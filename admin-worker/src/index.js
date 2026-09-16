@@ -1,3 +1,6 @@
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
+import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
 // =========================================================
 // admin-worker — Admin API / Core Orchestrator
@@ -25,7 +28,12 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
 import { renderApprovedAdminLogin } from "./admin-login-page.js";
+import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -84,6 +92,8 @@ const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
   "Public Models/Extreme Models/Straight",
 ];
 export const MODEL_SCHEMA_PATCH_V1_ROUTES = Object.freeze({
+  mediaReviewDecision: "/v1/model/media/review-decision",
+  mediaReviewFile: "/v1/model/media/review-file",
   visibilityUpdate: "/v1/model/visibility/update",
   rateRequest: "/v1/model/rate/request",
   mediaUploadInit: "/v1/model/media/upload-init",
@@ -101,7 +111,8 @@ const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
 const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
 const INTERNAL_ADMIN_PREFIX = "/internal/admin";
 const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
-const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji";
+const KENJI_KNOWLEDGE_LEGACY_PATH = "/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH = "/sigil/internal/admin/kenji-knowledge";
 const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
 const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
@@ -164,6 +175,10 @@ export default {
       return redirectLegacySigilInternalAdmin(req);
     }
 
+    if (path === KENJI_KNOWLEDGE_LEGACY_PATH) {
+      return redirectKenjiKnowledgeLegacy(req);
+    }
+
     if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
       return adminRouteNotFound();
     }
@@ -206,6 +221,9 @@ export default {
     }
 
     if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      if (String(env.KENJI_KNOWLEDGE_RUNTIME_V2_ENABLED || "").toLowerCase() === "true") {
+        return handleKenjiKnowledgeRuntimeRequest(req, env, { isAuthed });
+      }
       return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
@@ -243,7 +261,8 @@ export default {
     }
 
     if (method === "POST" && MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
-      return withCors(await handleModelSchemaPatchV1Route(req, env, path), cors);
+      const response = await handleModelSchemaPatchV1Route(req, env, path);
+      return path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile ? response : withCors(response, cors);
     }
 
     if (method === "GET" && path === MODEL_SESSION_CURRENT_PATH) {
@@ -485,8 +504,27 @@ export default {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
       }
 
+      // Canonical client lineage is read-only identity evidence. The outer
+      // admin gate above has already verified the signed internal-admin session.
+      if (isCreateSessionClientLineageRequest(path, method)) {
+        return withCors(
+          await handleCreateSessionClientLineageRequest(req, env, { alreadyAuthorized: true }),
+          cors,
+        );
+      }
+
       if (isAdminRichMenuRoute(path, method)) {
         return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
+      }
+
+      // Model HBD review gate. Submission is stored as manual_review by the
+      // model-session sidecar; only this credential-bound admin route may
+      // promote it to the public completed projection.
+      if (method === "GET" && path === "/v1/admin/model-wishes/review-queue") {
+        return withCors(await handleModelWishReviewQueue(env), cors);
+      }
+      if (method === "POST" && path === "/v1/admin/model-wishes/review") {
+        return withCors(await handleModelWishReview(req, env), cors);
       }
 
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
@@ -687,6 +725,19 @@ export default {
         }
       }
 
+      // Canonical Model-folder selection for Per's LINE activation console.
+      // This is a read-only candidate list; link issuance re-reads the exact Airtable record.
+      if (method === "GET" && path === "/v1/admin/models/activation-candidates") {
+        try {
+          return withCors(json(await listModelActivationCandidates(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "model_activation_candidates_failed") }, 500), cors);
+        }
+      }
+
       // ----------------------------------------------------
       // Models source resolver
       // ----------------------------------------------------
@@ -765,7 +816,10 @@ export default {
             return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
           }
           const error = String(e?.message || e || "job_create_failed");
-          return withCors(json({ ok: false, error }, error.startsWith("private_") ? 403 : 500), cors);
+          return withCors(json({ ok: false, error,
+            creation_outcome: e.creation_outcome || "unknown",
+            ...(e.session_id ? { session_id: e.session_id, payment_ref: e.payment_ref || null } : {}),
+          }, Number.isInteger(e.status) ? e.status : error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -827,6 +881,8 @@ function withCors(res, cors) {
    Auth
 ========================= */
 export async function isAuthed(req, env) {
+  const actor = await readCredentialBoundAdminActor(req, env);
+  if (actor) return actor.role === "admin" || actor.role === "owner";
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -845,7 +901,7 @@ function isConfirmKeyAuthed(req, env) {
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
 }
 
-async function isAdminGateSessionAuthed(req, env) {
+export async function isAdminGateSessionAuthed(req, env) {
   const session = await readAdminGateSession(req, env);
   if (!session || session.version !== 1) return false;
   if (session.scope !== "internal_admin") return false;
@@ -1097,7 +1153,7 @@ function hasTraversalSegment(value) {
 }
 
 function adminLoginRequiredPage(req) {
-  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
   return adminHtml(req, body, 401);
 }
 
@@ -1144,15 +1200,15 @@ function json(data, status = 200) {
 }
 
 function kenjiKnowledgeAdminShell(req, routeKind) {
-  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>MMD Kenji Knowledge</title><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23080604'/%3E%3Crect x='5' y='5' width='54' height='54' rx='13' fill='none' stroke='%23d9b66f' stroke-width='3'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-size='32' font-family='Arial,sans-serif' font-weight='900' fill='%23f5d58b'%3EM%3C/text%3E%3C/svg%3E"><link rel="shortcut icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%23080604%27/%3E%3Ctext x=%2732%27 y=%2738%27 text-anchor=%27middle%27 font-family=%27Arial,sans-serif%27 font-size=%2715%27 font-weight=%27700%27 fill=%27%23edc674%27%3EMMD%3C/text%3E%3C/svg%3E"><style>html,body{margin:0!important;padding:0!important;min-height:100%;background:#080604;color:#fff0dc;overflow-x:hidden}body{background:linear-gradient(180deg,#080604 0%,#050403 100%)}#mmdKenjiKnowledgeV9{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css"></head><body><div id="mmdKenjiKnowledgeV9"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader-board196.js"></script></body></html>`;
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"><style>html,body{margin:0;min-height:100%;background:#080604;color:#fff0dc}#mmdKenjiAdminV1{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css"></head><body><div id="mmdKenjiAdminV1" aria-live="polite"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js"></script></body></html>`;
   return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
     status: 200,
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
       "x-mmd-route-owner": "admin-worker",
-      "x-mmd-page": "kenji-knowledge-admin",
-      "x-mmd-origin": "admin-worker:kenji-knowledge-shell",
+      "x-mmd-page": "kenji-admin",
+      "x-mmd-origin": "admin-worker:kenji-admin-shell",
       "x-mmd-worker": "admin-worker",
       "x-mmd-route-canonical": KENJI_KNOWLEDGE_CANONICAL_PATH,
       "x-mmd-route-kind": routeKind,
@@ -1165,7 +1221,17 @@ function isKenjiKnowledgeShellPath(path) {
 }
 
 function isKenjiKnowledgeCapturedPath(path) {
-  return path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+  return path === KENJI_KNOWLEDGE_LEGACY_PATH || path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+}
+
+function redirectKenjiKnowledgeLegacy(req) {
+  const url = new URL(req.url);
+  url.pathname = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  return new Response(null, { status: 308, headers: {
+    "cache-control": "no-store",
+    location: `${url.origin}${url.pathname}${url.search}`,
+    "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+  }});
 }
 
 function isLegacySigilInternalAdminPath(path) {
@@ -1174,7 +1240,9 @@ function isLegacySigilInternalAdminPath(path) {
 
 function redirectLegacySigilInternalAdmin(req) {
   const url = new URL(req.url);
-  url.pathname = `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  url.pathname = url.pathname === KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH || url.pathname.startsWith(`${KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH}/`)
+    ? `${KENJI_KNOWLEDGE_CANONICAL_PATH}${url.pathname.slice(KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH.length)}`
+    : `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
   const location = `${url.origin}${url.pathname}${url.search}`;
   return new Response(null, {
     status: 308,
@@ -1448,6 +1516,65 @@ async function safeJson(req) {
   } catch (_) {
     return {};
   }
+}
+
+const MODEL_WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
+
+async function handleModelWishReviewQueue(env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const params = new URLSearchParams({
+    maxRecords: "100",
+    filterByFormula: "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='manual_review')",
+  });
+  const result = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
+  if (!result.ok) return json({ ok: false, error: "model_wish_review_queue_unavailable" }, 503);
+  const records = Array.isArray(result.data?.records) ? result.data.records : [];
+  return json({ ok: true, wishes: records.map((record) => {
+    const fields = record.fields || {};
+    return {
+      record_id: record.id,
+      wish_id: str(fields.wish_id),
+      wish_text: str(fields.wish_text).slice(0, 280),
+      submitted_at: str(fields.submitted_at),
+      source: str(fields.source),
+      payload_json: str(fields.payload_json),
+    };
+  }) });
+}
+
+async function handleModelWishReview(req, env) {
+  const body = await safeJson(req);
+  const recordId = str(body.record_id);
+  const decision = str(body.decision).toLowerCase();
+  if (!/^rec[a-zA-Z0-9]{14}$/.test(recordId) || !["approve", "reject"].includes(decision)) {
+    return json({ ok: false, error: "invalid_model_wish_review" }, 400);
+  }
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const read = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`);
+  const current = read.ok ? read.data : null;
+  const fields = current?.fields || {};
+  if (!read.ok || str(fields.campaign_id) !== "mmd_year_6_model_wish" || str(fields.wish_status) !== "manual_review") {
+    return json({ ok: false, error: "model_wish_review_state_conflict" }, 409);
+  }
+  const now = new Date().toISOString();
+  let audit = {};
+  try { audit = JSON.parse(str(fields.payload_json) || "{}"); } catch { audit = {}; }
+  audit.review = { decision, reviewed_at: now, reviewed_by: str(req.headers.get("X-MMD-Operator") || "admin") };
+  const patch = {
+    wish_status: decision === "approve" ? "completed" : "revoked",
+    public_display_text: decision === "approve" ? str(fields.wish_text).slice(0, 280) : "",
+    payload_json: JSON.stringify(audit),
+    updated_at: now,
+  };
+  const updated = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: patch, typecast: false }),
+  });
+  if (!updated.ok) return json({ ok: false, error: "model_wish_review_write_failed" }, 503);
+  return json({ ok: true, decision, record_id: recordId, public: decision === "approve" });
 }
 
 async function parseJsonObject(req) {
@@ -1860,18 +1987,25 @@ export function validateModelSchemaPatchV1Payload(route, body = {}) {
     const manualUnlock = input.manual_unlock === true;
     if (!manualUnlock && !str(input.payment_ref || input.payment_record_id)) errors.push("payment_ref");
   }
+  if ([MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision, MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile].includes(route) && !str(input.media_asset_id)) errors.push("media_asset_id");
+  if (route === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision && !["approve", "reject", "revoke"].includes(input.decision)) errors.push("decision");
 
   return { ok: errors.length === 0, errors };
 }
 
 async function handleModelSchemaPatchV1Route(req, env, path) {
   if (!isAllowedOrigin(req, env)) return modelSchemaPatchJson({ ok: false, error: "origin_not_allowed" }, 403);
+  // Cookie-authenticated mutations must carry an exact first-party origin.
+  // Server integrations retain their existing backend-only credentials.
 
   const body = await safeJson(req);
   const adminAuthed = await isAuthed(req, env);
   const isAuthorizeRoute = path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize;
   if (isAuthorizeRoute && !adminAuthed) return modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401);
   if (!adminAuthed) return modelSchemaPatchJson({ ok: false, error: "signed_t_required" }, 401);
+  const serviceBearer = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
+  const serviceAuthed = Boolean(serviceBearer && ((env.ADMIN_BEARER && serviceBearer === env.ADMIN_BEARER) || (env.INTERNAL_TOKEN && serviceBearer === env.INTERNAL_TOKEN))) || isConfirmKeyAuthed(req, env);
+  if (!serviceAuthed && req.headers.get("origin") !== new URL(req.url).origin) return modelSchemaPatchJson({ok:false,error:"origin_not_allowed"},403);
 
   const validation = validateModelSchemaPatchV1Payload(path, body || {});
   if (!validation.ok) {
@@ -1884,12 +2018,29 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
     }, 400);
   }
 
+  const verifiedActor = await readCredentialBoundAdminActor(req, env);
   const context = {
-    actor: str(req.headers.get("X-Admin-Actor") || body?.actor || body?.authorized_by || "admin-worker"),
+    actor: str(verifiedActor?.id || "admin-worker-service"),
     actorRole: "admin",
   };
 
   try {
+    if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile || path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision) {
+      const media = await readMediaByRecord(env, body.media_asset_id);
+      if (!ownedBy(media.fields || {}, body.model_id)) return modelSchemaPatchJson({ok:false,error:"media_owner_mismatch"},403);
+      if (!["pending_review", "approved"].includes(media.fields.review_status)) return modelSchemaPatchJson({ok:false,error:"media_review_state_conflict"},409);
+      const asset = await assertPrivateObject(env, media);
+      if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile) {
+        const object = await privateBucket(env).get(asset.key);
+        if (!object?.body || object.customMetadata?.sha256 !== asset.sha256) return modelSchemaPatchJson({ok:false,error:"media_unavailable"},503);
+        return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
+      }
+      const status = body.decision === "approve" ? "approved" : "rejected";
+      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
+      const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
+      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
+      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
+    }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));
     }
@@ -1915,6 +2066,7 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
       return modelSchemaPatchJson(await handleModelPrivateFlashAuthorize(env, body || {}, context));
     }
   } catch (error) {
+    if (error?.code && error?.status) return modelSchemaPatchJson({ok:false,error:error.code},error.status);
     if (error?.schemaPatchError) {
       return modelSchemaPatchJson({ ok: false, error: error.code, message: error.message }, error.status || 500);
     }
@@ -2000,15 +2152,22 @@ function isModelSessionPayload(payload) {
   return false;
 }
 
+function modelSessionVerificationSecret(payload, env) {
+  if (payload?.kind === "model_confirm") {
+    return str(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  if (payload?.kind === "customer_invite" && payload?.lane === "model_console") {
+    return str(env.LINK_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  return str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+}
+
 async function verifyModelSessionT(t, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
-  if (!secret || !t) return null;
+  if (!t) return null;
   const parts = String(t).split(".");
   if (parts.length !== 2) return null;
   const [encoded, signature] = parts;
   if (!encoded || !signature) return null;
-  const expected = await hmacSha256Hex(encoded, secret);
-  if (signature !== expected) return null;
 
   let payload = null;
   try {
@@ -2017,9 +2176,14 @@ async function verifyModelSessionT(t, env) {
     return null;
   }
 
+  if (!isModelSessionPayload(payload)) return null;
+  const secret = modelSessionVerificationSecret(payload, env);
+  if (!secret) return null;
+  const expected = await hmacSha256Hex(encoded, secret);
+  if (!(await constantTimeEqual(signature, expected))) return null;
+
   const exp = Number(payload?.exp || 0);
   if (exp && exp <= Math.floor(Date.now() / 1000)) return null;
-  if (!isModelSessionPayload(payload)) return null;
   return payload;
 }
 
@@ -2079,7 +2243,7 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_id", "Model"]);
+  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
   if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
 
   const payloadModelName = str(payload?.model_name).toLowerCase();
@@ -2159,7 +2323,7 @@ function modelSessionResponseSession(tables, record) {
 }
 
 async function signModelSessionPayload(payload, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  const secret = str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
   if (!secret) return "";
   const encoded = base64UrlEncodeUtf8(JSON.stringify(payload));
   return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
@@ -2251,16 +2415,18 @@ async function handleModelSessionCurrent(req, env) {
   });
 }
 
-async function verifyStartWorkPaymentTruth(env, session) {
+export async function verifyStartWorkPaymentTruth(env, session) {
   const truthUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
   // Runtime V1a must fail closed until payments-worker exposes a stable final-payment truth endpoint.
   if (!truthUrl) return { ok: false, error: "payment_gate_not_ready" };
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
 
   const res = await fetch(truthUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
+      "X-Internal-Token": serviceToken,
     },
     body: JSON.stringify({
       session_id: session.session_id,
@@ -2486,6 +2652,7 @@ function safeModelMediaExtension(fileName, contentType) {
 }
 
 async function handleModelMediaUploadInit(env, body) {
+  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) return planPrivateUpload(env, resolveSchemaPatchModelId(body), body);
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = `media_${crypto.randomUUID()}`;
@@ -2525,6 +2692,10 @@ async function handleModelMediaUploadInit(env, body) {
 }
 
 async function handleModelMediaUploadComplete(env, body) {
+  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) {
+    const planned = await readMedia(env, str(body.asset_id));
+    return completePrivateMetadata(env, planned, resolveSchemaPatchModelId(body));
+  }
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = str(body.asset_id) || `media_${crypto.randomUUID()}`;
@@ -2616,13 +2787,22 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
   const modelId = resolveSchemaPatchModelId(body);
   const clientId = str(body.client_id || body.client_record_id);
   const basis = await assertFlashAuthorizationBasis(env, body, tables);
+  const policy = resolvePrivatePreviewPolicy(body);
+  const media = await readMediaByRecord(env, str(body.media_asset_id || body.media_record_id));
+  if (!ownedBy(media.fields || {}, modelId)) throw schemaPatchError("media_owner_mismatch",403,"Media must belong to the selected Model.");
+  await assertPrivateObject(env, media, true, policy.preview_kind);
+  const client = await modelSchemaPatchGetById(env,{table:str(env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS")},clientId);
+  const cf = client?.fields || {};
+  if (!/^U[a-f0-9]{32}$/i.test(str(cf.line_user_id)) || cf.blocked === true || [cf.status,cf.client_status,cf.member_status].some(value => /^(blocked|suspended|revoked)$/i.test(str(value)))) throw schemaPatchError("verified_customer_required",403,"A verified linked customer is required.");
   const rawT = base64UrlEncodeString(`${crypto.randomUUID()}:${Date.now()}`);
   const tokenHash = await sha256Hex(rawT);
   const grantId = `flash_grant_${crypto.randomUUID()}`;
   const expiresAt = str(body.expires_at) || addMinutesIso(clampInt(body.expires_in_minutes, 1, 240, 30));
+  if (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now() || Date.parse(expiresAt) > Date.now() + 240 * 60 * 1000) throw schemaPatchError("grant_expiry_invalid",400,"Grant expiry must be within four hours.");
   const fields = tables.flashGrants.fields;
-  const viewLimit = clampInt(body.view_limit, 1, 20, 3);
-  const durationSec = clampInt(body.duration_sec || body.expires_in_minutes * 60, 30, 14400, 1800);
+  const previewPolicy = resolvePrivatePreviewPolicy(body);
+  const viewLimit = previewPolicy.view_limit;
+  const durationSec = previewPolicy.duration_sec;
   const rec = await modelSchemaPatchCreate(env, tables.flashGrants, {
     [fields.grantId]: grantId,
     [fields.client]: modelSchemaLinkedRecord(clientId),
@@ -2648,6 +2828,8 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
       authorization_basis: basis,
       payment_ref: str(body.payment_ref),
       token_storage: "sha256_hash_only",
+      preview_kind: previewPolicy.preview_kind,
+      consume_on: previewPolicy.consume_on,
     }),
   });
   return {
@@ -2659,8 +2841,12 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
     client_id: clientId,
     expires_at: expiresAt,
     view_limit: viewLimit,
+    duration_sec: durationSec,
+    preview_kind: previewPolicy.preview_kind,
+    consume_on: previewPolicy.consume_on,
     authorization_basis: basis,
     t: rawT,
+    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view#t=${encodeURIComponent(rawT)}`,
     token_storage: "sha256_hash_only",
   };
 }
@@ -2678,6 +2864,9 @@ async function assertFlashAuthorizationBasis(env, body, tables) {
   if (!payment || !isVerifiedDepositRecord(payment, tables)) {
     throw schemaPatchError("verified_deposit_required", 423, "Flash preview requires verified deposit or manual admin unlock.");
   }
+  const paymentClient = payment.fields?.Client || payment.fields?.client_record_id;
+  const clientIds = Array.isArray(paymentClient) ? paymentClient : paymentClient ? [paymentClient] : [];
+  if (clientIds.length !== 1 || clientIds[0] !== str(body.client_id || body.client_record_id)) throw schemaPatchError("payment_customer_mismatch",403,"Verified payment must belong to the grant recipient.");
   return "verified_deposit";
 }
 
@@ -2691,6 +2880,17 @@ export function isVerifiedDepositRecord(record, tables) {
   if (officialVerifiedAt) return true;
   return verificationStatus === "official_verified" &&
     Boolean(officialVerificationRef && (officialVerifiedBy || officialMatchReason));
+}
+
+export function resolvePrivatePreviewPolicy(body = {}) {
+  const kind = normalizeSchemaPatchWord(body.preview_kind || body.media_kind || body.kind);
+  if (kind === "private_pic" || kind === "private_picture" || kind === "image") {
+    return { preview_kind: "private_pic", duration_sec: 3, view_limit: 1, consume_on: "open" };
+  }
+  if (kind === "private_clip" || kind === "clip" || kind === "video") {
+    return { preview_kind: "private_clip", duration_sec: 0, view_limit: 1, consume_on: "play_start" };
+  }
+  throw schemaPatchError("preview_kind_required", 400, "preview_kind must be private_pic or private_clip.");
 }
 
 function isPublicCandidateMedia(mediaType) {
@@ -4606,6 +4806,34 @@ async function searchCreateSessionModels(env, url) {
   return out;
 }
 
+
+async function listModelActivationCandidates(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const folder = accessToken(url.searchParams.get("folder") || "");
+  const limit = clampInt(url.searchParams.get("limit") ?? 50, 1, 100, 50);
+  const allowedFolders = new Set([...PUBLIC_MODEL_FOLDERS, ...CANONICAL_PRIVATE_FOLDERS]);
+  if (folder && !allowedFolders.has(folder)) {
+    throw new CreateSessionAccessError("model_folder_invalid", "Folder is not a canonical Model folder.");
+  }
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const records = await airtableList(env, modelsTable, { q, limit: 100, matchFields: getModelSearchFields(env), fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS });
+  const items = [];
+  for (const record of records) {
+    // Activation selection requires affirmative canonical status. The legacy
+    // booking profile only excludes known blocked statuses and is not an
+    // approval check: blank, pending and unknown values must not pass here.
+    const status = record.fields?.status;
+    if (typeof status !== "string" || status.trim().toLowerCase() !== "active") continue;
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (!item.model_name || (folder && !item.folders.includes(folder))) continue;
+    items.push({ model_record_id: item.model_id, working_name: item.model_name, model_lookup_key: item.model_lookup_key, folders: item.folders, status: item.status });
+    if (items.length >= limit) break;
+  }
+  return { ok: true, layer: "core", folder, items };
+}
+
 export {
   CreateSessionAccessError,
   PRIVATE_ACCESS_FOLDERS,
@@ -4617,6 +4845,7 @@ export {
   resolveCreateSessionModel,
   enforcePrivateCreateAccess,
   searchCreateSessionModels,
+  listModelActivationCandidates,
 };
 
 /* =========================
@@ -4630,7 +4859,10 @@ async function createAdminJob(env, body) {
   const notes = body?.notes || {};
   const privateAccess = body?.private_access || {};
   const telegramGate = body?.telegram_gate || {};
-  const jobVisibility = str(work.job_visibility || body.job_visibility || body.booking_visibility || "");
+  // SIGIL Jobs uses visibility/job_details.world. Any private declaration must
+  // pass the existing authoritative access gate, including conflicting aliases.
+  const jobVisibility = [work.job_visibility, body.job_visibility, body.booking_visibility,
+    body.visibility, jobDetails.world].some(value => str(value).toLowerCase() === "private") ? "private" : "public";
 
   if (jobVisibility === "private") {
     // Authoritative gate: resolves the member from the backend ledger and the
@@ -4666,6 +4898,9 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    pay_model_thb: body.pay_model_thb,
+    service_amount_thb: body.service_amount_thb,
+    operational_status: jobDetails.operational_status === "pending_client_link" ? "pending_client_link" : undefined,
     payment_type,
     payment_method,
     note,
@@ -4673,7 +4908,20 @@ async function createAdminJob(env, body) {
     model_confirm_page,
   };
 
-  const minted = await callPaymentsCreateLink(env, payload);
+  // Older issuers reject this envelope at required-field validation, before
+  // writing anything. Rolling deployments must never mint a held job's links.
+  const issuerPayload = jobDetails.operational_status === "pending_client_link"
+    ? { operational_status: "pending_client_link", held_job: payload }
+    : payload;
+  const minted = await callPaymentsCreateLink(env, issuerPayload);
+
+  if (jobDetails.operational_status === "pending_client_link") {
+    // A held create must never accept a legacy issuer that already minted links.
+    if (minted.operational_status !== "pending_client_link" || minted.payment_ref || minted.customer_t || minted.model_t || minted.customer_confirmation_url || minted.model_confirmation_url) {
+      throw new Error("pending_client_link_issuer_contract_failed");
+    }
+    return { session_id: minted.session_id, payment_ref: null, operational_status: "pending_client_link", raw: minted };
+  }
 
   const session_id = minted.session_id || minted.sessionId || "";
   const payment_ref = minted.payment_ref || minted.paymentRef || "";
@@ -4692,7 +4940,9 @@ async function createAdminJob(env, body) {
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
 
-  await notifyJobCreated(env, {
+  let notificationStatus = "not_configured";
+  try {
+    const notification = await notifyJobCreated(env, {
     session_id,
     payment_ref,
     client_name,
@@ -4705,7 +4955,12 @@ async function createAdminJob(env, body) {
     amount_thb,
     customer_confirmation_url,
     model_confirmation_url,
-  });
+    });
+    if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
+  } catch (_) {
+    // The job/payment exists. A notification failure is not a failed create.
+    notificationStatus = "failed";
+  }
 
   return {
     session_id,
@@ -4713,22 +4968,12 @@ async function createAdminJob(env, body) {
     customer_confirmation_url,
     model_confirmation_url,
     raw: minted,
+    notification_status: notificationStatus,
   };
 }
 
-async function callPaymentsCreateLink(env, payload) {
-  const base = str(env.PAYMENTS_WORKER_BASE_URL || "").replace(/\/+$/, "");
-  if (!base) throw new Error("missing_PAYMENTS_WORKER_BASE_URL");
-
-  const res = await fetch(`${base}/v1/confirm/link`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
-    },
-    body: JSON.stringify(payload),
-  });
+export async function callPaymentsCreateLink(env, payload) {
+  const res = await requestPaymentsConfirmLink(env, payload);
 
   let data = null;
   try {
@@ -4738,7 +4983,12 @@ async function callPaymentsCreateLink(env, payload) {
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    const error = new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    error.status = res.status;
+    error.creation_outcome = data?.creation_outcome || "unknown";
+    error.session_id = data?.session_id;
+    error.payment_ref = data?.payment_ref;
+    throw error;
   }
 
   return data || {};
@@ -4763,7 +5013,7 @@ async function notifyJobCreated(env, data) {
     `Model URL: ${escHtml(data.model_confirmation_url)}`,
   ];
 
-  await telegramInternalSend(env, {
+  return await telegramInternalSend(env, {
     chat_id: env.TELEGRAM_CHAT_ID || "-1003546439681",
     message_thread_id: env.TG_THREAD_CONFIRM || 61,
     text: lines.join("\n"),
@@ -4771,3 +5021,5 @@ async function notifyJobCreated(env, data) {
     disable_web_page_preview: true,
   });
 }
+
+export { MmsPartnerAuthStore } from "./mms-partner-auth-store.js";

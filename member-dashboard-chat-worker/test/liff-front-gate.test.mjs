@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import worker from "../src/index.js";
@@ -53,6 +54,64 @@ test("LIFF front gate transparently forwards the request through the service bin
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
+test("member dashboard API front gate forwards only to member-pages-worker", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({
+          url: request.url,
+          method: request.method,
+          cookie: request.headers.get("cookie"),
+        });
+        return Response.json({ ok: true, data: { dashboard_state: "checking" } }, {
+          headers: { "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/; SameSite=Strict" },
+        });
+      },
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/api/member/dashboard?t=abc&unsafe=x", {
+    headers: { cookie: "__Host-mmd_liff_session=current" },
+  }), env);
+
+  assert.deepEqual(calls, [{
+    url: "https://www.mmdbkk.com/api/member/dashboard?t=abc&unsafe=x",
+    method: "GET",
+    cookie: "__Host-mmd_liff_session=current",
+  }]);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.dashboard_state, "checking");
+  assert.equal(response.headers.get("x-mmd-worker"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+});
+
+test("MMS member API uses the same trusted member-pages front gate", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({ url: request.url, method: request.method, cookie: request.headers.get("cookie") });
+        return Response.json({ ok: true, data: { matches: [] } }, {
+          headers: { "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/" },
+        });
+      },
+    },
+  };
+  const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/mms/match", {
+    method: "POST",
+    headers: { cookie: "__Host-mmd_liff_session=current", "content-type": "application/json" },
+    body: JSON.stringify({ recipient_gender: "male", zone: "sukhumvit", skills: ["thai_massage"] }),
+  }), env);
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url, "https://mmdbkk.com/member/api/liff/mms/match");
+  assert.equal(calls[0].cookie, "__Host-mmd_liff_session=current");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+  assert.match(response.headers.get("set-cookie") || "", /rotated/);
+});
+
 test("LIFF front gate fails closed when the service binding is missing", async () => {
   const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/status"), {});
 
@@ -60,7 +119,7 @@ test("LIFF front gate fails closed when the service binding is missing", async (
   assert.equal((await response.json()).error.code, "LIFF_UPSTREAM_NOT_CONFIGURED");
 });
 
-test("same-site LIFF shell is owned by the front gate and proxied only on the exact path", async () => {
+test("same-site LIFF shell is owned by the front gate on apex and www", async () => {
   const calls = [];
   const env = {
     MEMBER_PAGES_WORKER: {
@@ -70,17 +129,76 @@ test("same-site LIFF shell is owned by the front gate and proxied only on the ex
       },
     },
   };
+  const shellUrls = [
+    "https://mmdbkk.com/member/liff?intent=status&view=points",
+    "https://www.mmdbkk.com/member/liff?intent=promo&campaign=care_back&view=care_back",
+  ];
 
-  const shell = await worker.fetch(new Request("https://mmdbkk.com/member/liff?intent=status&view=points"), env);
+  const shells = await Promise.all(shellUrls.map((url) => worker.fetch(new Request(url), env)));
   const nearby = await worker.fetch(new Request("https://mmdbkk.com/member/liff-admin"), env);
 
-  assert.equal(shell.status, 200);
-  assert.match(shell.headers.get("content-type") || "", /^text\/html/);
-  assert.deepEqual(calls, ["https://mmdbkk.com/member/liff?intent=status&view=points"]);
+  for (const shell of shells) {
+    assert.equal(shell.status, 200);
+    assert.match(shell.headers.get("content-type") || "", /^text\/html/);
+    assert.equal(shell.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  }
+  assert.deepEqual(calls, shellUrls);
   assert.equal(nearby.status, 404);
 });
 
-test("Care Back stays outside the LIFF front gate until its API contract is ready", async () => {
+test("wrangler claims query-capable LIFF shell routes on apex and www", async () => {
+  const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
+  const routes = [
+    "mmdbkk.com/member/liff*",
+    "www.mmdbkk.com/member/liff*",
+    "mmdbkk.com/api/member/dashboard*",
+    "www.mmdbkk.com/api/member/dashboard*",
+  ];
+
+  for (const route of routes) {
+    assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
+  }
+});
+
+test("guarded CARE BACK state and wish APIs remain service-bound through the LIFF front gate", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({
+          path: new URL(request.url).pathname,
+          method: request.method,
+          cookie: request.headers.get("cookie"),
+          body: request.method === "POST" ? await request.json() : null,
+        });
+        return Response.json({ ok: true }, {
+          headers: { "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/; SameSite=Strict" },
+        });
+      },
+    },
+  };
+  const cookie = "__Host-mmd_liff_session=current";
+  const state = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/state", {
+    method: "GET",
+    headers: { cookie },
+  }), env);
+  const wish = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/care-back/wish", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ wish_text: "สุขสันต์ปีที่หกครับ", request_id: "req_1234567890abcdef" }),
+  }), env);
+
+  assert.deepEqual(calls, [
+    { path: "/member/api/liff/care-back/state", method: "GET", cookie, body: null },
+    { path: "/member/api/liff/care-back/wish", method: "POST", cookie, body: { wish_text: "สุขสันต์ปีที่หกครับ", request_id: "req_1234567890abcdef" } },
+  ]);
+  assert.equal(state.status, 200);
+  assert.equal(wish.status, 200);
+  assert.match(wish.headers.get("set-cookie") || "", /SameSite=Strict/);
+  assert.equal(wish.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+});
+
+test("legacy Care Back stays outside the LIFF front gate", async () => {
   let calls = 0;
   const env = {
     MEMBER_PAGES_WORKER: {

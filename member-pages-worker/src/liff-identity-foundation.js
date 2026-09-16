@@ -1,14 +1,19 @@
 import { getLiffGatewayStore, LiffGatewayStorageError } from "./liff-gateway-airtable.js";
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
+import { assertBirthdayWishOwnership, BirthdayWishStorageError, getBirthdayWishStore } from "./care-back-birthday-wish-store.js";
+import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
+import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
+import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
+import { readMmsCustomerHistory } from "./mms-customer-history.js";
 
 const WORKER = "member-pages-worker";
-const VERSION = "20260804-liff-membership-gateway-start";
+const VERSION = "20260828-care-back-benefits-wallet";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const SESSION_TTL_SECONDS = 15 * 60;
 const HALL_TOKEN_TTL_SECONDS = 5 * 60;
 const VERIFY_TIMEOUT_MS = 5000;
-const MEMBER_RESOLVER_TIMEOUT_MS = 5000;
+const MEMBER_RESOLVER_TIMEOUT_MS = 12000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
@@ -17,6 +22,9 @@ const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
+const MEMBERSHIP_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
+const MEMBERSHIP_RENEW_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
+const MEMBER_DASHBOARD_URL = "https://mmdbkk.com/member/dashboard";
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -26,7 +34,17 @@ const PACKAGE_PATHS = new Set(["/member/api/liff/package", "/member/api/liff/pac
 const PAYMENT_INTENT_PATHS = new Set(["/member/api/liff/payment-intent", "/member/api/liff/payment-intent/"]);
 const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/status/"]);
 const PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
+const MEMBERSHIP_ROUTE_PATHS = new Set(["/member/api/liff/membership-route", "/member/api/liff/membership-route/"]);
+const DASHBOARD_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
+const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/", "/member/api/liff/mms/catalog", "/member/api/liff/mms/catalog/"]);
+const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/", "/member/api/liff/mms/match", "/member/api/liff/mms/match/"]);
+const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/", "/member/api/liff/mms/prebookings", "/member/api/liff/mms/prebookings/"]);
+const MMS_HISTORY_PATHS = new Set(["/member/api/liff/mms/history", "/member/api/liff/mms/history/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
+const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
+const CARE_BACK_WALLET_PATHS = new Set(["/member/api/liff/care-back/wallet", "/member/api/liff/care-back/wallet/"]);
+const CARE_BACK_WISH_PATHS = new Set(["/member/api/liff/care-back/wish", "/member/api/liff/care-back/wish/"]);
+const CLOSED_LEGACY_CARE_BACK_WISH_PATHS = new Set(["/api/care-back-wish", "/api/care-back-wish/"]);
 const HALL_TOKEN_PATHS = new Set(["/member/api/liff/hall-token", "/member/api/liff/hall-token/"]);
 const APPROVED_ORIGINS = new Set([
   "https://mmdbkk.com",
@@ -34,15 +52,17 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
+const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "mms_booking", "unknown"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
-const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code"]);
+const START_BODY_KEYS = new Set(["id_token", "line_id_token", "intent", "liff_intent", "promo_code", "campaign"]);
 const INTENT_BODY_KEYS = new Set(["intent", "liff_intent"]);
 const AUDIENCE_BODY_KEYS = new Set(["hall_audience_context"]);
 const PACKAGE_BODY_KEYS = new Set(["requested_package_code", "promo_code"]);
 const PAYMENT_INTENT_BODY_KEYS = new Set(["package_code", "payment_stage"]);
 const HALL_BODY_KEYS = new Set();
 const CARE_BACK_BODY_KEYS = new Set();
+const CARE_BACK_WISH_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id"]);
+const CARE_BACK_CAMPAIGN = "care_back";
 const BROWSER_IDENTITY_FIELDS = [
   "line_user_id",
   "lineUserId",
@@ -56,6 +76,7 @@ const BROWSER_IDENTITY_FIELDS = [
   "line_profile",
   "user",
   "member_id",
+  "member_ref",
   "mmd_member_id",
   "tier",
   "points",
@@ -74,6 +95,25 @@ const BROWSER_IDENTITY_FIELDS = [
 export default {
   async fetch(request, env = {}, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isMmsMemberPrefix(path)) {
+      let response;
+      if (request.method === "OPTIONS") {
+        response = isApprovedOrigin(request, env)
+          ? new Response(null, { status: 204, headers: apiHeaders("POST,GET,OPTIONS") })
+          : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+      } else if (MMS_CATALOG_PATHS.has(path)) {
+        response = await handleMmsCatalog(request, env);
+      } else if (MMS_MATCH_PATHS.has(path)) {
+        response = await handleMmsMatch(request, env);
+      } else if (MMS_PREBOOKING_PATHS.has(path)) {
+        response = await handleMmsPrebooking(request, env);
+      } else if (MMS_HISTORY_PATHS.has(path)) {
+        response = await handleMmsCustomerHistory(request, env);
+      } else {
+        response = json({ ok: false, error: { code: "MMS_ROUTE_NOT_FOUND", message: "Unknown MMS member route." } }, 404);
+      }
+      return withLiffCors(request, response, env);
+    }
     if (isLiffPrefix(path)) {
       let response;
       if (request.method === "OPTIONS") {
@@ -96,28 +136,163 @@ export default {
         response = await handleStatus(request, env);
       } else if (PROFILE_PATHS.has(path)) {
         response = await handleMemberProfile(request, env);
+      } else if (MEMBERSHIP_ROUTE_PATHS.has(path)) {
+        response = await handleMembershipRoute(request, env);
       } else if (CARE_BACK_CLAIM_PATHS.has(path)) {
         response = await handleCareBackClaim(request, env);
+      } else if (CARE_BACK_STATE_PATHS.has(path)) {
+        response = await handleCareBackState(request, env);
+      } else if (CARE_BACK_WALLET_PATHS.has(path)) {
+        response = await handleCareBackWallet(request, env);
+      } else if (CARE_BACK_WISH_PATHS.has(path)) {
+        response = await handleCareBackWish(request, env);
       } else if (HALL_TOKEN_PATHS.has(path)) {
         response = await handleHallToken(request, env);
       } else {
         response = json({ ok: false, error: { code: "LIFF_ROUTE_NOT_FOUND", message: "Unknown LIFF identity route." } }, 404);
       }
-      return withLiffCors(request, response);
+      return withLiffCors(request, response, env);
+    }
+    if (DASHBOARD_PATHS.has(path)) {
+      let response;
+      if (request.method === "OPTIONS") {
+        response = isApprovedOrigin(request)
+          ? new Response(null, { status: 204, headers: apiHeaders("GET,OPTIONS") })
+          : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+      } else {
+        response = await handleMemberDashboard(request, env);
+      }
+      return withLiffCors(request, response, env);
+    }
+    if (CLOSED_LEGACY_CARE_BACK_WISH_PATHS.has(path)) {
+      return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
     }
     return legacyWorker.fetch(request, env, ctx);
   },
 };
 
+async function handleMmsCatalog(request, env) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  return forwardMmsResponse(await callMmsService(env, "/mms/api/catalog", { method: "GET" }));
+}
+
+async function handleMmsMatch(request, env) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const allowed = new Set(["recipient_gender", "zone", "skills"]);
+  if (hasUnexpectedKeys(parsed.body, allowed) || hasBrowserIdentityClaims(parsed.body)) return browserIdentityRejected();
+  const auth = await authenticateMmsMember(request, env);
+  if (!auth.ok) return auth.response;
+  const upstream = await callMmsService(env, "/mms/api/therapists/match", {
+    method: "POST",
+    body: parsed.body,
+  });
+  return commitMmsResponse(env, auth, upstream);
+}
+
+async function handleMmsPrebooking(request, env) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const allowed = new Set([
+    "idempotency_key",
+    "recipient_gender",
+    "zone",
+    "service_date",
+    "service_time",
+    "duration_minutes",
+    "skills",
+    "requested_therapist_ids",
+    "note",
+    "language",
+  ]);
+  if (hasUnexpectedKeys(parsed.body, allowed) || hasBrowserIdentityClaims(parsed.body)) return browserIdentityRejected();
+  const auth = await authenticateMmsMember(request, env);
+  if (!auth.ok) return auth.response;
+  const upstream = await callMmsService(env, "/mms/api/prebookings", {
+    method: "POST",
+    body: { ...parsed.body, member_ref: auth.session.member_id },
+  });
+  return commitMmsResponse(env, auth, upstream);
+}
+
+async function authenticateMmsMember(request, env) {
+  if (!env.LIFF_IDENTITY_KV || !env.LIFF_SESSION_SECRET) {
+    return { ok: false, response: unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED") };
+  }
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth;
+  if (!auth.session.member_exists || !auth.session.member_id) {
+    return {
+      ok: false,
+      response: await saveRotatedError(env, auth, "MMS_MEMBER_REQUIRED", "Verified MMD membership is required.", 403),
+    };
+  }
+  return auth;
+}
+
+async function callMmsService(env, path, options = {}) {
+  if (!env.MMS_WORKER?.fetch) {
+    return { ok: false, status: 503, payload: { ok: false, error: { code: "MMS_UPSTREAM_NOT_CONFIGURED", message: "MMS service is temporarily unavailable." } } };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const headers = new Headers({ accept: "application/json" });
+    const init = { method: options.method || "GET", headers, signal: controller.signal };
+    if (options.body) {
+      headers.set("content-type", "application/json");
+      init.body = JSON.stringify(options.body);
+    }
+    const response = await env.MMS_WORKER.fetch(new Request(`https://mms.internal${path}`, init));
+    const payload = await response.json().catch(() => null);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return { ok: false, status: 502, payload: { ok: false, error: { code: "MMS_UPSTREAM_INVALID", message: "MMS service returned an invalid response." } } };
+    }
+    return { ok: response.ok && payload.ok === true, status: response.status, payload };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error?.name === "AbortError" ? 504 : 502,
+      payload: { ok: false, error: { code: error?.name === "AbortError" ? "MMS_UPSTREAM_TIMEOUT" : "MMS_UPSTREAM_UNAVAILABLE", message: "MMS service is temporarily unavailable." } },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function commitMmsResponse(env, auth, upstream) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return forwardMmsResponse(upstream, [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)]);
+}
+
+function forwardMmsResponse(upstream, cookies = []) {
+  const status = Number.isInteger(upstream?.status) && upstream.status >= 200 && upstream.status <= 599 ? upstream.status : 502;
+  const payload = upstream?.payload && typeof upstream.payload === "object"
+    ? upstream.payload
+    : { ok: false, error: { code: "MMS_UPSTREAM_INVALID", message: "MMS service returned an invalid response." } };
+  return json(payload, status, { cookies });
+}
+
 export async function handleStart(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, START_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
 
   const idToken = singleIdToken(body);
@@ -127,33 +302,36 @@ export async function handleStart(request, env = {}) {
   if (!verified.ok) return json({ ok: false, error: { code: verified.code, message: verified.message } }, verified.status);
 
   const identityKey = await keyedDigest(env, `identity:${verified.sub}`);
-  const existing = await resolveExistingMember(env, verified.sub);
-  if (!existing.ok) return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
-  const memberProfile = existing.exists ? await resolveMemberProfile(env, verified.sub) : null;
-  if (existing.exists && !memberProfile?.ok) {
-    return json({ ok: false, error: { code: "MEMBER_PROFILE_RESOLUTION_FAILED", message: "Member profile could not be resolved safely." } }, 503);
+  const memberState = await resolveMemberIdentity(env, verified.sub);
+  if (!memberState.ok) {
+    return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
   }
 
-  const pending = existing.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
+  const pending = memberState.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
   const intent = normalizeIntent(body.intent);
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
   const continuity = cleanContinuity(new URL(request.url).searchParams.get("t"));
   const session = await issueSession(env, {
+    line_user_id: verified.sub,
+    verified_at: new Date().toISOString(),
+    renewal_flow_status: "identity_linked",
     identity_key: identityKey,
-    member_exists: existing.exists,
-    member_id: memberProfile?.member_id || null,
-    member_profile: memberProfile?.profile || null,
+    member_exists: memberState.exists,
+    member_id: memberState.member_id || null,
+    member_profile: memberState.profile || null,
     pending_identity_id: pending?.pending_identity_id || null,
     intent,
     liff_intent: liffIntent,
     source_channel: "line_liff",
+    language: "th",
     hype_decision_status: liffIntent === "unknown" ? "asking_intent" : "not_started",
     hall_audience_context: "unknown",
     model_visibility_mode: "hold_until_selected",
     pricing_lane: "unknown",
     promo_code: normalizePromoCode(body.promo_code),
+    promotion_campaign: normalizeCampaign(body.campaign),
     route_after_liff: null,
-    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, existing.exists),
+    next_screen_key: liffIntent === "unknown" ? "start_intent" : nextScreenForIntent(liffIntent, memberState.exists),
     continuity,
   });
   try {
@@ -171,13 +349,14 @@ export async function handleStart(request, env = {}) {
 
 export async function handleIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, INTENT_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -199,13 +378,14 @@ export async function handleIntent(request, env = {}) {
 
 export async function handleAudience(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, AUDIENCE_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const audience = normalizeAudience(body.hall_audience_context);
   if (!audience) return json({ ok: false, error: { code: "INVALID_AUDIENCE_CONTEXT", message: "A valid audience selection is required." } }, 400);
@@ -238,13 +418,14 @@ export async function handleAudience(request, env = {}) {
 
 export async function handlePackage(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, PACKAGE_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const requestedPackage = normalizePackageCode(body.requested_package_code);
   if (!requestedPackage) return json({ ok: false, error: { code: "PACKAGE_REQUIRED", message: "A package selection is required." } }, 400);
@@ -298,13 +479,14 @@ export async function handlePackage(request, env = {}) {
 
 export async function handlePaymentIntent(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, PAYMENT_INTENT_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const packageCode = normalizePackageCode(body.package_code);
   if (!packageCode || !normalizePaymentStage(body.payment_stage)) return json({ ok: false, error: { code: "PAYMENT_INTENT_INVALID", message: "A selected package and payment stage are required." } }, 400);
@@ -344,7 +526,7 @@ export async function handlePaymentIntent(request, env = {}) {
 
 export async function handleStatus(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
@@ -365,7 +547,7 @@ export async function handleStatus(request, env = {}) {
 
 export async function handleMemberProfile(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
-  const originFailure = rejectUnapprovedOrigin(request);
+  const originFailure = rejectUnapprovedOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
@@ -383,13 +565,310 @@ export async function handleMemberProfile(request, env = {}) {
   });
 }
 
+export async function handleMmsCustomerHistory(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  // There is no browser-selectable identity, Client, email or member reference.
+  if (new URL(request.url).search) return browserIdentityRejected();
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  const status = String(auth.session.member_profile?.membership_status || "").toLowerCase();
+  if (["blocked", "suspended", "revoked", "pending_review", "review_required"].includes(status)) {
+    return saveRotatedError(env, auth, "MMS_HISTORY_REVIEW_REQUIRED", "Identity review is required.", 403);
+  }
+  try {
+    const data = await readMmsCustomerHistory(env, auth.session.line_user_id);
+    await commitRotatedSession(env, auth);
+    return json({ ok: true, data }, 200, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+  } catch {
+    return saveRotatedError(env, auth, "MMS_HISTORY_UNAVAILABLE", "History is temporarily unavailable.", 503);
+  }
+}
+
+export async function handleMembershipRoute(request, env = {}) {
+  if (request.method !== "GET") return membershipRouteResponse("fail_closed", null, "method_not_allowed", 405);
+  if (rejectUnapprovedOrigin(request, env)) return membershipRouteResponse("fail_closed", null, "origin_not_allowed", 403);
+  if (new URL(request.url).search) return membershipRouteResponse("fail_closed", null, "browser_authority_rejected", 400);
+  if (!hasFoundationBindings(env)) return membershipRouteResponse("fail_closed", null, "resolver_unavailable", 503);
+  const gatewayStore = getLiffGatewayStore(env);
+  if (!gatewayStore || typeof gatewayStore.resolveMembershipReview !== "function") {
+    return membershipRouteResponse("fail_closed", null, "review_unavailable", 503);
+  }
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return membershipRouteResponse("fail_closed", null, "session_invalid", 401, [clearCookie(SESSION_COOKIE)]);
+  const lineUserId = String(auth.session.line_user_id || "").trim();
+  if (!lineUserId) return commitMembershipRoute(env, auth, "fail_closed", null, "identity_unavailable", 503);
+
+  const member = await resolveExistingMember(env, lineUserId);
+  if (!member.ok) return commitMembershipRoute(env, auth, "fail_closed", null, "resolver_unavailable", 503);
+  if (member.exists) {
+    const profile = await resolveMemberProfile(env, lineUserId);
+    if (!profile?.ok) return commitMembershipRoute(env, auth, "fail_closed", null, "member_state_unavailable", 503);
+    const status = String(profile.profile?.membership_status || "").trim().toLowerCase();
+    if (status === "active" || status === "grace") {
+      return commitMembershipRoute(env, auth, "dashboard", MEMBER_DASHBOARD_URL, `${status}_member`, 200);
+    }
+    if (status === "expired") return commitMembershipRoute(env, auth, "renew", MEMBERSHIP_RENEW_URL, "expired_member", 200);
+    return commitMembershipRoute(env, auth, "fail_closed", null, "member_state_unavailable", 200);
+  }
+
+  let review;
+  try {
+    review = await gatewayStore.resolveMembershipReview(lineUserId);
+  } catch {
+    return commitMembershipRoute(env, auth, "fail_closed", null, "review_unavailable", 503);
+  }
+  if (review?.membership_review?.authoritative !== true) {
+    return commitMembershipRoute(env, auth, "fail_closed", null, "review_unavailable", 503);
+  }
+  const state = String(review.membership_review.state || "");
+  if (["pending_application", "pending_payment_review", "approved_awaiting_member_creation"].includes(state)) {
+    return commitMembershipRoute(env, auth, "pending_review", null, "authoritative_review_pending", 200);
+  }
+  if (state === "none") return commitMembershipRoute(env, auth, "signup", MEMBERSHIP_SIGNUP_URL, "no_member_or_pending_review", 200);
+  return commitMembershipRoute(env, auth, "fail_closed", null, "review_state_unavailable", 200);
+}
+
+export async function handleMemberDashboard(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return dashboardError("checking", 503);
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return dashboardError("checking", 401);
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+    try {
+      await commitRotatedSession(env, auth);
+    } catch {
+      return dashboardError("checking", 503);
+    }
+    return json(buildCheckingDashboard(request, "member_checking"), 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  }
+
+  try {
+    await commitRotatedSession(env, auth);
+  } catch {
+    return dashboardError("checking", 503);
+  }
+
+  return json({ ok: true, data: buildMemberDashboardData(auth.session.member_profile, request) }, 200, {
+    cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+  });
+}
+
+function dashboardError(state, status) {
+  return json({
+    ok: false,
+    state,
+    message: "กำลังตรวจสอบข้อมูล",
+    error: "checking",
+  }, status);
+}
+
+function buildCheckingDashboard(request, code = "checking") {
+  return {
+    ok: true,
+    data: {
+      dashboard_state: "checking",
+      data_status: "checking",
+      member: {
+        display_name: "สมาชิก MMD",
+        tier: checkingField("member_profile"),
+        membership_status: checkingField("member_profile"),
+      },
+      points: {
+        value: null,
+        status: "checking",
+        source: "points_ledger",
+        records_count: null,
+      },
+      history: {
+        status: "checking",
+        range_days: 365,
+        events: [],
+        payment_history_status: "checking",
+      },
+      payment_history: {
+        status: "checking",
+        records: [],
+        note: "Payment records are historical only and do not represent current payment status.",
+      },
+      actions: dashboardActions(request),
+      messages: [{ code, text: "กำลังตรวจสอบข้อมูล" }],
+    },
+  };
+}
+
+function buildMemberDashboardData(profile = {}, request) {
+  const tier = dashboardTier(profile);
+  const membershipStatus = dashboardMembershipStatus(profile);
+  const points = dashboardPoints(profile);
+  const history = dashboardHistory(profile);
+  const paymentHistory = dashboardPaymentHistory(profile);
+  const fieldStatuses = [
+    tier.status,
+    membershipStatus.status,
+    points.status,
+    history.status,
+    paymentHistory.status === "verified_history" || paymentHistory.status === "empty" ? "verified" : "checking",
+  ];
+  const dataStatus = fieldStatuses.every((status) => status === "verified" || status === "empty") ? "complete" : "partial";
+
+  return {
+    dashboard_state: dataStatus === "complete" ? "ready" : "partial",
+    data_status: dataStatus,
+    member: {
+      display_name: dashboardDisplayName(profile.display_name),
+      tier,
+      membership_status: membershipStatus,
+      membership_expires_at: profile.membership_expires_at || null,
+    },
+    points,
+    history,
+    payment_history: paymentHistory,
+    actions: dashboardActions(request),
+    messages: dataStatus === "complete" ? [] : [{ code: "partial_data", text: "กำลังตรวจสอบข้อมูล" }],
+  };
+}
+
+function checkingField(source) {
+  return { value: null, status: "checking", source };
+}
+
+function verifiedField(value, source) {
+  return { value, status: "verified", source };
+}
+
+function dashboardDisplayName(value) {
+  return normalizeCustomerText(value, 120) || "สมาชิก MMD";
+}
+
+function dashboardTier(profile = {}) {
+  const value = String(profile.tier || "").trim();
+  if (!value || /^svip$/i.test(value)) return checkingField("member_profile");
+  if (!["Member", "Standard", "Premium", "VIP", "Black Card"].includes(value)) return checkingField("member_profile");
+  return verifiedField(value, "member_profile_resolver");
+}
+
+function dashboardMembershipStatus(profile = {}) {
+  const status = String(profile.membership_status || "").trim().toLowerCase();
+  if (["active", "grace", "blocked", "suspended", "revoked", "pending_review"].includes(status)) return verifiedField(status, "member_profile_resolver");
+  if (status === "expired") return verifiedField("expired", "member_profile_resolver");
+  if (status === "under_review") return verifiedField("pending", "member_profile_resolver");
+  return checkingField("member_profile_resolver");
+}
+
+function dashboardPoints(profile = {}) {
+  const value = profile.points === null || profile.points === undefined || String(profile.points).trim() === "" ? NaN : Number(profile.points);
+  const recordsCount = profile.points_records_count === null || profile.points_records_count === undefined
+    ? NaN
+    : Number(profile.points_records_count);
+  const hasVerifiedCount = Number.isInteger(recordsCount) && recordsCount >= 0;
+  if (!Number.isFinite(value) || value < 0 || !hasVerifiedCount) {
+    return { value: null, status: "checking", source: "points_ledger", records_count: null };
+  }
+  return {
+    value: Math.trunc(value),
+    status: "verified",
+    source: "points_ledger",
+    records_count: recordsCount,
+    ...(profile.customer_360?.points?.status === "verified" ? { history: profile.customer_360.points.history } : {}),
+  };
+}
+
+function dashboardHistory(profile = {}) {
+  const events = Array.isArray(profile.history)
+    ? profile.history.map(dashboardHistoryEvent).filter(Boolean).slice(0, 50)
+    : [];
+  const sourceStatus = profile.customer_360?.history?.status;
+  const status = sourceStatus && sourceStatus !== "verified" ? "checking" : (Array.isArray(profile.history) ? (events.length ? "verified" : "empty") : "checking");
+  const paymentHistoryStatus = dashboardPaymentHistory(profile).status;
+  return {
+    status,
+    range_days: 365,
+    events,
+    payment_history_status: paymentHistoryStatus,
+  };
+}
+
+function dashboardHistoryEvent(item = {}) {
+  const type = String(item.type || "");
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) ? String(item.date) : "";
+  if (!["service", "membership", "points"].includes(type) || !date) return null;
+  const title = normalizeCustomerText(item.title, 80) || "MMD activity";
+  const event = {
+    type,
+    occurred_at: `${date}T00:00:00.000Z`,
+    title,
+    summary: "รายการนี้ยืนยันแล้ว",
+    status: String(item.status || "checking"),
+  };
+  if (type === "points" && Number.isFinite(Number(item.points_delta))) {
+    event.points_delta = Math.trunc(Number(item.points_delta));
+  }
+  return event;
+}
+
+function dashboardPaymentHistory(profile = {}) {
+  const records = Array.isArray(profile.payment_history)
+    ? profile.payment_history.map(dashboardPaymentRecord).filter(Boolean).slice(0, 20)
+    : [];
+  return {
+    status: records.length ? "verified_history" : "empty",
+    records,
+    note: "Payment records are historical only and do not represent current payment status.",
+  };
+}
+
+function dashboardPaymentRecord(item = {}) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) ? String(item.date) : "";
+  const status = String(item.status || "").trim().toLowerCase();
+  if (!date || !["verified", "settled", "completed"].includes(status)) return null;
+  return {
+    occurred_at: `${date}T00:00:00.000Z`,
+    title: normalizeCustomerText(item.title, 80) || "Payment history",
+    summary: "รายการชำระเงินที่ยืนยันแล้ว",
+  };
+}
+
+function dashboardActions(request) {
+  const query = safeDashboardQuery(new URL(request.url).searchParams);
+  return {
+    dashboard_url: appendDashboardQuery("/member/dashboard", query),
+    requests_url: appendDashboardQuery("/sigil/booking", query),
+    membership_url: appendDashboardQuery(CANONICAL_MEMBER_ROUTE, query),
+    payments_url: appendDashboardQuery("/member/payments", query),
+  };
+}
+
+function safeDashboardQuery(searchParams) {
+  const safe = new URLSearchParams();
+  for (const key of ["t", "code", "promo", "source", "invite"]) {
+    const value = String(searchParams.get(key) || "").trim();
+    if (value && value.length <= 2048 && /^[A-Za-z0-9._~-]+$/.test(value)) safe.set(key, value);
+  }
+  return safe;
+}
+
+function appendDashboardQuery(path, query) {
+  const suffix = query.toString();
+  return suffix ? `${path}?${suffix}` : path;
+}
+
 export async function handleCareBackClaim(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, CARE_BACK_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -404,11 +883,9 @@ export async function handleCareBackClaim(request, env = {}) {
     const result = await store.openOrResume({
       identityHash: auth.session.identity_key,
       memberId: auth.session.member_id,
+      memberProfile: auth.session.member_profile,
     });
-    auth.session.campaign_code = "6-years-care-back";
-    auth.session.campaign_claim_id = result.claim_reference;
-    auth.session.promo_code = result.personal_code;
-    auth.session.promo_status = result.code_status;
+    applyCareBackClaimToSession(auth.session, result);
     await persistGatewaySession(env, gatewayStore, auth.session);
     await commitRotatedSession(env, auth);
     return json({ ok: true, data: safeCareBackClaim(result) }, 200, {
@@ -416,20 +893,191 @@ export async function handleCareBackClaim(request, env = {}) {
     });
   } catch (error) {
     const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_STORAGE_UNAVAILABLE";
-    const status = code.endsWith("_CONFLICT") ? 409 : 503;
-    return saveRotatedError(env, auth, code, "CARE BACK is temporarily unavailable.", status);
+    const campaignClosed = code === "CARE_BACK_CAMPAIGN_CLOSED";
+    const status = code.endsWith("_CONFLICT") || campaignClosed ? 409 : 503;
+    const message = campaignClosed
+      ? "The CARE BACK campaign period is closed."
+      : "CARE BACK is temporarily unavailable.";
+    return saveRotatedError(env, auth, code, message, status);
+  }
+}
+
+export async function handleCareBackState(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+
+  const eligibility = careBackWishEligibility(auth.session);
+  if (eligibility !== "wish_available") {
+    return saveCareBackState(env, auth, eligibility, null);
+  }
+
+  const store = getBirthdayWishStore(env);
+  if (!store) return saveRotatedError(env, auth, "BIRTHDAY_WISH_STORAGE_NOT_CONFIGURED", "Birthday Wish is temporarily unavailable.", 503);
+  try {
+    const expectedOwnership = {
+      claimRecordId: auth.session.campaign_claim_record_id,
+      verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+    };
+    let wish = await store.getBirthdayWishByClaim({ claimId: auth.session.campaign_claim_id });
+    if (wish) assertBirthdayWishOwnership(wish, expectedOwnership);
+    if (wish?.wish_status === "submitted") {
+      const expectedRecordId = wish.record_id;
+      wish = await store.completeBirthdayWish({
+        recordId: expectedRecordId,
+        publicDisplayText: birthdayWishDisplay(auth.session.language),
+        completedAt: new Date().toISOString(),
+      });
+      if (wish?.record_id !== expectedRecordId) {
+        throw new BirthdayWishStorageError("BIRTHDAY_WISH_STORAGE_MALFORMED");
+      }
+      assertBirthdayWishOwnership(wish, expectedOwnership);
+    }
+    if (!wish) {
+      const coordinator = await getBirthdayWishCoordinatorState(env, auth.session.campaign_claim_id);
+      if (coordinator.state === "pending_recovery") {
+        return saveCareBackState(env, auth, "write_pending", null);
+      }
+      if (coordinator.state === "reconciliation_required") {
+        return saveCareBackState(env, auth, "reconciliation_required", null);
+      }
+    }
+    const state = birthdayWishState(wish);
+    let claim = null;
+    if (state === "completed") {
+      const careBackStore = getCareBackStore(env);
+      const gatewayStore = getLiffGatewayStore(env);
+      if (!careBackStore || !gatewayStore) {
+        return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+      }
+      claim = await careBackStore.openOrResume({
+        identityHash: auth.session.identity_key,
+        memberId: auth.session.member_id,
+        memberProfile: auth.session.member_profile,
+        wishSubmitted: true,
+      });
+      applyCareBackClaimToSession(auth.session, claim);
+      await persistGatewaySession(env, gatewayStore, auth.session);
+    }
+    return saveCareBackState(env, auth, state, wish, claim);
+  } catch (error) {
+    if (error instanceof CareBackStoreError) {
+      const status = error.code.endsWith("_CONFLICT") ? 409 : 503;
+      return saveRotatedError(env, auth, error.code, "CARE BACK is temporarily unavailable.", status);
+    }
+    return saveBirthdayWishError(env, auth, error);
+  }
+}
+
+export async function handleCareBackWallet(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.identity_key) {
+    return saveRotatedError(env, auth, "CARE_BACK_MEMBER_REQUIRED", "Coupon Wallet requires a verified member match.", 409);
+  }
+  const store = getCareBackStore(env);
+  if (!store || typeof store.readCouponWallet !== "function") {
+    return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "Coupon Wallet is temporarily unavailable.", 503);
+  }
+  try {
+    const wallet = await store.readCouponWallet({
+      identityHash: auth.session.identity_key,
+      memberId: auth.session.member_id,
+    });
+    await commitRotatedSession(env, auth);
+    return json({ ok: true, wallet: safeCouponWallet(wallet) }, 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  } catch (error) {
+    const code = error instanceof CareBackStoreError ? error.code : "CARE_BACK_STORAGE_UNAVAILABLE";
+    return saveRotatedError(env, auth, code, "Coupon Wallet is temporarily unavailable.", code.endsWith("_CONFLICT") ? 409 : 503);
+  }
+}
+
+export async function handleCareBackWish(request, env = {}) {
+  if (request.method !== "POST") return methodNotAllowed("POST");
+  const originFailure = requireSameOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
+  if (hasUnexpectedKeys(body, CARE_BACK_WISH_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
+  const input = normalizeBirthdayWishInput(body);
+  if (!input.ok) return json({ ok: false, error: { code: input.code, message: input.message } }, 400);
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  const eligibility = careBackWishEligibility(auth.session);
+  if (eligibility !== "wish_available") {
+    const code = eligibility === "verification_required"
+      ? "CARE_BACK_MEMBER_REQUIRED"
+      : eligibility === "claim_required"
+        ? "CARE_BACK_CLAIM_REQUIRED"
+        : eligibility === "manual_review"
+          ? "CARE_BACK_REVIEW_REQUIRED"
+          : "CARE_BACK_WISH_NOT_AVAILABLE";
+    return saveRotatedError(env, auth, code, "Birthday Wish is not available for this verified campaign state.", 409);
+  }
+
+  const gatewayStore = getLiffGatewayStore(env);
+  if (!gatewayStore) return saveRotatedError(env, auth, "LIFF_GATEWAY_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+  const careBackStore = getCareBackStore(env);
+  if (!careBackStore) return saveRotatedError(env, auth, "CARE_BACK_STORAGE_NOT_CONFIGURED", "CARE BACK is temporarily unavailable.", 503);
+
+  try {
+    const wish = await createOrLoadBirthdayWishThroughCoordinator(
+      env,
+      auth.session.campaign_claim_id,
+      {
+        claimId: auth.session.campaign_claim_id,
+        claimRecordId: auth.session.campaign_claim_record_id,
+        idempotencyKey: input.requestId,
+        verifiedCustomerRefHash: await keyedDigest(env, `wish-customer:${auth.session.identity_key}`),
+        wishText: input.wishText,
+        wishOption: input.wishOption,
+        language: auth.session.language === "en" ? "en" : "th",
+        publicDisplayText: birthdayWishDisplay(auth.session.language),
+        now: new Date().toISOString(),
+      },
+    );
+    if (wish?.wish_status === "revoked" || wish?.wish_status === "manual_review") {
+      return saveRotatedError(env, auth, "CARE_BACK_REVIEW_REQUIRED", "Birthday Wish is under private review.", 409);
+    }
+    const claim = await careBackStore.openOrResume({
+      identityHash: auth.session.identity_key,
+      memberId: auth.session.member_id,
+      memberProfile: auth.session.member_profile,
+      wishSubmitted: true,
+    });
+    applyCareBackClaimToSession(auth.session, claim);
+    await persistGatewaySession(env, gatewayStore, auth.session);
+    await commitRotatedSession(env, auth);
+    return json(careBackWishResponse(birthdayWishState(wish), wish, claim), 200, {
+      cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+    });
+  } catch (error) {
+    return saveBirthdayWishError(env, auth, error);
   }
 }
 
 export async function handleHallToken(request, env = {}) {
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const originFailure = requireSameOrigin(request);
+  const originFailure = requireSameOrigin(request, env);
   if (originFailure) return originFailure;
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const gatewayStore = getLiffGatewayStore(env);
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
-  const body = await readJson(request);
-  if (!body) return invalidInput();
+  const parsed = await readJson(request);
+  if (!parsed.ok) return parsed.response;
+  const body = parsed.body;
   if (hasUnexpectedKeys(body, HALL_BODY_KEYS) || hasBrowserIdentityClaims(body)) return browserIdentityRejected();
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
@@ -476,24 +1124,32 @@ export async function handleHallToken(request, env = {}) {
 }
 
 async function verifyLineIdToken(idToken, env) {
-  const channelId = String(env.LINE_LOGIN_CHANNEL_ID || "").trim();
-  if (!channelId) return { ok: false, status: 503, code: "LINE_CHANNEL_NOT_CONFIGURED", message: "LINE verification is not configured." };
+  const channelIds = approvedLineChannelIds(env);
+  if (!channelIds.length) return { ok: false, status: 503, code: "LINE_CHANNEL_NOT_CONFIGURED", message: "LINE verification is not configured." };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_VERIFY_TIMEOUT_MS || VERIFY_TIMEOUT_MS));
   try {
-    const response = await fetch(env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL, {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
-      signal: controller.signal,
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload || typeof payload !== "object") return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
-    const sub = String(payload.sub || "").trim();
-    const aud = String(payload.aud || "").trim();
-    const exp = Number(payload.exp || 0);
-    if (!sub || aud !== channelId || !Number.isFinite(exp) || exp * 1000 <= Date.now()) return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
-    return { ok: true, sub };
+    const verifyUrl = env.LINE_ID_TOKEN_VERIFY_URL || LINE_VERIFY_URL;
+    // Audience selection is server-owned. The browser supplies only the opaque
+    // ID token; it cannot name, add, or reorder verification audiences.
+    for (const channelId of channelIds) {
+      const verifyInit = {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ id_token: idToken, client_id: channelId }),
+        signal: controller.signal,
+      };
+      const response = env.LINE_ID_TOKEN_VERIFIER?.fetch
+        ? await env.LINE_ID_TOKEN_VERIFIER.fetch(new Request(verifyUrl, verifyInit))
+        : await fetch(verifyUrl, verifyInit);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== "object") continue;
+      const sub = String(payload.sub || "").trim();
+      const aud = String(payload.aud || "").trim();
+      const exp = Number(payload.exp || 0);
+      if (sub && aud === channelId && Number.isFinite(exp) && exp * 1000 > Date.now()) return { ok: true, sub };
+    }
+    return { ok: false, status: 401, code: "LINE_ID_TOKEN_INVALID", message: "LINE identity verification failed." };
   } catch (error) {
     if (error?.name === "AbortError") return { ok: false, status: 504, code: "LINE_VERIFY_TIMEOUT", message: "LINE identity verification timed out." };
     return { ok: false, status: 502, code: "LINE_VERIFY_FAILED", message: "LINE identity verification failed." };
@@ -502,6 +1158,72 @@ async function verifyLineIdToken(idToken, env) {
   }
 }
 
+function approvedLineChannelIds(env) {
+  const values = [env.LINE_LOGIN_CHANNEL_ID, env.LINE_DASHBOARD_CHANNEL_ID]
+    .map((value) => String(value || "").trim())
+    .filter((value) => /^[A-Za-z0-9_-]{6,160}$/.test(value));
+  return [...new Set(values)].slice(0, 2);
+}
+
+async function resolveMemberIdentity(env, lineUserId) {
+  const resolver = env.MEMBER_STATUS_RESOLVER;
+  const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false, exists: false };
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
+  try {
+    const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${MEMBER_PROFILE_RESOLVER_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+      },
+      body: JSON.stringify({ line_user_id: lineUserId, purpose: MEMBER_PROFILE_RESOLVER_PURPOSE }),
+      signal: controller.signal,
+    }));
+    const payload = await response.json().catch(() => null);
+    const data = payload?.data && typeof payload.data === "object" ? payload.data : null;
+    if (!response.ok || payload?.ok === false || !data || typeof data.member_exists !== "boolean") {
+      console.warn({
+        event: "member_profile_resolver_failure",
+        stage: "member_profile_read",
+        failure_class: response.status >= 500 ? "upstream_5xx" : "invalid_response",
+        status: response.status,
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return { ok: false, exists: false };
+    }
+    if (data.member_exists !== true) return { ok: true, exists: false, member_id: null, profile: null };
+    if (!data.member_id || !data.profile) {
+      console.warn({
+        event: "member_profile_resolver_failure",
+        stage: "member_profile_read",
+        failure_class: "malformed_member_profile",
+        status: response.status,
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return { ok: false, exists: false };
+    }
+    return {
+      ok: true,
+      exists: true,
+      member_id: String(data.member_id).trim().slice(0, 160),
+      profile: safeMemberProfile(data.profile),
+    };
+  } catch (error) {
+    console.warn({
+      event: "member_profile_resolver_failure",
+      stage: "member_profile_read",
+      failure_class: error?.name === "AbortError" ? "timeout" : "request_failure",
+      status: null,
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return { ok: false, exists: false };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 async function resolveExistingMember(env, lineUserId) {
   const resolver = env.MEMBER_STATUS_RESOLVER;
   const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
@@ -571,7 +1293,6 @@ async function issueSession(env, data) {
   const hash = await keyedDigest(env, `session:${token}`);
   const now = Date.now();
   const session = { ...data, session_id: crypto.randomUUID(), issued_at: now, expires_at: now + SESSION_TTL_SECONDS * 1000, rotation: 0 };
-  await saveSession(env, hash, session, SESSION_TTL_SECONDS);
   return { token, hash, session };
 }
 
@@ -706,6 +1427,9 @@ async function recordGatewayDecision(gatewayStore, session) {
 function gatewaySessionRecord(session) {
   return {
     session_id: session.session_id,
+    line_user_id: session.line_user_id,
+    verified_at: session.verified_at,
+    renewal_flow_status: session.renewal_flow_status,
     liff_intent: session.liff_intent,
     source_channel: session.source_channel,
     hype_decision_status: session.hype_decision_status,
@@ -1000,27 +1724,31 @@ async function resolveScreen(gatewayStore, screenKey) {
   return fallbackScreen(screenKey);
 }
 
-function requireSameOrigin(request) {
-  if (!isApprovedOrigin(request)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+function requireSameOrigin(request, env) {
+  if (!isApprovedOrigin(request, env)) return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   return null;
 }
 
-function rejectUnapprovedOrigin(request) {
+function rejectUnapprovedOrigin(request, env) {
   const origin = request.headers.get("origin") || "";
-  if (origin && !APPROVED_ORIGINS.has(origin)) {
+  if (origin && !isApprovedOrigin(request, env)) {
     return json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   }
   return null;
 }
 
-function isApprovedOrigin(request) {
-  return APPROVED_ORIGINS.has(request.headers.get("origin") || "");
+function isApprovedOrigin(request, env) {
+  const origin = request.headers.get("origin") || "";
+  if (APPROVED_ORIGINS.has(origin)) return true;
+  if (String(env?.CARE_BACK_STAGING_MODE || "") !== "synthetic") return false;
+  const url = new URL(request.url);
+  return url.hostname.endsWith(".workers.dev") && origin === url.origin;
 }
 
-function withLiffCors(request, response) {
+function withLiffCors(request, response, env) {
   const headers = new Headers(response.headers);
   const origin = request.headers.get("origin") || "";
-  if (APPROVED_ORIGINS.has(origin)) headers.set("access-control-allow-origin", origin);
+  if (isApprovedOrigin(request, env)) headers.set("access-control-allow-origin", origin);
   else headers.delete("access-control-allow-origin");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
@@ -1045,9 +1773,11 @@ function hasAtomicSessionReplayGuard(_env) {
   return false;
 }
 function isLiffPrefix(path) { return path === "/member/api/liff" || path.startsWith("/member/api/liff/"); }
+function isMmsMemberPrefix(path) { return path === "/member/api/mms" || path.startsWith("/member/api/mms/") || path === "/member/api/liff/mms" || path.startsWith("/member/api/liff/mms/"); }
 function hasBrowserIdentityClaims(body) { return BROWSER_IDENTITY_FIELDS.some((key) => Object.prototype.hasOwnProperty.call(body, key)); }
 function hasUnexpectedKeys(body, allowed) { return Object.keys(body || {}).some((key) => !allowed.has(key)); }
 function normalizeLiffIntent(value) { const intent = String(value || "unknown").trim().toLowerCase(); return LIFF_INTENTS.has(intent) ? intent : "unknown"; }
+function normalizeCampaign(value) { return String(value || "").trim().toLowerCase() === CARE_BACK_CAMPAIGN ? CARE_BACK_CAMPAIGN : ""; }
 function normalizeAudience(value) { const audience = String(value || "").trim().toLowerCase(); return HALL_AUDIENCES.has(audience) ? audience : ""; }
 function normalizePackageCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : ""; }
 function normalizePromoCode(value) { const code = String(value || "").trim().toLowerCase(); return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(code) ? code : ""; }
@@ -1060,46 +1790,210 @@ function cleanContinuity(value) { const token = String(value || "").trim(); retu
 function exactToken(value) { const token = String(value || "").trim(); return token && token.length <= 8192 && /^[A-Za-z0-9._~-]+$/.test(token) ? token : ""; }
 function noGrants() { return { membership: false, points: false, payment_status: false, private_access: false }; }
 
-function safeMemberProfile(input = {}) {
-  const history = Array.isArray(input.history) ? input.history.slice(0, 50).map((item) => {
-    const type = ["service", "membership", "points"].includes(item?.type) ? item.type : "";
-    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(item?.date || "")) ? String(item.date) : "";
-    if (!type || !date) return null;
-    const safe = {
-      type,
-      date,
-      title: String(item.title || "MMD activity").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 80),
-      status: String(item.status || "").replace(/[^a-z_]/g, "").slice(0, 32),
-    };
-    if (type === "points" && Number.isFinite(Number(item.points_delta))) safe.points_delta = Math.trunc(Number(item.points_delta));
-    return safe;
-  }).filter(Boolean) : [];
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.from || "")) ? String(input.history_window.from) : "";
-  const to = /^\d{4}-\d{2}-\d{2}$/.test(String(input.history_window?.to || "")) ? String(input.history_window.to) : "";
+function careBackNoGrants() {
   return {
-    display_name: String(input.display_name || "สมาชิก MMD").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 120),
-    tier: ["Member", "Standard", "Premium", "Black Card"].includes(input.tier) ? input.tier : "Member",
-    membership_status: ["active", "grace", "expired", "under_review"].includes(input.membership_status) ? input.membership_status : "under_review",
-    points: Number.isFinite(Number(input.points)) && Number(input.points) >= 0 ? Math.trunc(Number(input.points)) : 0,
-    history_window: { from, to, timezone: "Asia/Bangkok" },
-    history,
+    payment: false,
+    membership: false,
+    points: false,
+    hall: false,
+    black_card: false,
+    svip: false,
+    booking: false,
+    access: false,
   };
+}
+
+function validAirtableRecordId(value) {
+  const recordId = String(value || "").trim();
+  return /^rec[A-Za-z0-9]{14}$/.test(recordId) ? recordId : "";
+}
+
+function applyCareBackClaimToSession(session, result = {}) {
+  session.campaign_code = "6-years-care-back";
+  session.campaign_claim_id = String(result.claim_reference || "");
+  session.campaign_claim_record_id = validAirtableRecordId(result.claim_record_id);
+  session.campaign_claim_status = String(result.claim_status || "identity_verified");
+  session.campaign_review_status = String(result.review_status || "pending");
+  session.promo_code = String(result.personal_code || "");
+  session.promo_status = String(result.code_status || "draft");
+}
+
+function careBackWishEligibility(session = {}) {
+  if (!session.member_exists || !session.member_id || !session.identity_key) return "verification_required";
+  if (session.liff_intent !== "promo" || session.promotion_campaign !== CARE_BACK_CAMPAIGN) return "not_eligible";
+  if (!session.campaign_claim_id || !validAirtableRecordId(session.campaign_claim_record_id)) return "claim_required";
+  if (["blocked", "rejected"].includes(session.campaign_claim_status)) return "not_eligible";
+  if (["manual_review", "in_review", "blocked"].includes(session.campaign_review_status)) return "manual_review";
+  return "wish_available";
+}
+
+function normalizeBirthdayWishInput(body) {
+  const requestId = String(body.request_id || "").trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/.test(requestId)) {
+    return { ok: false, code: "BIRTHDAY_WISH_REQUEST_ID_INVALID", message: "A bounded request_id is required." };
+  }
+  const wishText = normalizeCustomerText(body.wish_text, 600);
+  const wishOption = normalizeCustomerText(body.wish_option, 120);
+  if (wishText === null || wishOption === null) {
+    return { ok: false, code: "BIRTHDAY_WISH_CONTENT_INVALID", message: "Birthday Wish content is invalid." };
+  }
+  if (!wishText && !wishOption) {
+    return { ok: false, code: "BIRTHDAY_WISH_CONTENT_REQUIRED", message: "Birthday Wish content is required." };
+  }
+  return { ok: true, requestId, wishText, wishOption };
+}
+
+function normalizeCustomerText(value, maxLength) {
+  if (value === undefined || value === null || value === "") return "";
+  const text = String(value).replace(/\r\n?/g, "\n").trim();
+  if (!text || [...text].length > maxLength || /[<>]/.test(text) || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) return null;
+  return text;
+}
+
+function birthdayWishDisplay(language) {
+  return language === "en"
+    ? "MMD has received your birthday wish. Your message is saved privately and will be here when you return."
+    : "MMD ได้รับคำอวยพรของคุณแล้วครับ ข้อความนี้ถูกเก็บไว้อย่างเป็นส่วนตัว และจะยังอยู่เมื่อคุณกลับมาอีกครั้ง";
+}
+
+function birthdayWishState(wish) {
+  if (!wish) return "wish_available";
+  if (wish.wish_status === "completed") return "completed";
+  if (wish.wish_status === "submitted") return "submitted";
+  return "manual_review";
+}
+
+function careBackWishResponse(state, wish, claim) {
+  const response = { ok: true, state, grants: careBackNoGrants() };
+  if (wish) {
+    response.wish = {
+      text: String(wish.wish_text || ""),
+      option: String(wish.wish_option || ""),
+      submitted_at: String(wish.submitted_at || ""),
+    };
+  }
+  if (state === "completed") {
+    response.final_display = {
+      message: String(wish?.public_display_text || birthdayWishDisplay(wish?.language)),
+      next_action: "return_to_care_back",
+    };
+  }
+  if (claim) response.claim = safeCareBackClaim(claim);
+  return response;
+}
+
+function safeMemberProfile(input = {}) { return serializeCustomer360Profile(input); }
+
+function strictMemberCalendarDate(value) {
+  const text = String(value || "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return "";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day ? text : "";
 }
 
 function safeCareBackClaim(input = {}) {
   const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(input.personal_code || "")) ? String(input.personal_code) : "";
+  const codeStatus = ["draft", "active", "expired", "used", "revoked", "invalid"].includes(String(input.code_status))
+    ? String(input.code_status)
+    : "draft";
+  const expiresAt = safeCustomerTimestamp(input.expires_at);
+  const discountPercent = Number(input.discount_percent);
+  const membershipBenefit = input.membership_benefit?.type === "membership_extension"
+    && Number.isInteger(input.membership_benefit?.days)
+    && input.membership_benefit.days > 0
+    ? {
+        type: "membership_extension",
+        days: input.membership_benefit.days,
+        state: ["pending_application", "renewal_required"].includes(String(input.membership_benefit.state))
+          ? String(input.membership_benefit.state)
+          : "pending_application",
+      }
+    : null;
+  const pointsPolicy = Number.isInteger(input.points_policy?.rate_thb_per_point)
+    && input.points_policy.rate_thb_per_point > 0
+    && Number.isInteger(input.points_policy?.renewal_bonus_points)
+    && input.points_policy.renewal_bonus_points >= 0
+    ? {
+        reconciliation_state: ["pending", "manual_review", "verified", "reconciliation_required"].includes(String(input.points_policy.reconciliation_state))
+          ? String(input.points_policy.reconciliation_state)
+          : "pending",
+        rate_thb_per_point: input.points_policy.rate_thb_per_point,
+        renewal_bonus_points: input.points_policy.renewal_bonus_points,
+        renewal_bonus_state: ["not_offered", "renewal_required", "payment_required", "pending_application", "applied"].includes(String(input.points_policy.renewal_bonus_state))
+          ? String(input.points_policy.renewal_bonus_state)
+          : "not_offered",
+      }
+    : null;
+  const personalizedBenefits = Array.isArray(input.personalized_benefits)
+    ? input.personalized_benefits.map(safePersonalizedBenefit).filter(Boolean).slice(0, 4)
+    : [];
+  const couponWallet = safeCouponWallet(input.coupon_wallet);
   return {
     campaign_id: "6-years-care-back",
     claim_reference: String(input.claim_reference || "").replace(/[^A-Z0-9-]/gi, "").slice(0, 64),
     claim_status: String(input.claim_status || "identity_verified").slice(0, 32),
     review_status: String(input.review_status || "pending").slice(0, 32),
     personal_code: code,
-    code_status: String(input.code_status || "draft").slice(0, 16),
+    code_status: codeStatus,
+    expires_at: expiresAt || null,
+    discount_percent: Number.isFinite(discountPercent) && discountPercent > 0 && discountPercent <= 100 ? discountPercent : 0,
+    coupon_state: ["ready", "wish_required", "renewal_required", "verification_required", "expired", "used", "revoked", "invalid"].includes(String(input.coupon_state))
+      ? String(input.coupon_state)
+      : "verification_required",
+    coupon_message: normalizeCustomerText(input.coupon_message, 220) || "คูปองส่วนตัวจะพร้อมใช้หลัง MMD ยืนยันสิทธิ์เรียบร้อยแล้วครับ",
+    membership_benefit: membershipBenefit,
+    points_policy: pointsPolicy,
+    personalized_benefits: personalizedBenefits,
+    coupon_wallet: couponWallet,
+    wish_submitted: Boolean(input.wish_submitted),
+    campaign_phase: ["birthday", "continuation", "legacy"].includes(String(input.campaign_phase))
+      ? String(input.campaign_phase)
+      : null,
+    campaign_phase_ends_at: safeCustomerTimestamp(input.campaign_phase_ends_at) || null,
     resumed: Boolean(input.resumed),
     single_use: true,
-    benefit_state: "pending_official_review",
-    message: "โค้ดส่วนตัวถูกออกหลังยืนยัน LINE แล้ว และจะมีผลเมื่อ MMD ตรวจสอบสิทธิ์อย่างเป็นทางการเรียบร้อยครับ",
+    benefit_state: codeStatus === "active" ? "coupon_ready" : "benefit_pending",
+    message: codeStatus === "active"
+      ? "คูปองส่วนตัวพร้อมใช้กับบริการที่ร่วมรายการ 1 ครั้ง ภายในระยะเวลาที่ระบุครับ"
+      : "MMD จะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ",
   };
+}
+
+function safePersonalizedBenefit(input = {}) {
+  const type = String(input.type || "");
+  const unit = String(input.unit || "");
+  const value = Number(input.value);
+  const allowed = {
+    membership_extension: "days",
+    points_bonus: "points",
+    personal_coupon: "percent",
+  };
+  if (!allowed[type] || allowed[type] !== unit || !Number.isInteger(value) || value <= 0 || value > 10000) return null;
+  return { type, value, unit, state: String(input.state || "pending").replace(/[^a-z_]/g, "").slice(0, 32) || "pending" };
+}
+
+function safeCouponWallet(input = {}) {
+  const status = ["ready", "wish_required", "renewal_required", "verification_required", "expired", "used", "revoked", "invalid"]
+    .includes(String(input.status)) ? String(input.status) : "verification_required";
+  const code = /^[A-HJ-NP-Z2-9]{6}$/.test(String(input.code || "")) ? String(input.code) : "";
+  const percent = Number(input.discount_percent);
+  return {
+    status,
+    code,
+    discount_percent: code && Number.isFinite(percent) && percent > 0 && percent <= 100 ? percent : 0,
+    expires_at: code ? safeCustomerTimestamp(input.expires_at) || null : null,
+    single_use: true,
+  };
+}
+
+function safeCustomerTimestamp(value) {
+  const raw = String(value || "").trim();
+  const parsed = Date.parse(raw);
+  return raw && Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
 async function keyedDigest(env, value) {
@@ -1111,17 +2005,30 @@ async function hmacKey(env) {
 }
 function randomToken(bytes = 32) { const out = new Uint8Array(bytes); crypto.getRandomValues(out); return [...out].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 async function readJson(request) {
-  if (!/^application\/json(?:;|$)/i.test(request.headers.get("content-type") || "")) return null;
-  const body = await request.json().catch(() => null);
-  return body && typeof body === "object" && !Array.isArray(body) ? body : null;
+  const parsed = await readBoundedJsonObject(request, PUBLIC_JSON_BODY_MAX_BYTES);
+  if (parsed.ok) return { ok: true, body: parsed.value };
+  return {
+    ok: false,
+    response: json({ ok: false, error: { code: parsed.code, message: parsed.message } }, parsed.status),
+  };
 }
 function normalizePath(pathname) { return pathname.toLowerCase().replace(/\/{2,}/g, "/"); }
-function invalidInput() { return json({ ok: false, error: { code: "INVALID_INPUT", message: "A valid JSON object is required." } }, 400); }
 function browserIdentityRejected() { return json({ ok: false, error: { code: "BROWSER_IDENTITY_REJECTED", message: "Browser-supplied identity fields are not accepted." } }, 400); }
 function unavailable(code) { return json({ ok: false, error: { code, message: "LIFF identity foundation is not configured." } }, 503); }
 function gatewayStorageFailure(error) {
   const code = error instanceof LiffGatewayStorageError ? error.code : "LIFF_GATEWAY_STORAGE_UNAVAILABLE";
   return json({ ok: false, error: { code, message: "LIFF session storage is temporarily unavailable." } }, 503);
+}
+function membershipRouteResponse(decision, destination, reasonCode, status = 200, cookies = []) {
+  return json({ decision, destination, reason_code: reasonCode }, status, { cookies });
+}
+async function commitMembershipRoute(env, auth, decision, destination, reasonCode, status) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch {
+    return membershipRouteResponse("fail_closed", null, "session_commit_failed", 503);
+  }
+  return membershipRouteResponse(decision, destination, reasonCode, status, [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)]);
 }
 async function saveRotatedError(env, auth, code, message, status) {
   try {
@@ -1144,6 +2051,23 @@ async function saveGatewayStateError(env, gatewayStore, auth, code, message, sta
     data: await safeSessionView(gatewayStore, auth.session),
     error: { code, message },
   }, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+}
+async function saveCareBackState(env, auth, state, wish, claim = null) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch (error) {
+    return gatewayStorageFailure(error);
+  }
+  return json(careBackWishResponse(state, wish, claim), 200, {
+    cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
+  });
+}
+async function saveBirthdayWishError(env, auth, error) {
+  const code = error instanceof BirthdayWishStorageError
+    ? error.code
+    : "BIRTHDAY_WISH_STORAGE_UNAVAILABLE";
+  const status = code.endsWith("_CONFLICT") ? 409 : code.endsWith("_INVALID") || code === "BIRTHDAY_WISH_CONTENT_REQUIRED" ? 400 : 503;
+  return saveRotatedError(env, auth, code, "Birthday Wish is temporarily unavailable.", status);
 }
 function methodNotAllowed(methods) { return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED", message: `${methods} required` } }, 405, { headers: { allow: methods } }); }
 function authFailure(code, message) { return { ok: false, response: json({ ok: false, error: { code, message } }, 401, { cookies: [clearCookie(SESSION_COOKIE)] }) }; }

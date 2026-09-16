@@ -6,8 +6,10 @@ import test from "node:test";
 import worker from "./src/index.js";
 
 const CONFIRM_KEY = "test_confirm_key_runtime_v1a";
+const AUTH_SERVICE_ADMIN_TO_PAYMENTS = "test_admin_to_payments_runtime_v1a";
 const BASE_ENV = {
   CONFIRM_KEY,
+  AUTH_SERVICE_ADMIN_TO_PAYMENTS,
   AIRTABLE_API_KEY: "test_airtable_key",
   AIRTABLE_BASE_ID: "appRuntime",
   AIRTABLE_TABLE_SESSIONS: "sessions",
@@ -42,7 +44,7 @@ async function hmacSha256Hex(message, secret) {
   return bytesToHex(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message)));
 }
 
-async function signedModelT(overrides = {}) {
+async function signedModelT(overrides = {}, secret = CONFIRM_KEY) {
   const encoded = base64UrlEncode(JSON.stringify({
     kind: "model_confirm",
     role: "model",
@@ -52,7 +54,7 @@ async function signedModelT(overrides = {}) {
     exp: Math.floor(Date.now() / 1000) + 3600,
     ...overrides,
   }));
-  return `${encoded}.${await hmacSha256Hex(encoded, CONFIRM_KEY)}`;
+  return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
 }
 
 function makeSession(state) {
@@ -67,7 +69,11 @@ function makeSession(state) {
   };
 }
 
-function installRuntimeFetchMock({ initialState = "offered", paymentTruth = null } = {}) {
+function installRuntimeFetchMock({
+  initialState = "offered",
+  paymentTruth = null,
+  expectedPaymentServiceToken = AUTH_SERVICE_ADMIN_TO_PAYMENTS,
+} = {}) {
   const previousFetch = globalThis.fetch;
   const calls = [];
   let session = makeSession(initialState);
@@ -76,9 +82,16 @@ function installRuntimeFetchMock({ initialState = "offered", paymentTruth = null
     const request = input instanceof Request ? input : new Request(String(input), init);
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
-    calls.push({ method, url: request.url });
+    calls.push({
+      method,
+      url: request.url,
+      headers: Object.fromEntries(request.headers.entries()),
+    });
 
     if (url.hostname === "payments.test") {
+      if (request.headers.get("X-Internal-Token") !== expectedPaymentServiceToken) {
+        return jsonResponse({ ok: false, error: "service_auth_required" }, 401);
+      }
       if (paymentTruth instanceof Response) return paymentTruth;
       return jsonResponse(paymentTruth || { ok: true, final_payment_confirmed: false });
     }
@@ -152,6 +165,52 @@ test("invalid signed t returns 401 before Airtable access", async () => {
   const mock = installRuntimeFetchMock();
   try {
     const { response, body } = await getCurrent("bad.access.value");
+    assert.equal(response.status, 401);
+    assert.equal(body.error, "unauthorized");
+    assert.equal(mock.calls.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("dedicated model-session signing secret rejects the legacy fallback key", async () => {
+  const dedicated = "test_dedicated_model_session_secret";
+  const env = { ...BASE_ENV, MODEL_SESSION_SIGNING_SECRET: dedicated };
+  const legacyT = await signedModelT({ kind: "model_session" });
+  const dedicatedT = await signedModelT({ kind: "model_session" }, dedicated);
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    const rejected = await getCurrent(legacyT, env);
+    assert.equal(rejected.response.status, 401);
+    assert.equal(rejected.body.error, "unauthorized");
+
+    const accepted = await getCurrent(dedicatedT, env);
+    assert.equal(accepted.response.status, 200);
+    assert.equal(accepted.body.ok, true);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("payment confirmation tokens use their own verifier secret when configured", async () => {
+  const paymentSecret = "test_payment_confirmation_signing_secret";
+  const env = { ...BASE_ENV, PAYMENT_CONFIRMATION_SIGNING_SECRET: paymentSecret };
+  const legacyT = await signedModelT({ kind: "model_confirm" });
+  const paymentT = await signedModelT({ kind: "model_confirm" }, paymentSecret);
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    assert.equal((await getCurrent(legacyT, env)).response.status, 401);
+    assert.equal((await getCurrent(paymentT, env)).response.status, 200);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("expired signed t is rejected before Airtable access", async () => {
+  const t = await signedModelT({ exp: Math.floor(Date.now() / 1000) - 1 });
+  const mock = installRuntimeFetchMock();
+  try {
+    const { response, body } = await getCurrent(t);
     assert.equal(response.status, 401);
     assert.equal(body.error, "unauthorized");
     assert.equal(mock.calls.length, 0);
@@ -367,6 +426,72 @@ test("start_work is rejected when live payment truth is not confirmed", async ()
     assert.equal(response.status, 403);
     assert.equal(body.error, "payment_not_confirmed");
     assert.equal(mock.session.fields.state, "final_payment_confirmed");
+
+    const withoutDedicatedServiceAuth = { ...BASE_ENV };
+    delete withoutDedicatedServiceAuth.AUTH_SERVICE_ADMIN_TO_PAYMENTS;
+    const paymentCallsBeforeMissing = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+    const missing = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(missing.response.status, 403);
+    assert.equal(missing.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeMissing,
+    );
+
+    const wrong = await postAction(t, "start_work", {
+      env: {
+        ...BASE_ENV,
+        AUTH_SERVICE_ADMIN_TO_PAYMENTS: "wrong_synthetic_service_credential",
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(wrong.response.status, 403);
+    assert.equal(wrong.body.error, "payment_not_confirmed");
+    const wrongPaymentCall = mock.calls.find(
+      (call) => call.headers["x-internal-token"] === "wrong_synthetic_service_credential",
+    );
+    assert.ok(wrongPaymentCall, "receiver must observe and reject the wrong dedicated credential");
+
+    const paymentCallsBeforeConfirmKeyOnly = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+    const confirmKeyOnly = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(confirmKeyOnly.response.status, 403);
+    assert.equal(confirmKeyOnly.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeConfirmKeyOnly,
+    );
+    const paymentCallsBeforeAdminBearer = mock.calls.filter(
+      (call) => call.url === "https://payments.test/final-payment/status",
+    ).length;
+
+    const adminBearerOnly = await postAction(t, "start_work", {
+      env: {
+        ...withoutDedicatedServiceAuth,
+        ADMIN_BEARER: "synthetic_admin_bearer_only",
+        MODEL_SESSION_PAYMENT_TRUTH_URL: "https://payments.test/final-payment/status",
+      },
+    });
+    assert.equal(adminBearerOnly.response.status, 403);
+    assert.equal(adminBearerOnly.body.error, "payment_service_auth_not_ready");
+    assert.equal(
+      mock.calls.filter((call) => call.url === "https://payments.test/final-payment/status").length,
+      paymentCallsBeforeAdminBearer,
+    );
+    assert.equal(mock.session.fields.state, "final_payment_confirmed");
   } finally {
     mock.restore();
   }
@@ -392,6 +517,10 @@ test("start_work succeeds after live payment truth confirms final payment", asyn
     assert.notEqual(paymentCallIndex, -1);
     assert.notEqual(patchCallIndex, -1);
     assert(paymentCallIndex < patchCallIndex);
+    const paymentCall = mock.calls[paymentCallIndex];
+    assert.equal(paymentCall.headers["x-internal-token"], AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+    assert.equal("x-confirm-key" in paymentCall.headers, false);
+    assert.equal("authorization" in paymentCall.headers, false);
   } finally {
     mock.restore();
   }

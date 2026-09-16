@@ -16,6 +16,7 @@
     PARTNER_VENUE: "partner_venue",
     PRIVATE_TALENT: "private_talent",
     PAYMENT: "payment_slip",
+    CARE_BACK: "care_back",
     POINTS: "points",
     VIP: "vip",
     SVIP: "svip",
@@ -103,6 +104,10 @@
       return { intent: INTENTS.MMD_COMPANION, priority: 90, confidence: 0.95 };
     }
 
+    if (includesAny(text, ["care back", "careback", "แคร์แบ็ก", "แคร์ แบ็ก", "6 years", "6th anniversary", "birthday wish", "คำอวยพร", "คูปองวันเกิด"])) {
+      return { intent: INTENTS.CARE_BACK, priority: 89, confidence: 0.95 };
+    }
+
     if (includesAny(text, ["ส่งสลิป", "สลิป", "slip", "payment", "paid", "โอน", "ชำระ", "จ่าย"])) {
       return { intent: INTENTS.PAYMENT, priority: 88, confidence: 0.95 };
     }
@@ -157,7 +162,7 @@
 
     switch (classified.intent) {
       case INTENTS.EMPTY:
-        return "ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ เลือกได้ทั้ง MMD Companion, MMS Wellness, Partner Venue, Private Talent, Membership หรือ Payment Proof";
+        return "ผมช่วยดูเส้นทางที่เหมาะกับ request ของคุณก่อนนะครับ เลือกได้ทั้ง MMD Companion, MMS Wellness, Partner Venue, Private Talent, Membership หรือ Payment";
       case INTENTS.MMS_WELLNESS:
         return "ถ้าต้องการ male massage หรือ recovery service ผมจะแยกเป็น MMS Wellness route ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดยต้องให้ MMD ตรวจรายละเอียดก่อน";
       case INTENTS.PARTNER_VENUE:
@@ -167,7 +172,9 @@
       case INTENTS.MMD_COMPANION:
         return `ผมช่วยรับ MMD Companion request สำหรับ Private Social, Dining, Drinks, Event หรือ Appearance ได้ครับ${statusLine} MMD จะตรวจความเหมาะสมและความพร้อมก่อนยืนยัน`;
       case INTENTS.PAYMENT:
-        return "ถ้าต้องส่งหลักฐาน ผมจะพาไป /confirm/payment-proof ครับ MMD จะตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request";
+        return "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิด /member/payments ได้เลยครับ ระบบจะพาไปจากรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request";
+      case INTENTS.CARE_BACK:
+        return "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ";
       case INTENTS.POINTS:
         return `Your points summary is ${formatPoints(summary.points_balance)} points. Points can guide the next step, but they must not override booking, payment, SVIP, Black Card, or membership intent.`;
       case INTENTS.VIP:
@@ -177,11 +184,11 @@
       case INTENTS.BLACK_CARD:
         return `${SAFE_COPY.blackCard} I can help prepare the member context for that private review.`;
       case INTENTS.MEMBERSHIP:
-        return `ผมช่วยดูสถานะสมาชิกหรือการต่ออายุได้ครับ${statusLine} และจะแยก Payment Proof ออกจากการยืนยันยอดอย่างเป็นทางการเสมอ`;
+        return `ผมช่วยดูสถานะสมาชิกหรือการต่ออายุได้ครับ${statusLine} และจะแยกหลักฐานการชำระออกจากการยืนยันยอดอย่างเป็นทางการเสมอ`;
       case INTENTS.HIGH_POINTS:
         return `Your points look strong at ${formatPoints(summary.points_balance)} points. With no stronger intent detected, I can guide the next suitable member step without making automatic VIP, SVIP, or Black Card decisions.`;
       default:
-        return `I can help from the member concierge layer. Ask me about booking, payment proof, points, VIP, SVIP, Black Card, or membership renewal.${statusLine}`;
+        return `I can help from the member concierge layer. Ask me about booking, payment, points, VIP, SVIP, Black Card, or membership renewal.${statusLine}`;
     }
   }
 

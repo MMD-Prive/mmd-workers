@@ -58,15 +58,15 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
   },
   {
     id: "kenji_20_008_membership_intake_catalog",
-    title: "Kenji AI 2.0 — Membership Intake Service Catalog",
+    title: "Kenji AI 2.0 — MY MMD Canonical Route Map",
     category: "membership",
     language: "th",
     status: "active",
-    response_mode: "handoff_required",
-    risk_level: "high",
-    source_path: "/member/membership",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าคุณสนใจ Membership Access ผมช่วยรับความสนใจและแยกเส้นทางให้ MMD review ก่อนครับ ขั้นตอนนี้เป็น intake และ review เท่านั้น ยังไม่ใช่การยืนยัน membership, talent availability, ราคา, booking หรือ access ครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -78,19 +78,19 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake หรือ Payment Proof ตามบริบท และให้ MMD ตรวจความเหมาะสมก่อนเสมอ",
+      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
   },
   {
     id: "kenji_20_006_payment_proof",
-    title: "Kenji AI 2.0 — Payment Proof Handoff",
+    title: "Kenji AI 2.0 — Canonical Payment Handoff",
     category: "payment",
     language: "th",
     status: "active",
     response_mode: "handoff_required",
     risk_level: "critical",
-    source_path: "/confirm/payment-proof",
+    source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof\n\nMMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",
@@ -103,6 +103,18 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     source_path: "webflow/customer-facing-copy",
     customer_answer:
       "ผมจะใช้ถ้อยคำที่ปลอดภัยและให้ MMD ตรวจสอบก่อนเสมอครับ ถ้ามีเรื่องชำระเงินหรือ access ผมจะพาไปหน้าที่ถูกต้องและใช้คำว่า รับหลักฐานแล้ว / รอตรวจยอดจริง / MMD ตรวจยอดจริง เท่านั้น",
+  },
+  {
+    id: "kenji_20_011_care_back_2026",
+    title: "Kenji AI 2.0 — CARE BACK 2026 Final Lock",
+    category: "promotion",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "critical",
+    source_path: "/promotion/6-years-care-back",
+    customer_answer:
+      "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
   },
 ]);
 
@@ -130,7 +142,9 @@ export async function handleKenjiPublicKnowledgeRequest(request, env = {}) {
 
   const result = await loadPublicKnowledgeCards(env, { publishedOnly: true, limit: 100 });
   const publicCards = result.cards.map(toPublicCard).filter(isPublicCard);
-  const cards = publicCards.length ? publicCards : STATIC_PUBLIC_CARDS.map(toPublicCard);
+  const canonicalCards = STATIC_PUBLIC_CARDS.map(toPublicCard).filter(isPublicCard);
+  const liveCards = mergePublicCards(publicCards);
+  const cards = mergePublicCards(liveCards, canonicalCards);
   const dataStatus = publicCards.length ? result.data_status : "static_fallback";
 
   return withCors(jsonForMethod(request, {
@@ -139,12 +153,30 @@ export async function handleKenjiPublicKnowledgeRequest(request, env = {}) {
     mode: "public_published_runtime",
     data_status: dataStatus,
     storage: publicStorageStatus(result.storage),
+    coverage: {
+      airtable_count: liveCards.length,
+      canonical_fallback_count: Math.max(0, cards.length - liveCards.length),
+    },
     cards,
     items: cards,
     count: cards.length,
     total: cards.length,
     has_more: false,
   }, result.status || 200), cors);
+}
+
+function mergePublicCards(...groups) {
+  const merged = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const card of Array.isArray(group) ? group : []) {
+      const id = clean(card.id || card.knowledge_id).toLowerCase();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      merged.push(card);
+    }
+  }
+  return merged;
 }
 
 async function loadPublicKnowledgeCards(env, query = {}) {
@@ -236,7 +268,7 @@ function normalizeStaticCard(card) {
     ...card,
     knowledge_id: card.id,
     allowed_channels: ["Webflow", "LINE_OFC"],
-    effective_from: "2026-08-09",
+    effective_from: "2026-08-20",
     payload_json: {},
   });
 }

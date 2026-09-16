@@ -41,11 +41,22 @@ test("Kenji 2.0 separates MMD, MMS, partner venue, and private talent", () => {
   }
 });
 
-test("payment and slip intent includes official verification safety copy", () => {
+test("payment and slip intent continues the canonical payment item without duplicate proof", () => {
   const reply = concierge.buildKenjiReply("ส่งสลิปแล้ว");
   assert.equal(concierge.classifyIntent("ส่งสลิปแล้ว").intent, "payment_slip");
-  assert.match(reply, /\/confirm\/payment-proof/);
+  assert.match(reply, /\/member\/payments/);
+  assert.match(reply, /ไม่ต้องสร้างรายการหรือส่งซ้ำ/);
   assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
+  assert.doesNotMatch(reply, /\/confirm\/payment-proof/);
+});
+
+test("CARE BACK intent wins over payment terms and keeps the Wish gate", () => {
+  const reply = concierge.buildKenjiReply("CARE BACK ส่งสลิปแล้ว");
+  assert.equal(concierge.classifyIntent("CARE BACK ส่งสลิปแล้ว").intent, "care_back");
+  assert.match(reply, /Birthday Wish/);
+  assert.match(reply, /10%/);
+  assert.match(reply, /30 วัน/);
+  assert.doesNotMatch(reply, /คูปองอัตโนมัติ|Points อัตโนมัติ/);
 });
 
 test("points intent shows points summary", () => {
@@ -70,7 +81,7 @@ test("SVIP intent is Boss Per manual-only and never points-based", () => {
 
 test("Black Card intent is private review and not automatic approval", () => {
   const reply = concierge.buildKenjiReply("Black Card", { points_balance: 9999 });
-  assert.equal(concierge.classifyIntent("Black Card", { points_balance: 9999 }).intent, "black_card");
+  assert.equal(concierge.classifyIntent("Black Card").intent, "black_card");
   assert.match(reply, /Black Card is private review/);
   assert.match(reply, /not automatic approval/);
 });

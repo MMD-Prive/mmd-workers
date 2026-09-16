@@ -1,3 +1,8 @@
+import {
+  handleKenjiKnowledgeWorkflowRequest,
+  isKenjiKnowledgeWorkflowRequest,
+} from "./kenji-knowledge-airtable-adapter.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
@@ -36,6 +41,11 @@ const FIELD = Object.freeze({
   reviewedBy: "reviewed_by",
   reviewNote: "review_note",
   payloadJson: "payload_json",
+  allowedAudience: "allowed_audience",
+  workflowStage: "workflow_stage",
+  workflowVersion: "workflow_version",
+  lastCommandId: "last_command_id",
+  workflowUpdatedAt: "workflow_updated_at",
 });
 
 const STATIC_CANONICAL_CARDS = Object.freeze([
@@ -69,17 +79,17 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
   },
   {
     id: "kenji_20_008_membership_intake_catalog",
-    title: "Kenji AI 2.0 — Membership Intake Service Catalog",
+    title: "Kenji AI 2.0 — MY MMD Canonical Route Map",
     category: "membership",
     language: "th",
     status: "active",
-    response_mode: "handoff_required",
-    risk_level: "high",
-    source_path: "/member/membership",
+    response_mode: "auto_reply_allowed",
+    risk_level: "medium",
+    source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าคุณสนใจ Membership Access ผมช่วยรับความสนใจและแยกเส้นทางให้ MMD review ก่อนครับ เส้นนี้เหมาะกับคนที่ต้องการ access ระดับพิเศษ เช่น Companion, high-discretion entertainment, public figure / influencer / model lane หรือ potential curated access ขั้นตอนนี้เป็น intake และ review เท่านั้น ยังไม่ใช่การยืนยัน membership, talent availability, ราคา, booking หรือ access ครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
     internal_instruction:
-      "Use /member/membership as Membership Intake / service catalog / access request page. Existing-member status remains /sigil/member/membership or /member/dashboard. Do not promise celebrity/influencer/model access.",
+      "Canonical MY MMD route map: /member/dashboard = MY MMD Home; /sigil/member/membership = package selection/start/renew/upgrade; /sigil/membership = renewal/access conditions, not checkout; /member/payments = generic payment list/status/navigation; exact signed /sigil/pay?t=... = canonical combined payment+proof surface only when current backend intent supplies it; /confirm/payment-proof = legacy/manual no-ref compatibility only; /sigil/booking = booking request gate; /sigil/onboarding = explicit onboarding only. /member/membership is legacy compatibility. Preserve applicable t, code, promo, session_id, package, payment_ref context. Never create a replacement payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -91,23 +101,23 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake หรือ Payment Proof ตามบริบท และให้ MMD ตรวจความเหมาะสมก่อนเสมอ",
+      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
     internal_instruction:
-      "Drop Public Access 690 as main route. Legacy received/proof pages may remain as evidence/status compatibility only. Block pay-to-view, instant unlock, and old upstream wording.",
+      "Drop Public Access 690 as main route. Block pay-to-view, instant unlock, and old upstream wording. For payment continuation use the exact signed /sigil/pay?t=... only when supplied by the current backend intent; otherwise /member/payments. /confirm/payment-proof is legacy/manual no-ref compatibility only. Never create a replacement payment_ref or ask for proof resubmission when one is pending.",
   },
   {
     id: "kenji_20_006_payment_proof",
-    title: "Kenji AI 2.0 — Payment Proof Handoff",
+    title: "Kenji AI 2.0 — Canonical Payment Handoff",
     category: "payment",
     language: "th",
     status: "active",
     response_mode: "handoff_required",
     risk_level: "critical",
-    source_path: "/confirm/payment-proof",
+    source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องส่งหลักฐาน ผมจะพาไปหน้า Payment Proof ครับ: https://mmdbkk.com/confirm/payment-proof\n\nMMD จะรับหลักฐานไว้ตรวจยอดจริงก่อนอัปเดตขั้นตอนถัดไป หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
     internal_instruction:
-      "Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms.",
+      "Use the exact signed /sigil/pay?t=... URL only when the current backend payment intent supplies it; otherwise use /member/payments for payment list/status/navigation. /confirm/payment-proof is legacy/manual no-ref compatibility only and must never be the default new-payment CTA or mint a replacement payment_ref. Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms. If proof/ref is already pending verification, do not ask for resubmission.",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",
@@ -123,6 +133,20 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     internal_instruction:
       "Forbidden customer-facing examples: Payment Successful, Paid, Verified, Approved, ชำระเงินสำเร็จแล้ว, อนุมัติแล้ว, ยืนยันแล้ว, จ่ายแล้ว, ระบบ, ทีม, Admin, Staff, Operator, Handler, MMD Assistant, MMS Assistant, Chang, Ewvon, Ops Owner, Sales Owner. Preferred: MMD, Companion, รับหลักฐานแล้ว, รอตรวจยอดจริง, MMD ตรวจยอดจริง, ส่งหลักฐานให้ MMD ตรวจสอบ.",
   },
+  {
+    id: "kenji_20_011_care_back_2026",
+    title: "Kenji AI 2.0 — CARE BACK 2026 Final Lock",
+    category: "promotion",
+    language: "th",
+    status: "active",
+    response_mode: "auto_reply_allowed",
+    risk_level: "critical",
+    source_path: "/promotion/6-years-care-back",
+    customer_answer:
+      "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
+    internal_instruction:
+      "Final lock 2026-08-19. One idempotent claim only. Login/identity alone never issues a coupon or points. Wish saved is mandatory before coupon activation. Current active/grace: +180 days from real expiry, no automatic bonus. Expired: verified renewal/payment and restored active/grace before +90 days and +150 points. New Standard +150, New Premium +250, approved special selection up to +350 after verified membership/payment. Trial/Guest Pass has no automatic welcome points. Reconcile only verified payments at 100 THB = 1 Point. Proof is evidence only. Black Card is review only; VIP is not a package; SVIP is private Per review. Reject new claims after 2026-09-30 while allowing existing verified claims to resume. Never mutate payment, membership, points, coupon, Black Card, or SVIP from browser/chat.",
+  },
 ]);
 
 export function isKenjiKnowledgeRequest(path, method = "GET") {
@@ -133,6 +157,7 @@ export function isKenjiKnowledgeRequest(path, method = "GET") {
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
   if ((normalizedMethod === "POST" || normalizedMethod === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
+  if (isKenjiKnowledgeWorkflowRequest(path, normalizedMethod)) return true;
   if ((normalizedMethod === "GET" || normalizedMethod === "HEAD") && isKnowledgeDetailPath(path)) return true;
   return false;
 }
@@ -143,10 +168,12 @@ export function isKenjiKnowledgePath(path) {
     path === KENJI_KNOWLEDGE_LIST_PATH ||
     path === KENJI_KNOWLEDGE_DRAFT_PATH ||
     path === KENJI_KNOWLEDGE_PUBLISHED_PATH ||
+    isKenjiKnowledgeWorkflowRequest(path, "GET") ||
+    isKenjiKnowledgeWorkflowRequest(path, "POST") ||
     isKnowledgeDetailPath(path);
 }
 
-export async function handleKenjiKnowledgeRequest(request, env = {}) {
+export async function handleKenjiKnowledgeRequest(request, env = {}, options = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
   const method = request.method.toUpperCase();
@@ -161,9 +188,16 @@ export async function handleKenjiKnowledgeRequest(request, env = {}) {
     return withCors(json({ ok: false, error: "not_found" }, 404, request), cors);
   }
 
-  const authed = isAuthed(request, env);
+  const authed = await resolveAuthorization(request, env, options);
   if (!authed) {
     return withCors(json({ ok: false, authenticated: false, error: "unauthorized" }, 401, request), cors);
+  }
+
+  if (isKenjiKnowledgeWorkflowRequest(path, method)) {
+    const workflowResponse = await handleKenjiKnowledgeWorkflowRequest(request, env, {
+      actor: options.actor,
+    });
+    return withCors(workflowResponse, cors);
   }
 
   if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
@@ -356,6 +390,7 @@ function recordToCard(record = {}) {
     answer: clean(fields[FIELD.customerAnswer]) || payload.customer_answer,
     internal_instruction: clean(fields[FIELD.internalInstruction]) || payload.internal_instruction,
     allowed_channels: arrayValue(fields[FIELD.allowedChannels]),
+    allowed_audience: arrayValue(fields[FIELD.allowedAudience]),
     response_mode: clean(fields[FIELD.responseMode]) || payload.response_mode,
     risk_level: clean(fields[FIELD.riskLevel]) || payload.risk_level,
     status: clean(fields[FIELD.status]) || payload.status,
@@ -366,7 +401,11 @@ function recordToCard(record = {}) {
     reviewed_by: clean(fields[FIELD.reviewedBy]) || payload.reviewed_by,
     review_note: clean(fields[FIELD.reviewNote]) || payload.review_note,
     payload_json: payload,
-    updated_at: record.createdTime || clean(fields.updated_at),
+    workflow_stage: clean(fields[FIELD.workflowStage]) || payload.workflow?.stage,
+    workflow_version: Number(fields[FIELD.workflowVersion] || payload.workflow?.version || 1),
+    last_command_id: clean(fields[FIELD.lastCommandId]),
+    workflow_updated_at: clean(fields[FIELD.workflowUpdatedAt]),
+    updated_at: clean(fields[FIELD.workflowUpdatedAt]) || record.createdTime || clean(fields.updated_at),
   });
 }
 
@@ -375,7 +414,7 @@ function normalizeStaticCard(card) {
     ...card,
     knowledge_id: card.id,
     allowed_channels: ["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"],
-    effective_from: "2026-08-09",
+    effective_from: "2026-08-20",
     owner: "Boss Per",
     reviewed_by: "Boss Per",
     payload_json: {},
@@ -385,7 +424,9 @@ function normalizeStaticCard(card) {
 function normalizeDraft(body = {}) {
   const title = clean(body.title || body.name || "Kenji Knowledge Draft").slice(0, 180);
   const id = sanitizeId(body.knowledge_id || body.id || `kenji_draft_${Date.now().toString(36)}`);
-  const status = clean(body.status || (body.publish === true ? "active" : "draft"));
+  // Draft intake is intentionally incapable of changing Production behavior.
+  // Review and Publish require separate explicit endpoints and audit policy.
+  const status = "draft";
   return compact({
     id,
     knowledge_id: id,
@@ -396,6 +437,7 @@ function normalizeDraft(body = {}) {
     answer: clean(body.customer_answer || body.answer || body.copy || body.content || ""),
     internal_instruction: clean(body.internal_instruction || body.instruction || body.note || ""),
     allowed_channels: arrayValue(body.allowed_channels || body.channels || ["Admin Console"]),
+    allowed_audience: arrayValue(body.allowed_audience || body.audience || []),
     response_mode: clean(body.response_mode || "draft_only"),
     risk_level: clean(body.risk_level || "medium"),
     status,
@@ -405,7 +447,18 @@ function normalizeDraft(body = {}) {
     owner: clean(body.owner || "Boss Per"),
     reviewed_by: clean(body.reviewed_by || ""),
     review_note: clean(body.review_note || "Created through Kenji Knowledge runtime draft endpoint."),
-    payload_json: body.payload_json && typeof body.payload_json === "object" ? body.payload_json : {},
+    payload_json: {
+      ...(body.payload_json && typeof body.payload_json === "object" ? body.payload_json : {}),
+      workflow: {
+        stage: "draft",
+        version: 1,
+        qa_snapshot: null,
+        audit_log: [],
+      },
+    },
+    workflow_stage: "draft",
+    workflow_version: 1,
+    workflow_updated_at: new Date().toISOString(),
   });
 }
 
@@ -418,6 +471,7 @@ function cardToAirtableFields(card) {
     [FIELD.customerAnswer]: card.customer_answer,
     [FIELD.internalInstruction]: card.internal_instruction,
     [FIELD.allowedChannels]: card.allowed_channels,
+    [FIELD.allowedAudience]: card.allowed_audience,
     [FIELD.responseMode]: card.response_mode,
     [FIELD.riskLevel]: card.risk_level,
     [FIELD.status]: card.status,
@@ -428,6 +482,9 @@ function cardToAirtableFields(card) {
     [FIELD.reviewedBy]: card.reviewed_by,
     [FIELD.reviewNote]: card.review_note,
     [FIELD.payloadJson]: JSON.stringify(card.payload_json || {}, null, 2),
+    [FIELD.workflowStage]: card.workflow_stage,
+    [FIELD.workflowVersion]: card.workflow_version,
+    [FIELD.workflowUpdatedAt]: card.workflow_updated_at,
   });
 }
 
@@ -498,6 +555,17 @@ function isAllowedOrigin(request, env = {}) {
   return allowed.includes(origin);
 }
 
+async function resolveAuthorization(request, env = {}, options = {}) {
+  if (typeof options.isAuthed === "function") {
+    try {
+      return Boolean(await options.isAuthed(request, env));
+    } catch (_) {
+      return false;
+    }
+  }
+  return isAuthed(request, env);
+}
+
 function isAuthed(request, env = {}) {
   const authorization = request.headers.get("Authorization") || "";
   const bearer = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
@@ -547,7 +615,7 @@ function corsHeaders(request, env = {}) {
   }
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Methods", "GET,POST,HEAD,OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key, Idempotency-Key");
   headers.set("Access-Control-Max-Age", "86400");
   return headers;
 }
