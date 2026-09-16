@@ -306,6 +306,21 @@ test("Airtable feed exposes only explicitly consenting verified linked member wi
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("Airtable feed exposes owner-approved historical customer wishes across campaign phases", async () => {
+  const { handlePublicCareBackWishRoute } = await import('../src/public-care-back-wish.js');
+  const originalFetch = globalThis.fetch;
+  const time = '2026-09-16T00:00:00.000Z';
+  globalThis.fetch = async () => Response.json({ records: [
+    { fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'Historical customer wish', submitted_at: time, payload_json: JSON.stringify({ public_display_owner_approved: true, public_display_owner_approved_at: time, public_display_approval_basis: 'owner_request_publish_all_real_wishes_all_phases_2026-09-16' }) } },
+    { fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'STAGING smoke wish', submitted_at: time, payload_json: '{}' } },
+  ] });
+  try {
+    const response = await handlePublicCareBackWishRoute(new Request(ORIGIN + '/member/api/care-back/public-wish'), { AIRTABLE_API_KEY: 'pat_test', AIRTABLE_BASE_ID: 'appsV1ILPRfIjkaYg' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, wishes: [{ text: 'Historical customer wish', submitted_at: time }] });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("publication consent persists across real Airtable linking; member eligibility comes only from signed session", async () => {
   const originalFetch = globalThis.fetch;
   for (const [consent, member, membershipStatus] of [[true, true, 'active'], [false, true, 'active'], [true, false, 'active'], [true, true, 'blocked']]) {
