@@ -8,17 +8,6 @@ import {
 } from "../src/renderers/single-renewal-renderer.js";
 import worker from "../src/index.js";
 
-const FORBIDDEN_MARKERS = [
-  "Renew with Kenji",
-  "Proof enters official review only",
-  "mmd-renewal-kenji-public",
-  "Ready to Start",
-  "data-bank-display",
-  "fetchSigilPayRenewalFromWebflow",
-  "RENEWAL_WEBFLOW_SOURCE_ORIGIN",
-  "RENEWAL_WEBFLOW_SOURCE_PATH",
-];
-
 const ROUTES = [
   "https://mmdbkk.com/pay/renewal",
   "https://www.mmdbkk.com/pay/renewal",
@@ -26,6 +15,17 @@ const ROUTES = [
   "https://mmdbkk.com/sigil/pay/renewal",
   "https://www.mmdbkk.com/sigil/pay/renewal",
   "https://sigil.mmdbkk.com/sigil/pay/renewal",
+];
+
+const FORBIDDEN_PAYMENT_AUTHORITY = [
+  "promptpay.io/0829528889",
+  "data-promptpay-base",
+  "RENEWAL_BANK_ACCOUNT_NUMBER",
+  "RENEWAL_BANK_ACCOUNT_NAME",
+  "RENEWAL_BANK_NAME",
+  "data-amount-input",
+  "data-ref-input",
+  "กรอกยอดตามที่ได้รับแจ้ง",
 ];
 
 test("matches canonical renewal route family", () => {
@@ -36,7 +36,7 @@ test("matches canonical renewal route family", () => {
   assert.equal(isRenewalRoute("/member/payments"), false);
 });
 
-test("returns canonical headers", async () => {
+test("returns canonical route-owner headers", async () => {
   for (const url of ROUTES) {
     const response = renderRenewalResponse(new Request(url));
     assert.equal(response.status, 200);
@@ -47,64 +47,66 @@ test("returns canonical headers", async () => {
   }
 });
 
-test("renders canonical body markers and excludes forbidden legacy markers", async () => {
-  const response = renderRenewalResponse(new Request("https://mmdbkk.com/pay/renewal?status=confirmed&amount=5000&t=TEST&package=premium&session_id=SESSION&payment_ref=PAYMENT"));
+test("renders Payment Instructions v1 consumer and canonical proof intake", async () => {
+  const response = renderRenewalResponse(new Request(
+    "https://mmdbkk.com/sigil/pay/renewal?t=SIGNED_TOKEN&package=premium&session_id=SESSION&payment_ref=PAYMENT&amount=5000",
+  ));
   const body = await response.text();
 
   assert.match(body, /mmd-renewal-single/);
-  assert.match(body, /MMD \/ SIGIL/);
-  assert.match(body, /Renewal Payment Review/);
-  assert.match(body, /ต่ออายุสมาชิกจากหน้านี้ได้เลยครับ/);
-  assert.match(body, /ส่งสลิปให้เปอร์ตรวจ/);
-  assert.match(body, /data-ui-status-title>เตรียมต่ออายุ<\/strong>/);
-  assert.match(body, /data-proof-url="https:\/\/sigil\.mmdbkk\.com\/api\/pay\/renewal\/proof"/);
-  assert.match(body, /data-initial-plan="premium"/);
-  assert.match(body, /data-token="TEST"/);
-  assert.match(body, /data-session-id="SESSION"/);
-  assert.match(body, /data-payment-ref="PAYMENT"/);
-  assert.doesNotMatch(body, /Kenji|เคนจิ|ทีม|ระบบ/);
-  assert.doesNotMatch(body, />Upgrade</);
+  assert.match(body, /data-payment-instructions-url="https:\/\/sigil\.mmdbkk\.com\/v1\/confirm\/payment-instructions"/);
+  assert.match(body, /data-proof-url="https:\/\/sigil\.mmdbkk\.com\/v1\/pay\/slip\/evidence"/);
+  assert.match(body, /data-token="SIGNED_TOKEN"/);
+  assert.match(body, /mmd_payment_instructions_v1/);
+  assert.match(body, /authority!==AUTHORITY/);
+  assert.match(body, /fd\.append\("payment_ref",state\.paymentRef\)/);
+  assert.match(body, /fd\.append\("source_page","sigil_pay"\)/);
+  assert.doesNotMatch(body, /data-initial-amount=/);
+  assert.doesNotMatch(body, />5,?000</);
 
-  for (const marker of FORBIDDEN_MARKERS) {
-    assert.equal(body.includes(marker), false, `Forbidden legacy marker found: ${marker}`);
+  for (const marker of FORBIDDEN_PAYMENT_AUTHORITY) {
+    assert.equal(body.includes(marker), false, `Forbidden browser payment authority found: ${marker}`);
   }
 });
 
-test("keeps exactly the three approved customer packages and preserves query-selected package", async () => {
-  const response = renderRenewalResponse(new Request("https://sigil.mmdbkk.com/sigil/pay/renewal?package=standard"));
+test("query amount is ignored and unsigned renewal fails closed", async () => {
+  const response = renderRenewalResponse(new Request("https://mmdbkk.com/sigil/pay/renewal?amount=2500&package=standard"));
   const body = await response.text();
 
-  assert.equal((body.match(/data-package="trial"/g) || []).length, 1);
-  assert.equal((body.match(/data-package="standard"/g) || []).length, 1);
-  assert.equal((body.match(/data-package="premium"/g) || []).length, 1);
-  assert.match(body, /data-initial-plan="standard"/);
-  assert.match(body, /data-selected-package value="standard"/);
-  assert.doesNotMatch(body, /data-package="(?:current|upgrade|vip|svip|black-card)"/i);
+  assert.match(body, /data-token=""/);
+  assert.match(body, /Signed token required/);
+  assert.match(body, /ไม่แสดงเลขบัญชีหรือ QR/);
+  assert.doesNotMatch(body, /data-initial-amount=/);
+  assert.doesNotMatch(body, /2,500/);
 });
 
-test("supports environment-backed payment connections without exposing unsafe schemes", async () => {
+test("keeps package as UI context only", async () => {
+  const response = renderRenewalResponse(new Request("https://sigil.mmdbkk.com/sigil/pay/renewal?t=X&package=standard"));
+  const body = await response.text();
+
+  assert.match(body, /data-initial-plan="standard"/);
+  assert.match(body, /PACKAGE CONTEXT/);
+  assert.doesNotMatch(body, /data-package="standard"/);
+  assert.doesNotMatch(body, /data-package="premium"/);
+  assert.doesNotMatch(body, /data-package="trial"/);
+});
+
+test("allows only HTTPS endpoint overrides", async () => {
   const response = renderRenewalResponse(
-    new Request("https://sigil.mmdbkk.com/sigil/pay/renewal"),
+    new Request("https://sigil.mmdbkk.com/sigil/pay/renewal?t=T"),
     {
-      RENEWAL_PROOF_ENDPOINT: "https://payments.example.test/api/proof",
-      RENEWAL_STATUS_ENDPOINT: "https://payments.example.test/api/status",
-      RENEWAL_BANK_NAME: "TTB",
-      RENEWAL_BANK_ACCOUNT_NAME: "MMD TEST",
-      RENEWAL_BANK_ACCOUNT_NUMBER: "1234567890",
-      RENEWAL_CARD_URL: "javascript:alert(1)",
+      PAYMENT_INSTRUCTIONS_URL: "https://payments.example.test/v1/confirm/payment-instructions",
+      PAYMENT_PROOF_URL: "javascript:alert(1)",
     },
   );
   const body = await response.text();
 
-  assert.match(body, /data-proof-url="https:\/\/payments\.example\.test\/api\/proof"/);
-  assert.match(body, /data-status-url="https:\/\/payments\.example\.test\/api\/status"/);
-  assert.match(body, /MMD TEST/);
-  assert.match(body, /1234567890/);
+  assert.match(body, /data-payment-instructions-url="https:\/\/payments\.example\.test\/v1\/confirm\/payment-instructions"/);
+  assert.match(body, /data-proof-url="https:\/\/sigil\.mmdbkk\.com\/v1\/pay\/slip\/evidence"/);
   assert.doesNotMatch(body, /javascript:/i);
-  assert.doesNotMatch(body, /data-method-button="card"/);
 });
 
-test("handles HEAD and rejects mutations on the page route", async () => {
+test("handles HEAD and rejects mutations on page route", async () => {
   const head = renderRenewalResponse(new Request("https://mmdbkk.com/sigil/pay/renewal", { method: "HEAD" }));
   assert.equal(head.status, 200);
   assert.equal(await head.text(), "");
@@ -114,7 +116,7 @@ test("handles HEAD and rejects mutations on the page route", async () => {
   assert.equal(post.headers.get("allow"), "GET, HEAD");
 });
 
-test("production entrypoint serves renewal before unrelated member and LINE routes", async () => {
+test("production entrypoint still serves renewal before unrelated routes", async () => {
   const response = await worker.fetch(new Request("https://mmdbkk.com/sigil/pay/renewal?package=trial&t=abc"), {});
   const body = await response.text();
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildKenjiLineReply, inferLineIntent } from "../src/index.js";
+import { decideKenjiCapability } from "../src/kenji-capability-policy.js";
 
 function lineTextEvent(text) {
   return {
@@ -12,30 +13,42 @@ function lineTextEvent(text) {
   };
 }
 
-for (const [text, intent, membershipIntent] of [
-  ["สมัครสมาชิก", "membership_signup", "signup"],
-  ["อยากสมัครสมาชิก", "membership_signup", "signup"],
-  ["ขอสมัครสมาชิก", "membership_signup", "signup"],
-  ["ต่ออายุ", "membership_renewal", "renew"],
-  ["ต่ออายุสมาชิก", "membership_renewal", "renew"],
-  ["ขอต่ออายุสมาชิก", "membership_renewal", "renew"],
-]) {
-  test(`${text} routes to the canonical ${membershipIntent} action`, () => {
+test("membership signup and renewal use separate deterministic actions", () => {
+  for (const text of ["สมัครสมาชิก", "อยากสมัครสมาชิก", "ขอสมัครสมาชิก"]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), "membership_signup");
+    assert.deepEqual(decideKenjiCapability({ intent: "membership_signup", text }), {
+      capability: "deterministic_truth",
+      requested_domain: "none",
+      requires_truth: false,
+    });
+    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/);
+  }
+  for (const text of ["ต่ออายุ", "ต่ออายุสมาชิก", "ขอต่ออายุสมาชิก"]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), "membership_renewal");
+    assert.deepEqual(decideKenjiCapability({ intent: "membership_renewal", text }), {
+      capability: "deterministic_truth",
+      requested_domain: "none",
+      requires_truth: false,
+    });
+    const reply = buildKenjiLineReply(event);
+    assert.match(reply, /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/);
+    assert.doesNotMatch(reply, /ต่ออายุ(?:สมาชิก)?(?:สำเร็จ|เรียบร้อย)|ยืนยัน(?:การ)?ชำระ|สมาชิก.*active/i);
+  }
+});
+
+test("personal status routes remain protected and contain no raw Worker URL", () => {
+  const cases = [
+    ["สถานะผมเป็นยังไง", "membership_status"],
+    ["ผมจ่ายแล้ว", "payment_status"],
+    ["แต้มเข้าไหม", "points_status"],
+  ];
+  for (const [text, intent] of cases) {
     const event = lineTextEvent(text);
     assert.equal(inferLineIntent(text, event), intent);
     const reply = buildKenjiLineReply(event);
-    assert.match(reply, new RegExp(`https://mmdbkk\\.com/sigil/member/membership\\?source=line&intent=${membershipIntent}`));
-    assert.doesNotMatch(reply, /intent=status/);
-    assert.match(reply, /ข้อมูลทางการ/);
-  });
-}
-
-for (const [text, intent] of [
-  ["สถานะผมเป็นยังไง", "membership_status"],
-  ["แต้มเข้าไหม", "points_status"],
-  ["ผมจ่ายแล้ว", "payment_status"],
-]) {
-  test(`${text} remains a protected status route`, () => {
-    assert.equal(inferLineIntent(text, lineTextEvent(text)), intent);
-  });
-}
+    assert.doesNotMatch(reply, /workers\.dev\/member\/liff/);
+    assert.doesNotMatch(reply, /ชำระสำเร็จ|สมาชิก(?:เป็น|อยู่ในสถานะ) active|แต้มเข้าแล้ว/i);
+  }
+});

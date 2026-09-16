@@ -11,35 +11,25 @@ const dirtyPatchPath = process.env.MMD_ROUTE_LOCK_DIRTY_PATCH
 
 const testFiles = [
   "member-pages-worker/test/liff-identity.test.mjs",
-  "mmd-redirect-worker/test/redirect.test.mjs",
+  "member-pages-worker/test/payment-route-boundary.test.mjs",
+  "immigrate-worker/test/payment-route-boundary.test.mjs",
+  "mmd-redirect-worker/test/hard-disabled.test.mjs",
   "member-dashboard-chat-worker/test/renewal-route.test.mjs",
+  "webflow/payment/legacy-payment-route-bridge-v1.test.mjs",
+  "telegram-worker/test/webhook-secret-token.test.mjs",
 ];
 
 const routeChecks = [
-  { name: "sigil membership", url: "https://mmdbkk.com/sigil/pay/membership", kind: "membership" },
-  { name: "sigil membership code", url: "https://mmdbkk.com/sigil/pay/membership?code=TEST", kind: "membership-query" },
-  { name: "sigil membership package", url: "https://mmdbkk.com/sigil/pay/membership?package=premium", kind: "membership-query" },
-  { name: "sigil membership plan", url: "https://mmdbkk.com/sigil/pay/membership?plan=standard", kind: "membership-query" },
-  { name: "www sigil membership", url: "https://www.mmdbkk.com/sigil/pay/membership", kind: "membership" },
-  { name: "pay membership", url: "https://mmdbkk.com/pay/membership", kind: "pay-membership" },
+  { name: "membership selection", url: "https://mmdbkk.com/sigil/member/membership", kind: "membership-selection" },
+  { name: "legacy sigil membership alias", url: "https://mmdbkk.com/sigil/pay/membership", kind: "membership-alias" },
+  { name: "legacy sigil membership signed alias", url: "https://mmdbkk.com/sigil/pay/membership?t=route-lock-placeholder", kind: "membership-alias-signed" },
+  { name: "legacy pay membership alias", url: "https://mmdbkk.com/pay/membership", kind: "membership-alias" },
+  { name: "legacy pay membership signed alias", url: "https://mmdbkk.com/pay/membership?t=route-lock-placeholder", kind: "membership-alias-signed" },
   { name: "sigil renewal", url: "https://mmdbkk.com/sigil/pay/renewal", kind: "manual-renewal" },
   { name: "pay renewal", url: "https://mmdbkk.com/pay/renewal", kind: "manual-renewal" },
+  { name: "legacy renew alias", url: "https://mmdbkk.com/sigil/pay/renew", kind: "renew-alias" },
+  { name: "legacy generic payment alias", url: "https://mmdbkk.com/sigil/pay/payment", kind: "payment-alias" },
   { name: "unknown route", url: "https://mmdbkk.com/unknown-test-route-mmd", kind: "unknown" },
-];
-
-const liffChecks = [
-  {
-    name: "renewal",
-    body: { line_user_id: "Ucodexmin_route_lock_check", entry_route: "renewal", t: "tok" },
-    expectedIntent: "membership_review",
-    expectedNextRoute: "/sigil/member/membership?t=tok",
-  },
-  {
-    name: "pay_membership",
-    body: { line_user_id: "Ucodexmin_route_lock_check", entry_route: "pay_membership", t: "tok" },
-    expectedIntent: "pay_membership",
-    expectedNextRoute: "/pay/membership?t=tok",
-  },
 ];
 
 const dirtyPatchFiles = [
@@ -91,30 +81,64 @@ async function checkRoute(check) {
   const page = response.headers.get("x-mmd-page") || "";
   const gate = response.headers.get("x-mmd-front-gate") || "";
   const source = response.headers.get("x-mmd-route-source") || "";
-  const forbiddenLocation = containsForbiddenRoute(location);
+  const status = response.status;
+  const locationUrl = location ? new URL(location, check.url) : null;
+  const locationPath = locationUrl?.pathname || "";
 
-  let ok = !forbiddenLocation;
-  if (check.kind === "membership" || check.kind === "membership-query") {
-    ok = ok && !location.includes("/sigil/pay/renewal");
+  let ok = !containsGloballyForbiddenRoute(location);
+
+  if (check.kind === "membership-selection") {
+    ok = ok && status === 200 && locationPath !== "/pay/membership" && locationPath !== "/sigil/pay/membership";
   }
-  if (check.kind === "membership-query") {
-    ok = ok && response.url === check.url;
+
+  if (check.kind === "membership-alias") {
+    ok = ok
+      && (status === 200 || [301, 302, 307, 308].includes(status))
+      && locationPath !== "/sigil/pay/renewal";
+    if ([301, 302, 307, 308].includes(status)) {
+      ok = ok && locationPath === "/sigil/member/membership";
+    }
   }
-  if (check.kind === "pay-membership") {
-    ok = ok && !location.includes("/sigil/pay/renewal") && response.status === 200;
+
+  if (check.kind === "membership-alias-signed") {
+    ok = ok
+      && (status === 200 || [301, 302, 307, 308].includes(status))
+      && locationPath !== "/sigil/pay/renewal";
+    if ([301, 302, 307, 308].includes(status)) {
+      ok = ok
+        && locationPath === "/sigil/pay"
+        && Boolean(locationUrl?.searchParams.get("t"))
+        && [...locationUrl.searchParams.keys()].every((key) => key === "t");
+    }
   }
+
   if (check.kind === "manual-renewal") {
-    ok = ok && response.status === 200
+    ok = ok && status === 200
       && (source.includes("single-renewal-renderer") || page.includes("renewal"));
   }
+
+  if (check.kind === "renew-alias") {
+    ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
+    if ([301, 302, 307, 308].includes(status)) {
+      ok = ok && locationPath === "/sigil/pay/renewal";
+    }
+  }
+
+  if (check.kind === "payment-alias") {
+    ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
+    if ([301, 302, 307, 308].includes(status)) {
+      ok = ok && locationPath === "/member/payments";
+    }
+  }
+
   if (check.kind === "unknown") {
-    ok = ok && ![301, 302, 307, 308].includes(response.status);
+    ok = ok && ![301, 302, 307, 308].includes(status);
   }
 
   const summary = {
     name: check.name,
     url: check.url,
-    status: response.status,
+    status,
     location: location || null,
     page: page || null,
     gate: gate || null,
@@ -127,38 +151,29 @@ async function checkRoute(check) {
   else markFailed(`route ${check.name}: ${JSON.stringify(summary)}`);
 }
 
-async function checkLiff(check) {
+async function checkLegacyLiffIdentityDisabled() {
   const response = await fetch("https://mmdbkk.com/member/api/liff/identify", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(check.body),
+    body: JSON.stringify({ line_user_id: "Uroute-lock-spoof", member_id: "MMD-route-lock-spoof" }),
   });
-  const json = await response.json();
-  const data = json.data || {};
-  const bodyText = JSON.stringify(json);
-  const sigilPayment = data.safe_next?.sigil_payment || "";
-  const ok = response.status === 200
-    && json.ok === true
-    && data.intent === check.expectedIntent
-    && data.next_route === check.expectedNextRoute
-    && data.safe_next?.renewal === null
-    && sigilPayment.startsWith("/sigil/pay/membership")
-    && data.auto_renewal_route_disabled === true
-    && !bodyText.includes("/sigil/pay/renewal");
+  const json = await response.json().catch(() => null);
+  const bodyText = JSON.stringify(json || {});
+  const ok = response.status === 410
+    && json?.error?.code === "LEGACY_LIFF_IDENTITY_DISABLED"
+    && !bodyText.includes("Uroute-lock-spoof")
+    && !bodyText.includes("MMD-route-lock-spoof");
 
   const summary = {
-    name: check.name,
+    name: "legacy_identity_disabled",
     status: response.status,
+    error_code: json?.error?.code || null,
     ok,
-    intent: data.intent || null,
-    next_route: data.next_route || null,
-    safe_next_renewal: data.safe_next?.renewal ?? null,
-    safe_next_sigil_payment_path: sigilPayment.split("?")[0] || null,
   };
   results.liff.push(summary);
 
-  if (ok) pass(`liff ${check.name}`);
-  else markFailed(`liff ${check.name}: ${JSON.stringify(summary)}`);
+  if (ok) pass("liff legacy identity disabled");
+  else markFailed(`liff legacy identity disabled: ${JSON.stringify(summary)}`);
 }
 
 function scanDirtyPatch() {
@@ -212,10 +227,8 @@ function extractPatchForFile(patch, file) {
   return patch.match(pattern)?.[1] || "";
 }
 
-function containsForbiddenRoute(value) {
-  return value.includes("/sigil/pay/renewal")
-    || value.includes("/default")
-    || value.includes("/autodirect");
+function containsGloballyForbiddenRoute(value) {
+  return value.includes("/default") || value.includes("/autodirect");
 }
 
 function redact(value) {
@@ -230,12 +243,12 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-console.log("MMD route governance connector");
-console.log("No deploy, route mutation, Cloudflare secret mutation, Airtable mutation, Webflow mutation, Memberstack mutation, or DNS mutation is performed.");
+console.log("MMD canonical payment route governance connector");
+console.log("Read-only smoke only. No deploy, route mutation, Cloudflare secret mutation, Airtable mutation, Webflow mutation, Memberstack mutation, or DNS mutation is performed.");
 
 for (const file of testFiles) runNodeTest(file);
 for (const check of routeChecks) await checkRoute(check);
-for (const check of liffChecks) await checkLiff(check);
+await checkLegacyLiffIdentityDisabled();
 scanDirtyPatch();
 
 console.log(JSON.stringify(results, null, 2));
