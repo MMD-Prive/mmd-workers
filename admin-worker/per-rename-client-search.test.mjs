@@ -50,6 +50,22 @@ const kongIndex = {
   },
 };
 
+const otherKongIndex = {
+  id: "recOtherKong",
+  fields: {
+    identity_key: "line_ofc_per_rename:u3c779cd79247ece116509ec78e3957fa",
+    source_type: "line_ofc_staging",
+    source_record_id: "recOtherSource",
+    preferred_name: "ก้อง 12 กย 68",
+    line_user_id: "U3c779cd79247ece116509ec78e3957fa",
+    line_display_name: "A",
+    linked_client: ["recOtherClient"],
+    resolution_status: "linked",
+    session_lookup_status: "canonical_ready",
+    confidence: "verified",
+  },
+};
+
 const kongClient = {
   id: "recAcTMLy1teHWMp1",
   fields: {
@@ -57,6 +73,16 @@ const kongClient = {
     "Client Name (Display)": "KKKsk",
     username: "KKKsk",
     line_user_id: "U64e58603b56a881f48da2236f8036b18",
+  },
+};
+
+const otherKongClient = {
+  id: "recOtherClient",
+  fields: {
+    "Client Name": "A",
+    "Client Name (Display)": "A",
+    username: "A",
+    line_user_id: "U3c779cd79247ece116509ec78e3957fa",
   },
 };
 
@@ -130,26 +156,57 @@ test("Per nickname lookup may combine renamed name and LINE display tokens", asy
   }
 });
 
-test("broad Per nickname that points to multiple Clients fails closed as ambiguous", async () => {
-  const other = {
-    id: "recOtherKong",
-    fields: {
-      identity_key: "line_ofc_per_rename:u3c779cd79247ece116509ec78e3957fa",
-      source_type: "line_ofc_staging",
-      source_record_id: "recOtherSource",
-      preferred_name: "ก้อง 12 กย 68",
-      line_user_id: "U3c779cd79247ece116509ec78e3957fa",
-      line_display_name: "A",
-      linked_client: ["recOtherClient"],
-      resolution_status: "linked",
-      session_lookup_status: "canonical_ready",
-      confidence: "verified",
+test("broad Per nickname returns linked canonical choices without guessing", async () => {
+  const restore = installResolverMock(
+    [kongIndex, otherKongIndex],
+    {
+      recAcTMLy1teHWMp1: kongClient,
+      recOtherClient: otherKongClient,
     },
-  };
-  const restore = installResolverMock([kongIndex, other]);
+  );
   try {
     const response = await enrichLineageWithPerRename(
       lookupRequest("ก้อง"),
+      fallbackResponse(),
+      env,
+    );
+    const body = await response.json();
+    assert.equal(response.headers.get("x-mmd-per-rename-search"), "multiple");
+    assert.equal(body.per_rename_alias, true);
+    assert.equal(body.per_rename_alias_multiple, true);
+    assert.equal(body.manual_fallback, false);
+    assert.equal(body.records.length, 2);
+    assert.deepEqual(
+      new Set(body.records.map((record) => record.client_id)),
+      new Set(["recAcTMLy1teHWMp1", "recOtherClient"]),
+    );
+    assert.ok(body.records.every((record) => record.matched_on === "per_rename"));
+    assert.ok(body.records.every((record) => record.manual_public_only === false));
+    assert.match(body.lineage_warnings.join(" "), /operator_selection_required/);
+    assert.doesNotMatch(body.lineage_warnings.join(" "), /manual_public_only_pending_reconcile/);
+  } finally {
+    restore();
+  }
+});
+
+test("exact Per Rename collision across canonical Clients still fails closed", async () => {
+  const exactOther = {
+    ...otherKongIndex,
+    fields: {
+      ...otherKongIndex.fields,
+      preferred_name: "ก้อง - SVIP -",
+    },
+  };
+  const restore = installResolverMock(
+    [kongIndex, exactOther],
+    {
+      recAcTMLy1teHWMp1: kongClient,
+      recOtherClient: otherKongClient,
+    },
+  );
+  try {
+    const response = await enrichLineageWithPerRename(
+      lookupRequest("ก้อง - SVIP -"),
       fallbackResponse(),
       env,
     );
