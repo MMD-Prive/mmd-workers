@@ -12,6 +12,7 @@ import {
   isModelConfirmActionRequest,
   maybeCreateInternalHoldAfterModelConfirm,
 } from "./model-confirm-cal-hold.js";
+import { enrichLineageWithPerRename } from "./per-rename-client-search.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -19,6 +20,9 @@ const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
+const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
+const LINEAGE_RECENT_PATH = "/v1/admin/clients/recent";
+const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
 let lineOfcContactBackfillKickStarted = false;
 
 function scheduleLineOfcContactBackfill(env, ctx) {
@@ -124,12 +128,14 @@ export default {
     let privateModelRequest = null;
     let activationRequest = null;
     let modelConfirmRequest = null;
+    let perRenameRequest = null;
     let normalizedPath = "";
     const method = String(request.method || "GET").toUpperCase();
     try {
       normalizedPath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
       if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
       if (isModelConfirmActionRequest(request)) modelConfirmRequest = request.clone();
+      if (normalizedPath === LINEAGE_LOOKUP_PATH && method === "POST") perRenameRequest = request.clone();
       if (normalizedPath === MODEL_ACTIVATE_PATH && method === "POST") {
         activationRequest = request.clone();
       }
@@ -154,6 +160,18 @@ export default {
     if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
     if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
     if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
-    return enforceOwnerDashboardFirst(request, response);
+    if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, env);
+    response = await enforceOwnerDashboardFirst(request, response);
+
+    if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
+      const headers = new Headers(response.headers);
+      headers.set("X-MMD-Manual-Public-Fallback", MANUAL_PUBLIC_FALLBACK_MARKER);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+    return response;
   },
 };
