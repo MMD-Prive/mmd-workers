@@ -79,7 +79,7 @@ for (const record of rows) {
 
 const candidate = [...groups.entries()]
   .filter(([, value]) => value.clients.size >= 2)
-  .sort((a, b) => b[1].clients.size - a[1].clients.size || b[1].rows - a[1].rows)[0];
+  .sort((a, b) => a[1].clients.size - b[1].clients.size || a[1].rows - b[1].rows)[0];
 
 if (!candidate) throw new Error("no_multi_client_per_rename_canary_available");
 
