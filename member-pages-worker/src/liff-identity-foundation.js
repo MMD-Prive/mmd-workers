@@ -5,6 +5,7 @@ import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-jso
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
+import { readMmsCustomerHistory } from "./mms-customer-history.js";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -38,6 +39,7 @@ const DASHBOARD_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard
 const MMS_CATALOG_PATHS = new Set(["/member/api/mms/catalog", "/member/api/mms/catalog/", "/member/api/liff/mms/catalog", "/member/api/liff/mms/catalog/"]);
 const MMS_MATCH_PATHS = new Set(["/member/api/mms/match", "/member/api/mms/match/", "/member/api/liff/mms/match", "/member/api/liff/mms/match/"]);
 const MMS_PREBOOKING_PATHS = new Set(["/member/api/mms/prebookings", "/member/api/mms/prebookings/", "/member/api/liff/mms/prebookings", "/member/api/liff/mms/prebookings/"]);
+const MMS_HISTORY_PATHS = new Set(["/member/api/liff/mms/history", "/member/api/liff/mms/history/"]);
 const CARE_BACK_CLAIM_PATHS = new Set(["/member/api/liff/care-back/claim", "/member/api/liff/care-back/claim/"]);
 const CARE_BACK_STATE_PATHS = new Set(["/member/api/liff/care-back/state", "/member/api/liff/care-back/state/"]);
 const CARE_BACK_WALLET_PATHS = new Set(["/member/api/liff/care-back/wallet", "/member/api/liff/care-back/wallet/"]);
@@ -105,6 +107,8 @@ export default {
         response = await handleMmsMatch(request, env);
       } else if (MMS_PREBOOKING_PATHS.has(path)) {
         response = await handleMmsPrebooking(request, env);
+      } else if (MMS_HISTORY_PATHS.has(path)) {
+        response = await handleMmsCustomerHistory(request, env);
       } else {
         response = json({ ok: false, error: { code: "MMS_ROUTE_NOT_FOUND", message: "Unknown MMS member route." } }, 404);
       }
@@ -559,6 +563,28 @@ export async function handleMemberProfile(request, env = {}) {
   return json({ ok: true, data: safeMemberProfile(auth.session.member_profile) }, 200, {
     cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)],
   });
+}
+
+export async function handleMmsCustomerHistory(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  // There is no browser-selectable identity, Client, email or member reference.
+  if (new URL(request.url).search) return browserIdentityRejected();
+  if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  const status = String(auth.session.member_profile?.membership_status || "").toLowerCase();
+  if (["blocked", "suspended", "revoked", "pending_review", "review_required"].includes(status)) {
+    return saveRotatedError(env, auth, "MMS_HISTORY_REVIEW_REQUIRED", "Identity review is required.", 403);
+  }
+  try {
+    const data = await readMmsCustomerHistory(env, auth.session.line_user_id);
+    await commitRotatedSession(env, auth);
+    return json({ ok: true, data }, 200, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+  } catch {
+    return saveRotatedError(env, auth, "MMS_HISTORY_UNAVAILABLE", "History is temporarily unavailable.", 503);
+  }
 }
 
 export async function handleMembershipRoute(request, env = {}) {

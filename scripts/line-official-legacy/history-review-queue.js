@@ -5,6 +5,7 @@ const {
   HISTORY_REVIEWS_TABLE,
   assertIdentityCommitGate,
   defaultHistoryReviewId,
+  historyServiceBrand,
   parseHistoricalDate,
 } = require("./history-materializer.js");
 
@@ -104,6 +105,7 @@ function buildReviewCandidate(staging) {
       ...(duration > 0 ? { candidate_duration_minutes: Math.round(duration) } : {}),
       evidence_summary: [
         `import_id=${clean(fields.import_id)}`,
+        `service_brand=${historyServiceBrand(fields)}`,
         `rename_present=${Boolean(clean(fields.line_renamed_name))}`,
         `service_events=${events.length}`,
         `dates=${detectedDates.length}`,
