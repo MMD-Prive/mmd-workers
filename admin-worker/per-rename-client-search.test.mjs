@@ -189,6 +189,33 @@ test("broad Per nickname returns linked canonical choices without guessing", asy
   }
 });
 
+test("exact LINE display does not hide other broad Per Rename canonical choices", async () => {
+  const exactLineDisplay = {
+    ...kongIndex,
+    fields: {
+      ...kongIndex.fields,
+      line_display_name: "ก้อง",
+    },
+  };
+  const restore = installResolverMock(
+    [exactLineDisplay, otherKongIndex],
+    {
+      recAcTMLy1teHWMp1: kongClient,
+      recOtherClient: otherKongClient,
+    },
+  );
+  try {
+    const result = await resolvePerRenameAlias(env, "ก้อง");
+    assert.equal(result.state, "multiple");
+    assert.deepEqual(
+      new Set(result.records.map((record) => record.client_id)),
+      new Set(["recAcTMLy1teHWMp1", "recOtherClient"]),
+    );
+  } finally {
+    restore();
+  }
+});
+
 test("exact Per Rename collision across canonical Clients still fails closed", async () => {
   const exactOther = {
     ...otherKongIndex,

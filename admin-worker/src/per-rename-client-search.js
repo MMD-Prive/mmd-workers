@@ -1,6 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v4-client-record-fetch";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v5-broad-per-name-choice";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
@@ -241,11 +241,15 @@ function authoritativeMatch(record, query) {
   const q = normalizeAlias(query);
   const qTokens = searchTokens(query);
   const aliases = [perName, lineDisplay, lineUserId].filter(Boolean);
+  const normalizedPerName = normalizeAlias(perName);
   const normalizedAliases = aliases.map(normalizeAlias).filter(Boolean);
   const aliasTokens = new Set(aliases.flatMap(searchTokens));
 
   let quality = 0;
-  if (normalizedAliases.includes(q)) quality = 300;
+  // Only an exact Boss/Per rename is authoritative enough to collapse the
+  // candidate set. An exact LINE display name must not hide other Per Rename
+  // rows that share the same broad customer token.
+  if (normalizedPerName === q) quality = 300;
   else if (qTokens.length && qTokens.every((token) => aliasTokens.has(token))) quality = 240;
   else if (normalizedAliases.some((alias) => alias.startsWith(q) || q.startsWith(alias))) quality = 200;
   else if (normalizedAliases.some((alias) => q.length >= 3 && alias.includes(q))) quality = 180;
