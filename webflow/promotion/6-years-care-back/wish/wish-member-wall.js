@@ -73,7 +73,7 @@
       var controller = new AbortController();
       var timer = setTimeout(function () { controller.abort(); }, 12000);
       try {
-        var response = await fetch('/member/api/care-back/public-wish', { method: 'GET', credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal });
+        var response = await fetch('https://www.mmdbkk.com/member/api/care-back/public-wish', { method: 'GET', credentials: 'omit', cache: 'no-store', headers: { Accept: 'application/json' }, signal: controller.signal });
         var payload = await response.json();
         if (!response.ok || !payload || payload.ok !== true || !Array.isArray(payload.wishes)) throw new Error('unavailable');
         list.replaceChildren();
