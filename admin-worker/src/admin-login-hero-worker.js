@@ -18,6 +18,10 @@ import {
   guardPrivateJobCreateWork,
   isPrivateModelSearchRequest,
 } from "./private-model-work-policy.js";
+import {
+  handleKenjiLv5OperationalRpc,
+  isKenjiLv5OperationalRpcRequest,
+} from "./kenji-lv5-operational-rpc.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -150,6 +154,12 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    // Kenji LV5 orchestration is service-binding only. The handler performs its
+    // own strict caller + internal bearer checks and never becomes domain truth.
+    if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
+      return handleKenjiLv5OperationalRpc(request, env);
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
