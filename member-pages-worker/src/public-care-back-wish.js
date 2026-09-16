@@ -81,7 +81,8 @@ export async function handlePublicWishFeed(request, env = {}) {
         || !text || !safeTimestamp(fields.submitted_at)) return [];
       return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
     }).slice(0, 24);
-    return json({ ok: true, wishes });
+    const model_wishes = await listApprovedModelWishes(env);
+    return json(model_wishes.length ? { ok: true, wishes, model_wishes } : { ok: true, wishes });
   } catch {
     return unavailable("PUBLIC_WISH_STORAGE_UNAVAILABLE");
   }
@@ -140,6 +141,35 @@ export async function handlePublicWish(request, env = {}) {
   } catch (error) {
     return publicWishStorageError(error);
   }
+}
+
+// Public projection for post-job Model HBD. This deliberately shares the
+// existing read endpoint but has a separate campaign/status filter. Only an
+// Admin-approved record (status=completed) is projected; model/session IDs,
+// payload JSON and identity fields never leave the Worker.
+async function listApprovedModelWishes(env = {}) {
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  if (!apiKey || !baseId) return [];
+  const table = String(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || "tblvMJjYXy29mgDLb").trim();
+  const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+  url.searchParams.set("filterByFormula", "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='completed')");
+  url.searchParams.set("maxRecords", "50");
+  url.searchParams.set("sort[0][field]", "submitted_at");
+  url.searchParams.set("sort[0][direction]", "desc");
+  try {
+    const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.records)) return [];
+    const wishes = payload.records.map((record) => {
+      const fields = record?.fields || {};
+      if (String(fields.campaign_id || "") !== "mmd_year_6_model_wish" || String(fields.wish_status || "") !== "completed") return null;
+      const text = String(fields.public_display_text || fields.wish_text || "").replace(/\r\n?/g, "\n").trim().slice(0, 280);
+      const submittedAt = String(fields.submitted_at || "").trim();
+      return text && Date.parse(submittedAt) ? { text, submitted_at: new Date(submittedAt).toISOString(), source: "model" } : null;
+    }).filter(Boolean);
+    return wishes;
+  } catch { return []; }
 }
 
 export async function handleLinkWish(request, env = {}) {

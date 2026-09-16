@@ -30,6 +30,16 @@
     retry.hidden = true;
     wall.append(heading, note, status, list, retry);
     root.append(wall);
+    var modelWall = document.createElement('section');
+    modelWall.className = 'wish-member-wall wish-model-wall';
+    modelWall.setAttribute('aria-labelledby', 'wish-model-wall-title');
+    var modelHeading = document.createElement('h2');
+    modelHeading.id = 'wish-model-wall-title';
+    var modelNote = document.createElement('p');
+    var modelList = document.createElement('div');
+    modelList.className = 'wish-member-wall-list';
+    modelWall.append(modelHeading, modelNote, modelList);
+    root.append(modelWall);
     var success = root.querySelector('[data-success]');
     var coupon = document.createElement('a');
     coupon.className = 'wish-coupon-link';
@@ -50,6 +60,8 @@
       if (sendLabel) sendLabel.textContent = lang.indexOf('en') === 0 ? 'I confirm that I want to send this message to MMD' : lang.indexOf('zh') === 0 ? '我确认要把这段留言发送给 MMD' : 'ยืนยันส่งข้อความนี้ให้ MMD';
       heading.textContent = c.title;
       note.textContent = c.note;
+      modelHeading.textContent = lang.indexOf('en') === 0 ? 'Wishes from MMD Models' : lang.indexOf('zh') === 0 ? '来自 MMD 模特的祝福' : 'คำอวยพรจาก Model ของ MMD';
+      modelNote.textContent = lang.indexOf('en') === 0 ? 'Post-job wishes approved by MMD.' : lang.indexOf('zh') === 0 ? '仅显示经 MMD 审核通过的工作后祝福。' : 'แสดงเฉพาะคำอวยพรหลังจบงานที่ MMD อนุมัติแล้ว';
       var step = root.querySelector('[data-v23="r3a"]');
       var stepTitle = root.querySelector('[data-v23="r3b"]');
       var stepCopy = root.querySelector('[data-v23="r3c"]');
@@ -83,8 +95,16 @@
           quote.textContent = wish.text.slice(0, 600);
           list.append(quote);
         });
+        modelList.replaceChildren();
+        (Array.isArray(payload.model_wishes) ? payload.model_wishes : []).slice(0, 24).forEach(function (wish) {
+          if (!wish || typeof wish.text !== 'string' || !wish.text.trim()) return;
+          var quote = document.createElement('blockquote');
+          quote.textContent = wish.text.slice(0, 280);
+          modelList.append(quote);
+        });
+        modelWall.hidden = !modelList.children.length;
         state = list.children.length ? 'ready' : 'empty';
-      } catch (_) { list.replaceChildren(); state = 'error'; retry.hidden = false; }
+      } catch (_) { list.replaceChildren(); modelList.replaceChildren(); modelWall.hidden = true; state = 'error'; retry.hidden = false; }
       finally { clearTimeout(timer); loading = false; translate(); if (refreshPending) { refreshPending = false; void refresh(); } }
     }
     retry.addEventListener('click', refresh);
