@@ -50,6 +50,14 @@
       if (sendLabel) sendLabel.textContent = lang.indexOf('en') === 0 ? 'I confirm that I want to send this message to MMD' : lang.indexOf('zh') === 0 ? '我确认要把这段留言发送给 MMD' : 'ยืนยันส่งข้อความนี้ให้ MMD';
       heading.textContent = c.title;
       note.textContent = c.note;
+      var step = root.querySelector('[data-v23="r3a"]');
+      var stepTitle = root.querySelector('[data-v23="r3b"]');
+      var stepCopy = root.querySelector('[data-v23="r3c"]');
+      if (step && stepTitle && stepCopy) {
+        step.textContent = lang.indexOf('en') === 0 ? '03 · CLAIM' : lang.indexOf('zh') === 0 ? '03 · 领取' : '03 · เคลม';
+        stepTitle.textContent = lang.indexOf('en') === 0 ? 'LINE claim required' : lang.indexOf('zh') === 0 ? '需要验证 LINE' : 'ยืนยัน LINE เพื่อเคลม';
+        stepCopy.textContent = lang.indexOf('en') === 0 ? 'Verify LINE after sending to claim your personal coupon immediately.' : lang.indexOf('zh') === 0 ? '发送后验证 LINE，即可立即领取个人优惠券。' : 'ส่งแล้วกรุณายืนยัน LINE เพื่อเคลมคูปองส่วนตัวได้ทันทีครับ';
+      }
       retry.textContent = c.retry;
       status.textContent = c[state] || '';
       status.hidden = state === 'ready';

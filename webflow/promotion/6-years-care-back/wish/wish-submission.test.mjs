@@ -94,7 +94,7 @@ test("Browser bridge posts Public Wish and keeps benefit linking separate", () =
   assert.match(source, /credentials:\s*"same-origin"/);
   assert.match(source, /payload\?\.ok\s*===\s*true\s*&&\s*payload\?\.state\s*===\s*"completed"/);
   assert.match(source, /mmd:care-back:wish-completed/);
-  assert.match(source, /benefitVerificationRequired:\s*true/);
+  assert.match(source, /couponClaimRequired:\s*true/);
   assert.match(source, /next:\s*MEMBER_URL/);
   assert.doesNotMatch(source, /window\.location\.assign|LIFF_URL|getProfile\(/);
   assert.doesNotMatch(source, /innerHTML|insertAdjacentHTML|document\.write/);
@@ -113,10 +113,10 @@ test("Existing Webflow Wish form reuses the canonical My MMD handoff", () => {
   assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
 });
 
-test("Customer copy keeps Wish separate and continues verified benefits in My MMD", () => {
-  assert.match(source, /คูปอง วันสมาชิก และ Points ที่ตรวจได้จริง ดูต่อใน My MMD/);
-  assert.match(source, /Verified coupon, membership days and Points continue in My MMD/);
-  assert.match(source, /已核实的优惠券、会员天数和 Points 请在 My MMD 继续查看/);
+test("Customer copy requires the My MMD coupon claim after Wish", () => {
+  assert.match(source, /ยืนยัน LINE ต่อใน My MMD เพื่อเคลมคูปองส่วนตัวทันทีครับ/);
+  assert.match(source, /Verify LINE in My MMD to claim your personal coupon immediately/);
+  assert.match(source, /请在 My MMD 验证 LINE，立即领取个人优惠券/);
   assert.match(source, /benefitCta: "ดูคูปองของฉัน"/);
 });
 

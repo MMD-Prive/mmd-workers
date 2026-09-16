@@ -67,7 +67,7 @@ function verifiedCouponStore(expectedIdentity = IDENTITY) {
   };
 }
 
-test("public Wish succeeds without LINE session or LIFF secret and only offers optional coupon verification", async () => {
+test("public Wish saves first and requires LINE coupon claim", async () => {
   const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
   const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
     wish_text: "สุขสันต์วันเกิด MMD ครับ",
@@ -81,10 +81,11 @@ test("public Wish succeeds without LINE session or LIFF secret and only offers o
   assert.match(payload.wish_link_token, /^pw_[A-Za-z0-9_-]+$/);
   assert.equal(payload.benefits.verification_required, false);
   assert.equal(payload.benefits.coupon, false);
-  assert.equal(payload.benefits.coupon_after_verification, true);
+  assert.equal(payload.benefits.coupon_after_verification, false);
+  assert.equal(payload.benefits.coupon_claim_required, true);
   assert.equal(payload.benefits.membership_extension, false);
   assert.equal(payload.benefits.points, false);
-  assert.equal(payload.final_display.next_action, "optional_coupon_verification");
+  assert.equal(payload.final_display.next_action, "required_coupon_claim");
   assert.match(response.headers.get("set-cookie") || "", /mmd_care_back_wish_link=pw_/);
   assert.equal(payload.grants.membership, false);
   assert.equal(payload.grants.points, false);

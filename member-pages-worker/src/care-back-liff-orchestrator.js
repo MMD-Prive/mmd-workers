@@ -115,14 +115,10 @@ export async function handleCanonicalCareBackLinkWish(request, env = {}, ctx, de
   if (!session.ok) return session.response;
 
   // A verified customer without a Member row can link a saved Wish for the
-  // customer wall. Coupon approval still requires the canonical member flow.
+  // customer wall. A verified LINE identity can claim the personal CARE BACK
+  // coupon immediately; membership evaluation remains separate.
   if (!session.memberId) {
-    return (deps.linkWishHandler || handleLinkWish)(request, {
-      ...env,
-      VERIFIED_WISH_COUPON_STORE: {
-        issueOrResume: async () => ({ state: "verification_required", code: "", approved_discount_percent: null }),
-      },
-    });
+    return (deps.linkWishHandler || handleLinkWish)(request, env);
   }
 
   const careBackStore = getCareBackStore(env);
