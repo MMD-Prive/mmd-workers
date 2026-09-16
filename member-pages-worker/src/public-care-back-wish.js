@@ -26,7 +26,7 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const PUBLIC_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language"]);
+const PUBLIC_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language", "public_display_consent"]);
 const LINK_BODY_KEYS = new Set(["wish_link_token"]);
 const BROWSER_IDENTITY_FIELDS = new Set([
   "line_user_id", "lineUserId", "line_id", "sub", "profile", "user",
@@ -43,12 +43,43 @@ export async function handlePublicCareBackWishRoute(request, env = {}) {
   const path = normalizePath(new URL(request.url).pathname);
   if (request.method === "OPTIONS") {
     return isApprovedOrigin(request, env)
-      ? withCors(request, new Response(null, { status: 204, headers: apiHeaders("POST,OPTIONS") }), env)
+      ? withCors(request, new Response(null, { status: 204, headers: apiHeaders("GET,POST,OPTIONS") }), env)
       : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   }
-  if (PUBLIC_WISH_PATHS.has(path)) return withCors(request, await handlePublicWish(request, env), env);
+  if (PUBLIC_WISH_PATHS.has(path)) return withCors(request, await (request.method === "GET" ? handlePublicWishFeed(request, env) : handlePublicWish(request, env)), env);
   if (LINK_WISH_PATHS.has(path)) return withCors(request, await handleLinkWish(request, env), env);
   return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
+}
+
+// Only this server-side projection can make a stored Wish public. Legacy rows
+// without explicit publication consent are private, including linked members.
+export async function handlePublicWishFeed(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const store = getPublicWishStore(env);
+  if (!store || typeof store.listPublicCandidates !== "function") return unavailable("PUBLIC_WISH_STORAGE_NOT_CONFIGURED");
+  try {
+    const records = await store.listPublicCandidates();
+    if (!Array.isArray(records)) return unavailable("PUBLIC_WISH_STORAGE_MALFORMED");
+    const wishes = records.flatMap((record) => {
+      const fields = record?.fields || {};
+      const payload = safeObjectJson(fields.payload_json);
+      const links = fields["Campaign Claim"];
+      const text = normalizeText(fields.wish_text, MAX_WISH);
+      if (fields.campaign_id !== CAMPAIGN_ID || fields.wish_status !== "completed"
+        || payload.public_display_consent !== true
+        || payload.public_display_consent_version !== "wish-wall-v1"
+        || !safeTimestamp(payload.public_display_consented_at)
+        || payload.public_display_member_verified !== true
+        || !safeTimestamp(payload.public_display_member_verified_at)
+        || payload.wish_kind !== "verified_identity_linked"
+        || !Array.isArray(links) || links.length !== 1 || !validAirtableRecordId(links[0])
+        || !text || !safeTimestamp(fields.submitted_at)) return [];
+      return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
+    }).slice(0, 24);
+    return json({ ok: true, wishes });
+  } catch {
+    return unavailable("PUBLIC_WISH_STORAGE_UNAVAILABLE");
+  }
 }
 
 export async function handlePublicWish(request, env = {}) {
@@ -73,6 +104,7 @@ export async function handlePublicWish(request, env = {}) {
       wishText: input.wishText,
       wishOption: input.wishOption,
       language: input.language,
+      publicDisplayConsent: input.publicDisplayConsent,
       linkTokenHash,
       now: new Date().toISOString(),
     });
@@ -139,6 +171,8 @@ export async function handleLinkWish(request, env = {}) {
       claimId: hasCanonicalClaim ? claimId : "",
       claimRecordId: hasCanonicalClaim ? claimRecordId : "",
       verifiedCustomerRefHash,
+      memberVerified: hasCanonicalClaim && data.member_exists === true
+        && ["active", "grace", "expired"].includes(String(data.member_profile?.membership_status || "").trim().toLowerCase()),
       now: new Date().toISOString(),
     });
 
@@ -223,7 +257,7 @@ class AirtablePublicWishStore {
       source_path: "/promotion/6-years-care-back/wish",
       language: input.language,
       display_version: "care_back_public_v2",
-      payload_json: JSON.stringify({ schema_version: 3, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked" }),
+      payload_json: JSON.stringify({ schema_version: 4, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked", public_display_consent: input.publicDisplayConsent === true, public_display_consent_version: "wish-wall-v1", public_display_consented_at: input.publicDisplayConsent === true ? input.now : null }),
       created_at: input.now,
       updated_at: input.now,
     };
@@ -246,7 +280,10 @@ class AirtablePublicWishStore {
         source_path: "/member/liff",
         display_version: "care_back_verified_wish_v2",
         payload_json: JSON.stringify({
-          schema_version: 3,
+          ...wish.payload,
+          schema_version: 4,
+          public_display_member_verified: input.memberVerified === true,
+          public_display_member_verified_at: input.memberVerified === true ? input.now : null,
           campaign_id: CAMPAIGN_ID,
           claim_id: input.claimId || undefined,
           wish_kind: "verified_identity_linked",
@@ -256,6 +293,10 @@ class AirtablePublicWishStore {
       }, typecast: false },
     });
     return sanitizePublicWish(record);
+  }
+
+  async listPublicCandidates() {
+    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',{Campaign Claim}!='')`, 100, true);
   }
 
   async findByRequestId(requestId) {
@@ -270,8 +311,8 @@ class AirtablePublicWishStore {
     return records.length ? sanitizePublicWish(records[0]) : null;
   }
 
-  async list(filterByFormula, maxRecords) {
-    const payload = await this.write("GET", { query: { filterByFormula, maxRecords } });
+  async list(filterByFormula, maxRecords, newestFirst = false) {
+    const payload = await this.write("GET", { query: { filterByFormula, maxRecords, newestFirst } });
     return Array.isArray(payload?.records) ? payload.records : [];
   }
 
@@ -280,7 +321,9 @@ class AirtablePublicWishStore {
     const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
     if (query?.filterByFormula) url.searchParams.set("filterByFormula", query.filterByFormula);
     if (query?.maxRecords) url.searchParams.set("maxRecords", String(query.maxRecords));
+    if (query?.newestFirst) { url.searchParams.set("sort[0][field]", "submitted_at"); url.searchParams.set("sort[0][direction]", "desc"); }
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
       method,
       headers: { Authorization: `Bearer ${this.env.AIRTABLE_API_KEY}`, ...(body ? { "content-type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
@@ -401,6 +444,7 @@ function sanitizePublicWish(record) {
   const fields = record?.fields || {};
   const claimLinks = Array.isArray(fields["Campaign Claim"]) ? fields["Campaign Claim"] : [];
   const wish = {
+    payload: safeObjectJson(fields.payload_json),
     record_id: validAirtableRecordId(record?.id),
     wish_id: String(fields.wish_id || ""),
     claim_record_id: claimLinks.length === 1 ? validAirtableRecordId(claimLinks[0]) : "",
@@ -435,8 +479,9 @@ function normalizePublicWishInput(body) {
   const wishOption = normalizeText(body.wish_option, 120);
   if (wishText === null || wishOption === null) return { ok: false, code: "BIRTHDAY_WISH_CONTENT_INVALID", message: "Birthday Wish content is invalid." };
   if (!wishText && !wishOption) return { ok: false, code: "BIRTHDAY_WISH_CONTENT_REQUIRED", message: "Birthday Wish content is required." };
+  if (body.public_display_consent !== undefined && typeof body.public_display_consent !== "boolean") return { ok: false, code: "PUBLIC_WISH_CONSENT_INVALID", message: "Publication consent must be a boolean." };
   const language = String(body.language || "th").toLowerCase();
-  return { ok: true, requestId, wishText, wishOption, language: language.startsWith("en") ? "en" : "th" };
+  return { ok: true, requestId, wishText, wishOption, publicDisplayConsent: body.public_display_consent === true, language: language.startsWith("en") ? "en" : "th" };
 }
 
 function normalizeText(value, maxLength) {

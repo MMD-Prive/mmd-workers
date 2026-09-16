@@ -90,3 +90,15 @@ test("wrangler claims the public Wish and link routes on apex and www", async ()
   }
   assert.match(wrangler, /main = "src\/mms-line-front-gate\.js"/);
 });
+
+test('public member Wish feed GET reaches the existing Worker owner without a login gate', async () => {
+  const response = await worker.fetch(new Request('https://mmdbkk.com/member/api/care-back/public-wish'), {
+    MEMBER_PAGES_WORKER: { fetch: async (request) => {
+      assert.equal(request.method, 'GET');
+      return Response.json({ ok: true, wishes: [{ text: 'Shared with consent', submitted_at: '2026-09-16T12:00:00.000Z' }] }, { headers: { 'cache-control': 'no-store' } });
+    } },
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).wishes.length, 1);
+  assert.match(response.headers.get('cache-control'), /no-store/);
+});

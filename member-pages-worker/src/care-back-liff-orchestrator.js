@@ -13,7 +13,7 @@ const CLAIM_PATH = "/member/api/liff/care-back/claim";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const PENDING_WISH_COOKIE = "mmd_care_back_wish_link";
 const CARE_BACK_COOKIE_DOMAIN = "mmdbkk.com";
-const WISH_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language"]);
+const WISH_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language", "public_display_consent"]);
 const LINK_BODY_KEYS = new Set(["wish_link_token"]);
 const BROWSER_AUTHORITY_KEYS = new Set([
   "line_user_id", "lineUserId", "line_id", "sub", "profile", "user",
