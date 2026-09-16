@@ -3,7 +3,6 @@ import fs from "node:fs";
 
 const wrangler = fs.readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
 const activeWorker = fs.readFileSync(new URL("./src/admin-login-hero-worker.js", import.meta.url), "utf8");
-const coreWorker = fs.readFileSync(new URL("./src/admin-login-hero-core.js", import.meta.url), "utf8");
 const legacyWrapper = fs.readFileSync(new URL("./src/admin-live-marker-wrapper.js", import.meta.url), "utf8");
 
 assert.match(
@@ -20,16 +19,16 @@ for (const path of [
 }
 
 assert.ok(
-  activeWorker.includes("enrichLineageWithPerRename"),
-  "active worker must run Per Rename enrichment",
+  activeWorker.includes('import { enrichLineageWithPerRename } from "./per-rename-client-search.js"'),
+  "active worker must import Per Rename enrichment",
 );
 assert.ok(
-  activeWorker.includes("./admin-login-hero-core.js"),
-  "active worker must delegate to the preserved core implementation",
+  activeWorker.includes("response = await enrichLineageWithPerRename(perRenameRequest, response, env)"),
+  "active worker must run Per Rename enrichment after the canonical lineage response",
 );
 assert.ok(
-  coreWorker.includes("job-orchestrator-owner-ops-wrapper.js"),
-  "core worker must preserve the existing admin implementation",
+  activeWorker.includes('const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup"'),
+  "active worker must keep lineage lookup path explicit",
 );
 assert.ok(
   legacyWrapper.includes('export { default } from "./admin-login-hero-worker.js"'),
