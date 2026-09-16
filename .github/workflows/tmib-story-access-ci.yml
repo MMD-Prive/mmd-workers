@@ -6,6 +6,7 @@ on:
       - "member-pages-worker/src/tmib-story-access.js"
       - "member-pages-worker/src/index.js"
       - "member-pages-worker/test/tmib-story-access.test.mjs"
+      - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
       - "member-pages-worker/wrangler.toml"
       - ".github/workflows/tmib-story-access-ci.yml"
   push:
@@ -15,6 +16,7 @@ on:
       - "member-pages-worker/src/tmib-story-access.js"
       - "member-pages-worker/src/index.js"
       - "member-pages-worker/test/tmib-story-access.test.mjs"
+      - "member-pages-worker/test/tmib-story-access-route-contract.test.mjs"
       - "member-pages-worker/wrangler.toml"
       - ".github/workflows/tmib-story-access-ci.yml"
 
@@ -37,7 +39,7 @@ jobs:
           node --check member-pages-worker/src/tmib-story-access.js
           node --check member-pages-worker/src/index.js
       - name: Test TMIB story access
-        run: node --experimental-global-webcrypto --test member-pages-worker/test/tmib-story-access.test.mjs
+        run: node --experimental-global-webcrypto --test member-pages-worker/test/tmib-story-access.test.mjs member-pages-worker/test/tmib-story-access-route-contract.test.mjs
       - name: Dry-run member pages worker
         working-directory: member-pages-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars
