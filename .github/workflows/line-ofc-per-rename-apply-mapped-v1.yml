@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'scripts/line-ofc-per-rename-resolve-mapped-v1.js'
+      - 'scripts/line-ofc-per-rename-backfill-mapped-runner-v1.js'
       - '.github/workflows/line-ofc-per-rename-apply-mapped-v1.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/line-ofc-per-rename-resolve-mapped-v1.js'
+      - 'scripts/line-ofc-per-rename-backfill-mapped-runner-v1.js'
       - '.github/workflows/line-ofc-per-rename-apply-mapped-v1.yml'
 
 permissions:
@@ -42,7 +44,7 @@ jobs:
       - name: Resolve 291 mapped rooms to exact LINE User IDs
         run: node scripts/line-ofc-per-rename-resolve-mapped-v1.js /tmp/per-rename-mapped-input.json /tmp/resolve-receipt.json
       - name: Dry-run authoritative Per-Rename backfill
-        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --dry-run --report /tmp/dry-run.json
+        run: node scripts/line-ofc-per-rename-backfill-mapped-runner-v1.js --input /tmp/per-rename-mapped-input.json --dry-run --report /tmp/dry-run.json
       - name: Assert dry-run scope
         run: |
           node - <<'NODE'
@@ -55,9 +57,9 @@ jobs:
           console.log(JSON.stringify({ok:true,source_rows:291,selected:283,held_invalid_rename:8}));
           NODE
       - name: Apply one authoritative Per-Rename row per LINE User ID
-        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --apply --report /tmp/apply.json
+        run: node scripts/line-ofc-per-rename-backfill-mapped-runner-v1.js --input /tmp/per-rename-mapped-input.json --apply --report /tmp/apply.json
       - name: Verify exact rerun is zero writes
-        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --dry-run --assert-idempotent --report /tmp/noop.json
+        run: node scripts/line-ofc-per-rename-backfill-mapped-runner-v1.js --input /tmp/per-rename-mapped-input.json --dry-run --assert-idempotent --report /tmp/noop.json
       - name: Upload count-only receipts
         uses: actions/upload-artifact@v4
         with:
