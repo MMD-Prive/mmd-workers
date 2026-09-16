@@ -145,7 +145,7 @@ test("POST stores one post-job Wish with Airtable-safe controlled selects and no
     assert.equal(body.payout_gate, false);
     assert.equal(createdFields.campaign_id, MODEL_YEAR6_WISH_CAMPAIGN_ID);
     assert.equal(createdFields.wish_option, "post_job_model");
-    assert.equal(createdFields.wish_status, "completed");
+    assert.equal(createdFields.wish_status, "manual_review");
     assert.equal(createdFields.source, "member_page");
     assert.equal(createdFields.source_path, "mmdmodel.lovable.app");
     assert.equal("language" in createdFields, false, "unsupported Airtable zh select must be omitted");

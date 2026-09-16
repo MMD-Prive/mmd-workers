@@ -1,19 +1,37 @@
 /* MMD SIGIL Model Confirmation v15 i18n
  * Route: /sigil/confirm/job-model
- * Locale contract: ?lang=th|en|zh -> localStorage.mmd_sigil_lang -> th
+ * Locale contract: ?lang=th|en|zh -> safe localStorage.mmd_sigil_lang -> th
  * Keeps confirmation authority on sigil.mmdbkk.com and never exposes partner pricing.
+ * Storage access is guarded because LINE/iOS in-app browsers may throw on localStorage.
  */
 (() => {
   "use strict";
 
   const root = document.getElementById("mmd-model-confirm-v15");
   if (!root || root.dataset.i18nReady === "true") return;
-  root.dataset.i18nReady = "true";
 
   const API = "https://sigil.mmdbkk.com";
   const STORAGE_KEY = "mmd_sigil_lang";
   const params = new URL(window.location.href).searchParams;
   const token = params.get("t") || "";
+
+  const storageGet = (key) => {
+    try {
+      return window.localStorage?.getItem(key) || "";
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const storageSet = (key, value) => {
+    try {
+      window.localStorage?.setItem(key, value);
+    } catch (_) {
+      // Restricted LINE/iOS storage must never block job-detail loading.
+    }
+  };
+
+  root.dataset.i18nReady = "true";
 
   const COPY = Object.freeze({
     th: {
@@ -110,7 +128,7 @@
     return "th";
   };
 
-  let lang = normalizeLang(params.get("lang") || localStorage.getItem(STORAGE_KEY) || "th");
+  let lang = normalizeLang(params.get("lang") || storageGet(STORAGE_KEY) || "th");
   let currentDetails = null;
   let loaded = false;
   let busy = false;
@@ -205,7 +223,7 @@
   function applyLanguage() {
     const d = dict();
     document.documentElement.lang = lang === "zh" ? "zh-CN" : lang;
-    localStorage.setItem(STORAGE_KEY, lang);
+    storageSet(STORAGE_KEY, lang);
     root.querySelectorAll("[data-mmd-lang-switch] button[data-lang]").forEach((button) => {
       button.setAttribute("aria-pressed", button.dataset.lang === lang ? "true" : "false");
     });
@@ -280,19 +298,26 @@
   }
 
   async function call(path, body) {
-    const response = await fetch(API + path, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      credentials: "omit",
-      body: JSON.stringify(body)
-    });
-    const raw = await response.text();
-    let data = {};
-    try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
-    if (!response.ok || data.ok === false) {
-      throw new Error(data.error || data.message || `HTTP ${response.status}`);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const response = await fetch(API + path, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        credentials: "omit",
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const raw = await response.text();
+      let data = {};
+      try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || data.message || `HTTP ${response.status}`);
+      }
+      return data;
+    } finally {
+      clearTimeout(timer);
     }
-    return data;
   }
 
   function sync() {

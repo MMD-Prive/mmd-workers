@@ -1,3 +1,4 @@
+import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
 import { addCalendarMonths, deriveClaimAndCode, getCareBackStore } from "./care-back-claim-store.js";
 
@@ -26,7 +27,7 @@ const APPROVED_ORIGINS = new Set([
   "https://mmdprive.webflow.io",
   "https://mmdprive.com",
 ]);
-const PUBLIC_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language"]);
+const PUBLIC_BODY_KEYS = new Set(["wish_text", "wish_option", "request_id", "language", "public_display_consent"]);
 const LINK_BODY_KEYS = new Set(["wish_link_token"]);
 const BROWSER_IDENTITY_FIELDS = new Set([
   "line_user_id", "lineUserId", "line_id", "sub", "profile", "user",
@@ -43,12 +44,48 @@ export async function handlePublicCareBackWishRoute(request, env = {}) {
   const path = normalizePath(new URL(request.url).pathname);
   if (request.method === "OPTIONS") {
     return isApprovedOrigin(request, env)
-      ? withCors(request, new Response(null, { status: 204, headers: apiHeaders("POST,OPTIONS") }), env)
+      ? withCors(request, new Response(null, { status: 204, headers: apiHeaders("GET,POST,OPTIONS") }), env)
       : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
   }
-  if (PUBLIC_WISH_PATHS.has(path)) return withCors(request, await handlePublicWish(request, env), env);
+  if (PUBLIC_WISH_PATHS.has(path)) return withCors(request, await (request.method === "GET" ? handlePublicWishFeed(request, env) : handlePublicWish(request, env)), env);
   if (LINK_WISH_PATHS.has(path)) return withCors(request, await handleLinkWish(request, env), env);
   return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
+}
+
+// Only this server-side projection can make a stored Wish public. New wishes
+// require the customer's explicit opt-in. Historical wishes may also be
+// published when the owner has recorded an explicit publication approval;
+// this keeps the approval provenance separate from customer consent.
+export async function handlePublicWishFeed(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const store = getPublicWishStore(env);
+  if (!store || typeof store.listPublicCandidates !== "function") return unavailable("PUBLIC_WISH_STORAGE_NOT_CONFIGURED");
+  try {
+    const records = await store.listPublicCandidates();
+    if (!Array.isArray(records)) return unavailable("PUBLIC_WISH_STORAGE_MALFORMED");
+    const wishes = records.flatMap((record) => {
+      const fields = record?.fields || {};
+      const payload = safeObjectJson(fields.payload_json);
+      const text = normalizeText(fields.wish_text, MAX_WISH);
+      const customerOptIn = payload.public_display_consent === true
+        && payload.public_display_consent_version === "wish-wall-v1"
+        && safeTimestamp(payload.public_display_consented_at)
+        && payload.public_display_customer_verified === true
+        && safeTimestamp(payload.public_display_customer_verified_at)
+        && payload.wish_kind === "verified_identity_linked";
+      const ownerApproval = payload.public_display_owner_approved === true
+        && safeTimestamp(payload.public_display_owner_approved_at)
+        && payload.public_display_approval_basis === "owner_request_publish_all_real_wishes_all_phases_2026-09-16";
+      if (fields.campaign_id !== CAMPAIGN_ID || fields.wish_status !== "completed"
+        || (!customerOptIn && !ownerApproval)
+        || !text || !safeTimestamp(fields.submitted_at)) return [];
+      return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
+    }).slice(0, 24);
+    const model_wishes = await listApprovedModelWishes(env);
+    return json(model_wishes.length ? { ok: true, wishes, model_wishes } : { ok: true, wishes });
+  } catch {
+    return unavailable("PUBLIC_WISH_STORAGE_UNAVAILABLE");
+  }
 }
 
 export async function handlePublicWish(request, env = {}) {
@@ -73,6 +110,7 @@ export async function handlePublicWish(request, env = {}) {
       wishText: input.wishText,
       wishOption: input.wishOption,
       language: input.language,
+      publicDisplayConsent: input.publicDisplayConsent,
       linkTokenHash,
       now: new Date().toISOString(),
     });
@@ -87,21 +125,51 @@ export async function handlePublicWish(request, env = {}) {
       benefits: {
         verification_required: false,
         coupon: false,
-        coupon_after_verification: true,
+        coupon_after_verification: false,
+        coupon_claim_required: true,
         membership_extension: false,
         points: false,
       },
       final_display: {
         message: input.language === "en"
-          ? "MMD has received your wish. You can stop here, or verify LINE to receive your personal discount coupon."
-          : "MMD ได้รับคำอวยพรของคุณแล้วครับ จบตรงนี้ได้เลย หรือยืนยัน LINE ต่อเพื่อรับคูปองส่วนลดส่วนตัวครับ",
-        next_action: "optional_coupon_verification",
+          ? "MMD has received your wish. Verify LINE now to claim your personal discount coupon immediately."
+          : "MMD ได้รับคำอวยพรของคุณแล้วครับ กรุณายืนยัน LINE ต่อเพื่อเคลมคูปองส่วนตัวได้ทันทีครับ",
+        next_action: "required_coupon_claim",
       },
       grants: noGrants(),
     }, 200, { "set-cookie": pendingWishCookie(linkToken) });
   } catch (error) {
     return publicWishStorageError(error);
   }
+}
+
+// Public projection for post-job Model HBD. This deliberately shares the
+// existing read endpoint but has a separate campaign/status filter. Only an
+// Admin-approved record (status=completed) is projected; model/session IDs,
+// payload JSON and identity fields never leave the Worker.
+async function listApprovedModelWishes(env = {}) {
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  if (!apiKey || !baseId) return [];
+  const table = String(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || "tblvMJjYXy29mgDLb").trim();
+  const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+  url.searchParams.set("filterByFormula", "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='completed')");
+  url.searchParams.set("maxRecords", "50");
+  url.searchParams.set("sort[0][field]", "submitted_at");
+  url.searchParams.set("sort[0][direction]", "desc");
+  try {
+    const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.records)) return [];
+    const wishes = payload.records.map((record) => {
+      const fields = record?.fields || {};
+      if (String(fields.campaign_id || "") !== "mmd_year_6_model_wish" || String(fields.wish_status || "") !== "completed") return null;
+      const text = String(fields.public_display_text || fields.wish_text || "").replace(/\r\n?/g, "\n").trim().slice(0, 280);
+      const submittedAt = String(fields.submitted_at || "").trim();
+      return text && Date.parse(submittedAt) ? { text, submitted_at: new Date(submittedAt).toISOString(), source: "model" } : null;
+    }).filter(Boolean);
+    return wishes;
+  } catch { return []; }
 }
 
 export async function handleLinkWish(request, env = {}) {
@@ -132,6 +200,11 @@ export async function handleLinkWish(request, env = {}) {
   const hasCanonicalClaim = Boolean(data.member_exists && data.member_id && claimId && claimRecordId);
   const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   const verifiedCustomerRefHash = await keyedDigest(env, `wish-customer:${data.identity_key}`);
+  // Publication is based on completed service history, never membership/tier.
+  const history = await readClientBackedHistoryResult(env, data.line_user_id, new Date(), { requireLinkedClient: true });
+  const customerVerified = history.state === "resolved"
+    && history.summary.verifiedServiceCount > 0
+    && !["blocked", "suspended", "revoked"].includes(String(data.member_profile?.membership_status || "").toLowerCase());
 
   try {
     const wish = await store.linkVerified({
@@ -139,6 +212,9 @@ export async function handleLinkWish(request, env = {}) {
       claimId: hasCanonicalClaim ? claimId : "",
       claimRecordId: hasCanonicalClaim ? claimRecordId : "",
       verifiedCustomerRefHash,
+      customerVerified,
+      memberVerified: hasCanonicalClaim && data.member_exists === true
+        && ["active", "grace", "expired"].includes(String(data.member_profile?.membership_status || "").trim().toLowerCase()),
       now: new Date().toISOString(),
     });
 
@@ -223,7 +299,7 @@ class AirtablePublicWishStore {
       source_path: "/promotion/6-years-care-back/wish",
       language: input.language,
       display_version: "care_back_public_v2",
-      payload_json: JSON.stringify({ schema_version: 3, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked" }),
+      payload_json: JSON.stringify({ schema_version: 4, campaign_id: CAMPAIGN_ID, wish_kind: "public_unlinked", public_display_consent: input.publicDisplayConsent === true, public_display_consent_version: "wish-wall-v1", public_display_consented_at: input.publicDisplayConsent === true ? input.now : null }),
       created_at: input.now,
       updated_at: input.now,
     };
@@ -236,6 +312,9 @@ class AirtablePublicWishStore {
     if (wish.claim_record_id && input.claimRecordId && wish.claim_record_id !== input.claimRecordId) {
       throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
     }
+    if (wish.payload.linked_customer_ref_hash && wish.payload.linked_customer_ref_hash !== input.verifiedCustomerRefHash) {
+      throw new PublicWishError("PUBLIC_WISH_ALREADY_LINKED_CONFLICT");
+    }
     const linkedClaim = input.claimRecordId ? { "Campaign Claim": [input.claimRecordId] } : {};
     const record = await this.write("PATCH", {
       recordId: wish.record_id,
@@ -246,7 +325,14 @@ class AirtablePublicWishStore {
         source_path: "/member/liff",
         display_version: "care_back_verified_wish_v2",
         payload_json: JSON.stringify({
-          schema_version: 3,
+          ...wish.payload,
+          schema_version: 4,
+          wish_link_token_hash: input.linkTokenHash,
+          linked_customer_ref_hash: input.verifiedCustomerRefHash,
+          public_display_customer_verified: input.customerVerified === true,
+          public_display_customer_verified_at: input.customerVerified === true ? input.now : null,
+          public_display_member_verified: input.memberVerified === true,
+          public_display_member_verified_at: input.memberVerified === true ? input.now : null,
           campaign_id: CAMPAIGN_ID,
           claim_id: input.claimId || undefined,
           wish_kind: "verified_identity_linked",
@@ -258,6 +344,10 @@ class AirtablePublicWishStore {
     return sanitizePublicWish(record);
   }
 
+  async listPublicCandidates() {
+    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',OR(FIND('"public_display_customer_verified":true',{payload_json}&''),FIND('"public_display_owner_approved":true',{payload_json}&'')))`, 100, true);
+  }
+
   async findByRequestId(requestId) {
     const records = await this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{idempotency_key}=${formulaString(requestId)})`, 2);
     if (records.length > 1) throw new PublicWishError("PUBLIC_WISH_CONFLICT");
@@ -265,13 +355,13 @@ class AirtablePublicWishStore {
   }
 
   async findByLinkTokenHash(hash) {
-    const records = await this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{verified_customer_ref_hash}=${formulaString(hash)})`, 2);
+    const records = await this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},OR({verified_customer_ref_hash}=${formulaString(hash)},FIND(${formulaString('"wish_link_token_hash":"' + hash + '"')},{payload_json}&'')))`, 2);
     if (records.length > 1) throw new PublicWishError("PUBLIC_WISH_CONFLICT");
     return records.length ? sanitizePublicWish(records[0]) : null;
   }
 
-  async list(filterByFormula, maxRecords) {
-    const payload = await this.write("GET", { query: { filterByFormula, maxRecords } });
+  async list(filterByFormula, maxRecords, newestFirst = false) {
+    const payload = await this.write("GET", { query: { filterByFormula, maxRecords, newestFirst } });
     return Array.isArray(payload?.records) ? payload.records : [];
   }
 
@@ -280,7 +370,9 @@ class AirtablePublicWishStore {
     const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
     if (query?.filterByFormula) url.searchParams.set("filterByFormula", query.filterByFormula);
     if (query?.maxRecords) url.searchParams.set("maxRecords", String(query.maxRecords));
+    if (query?.newestFirst) { url.searchParams.set("sort[0][field]", "submitted_at"); url.searchParams.set("sort[0][direction]", "desc"); }
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
       method,
       headers: { Authorization: `Bearer ${this.env.AIRTABLE_API_KEY}`, ...(body ? { "content-type": "application/json" } : {}) },
       body: body ? JSON.stringify(body) : undefined,
@@ -401,6 +493,7 @@ function sanitizePublicWish(record) {
   const fields = record?.fields || {};
   const claimLinks = Array.isArray(fields["Campaign Claim"]) ? fields["Campaign Claim"] : [];
   const wish = {
+    payload: safeObjectJson(fields.payload_json),
     record_id: validAirtableRecordId(record?.id),
     wish_id: String(fields.wish_id || ""),
     claim_record_id: claimLinks.length === 1 ? validAirtableRecordId(claimLinks[0]) : "",
@@ -408,7 +501,7 @@ function sanitizePublicWish(record) {
     wish_option: String(fields.wish_option || "").slice(0, 120),
     wish_status: String(fields.wish_status || ""),
     idempotency_key: String(fields.idempotency_key || ""),
-    link_token_hash: String(fields.verified_customer_ref_hash || "").toLowerCase(),
+    link_token_hash: String(safeObjectJson(fields.payload_json).wish_link_token_hash || fields.verified_customer_ref_hash || "").toLowerCase(),
     submitted_at: String(fields.submitted_at || ""),
   };
   if (!wish.record_id || !/^wish_[a-f0-9]{32}$/i.test(wish.wish_id) || wish.wish_status !== "completed"
@@ -435,8 +528,9 @@ function normalizePublicWishInput(body) {
   const wishOption = normalizeText(body.wish_option, 120);
   if (wishText === null || wishOption === null) return { ok: false, code: "BIRTHDAY_WISH_CONTENT_INVALID", message: "Birthday Wish content is invalid." };
   if (!wishText && !wishOption) return { ok: false, code: "BIRTHDAY_WISH_CONTENT_REQUIRED", message: "Birthday Wish content is required." };
+  if (body.public_display_consent !== undefined && typeof body.public_display_consent !== "boolean") return { ok: false, code: "PUBLIC_WISH_CONSENT_INVALID", message: "Publication consent must be a boolean." };
   const language = String(body.language || "th").toLowerCase();
-  return { ok: true, requestId, wishText, wishOption, language: language.startsWith("en") ? "en" : "th" };
+  return { ok: true, requestId, wishText, wishOption, publicDisplayConsent: body.public_display_consent === true, language: language.startsWith("en") ? "en" : "th" };
 }
 
 function normalizeText(value, maxLength) {

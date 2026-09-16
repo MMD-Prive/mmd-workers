@@ -1,132 +1,111 @@
+import "./my-mmd-status-recovery-gate.runtime.test.mjs";
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import test from "node:test";
+import { MMD_LIFF_STABILITY_INTERNALS } from "../src/mms-line-front-gate.js";
 
-import worker, {
-  canonicalMyMmdHostRedirect,
-  withSharedPendingWishCookie,
-} from "../src/my-mmd-bounded-status-front-gate.js";
+const I = MMD_LIFF_STABILITY_INTERNALS;
 
-test("apex My MMD canonicalizes to www and migrates an existing host-only pending Wish", () => {
-  const token = `pw_${"A".repeat(43)}`;
-  const response = canonicalMyMmdHostRedirect(new Request("https://mmdbkk.com/member/my-mmd?from=care-back", {
-    headers: { cookie: `mmd_care_back_wish_link=${token}` },
-  }));
+const STATUS_SHELL = `const existingProfile = await readProfile();\n      if (existingProfile) return;\n      if (started && started.member_resolved) await readProfile();`;
 
-  assert.ok(response);
-  assert.equal(response.status, 308);
-  assert.equal(response.headers.get("location"), "https://www.mmdbkk.com/member/my-mmd?from=care-back");
-  assert.equal(response.headers.get("x-mmd-my-mmd-canonical-host"), "www.mmdbkk.com");
-  assert.equal(response.headers.get("x-mmd-care-back-wish-cookie-migrated"), "true");
-  const setCookie = response.headers.get("set-cookie") || "";
-  assert.match(setCookie, new RegExp(`mmd_care_back_wish_link=${token}`));
-  assert.match(setCookie, /Domain=mmdbkk\.com/i);
-  assert.match(setCookie, /mmd_care_back_wish_link=; Max-Age=0; Path=\//i);
+function assertDirectReturn(output, target = "/my-mmd/") {
+  assert.doesNotMatch(output, /await readProfile\(\)/);
+  assert.match(output, /auth-only bridge/);
+  assert.match(output, /ยืนยัน LINE สำเร็จแล้วครับ/);
+  assert.match(output, new RegExp(`window\\.location\\.replace\\(${JSON.stringify(target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)`));
+  assert.match(output, /if \(started\)/);
+}
+
+test("status LIFF shell becomes auth-only and returns directly to My MMD after verified start", () => {
+  const request = new Request("https://www.mmdbkk.com/member/liff?intent=status");
+  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
 });
 
-test("CARE BACK pending-Wish response cookies are shared across apex and www", () => {
-  const response = withSharedPendingWishCookie(new Response("{}", {
-    status: 200,
-    headers: {
-      "content-type": "application/json",
-      "set-cookie": "mmd_care_back_wish_link=pw_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdef; Max-Age=2592000; Path=/; Secure; SameSite=Lax",
-    },
-  }));
-
-  assert.equal(response.headers.get("x-mmd-care-back-wish-cookie-scope"), "parent-domain-v1");
-  assert.match(response.headers.get("set-cookie") || "", /Domain=mmdbkk\.com/i);
+test("coupon status LIFF returns to the single /coupon entry after verified start", () => {
+  const request = new Request("https://www.mmdbkk.com/member/liff?intent=status&return_to=coupon");
+  assert.equal(I.statusReturnTarget(request), "/my-mmd/coupons");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), "/my-mmd/coupons");
 });
 
-test("customer status recovery verifies the LINE session, hard-stops after 12 seconds, and renders one non-overlapping status surface", async () => {
-  const runtime = {
-    MEMBER_PAGES_WORKER: {
-      fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>LIFF bridge</main><div id="message"></div><div id="actions"></div><script nonce="abc123">window.__shell=true;</script></body></html>`,
-        { headers: { "content-type": "text/html; charset=utf-8" } },
-      ),
-    },
-  };
+test("TMIB status LIFF returns to the originating story or checkout after verified start", () => {
+  const actTarget = "/tmib/act-001#unlock-v4";
+  const actRequest = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(actTarget)}`);
+  assert.equal(I.statusReturnTarget(actRequest), actTarget);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, actRequest), actTarget);
 
-  const response = await worker.fetch(new Request("https://www.mmdbkk.com/member/liff?intent=status"), runtime);
-  const html = await response.text();
-
-  assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
-  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/");
-  assert.equal(response.headers.get("x-mmd-liff-recovery-gate"), "hard-timeout-v3-single-surface-one-retry");
-  assert.equal(response.headers.get("x-mmd-liff-hard-timeout-ms"), "12000");
-  assert.equal(response.headers.get("x-mmd-liff-manual-retry-window-ms"), "120000");
-  assert.equal(response.headers.get("x-mmd-liff-session-check"), "status-v1");
-
-  assert.match(html, /const statusEndpoint = "\/member\/api\/liff\/status"/);
-  assert.match(html, /fetch\(statusEndpoint,/);
-  assert.doesNotMatch(html, /const profileEndpoint =/);
-  assert.doesNotMatch(html, /\/member\/api\/liff\/profile/);
-
-  // The older embedded bridge still contains its own recovery CSS, but this
-  // later v3 override is the final cascade: the raw #message never becomes a
-  // second visible text layer. Its text is mirrored into the HYPE veil .t.
-  assert.match(html, /id="mmd-status-single-surface-fix"/);
-  assert.match(html, /body\.mmd-status-recovery #message\{display:none!important\}/);
-  assert.match(html, /body\.mmd-status-recovery #mmd-status-bridge-veil \.t\{display:block!important/);
-  assert.match(html, /body #actions\{top:auto!important;bottom:max\(/);
-  assert.doesNotMatch(html, /:has\(/);
-
-  assert.match(html, /id="mmd-status-single-surface-sync"/);
-  assert.match(html, /statusText\.textContent = text \|\| "ยังยืนยัน LINE Session ไม่สำเร็จครับ"/);
-  assert.match(html, /new MutationObserver\(sync\)\.observe\(actions/);
-  assert.match(html, /new MutationObserver\(sync\)\.observe\(message/);
-
-  assert.match(html, /id="mmd-status-hard-timeout-gate"/);
-  assert.match(html, /const HARD_TIMEOUT_MS = 12000/);
-  assert.match(html, /const MANUAL_RETRY_WINDOW_MS = 120000/);
-  assert.match(html, /mmd_status_manual_retry_at_v1/);
-  assert.match(html, /window\.sessionStorage\.setItem\(RETRY_KEY/);
-  assert.match(html, /retryAlreadyUsed/);
-  assert.match(html, /ระบบจะไม่วนยืนยันซ้ำเอง/);
-  assert.match(html, /LINE Session/);
-  assert.match(html, /ตรวจสถานะอีกครั้ง/);
-  assert.match(html, /กลับ My MMD/);
-  assert.match(html, /retry\.disabled = true/);
-  assert.match(html, /window\.location\.reload\(\)/);
-  assert.match(html, /window\.location\.replace\("\/my-mmd\/"\)/);
+  const checkoutTarget = "/pay/tmib?episode=act-001";
+  const checkoutRequest = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(checkoutTarget)}`);
+  assert.equal(I.statusReturnTarget(checkoutRequest), checkoutTarget);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, checkoutRequest), checkoutTarget);
 });
 
-test("My MMD serves the pending public-Wish coupon bridge as same-origin behavior code", async () => {
-  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd-assets/care-back-wish-link.js"), {});
-  const js = await response.text();
-
-  assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type") || "", /application\/javascript/);
-  assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");
-  assert.match(js, /mmd_care_back_wish_link/);
-  assert.match(js, /\/member\/api\/care-back\/link-wish/);
-  assert.match(js, /if \(response\.status === 401\) return/);
-  assert.match(js, /mmd:care-back:coupon-linked/);
-  assert.match(js, /Domain=mmdbkk\.com/);
-  assert.match(js, /window\.location\.reload\(\)/);
-});
-
-test("canonical My MMD HTML receives the pending Wish bridge without moving coupon authority into Lovable", async () => {
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = typeof input === "string" ? input : input.url;
-    if (String(url).startsWith("https://my-mmd-member-profile.lovable.app")) {
-      return new Response("<!doctype html><html><head><title>My MMD</title></head><body><main>Lovable app</main></body></html>", {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
-    }
-    return originalFetch(input);
-  };
-
-  try {
-    const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/"), {});
-    const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-care-back-wish-bridge"), "verified-coupon-v1");
-    assert.match(html, /<script src="\/my-mmd-assets\/care-back-wish-link\.js" defer><\/script><\/body>/);
-    assert.doesNotMatch(html, /wish_link_token\s*:/);
-  } finally {
-    globalThis.fetch = originalFetch;
+test("TMIB return-to-origin fails closed for external, privileged, or malformed targets", () => {
+  const hostileTargets = [
+    "https://evil.example/",
+    "//evil.example/tmib/act-001",
+    "/internal/admin",
+    "/pay/tmib?episode=../../internal/admin",
+    "/pay/tmib?episode=act-001&next=https://evil.example/",
+    "/tmib/not-an-act",
+  ];
+  for (const target of hostileTargets) {
+    const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+    assert.equal(I.statusReturnTarget(request), "/my-mmd/");
   }
+});
+
+test("LINE liff.state status launch gets the same direct My MMD return", () => {
+  const state = encodeURIComponent("/member/liff?intent=status");
+  const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
+  assert.equal(I.isStatusLiffShellRequest(request), true);
+  assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request));
+});
+
+test("LINE liff.state carries the coupon return target without allowing arbitrary redirects", () => {
+  const couponState = encodeURIComponent("/member/liff?intent=status&return_to=coupon");
+  const couponRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${couponState}`);
+  assert.equal(I.isStatusLiffShellRequest(couponRequest), true);
+  assert.equal(I.statusReturnTarget(couponRequest), "/my-mmd/coupons");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, couponRequest), "/my-mmd/coupons");
+
+  const hostileState = encodeURIComponent("/member/liff?intent=status&return_to=https://evil.example/");
+  const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
+  assert.equal(I.statusReturnTarget(hostileRequest), "/my-mmd/");
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest));
+});
+
+test("LINE liff.state carries the bounded TMIB origin", () => {
+  const target = "/pay/tmib?episode=act-001";
+  const state = encodeURIComponent(`/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+  const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
+  assert.equal(I.isStatusLiffShellRequest(request), true);
+  assert.equal(I.statusReturnTarget(request), target);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), target);
+});
+
+test("status shell defaults to status when LINE omits intent, but never steals campaign LIFF", () => {
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff")), true);
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff?liff_intent=unknown")), true);
+  assert.equal(I.isStatusLiffShellRequest(new Request("https://www.mmdbkk.com/member/liff?intent=promo&campaign=care_back")), false);
+});
+
+test("anonymous late 401 cannot clear a newly established LIFF session", async () => {
+  const request = new Request("https://www.mmdbkk.com/member/api/liff/status");
+  const response = new Response(JSON.stringify({ ok:false }), { status:401, headers:{ "set-cookie":"__Host-mmd_liff_session=; Max-Age=0; Path=/; Secure; HttpOnly" } });
+  const guarded = I.guardAnonymousSessionClear(request, response);
+  assert.equal(guarded.headers.get("set-cookie"), null);
+  assert.equal(guarded.headers.get("x-mmd-liff-cookie-race-guard"), "ignored-anonymous-stale-clear-v2");
+});
+
+test("CARE BACK LIFF bridge carries only a bounded opaque Wish token and returns to /coupon after link", () => {
+  const html = `<html><head></head><body><script nonce="abcdefgh12345678">async function readProfile(){ if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();\n    return payload.data || {}; }</script></body></html>`;
+  const request = new Request("https://www.mmdbkk.com/member/liff?intent=promo&campaign=care_back&wish_link_token=pw_abcdefghijklmnopqrstuvwxyz123456");
+  const output = I.injectCareBackWishBridge(html, request);
+  assert.match(output, /mmd-care-back-wish-liff-bridge/);
+  assert.match(output, /mmd:liff:member-ready/);
+  assert.match(output, /care-back\/link-wish/);
+  assert.match(output, /\/my-mmd\/coupons\?care_back=linked/);
+  assert.doesNotMatch(output, /\/my-mmd\/\?view=care/);
+  assert.doesNotMatch(output, /member_id|approved_discount_percent|line_user_id/);
 });

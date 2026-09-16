@@ -1,4 +1,8 @@
 import { CareBackStoreError, getCareBackStore } from "./care-back-claim-store.js";
+import {
+  approveCareBackPhase1RecoveryDiscount,
+  readCareBackPhase1Recovery,
+} from "./care-back-phase1-recovery.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const APPROVAL_PATH = "/__internal/care-back/approve-booking";
@@ -31,9 +35,15 @@ export async function handleTrustedCareBackBookingApproval(request, env = {}) {
   if (!jobFormat) return json({ ok: false, status: "review_required", error: "care_back_job_format_unresolved" }, 409);
   if (!modelLookup) return json({ ok: false, status: "review_required", error: "care_back_model_unresolved" }, 409);
 
-  const member = await resolveMember(env, lineUserId);
-  if (!member?.member_exists || !member.member_id || !member.profile) {
-    return json({ ok: false, status: "not_applicable", error: "care_back_member_not_resolved" }, 409);
+  let recovery = null;
+  try {
+    recovery = await readCareBackPhase1Recovery(env, lineUserId);
+  } catch (error) {
+    const code = clean(error?.code || "");
+    if (code && !["CARE_BACK_RECOVERY_STORAGE_UNAVAILABLE"].includes(code)) {
+      return json({ ok: false, status: "unavailable", error: code }, 503);
+    }
+    console.warn({ event: "care_back_phase1_recovery_lookup_unavailable", failure_class: code || "request_failure" });
   }
 
   const model = await resolveCanonicalModel(env, modelLookup);
@@ -48,6 +58,49 @@ export async function handleTrustedCareBackBookingApproval(request, env = {}) {
   const publicModelPercent = modelLevel === "Public Models" ? canonicalPublicPercent(model.fields || {}) : null;
   if (modelLevel === "Public Models" && !publicModelPercent) {
     return json({ ok: false, status: "review_required", error: "care_back_public_rate_unresolved" }, 409);
+  }
+
+  // Phase 1 recovery coupons are a Boss Per-approved compensation lane for
+  // customers whose Birthday Wish submission was lost/broken by MMD systems.
+  // Exact LINE identity + recovery authorization is sufficient for this coupon
+  // only. It does not create or widen membership, Points, or private access.
+  if (recovery) {
+    try {
+      const approved = await approveCareBackPhase1RecoveryDiscount(env, {
+        lineUserId,
+        modelLevel,
+        jobFormat,
+        publicModelPercent,
+      });
+      return json({
+        ok: true,
+        status: "approved",
+        booking_ref: clean(body.booking_ref) || null,
+        session_id: clean(body.session_id) || null,
+        model_record_id: model.id,
+        model_level: modelLevel,
+        job_format: jobFormat,
+        approved_discount_percent: approved.approved_discount_percent,
+        activated_at: approved.activated_at,
+        expires_at: approved.expires_at,
+        single_use: true,
+        recovery: true,
+        authority: "care_back_phase1_recovery_backend_verified_booking_v1",
+      });
+    } catch (error) {
+      const code = clean(error?.code || "CARE_BACK_RECOVERY_APPROVAL_UNAVAILABLE");
+      const reviewRequired = code === "CARE_BACK_DISCOUNT_CONTEXT_UNRESOLVED";
+      return json({
+        ok: false,
+        status: reviewRequired ? "review_required" : "unavailable",
+        error: code,
+      }, reviewRequired ? 409 : 503);
+    }
+  }
+
+  const member = await resolveMember(env, lineUserId);
+  if (!member?.member_exists || !member.member_id || !member.profile) {
+    return json({ ok: false, status: "not_applicable", error: "care_back_member_not_resolved" }, 409);
   }
 
   const store = getCareBackStore(env);

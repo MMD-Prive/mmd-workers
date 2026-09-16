@@ -62,6 +62,10 @@ new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
 binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
 
+[[r2_buckets]]
+binding = "PRIVATE_MODEL_MEDIA"
+bucket_name = "mmd-private-model-media"
+
 [[durable_objects.bindings]]
 name = "PRIVATE_PREVIEW_GATE"
 class_name = "PrivatePreviewGate"

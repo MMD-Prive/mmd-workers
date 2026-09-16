@@ -4,6 +4,16 @@ import test from "node:test";
 
 const source = await readFile(new URL("./mmd-canonical-cta-v4.js", import.meta.url), "utf8");
 
+test("routes member login to coupon or canonical My MMD without direct LIFF hop", () => {
+  assert.match(source, /const MY_MMD_CANONICAL = "\/my-mmd\/"/);
+  assert.match(source, /const COUPON_ENTRY = "\/coupon"/);
+  assert.match(source, /function memberLoginTarget\(\)/);
+  assert.match(source, /params\.get\("return_to"\) === "coupon" \? COUPON_ENTRY : MY_MMD_CANONICAL/);
+  assert.match(source, /if \(path === "\/member\/login"\)/);
+  assert.match(source, /document\.querySelectorAll\("\[data-mml-login\]"\)/);
+  assert.doesNotMatch(source, /if \(path === "\/member\/login"\) \{\s*setLinks\("\[data-mml-login\]", LIFF_STATUS\)/);
+});
+
 test("keeps generic member status on /member/dashboard", () => {
   assert.match(source, /const DASHBOARD = "\/member\/dashboard"/);
   assert.match(source, /path === "\/member\/payments"/);

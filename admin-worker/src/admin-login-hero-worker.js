@@ -1,7 +1,9 @@
+import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
 import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
 import { buildAudienceBriefLive } from "./audience-brief-live.js";
+import { maybeHandleHeldIdentityLinkRefresh } from "./sigil-jobs-identity-link-refresh.js";
 import {
   isPrivateModelAdminRequest,
   maybeHandlePrivateModelAdminRequest,
@@ -11,6 +13,16 @@ import {
   isModelConfirmActionRequest,
   maybeCreateInternalHoldAfterModelConfirm,
 } from "./model-confirm-cal-hold.js";
+import { enrichLineageWithPerRename } from "./per-rename-client-search.js";
+import {
+  enforcePrivateModelSearchPolicy,
+  guardPrivateJobCreateWork,
+  isPrivateModelSearchRequest,
+} from "./private-model-work-policy.js";
+import {
+  handleKenjiLv5OperationalRpc,
+  isKenjiLv5OperationalRpcRequest,
+} from "./kenji-lv5-operational-rpc.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -18,6 +30,10 @@ const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const MMS_PARTNER_PATH = "/internal/admin/mms";
 const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
 const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
+const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
+const LINEAGE_RECENT_PATH = "/v1/admin/clients/recent";
+const JOB_CREATE_PATH = "/v1/admin/job/create";
+const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
 let lineOfcContactBackfillKickStarted = false;
 
 function scheduleLineOfcContactBackfill(env, ctx) {
@@ -105,7 +121,8 @@ Delegated active-entrypoint contract markers.
 The implementation remains in the pre-model-line-link wrapper/core chain; these
 markers keep existing source-contract CI explicit while the outer wrappers add
 owner-reviewed MMD MODEL LINE-link behavior, read-only dashboard summary, verified
-Client Credit carry-forward authority, and the canonical owner Job Orchestrator.
+Client Credit carry-forward authority, the canonical owner Job Orchestrator, and
+canonical Private work capability enforcement.
 
 browser_admin_session_required
 forbidden_origin
@@ -118,22 +135,40 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
+    if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, env, ctx);
     scheduleLineOfcContactBackfill(env, ctx);
     if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
     let privateModelRequest = null;
+    let privateModelSearchRequest = null;
     let activationRequest = null;
     let modelConfirmRequest = null;
+    let perRenameRequest = null;
     let normalizedPath = "";
     const method = String(request.method || "GET").toUpperCase();
     try {
       normalizedPath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
       if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
+      if (isPrivateModelSearchRequest(request)) privateModelSearchRequest = request.clone();
       if (isModelConfirmActionRequest(request)) modelConfirmRequest = request.clone();
+      if (normalizedPath === LINEAGE_LOOKUP_PATH && method === "POST") perRenameRequest = request.clone();
       if (normalizedPath === MODEL_ACTIVATE_PATH && method === "POST") {
         activationRequest = request.clone();
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    // Kenji LV5 orchestration is service-binding only. The handler performs its
+    // own strict caller + internal bearer checks and never becomes domain truth.
+    if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
+      return handleKenjiLv5OperationalRpc(request, env);
+    }
+
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), env);
+      if (privateWorkBlocked) return privateWorkBlocked;
+      const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, env);
+      if (refreshed) return refreshed;
     }
 
     let response = await worker.fetch(request, env, ctx);
@@ -145,9 +180,22 @@ export default {
         (path) => delegatedJson(request, env, ctx, path),
       );
     }
+    if (privateModelSearchRequest) response = await enforcePrivateModelSearchPolicy(privateModelSearchRequest, response, env);
     if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
     if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
     if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
-    return enforceOwnerDashboardFirst(request, response);
+    if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, env);
+    response = await enforceOwnerDashboardFirst(request, response);
+
+    if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
+      const headers = new Headers(response.headers);
+      headers.set("X-MMD-Manual-Public-Fallback", MANUAL_PUBLIC_FALLBACK_MARKER);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+    return response;
   },
 };

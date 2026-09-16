@@ -6,13 +6,16 @@ import worker from "../src/index.js";
 const LINE_ID = `U${"a".repeat(32)}`;
 const RESOLVER_SECRET = "test-only-member-status-resolver-secret-1234567890";
 const RESOLVER_URL = "https://mmd-auth-worker.internal/__internal/member-status/resolve";
+const DIAGNOSTIC_URL = "https://mmd-auth-worker.internal/__internal/member-status/diagnostic";
 const PROFILE_URL = "https://mmd-auth-worker.internal/__internal/member-profile/read";
 const realFetch = globalThis.fetch;
 const realConsoleWarn = console.warn;
+const realConsoleInfo = console.info;
 
 afterEach(() => {
   globalThis.fetch = realFetch;
   console.warn = realConsoleWarn;
+  console.info = realConsoleInfo;
 });
 
 function env(overrides = {}) {
@@ -32,6 +35,105 @@ function resolverRequest(body, { secret = RESOLVER_SECRET, contentType = "applic
   if (secret) headers["x-mmd-member-resolver-secret"] = secret;
   return new Request(RESOLVER_URL, { method: "POST", headers, body: JSON.stringify(body) });
 }
+
+function diagnosticRequest(secret = RESOLVER_SECRET) {
+  const headers = secret ? { "x-mmd-member-resolver-secret": secret } : {};
+  return new Request(DIAGNOSTIC_URL, { method: "POST", headers });
+}
+
+function assertSafeDiagnosticEvent(event, expectedFailureClass) {
+  assert.deepEqual(Object.keys(event).sort(), ["duration_ms", "event", "failure_class", "stage"]);
+  assert.equal(event.event, "member_status_resolver_diagnostic");
+  assert.equal(event.stage, "airtable_members_lookup");
+  assert.equal(event.failure_class, expectedFailureClass);
+  assert.ok(Number.isInteger(event.duration_ms) && event.duration_ms >= 0);
+  assert.doesNotMatch(JSON.stringify(event), /mmd_internal_noncustomer|U[a-f0-9]{32}|@|rec_private|app_test|line_user_id|Authorization|Bearer|test-airtable-key|test-only-member-status-resolver-secret/i);
+}
+
+test("resolver diagnostic requires the existing service authentication boundary", async () => {
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider must not be called");
+  };
+
+  for (const secret of ["", "wrong-service-secret-that-is-long-enough-1234567890"]) {
+    const response = await worker.fetch(diagnosticRequest(secret), env());
+    assert.equal(response.status, 404);
+    assert.deepEqual(await response.json(), { ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+  }
+  assert.equal(providerCalls, 0);
+});
+
+test("resolver diagnostic returns only healthy_zero_match and performs one read-only lookup", async () => {
+  const events = [];
+  console.info = (event) => events.push(event);
+  let providerCalls = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    providerCalls += 1;
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "api.airtable.com");
+    assert.equal(url.pathname, "/v0/app_test/Members");
+    assert.equal(init.method || "GET", "GET");
+    assert.equal(init.body, undefined);
+    assert.equal(url.searchParams.get("maxRecords"), "2");
+    assert.ok(url.searchParams.get("filterByFormula"));
+    return Response.json({ records: [] });
+  };
+
+  const response = await worker.fetch(diagnosticRequest(), env());
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, result: "healthy_zero_match" });
+  assert.equal(providerCalls, 1);
+  assert.equal(events.length, 1);
+  assertSafeDiagnosticEvent(events[0], "none");
+});
+
+test("resolver diagnostic maps provider and malformed/network failures to a generic private response", async () => {
+  const sensitive = "private-provider-token-record-email@example.com";
+  const cases = [
+    ["provider 401", "provider_401", async () => new Response(sensitive, { status: 401 })],
+    ["provider 403", "provider_403", async () => new Response(sensitive, { status: 403 })],
+    ["provider 404", "provider_404", async () => new Response(sensitive, { status: 404 })],
+    ["provider 422", "provider_422", async () => new Response(sensitive, { status: 422 })],
+    ["provider 429", "provider_429", async () => new Response(sensitive, { status: 429 })],
+    ["provider 5xx", "provider_5xx", async () => new Response(sensitive, { status: 503 })],
+    ["malformed response", "malformed_response", async () => Response.json({ records: sensitive })],
+    ["network failure", "network_failure", async () => { throw new Error(sensitive); }],
+  ];
+
+  for (const [name, expectedFailureClass, provider] of cases) {
+    const events = [];
+    console.warn = (event) => events.push(event);
+    globalThis.fetch = provider;
+    const response = await worker.fetch(diagnosticRequest(), env());
+    const payload = await response.json();
+    assert.equal(response.status, 503, name);
+    assert.deepEqual(payload, { ok: false, result: "generic_failure" }, name);
+    assert.equal(events.length, 1, name);
+    assertSafeDiagnosticEvent(events[0], expectedFailureClass);
+    assert.doesNotMatch(JSON.stringify({ payload, events }), /private-provider|token-record|email@example\.com/i);
+  }
+});
+
+test("resolver diagnostic timeout fails generically, logs safely, and performs zero writes", async () => {
+  const events = [];
+  console.warn = (event) => events.push(event);
+  let writes = 0;
+  globalThis.fetch = async (_input, init = {}) => {
+    if ((init.method || "GET") !== "GET" || init.body !== undefined) writes += 1;
+    return new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    });
+  };
+
+  const response = await worker.fetch(diagnosticRequest(), env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, result: "generic_failure" });
+  assert.equal(writes, 0);
+  assert.equal(events.length, 1);
+  assertSafeDiagnosticEvent(events[0], "timeout");
+});
 
 async function captureResolverFailure(run) {
   const warnings = [];

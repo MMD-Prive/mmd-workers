@@ -258,7 +258,6 @@ LINE_KENJI_AI_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
-MMS_LINE_AI_ENABLED = "true"
 # Customer continuity is resolved from the canonical Conversation Matrix before
 # a LINE reply is selected. Post-turn write-back updates only bounded state;
 # Memory remains context and protected current truth still comes from its owner.
@@ -289,7 +288,7 @@ TELEGRAM_PAYMENT_THREAD_ID = "22"
 TELEGRAM_MEMBERSHIP_THREAD_ID = "20"
 TELEGRAM_ALERTS_THREAD_ID = "9"
 TG_THREAD_PAYMENTS_CONFIRM = "22"
-TG_THREAD_PAYMENTS_MEMBERSHIP = "20"
+TG_THREAD_MEMBERSHIP = "20"
 TG_THREAD_ALERTS = "9"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
@@ -305,6 +304,13 @@ LINE_KENJI_MODEL_CANARY_HASHES = ""
 LINE_KENJI_MODEL_KNOWLEDGE_IDS = ""
 LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW = "3"
 LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS = "900"
+
+# MMS AI Knowledge Master V4 runtime. Static/clarification replies can run
+# without model generation; model replies remain read-only and never perform
+# MMS mutations. User-specific live truth must come from mms-worker contracts.
+MMS_LINE_AI_ENABLED = "true"
+MMS_LINE_AI_MODEL_ENABLED = "true"
+MMS_OPENAI_MODEL = "gpt-5.6"
 
 [[durable_objects.bindings]]
 name = "KENJI_MODEL_DEDUPE"

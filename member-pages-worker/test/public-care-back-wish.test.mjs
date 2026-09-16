@@ -67,7 +67,7 @@ function verifiedCouponStore(expectedIdentity = IDENTITY) {
   };
 }
 
-test("public Wish succeeds without LINE session or LIFF secret and only offers optional coupon verification", async () => {
+test("public Wish saves first and requires LINE coupon claim", async () => {
   const env = { PUBLIC_CARE_BACK_WISH_STORE: publicStore() };
   const response = await handlePublicWish(request("/member/api/care-back/public-wish", {
     wish_text: "สุขสันต์วันเกิด MMD ครับ",
@@ -81,10 +81,11 @@ test("public Wish succeeds without LINE session or LIFF secret and only offers o
   assert.match(payload.wish_link_token, /^pw_[A-Za-z0-9_-]+$/);
   assert.equal(payload.benefits.verification_required, false);
   assert.equal(payload.benefits.coupon, false);
-  assert.equal(payload.benefits.coupon_after_verification, true);
+  assert.equal(payload.benefits.coupon_after_verification, false);
+  assert.equal(payload.benefits.coupon_claim_required, true);
   assert.equal(payload.benefits.membership_extension, false);
   assert.equal(payload.benefits.points, false);
-  assert.equal(payload.final_display.next_action, "optional_coupon_verification");
+  assert.equal(payload.final_display.next_action, "required_coupon_claim");
   assert.match(response.headers.get("set-cookie") || "", /mmd_care_back_wish_link=pw_/);
   assert.equal(payload.grants.membership, false);
   assert.equal(payload.grants.points, false);
@@ -266,3 +267,88 @@ async function keyedDigest(value) {
   const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+test("publication opt-in is strictly boolean and never accepts browser member authority", async () => {
+  for (const consent of ['true', 1, null, {}]) {
+    const response = await handlePublicWish(request('/member/api/care-back/public-wish', {
+      wish_text: 'Private by default', request_id: 'wish-consent-validation-001', public_display_consent: consent,
+    }), { PUBLIC_CARE_BACK_WISH_STORE: publicStore() });
+    assert.equal(response.status, 400);
+  }
+  const response = await handlePublicWish(request('/member/api/care-back/public-wish', {
+    wish_text: 'Cannot self-verify', request_id: 'wish-consent-authority-001', public_display_consent: true, public_display_member_verified: true,
+  }), { PUBLIC_CARE_BACK_WISH_STORE: publicStore() });
+  assert.equal(response.status, 400);
+});
+
+test("Airtable feed exposes only explicitly consenting verified linked member wishes, with no identity fields", async () => {
+  const { handlePublicCareBackWishRoute } = await import('../src/public-care-back-wish.js');
+  const originalFetch = globalThis.fetch;
+  const time = '2026-09-16T12:00:00.000Z';
+  const payload = { public_display_consent: true, public_display_consent_version: 'wish-wall-v1', public_display_consented_at: time, public_display_customer_verified: true, public_display_customer_verified_at: time, wish_kind: 'verified_identity_linked' };
+  const row = (changes = {}, fields = {}) => ({ id: 'recABCDEFGHIJKLMN', fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'Approved member wish', submitted_at: time, 'Campaign Claim': ['recABCDEFGHIJKLMN'], verified_customer_ref_hash: 'private-hash', payload_json: JSON.stringify({ ...payload, ...changes }), ...fields } });
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /sort%5B0%5D%5Bdirection%5D=desc/);
+    return Response.json({ records: [
+      row(), row({ public_display_consent: false }), row({ public_display_consent: 'true' }),
+      row({ public_display_customer_verified: false }), row({ public_display_customer_verified: 'true' }),
+      row({ public_display_consented_at: null }), row({ wish_kind: 'public_unlinked' }),
+      row({ public_display_customer_verified_at: null }), row({}, { payload_json: '{}' }),
+      row({}, { payload_json: 'malformed' }), row({}, { wish_text: '<script>alert(1)</script>' }),
+    ] });
+  };
+  try {
+    const response = await handlePublicCareBackWishRoute(new Request(ORIGIN + '/member/api/care-back/public-wish'), {
+      AIRTABLE_API_KEY: 'pat_test', AIRTABLE_BASE_ID: 'appsV1ILPRfIjkaYg',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.deepEqual(await response.json(), { ok: true, wishes: [{ text: 'Approved member wish', submitted_at: time }] });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("Airtable feed exposes owner-approved historical customer wishes across campaign phases", async () => {
+  const { handlePublicCareBackWishRoute } = await import('../src/public-care-back-wish.js');
+  const originalFetch = globalThis.fetch;
+  const time = '2026-09-16T00:00:00.000Z';
+  globalThis.fetch = async () => Response.json({ records: [
+    { fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'Historical customer wish', submitted_at: time, payload_json: JSON.stringify({ public_display_owner_approved: true, public_display_owner_approved_at: time, public_display_approval_basis: 'owner_request_publish_all_real_wishes_all_phases_2026-09-16' }) } },
+    { fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'STAGING smoke wish', submitted_at: time, payload_json: '{}' } },
+  ] });
+  try {
+    const response = await handlePublicCareBackWishRoute(new Request(ORIGIN + '/member/api/care-back/public-wish'), { AIRTABLE_API_KEY: 'pat_test', AIRTABLE_BASE_ID: 'appsV1ILPRfIjkaYg' });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, wishes: [{ text: 'Historical customer wish', submitted_at: time }] });
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("publication consent persists across real Airtable linking; member eligibility comes only from signed session", async () => {
+  const originalFetch = globalThis.fetch;
+  for (const [consent, member, membershipStatus] of [[true, true, 'active'], [false, true, 'active'], [true, false, 'active'], [true, true, 'blocked']]) {
+    let stored;
+    globalThis.fetch = async (url, init = {}) => {
+      if ((init.method || 'GET') === 'GET') return Response.json({ records: stored ? [stored] : [] });
+      const fields = JSON.parse(init.body).fields;
+      if (init.method === 'POST') stored = { id: 'recABCDEFGHIJKLMN', fields };
+      else stored = { ...stored, fields: { ...stored.fields, ...fields } };
+      return Response.json(stored);
+    };
+    try {
+      const env = {
+        AIRTABLE_API_KEY: 'pat_test', AIRTABLE_BASE_ID: 'appsV1ILPRfIjkaYg', LIFF_SESSION_SECRET: SECRET,
+        LIFF_IDENTITY_KV: { get: async () => ({ expires_at: Date.now() + 60000, identity_key: IDENTITY, member_exists: member, member_id: member ? 'mem_001' : '', member_profile: { membership_status: membershipStatus }, campaign_claim_id: 'careback001', campaign_claim_record_id: 'recABCDEFGHIJKLMN' }) },
+        VERIFIED_WISH_COUPON_STORE: verifiedCouponStore(),
+        CARE_BACK_STORE: { openOrResume: async () => ({}) },
+      };
+      const saved = await handlePublicWish(request('/member/api/care-back/public-wish', { wish_text: 'My wish', request_id: 'wish-store-consent-00001', public_display_consent: consent }), env);
+      const savedBody = await saved.json();
+      assert.equal(saved.status, 200);
+      assert.equal(JSON.parse(stored.fields.payload_json).public_display_consent, consent);
+      const linked = await handleLinkWish(request('/member/api/care-back/link-wish', { wish_link_token: savedBody.wish_link_token }, '__Host-mmd_liff_session=session-verified'), env);
+      assert.equal(linked.status, 200);
+      const data = JSON.parse(stored.fields.payload_json);
+      assert.equal(data.public_display_consent, consent);
+      assert.equal(data.public_display_member_verified, member && membershipStatus !== 'blocked');
+    } finally { globalThis.fetch = originalFetch; }
+  }
+});

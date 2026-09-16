@@ -13,6 +13,7 @@ const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
 const CALENDAR_API_PATH = "/v1/admin/calendar";
 const CALENDAR_PAGE_PATH = "/internal/admin/calendar";
+const ALL_JOBS_PAGE_PATH = "/internal/admin/jobs/all";
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
 const MODEL_SESSION_RUNTIME_PATHS = new Set(["/v1/model/session/current", "/v1/model/session/action"]);
 
@@ -28,6 +29,54 @@ function lifecycleEnv(env = {}, path = "") {
     ...env,
     AT_SESSIONS__STATE: clean(env.AT_SESSIONS__CANONICAL_STATE, 120) || "model_session_state",
     AT_SESSIONS__STATE_UPDATED_AT: clean(env.AT_SESSIONS__STATE_UPDATED_AT, 120) || "model_session_state_updated_at",
+  };
+}
+function isLegacyDynamicJobHref(value) {
+  const href = clean(value, 500);
+  return /^\/internal\/admin\/jobs\/(?!all(?:[/?#]|$)|create-job(?:[/?#]|$)|create-session(?:[/?#]|$)|prefill(?:[/?#]|$))[^/?#]+(?:[?#].*)?$/.test(href);
+}
+function allJobsHref(jobDate = "") {
+  const date = clean(jobDate, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${ALL_JOBS_PAGE_PATH}?date=${date}` : ALL_JOBS_PAGE_PATH;
+}
+export function canonicalizeDashboardJobLinks(payload = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+
+  const sourceJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+  const dateByLegacyHref = new Map();
+  for (const item of sourceJobs) {
+    if (!item || typeof item !== "object" || !isLegacyDynamicJobHref(item.href)) continue;
+    dateByLegacyHref.set(clean(item.href, 500), clean(item.job_date, 10));
+  }
+
+  const jobs = sourceJobs.map((item) => {
+    if (!item || typeof item !== "object" || !isLegacyDynamicJobHref(item.href)) return item;
+    return { ...item, href: allJobsHref(item.job_date) };
+  });
+  const todos = Array.isArray(payload.todos)
+    ? payload.todos.map((item) => {
+        if (!item || typeof item !== "object" || !isLegacyDynamicJobHref(item.href)) return item;
+        return { ...item, href: allJobsHref(dateByLegacyHref.get(clean(item.href, 500))) };
+      })
+    : payload.todos;
+  const queues = payload.queues && typeof payload.queues === "object" && !Array.isArray(payload.queues)
+    ? Object.fromEntries(Object.entries(payload.queues).map(([key, value]) => {
+        if (!value || typeof value !== "object") return [key, value];
+        if (clean(value.href, 500) === "/internal/admin/jobs") {
+          return [key, { ...value, href: `${ALL_JOBS_PAGE_PATH}?ops=confirm` }];
+        }
+        if (isLegacyDynamicJobHref(value.href)) {
+          return [key, { ...value, href: ALL_JOBS_PAGE_PATH }];
+        }
+        return [key, value];
+      }))
+    : payload.queues;
+
+  return {
+    ...payload,
+    ...(Array.isArray(payload.jobs) ? { jobs } : {}),
+    ...(Array.isArray(payload.todos) ? { todos } : {}),
+    ...(payload.queues && typeof payload.queues === "object" && !Array.isArray(payload.queues) ? { queues } : {}),
   };
 }
 async function readOwnerActor(request, env, ctx) {
@@ -61,11 +110,13 @@ async function augmentDashboard(response, env) {
   const projected = ownerOps?.ok
     ? augmentDashboardPayload(payload, ownerOps)
     : { ...payload, owner_actions: { authority: "model_session_contract_v1", state: "degraded", error: ownerOps?.error || "owner_ops_unavailable" } };
+  const canonicalized = canonicalizeDashboardJobLinks(projected);
   const headers = new Headers(response.headers);
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store, private");
   headers.set("x-mmd-job-orchestrator", ownerOps?.ok ? "owner-ops-v1" : "owner-ops-degraded");
-  return new Response(JSON.stringify(projected), { status: response.status, statusText: response.statusText, headers });
+  headers.set("x-mmd-dashboard-job-links", "all-jobs-v1");
+  return new Response(JSON.stringify(canonicalized), { status: response.status, statusText: response.statusText, headers });
 }
 function calendarLoginRedirect(request) {
   const login = new URL("/internal/admin/login", request.url);

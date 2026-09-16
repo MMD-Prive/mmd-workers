@@ -3,12 +3,15 @@ import {
   handleKenjiSeedLineRequest,
   isKenjiSeedLineRequest,
   kenjiTelemetryEventId,
+  writeKenjiAiMessageEvent,
 } from "./kenji-seed-line-runtime.mjs";
 import { redeliveryOutcomeFromAiEvent } from "./kenji-line-redelivery-policy.mjs";
 import {
   linkCanonicalKenjiLineClientAfterTurn,
   resolveCanonicalKenjiLineClient,
 } from "./kenji-line-canonical-client-resolution.mjs";
+import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
+import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -36,8 +39,6 @@ function json(payload, status = 200) {
 function membershipStatusText(value = "") {
   const normalized = text(value).normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
   if (!normalized) return false;
-  // Preserve the original campaign question for V2 classification. Signature,
-  // redelivery, privacy and account-truth guards still run on their normal paths.
   if (/care[\s_-]*back|แคร์\s*แบ[็๊]?ก|แคร์\s*แบค|double[\s_-]*moment|ดับเบิล\s*โมเมนต์/i.test(normalized)) return false;
   if (/(?:membership|member)\s*status|status\s*(?:membership|member)/i.test(normalized)) return true;
   if (/(?:เช็ก|เช็ค|ตรวจ|ตรวจสอบ|ดู|ขอดู|ขอเช็ก|ขอเช็ค).{0,16}สถานะ(?:การ)?สมาชิก/i.test(normalized)) return true;
@@ -133,6 +134,28 @@ function scheduleCanonicalCustomerMemory(ctx, env, events) {
   return work;
 }
 
+async function runOperationalTelemetry(env, operational) {
+  if (!operational?.handled || !operational?.event || !operational?.decision) return null;
+  return writeKenjiAiMessageEvent({
+    env,
+    event: operational.event,
+    decision: operational.decision,
+    delivered: operational.delivered === true,
+    attempted: operational.attempted === true,
+    deliveryStatus: operational.delivery_status,
+  }).catch(() => ({ skipped: true, reason: "lv5_operational_telemetry_runtime_error" }));
+}
+
+function scheduleOperationalSideEffects(ctx, env, events, operational) {
+  const work = Promise.all([
+    runOperationalTelemetry(env, operational),
+    notifyKenjiLv5Hype(env, operational?.event || {}, operational?.decision || {}).catch(() => ({ skipped: true, reason: "lv5_hype_runtime_error" })),
+    syncCanonicalCustomerMemory(env, events).catch(() => []),
+  ]);
+  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
+  return work;
+}
+
 /** Normalize only the existing public, read-only GET diagnostic after edge routing. */
 export function kenjiSalesV2SmokeRequest(request) {
   if (!isKenjiSeedLineRequest(request) || request.method !== "GET" || request.headers.get("x-mmd-kenji-sales-v2-smoke") !== "1") return request;
@@ -172,6 +195,20 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
   const membershipStatusIndexes = events
     .map((event, index) => membershipStatusEvent(event) ? index : -1)
     .filter((index) => index >= 0);
+
+  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0) {
+    const operationalRequest = new Request(request.url, {
+      method: "POST",
+      headers: new Headers(request.headers),
+      body: rawBody,
+    });
+    const operational = await tryHandleKenjiLv5LineOperationalRequest(operationalRequest, env, ctx).catch(() => null);
+    if (operational?.handled && operational.response) {
+      const sideEffects = scheduleOperationalSideEffects(ctx, env, events, operational);
+      if (typeof ctx?.waitUntil !== "function") await sideEffects;
+      return operational.response;
+    }
+  }
 
   const outcomes = new Map();
   await Promise.all(redeliveryIndexes.map(async (index) => {

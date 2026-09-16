@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "member-pages-worker/**"
+      - "shared/private-media.mjs"
+      - "scripts/ensure-private-media-bucket.mjs"
       - ".github/workflows/deploy-member-pages-worker.yml"
 
 concurrency:
@@ -127,10 +129,17 @@ jobs:
           npm ci
           npm ci --prefix member-pages-worker/test-runtime
 
-      - name: Run focused LIFF and CARE BACK tests
+      - name: Run focused LIFF, CARE BACK, and model Drive tests
         run: |
           npm run test:member-pages-liff
+          node --test member-pages-worker/test/model-drive-directory.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/private-preview.test.mjs shared/private-media.test.mjs
           npm run check:member-pages-wrangler
+
+      - name: Verify private media bucket is private
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+        run: node scripts/ensure-private-media-bucket.mjs
 
       - name: Validate Cloudflare deploy
         working-directory: member-pages-worker
@@ -157,6 +166,76 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/member-pages-worker-deploy.log"
           version_id="$(sed -n 's/.*Current Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/member-pages-worker-deploy.log" | tail -n 1)"
           echo "MEMBER_PAGES_WORKER_VERSION_ID=${version_id:-direct-deploy}" >> "$GITHUB_ENV"
+
+      - name: Smoke production Exclusive EMs15 Drive resolution
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const crypto = require("node:crypto");
+
+          (async () => {
+            const secret = String(process.env.AIRTABLE_API_KEY || "").trim();
+            if (!secret) throw new Error("Model Drive directory signing secret is unavailable");
+
+            const base = "https://member-pages-worker.malemodel-bkk.workers.dev";
+            const ems15Id = "1CCf755JC6-e4VPM5ApqadNozXVFpofmh";
+            const expectedRoot = "1j1NRB44PboVQR91M8-17Vb8kcCTCLS97";
+            const expectedScope = `exclusive:drive:${ems15Id}`;
+
+            async function signedFetch(url, { method = "GET", body = "" } = {}) {
+              const timestamp = String(Math.floor(Date.now() / 1000));
+              const bodyHash = crypto.createHash("sha256").update(body).digest("hex");
+              const canonical = `${timestamp}\n${method}\n${url.pathname}\n${url.search}\n${bodyHash}`;
+              const signature = crypto.createHmac("sha256", secret).update(canonical).digest("hex");
+              return fetch(url, {
+                method,
+                body: method === "GET" ? undefined : body,
+                headers: {
+                  accept: "application/json",
+                  "content-type": "application/json",
+                  "x-mmd-model-drive-ts": timestamp,
+                  "x-mmd-model-drive-signature": signature,
+                },
+                redirect: "manual",
+              });
+            }
+
+            const search = new URL("/__internal/model-drive/search", base);
+            search.searchParams.set("q", "EMs15");
+            search.searchParams.set("lane", "all");
+
+            const response = await signedFetch(search);
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.ok !== true || !Array.isArray(payload?.items)) {
+              throw new Error(`EMs15 signed Drive search failed: HTTP ${response.status} ${JSON.stringify(payload).slice(0, 300)}`);
+            }
+
+            const candidate = payload.items.find((item) => item?.drive_folder_id === ems15Id);
+            if (!candidate) throw new Error(`EMs15 was not returned by approved Drive search; count=${payload.items.length}`);
+            if (candidate.lane !== "exclusive") throw new Error(`EMs15 lane must be exclusive; got ${candidate.lane}`);
+            if (candidate.folder_scope_key !== expectedScope) throw new Error(`EMs15 folder_scope_key mismatch: ${candidate.folder_scope_key}`);
+            if (candidate.approved_root_id !== expectedRoot) throw new Error(`EMs15 approved_root_id mismatch: ${candidate.approved_root_id}`);
+            if (!String(candidate.folder_path || "").includes("MMD Exclusive Models / Exclusive VIP / Both / EMs15")) {
+              throw new Error(`EMs15 folder_path mismatch: ${candidate.folder_path}`);
+            }
+
+            const resolve = new URL("/__internal/model-drive/resolve", base);
+            const body = JSON.stringify({ drive_folder_id: ems15Id });
+            const resolvedResponse = await signedFetch(resolve, { method: "POST", body });
+            const resolved = await resolvedResponse.json().catch(() => ({}));
+            if (!resolvedResponse.ok || resolved?.ok !== true || resolved?.item?.drive_folder_id !== ems15Id) {
+              throw new Error(`EMs15 exact Drive re-resolution failed: HTTP ${resolvedResponse.status} ${JSON.stringify(resolved).slice(0, 300)}`);
+            }
+            if (resolved?.item?.lane !== "exclusive") throw new Error(`EMs15 re-resolution lost exclusive lane: ${resolved?.item?.lane}`);
+            if (resolved?.item?.folder_scope_key !== expectedScope) throw new Error(`EMs15 re-resolution scope mismatch: ${resolved?.item?.folder_scope_key}`);
+
+            console.log(`EMs15 production Drive smoke passed: ${expectedScope}`);
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
 
       - name: Smoke production public Wish endpoint
         shell: bash

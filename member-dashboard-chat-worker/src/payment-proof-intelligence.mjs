@@ -172,7 +172,9 @@ function choosePurpose({ membership, service, contextText, renewal }) {
   if (membership && (membershipText || renewal?.id) && !serviceText) return { ...membership, inferred_label: membershipInferenceLabel(membership), ambiguous: false, match_basis: renewal?.id ? "renewal_record_match" : "explicit_membership_context" };
   if (service && service.confidence >= 0.9) return service;
   if (membership && membership.confidence >= 0.9) return { ...membership, inferred_label: membershipInferenceLabel(membership), ambiguous: false, match_basis: "membership_amount_identity_match" };
-  return service || (membership ? { ...membership, inferred_label: membershipInferenceLabel(membership), ambiguous: false, match_basis: "membership_amount_candidate" } : null);
+  // A price alone is only a candidate signal. Do not turn a generic service/MMS
+  // slip into membership truth merely because its amount matches a member price.
+  return service || null;
 }
 
 export async function analyzeProductionPaymentProof({ env = {}, image, lineUserId = "", contextText = "" } = {}) {
