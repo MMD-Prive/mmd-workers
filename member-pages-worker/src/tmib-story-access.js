@@ -1,15 +1,17 @@
 import { handleMemberAppApi, normalizeLevel, readMemberAppSession } from "./member-app-api.js";
+import {
+  TMIB_EPISODE_CATALOG,
+  getTmibEpisode,
+  normalizeTmibEpisodeId,
+  publicTmibEpisodeMetadata,
+} from "./tmib-episode-catalog.js";
 
-const ROOT = "/member/api/liff/tmib/episodes/act-001";
-const EPISODE_ID = "act-001";
-const PRICE_THB = 299;
-const PACKAGE_CODE = "tmib_act_001";
-const PAYMENT_STAGE = "tmib_story";
+const API_ROOT = "/member/api/liff/tmib/episodes";
 const MEDIA_TTL_SECONDS = 5 * 60;
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAYMENTS_TABLE_DEFAULT = "tblWGGJJOx5eBvBZJ";
-const FRAMES = Array.from({ length: 17 }, (_, index) => String(index + 4).padStart(2, "0"));
 const MEMBER_LEVELS = new Set(["public_member", "elite", "red_card", "standard", "premium", "vip", "svip", "black_card"]);
+const ACT_001 = getTmibEpisode("act-001");
 
 function clean(value, max = 4000) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -20,13 +22,36 @@ function normalizePath(value) {
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
+function episodeRoot(episode) {
+  return `${API_ROOT}/${episode.id}`;
+}
+
+function parseRoute(input) {
+  const url = input instanceof URL ? input : new URL(String(input));
+  const path = normalizePath(url.pathname);
+  const prefix = `${API_ROOT}/`;
+  if (!path.startsWith(prefix)) return null;
+  const parts = path.slice(prefix.length).split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const episodeId = normalizeTmibEpisodeId(parts[0]);
+  if (!episodeId) return null;
+  const action = parts[1];
+  if (["catalog", "access", "purchase"].includes(action) && parts.length === 2) {
+    return { episodeId, action, detail: "" };
+  }
+  if (action === "media" && parts.length === 3) {
+    return { episodeId, action, detail: clean(parts[2], 16) };
+  }
+  return null;
+}
+
 function json(payload, status = 200, headers = {}) {
   return Response.json(payload, {
     status,
     headers: {
       "cache-control": "no-store, private",
       "x-robots-tag": "noindex, noarchive, nosnippet, noimageindex",
-      "x-mmd-tmib-story": "v1",
+      "x-mmd-tmib-story": "v2",
       ...headers,
     },
   });
@@ -66,12 +91,12 @@ async function userKey(env, lineUserId) {
   return hmacHex(secret, `tmib-user:${lineUserId}`);
 }
 
-function entitlementKey(hash) {
-  return `tmib:episode:${EPISODE_ID}:user:${hash}`;
+function entitlementKey(episode, hash) {
+  return `tmib:episode:${episode.id}:user:${hash}`;
 }
 
-function canonicalPurchaseSession(hash) {
-  return `tmib_${EPISODE_ID.replace(/[^a-z0-9]/g, "")}_${hash.slice(0, 32)}`;
+function canonicalPurchaseSession(episode, hash) {
+  return `tmib_${episode.id.replace(/[^a-z0-9]/g, "")}_${hash.slice(0, 32)}`;
 }
 
 function memberRequest(request) {
@@ -136,7 +161,13 @@ async function findPaymentByRef(env, paymentRef) {
   return null;
 }
 
-export function paymentGrantsTmib(record) {
+function resolveEpisode(value) {
+  return typeof value === "object" && value?.id ? getTmibEpisode(value.id) : getTmibEpisode(value || "act-001");
+}
+
+export function paymentGrantsTmib(record, episodeValue = "act-001") {
+  const episode = resolveEpisode(episodeValue);
+  if (!episode) return false;
   const fields = record?.fields && typeof record.fields === "object" ? record.fields : {};
   const paymentStatus = clean(first(fields, ["Payment Status", "payment_status", "status"]), 80).toLowerCase();
   const verification = clean(first(fields, ["Verification Status", "verification_status"]), 80).toLowerCase();
@@ -147,9 +178,9 @@ export function paymentGrantsTmib(record) {
     || clean((notes.match(/stage=([^;\n]+)/i) || [])[1], 80).toLowerCase();
   return ["paid", "completed", "success"].includes(paymentStatus)
     && ["verified", "approved"].includes(verification)
-    && packageCode === PACKAGE_CODE
-    && amount === PRICE_THB
-    && stage === PAYMENT_STAGE;
+    && packageCode === episode.packageCode.toLowerCase()
+    && amount === episode.priceThb
+    && stage === episode.paymentStage.toLowerCase();
 }
 
 function sameOrigin(request) {
@@ -170,7 +201,7 @@ function canonicalPayUrl(value) {
   }
 }
 
-async function paymentIntent(env, sessionId) {
+async function paymentIntent(env, episode, sessionId) {
   if (!env.PAYMENTS_WORKER?.fetch) return null;
   const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments.internal/v1/pay/verify", {
     method: "POST",
@@ -181,9 +212,9 @@ async function paymentIntent(env, sessionId) {
     },
     body: JSON.stringify({
       session_id: sessionId,
-      payment_stage: PAYMENT_STAGE,
-      amount: PRICE_THB,
-      package_code: PACKAGE_CODE,
+      payment_stage: episode.paymentStage,
+      amount: episode.priceThb,
+      package_code: episode.packageCode,
       payment_method: "promptpay",
     }),
   }));
@@ -195,28 +226,30 @@ async function paymentIntent(env, sessionId) {
   return { paymentRef, paymentUrl, sessionId };
 }
 
-async function readStoredGrant(env, hash) {
+async function readStoredGrant(env, episode, hash) {
   if (!env.LIFF_IDENTITY_KV?.get) return null;
-  return env.LIFF_IDENTITY_KV.get(entitlementKey(hash), "json").catch(() => null);
+  return env.LIFF_IDENTITY_KV.get(entitlementKey(episode, hash), "json").catch(() => null);
 }
 
-async function storeGrant(env, hash, data) {
+async function storeGrant(env, episode, hash, data) {
   if (!env.LIFF_IDENTITY_KV?.put) return false;
-  await env.LIFF_IDENTITY_KV.put(entitlementKey(hash), JSON.stringify(data));
+  await env.LIFF_IDENTITY_KV.put(entitlementKey(episode, hash), JSON.stringify(data));
   return true;
 }
 
-async function resolveEpisodeAccess(request, env, session, hash) {
-  const stored = await readStoredGrant(env, hash);
+async function resolveEpisodeAccess(request, env, hash, episode) {
+  const stored = await readStoredGrant(env, episode, hash);
   if (stored?.state === "granted") return { granted: true, source: "episode_purchase", paymentRef: clean(stored.payment_ref, 220) || null };
 
-  const membership = await resolveMembership(request, env);
-  if (membership) return { granted: true, source: "membership", level: normalizeLevel(membership.level) };
+  if (episode.membershipIncluded === true) {
+    const membership = await resolveMembership(request, env);
+    if (membership) return { granted: true, source: "membership", level: normalizeLevel(membership.level) };
+  }
 
   if (stored?.state === "pending" && clean(stored.payment_ref, 220)) {
     const record = await findPaymentByRef(env, clean(stored.payment_ref, 220));
-    if (paymentGrantsTmib(record)) {
-      await storeGrant(env, hash, {
+    if (paymentGrantsTmib(record, episode)) {
+      await storeGrant(env, episode, hash, {
         state: "granted",
         payment_ref: clean(stored.payment_ref, 220),
         granted_at: new Date().toISOString(),
@@ -228,29 +261,40 @@ async function resolveEpisodeAccess(request, env, session, hash) {
   return { granted: false };
 }
 
-async function mediaMap(env, hash) {
+async function mediaMap(env, hash, episode) {
   const secret = secretFor(env);
   const exp = Math.floor(Date.now() / 1000) + MEDIA_TTL_SECONDS;
   const media = {};
-  for (const frame of FRAMES) {
-    const sig = await hmacHex(secret, `tmib-media:${EPISODE_ID}:${frame}:${exp}:${hash}`);
-    media[frame] = `${ROOT}/media/${frame}?exp=${exp}&sig=${sig}`;
+  for (const frame of episode.frames) {
+    const sig = await hmacHex(secret, `tmib-media:${episode.id}:${frame}:${exp}:${hash}`);
+    media[frame] = `${episodeRoot(episode)}/media/${frame}?exp=${exp}&sig=${sig}`;
   }
   return { media, expiresAt: new Date(exp * 1000).toISOString() };
 }
 
-async function handleAccess(request, env) {
+function catalogPayload(episode) {
+  const metadata = publicTmibEpisodeMetadata(episode);
+  return {
+    ok: true,
+    authority: "member-pages-worker",
+    schema: "tmib_episode_catalog_v1",
+    ...metadata,
+    access_path: `${episodeRoot(episode)}/access`,
+    purchase_path: `${episodeRoot(episode)}/purchase`,
+  };
+}
+
+async function handleAccess(request, env, episode) {
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return json({ ok: false, granted: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
   const hash = await userKey(env, session.lineUserId);
   if (!hash) return json({ ok: false, granted: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503);
-  const access = await resolveEpisodeAccess(request, env, session, hash);
-  if (!access.granted) return json({ ok: true, granted: false, episode_id: EPISODE_ID, price_thb: PRICE_THB });
-  const signed = await mediaMap(env, hash);
+  const access = await resolveEpisodeAccess(request, env, hash, episode);
+  if (!access.granted) return json({ ...catalogPayload(episode), granted: false });
+  const signed = await mediaMap(env, hash, episode);
   return json({
-    ok: true,
+    ...catalogPayload(episode),
     granted: true,
-    episode_id: EPISODE_ID,
     access_source: access.source,
     watermark: `MMD PRIVATE · ${hash.slice(0, 10).toUpperCase()}`,
     media_expires_at: signed.expiresAt,
@@ -258,36 +302,47 @@ async function handleAccess(request, env) {
   });
 }
 
-async function handlePurchase(request, env) {
+async function handlePurchase(request, env, episode) {
   if (!sameOrigin(request)) return json({ ok: false, error: { code: "SAME_ORIGIN_REQUIRED" } }, 403);
+  if (episode.status !== "live" || episode.purchasable !== true) {
+    return json({ ok: false, error: { code: "EPISODE_NOT_PURCHASABLE" } }, 409);
+  }
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
   const hash = await userKey(env, session.lineUserId);
   if (!hash) return json({ ok: false, error: { code: "TMIB_SIGNING_UNAVAILABLE" } }, 503);
-  const existing = await resolveEpisodeAccess(request, env, session, hash);
-  if (existing.granted) return json({ ok: true, already_granted: true, episode_id: EPISODE_ID, redirect_to: "/tmib/act-001" });
-  const intent = await paymentIntent(env, canonicalPurchaseSession(hash));
+  const existing = await resolveEpisodeAccess(request, env, hash, episode);
+  if (existing.granted) return json({
+    ok: true,
+    already_granted: true,
+    episode_id: episode.id,
+    redirect_to: episode.storyPath,
+  });
+  const intent = await paymentIntent(env, episode, canonicalPurchaseSession(episode, hash));
   if (!intent) return json({ ok: false, error: { code: "PAYMENT_INTENT_UNAVAILABLE" } }, 503);
-  await storeGrant(env, hash, {
+  await storeGrant(env, episode, hash, {
     state: "pending",
     payment_ref: intent.paymentRef,
     payment_session_id: intent.sessionId,
-    amount_thb: PRICE_THB,
-    package_code: PACKAGE_CODE,
+    amount_thb: episode.priceThb,
+    package_code: episode.packageCode,
+    episode_id: episode.id,
     created_at: new Date().toISOString(),
   });
   return json({
     ok: true,
-    episode_id: EPISODE_ID,
-    amount_thb: PRICE_THB,
+    episode_id: episode.id,
+    amount_thb: episode.priceThb,
+    currency: "THB",
     payment_ref: intent.paymentRef,
+    story_path: episode.storyPath,
     redirect_to: intent.paymentUrl,
     customer_payment_url: intent.paymentUrl,
   });
 }
 
-async function handleMedia(request, env, frame) {
-  if (!FRAMES.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
+async function handleMedia(request, env, episode, frame) {
+  if (!episode.frames.includes(frame)) return json({ ok: false, error: { code: "FRAME_NOT_FOUND" } }, 404);
   const session = await readMemberAppSession(request, env);
   if (!session?.lineUserId) return json({ ok: false, error: { code: "LINE_SESSION_REQUIRED" } }, 401);
   const hash = await userKey(env, session.lineUserId);
@@ -298,57 +353,62 @@ async function handleMedia(request, env, frame) {
   if (!hash || !Number.isInteger(exp) || exp < now || exp > now + MEDIA_TTL_SECONDS + 30 || !/^[a-f0-9]{64}$/.test(sig)) {
     return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403);
   }
-  const expected = await hmacHex(secretFor(env), `tmib-media:${EPISODE_ID}:${frame}:${exp}:${hash}`);
+  const expected = await hmacHex(secretFor(env), `tmib-media:${episode.id}:${frame}:${exp}:${hash}`);
   if (!timingSafeEqual(sig, expected)) return json({ ok: false, error: { code: "MEDIA_TOKEN_INVALID" } }, 403);
   const bucket = env.MMD_MODEL_ASSETS;
   if (!bucket?.get) return json({ ok: false, error: { code: "TMIB_MEDIA_STORAGE_UNAVAILABLE" } }, 503);
-  const object = await bucket.get(`tmib/${EPISODE_ID}/${frame}.webp`);
+  const object = await bucket.get(`tmib/${episode.id}/${frame}.webp`);
   if (!object) return json({ ok: false, error: { code: "TMIB_MEDIA_NOT_SEEDED", frame } }, 503);
   const headers = new Headers();
   object.writeHttpMetadata?.(headers);
   headers.set("content-type", headers.get("content-type") || "image/webp");
   headers.set("cache-control", "private, max-age=60, no-store");
-  headers.set("content-disposition", `inline; filename="tmib-${EPISODE_ID}-${frame}.webp"`);
+  headers.set("content-disposition", `inline; filename="tmib-${episode.id}-${frame}.webp"`);
   headers.set("cross-origin-resource-policy", "same-origin");
   headers.set("x-content-type-options", "nosniff");
   headers.set("x-robots-tag", "noindex, noarchive, nosnippet, noimageindex");
-  headers.set("x-mmd-tmib-story", "media-v1");
+  headers.set("x-mmd-tmib-story", "media-v2");
   return new Response(object.body, { status: 200, headers });
 }
 
 export function isTmibStoryAccessPath(input) {
-  const url = input instanceof URL ? input : new URL(String(input));
-  const path = normalizePath(url.pathname);
-  return path === `${ROOT}/access`
-    || path === `${ROOT}/purchase`
-    || path.startsWith(`${ROOT}/media/`);
+  return Boolean(parseRoute(input));
 }
 
 export async function handleTmibStoryAccess(request, env = {}) {
-  const url = new URL(request.url);
-  const path = normalizePath(url.pathname);
-  if (path === `${ROOT}/access`) {
+  const route = parseRoute(request.url);
+  if (!route) return json({ ok: false, error: { code: "TMIB_ROUTE_NOT_FOUND" } }, 404);
+  const episode = getTmibEpisode(route.episodeId);
+  if (!episode) return json({ ok: false, error: { code: "TMIB_EPISODE_NOT_FOUND" } }, 404);
+
+  if (route.action === "catalog") {
     if (request.method !== "GET") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, { allow: "GET" });
-    return handleAccess(request, env);
+    return json(catalogPayload(episode));
   }
-  if (path === `${ROOT}/purchase`) {
+  if (route.action === "access") {
+    if (request.method !== "GET") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, { allow: "GET" });
+    return handleAccess(request, env, episode);
+  }
+  if (route.action === "purchase") {
     if (request.method !== "POST") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, { allow: "POST" });
-    return handlePurchase(request, env);
+    return handlePurchase(request, env, episode);
   }
-  if (path.startsWith(`${ROOT}/media/`)) {
+  if (route.action === "media") {
     if (request.method !== "GET") return json({ ok: false, error: { code: "METHOD_NOT_ALLOWED" } }, 405, { allow: "GET" });
-    return handleMedia(request, env, clean(path.slice(`${ROOT}/media/`.length), 8));
+    return handleMedia(request, env, episode, route.detail);
   }
   return json({ ok: false, error: { code: "TMIB_ROUTE_NOT_FOUND" } }, 404);
 }
 
 export const TMIB_STORY_INTERNALS = Object.freeze({
-  EPISODE_ID,
-  PRICE_THB,
-  PACKAGE_CODE,
-  PAYMENT_STAGE,
-  ROOT,
-  FRAMES,
+  EPISODE_ID: ACT_001.id,
+  PRICE_THB: ACT_001.priceThb,
+  PACKAGE_CODE: ACT_001.packageCode,
+  PAYMENT_STAGE: ACT_001.paymentStage,
+  ROOT: episodeRoot(ACT_001),
+  FRAMES: ACT_001.frames,
+  API_ROOT,
+  CATALOG: TMIB_EPISODE_CATALOG,
   paymentGrantsTmib,
   membershipGrantsTmib,
 });
