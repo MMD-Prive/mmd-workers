@@ -857,6 +857,12 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `รับเรื่องสมาชิกแล้วครับ ${prefix}จัดการ MY MMD ได้ที่ https://mmdbkk.com/sigil/member/membership ครับ หน้านี้ใช้สำหรับดูแพ็กเกจ สมัคร ต่ออายุ หรืออัปเกรดสมาชิกได้ โดยสถานะสมาชิกและการชำระเงินจะยืนยันหลัง MMD ตรวจสอบข้อมูลทางการแล้วครับ`;
   }
 
+  if (intent === "membership_signup" || intent === "membership_renewal") {
+    const membershipIntent = intent === "membership_signup" ? "signup" : "renew";
+    const label = membershipIntent === "signup" ? "สมัครสมาชิก" : "ต่ออายุสมาชิก";
+    return `${label}ผ่านขั้นตอนทางการของ MMD ได้ตรงนี้ครับ → https://mmdbkk.com/sigil/member/membership?source=line&intent=${membershipIntent} สถานะจะเปลี่ยนเมื่อข้อมูลทางการได้รับการตรวจสอบแล้วเท่านั้นครับ`;
+  }
+
   if (intent === "pricing_review") {
     return `${prefix}เรื่องราคา เดี๋ยวเปอร์ขอดูรายละเอียดที่เหมาะก่อนนะครับ ถ้าสะดวก แจ้งวัน เวลา โซน และระยะเวลาที่ต้องการไว้ได้เลยครับ`;
   }

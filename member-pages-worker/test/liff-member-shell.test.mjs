@@ -117,7 +117,10 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /verified:"Verified"/);
     assert.match(html, /pending_review:"Pending review"/);
     assert.match(html, /unavailable:"Unavailable"/);
-    assert.match(html, /\|\| "Unavailable"/);
+    assert.match(html, /unavailable:"ยังไม่พร้อมยืนยัน"/);
+    assert.match(html, /unavailable:"暂不可确认"/);
+    assert.match(html, /status === "verified" \|\| status === "pending_review" \? status : "unavailable"/);
+    assert.doesNotMatch(html, /failed:"Not verified"|not_found:"No payment record found"|ยังไม่มีสถานะที่ยืนยันได้|暂无可验证状态/);
     assert.match(html, /function safeDate\(value\)/);
     assert.doesNotMatch(html, /payment_ref|receipt_url|member_email|Verification Status/);
   });

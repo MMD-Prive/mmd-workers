@@ -81,10 +81,7 @@ function renderShell(config, nonce) {
     <div class="section-rail">
     <section id="home" class="panel" aria-label="Home">
     <div class="card"><span class="label" data-copy="memberLabel">Member</span><strong id="profile-name" class="value">สมาชิก MMD</strong><span id="profile-status" class="sub"></span></div>
-    <div class="summary">
-      <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
-      <div id="points-card" class="card"><span class="label" data-copy="pointsLabel">Active Points</span><strong id="profile-points" class="value points">0</strong></div>
-    </div>
+    <div class="card"><span class="label" data-copy="tierLabel">Tier</span><strong id="profile-tier" class="value">Member</strong></div>
     <div id="member-details" class="detail-grid hidden">
       <div id="expiry-card" class="card hidden"><span class="label" data-copy="expiryLabel">Membership valid until</span><strong id="profile-expiry" class="value">—</strong></div>
       <div id="payment-card" class="card hidden"><span class="label" data-copy="paymentLabel">Payment status</span><strong id="profile-payment" class="value payment-status">—</strong></div>
@@ -179,7 +176,7 @@ function renderShell(config, nonce) {
   }
 
   function show(text) {
-    message.textContent = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+    message.textContent = String(text || copy.fallback);
   }
 
   function setBusy(value) {
@@ -427,7 +424,7 @@ function renderShell(config, nonce) {
       renderCareBackClaim(payload.data || {});
       await readCareBackState();
     } catch {
-      document.getElementById("care-message").textContent = copy.claimMessage || "ตอนนี้ยังออกโค้ดไม่ได้ครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ HYPE";
+      document.getElementById("care-message").textContent = copy.claimError;
       careButton.disabled = false; careButton.textContent = copy.careRetry || "ลองตรวจสอบอีกครั้ง";
     } finally { setBusy(false); }
   }
@@ -557,7 +554,7 @@ function renderShell(config, nonce) {
       // No valid same-site session yet. Fall through to the one-time LIFF handshake.
     }
     if (!CONFIG.liffId || !window.liff) {
-      show("ช่องทางนี้ยังไม่พร้อมใช้งานครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+      show(copy.channelUnavailable);
       return;
     }
     try {
@@ -568,7 +565,7 @@ function renderShell(config, nonce) {
       }
       const idToken = window.liff.getIDToken();
       if (!idToken) {
-        show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");
+        show(copy.identityUnavailable);
         return;
       }
       const body = { id_token: idToken, liff_intent: CONFIG.intent };
@@ -577,10 +574,14 @@ function renderShell(config, nonce) {
       const started = await call(CONFIG.startEndpoint, body);
       if (started && started.member_resolved) await readProfile();
     } catch {
-      show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
+      show(copy.unavailable);
     }
   }
 
+  renderMembershipFlow();
+  activateView(currentView);
+  for (const tab of document.querySelectorAll("[data-view-tab]")) tab.addEventListener("click", () => activateView(tab.dataset.viewTab, true));
+  window.addEventListener("popstate", () => activateView(new URL(location.href).searchParams.get("view") || "profile"));
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
   boot();
