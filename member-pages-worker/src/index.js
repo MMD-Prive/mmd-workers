@@ -17,6 +17,8 @@ import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-e
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
+import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
+import { handleTmibAct001Content, isTmibAct001ContentPath } from "./tmib-act001-content.js";
 import {
   ensureMemberHistoryRecoveryOnAccess,
   isMemberHistoryOnAccessPath,
@@ -47,6 +49,12 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+
+    // TMIB Long Story routes resolve before generic response decorators. The
+    // content endpoint reuses the same canonical entitlement gate and returns
+    // the narrative only after that gate grants access.
+    if (isTmibAct001ContentPath(url)) return handleTmibAct001Content(request, env);
+    if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
     // bound to the server-verified LINE session. It must remain available even
