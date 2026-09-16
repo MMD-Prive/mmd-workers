@@ -845,7 +845,7 @@ function isConfirmKeyAuthed(req, env) {
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
 }
 
-async function isAdminGateSessionAuthed(req, env) {
+export async function isAdminGateSessionAuthed(req, env) {
   const session = await readAdminGateSession(req, env);
   if (!session || session.version !== 1) return false;
   if (session.scope !== "internal_admin") return false;
