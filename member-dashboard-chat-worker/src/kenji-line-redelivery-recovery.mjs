@@ -11,6 +11,7 @@ import {
   resolveCanonicalKenjiLineClient,
 } from "./kenji-line-canonical-client-resolution.mjs";
 import { tryHandleKenjiLv5LineOperationalRequest } from "./kenji-lv5-line-operational-request.mjs";
+import { notifyKenjiLv5Hype } from "./kenji-lv5-hype-alert.mjs";
 
 const AI_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกของผม";
@@ -148,6 +149,7 @@ async function runOperationalTelemetry(env, operational) {
 function scheduleOperationalSideEffects(ctx, env, events, operational) {
   const work = Promise.all([
     runOperationalTelemetry(env, operational),
+    notifyKenjiLv5Hype(env, operational?.event || {}, operational?.decision || {}).catch(() => ({ skipped: true, reason: "lv5_hype_runtime_error" })),
     syncCanonicalCustomerMemory(env, events).catch(() => []),
   ]);
   if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
