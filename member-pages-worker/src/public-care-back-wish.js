@@ -124,15 +124,16 @@ export async function handlePublicWish(request, env = {}) {
       benefits: {
         verification_required: false,
         coupon: false,
-        coupon_after_verification: true,
+        coupon_after_verification: false,
+        coupon_claim_required: true,
         membership_extension: false,
         points: false,
       },
       final_display: {
         message: input.language === "en"
-          ? "MMD has received your wish. You can stop here, or verify LINE to receive your personal discount coupon."
-          : "MMD ได้รับคำอวยพรของคุณแล้วครับ จบตรงนี้ได้เลย หรือยืนยัน LINE ต่อเพื่อรับคูปองส่วนลดส่วนตัวครับ",
-        next_action: "optional_coupon_verification",
+          ? "MMD has received your wish. Verify LINE now to claim your personal discount coupon immediately."
+          : "MMD ได้รับคำอวยพรของคุณแล้วครับ กรุณายืนยัน LINE ต่อเพื่อเคลมคูปองส่วนตัวได้ทันทีครับ",
+        next_action: "required_coupon_claim",
       },
       grants: noGrants(),
     }, 200, { "set-cookie": pendingWishCookie(linkToken) });

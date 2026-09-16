@@ -17,8 +17,8 @@
       tooLong: "คำอวยพรยาวเกินจำนวนที่กำหนดครับ",
       invalid: "มีอักขระที่ใช้ไม่ได้ครับ ลองปรับข้อความอีกครั้ง",
       unavailable: "ตอนนี้ยังส่งไม่ได้ครับ ลองใหม่อีกครั้งในอีกสักครู่",
-      success: "MMD ได้รับคำอวยพรของคุณแล้วครับ",
-      benefit: "คูปอง วันสมาชิก และ Points ที่ตรวจได้จริง ดูต่อใน My MMD ได้เลยครับ",
+      success: "MMD ได้รับคำอวยพรของคุณแล้วครับ กรุณาไปยืนยัน LINE เพื่อเคลมคูปองทันทีครับ",
+      benefit: "ยืนยัน LINE ต่อใน My MMD เพื่อเคลมคูปองส่วนตัวทันทีครับ",
       counter: "ตัวอักษร",
       benefitCta: "ดูคูปองของฉัน",
     },
@@ -31,8 +31,8 @@
       tooLong: "Your wish is longer than the allowed limit.",
       invalid: "Some characters cannot be used. Please revise your wish.",
       unavailable: "Your wish cannot be sent right now. Please try again shortly.",
-      success: "MMD has received your wish.",
-      benefit: "Verified coupon, membership days and Points continue in My MMD.",
+      success: "MMD has received your wish. Verify LINE in My MMD to claim your coupon immediately.",
+      benefit: "Verify LINE in My MMD to claim your personal coupon immediately.",
       counter: "characters",
       benefitCta: "View my coupons",
     },
@@ -45,8 +45,8 @@
       tooLong: "祝福内容超过允许的长度。",
       invalid: "内容含有无法使用的字符，请修改后重试。",
       unavailable: "暂时无法发送祝福，请稍后再试。",
-      success: "MMD 已收到您的祝福。",
-      benefit: "已核实的优惠券、会员天数和 Points 请在 My MMD 继续查看。",
+      success: "MMD 已收到您的祝福。请在 My MMD 验证 LINE 立即领取优惠券。",
+      benefit: "请在 My MMD 验证 LINE，立即领取个人优惠券。",
       counter: "字符",
       benefitCta: "查看我的优惠券",
     },
@@ -190,7 +190,7 @@
       form.consent.disabled = true;
       form.submit.disabled = true;
       form.submit.setAttribute("aria-busy", "false");
-      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", benefitVerificationRequired: true, next: MEMBER_URL } }));
+      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", couponClaimRequired: true, next: MEMBER_URL } }));
       if (form.success) form.success.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" });
     } catch {
       setExistingError(form, copy.unavailable);
@@ -295,7 +295,7 @@
       setStatus(form, message, "success");
       form.textarea.disabled = true;
       form.submit.hidden = true;
-      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", benefitVerificationRequired: true, next: MEMBER_URL } }));
+      document.dispatchEvent(new CustomEvent("mmd:care-back:wish-completed", { detail: { state: "completed", couponClaimRequired: true, next: MEMBER_URL } }));
     } catch {
       setStatus(form, form.copy.unavailable, "error");
     } finally {

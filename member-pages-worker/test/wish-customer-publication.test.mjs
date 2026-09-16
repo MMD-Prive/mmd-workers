@@ -34,15 +34,15 @@ test('membership alone never publishes a Wish without completed service evidence
   assert.equal(x.linked().customerVerified, false);
 });
 
-test('verified past customer without a Member row links the Wish but receives no coupon grant', async () => {
+test('verified LINE identity without a Member row links the Wish and receives the coupon immediately', async () => {
   const x = setup({ member: false });
   const response = await handleCanonicalCareBackLinkWish(x.request, x.env);
   const result = await response.json();
   assert.equal(response.status, 200);
   assert.equal(x.linked().customerVerified, true);
   assert.equal(result.linked, true);
-  assert.equal(result.benefits.coupon, false);
-  assert.equal(x.issued(), 0);
+  assert.equal(result.benefits.coupon, true);
+  assert.equal(x.issued(), 1);
 });
 
 test('unavailable history and blocked accounts keep Wishes private', async () => {
