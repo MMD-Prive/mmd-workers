@@ -1,14 +1,24 @@
 import worker from "./admin-login-hero-worker.js";
 export * from "./admin-login-hero-worker.js";
 
+import { enrichLineageWithPerRename } from "./per-rename-client-search.js";
+
 const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
 const LINEAGE_RECENT_PATH = "/v1/admin/clients/recent";
 const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
 
 export default {
   async fetch(request, env, ctx) {
-    const response = await worker.fetch(request, env, ctx);
     const pathname = normalizePath(new URL(request.url).pathname);
+    const perRenameRequest = pathname === LINEAGE_LOOKUP_PATH && request.method.toUpperCase() === "POST"
+      ? request.clone()
+      : null;
+
+    let response = await worker.fetch(request, env, ctx);
+    if (perRenameRequest) {
+      response = await enrichLineageWithPerRename(perRenameRequest, response, env);
+    }
+
     if (pathname !== LINEAGE_LOOKUP_PATH && pathname !== LINEAGE_RECENT_PATH) {
       return response;
     }
