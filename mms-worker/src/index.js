@@ -235,9 +235,14 @@ export default {
             private_uploads: Boolean(env.MMS_PRIVATE_UPLOADS),
             airtable: Boolean(env.AIRTABLE_API_TOKEN),
             telegram: telegramConfigured(env),
+            line: lineBotStatus(env),
           },
           time: new Date().toISOString(),
         }, 200, cors, requestId);
+      }
+
+      if (path === "/mms/webhooks/line" && request.method === "POST") {
+        return await handleMmsLineWebhook(request, env);
       }
 
       if (path === "/mms/api/catalog" && request.method === "GET") {

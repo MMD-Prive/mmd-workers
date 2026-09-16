@@ -20,6 +20,20 @@ Sexual orientation is written only to `MMS Therapist Sensitive Profiles` after e
 - `POST /mms/api/applications`
 - `POST /mms/api/uploads/presign`
 - `PUT /mms/api/uploads/:applicationRef/:uploadToken`
+- `POST /mms/webhooks/line`
+
+## HENNA LINE bot
+
+Set these as Cloudflare secrets for the Male Massage LINE Messaging API channel only:
+
+- `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_ACCESS_TOKEN`
+
+`LINE_AUTO_REPLY_ENABLED` defaults to `false`. In this state, the webhook verifies and classifies events but sends no automatic LINE replies. Set it to `true` only after the LINE Console webhook verification and production smoke pass.
+
+The canonical Male Massage Messaging API channel is `2011386859`, configured as `MMS_LINE_CHANNEL_ID` for identity checks. It is not a secret.
+
+HENNA answers only stable MMS information (booking intake, service categories, how-to, and therapist applications). Price, live availability, explicit human requests, and unknown questions are routed to the existing MMS Telegram operations chat without copying customer message content.
 
 Public write routes accept only configured MMD/Webflow origins. Add Turnstile before advertising the application endpoint broadly.
 

@@ -26,6 +26,8 @@ jobs:
       AIRTABLE_API_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
       MMS_TELEGRAM_CHAT_ID: ${{ secrets.MMS_TELEGRAM_CHAT_ID || secrets.TELEGRAM_CHAT_ID }}
+      LINE_CHANNEL_SECRET: ${{ secrets.MMS_LINE_CHANNEL_SECRET }}
+      LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.MMS_LINE_CHANNEL_ACCESS_TOKEN }}
       NO_COLOR: "1"
       WRANGLER_SEND_METRICS: "false"
 
@@ -158,6 +160,11 @@ jobs:
             console.log(`::add-mask::${telegramToken}`);
             console.log(`::add-mask::${telegramChatId}`);
             lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
+          }
+          if (lineChannelSecret && lineChannelAccessToken) {
+            console.log(`::add-mask::${lineChannelSecret}`);
+            console.log(`::add-mask::${lineChannelAccessToken}`);
+            lines.push(`LINE_CHANNEL_SECRET=${lineChannelSecret}`, `LINE_CHANNEL_ACCESS_TOKEN=${lineChannelAccessToken}`);
           }
           fs.writeFileSync(path, lines.length ? `${lines.join("\n")}\n` : "", { mode: 0o600 });
           fs.appendFileSync(process.env.GITHUB_STEP_OUTPUT || process.env.GITHUB_OUTPUT, `configured=${lines.length ? "true" : "false"}\n`);
