@@ -43,6 +43,8 @@ import {
   handleLiffClientDiagnostic,
   isLiffClientDiagnosticPath,
 } from "./liff-client-runtime-diagnostic.js";
+import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
+import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
@@ -105,6 +107,9 @@ export default {
       return finish(await handleCanonicalCareBackLinkWish(request, env, ctx));
     }
     if (isPublicCareBackWishPath(url)) return finish(await handlePublicCareBackWishRoute(request, env));
+    if (isMmsCustomerHistoryPage(request)) {
+      return handleMmsCustomerHistoryPage(request, env);
+    }
     if (isLiffMemberShellPath(url)) {
       const response = handleLiffMemberShell(request, env);
       const diagnostic = decorateLiffShellWithClientDiagnostic(response);
