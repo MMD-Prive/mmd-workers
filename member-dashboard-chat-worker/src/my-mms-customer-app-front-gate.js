@@ -1,7 +1,7 @@
 const WORKER_NAME = "member-dashboard-chat-worker";
 const CUSTOMER_UI_PREFIX = "/male-massage";
 const CUSTOMER_ASSET_PREFIX = "/male-massage-assets/";
-const CUSTOMER_API_PREFIX = "/api/mms/app/";
+const CUSTOMER_API_BASE = "/api/mms/app";
 const PRESENTATION_ORIGIN = "https://my-mms-therapist.lovable.app";
 const MEMBER_PROFILE_PATH = "/api/member/app/profile";
 const MMS_MEMBER_PREBOOKINGS_PATH = "/internal/mms/member/prebookings";
@@ -9,6 +9,15 @@ const MMS_INTERNAL_ORIGIN = "https://mms.internal";
 const MEMBER_REF_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{2,119}$/;
 const PREBOOKING_ID_RE = /^mmspre_[a-f0-9]{24}$/;
 const CUSTOMER_UI_SEGMENTS = new Set(["bookings", "payment", "after-service", "profile", "support"]);
+const CUSTOMER_API_PATHS = Object.freeze({
+  customer: `${CUSTOMER_API_BASE}/customer`,
+  bookings: `${CUSTOMER_API_BASE}/bookings`,
+  currentBooking: `${CUSTOMER_API_BASE}/bookings/current`,
+  therapists: `${CUSTOMER_API_BASE}/therapists`,
+  payments: `${CUSTOMER_API_BASE}/payments`,
+  afterService: `${CUSTOMER_API_BASE}/after-service`,
+  support: `${CUSTOMER_API_BASE}/support`,
+});
 
 function normalizePath(value = "/") {
   const clean = String(value || "/").replace(/\/{2,}/g, "/");
@@ -35,11 +44,13 @@ export function isMyMmsCustomerUiRequest(request) {
 }
 
 export function isMyMmsCustomerAssetRequest(request) {
-  return requestPath(request).startsWith(CUSTOMER_ASSET_PREFIX.slice(0, -1));
+  const path = requestPath(request);
+  return path.startsWith(CUSTOMER_ASSET_PREFIX);
 }
 
 export function isMyMmsCustomerApiRequest(request) {
-  return requestPath(request).startsWith(CUSTOMER_API_PREFIX.slice(0, -1));
+  const path = requestPath(request);
+  return path === CUSTOMER_API_BASE || path.startsWith(`${CUSTOMER_API_BASE}/`);
 }
 
 function json(payload, status = 200, extraHeaders = {}) {
@@ -55,6 +66,10 @@ function json(payload, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
+}
+
+function methodNotAllowed(allow) {
+  return new Response(null, { status: 405, headers: { allow, "cache-control": "no-store" } });
 }
 
 function presentationRequestHeaders(request) {
@@ -117,12 +132,10 @@ export function rewriteMyMmsCustomerHtml(html) {
   output = output.replaceAll("/favicon.svg", `${CUSTOMER_ASSET_PREFIX}favicon.svg`);
   output = output.replaceAll("/hype-loader.png", `${CUSTOMER_ASSET_PREFIX}hype-loader.png`);
 
-  output = output.replace(/href=["']\/["']/g, `href="${CUSTOMER_UI_PREFIX}"`);
+  output = output.replace(/href=(["'])\/\1/g, (_match, quote) => `href=${quote}${CUSTOMER_UI_PREFIX}${quote}`);
   for (const suffix of ["bookings", "therapists", "payment", "after-service", "profile", "support"]) {
-    output = output.replace(
-      new RegExp(`href=["']\\/${suffix}(?=\\/|["'])`, "g"),
-      `href="${CUSTOMER_UI_PREFIX}/${suffix}`,
-    );
+    const pattern = new RegExp(`href=(["'])\\/${suffix}([^"']*)\\1`, "g");
+    output = output.replace(pattern, (_match, quote, rest) => `href=${quote}${CUSTOMER_UI_PREFIX}/${suffix}${rest}${quote}`);
   }
   return output;
 }
@@ -142,9 +155,7 @@ function recoveryHtml() {
 }
 
 export async function handleMyMmsCustomerUi(request) {
-  if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) {
-    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "no-store" } });
-  }
+  if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) return methodNotAllowed("GET, HEAD");
 
   let upstream;
   try {
@@ -175,12 +186,11 @@ export async function handleMyMmsCustomerUi(request) {
 }
 
 export async function handleMyMmsCustomerAsset(request) {
-  if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) {
-    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
-  }
+  if (!new Set(["GET", "HEAD"]).has(String(request.method || "GET").toUpperCase())) return methodNotAllowed("GET, HEAD");
+  const upstreamUrl = presentationUrlForAsset(request);
   let upstream;
   try {
-    upstream = await globalThis.fetch(new Request(presentationUrlForAsset(request), {
+    upstream = await globalThis.fetch(new Request(upstreamUrl, {
       method: request.method,
       headers: presentationRequestHeaders(request),
       redirect: "follow",
@@ -190,8 +200,8 @@ export async function handleMyMmsCustomerAsset(request) {
   }
 
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
-  const isJavascript = contentType.includes("javascript") || presentationUrlForAsset(request).pathname.endsWith(".js");
-  const isStylesheet = contentType.includes("text/css") || presentationUrlForAsset(request).pathname.endsWith(".css");
+  const isJavascript = contentType.includes("javascript") || upstreamUrl.pathname.endsWith(".js");
+  const isStylesheet = contentType.includes("text/css") || upstreamUrl.pathname.endsWith(".css");
   const headers = presentationResponseHeaders(upstream.headers, { rewritten: isJavascript || isStylesheet });
   if (request.method === "HEAD") return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
   if (isJavascript) return new Response(rewriteMyMmsCustomerJavascript(await upstream.text()), { status: upstream.status, statusText: upstream.statusText, headers });
@@ -228,19 +238,23 @@ function safeString(value, max = 160) {
 
 function safeContact(value, verified, safeToDisplay) {
   const text = safeString(value, 254) || null;
-  return { value: safeToDisplay === true ? text : null, verified: verified === true, safeToDisplay: safeToDisplay === true && Boolean(text) };
+  return {
+    value: safeToDisplay === true ? text : null,
+    verified: verified === true,
+    safeToDisplay: safeToDisplay === true && Boolean(text),
+  };
 }
 
 function customerFromProfile(profile) {
   const match = safeString(profile?.match_state, 40).toLowerCase();
-  const identityState = match === "matched" ? "verified" : match === "pending_review" ? "checking" : "checking";
+  const identityState = match === "matched" ? "verified" : "checking";
   return {
     displayName: safeString(profile?.displayName || profile?.member_display_name, 120) || null,
     lineDisplayName: safeString(profile?.lineDisplayName || profile?.line_display_name, 120) || null,
-    lineAccountSummary: safeString(profile?.lineAccountSummary, 160) || null,
+    lineAccountSummary: safeString(profile?.lineAccountSummary || profile?.line_account_summary, 160) || null,
     avatarUrl: null,
     identityState,
-    customerRefDisplay: safeString(profile?.memberRef, 120) || null,
+    customerRefDisplay: safeString(profile?.memberRef || profile?.member_ref, 120) || null,
     language: null,
     email: safeContact(profile?.emailMasked, profile?.emailVerified, profile?.emailSafeToDisplay),
     phone: safeContact(profile?.phoneMasked, profile?.phoneVerified, profile?.phoneSafeToDisplay),
@@ -276,12 +290,14 @@ function bookingStatus(value) {
 }
 
 function bookingFromRequest(record) {
-  const id = safeString(record?.prebooking_id || record?.request_id, 80);
+  const id = safeString(record?.prebooking_id || record?.request_id, 80).toLowerCase();
   if (!PREBOOKING_ID_RE.test(id)) return null;
   const rawStatus = safeString(record?.status, 64).toLowerCase();
   const date = safeString(record?.service_date, 16);
   const time = safeString(record?.service_time, 8);
-  const skills = Array.isArray(record?.skills) ? record.skills.map((item) => safeString(item, 80)).filter(Boolean).slice(0, 8) : [];
+  const skills = Array.isArray(record?.skills)
+    ? record.skills.map((item) => safeString(item, 80)).filter(Boolean).slice(0, 8)
+    : [];
   const needsAttention = ["waiting_customer", "action_required"].includes(rawStatus);
   return {
     id,
@@ -294,7 +310,9 @@ function bookingFromRequest(record) {
     status: bookingStatus(rawStatus),
     paymentState: "checking",
     amountSummary: null,
-    nextAction: needsAttention ? { kind: "contact_support", label: "ติดต่อทีมงาน Male Massage", url: "https://line.me/R/ti/p/%40malemassage" } : null,
+    nextAction: needsAttention
+      ? { kind: "contact_support", label: "ติดต่อทีมงาน Male Massage", url: "https://line.me/R/ti/p/%40malemassage" }
+      : null,
     needsAttention,
   };
 }
@@ -302,11 +320,17 @@ function bookingFromRequest(record) {
 async function memberAndPrebookings(request, env) {
   const profile = await readMemberProfile(request, env);
   if (profile.status === 401) return { error: json({ ok: false, error: { code: "MMS_SESSION_REQUIRED" } }, 401) };
-  if (profile.status !== 200 || !profile.data) return { error: json({ ok: false, error: { code: "MMS_MEMBER_CONTEXT_UNAVAILABLE" } }, 503) };
-  const memberRef = safeString(profile.data.memberRef, 120);
-  if (!MEMBER_REF_RE.test(memberRef)) return { error: json({ ok: false, error: { code: "MMS_MEMBER_LINK_CHECKING" } }, 409) };
+  if (profile.status !== 200 || !profile.data) {
+    return { error: json({ ok: false, error: { code: "MMS_MEMBER_CONTEXT_UNAVAILABLE" } }, 503) };
+  }
+  const memberRef = safeString(profile.data.memberRef || profile.data.member_ref, 120);
+  if (!MEMBER_REF_RE.test(memberRef)) {
+    return { error: json({ ok: false, error: { code: "MMS_MEMBER_LINK_CHECKING" } }, 409) };
+  }
   const read = await readPrebookings(env, memberRef);
-  if (read.status !== 200 || !read.requests) return { error: json({ ok: false, error: { code: "MMS_BOOKINGS_UNAVAILABLE" } }, read.status === 401 ? 401 : 503) };
+  if (read.status !== 200 || !read.requests) {
+    return { error: json({ ok: false, error: { code: "MMS_BOOKINGS_UNAVAILABLE" } }, read.status === 401 ? 401 : 503) };
+  }
   return { profile: profile.data, requests: read.requests };
 }
 
@@ -322,32 +346,37 @@ export async function handleMyMmsCustomerApi(request, env = {}) {
   const method = String(request.method || "GET").toUpperCase();
   const path = requestPath(request);
 
-  if (path === `${CUSTOMER_API_PREFIX}customer`.slice(0, -1)) {
-    if (method !== "GET") return new Response(null, { status: 405, headers: { allow: "GET" } });
+  if (path === CUSTOMER_API_PATHS.customer) {
+    if (method !== "GET") return methodNotAllowed("GET");
     const profile = await readMemberProfile(request, env);
     if (profile.status === 401) return json({ ok: false, error: { code: "MMS_SESSION_REQUIRED" } }, 401);
     if (profile.status !== 200 || !profile.data) return json({ ok: false, error: { code: "MMS_MEMBER_CONTEXT_UNAVAILABLE" } }, 503);
     return json({ ok: true, data: customerFromProfile(profile.data) });
   }
 
-  if (path === `${CUSTOMER_API_PREFIX}bookings`.slice(0, -1) || path === `${CUSTOMER_API_PREFIX}bookings/current`.slice(0, -1) || path.startsWith(`${CUSTOMER_API_PREFIX}bookings/`.slice(0, -1))) {
-    if (method !== "GET") return new Response(null, { status: 405, headers: { allow: "GET" } });
+  if (path === CUSTOMER_API_PATHS.bookings || path === CUSTOMER_API_PATHS.currentBooking || path.startsWith(`${CUSTOMER_API_PATHS.bookings}/`)) {
+    if (method !== "GET") return methodNotAllowed("GET");
     const context = await memberAndPrebookings(request, env);
     if (context.error) return context.error;
     const bookings = context.requests.map(bookingFromRequest).filter(Boolean);
-    if (path === `${CUSTOMER_API_PREFIX}bookings`.slice(0, -1)) return json({ ok: true, data: bookings });
-    if (path === `${CUSTOMER_API_PREFIX}bookings/current`.slice(0, -1)) return json({ ok: true, data: currentBooking(bookings) });
-    const id = decodeURIComponent(path.slice(`${CUSTOMER_API_PREFIX}bookings/`.length));
+    if (path === CUSTOMER_API_PATHS.bookings) return json({ ok: true, data: bookings });
+    if (path === CUSTOMER_API_PATHS.currentBooking) return json({ ok: true, data: currentBooking(bookings) });
+    let id = "";
+    try {
+      id = decodeURIComponent(path.slice(`${CUSTOMER_API_PATHS.bookings}/`.length));
+    } catch (_) {
+      return json({ ok: false, error: { code: "MMS_BOOKING_ID_INVALID" } }, 400);
+    }
     if (!PREBOOKING_ID_RE.test(id)) return json({ ok: false, error: { code: "MMS_BOOKING_ID_INVALID" } }, 400);
     const booking = bookings.find((item) => item.id === id);
     if (!booking) return json({ ok: false, error: { code: "MMS_BOOKING_NOT_FOUND" } }, 404);
     return json({ ok: true, data: { ...booking, timeline: [], payment: null, operatorNote: null } });
   }
 
-  if (path === `${CUSTOMER_API_PREFIX}therapists`.slice(0, -1) || path.startsWith(`${CUSTOMER_API_PREFIX}therapists/`.slice(0, -1))) return unavailableContract("therapists");
-  if (path === `${CUSTOMER_API_PREFIX}payments`.slice(0, -1)) return unavailableContract("payments");
-  if (path === `${CUSTOMER_API_PREFIX}after-service`.slice(0, -1)) return unavailableContract("after-service");
-  if (path === `${CUSTOMER_API_PREFIX}support`.slice(0, -1)) return unavailableContract("support");
+  if (path === CUSTOMER_API_PATHS.therapists || path.startsWith(`${CUSTOMER_API_PATHS.therapists}/`)) return unavailableContract("therapists");
+  if (path === CUSTOMER_API_PATHS.payments) return unavailableContract("payments");
+  if (path === CUSTOMER_API_PATHS.afterService) return unavailableContract("after-service");
+  if (path === CUSTOMER_API_PATHS.support) return unavailableContract("support");
   return json({ ok: false, error: { code: "MMS_CUSTOMER_ROUTE_NOT_FOUND" } }, 404);
 }
 
