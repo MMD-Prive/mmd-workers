@@ -20,7 +20,8 @@ assert.match(memberStaging, /name\s*=\s*"member-pages-worker-staging"/);
 assert.match(memberStaging, /CARE_BACK_STAGING_MODE\s*=\s*"synthetic"/);
 assert.match(memberStaging, /AIRTABLE_BASE_ID\s*=\s*"appsV1ILPRfIjkaYg"/);
 assert.match(memberStaging, /AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES\s*=\s*"tblvMJjYXy29mgDLb"/);
-assert.equal((memberStaging.match(/service\s*=\s*"care-back-staging-fixtures-worker-staging"/g) || []).length, 2);
+assert.equal((memberStaging.match(/service\s*=\s*"care-back-staging-fixtures-worker-staging"/g) || []).length, 1);
+assert.match(memberStaging, /service\s*=\s*"mmd-auth-worker-staging"/);
 assert.doesNotMatch(memberStaging, /\[\[env\.staging\.routes\]\]/);
 
 const frontStaging = section(frontGate, "env.staging");

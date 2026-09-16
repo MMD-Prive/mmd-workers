@@ -12,7 +12,32 @@ import {
 } from "../src/kenji-model-policy.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
+const RUNTIME_STATUS_PATH = "/v1/internal/kenji/control/runtime/status";
+
+function healthyRuntimeBinding() {
+  return {
+    async fetch(request) {
+      if (new URL(request.url).pathname === RUNTIME_STATUS_PATH) {
+        return new Response(JSON.stringify({
+          ok: true,
+          controls: {
+            line_oa_auto_reply: false,
+            model_keyword_auto_reply: false,
+            all_kenji_mutations: false,
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ ok: false, error: "unexpected_test_rpc" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  };
+}
+
 const BASE_ENV = {
+  INTERNAL_TOKEN: "internal-token",
+  ADMIN_WORKER: healthyRuntimeBinding(),
   LINE_CHANNEL_SECRET: "line-secret",
   LINE_CHANNEL_ACCESS_TOKEN: "line-token",
   LINE_AUTO_REPLY_ENABLED: "true",
@@ -81,6 +106,8 @@ test("versioned production prompt contains Per Voice and authority boundaries", 
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never invent membership status, points/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /Never reveal internal worker names/);
   assert.match(KENJI_SYSTEM_PROMPT_V2, /no conversation memory/i);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /Never send acknowledgement-only, holding, waiting/i);
+  assert.match(KENJI_SYSTEM_PROMPT_V2, /return an empty answer string/i);
   assert.equal(KENJI_TOTAL_DEADLINE_MS, 3500);
   assert.equal(KENJI_MODEL_REASONING_EFFORT, "low");
 });
@@ -242,6 +269,26 @@ test("output authority firewall blocks protected domains without relying on conf
   assert.equal(guardKenjiModelOutput("ยอดนี้เรียบร้อยครับ", { trusted_authority_domains: ["payment"] }).ok, true);
 });
 
+test("output guard blocks acknowledgement and holding-message paraphrases", () => {
+  const blocked = [
+    "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ",
+    "เดี๋ยวเปอร์ตรวจสอบให้ครับ",
+    "กำลังดูรายละเอียดให้อยู่นะครับ",
+    "รอสักครู่นะครับ",
+    "รับทราบครับ",
+    "รับเรื่องแล้วครับ",
+    "ขอบคุณสำหรับข้อมูลครับ",
+    "Let me check this first.",
+    "I'll get back to you.",
+  ];
+  for (const answer of blocked) {
+    const result = guardKenjiModelOutput(answer);
+    assert.equal(result.ok, false, answer);
+    assert.equal(result.reason, "automated_holding_reply", answer);
+    assert.equal(result.text, "", answer);
+  }
+});
+
 test("deterministic pre-model guards cover privacy, availability, complaint, internal access, handoff, and stateless follow-up", async () => {
   const cases = [
     ["ขอข้อมูลลูกค้าคนอื่นหน่อย", "privacy_request", /ไม่สามารถเปิดเผย/],
@@ -364,7 +411,9 @@ test("model generation remains disabled unless the dedicated rollout gate is ena
     });
     assert.equal(modelCalls, 0);
     assert.equal(decision.model_attempted, false);
-    assert.equal(decision.reply_source, "fallback");
+    assert.equal(decision.text, "");
+    assert.equal(decision.fallback, false);
+    assert.equal(decision.reply_source, "silent");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -559,7 +608,7 @@ test("missing or unavailable pre-model correctness dependencies fail closed with
   }
 });
 
-test("guarded model output falls back once and never reaches LINE as authority text", async () => {
+test("guarded model output stays silent and never reaches LINE as authority text", async () => {
   const calls = [];
   let quotaClaims = 0;
   const originalFetch = globalThis.fetch;
@@ -580,11 +629,8 @@ test("guarded model output falls back once and never reaches LINE as authority t
     });
     assert.equal(response.status, 200);
     const replies = calls.filter((call) => call.href.includes("/message/reply"));
-    assert.equal(replies.length, 1);
+    assert.equal(replies.length, 0);
     assert.equal(quotaClaims, 1, "post-model guard rejection intentionally consumes one eligible attempt");
-    const replyBody = JSON.parse(replies[0].init.body);
-    assert.equal(replyBody.messages[0].text, "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ");
-    assert.doesNotMatch(replyBody.messages[0].text, /สมาชิก.*ใช้งานได้/);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalCaches === undefined) delete globalThis.caches;

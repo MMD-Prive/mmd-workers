@@ -1,0 +1,345 @@
+name: Kenji Seed Pack V1 Review QA
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.md"
+      - "docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json"
+      - ".github/workflows/kenji-seed-pack-v1-review-qa.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.md"
+      - "docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json"
+      - ".github/workflows/kenji-seed-pack-v1-review-qa.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kenji-seed-pack-v1-review-qa-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-manifest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate normalized 30-card manifest
+        shell: bash
+        env:
+          MANIFEST: docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json
+        run: |
+          set -euo pipefail
+
+          jq -e '
+            .version == "1.1" and
+            .status == "qa_ready_not_published" and
+            .count == 30 and
+            (.cards | length) == 30 and
+            ([.cards[].knowledge_id] | unique | length) == 30 and
+            all(.cards[];
+              (.knowledge_id | type == "string" and length >= 3) and
+              (.title | type == "string" and length > 0) and
+              (.category | IN("payment","membership","booking","privacy","admin_policy")) and
+              ((.customer_answer // "") | type == "string" and length > 0) and
+              ((.customer_question_examples // []) | type == "array" and length > 0) and
+              (.response_mode | IN("auto_reply_allowed","draft_only","handoff_required","owner_approval_required","do_not_answer")) and
+              (.risk_level | IN("low","medium","high","critical")) and
+              (.source_path | type == "string" and length > 0)
+            )
+          ' "$MANIFEST" >/dev/null
+
+          jq -r '.cards[].customer_answer' "$MANIFEST" > "$RUNNER_TEMP/customer-copy.txt"
+          jq -r '.cards[] | .source_path, (.related_routes[]? // empty)' "$MANIFEST" > "$RUNNER_TEMP/routes.txt"
+
+          if grep -Eqi '\b(admin|staff|operator|handler|paid|verified|approved|payment successful)\b|ชำระเงินสำเร็จแล้ว|อนุมัติแล้ว|ยืนยันยอดแล้ว|จ่ายแล้ว' "$RUNNER_TEMP/customer-copy.txt"; then
+            echo "Forbidden customer-facing authority wording found." >&2
+            exit 1
+          fi
+
+          if grep -Eq '^(/recovery|/member/mms-booking|/member/dashboard|/profiles|/public/access)$' "$RUNNER_TEMP/routes.txt"; then
+            echo "Stale or unresolved route found in normalized manifest." >&2
+            cat "$RUNNER_TEMP/routes.txt" >&2
+            exit 1
+          fi
+
+          if grep -Eq '/v1/admin/kenji/knowledge/.+/publish|"publish"' "$MANIFEST"; then
+            echo "Manifest must not contain a publication action." >&2
+            exit 1
+          fi
+
+          echo "Manifest validation passed: 30 unique cards, normalized routes, no publish action."
+
+  review-qa-production:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate-manifest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      MANIFEST: docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate canonical owner session
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_LOGIN_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_LOGIN_CREDENTIAL"
+
+          cookie_jar="$RUNNER_TEMP/kenji-seed-cookie.jar"
+          login_headers="$RUNNER_TEMP/kenji-seed-login.headers"
+          login_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -D "$login_headers" -c "$cookie_jar" -o /dev/null -w "%{http_code}" \
+            -X POST -H "Origin: $ORIGIN" -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/kenji" \
+            "$ORIGIN/internal/admin/login/session")"
+          test "$login_code" = "303"
+          grep -qi '^location: /internal/admin/kenji' "$login_headers"
+          grep -q 'mmd_admin_gate_v1' "$cookie_jar"
+
+          auth_body="$RUNNER_TEMP/kenji-seed-auth.json"
+          auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$auth_body" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/auth/me")"
+          test "$auth_code" = "200"
+          jq -e '.ok == true' "$auth_body" >/dev/null
+          echo "Canonical admin session authenticated."
+
+      - name: Create drafts and run signed Review to QA only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar="$RUNNER_TEMP/kenji-seed-cookie.jar"
+
+          get_detail() {
+            local id="$1"
+            local outfile="$2"
+            curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" -o "$outfile" -w "%{http_code}" \
+              "$ORIGIN/v1/admin/kenji/knowledge/$id"
+          }
+
+          get_audit() {
+            local id="$1"
+            local outfile="$2"
+            local code
+            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" -o "$outfile" -w "%{http_code}" \
+              "$ORIGIN/v1/admin/kenji/knowledge/$id/audit")"
+            if [ "$code" != "200" ]; then
+              cat "$outfile" >&2
+              echo "Audit fetch failed for $id with HTTP $code" >&2
+              exit 1
+            fi
+          }
+
+          post_json() {
+            local path="$1"
+            local key="$2"
+            local payload_file="$3"
+            local outfile="$4"
+            curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" \
+              -H "Origin: $ORIGIN" \
+              -H "Content-Type: application/json" \
+              -H "Idempotency-Key: $key" \
+              --data-binary "@$payload_file" \
+              -o "$outfile" -w "%{http_code}" \
+              "$ORIGIN$path"
+          }
+
+          verify_detail_matches_manifest() {
+            local detail="$1"
+            local card="$2"
+            local defaults="$3"
+            jq -e --argjson expected "$card" --argjson defaults "$defaults" '
+              .ok == true and
+              (.card.knowledge_id == $expected.knowledge_id) and
+              (.card.title == $expected.title) and
+              (.card.category == $expected.category) and
+              (.card.language == $defaults.language) and
+              (.card.customer_answer == $expected.customer_answer) and
+              (.card.internal_instruction == $expected.internal_instruction) and
+              (.card.response_mode == $expected.response_mode) and
+              (.card.risk_level == $expected.risk_level) and
+              (.card.source_path == $expected.source_path) and
+              (.card.source_ref == $defaults.source_ref) and
+              (.card.owner == $defaults.owner) and
+              ((.card.allowed_audience | sort) == ($defaults.allowed_audience | sort))
+            ' "$detail" >/dev/null
+          }
+
+          defaults="$(jq -c '.defaults' "$MANIFEST")"
+          : > "$RUNNER_TEMP/kenji-seed-summary.tsv"
+
+          while IFS= read -r card; do
+            id="$(jq -r '.knowledge_id' <<<"$card")"
+            sample="$(jq -r '.customer_question_examples[0]' <<<"$card")"
+            detail="$RUNNER_TEMP/$id-detail.json"
+            code="$(get_detail "$id" "$detail")"
+
+            if [ "$code" = "404" ]; then
+              draft="$RUNNER_TEMP/$id-draft.json"
+              jq -n --argjson card "$card" --argjson defaults "$defaults" '
+                {
+                  knowledge_id: $card.knowledge_id,
+                  title: $card.title,
+                  category: $card.category,
+                  language: $defaults.language,
+                  customer_answer: $card.customer_answer,
+                  internal_instruction: $card.internal_instruction,
+                  allowed_channels: $defaults.allowed_channels,
+                  allowed_audience: $defaults.allowed_audience,
+                  response_mode: $card.response_mode,
+                  risk_level: $card.risk_level,
+                  effective_from: $defaults.effective_from,
+                  source_path: $card.source_path,
+                  source_ref: $defaults.source_ref,
+                  owner: $defaults.owner,
+                  review_note: $defaults.review_note,
+                  payload_json: {
+                    seed_pack: {
+                      version: "1.1",
+                      lane: $card.lane,
+                      customer_question_examples: $card.customer_question_examples,
+                      related_routes: $card.related_routes
+                    }
+                  }
+                }
+              ' > "$draft"
+
+              draft_response="$RUNNER_TEMP/$id-draft-response.json"
+              draft_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+                -b "$cookie_jar" \
+                -H "Origin: $ORIGIN" \
+                -H "Content-Type: application/json" \
+                --data-binary "@$draft" \
+                -o "$draft_response" -w "%{http_code}" \
+                "$ORIGIN/v1/admin/kenji/knowledge/draft")"
+              if [ "$draft_code" != "200" ]; then
+                cat "$draft_response" >&2
+                echo "Draft create failed for $id with HTTP $draft_code" >&2
+                exit 1
+              fi
+              jq -e '.ok == true and .draft_received == true and (.record_id | type == "string" and length > 0)' "$draft_response" >/dev/null
+              code="$(get_detail "$id" "$detail")"
+            fi
+
+            if [ "$code" != "200" ]; then
+              cat "$detail" >&2
+              echo "Detail fetch failed for $id with HTTP $code" >&2
+              exit 1
+            fi
+
+            verify_detail_matches_manifest "$detail" "$card" "$defaults"
+            stage="$(jq -r '.card.workflow_stage // "draft"' "$detail")"
+            version="$(jq -r '.card.workflow_version // 1' "$detail")"
+
+            if [ "$stage" = "published" ] || [ "$stage" = "archived" ]; then
+              echo "$id is unexpectedly terminal at stage $stage; refusing to continue." >&2
+              exit 1
+            fi
+
+            if [ "$stage" = "draft" ]; then
+              review_payload="$RUNNER_TEMP/$id-review.json"
+              jq -n --argjson version "$version" '{expected_version:$version}' > "$review_payload"
+              review_response="$RUNNER_TEMP/$id-review-response.json"
+              review_code="$(post_json "/v1/admin/kenji/knowledge/$id/review" "kenji-seed-v1-review-$id" "$review_payload" "$review_response")"
+              if [ "$review_code" != "200" ]; then
+                cat "$review_response" >&2
+                echo "Review failed for $id with HTTP $review_code" >&2
+                exit 1
+              fi
+              jq -e '.ok == true and .stage == "review"' "$review_response" >/dev/null
+              code="$(get_detail "$id" "$detail")"
+              test "$code" = "200"
+              stage="$(jq -r '.card.workflow_stage' "$detail")"
+              version="$(jq -r '.card.workflow_version' "$detail")"
+            fi
+
+            if [ "$stage" = "review" ]; then
+              qa_payload="$RUNNER_TEMP/$id-qa.json"
+              checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              jq -n \
+                --argjson version "$version" \
+                --arg sample "$sample" \
+                --arg checked_at "$checked_at" \
+                '{
+                  expected_version:$version,
+                  qa:{
+                    policy_path_match:true,
+                    sample_question:$sample,
+                    blocked_information:[
+                      "payment approval",
+                      "membership activation",
+                      "booking confirmation",
+                      "live availability",
+                      "private contacts",
+                      "internal notes"
+                    ],
+                    privacy_checked:true,
+                    checked_at:$checked_at,
+                    channel:"LINE_OFC",
+                    audience:"customer"
+                  }
+                }' > "$qa_payload"
+              qa_response="$RUNNER_TEMP/$id-qa-response.json"
+              qa_code="$(post_json "/v1/admin/kenji/knowledge/$id/qa" "kenji-seed-v1-qa-$id" "$qa_payload" "$qa_response")"
+              if [ "$qa_code" != "200" ]; then
+                cat "$qa_response" >&2
+                echo "QA failed for $id with HTTP $qa_code" >&2
+                exit 1
+              fi
+              jq -e '.ok == true and .stage == "qa_passed"' "$qa_response" >/dev/null
+            fi
+
+            audit="$RUNNER_TEMP/$id-audit.json"
+            get_audit "$id" "$audit"
+            jq -e '
+              .ok == true and
+              .stage == "qa_passed" and
+              ([.events[]?.action] | index("submit_review") != null) and
+              ([.events[]?.action] | index("record_qa") != null) and
+              ([.events[]?.action] | index("publish") == null)
+            ' "$audit" >/dev/null
+
+            final_detail="$RUNNER_TEMP/$id-final-detail.json"
+            final_code="$(get_detail "$id" "$final_detail")"
+            test "$final_code" = "200"
+            verify_detail_matches_manifest "$final_detail" "$card" "$defaults"
+            jq -e '.card.workflow_stage == "qa_passed" and .card.status == "approved" and .card.workflow_version == 1' "$final_detail" >/dev/null
+
+            printf '%s\t%s\t%s\n' "$id" "qa_passed" "no_publish" >> "$RUNNER_TEMP/kenji-seed-summary.tsv"
+            echo "$id → QA PASSED (not published)"
+          done < <(jq -c '.cards[]' "$MANIFEST")
+
+          test "$(wc -l < "$RUNNER_TEMP/kenji-seed-summary.tsv" | tr -d ' ')" = "30"
+          echo "All 30 Kenji Seed Pack V1 cards reached qa_passed through the signed Worker contract. No publish endpoint was called."
+
+      - name: Final 30-card no-publish audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie_jar="$RUNNER_TEMP/kenji-seed-cookie.jar"
+          count=0
+          while IFS= read -r id; do
+            audit="$RUNNER_TEMP/final-$id-audit.json"
+            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -b "$cookie_jar" -o "$audit" -w "%{http_code}" \
+              "$ORIGIN/v1/admin/kenji/knowledge/$id/audit")"
+            test "$code" = "200"
+            jq -e '.stage == "qa_passed" and ([.events[]?.action] | index("publish") == null)' "$audit" >/dev/null
+            count=$((count + 1))
+          done < <(jq -r '.cards[].knowledge_id' "$MANIFEST")
+          test "$count" = "30"
+          echo "Final audit: 30/30 QA passed; 0 publish events."

@@ -1,0 +1,57 @@
+name: LINE OFC historical contact enrichment
+
+on:
+  pull_request:
+    paths:
+      - scripts/line-ofc-historical-contact-enrichment.js
+      - .github/workflows/line-ofc-historical-contact-enrichment.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-historical-contact-enrichment.js
+      - .github/workflows/line-ofc-historical-contact-enrichment.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-historical-contact-enrichment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  enrich:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate resolver
+        run: |
+          node --check scripts/line-ofc-historical-contact-enrichment.js
+          node scripts/line-ofc-historical-contact-enrichment.js --self-test
+      - name: Audit historical contact evidence
+        run: node scripts/line-ofc-historical-contact-enrichment.js --report /tmp/historical-contact-audit.json
+      - name: Apply matched evidence to blank canonical fields
+        if: github.event_name != 'pull_request'
+        run: node scripts/line-ofc-historical-contact-enrichment.js --apply --report /tmp/historical-contact-apply.json
+      - name: Verify idempotency
+        if: github.event_name != 'pull_request'
+        run: node scripts/line-ofc-historical-contact-enrichment.js --assert-idempotent --report /tmp/historical-contact-idempotency.json
+      - name: Upload aggregate-only reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-historical-contact-enrichment-report
+          path: |
+            /tmp/historical-contact-audit.json
+            /tmp/historical-contact-apply.json
+            /tmp/historical-contact-idempotency.json
+          if-no-files-found: warn
+          retention-days: 14

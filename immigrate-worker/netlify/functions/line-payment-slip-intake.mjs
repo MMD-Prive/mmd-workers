@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
+import { inferMembershipPayment } from "../../../shared/payment-intelligence.mjs";
 
-export const SAFE_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ ผมกำลังส่งรายละเอียดให้ทางระบบตรวจสอบ กรุณารอสักครู่ก่อนนะครับ";
-export const MANUAL_SLIP_ACK = "ได้รับหลักฐานการชำระเงินแล้วครับ แต่รายละเอียดต้องให้ทาง MMD ตรวจสอบด้วยตนเอง กรุณารอสักครู่ก่อนนะครับ";
-export const RETRY_SLIP_ACK = "ขณะนี้ระบบยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน ทาง MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
+export const SAFE_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ กำลังตรวจรายละเอียดให้ กรุณารอสักครู่ก่อนนะครับ";
+export const MANUAL_SLIP_ACK = "MMD รับหลักฐานการชำระเงินไว้แล้วครับ แต่รายละเอียดต้องตรวจด้วยตนเองก่อน กรุณารอสักครู่ก่อนนะครับ";
+export const RETRY_SLIP_ACK = "ตอนนี้ MMD ยังบันทึกหลักฐานการชำระเงินไม่สำเร็จครับ กรุณาเก็บสลิปไว้ก่อน แล้ว MMD จะตรวจสอบและแจ้งให้ทราบอีกครั้งครับ";
 
-const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอนแล้ว|จ่ายแล้ว|ชำระแล้ว|payment\s*(slip|proof)|transfer\s*(slip|proof)|promptpay)/i;
+const SLIP_CONTEXT_RE = /(สลิป|หลักฐาน.{0,12}(ชำระ|โอน|จ่าย)|โอน(?:เงิน)?(?:แล้ว|เรียบร้อย)?|จ่าย(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ชำระ(?:เงิน)?(?:แล้ว|เรียบร้อย)?|ยอด.{0,18}(?:บาท|thb)|(?:บาท|thb).{0,18}ยอด|payment\s*(slip|proof)|transfer\s*(slip|proof|done|complete|completed)|bank\s*transfer|prompt\s*pay|promptpay|พร้อมเพย์|\bpaid\b)/i;
+const NON_PAYMENT_IMAGE_CONTEXT_RE = /(ส่ง|ขอ|ดู|มี).{0,10}(รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด)|(?:รูป|รูปภาพ|profile|โปรไฟล์|หน้าสด).{0,10}(model|นายแบบ|ems\d+|gws\d+)/i;
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const DEFAULT_MAX_AMOUNT_THB = 10_000_000;
@@ -36,8 +38,17 @@ export function isImageMessage(event) {
 export function looksLikePaymentSlipContext(event, recentContext = []) {
   if (!isImageMessage(event)) return false;
   const direct = [event?.message?.fileName, event?.context?.text].map(clean).filter(Boolean);
+  if (direct.some((value) => SLIP_CONTEXT_RE.test(value))) return true;
+  if (direct.some((value) => NON_PAYMENT_IMAGE_CONTEXT_RE.test(value))) return false;
+
   const recent = (Array.isArray(recentContext) ? recentContext : [recentContext]).map(clean).filter(Boolean);
-  return [...direct, ...recent].some((value) => SLIP_CONTEXT_RE.test(value));
+  // Recent context is newest-first. The latest clear image/payment intent wins,
+  // so an older payment chat cannot swallow a later model/profile image.
+  for (const value of recent) {
+    if (SLIP_CONTEXT_RE.test(value)) return true;
+    if (NON_PAYMENT_IMAGE_CONTEXT_RE.test(value)) return false;
+  }
+  return false;
 }
 
 export function buildProofIdentity(event) {
@@ -234,6 +245,9 @@ async function uniqueRecord({ env, table, formula, fetchImpl }) {
 export async function resolveDeterministicLinks({ env, identity, extraction, fetchImpl = fetch }) {
   const queries = [];
   if (identity.lineUserId) {
+    if (/^U[A-Za-z0-9_-]{20,80}$/.test(identity.lineUserId)) {
+      queries.push(["client", env.AIRTABLE_TABLE_CLIENTS || "Clients", `{line_user_id}='${formulaValue(identity.lineUserId)}'`]);
+    }
     queries.push(["member", env.AIRTABLE_TABLE_MEMBERS || "Members", `{line_id}='${formulaValue(identity.lineUserId)}'`]);
   }
   if (extraction.session_id) {
@@ -247,7 +261,7 @@ export async function resolveDeterministicLinks({ env, identity, extraction, fet
   }
   const resolved = Object.fromEntries(await Promise.all(queries.map(async ([name, table, formula]) => [name, await uniqueRecord({ env, table, formula, fetchImpl })])));
   const ambiguous = Object.values(resolved).some((item) => item.ambiguous);
-  return { member: ambiguous ? "" : resolved.member?.id || "", session: ambiguous ? "" : resolved.session?.id || "", payment: ambiguous ? "" : resolved.payment?.id || "", renewal: ambiguous ? "" : resolved.renewal?.id || "", ambiguous };
+  return { client: ambiguous ? "" : resolved.client?.id || "", member: ambiguous ? "" : resolved.member?.id || "", session: ambiguous ? "" : resolved.session?.id || "", payment: ambiguous ? "" : resolved.payment?.id || "", renewal: ambiguous ? "" : resolved.renewal?.id || "", ambiguous };
 }
 
 export function buildStagedHandoff({ proofId, extraction, reviewRequired }) {
@@ -268,6 +282,12 @@ export function buildStagedHandoff({ proofId, extraction, reviewRequired }) {
 }
 
 function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired }) {
+  const paymentIntelligence = inferMembershipPayment({
+    amount_thb: extraction.amount_thb,
+    linked_member: Boolean(links.member),
+    linked_renewal: Boolean(links.renewal),
+    source_context: "line_ofc_payment_proof",
+  });
   const note = JSON.stringify({
     schema: "line_ofc_payment_proof_v1", line_user_id_hash: identity.lineUserIdHash, line_message_id: identity.messageId,
     webhook_event_id: identity.webhookEventId, r2_key: stored.key, evidence_sha256: stored.sha256, mime_type: stored.mimeType,
@@ -275,7 +295,14 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     provider: extraction.provider || null, sender_bank: extraction.sender_bank || null, receiver_bank: extraction.receiver_bank || null,
     duplicate_status: duplicateRef ? "duplicate_payment_ref" : duplicateSha ? "duplicate_sha" : "not_detected",
     extraction_error: extraction.extraction_error || null, raw_payload_json_redacted: { message_id: identity.messageId, webhook_event_id: identity.webhookEventId },
-    links, payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
+    links,
+    payment_intelligence: paymentIntelligence,
+    pending_identity: paymentIntelligence?.pending_member_profile && !links.client ? {
+      state: "pending_identity_match", line_user_id: identity.lineUserId || null, line_user_id_hash: identity.lineUserIdHash,
+      payer_name: extraction.payer_name || null, payment_ref: extraction.payment_ref || null, amount_thb: extraction.amount_thb,
+      created_from: "verified_line_payment_evidence", merge_target: "canonical_client_and_member",
+    } : null,
+    payments_worker_handoff: buildStagedHandoff({ proofId: identity.proofId, extraction, reviewRequired }),
   });
   // INTERNAL ONLY: note contains private R2 and payment-evidence metadata.
   // Never return this field from customer-facing or frontend APIs.
@@ -287,6 +314,7 @@ function proofFields({ identity, stored, extraction, duplicateSha, duplicateRef,
     fields.paid_at = localDate || new Date(extraction.paid_at).toISOString().slice(0, 10);
   }
   if (extraction.payment_ref) fields.payment_ref = extraction.payment_ref;
+  if (links.client) fields.Client = [links.client];
   if (links.member) fields.member = [links.member];
   if (links.session) fields.session = [links.session];
   if (links.payment) fields.payment = [links.payment];
@@ -300,14 +328,45 @@ async function createProof({ env, fields, fetchImpl }) {
 }
 
 export async function notifyOps({ env, kind, proofId, extraction = {}, status = "pending", fetchImpl = fetch }) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN);
-  const chatId = clean(env.TELEGRAM_OPS_CHAT_ID);
-  if (!token || !chatId) return { ok: false, skipped: true, reason: "telegram_config_missing" };
+  const chatId = clean(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID);
+  if (!chatId) return { ok: false, skipped: true, reason: "telegram_chat_missing" };
+
   const title = kind === "duplicate" ? "⚠️ LINE SLIP DUPLICATE" : kind === "extraction_failed" ? "⚠️ LINE SLIP REVIEW REQUIRED" : "🧾 LINE SLIP RECEIVED";
   const maskedRef = extraction.payment_ref ? `${extraction.payment_ref.slice(0, 4)}…${extraction.payment_ref.slice(-4)}` : "";
   const message = [title, `Proof: ${proofId}`, extraction.amount_thb != null ? `Amount: ${extraction.amount_thb} THB` : "", maskedRef ? `Ref: ${maskedRef}` : "", `Status: ${status}`].filter(Boolean).join("\n");
-  const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chatId, text: message }) });
-  return { ok: response.ok, status: response.status };
+  const threadId = Number(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 21) || 21;
+
+  const gatewayUrl = clean(env.TELEGRAM_INTERNAL_SEND_URL);
+  const gatewayToken = clean(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.TELEGRAM_INTERNAL_TOKEN);
+  if (gatewayUrl && gatewayToken) {
+    try {
+      const gatewayResponse = await fetchImpl(gatewayUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${gatewayToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flow: "payment_proof",
+          chat_id: chatId,
+          message_thread_id: threadId,
+          text: message,
+        }),
+      });
+      const gatewayBody = await gatewayResponse.json().catch(() => ({}));
+      if (gatewayResponse.ok && gatewayBody?.telegram?.ok === true) {
+        return { ok: true, status: gatewayResponse.status, route: "telegram_worker", message_thread_id: threadId };
+      }
+    } catch {}
+  }
+
+  // Transitional fallback while the LINE/Netlify service credential is rolled out.
+  // It still targets the canonical HYPE payment topic and never mutates payment truth.
+  const token = clean(env.TELEGRAM_BOT_TOKEN);
+  if (!token) return { ok: false, skipped: true, reason: "telegram_gateway_and_bot_missing", message_thread_id: threadId };
+  const response = await fetchImpl(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_thread_id: threadId, text: message }),
+  });
+  return { ok: response.ok, status: response.status, route: "direct_hype_thread_fallback", message_thread_id: threadId };
 }
 
 export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, now = new Date() }) {
@@ -331,11 +390,11 @@ export async function processPaymentSlipImage({ env, event, fetchImpl = fetch, n
       findDuplicate({ env, formula: duplicateShaFormula, fetchImpl }),
       findDuplicate({ env, formula: duplicateRefFormula, fetchImpl }),
     ]);
-    let links = { member: "", session: "", payment: "", renewal: "", ambiguous: false };
+    let links = { client: "", member: "", session: "", payment: "", renewal: "", ambiguous: false };
     try { links = await resolveDeterministicLinks({ env, identity, extraction, fetchImpl }); } catch { links.ambiguous = true; }
     const threshold = Math.max(0.5, Math.min(1, numberOrNull(env.LINE_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
     const reconciliationComplete = Boolean(extraction.payment_ref && extraction.amount_thb != null);
-    const deterministicallyLinked = Boolean(links.member || links.session || links.payment || links.renewal);
+    const deterministicallyLinked = Boolean(links.client || links.member || links.session || links.payment || links.renewal);
     const reviewRequired = Boolean(duplicateSha || duplicateRef || links.ambiguous || extraction.confidence_score < threshold || !reconciliationComplete || !deterministicallyLinked);
     const fields = proofFields({ identity, stored, extraction, duplicateSha, duplicateRef, links, reviewRequired });
     const proof = await createProof({ env, fields, fetchImpl });

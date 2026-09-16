@@ -1,3 +1,21 @@
+import {
+  handlePublicModelRequest,
+  PUBLIC_MODEL_ALLOWED_WORK_TYPES,
+  PUBLIC_MODEL_APPLY_PATH,
+  PUBLIC_MODEL_DOCUMENT_MIME_TYPES,
+  PUBLIC_MODEL_DOCUMENT_ROLES,
+  PUBLIC_MODEL_MAX_UPLOAD_BYTES,
+  PUBLIC_MODEL_PHOTO_MIME_TYPES,
+  PUBLIC_MODEL_PHOTO_ROLES,
+  PUBLIC_MODEL_SERVICE,
+  PUBLIC_MODEL_UPLOAD_SERVICE,
+  PUBLIC_MODEL_UPLOAD_URL_PATH,
+  PublicModelCoordinator,
+  probePublicModelReadiness,
+} from "./public-model.js";
+
+export { PublicModelCoordinator };
+
 const WORKER_NAME_FALLBACK = "sigil-worker";
 const MODE = "read_only";
 const SOURCE = "worker";
@@ -64,11 +82,28 @@ export default {
     const corsHeaders = corsFor(request, env);
 
     try {
+      if (url.pathname === PUBLIC_MODEL_APPLY_PATH) {
+        return handlePublicModelRequest(request, env, corsHeaders);
+      }
+
+      if (url.pathname === PUBLIC_MODEL_UPLOAD_URL_PATH) {
+        return handlePublicModelRequest(request, env, corsHeaders);
+      }
+
       if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
 
       if (url.pathname === "/health" || url.pathname === "/ping") {
         if (request.method !== "GET") return methodNotAllowed(corsHeaders);
-        return json({ ok: true, worker: workerName(env), mode: MODE }, 200, corsHeaders);
+        const publicModel = await probePublicModelReadiness(env);
+        return json({
+          ok: true,
+          worker: workerName(env),
+          mode: MODE,
+          capabilities: {
+            public_model_apply: publicModel.public_model_apply,
+            public_model_upload: publicModel.public_model_upload,
+          },
+        }, 200, corsHeaders);
       }
 
       if (isRecoveryCouponPath(url.pathname)) {
@@ -841,6 +876,7 @@ function queueLimitFrom(url) {
 }
 
 function corsFor(request, env) {
+  const pathname = new URL(request.url).pathname;
   const origin = request.headers.get("origin") || "";
   const allowed = (env?.ALLOWED_ORIGINS || "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io")
     .split(",")
@@ -849,7 +885,7 @@ function corsFor(request, env) {
   const headers = new Headers();
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("vary", "Origin");
-  headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
+  headers.set("access-control-allow-methods", corsMethodsForPath(pathname));
   headers.set("access-control-allow-headers", "content-type,x-request-id,x-mmd-client,x-mmd-proxy,x-mmd-route");
   headers.set("access-control-max-age", "86400");
   if (origin && allowed.includes(origin)) {
@@ -857,6 +893,13 @@ function corsFor(request, env) {
     headers.set("access-control-allow-credentials", "true");
   }
   return headers;
+}
+
+function corsMethodsForPath(pathname) {
+  if (pathname === BOARD_STATUS_PATH || pathname === BOARD_QUEUE_PATH) return "GET,OPTIONS";
+  if (pathname === PUBLIC_MODEL_APPLY_PATH) return "POST,OPTIONS";
+  if (pathname === PUBLIC_MODEL_UPLOAD_URL_PATH) return "POST,PUT,OPTIONS";
+  return "GET,POST,OPTIONS";
 }
 
 function json(body, status = 200, headers = new Headers()) {
@@ -874,6 +917,16 @@ function errorMessage(error) {
 }
 
 export const testInternals = {
+  PUBLIC_MODEL_APPLY_PATH,
+  PUBLIC_MODEL_UPLOAD_URL_PATH,
+  PUBLIC_MODEL_SERVICE,
+  PUBLIC_MODEL_UPLOAD_SERVICE,
+  PUBLIC_MODEL_ALLOWED_WORK_TYPES,
+  PUBLIC_MODEL_PHOTO_ROLES,
+  PUBLIC_MODEL_DOCUMENT_ROLES,
+  PUBLIC_MODEL_PHOTO_MIME_TYPES,
+  PUBLIC_MODEL_DOCUMENT_MIME_TYPES,
+  PUBLIC_MODEL_MAX_UPLOAD_BYTES,
   BOARD_STATUS_PATH,
   BOARD_QUEUE_PATH,
   BOARD_CARDS_KV_KEY,
@@ -895,4 +948,5 @@ export const testInternals = {
   normalizeComplaintLane,
   evidenceFileMeta,
   complaintLookupKeys,
+  corsMethodsForPath,
 };
