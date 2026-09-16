@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 
+import { resolvePerRenameAlias } from "../admin-worker/src/per-rename-client-search.js";
+
 const API = "https://api.airtable.com/v0";
 const base = process.env.AIRTABLE_BASE_ID || "appsV1ILPRfIjkaYg";
 const table = process.env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID || "tblwn6I9VWie5d7Ui";
+const clientsTable = process.env.AIRTABLE_TABLE_CLIENTS_ID || "tblVv58TCbwh5j1fS";
 const token = String(process.env.AIRTABLE_API_KEY || "").trim();
 const outPath = process.argv[2] || "/tmp/mmd-create-job-per-rename-canary.txt";
 
@@ -83,3 +86,21 @@ if (!candidate) throw new Error("no_multi_client_per_rename_canary_available");
 const [query, metadata] = candidate;
 fs.writeFileSync(outPath, query, { mode: 0o600 });
 console.log(`Per Rename production canary prepared: ${metadata.clients.size} canonical clients`);
+
+try {
+  const resolved = await resolvePerRenameAlias({
+    AIRTABLE_API_KEY: token,
+    AIRTABLE_BASE_ID: base,
+    AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX_ID: table,
+    AIRTABLE_TABLE_CLIENTS_ID: clientsTable,
+  }, query);
+  const resolvedCount = Array.isArray(resolved?.records) ? resolved.records.length : resolved?.record ? 1 : 0;
+  console.log(`Direct Per Rename resolver state=${clean(resolved?.state) || "missing"} count=${resolvedCount}`);
+} catch (error) {
+  const raw = clean(error?.message || error);
+  const safe = /^airtable_[A-Za-z0-9]+_\d{3}$/.test(raw) || raw === "per_rename_storage_not_ready"
+    ? raw
+    : "per_rename_resolver_error";
+  console.error(`Direct Per Rename resolver failed: ${safe}`);
+  process.exit(2);
+}
