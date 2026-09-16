@@ -15,6 +15,7 @@ function isRotatingSessionPath(request) {
   if (!(request instanceof Request)) return false;
   let path;
   try { path = normalizePath(new URL(request.url).pathname).toLowerCase(); } catch { return false; }
+  if (path === "/member/api/liff/mms/history") return false;
   return path === "/api/member/dashboard" || path.startsWith("/member/api/liff/");
 }
 
@@ -148,9 +149,6 @@ export default {
     if (!rotatedToken || rotatedToken === snapshot.token) return response;
 
     try {
-      // If this GET arrived on a grace token, the foundation copied the grace
-      // marker into the replacement session. Remove it from the newly-issued
-      // current token before restoring the old token as a short read-only alias.
       await scrubRotatedSession(env, rotatedToken);
       await restoreReadGrace(env, snapshot);
       return withOverlapHeader(response, "read-only-30s-v1");
