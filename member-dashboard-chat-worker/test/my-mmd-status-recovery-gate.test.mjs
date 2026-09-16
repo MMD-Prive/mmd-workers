@@ -27,6 +27,33 @@ test("coupon status LIFF returns to the single /coupon entry after verified star
   assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), "/coupon");
 });
 
+test("TMIB status LIFF returns to the originating story or checkout after verified start", () => {
+  const actTarget = "/tmib/act-001#unlock-v4";
+  const actRequest = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(actTarget)}`);
+  assert.equal(I.statusReturnTarget(actRequest), actTarget);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, actRequest), actTarget);
+
+  const checkoutTarget = "/pay/tmib?episode=act-001";
+  const checkoutRequest = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(checkoutTarget)}`);
+  assert.equal(I.statusReturnTarget(checkoutRequest), checkoutTarget);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, checkoutRequest), checkoutTarget);
+});
+
+test("TMIB return-to-origin fails closed for external, privileged, or malformed targets", () => {
+  const hostileTargets = [
+    "https://evil.example/",
+    "//evil.example/tmib/act-001",
+    "/internal/admin",
+    "/pay/tmib?episode=../../internal/admin",
+    "/pay/tmib?episode=act-001&next=https://evil.example/",
+    "/tmib/not-an-act",
+  ];
+  for (const target of hostileTargets) {
+    const request = new Request(`https://www.mmdbkk.com/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+    assert.equal(I.statusReturnTarget(request), "/my-mmd/");
+  }
+});
+
 test("LINE liff.state status launch gets the same direct My MMD return", () => {
   const state = encodeURIComponent("/member/liff?intent=status");
   const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
@@ -46,6 +73,15 @@ test("LINE liff.state carries the coupon return target without allowing arbitrar
   const hostileRequest = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${hostileState}`);
   assert.equal(I.statusReturnTarget(hostileRequest), "/my-mmd/");
   assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, hostileRequest));
+});
+
+test("LINE liff.state carries the bounded TMIB origin", () => {
+  const target = "/pay/tmib?episode=act-001";
+  const state = encodeURIComponent(`/member/liff?intent=status&return_to=${encodeURIComponent(target)}`);
+  const request = new Request(`https://www.mmdbkk.com/member/liff?liff.state=${state}`);
+  assert.equal(I.isStatusLiffShellRequest(request), true);
+  assert.equal(I.statusReturnTarget(request), target);
+  assertDirectReturn(I.stabilizeStatusShell(STATUS_SHELL, request), target);
 });
 
 test("status shell defaults to status when LINE omits intent, but never steals campaign LIFF", () => {
