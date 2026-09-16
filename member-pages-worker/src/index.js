@@ -19,6 +19,7 @@ import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
 import { handleTmibAct001Content, isTmibAct001ContentPath } from "./tmib-act001-content.js";
+import { handleTmibAct001Media, isTmibAct001MediaPath } from "./tmib-media-lazy-seed.js";
 import {
   ensureMemberHistoryRecoveryOnAccess,
   isMemberHistoryOnAccessPath,
@@ -50,10 +51,11 @@ export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
 
-    // TMIB Long Story routes resolve before generic response decorators. The
-    // content endpoint reuses the same canonical entitlement gate and returns
-    // the narrative only after that gate grants access.
+    // TMIB Long Story routes resolve before generic response decorators. Media
+    // keeps the canonical session/signature gate and may migrate a missing
+    // source object into private R2 only after those checks have passed.
     if (isTmibAct001ContentPath(url)) return handleTmibAct001Content(request, env);
+    if (isTmibAct001MediaPath(url)) return handleTmibAct001Media(request, env);
     if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
