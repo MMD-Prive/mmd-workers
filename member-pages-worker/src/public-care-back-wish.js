@@ -52,8 +52,10 @@ export async function handlePublicCareBackWishRoute(request, env = {}) {
   return json({ ok: false, error: { code: "NOT_FOUND", message: "Not found." } }, 404);
 }
 
-// Only this server-side projection can make a stored Wish public. Legacy rows
-// without explicit publication consent are private, including linked members.
+// Only this server-side projection can make a stored Wish public. New wishes
+// require the customer's explicit opt-in. Historical wishes may also be
+// published when the owner has recorded an explicit publication approval;
+// this keeps the approval provenance separate from customer consent.
 export async function handlePublicWishFeed(request, env = {}) {
   if (request.method !== "GET") return methodNotAllowed("GET");
   const store = getPublicWishStore(env);
@@ -65,13 +67,17 @@ export async function handlePublicWishFeed(request, env = {}) {
       const fields = record?.fields || {};
       const payload = safeObjectJson(fields.payload_json);
       const text = normalizeText(fields.wish_text, MAX_WISH);
+      const customerOptIn = payload.public_display_consent === true
+        && payload.public_display_consent_version === "wish-wall-v1"
+        && safeTimestamp(payload.public_display_consented_at)
+        && payload.public_display_customer_verified === true
+        && safeTimestamp(payload.public_display_customer_verified_at)
+        && payload.wish_kind === "verified_identity_linked";
+      const ownerApproval = payload.public_display_owner_approved === true
+        && safeTimestamp(payload.public_display_owner_approved_at)
+        && payload.public_display_approval_basis === "owner_request_publish_all_real_wishes_all_phases_2026-09-16";
       if (fields.campaign_id !== CAMPAIGN_ID || fields.wish_status !== "completed"
-        || payload.public_display_consent !== true
-        || payload.public_display_consent_version !== "wish-wall-v1"
-        || !safeTimestamp(payload.public_display_consented_at)
-        || payload.public_display_customer_verified !== true
-        || !safeTimestamp(payload.public_display_customer_verified_at)
-        || payload.wish_kind !== "verified_identity_linked"
+        || (!customerOptIn && !ownerApproval)
         || !text || !safeTimestamp(fields.submitted_at)) return [];
       return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
     }).slice(0, 24);
@@ -308,7 +314,7 @@ class AirtablePublicWishStore {
   }
 
   async listPublicCandidates() {
-    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',FIND('"public_display_customer_verified":true',{payload_json}&''))`, 100, true);
+    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',OR(FIND('"public_display_customer_verified":true',{payload_json}&''),FIND('"public_display_owner_approved":true',{payload_json}&'')))`, 100, true);
   }
 
   async findByRequestId(requestId) {
