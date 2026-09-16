@@ -1,0 +1,70 @@
+name: LINE OFC Per-Rename Apply Mapped v1
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/line-ofc-per-rename-resolve-mapped-v1.js'
+      - '.github/workflows/line-ofc-per-rename-apply-mapped-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/line-ofc-per-rename-resolve-mapped-v1.js'
+      - '.github/workflows/line-ofc-per-rename-apply-mapped-v1.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Self-test mapped resolver
+        run: node scripts/line-ofc-per-rename-resolve-mapped-v1.js --self-test
+      - name: Self-test authoritative backfill
+        run: node scripts/line-ofc-per-rename-backfill-v1.js --self-test
+
+  production-apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve 291 mapped rooms to exact LINE User IDs
+        run: node scripts/line-ofc-per-rename-resolve-mapped-v1.js /tmp/per-rename-mapped-input.json /tmp/resolve-receipt.json
+      - name: Dry-run authoritative Per-Rename backfill
+        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --dry-run --report /tmp/dry-run.json
+      - name: Assert dry-run scope
+        run: |
+          node - <<'NODE'
+          const r=require('/tmp/dry-run.json');
+          if(r.source.source_rows!==291) throw new Error('source_rows_not_291');
+          if(r.source.invalid_line_user_id_rows!==0) throw new Error('invalid_uid_rows');
+          if(r.source.invalid_rename_rows!==8) throw new Error('invalid_rename_rows_not_8');
+          if(r.source.selected_unique_identities!==283) throw new Error('selected_not_283');
+          if(r.source.unresolved_rename_conflict_groups!==0) throw new Error('rename_conflicts');
+          console.log(JSON.stringify({ok:true,source_rows:291,selected:283,held_invalid_rename:8}));
+          NODE
+      - name: Apply one authoritative Per-Rename row per LINE User ID
+        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --apply --report /tmp/apply.json
+      - name: Verify exact rerun is zero writes
+        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --input /tmp/per-rename-mapped-input.json --dry-run --assert-idempotent --report /tmp/noop.json
+      - name: Upload count-only receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-per-rename-apply-mapped-v1-receipts
+          path: |
+            /tmp/resolve-receipt.json
+            /tmp/dry-run.json
+            /tmp/apply.json
+            /tmp/noop.json
+          retention-days: 30
