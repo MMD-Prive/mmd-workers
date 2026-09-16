@@ -7,6 +7,10 @@ import {
   KENJI_LV5_LIVE_CONTEXT_SCHEMA,
   resolveKenjiLv5LiveContext,
 } from "./kenji-lv5-live-context.js";
+import {
+  executeKenjiLv5SupervisedAction,
+  KENJI_LV5_ACTION_RPC_PATH,
+} from "./kenji-lv5-supervised-action.js";
 
 export const KENJI_LV5_OPERATIONAL_RPC_PATH = "/v1/internal/kenji/operational-context";
 export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/live";
@@ -19,7 +23,7 @@ const ALLOWED_CALLERS = new Set([
 
 export function isKenjiLv5OperationalRpcRequest(path, method = "") {
   const normalized = normalizePath(path);
-  return [KENJI_LV5_OPERATIONAL_RPC_PATH, KENJI_LV5_LIVE_RPC_PATH].includes(normalized)
+  return [KENJI_LV5_OPERATIONAL_RPC_PATH, KENJI_LV5_LIVE_RPC_PATH, KENJI_LV5_ACTION_RPC_PATH].includes(normalized)
     && String(method || "").toUpperCase() === "POST";
 }
 
@@ -32,6 +36,17 @@ export async function handleKenjiLv5OperationalRpc(request, env = {}) {
   }
 
   const path = normalizePath(new URL(request.url).pathname);
+  if (path === KENJI_LV5_ACTION_RPC_PATH) {
+    const result = await executeKenjiLv5SupervisedAction(env, body);
+    return json({
+      ...result,
+      transport: {
+        mode: "service_binding_only_supervised_action",
+        caller: clean(request.headers.get("x-mmd-service-binding"), 120),
+      },
+    }, actionStatus(result));
+  }
+
   if (path === KENJI_LV5_LIVE_RPC_PATH) {
     const context = await resolveKenjiLv5LiveContext(env, body);
     return json({
@@ -63,6 +78,14 @@ export async function handleKenjiLv5OperationalRpc(request, env = {}) {
     },
     schema: KENJI_LV5_SCHEMA,
   });
+}
+
+function actionStatus(result = {}) {
+  if (result?.ok === true) return 200;
+  if (result?.status === "write_failed") return 503;
+  if (result?.status === "invalid_action_request") return 400;
+  if (["supervision_required", "action_blocked"].includes(result?.status)) return 409;
+  return 400;
 }
 
 function authorized(request, env) {
