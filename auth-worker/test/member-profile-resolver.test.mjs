@@ -27,7 +27,7 @@ function useFixedClock() {
   };
 }
 
-function env() {
+function env(overrides = {}) {
   return {
     AIRTABLE_API_KEY: "test-airtable-key",
     AIRTABLE_BASE_ID: "app_test",
@@ -38,6 +38,7 @@ function env() {
     AIRTABLE_TABLE_POINTS_LEDGER: "MMD — Points Ledger",
     AIRTABLE_MEMBERS_LINE_USER_ID_FIELD: "line_id",
     MEMBER_STATUS_RESOLVER_SECRET: SECRET,
+    ...overrides,
   };
 }
 
@@ -371,4 +372,64 @@ test("LIFF member profile resolver rejects public calls and browser-selected his
   assert.equal(publicResponse.status, 404);
   assert.equal(widened.status, 400);
   assert.equal(called, false);
+});
+
+test("LIFF member profile returns partial-safe Customer 360 when ancillary reads hit the shared deadline", async () => {
+  let abortedReads = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") {
+      return Response.json({ records: [{ id: "rec_member", fields: {
+        line_id: LINE_ID,
+        member_id: "mmd-stage-timeout",
+        "Full Name (Display)": "Deadline Test",
+        "Contact Email": "deadline@example.invalid",
+      } }] });
+    }
+    return new Promise((_resolve, reject) => {
+      const fail = () => {
+        abortedReads += 1;
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      if (init.signal?.aborted) return fail();
+      init.signal?.addEventListener("abort", fail, { once: true });
+    });
+  };
+
+  const startedAt = Date.now();
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.member_exists, true);
+  assert.equal(payload.data.member_id, "mmd-stage-timeout");
+  assert.equal(payload.data.profile.customer_360.packages.status, "checking");
+  assert.equal(payload.data.profile.customer_360.points.status, "checking");
+  assert.equal(payload.data.profile.customer_360.jobs.status, "checking");
+  assert.ok(abortedReads >= 3);
+  assert.ok(Date.now() - startedAt < 500);
+});
+
+test("LIFF member profile fails closed when the authoritative Members lookup exceeds the shared deadline", async () => {
+  let aborted = false;
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    const fail = () => {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (init.signal?.aborted) return fail();
+    init.signal?.addEventListener("abort", fail, { once: true });
+  });
+
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, "MEMBER_PROFILE_RESOLVER_UNAVAILABLE");
+  assert.equal(aborted, true);
 });

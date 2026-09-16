@@ -1,0 +1,44 @@
+name: Test mms-worker
+
+on:
+  pull_request:
+    paths:
+      - "mms-worker/**"
+      - ".github/workflows/test-mms-worker.yml"
+  push:
+    branches-ignore:
+      - main
+    paths:
+      - "mms-worker/**"
+      - ".github/workflows/test-mms-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-mms-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Install mms-worker dependencies
+        run: npm install --prefix mms-worker --ignore-scripts
+
+      - name: Test MMS contracts and privacy boundary
+        run: npm test --prefix mms-worker
+
+      - name: Validate Cloudflare bundle
+        working-directory: mms-worker
+        run: npx wrangler deploy --dry-run

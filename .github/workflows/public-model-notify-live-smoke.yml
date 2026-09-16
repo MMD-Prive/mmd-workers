@@ -1,0 +1,58 @@
+name: Public Model Bot Live Smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/public-model-notify-live-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fire one production Public Model application
+        shell: bash
+        run: |
+          node <<'NODE'
+          const endpoint = "https://sigil-worker.malemodel-bkk.workers.dev/v1/public-model/apply";
+          const runId = String(process.env.GITHUB_RUN_ID || Date.now());
+          const payload = {
+            application_type: "public_model",
+            form_version: "public-model-apply-v8",
+            nickname: `MMD BOT TEST ${runId}`,
+            email: `public-model-bot-test-${runId}@example.invalid`,
+            consent: true,
+            age: 30,
+            height: 180,
+            location: "Bangkok - PRODUCTION BOT TEST",
+            occupation_detail: "MMD internal notification test",
+            work_types: ["Public Events"],
+            intro: "PRODUCTION TEST ONLY - verify Airtable to Telegram notification flow.",
+            submitted_at: new Date().toISOString(),
+            timezone: "Asia/Bangkok",
+            language: "th"
+          };
+
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "origin": "https://www.mmdbkk.com",
+              "x-mmd-client": "github-live-smoke",
+              "x-request-id": `pma-live-smoke-${runId}`
+            },
+            body: JSON.stringify(payload)
+          });
+          const body = await response.json().catch(() => null);
+          console.log("Apply HTTP:", response.status);
+          console.log("Apply response:", JSON.stringify(body));
+          if (!response.ok || body?.ok !== true || !body?.application_id) {
+            throw new Error(`Public Model production apply failed: HTTP ${response.status}`);
+          }
+          console.log(`LIVE BOT SMOKE SUBMITTED application_id=${body.application_id}`);
+          NODE

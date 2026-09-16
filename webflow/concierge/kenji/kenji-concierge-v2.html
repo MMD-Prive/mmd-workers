@@ -1,0 +1,131 @@
+<main
+  id="kenji-concierge"
+  class="kc"
+  data-profile-endpoint="/member/api/my-mmd/profile"
+  data-chat-url="/member/kenji-ai-20"
+  data-verify-url="/member/my-mmd"
+  data-booking-url="/booking"
+  data-recovery-url="/recovery"
+  aria-labelledby="kc-title"
+>
+  <section class="kc-hero" aria-labelledby="kc-title">
+    <picture class="kc-hero__media" aria-hidden="true">
+      <source media="(min-width: 768px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0d36b309d889ec6d5_Kenji%20CC%2012.webp">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b02b82617e25beaa4c_Kenji%20CC%2002.webp" alt="" width="1086" height="1448" fetchpriority="high">
+    </picture>
+    <div class="kc-hero__veil" aria-hidden="true"></div>
+    <div class="kc-shell kc-hero__content">
+      <p class="kc-kicker">MMD AI · VERIFIED MEMBER CONCIERGE</p>
+      <h1 id="kc-title">ผมรู้ว่า<br>คุณควรไปต่อทางไหน</h1>
+      <p class="kc-hero__copy">ผมคือ Kenji — อ่านสถานะสมาชิกจริง ก่อนพาไปเรื่องสิทธิ์ การจอง และ Private Care</p>
+      <div class="kc-actions">
+        <a class="kc-button kc-button--primary" data-kc-primary href="/member/my-mmd">ให้ผมตรวจสอบสิทธิ์</a>
+        <a class="kc-button kc-button--quiet" href="#kc-services">เลือกเรื่องให้ผมดู</a>
+      </div>
+      <div class="kc-ai-rail" aria-label="MMD AI process">
+        <span><i aria-hidden="true"></i> IDENTITY</span>
+        <span><i aria-hidden="true"></i> ACCESS</span>
+        <span><i aria-hidden="true"></i> NEXT ACTION</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="kc-status" aria-labelledby="kc-status-title">
+    <div class="kc-shell">
+      <div class="kc-status__card" data-kc-status-card data-state="loading" aria-live="polite">
+        <span class="kc-status__dot" aria-hidden="true"></span>
+        <div class="kc-status__body">
+          <p class="kc-label">MMD AI · LIVE MEMBER STATUS</p>
+          <h2 id="kc-status-title" data-kc-status-title>กำลังอ่านสถานะสมาชิก</h2>
+          <p data-kc-status-copy>ผมจะตอบจากข้อมูลที่ยืนยันแล้วเท่านั้น</p>
+        </div>
+        <button class="kc-status__retry" type="button" data-kc-retry hidden>ลองอีกครั้ง</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="kc-services" class="kc-section" aria-labelledby="kc-services-title">
+    <div class="kc-shell">
+      <header class="kc-section__head kc-reveal">
+        <p class="kc-kicker">ONE STATUS · NEXT BEST ACTION</p>
+        <h2 id="kc-services-title">ไม่ต้องหาเองครับ</h2>
+        <p>ผมอ่านสถานะจริง แล้วพาไปยังขั้นตอนที่ทำได้ตอนนี้</p>
+      </header>
+
+      <div class="kc-service-rail" role="list" aria-label="งานที่ Kenji ช่วยดูแล">
+        <a class="kc-service-card kc-reveal" role="listitem" data-kc-membership href="/member/my-mmd">
+          <span class="kc-service-card__number">01 · MY MMD</span><h3>สิทธิ์ของคุณ<br>ตอนนี้</h3>
+          <p>สถานะ สิทธิ์ และการต่ออายุในจุดเดียว</p><span class="kc-arrow" aria-hidden="true">↗</span>
+        </a>
+        <a class="kc-service-card kc-reveal" role="listitem" data-kc-booking href="/booking">
+          <span class="kc-service-card__number">02 · BOOKING</span><h3>เปลี่ยนความต้องการ<br>เป็นคำขอที่ชัดเจน</h3>
+          <p>เวลา พื้นที่ ความต้องการ และ next step</p><span class="kc-arrow" aria-hidden="true">↗</span>
+        </a>
+        <a class="kc-service-card kc-reveal" role="listitem" data-kc-private href="/member/kenji-ai-20">
+          <span class="kc-service-card__number">03 · PRIVATE MATCH</span><h3>เห็นเฉพาะ<br>ตัวเลือกที่เข้าถึงได้</h3>
+          <p>คัดตามสิทธิ์ที่ยืนยันแล้ว ไม่มีการเดา</p><span class="kc-arrow" aria-hidden="true">↗</span>
+        </a>
+        <a class="kc-service-card kc-reveal" role="listitem" data-kc-private href="/member/kenji-ai-20">
+          <span class="kc-service-card__number">04 · CARE LOOP</span><h3>งานจบ<br>การดูแลยังไม่จบ</h3>
+          <p>รับเรื่อง ติดตาม และส่งต่ออย่างเป็นส่วนตัว</p><span class="kc-arrow" aria-hidden="true">↗</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="kc-story" aria-label="การดูแลของ Kenji">
+    <article class="kc-story-card kc-reveal">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b01bf3d46fb13a7070_Kenji%20CC%2005.webp" alt="Kenji กำลังคัดสรรแฟ้มข้อมูลอย่างเป็นส่วนตัว" width="1122" height="1402" loading="lazy">
+      <div class="kc-story-card__shade" aria-hidden="true"></div>
+      <div class="kc-story-card__copy">
+        <p class="kc-kicker">MMD AI · CURATED ACCESS</p><h2>ไม่เปิดทั้งหมด<br>ผมเลือกเฉพาะที่ใช่</h2>
+        <p>เวลา พื้นที่ ความต้องการ และสิทธิ์—ผมรวมให้เป็นตัวเลือกที่ชัดเจน</p>
+        <a class="kc-text-link" data-kc-private href="/member/kenji-ai-20">ให้ Kenji เริ่มคัดสรร <span aria-hidden="true">↗</span></a>
+      </div>
+    </article>
+
+    <article class="kc-story-card kc-reveal">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0c8e3decbef9bbd99_Kenji%20CC%2001.webp" alt="Kenji รับฟังสมาชิกในพื้นที่ส่วนตัว" width="1122" height="1402" loading="lazy">
+      <div class="kc-story-card__shade" aria-hidden="true"></div>
+      <div class="kc-story-card__copy">
+        <p class="kc-kicker">MMD AI · PRIVATE AFTERCARE</p><h2>หลังบริการ<br>ผมยังตามเรื่องให้</h2>
+        <p>Feedback ส่วนตัว การติดตาม และ Private Care อยู่ในเส้นทางเดียวกัน</p>
+        <a class="kc-text-link" data-kc-private href="/member/kenji-ai-20">เปิด Private Care <span aria-hidden="true">↗</span></a>
+      </div>
+    </article>
+  </section>
+
+  <section class="kc-details" aria-labelledby="kc-details-title">
+    <div class="kc-shell kc-details__grid">
+      <header><p class="kc-kicker">THE INTELLIGENCE BEHIND THE ANSWER</p><h2 id="kc-details-title">ระบบที่อยู่หลัง<br>คำตอบของผม</h2></header>
+      <div class="kc-accordion">
+        <details class="kc-disclosure">
+          <summary>ผมตอบจากอะไร <span class="kc-plus" aria-hidden="true"></span></summary>
+          <div class="kc-disclosure__content"><p>ผมใช้สถานะจาก MY MMD ที่ยืนยันแล้ว เพื่อแนะนำเฉพาะสิ่งที่คุณเข้าถึงได้จริง</p></div>
+        </details>
+        <details class="kc-disclosure">
+          <summary>ถ้าสถานะยังไม่พร้อม <span class="kc-plus" aria-hidden="true"></span></summary>
+          <div class="kc-disclosure__content"><p>ผมจะไม่เดาหรือเปิดสิทธิ์ล่วงหน้า และจะพาคุณไปยืนยันที่ MY MMD ก่อนครับ</p></div>
+        </details>
+        <details class="kc-disclosure">
+          <summary>เรื่องไหนส่งถึง Boss Per <span class="kc-plus" aria-hidden="true"></span></summary>
+          <div class="kc-disclosure__content"><p>เรื่องที่ต้องใช้อำนาจตัดสินใจจะถูกสรุปและส่งต่ออย่างเป็นส่วนตัว Kenji ไม่อนุมัติแทน MMD</p></div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="kc-recovery kc-reveal" aria-labelledby="kc-recovery-title">
+    <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa4b6b0125e7d701f62a5e6_Kenji%20CC%2008.webp" alt="Kenji ยืนอยู่หน้าห้อง Private Care" width="1918" height="820" loading="lazy">
+    <div class="kc-recovery__veil" aria-hidden="true"></div>
+    <div class="kc-shell kc-recovery__content">
+      <p class="kc-kicker">MMD AI · PRIVATE CARE</p><h2 id="kc-recovery-title">เรื่องละเอียดอ่อน<br>ไม่ควรถูกทิ้งไว้กลางทาง</h2>
+      <p>ส่งให้ผมครับ ผมจะรับเรื่องและพาไปยังคนที่ควรดูแลต่อ</p>
+      <a class="kc-button kc-button--primary" data-kc-recovery href="/recovery">ส่งเรื่องถึง Private Care</a>
+    </div>
+  </section>
+
+  <footer class="kc-footer">
+    <div class="kc-shell"><p>KENJI · MMD AI · PRIVÉ</p><a data-kc-footer href="/member/my-mmd">ให้ Kenji พาไปต่อ <span aria-hidden="true">↗</span></a></div>
+  </footer>
+</main>

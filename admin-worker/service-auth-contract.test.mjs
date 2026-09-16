@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import "./model-confirm-cal-hold.test.mjs";
 import { callPaymentsCreateLink, verifyStartWorkPaymentTruth } from "./src/index.js";
 import { notifyStudioTelegram } from "./src/studio-telegram-worker.js";
 
