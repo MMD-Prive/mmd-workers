@@ -11,6 +11,7 @@ import {
 } from "../src/kenji-lv5-line-operational.mjs";
 import { renderKenjiLv5ModelGateReply } from "../src/kenji-lv5-line-model-gate.mjs";
 import { KENJI_LV5_HYPE_INTERNALS } from "../src/kenji-lv5-hype-alert.mjs";
+import { KENJI_LV5_LINE_REQUEST_INTERNALS } from "../src/kenji-lv5-line-operational-request.mjs";
 
 const NOW = new Date("2026-09-16T12:00:00+07:00");
 const USER_ID = "U0123456789abcdef0123456789abcdef";
@@ -103,6 +104,23 @@ test("model access silent state does not reveal private model existence or sched
   const reply = renderKenjiLv5ModelGateReply({ required: true, status: "silent" });
   assert.match(reply, /ยังยืนยันสิทธิ์กับนายแบบที่ขอ/);
   assert.doesNotMatch(reply, /ว่าง|ไม่ว่าง|มีนายแบบ|ไม่มีนายแบบ/);
+});
+
+test("model code or alias must not bypass canonical calendar-name mapping", () => {
+  const same = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+    required: true,
+    status: "match",
+    parsed: { model_name: "Rossi" },
+    model: { working_name: "Rossi", model_code: "EMs20" },
+  });
+  const alias = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+    required: true,
+    status: "match",
+    parsed: { model_name: "EMs20" },
+    model: { working_name: "Rossi", model_code: "EMs20" },
+  });
+  assert.equal(same, false);
+  assert.equal(alias, true);
 });
 
 test("HYPE exception routing keeps payment, membership and identity in canonical threads", () => {
