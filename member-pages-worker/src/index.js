@@ -17,6 +17,7 @@ import { handleMemberEmailRecovery, isMemberEmailRecoveryPath } from "./member-e
 import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./mms-member-prebooking-read.js";
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
+import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
 import {
   ensureMemberHistoryRecoveryOnAccess,
   isMemberHistoryOnAccessPath,
@@ -47,6 +48,11 @@ export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coord
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);
+
+    // TMIB Long Story is a member-identity-bound content gate. It must resolve
+    // before generic response decorators because media responses are binary and
+    // access is already re-verified against the canonical LIFF/member state.
+    if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
     // bound to the server-verified LINE session. It must remain available even
