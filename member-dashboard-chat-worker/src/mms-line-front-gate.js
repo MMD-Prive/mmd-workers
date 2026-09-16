@@ -9,6 +9,9 @@ const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
 const DEFAULT_STATUS_RETURN_TARGET = "/my-mmd/";
 const COUPON_STATUS_RETURN_TARGET = "/coupon";
+const RETURN_TARGET_BASE = "https://www.mmdbkk.com";
+const TMIB_ACT_PATH = /^\/tmib\/act-\d{3}$/;
+const TMIB_EPISODE = /^act-\d{3}$/;
 
 function cookieValue(request, name) {
   for (const part of String(request.headers.get("cookie") || "").split(";")) {
@@ -50,12 +53,37 @@ function liffStateSearchParams(url) {
   return new URLSearchParams();
 }
 
+function tmibReturnTarget(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.length > 600 || !raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\") || /[\u0000-\u001f\u007f]/.test(raw)) return "";
+
+  let target;
+  try { target = new URL(raw, RETURN_TARGET_BASE); } catch { return ""; }
+  if (target.origin !== RETURN_TARGET_BASE) return "";
+
+  const path = target.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
+  if (path === "/tmib" || path === "/tmib/stories" || TMIB_ACT_PATH.test(path)) {
+    return `${path}${target.hash || ""}`;
+  }
+
+  if (path === "/pay/tmib") {
+    const keys = [...target.searchParams.keys()];
+    if (keys.some((key) => key !== "episode")) return "";
+    const episode = String(target.searchParams.get("episode") || "act-001").trim().toLowerCase();
+    if (!TMIB_EPISODE.test(episode)) return "";
+    return `/pay/tmib?episode=${encodeURIComponent(episode)}${target.hash || ""}`;
+  }
+
+  return "";
+}
+
 export function statusReturnTarget(request) {
   let url;
   try { url = new URL(request.url); } catch { return DEFAULT_STATUS_RETURN_TARGET; }
   const stateParams = liffStateSearchParams(url);
-  const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim().toLowerCase();
-  return returnTo === "coupon" ? COUPON_STATUS_RETURN_TARGET : DEFAULT_STATUS_RETURN_TARGET;
+  const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim();
+  if (returnTo.toLowerCase() === "coupon") return COUPON_STATUS_RETURN_TARGET;
+  return tmibReturnTarget(returnTo) || DEFAULT_STATUS_RETURN_TARGET;
 }
 
 export function isStatusLiffShellRequest(request) {
@@ -107,7 +135,7 @@ export function stabilizeStatusShell(html, request) {
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
-    `$1      if (started) { show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD"); window.location.replace(${targetJson}); return; }`,
+    `$1      if (started) { show("ยืนยัน LINE สำเร็จแล้วครับ กำลังกลับไปหน้าที่เปิดไว้"); window.location.replace(${targetJson}); return; }`,
   );
   output = output.replace(
     /const target = ["']\/my-mmd\/["'];/g,
