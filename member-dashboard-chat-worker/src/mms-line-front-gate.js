@@ -7,6 +7,8 @@ const STATUS_PATHS = new Set(["/member/api/liff/status", "/member/api/liff/statu
 const LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const LIFF_API_PREFIX = "/member/api/liff/";
 const CARE_BACK_LINK_ENDPOINT = "/member/api/care-back/link-wish";
+const DEFAULT_STATUS_RETURN_TARGET = "/my-mmd/";
+const COUPON_STATUS_RETURN_TARGET = "/coupon";
 
 function cookieValue(request, name) {
   for (const part of String(request.headers.get("cookie") || "").split(";")) {
@@ -46,6 +48,14 @@ function liffStateSearchParams(url) {
   if (queryIndex >= 0) return new URLSearchParams(state.slice(queryIndex + 1));
   if (state.startsWith("intent=") || state.startsWith("liff_intent=")) return new URLSearchParams(state);
   return new URLSearchParams();
+}
+
+export function statusReturnTarget(request) {
+  let url;
+  try { url = new URL(request.url); } catch { return DEFAULT_STATUS_RETURN_TARGET; }
+  const stateParams = liffStateSearchParams(url);
+  const returnTo = String(url.searchParams.get("return_to") || stateParams.get("return_to") || "").trim().toLowerCase();
+  return returnTo === "coupon" ? COUPON_STATUS_RETURN_TARGET : DEFAULT_STATUS_RETURN_TARGET;
 }
 
 export function isStatusLiffShellRequest(request) {
@@ -89,6 +99,7 @@ function safeNonce(html) {
 
 export function stabilizeStatusShell(html, request) {
   if (!isStatusLiffShellRequest(request)) return String(html || "");
+  const targetJson = JSON.stringify(statusReturnTarget(request));
   let output = String(html || "");
   output = output.replace(
     /(^|\n)[ \t]*const existingProfile = await readProfile\(\);[ \t]*\n[ \t]*if \(existingProfile\) return;/m,
@@ -96,7 +107,11 @@ export function stabilizeStatusShell(html, request) {
   );
   output = output.replace(
     /(^|\n)[ \t]*if \(started && started\.member_resolved\) await readProfile\(\);/gm,
-    '$1      if (started) { show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD"); window.location.replace("/my-mmd/"); return; }',
+    `$1      if (started) { show("ยืนยัน LINE สำเร็จแล้วครับ กำลังเปิด My MMD"); window.location.replace(${targetJson}); return; }`,
+  );
+  output = output.replace(
+    /const target = ["']\/my-mmd\/["'];/g,
+    `const target = ${targetJson};`,
   );
   return output;
 }
@@ -127,7 +142,7 @@ export function injectCareBackWishBridge(html, request) {
   const nonce = safeNonce(output);
   if (!nonce || !output.includes("</head>")) return output;
   const tokenJson = JSON.stringify(token).replace(/</g, "\\u003c");
-  const script = `<script nonce="${nonce}" id="mmd-care-back-wish-liff-bridge">(() => {\n  \"use strict\";\n  const token = ${tokenJson};\n  let running = false;\n  async function linkWish() {\n    if (running) return; running = true;\n    try {\n      const response = await fetch(\"${CARE_BACK_LINK_ENDPOINT}\", { method:\"POST\", credentials:\"same-origin\", headers:{\"accept\":\"application/json\",\"content-type\":\"application/json\"}, body:JSON.stringify({wish_link_token:token}) });\n      const payload = await response.json().catch(() => null);\n      if (response.ok && payload && payload.ok === true && payload.linked === true) { window.location.replace(\"/my-mmd/?view=care&care_back=linked\"); return; }\n      if (response.status === 401) running = false;\n      else document.dispatchEvent(new CustomEvent(\"mmd:care-back:link-failed\", { detail:{ code:String(payload && payload.error && payload.error.code || \"CARE_BACK_LINK_FAILED\") } }));\n    } catch { running = false; }\n  }\n  document.addEventListener(\"mmd:liff:member-ready\", linkWish);\n})();</script>`;
+  const script = `<script nonce="${nonce}" id="mmd-care-back-wish-liff-bridge">(() => {\n  \"use strict\";\n  const token = ${tokenJson};\n  let running = false;\n  async function linkWish() {\n    if (running) return; running = true;\n    try {\n      const response = await fetch(\"${CARE_BACK_LINK_ENDPOINT}\", { method:\"POST\", credentials:\"same-origin\", headers:{\"accept\":\"application/json\",\"content-type\":\"application/json\"}, body:JSON.stringify({wish_link_token:token}) });\n      const payload = await response.json().catch(() => null);\n      if (response.ok && payload && payload.ok === true && payload.linked === true) { window.location.replace(\"/coupon?care_back=linked\"); return; }\n      if (response.status === 401) running = false;\n      else document.dispatchEvent(new CustomEvent(\"mmd:care-back:link-failed\", { detail:{ code:String(payload && payload.error && payload.error.code || \"CARE_BACK_LINK_FAILED\") } }));\n    } catch { running = false; }\n  }\n  document.addEventListener(\"mmd:liff:member-ready\", linkWish);\n})();</script>`;
   output = output.replace("</head>", `${script}</head>`);
   return output;
 }
@@ -145,6 +160,7 @@ async function rewriteLiffHtml(request, response) {
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
   headers.set("x-mmd-liff-stability", "real-line-v1");
+  if (isStatusLiffShellRequest(request)) headers.set("x-mmd-liff-return-target", statusReturnTarget(request));
   return new Response(html, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -155,6 +171,7 @@ export const MMD_LIFF_STABILITY_INTERNALS = Object.freeze({
   guardAnonymousSessionClear,
   isCanonicalLiffRequest,
   isStatusLiffShellRequest,
+  statusReturnTarget,
 });
 
 export default {
