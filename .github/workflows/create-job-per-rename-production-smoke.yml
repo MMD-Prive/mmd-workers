@@ -87,6 +87,7 @@ jobs:
               --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
               --data-urlencode "next=/internal/admin/jobs/create-job" \
               "$origin/internal/admin/login/session")"
+            echo "Create Job login HTTP $login_code"
             test "$login_code" = "303"
             grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
 
@@ -97,6 +98,34 @@ jobs:
               -H "Content-Type: application/json" \
               --data-binary @"$request_body" \
               "$origin/v1/admin/clients/lineage-lookup")"
+
+            echo "Create Job lookup HTTP $lookup_code"
+            node - "$headers" "$body" <<'NODE'
+          const fs = require('node:fs');
+          const headers = fs.readFileSync(process.argv[2], 'utf8');
+          const bodyText = fs.readFileSync(process.argv[3], 'utf8');
+          const header = (name) => {
+            const match = headers.match(new RegExp(`^${name}:\\s*([^\\r\\n]+)`, 'im'));
+            return match ? match[1].trim() : 'missing';
+          };
+          let payload = null;
+          try { payload = JSON.parse(bodyText); } catch {}
+          const rows = Array.isArray(payload?.records) ? payload.records : Array.isArray(payload?.items) ? payload.items : [];
+          const warnings = Array.isArray(payload?.lineage_warnings) ? payload.lineage_warnings : [];
+          console.log([
+            `search=${header('x-mmd-per-rename-search')}`,
+            `version=${header('x-mmd-per-rename-search-version')}`,
+            `content_type=${header('content-type')}`,
+            `ok=${payload?.ok === true}`,
+            `count=${rows.length}`,
+            `manual_fallback=${payload?.manual_fallback === true}`,
+            `alias=${payload?.per_rename_alias === true}`,
+            `multiple=${payload?.per_rename_alias_multiple === true}`,
+            `ambiguous=${payload?.per_rename_alias_ambiguous === true}`,
+            `warnings=${warnings.join(',') || 'none'}`,
+          ].join(' '));
+          NODE
+
             test "$lookup_code" = "200"
             grep -qi '^content-type:.*application/json' "$headers"
             grep -Eqi '^x-mmd-per-rename-search:[[:space:]]*multiple' "$headers"
