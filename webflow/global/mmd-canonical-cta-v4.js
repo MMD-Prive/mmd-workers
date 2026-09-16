@@ -3,6 +3,8 @@
 
   const DASHBOARD = "/member/dashboard";
   const MY_MMD = "/member/my-mmd";
+  const MY_MMD_CANONICAL = "/my-mmd/";
+  const COUPON_ENTRY = "/coupon";
   const LIFF_STATUS = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status";
   const CARE_BACK_WISH = "/promotion/6-years-care-back/wish";
 
@@ -18,6 +20,16 @@
       }
       anchor.setAttribute("href", target);
     });
+  }
+
+  function memberLoginTarget() {
+    const params = new URLSearchParams(location.search);
+    const target = params.get("return_to") === "coupon" ? COUPON_ENTRY : MY_MMD_CANONICAL;
+    const token = String(params.get("t") || "").trim();
+    if (!token) return target;
+    const url = new URL(target, location.origin);
+    url.searchParams.set("t", token);
+    return `${url.pathname}${url.search}`;
   }
 
   function patchCareBackTier(root, tier, duration, text) {
@@ -208,7 +220,8 @@
     let root;
 
     if (path === "/member/login") {
-      setLinks("[data-mml-login]", LIFF_STATUS);
+      const target = memberLoginTarget();
+      document.querySelectorAll("[data-mml-login]").forEach((anchor) => anchor.setAttribute("href", target));
     }
 
     if (path === "/public/access") {
