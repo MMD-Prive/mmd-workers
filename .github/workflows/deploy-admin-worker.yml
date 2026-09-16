@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "admin-worker/**"
+      - "shared/private-media.mjs"
+      - "scripts/ensure-private-media-bucket.mjs"
       - "knowledge/kenji/**"
       - ".github/workflows/deploy-admin-worker.yml"
 
@@ -135,6 +137,11 @@ jobs:
           node --check src/index.js
           grep -Fq "kenji-admin-v1.css?v=${GITHUB_SHA}" src/index.js
           grep -Fq "kenji-admin-v1.js?v=${GITHUB_SHA}" src/index.js
+
+      - name: Verify private media storage and security tests
+        run: |
+          node ../scripts/ensure-private-media-bucket.mjs
+          node --experimental-global-webcrypto --test ../shared/private-media.test.mjs model-schema-patch-v1.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
