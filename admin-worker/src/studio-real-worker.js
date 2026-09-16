@@ -56,8 +56,6 @@ export async function handleStudioRequest(request, env, path = normalizePathname
   if (isCareBackPath(path)) return handleCareBackRequest(request, env, path, method);
 
   if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
-  const body = await safeJson(request);
-  if (containsBrowserLineUserId(body)) return json({ ok: false, error: "line_user_id_not_allowed" }, 400);
 
   try {
     if (path === UPLOAD_PATH) return await handleStudioUpload(request, env);
