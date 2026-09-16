@@ -1,8 +1,10 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
-export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v2-multi-candidate";
+export const PER_RENAME_CLIENT_SEARCH_VERSION = "per-rename-client-search-v3-local-scan";
 export const DEFAULT_PRE_SESSION_CLIENT_INDEX_TABLE = "tblwn6I9VWie5d7Ui";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
+const PER_RENAME_INDEX_SCAN_LIMIT = 2000;
+const AIRTABLE_PAGE_PAUSE_MS = 210;
 
 const INDEX_FIELDS = [
   "identity_key",
@@ -142,7 +144,9 @@ export async function resolvePerRenameAlias(env, query) {
     }
 
     const records = [];
-    for (const clientId of linkedIds) {
+    for (let index = 0; index < linkedIds.length; index += 1) {
+      if (index > 0) await pause(AIRTABLE_PAGE_PAUSE_MS);
+      const clientId = linkedIds[index];
       const sameClient = best.filter((match) => match.client_ids.includes(clientId));
       const chosen = sameClient.sort(compareMatches)[0];
       const client = await fetchCanonicalClient(env, clientId);
@@ -189,27 +193,46 @@ export async function searchAuthoritativePerRenameRows(env, query) {
   const tokens = searchTokens(query).slice(0, 6);
   if (!tokens.length) return [];
 
-  const searchable = ["preferred_name", "line_display_name", "line_user_id"];
-  const tokenChecks = tokens.map((token) => {
-    const needle = formulaString(token);
-    const checks = searchable.map((field) => `IFERROR(SEARCH(\"${needle}\",LOWER({${field}}&\"\")),0)>0`);
-    return `OR(${checks.join(",")})`;
-  });
-
+  // The production Airtable base rejects the former filterByFormula expression
+  // with HTTP 422. The index is intentionally small and bounded, so read it in
+  // pages and perform the same token containment test locally instead. This
+  // avoids formula/schema drift while keeping canonical authority unchanged.
   const params = new URLSearchParams();
-  params.set("pageSize", "50");
-  params.set("maxRecords", "50");
-  params.set("filterByFormula", tokenChecks.length === 1 ? tokenChecks[0] : `AND(${tokenChecks.join(",")})`);
+  params.set("pageSize", "100");
   for (const field of INDEX_FIELDS) params.append("fields[]", field);
 
-  const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`;
-  const result = await fetch(url, {
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
-  });
-  if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
+  const rows = [];
+  let offset = "";
+  do {
+    if (offset) params.set("offset", offset);
+    else params.delete("offset");
 
-  const data = await result.json().catch(() => ({}));
-  return Array.isArray(data.records) ? data.records : [];
+    const url = `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`;
+    const result = await fetch(url, {
+      headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" },
+    });
+    if (!result.ok) throw new Error(`airtable_${table}_${result.status}`);
+
+    const data = await result.json().catch(() => ({}));
+    const page = Array.isArray(data.records) ? data.records : [];
+    rows.push(...page);
+    offset = clean(data.offset);
+
+    if (rows.length >= PER_RENAME_INDEX_SCAN_LIMIT && offset) {
+      throw new Error("per_rename_index_scan_limit");
+    }
+    if (offset) await pause(AIRTABLE_PAGE_PAUSE_MS);
+  } while (offset);
+
+  return rows.filter((record) => rowContainsSearchTokens(record, tokens));
+}
+
+function rowContainsSearchTokens(record, tokens) {
+  const fields = record?.fields || {};
+  const searchable = [fields.preferred_name, fields.line_display_name, fields.line_user_id]
+    .map(normalizeAlias)
+    .filter(Boolean);
+  return tokens.every((token) => searchable.some((value) => value.includes(token)));
 }
 
 function authoritativeMatch(record, query) {
@@ -364,10 +387,6 @@ function normalizeAlias(value) {
     .trim();
 }
 
-function formulaString(value) {
-  return clean(value).replace(/\\/g, "\\\\").replace(/\"/g, '\\"');
-}
-
 function linkIds(value) {
   if (Array.isArray(value)) return value.map(clean).filter(Boolean);
   const one = clean(value);
@@ -400,6 +419,10 @@ function unique(values) {
 function normalizePath(value) {
   const pathname = String(value || "/").replace(/\/{2,}/g, "/");
   return pathname.length > 1 ? pathname.replace(/\/+$/g, "") : pathname;
+}
+
+function pause(ms) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
 function clean(value) {
