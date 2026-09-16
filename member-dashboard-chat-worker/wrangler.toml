@@ -288,7 +288,7 @@ TELEGRAM_PAYMENT_THREAD_ID = "22"
 TELEGRAM_MEMBERSHIP_THREAD_ID = "20"
 TELEGRAM_ALERTS_THREAD_ID = "9"
 TG_THREAD_PAYMENTS_CONFIRM = "22"
-TG_THREAD_PAYMENTS_MEMBERSHIP = "20"
+TG_THREAD_MEMBERSHIP = "20"
 TG_THREAD_ALERTS = "9"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
