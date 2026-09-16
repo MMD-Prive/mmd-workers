@@ -741,6 +741,10 @@ binding = "MMD_MODEL_ASSETS"
 bucket_name = "mmd-models"
 
 [[r2_buckets]]
+binding = "PRIVATE_MODEL_MEDIA"
+bucket_name = "mmd-private-model-media"
+
+[[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"
 

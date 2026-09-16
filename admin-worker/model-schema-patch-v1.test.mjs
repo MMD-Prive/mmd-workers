@@ -2,6 +2,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { privateMediaFixture } from "../shared/private-media-fixture.mjs";
 
 import {
   MODEL_SCHEMA_PATCH_V1_ROUTES,
@@ -145,7 +146,7 @@ test("runtime accepts official verified deposit for private flash", async () => 
   await withMockedFetch(async () => {
     const response = await worker.fetch(
       privateFlashRequest({ payment_ref: "pay_verified" }),
-      baseTestEnv(),
+      { ...baseTestEnv(), PRIVATE_MODEL_MEDIA: privateMediaFixture().env.PRIVATE_MODEL_MEDIA },
     );
     const data = await response.json();
     assert.equal(response.status, 200);
@@ -157,6 +158,8 @@ test("runtime accepts official verified deposit for private flash", async () => 
   }, async (input, init) => {
     const req = normalizeMockRequest(input, init);
     calls.push({ method: req.method, url: req.url });
+    if (req.method === "GET" && req.url.endsWith("/recMedia")) return jsonResponse(privateMediaFixture().asset);
+    if (req.method === "GET" && req.url.endsWith("/recClient")) return jsonResponse({id:"recClient",fields:{line_user_id:privateMediaFixture().lineUserId}});
     if (req.method === "GET") {
       return jsonResponse({
         records: [
@@ -164,6 +167,7 @@ test("runtime accepts official verified deposit for private flash", async () => 
             id: "recPaymentVerified",
             fields: {
               payment_ref: "pay_verified",
+              Client: ["recClient"],
               verification_status: "official_verified",
               official_verification_ref: "pay_verified",
               official_verified_by: "per",
@@ -221,6 +225,7 @@ function privateFlashRequest(body) {
       model_id: "recModel",
       client_id: "recClient",
       preview_kind: "private_pic",
+      media_asset_id: "recMedia",
       ...body,
     }),
   });
@@ -270,4 +275,24 @@ test("private clip preview is one play and consumes at playback start", () => {
 test("private preview fails closed when kind is missing or unknown", () => {
   assert.throws(() => resolvePrivatePreviewPolicy({}), /preview_kind must be private_pic or private_clip/);
   assert.throws(() => resolvePrivatePreviewPolicy({ preview_kind: "other" }), /preview_kind must be private_pic or private_clip/);
+});
+
+test('MMD review verifies private bytes and records actor before approval; failed audit denies approval',async()=>{
+  for(const failAudit of [false,true]){
+    const f=privateMediaFixture();f.asset.fields.review_status='pending_review';f.asset.fields.private_safe=false;
+    const writes=[];
+    await withMockedFetch(async()=>{
+      const response=await worker.fetch(new Request('https://mmdbkk.com/v1/model/media/review-decision',{method:'POST',headers:{authorization:'Bearer test-admin','content-type':'application/json'},body:JSON.stringify({model_id:'recModel',media_asset_id:'recMedia',decision:'approve',requested_by:'forged-model'})}),{...baseTestEnv(),PRIVATE_MODEL_MEDIA:f.env.PRIVATE_MODEL_MEDIA});
+      assert.equal(response.status,failAudit?500:200,await response.clone().text());
+      assert.equal(writes.length,failAudit?1:2);
+      const audit=writes[0];assert.equal(audit.records[0].fields.requested_by,'admin-worker-service');assert.match(audit.records[0].fields.payload_json,/media_sha256/);
+      if(!failAudit){assert.equal(writes[1].fields.private_safe,true);assert.equal(writes[1].fields.public_safe,false);}
+    },async(input,init)=>{
+      const req=normalizeMockRequest(input,init);
+      if(req.method==='GET')return jsonResponse(f.asset);
+      const body=await req.json();writes.push(body);
+      if(req.method==='POST')return failAudit?jsonResponse({},503):jsonResponse({records:[{id:'recReview',fields:body.records[0].fields}]});
+      return jsonResponse({id:'recMedia',fields:body.fields});
+    });
+  }
 });

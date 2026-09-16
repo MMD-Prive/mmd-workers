@@ -1,4 +1,5 @@
 import dashboardWorker from "./dashboard-worker.js";
+import { planPrivateUpload, uploadPrivateMedia } from "../../shared/private-media.mjs";
 
 const EXCHANGE_PATH = "/v1/model/liff/exchange";
 const CURRENT_PATH = "/v1/model/session/current";
@@ -36,6 +37,23 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (["/v1/model/media/private-upload-plan", "/v1/model/media/private-upload"].includes(path)) {
+      const origin = request.headers.get("origin");
+      if (!["https://mmdbkk.com", "https://www.mmdbkk.com", "https://mmdmodel.lovable.app"].includes(origin) || !isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
+      if (method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+      const auth = await requireModelSession(request, env);
+      if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+      if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+      try {
+        const result = path.endsWith("-plan")
+          ? await planPrivateUpload(env, auth.payload.model_record_id, await request.json())
+          : await uploadPrivateMedia(request, env, auth.payload.model_record_id, url.searchParams.get("asset_id"));
+        return json(result, 200, request, env);
+      } catch (error) {
+        return json({ ok: false, error: error.code || "private_media_unavailable" }, error.status || 503, request, env);
+      }
+    }
 
     if (method === "OPTIONS" && isModelLiffPath(path)) {
       return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -410,6 +428,7 @@ async function handleMediaFile(request, env, mediaId) {
 
   const media = await findOwnedMedia(env, auth.payload.model_record_id, mediaId);
   if (!media.ok) return json({ ok: false, error: media.error }, media.status, request, env);
+  if (!modelMediaPolicy(media.record.fields || {}).self_managed) return json({ ok: false, error: "private_media_review_required" }, 403, request, env);
   const key = clean(media.record.fields?.private_original_key);
   if (!key) return json({ ok: false, error: "media_object_missing" }, 404, request, env);
 
@@ -561,7 +580,7 @@ function safeMediaRecord(record) {
     file_type: clean(fields.file_type),
     file_size_bytes: finiteOrNull(fields.file_size_bytes),
     uploaded_at: clean(fields.uploaded_at),
-    preview_url: mediaId ? `${MEDIA_PATH}/${encodeURIComponent(mediaId)}/file` : "",
+    preview_url: mediaId && policy.self_managed ? `${MEDIA_PATH}/${encodeURIComponent(mediaId)}/file` : "",
     can_delete: policy.self_managed,
     can_request_main: policy.self_managed && Boolean(mediaId),
     self_managed: policy.self_managed,
