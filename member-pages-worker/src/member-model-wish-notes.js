@@ -48,26 +48,38 @@ export async function readPastClientModelWishNotes(request, env = {}) {
   const wishes = await listApprovedDirectWishes(env);
   const out = [];
   for (const record of wishes) {
-    const fields = record?.fields || {};
-    const detail = safeJsonObject(fields.payload_json);
-    if (detail.wish_kind !== "model_direct_wish" || detail.past_clients_consent !== true) continue;
-    const modelId = clean(detail.model_record_id);
-    if (!modelIds.has(modelId)) continue;
-    const text = clean(detail.birthday_wish).slice(0, MAX_WISH);
-    if (!text) continue;
-    const review = detail.review && typeof detail.review === "object" ? detail.review : {};
-    const approvedAt = safeTimestamp(review.reviewed_at) || safeTimestamp(fields.updated_at) || safeTimestamp(fields.completed_at) || null;
-    out.push({
-      type: "model_wish",
-      visibility: "past_client_private",
-      model_name: clean(detail.model_display_name).slice(0, 120) || "MMD Model",
-      text,
-      submitted_at: safeTimestamp(fields.submitted_at) || null,
-      approved_at: approvedAt,
-    });
+    const note = projectPastClientModelWish(record, modelIds);
+    if (!note) continue;
+    out.push(note);
     if (out.length >= MAX_NOTES) break;
   }
   return out;
+}
+
+/**
+ * Pure customer-safe projection. This is intentionally narrow so tests can
+ * prove that the Per-only note and every internal identifier stay behind the
+ * Worker boundary even when they exist in payload_json.
+ */
+export function projectPastClientModelWish(record, completedModelIds = new Set()) {
+  const fields = record?.fields || {};
+  if (clean(fields.campaign_id) !== CAMPAIGN_ID || clean(fields.wish_status) !== "completed") return null;
+  const detail = safeJsonObject(fields.payload_json);
+  if (detail.wish_kind !== "model_direct_wish" || detail.past_clients_consent !== true) return null;
+  const modelId = clean(detail.model_record_id);
+  if (!(completedModelIds instanceof Set) || !completedModelIds.has(modelId)) return null;
+  const text = clean(detail.birthday_wish).slice(0, MAX_WISH);
+  if (!text) return null;
+  const review = detail.review && typeof detail.review === "object" && !Array.isArray(detail.review) ? detail.review : {};
+  const approvedAt = safeTimestamp(review.reviewed_at) || safeTimestamp(fields.updated_at) || safeTimestamp(fields.completed_at) || null;
+  return {
+    type: "model_wish",
+    visibility: "past_client_private",
+    model_name: clean(detail.model_display_name).slice(0, 120) || "MMD Model",
+    text,
+    submitted_at: safeTimestamp(fields.submitted_at) || null,
+    approved_at: approvedAt,
+  };
 }
 
 async function completedCanonicalModelIdsForClient(env, client) {
