@@ -2102,6 +2102,13 @@ function modelSessionTables(env = {}) {
         status: str(env.AT_SESSIONS__STATUS || "status"),
         modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+        jobType: str(env.AT_SESSIONS__JOB_TYPE || "job_type"),
+        jobDate: str(env.AT_SESSIONS__JOB_DATE || "job_date"),
+        startTime: str(env.AT_SESSIONS__START_TIME || "start_time"),
+        endTime: str(env.AT_SESSIONS__END_TIME || "end_time"),
+        locationName: str(env.AT_SESSIONS__LOCATION_NAME || "location_name"),
+        googleMapUrl: str(env.AT_SESSIONS__GOOGLE_MAP_URL || "google_map_url"),
+        payModelThb: str(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB || "pay_model_thb"),
       },
     },
   };
@@ -2309,16 +2316,25 @@ function modelSessionPageSlug(page) {
 
 function modelSessionResponseSession(tables, record) {
   const fields = record?.fields || {};
+  const names = tables.sessions.fields;
   const stateInfo = modelSessionStateFromRecord(tables, record);
   const normalized = normalizeSessionState(stateInfo.state);
   const page = resolveModelSessionPage(normalized);
+  const payModelThb = Number(fields[names.payModelThb]);
   return {
-    session_id: str(fields[tables.sessions.fields.sessionId] || ""),
+    session_id: str(fields[names.sessionId] || ""),
     state: stateInfo.state,
     normalized_state: normalized,
     page: modelSessionPageSlug(page),
     route: page?.path || "",
     allowed_actions: getAllowedModelSessionActions(normalized),
+    job_type: str(fields[names.jobType] || ""),
+    job_date: str(fields[names.jobDate] || ""),
+    start_time: str(fields[names.startTime] || ""),
+    end_time: str(fields[names.endTime] || ""),
+    location_name: str(fields[names.locationName] || ""),
+    google_map_url: str(fields[names.googleMapUrl] || ""),
+    pay_model_thb: Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null,
   };
 }
 
