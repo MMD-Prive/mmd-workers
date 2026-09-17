@@ -1,6 +1,5 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
-import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
 // =========================================================
 // admin-worker — Admin API / Core Orchestrator
@@ -92,8 +91,6 @@ const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
   "Public Models/Extreme Models/Straight",
 ];
 export const MODEL_SCHEMA_PATCH_V1_ROUTES = Object.freeze({
-  mediaReviewDecision: "/v1/model/media/review-decision",
-  mediaReviewFile: "/v1/model/media/review-file",
   visibilityUpdate: "/v1/model/visibility/update",
   rateRequest: "/v1/model/rate/request",
   mediaUploadInit: "/v1/model/media/upload-init",
@@ -261,8 +258,7 @@ export default {
     }
 
     if (method === "POST" && MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
-      const response = await handleModelSchemaPatchV1Route(req, env, path);
-      return path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile ? response : withCors(response, cors);
+      return withCors(await handleModelSchemaPatchV1Route(req, env, path), cors);
     }
 
     if (method === "GET" && path === MODEL_SESSION_CURRENT_PATH) {
@@ -515,16 +511,6 @@ export default {
 
       if (isAdminRichMenuRoute(path, method)) {
         return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
-      }
-
-      // Model HBD review gate. Submission is stored as manual_review by the
-      // model-session sidecar; only this credential-bound admin route may
-      // promote it to the public completed projection.
-      if (method === "GET" && path === "/v1/admin/model-wishes/review-queue") {
-        return withCors(await handleModelWishReviewQueue(env), cors);
-      }
-      if (method === "POST" && path === "/v1/admin/model-wishes/review") {
-        return withCors(await handleModelWishReview(req, env), cors);
       }
 
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
@@ -901,7 +887,7 @@ function isConfirmKeyAuthed(req, env) {
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
 }
 
-export async function isAdminGateSessionAuthed(req, env) {
+async function isAdminGateSessionAuthed(req, env) {
   const session = await readAdminGateSession(req, env);
   if (!session || session.version !== 1) return false;
   if (session.scope !== "internal_admin") return false;
@@ -1518,65 +1504,6 @@ async function safeJson(req) {
   }
 }
 
-const MODEL_WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
-
-async function handleModelWishReviewQueue(env) {
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
-  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
-  const params = new URLSearchParams({
-    maxRecords: "100",
-    filterByFormula: "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='manual_review')",
-  });
-  const result = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
-  if (!result.ok) return json({ ok: false, error: "model_wish_review_queue_unavailable" }, 503);
-  const records = Array.isArray(result.data?.records) ? result.data.records : [];
-  return json({ ok: true, wishes: records.map((record) => {
-    const fields = record.fields || {};
-    return {
-      record_id: record.id,
-      wish_id: str(fields.wish_id),
-      wish_text: str(fields.wish_text).slice(0, 280),
-      submitted_at: str(fields.submitted_at),
-      source: str(fields.source),
-      payload_json: str(fields.payload_json),
-    };
-  }) });
-}
-
-async function handleModelWishReview(req, env) {
-  const body = await safeJson(req);
-  const recordId = str(body.record_id);
-  const decision = str(body.decision).toLowerCase();
-  if (!/^rec[a-zA-Z0-9]{14}$/.test(recordId) || !["approve", "reject"].includes(decision)) {
-    return json({ ok: false, error: "invalid_model_wish_review" }, 400);
-  }
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
-  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
-  const read = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`);
-  const current = read.ok ? read.data : null;
-  const fields = current?.fields || {};
-  if (!read.ok || str(fields.campaign_id) !== "mmd_year_6_model_wish" || str(fields.wish_status) !== "manual_review") {
-    return json({ ok: false, error: "model_wish_review_state_conflict" }, 409);
-  }
-  const now = new Date().toISOString();
-  let audit = {};
-  try { audit = JSON.parse(str(fields.payload_json) || "{}"); } catch { audit = {}; }
-  audit.review = { decision, reviewed_at: now, reviewed_by: str(req.headers.get("X-MMD-Operator") || "admin") };
-  const patch = {
-    wish_status: decision === "approve" ? "completed" : "revoked",
-    public_display_text: decision === "approve" ? str(fields.wish_text).slice(0, 280) : "",
-    payload_json: JSON.stringify(audit),
-    updated_at: now,
-  };
-  const updated = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fields: patch, typecast: false }),
-  });
-  if (!updated.ok) return json({ ok: false, error: "model_wish_review_write_failed" }, 503);
-  return json({ ok: true, decision, record_id: recordId, public: decision === "approve" });
-}
-
 async function parseJsonObject(req) {
   try {
     const data = await req.json();
@@ -1987,25 +1914,18 @@ export function validateModelSchemaPatchV1Payload(route, body = {}) {
     const manualUnlock = input.manual_unlock === true;
     if (!manualUnlock && !str(input.payment_ref || input.payment_record_id)) errors.push("payment_ref");
   }
-  if ([MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision, MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile].includes(route) && !str(input.media_asset_id)) errors.push("media_asset_id");
-  if (route === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision && !["approve", "reject", "revoke"].includes(input.decision)) errors.push("decision");
 
   return { ok: errors.length === 0, errors };
 }
 
 async function handleModelSchemaPatchV1Route(req, env, path) {
   if (!isAllowedOrigin(req, env)) return modelSchemaPatchJson({ ok: false, error: "origin_not_allowed" }, 403);
-  // Cookie-authenticated mutations must carry an exact first-party origin.
-  // Server integrations retain their existing backend-only credentials.
 
   const body = await safeJson(req);
   const adminAuthed = await isAuthed(req, env);
   const isAuthorizeRoute = path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize;
   if (isAuthorizeRoute && !adminAuthed) return modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401);
   if (!adminAuthed) return modelSchemaPatchJson({ ok: false, error: "signed_t_required" }, 401);
-  const serviceBearer = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
-  const serviceAuthed = Boolean(serviceBearer && ((env.ADMIN_BEARER && serviceBearer === env.ADMIN_BEARER) || (env.INTERNAL_TOKEN && serviceBearer === env.INTERNAL_TOKEN))) || isConfirmKeyAuthed(req, env);
-  if (!serviceAuthed && req.headers.get("origin") !== new URL(req.url).origin) return modelSchemaPatchJson({ok:false,error:"origin_not_allowed"},403);
 
   const validation = validateModelSchemaPatchV1Payload(path, body || {});
   if (!validation.ok) {
@@ -2018,29 +1938,12 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
     }, 400);
   }
 
-  const verifiedActor = await readCredentialBoundAdminActor(req, env);
   const context = {
-    actor: str(verifiedActor?.id || "admin-worker-service"),
+    actor: str(req.headers.get("X-Admin-Actor") || body?.actor || body?.authorized_by || "admin-worker"),
     actorRole: "admin",
   };
 
   try {
-    if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile || path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision) {
-      const media = await readMediaByRecord(env, body.media_asset_id);
-      if (!ownedBy(media.fields || {}, body.model_id)) return modelSchemaPatchJson({ok:false,error:"media_owner_mismatch"},403);
-      if (!["pending_review", "approved"].includes(media.fields.review_status)) return modelSchemaPatchJson({ok:false,error:"media_review_state_conflict"},409);
-      const asset = await assertPrivateObject(env, media);
-      if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile) {
-        const object = await privateBucket(env).get(asset.key);
-        if (!object?.body || object.customMetadata?.sha256 !== asset.sha256) return modelSchemaPatchJson({ok:false,error:"media_unavailable"},503);
-        return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
-      }
-      const status = body.decision === "approve" ? "approved" : "rejected";
-      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
-      const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
-      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
-      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
-    }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));
     }
@@ -2066,7 +1969,6 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
       return modelSchemaPatchJson(await handleModelPrivateFlashAuthorize(env, body || {}, context));
     }
   } catch (error) {
-    if (error?.code && error?.status) return modelSchemaPatchJson({ok:false,error:error.code},error.status);
     if (error?.schemaPatchError) {
       return modelSchemaPatchJson({ ok: false, error: error.code, message: error.message }, error.status || 500);
     }
@@ -2102,6 +2004,13 @@ function modelSessionTables(env = {}) {
         status: str(env.AT_SESSIONS__STATUS || "status"),
         modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+        jobType: str(env.AT_SESSIONS__JOB_TYPE || "job_type"),
+        jobDate: str(env.AT_SESSIONS__JOB_DATE || "job_date"),
+        startTime: str(env.AT_SESSIONS__START_TIME || "start_time"),
+        endTime: str(env.AT_SESSIONS__END_TIME || "end_time"),
+        locationName: str(env.AT_SESSIONS__LOCATION_NAME || "location_name"),
+        googleMapUrl: str(env.AT_SESSIONS__GOOGLE_MAP_URL || "google_map_url"),
+        payModelThb: str(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB || "pay_model_thb"),
       },
     },
   };
@@ -2309,16 +2218,25 @@ function modelSessionPageSlug(page) {
 
 function modelSessionResponseSession(tables, record) {
   const fields = record?.fields || {};
+  const names = tables.sessions.fields;
   const stateInfo = modelSessionStateFromRecord(tables, record);
   const normalized = normalizeSessionState(stateInfo.state);
   const page = resolveModelSessionPage(normalized);
+  const payModelThb = Number(fields[names.payModelThb]);
   return {
-    session_id: str(fields[tables.sessions.fields.sessionId] || ""),
+    session_id: str(fields[names.sessionId] || ""),
     state: stateInfo.state,
     normalized_state: normalized,
     page: modelSessionPageSlug(page),
     route: page?.path || "",
     allowed_actions: getAllowedModelSessionActions(normalized),
+    job_type: str(fields[names.jobType] || ""),
+    job_date: str(fields[names.jobDate] || ""),
+    start_time: str(fields[names.startTime] || ""),
+    end_time: str(fields[names.endTime] || ""),
+    location_name: str(fields[names.locationName] || ""),
+    google_map_url: str(fields[names.googleMapUrl] || ""),
+    pay_model_thb: Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null,
   };
 }
 
@@ -2652,7 +2570,6 @@ function safeModelMediaExtension(fileName, contentType) {
 }
 
 async function handleModelMediaUploadInit(env, body) {
-  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) return planPrivateUpload(env, resolveSchemaPatchModelId(body), body);
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = `media_${crypto.randomUUID()}`;
@@ -2692,10 +2609,6 @@ async function handleModelMediaUploadInit(env, body) {
 }
 
 async function handleModelMediaUploadComplete(env, body) {
-  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) {
-    const planned = await readMedia(env, str(body.asset_id));
-    return completePrivateMetadata(env, planned, resolveSchemaPatchModelId(body));
-  }
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = str(body.asset_id) || `media_${crypto.randomUUID()}`;
@@ -2787,18 +2700,10 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
   const modelId = resolveSchemaPatchModelId(body);
   const clientId = str(body.client_id || body.client_record_id);
   const basis = await assertFlashAuthorizationBasis(env, body, tables);
-  const policy = resolvePrivatePreviewPolicy(body);
-  const media = await readMediaByRecord(env, str(body.media_asset_id || body.media_record_id));
-  if (!ownedBy(media.fields || {}, modelId)) throw schemaPatchError("media_owner_mismatch",403,"Media must belong to the selected Model.");
-  await assertPrivateObject(env, media, true, policy.preview_kind);
-  const client = await modelSchemaPatchGetById(env,{table:str(env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS")},clientId);
-  const cf = client?.fields || {};
-  if (!/^U[a-f0-9]{32}$/i.test(str(cf.line_user_id)) || cf.blocked === true || [cf.status,cf.client_status,cf.member_status].some(value => /^(blocked|suspended|revoked)$/i.test(str(value)))) throw schemaPatchError("verified_customer_required",403,"A verified linked customer is required.");
   const rawT = base64UrlEncodeString(`${crypto.randomUUID()}:${Date.now()}`);
   const tokenHash = await sha256Hex(rawT);
   const grantId = `flash_grant_${crypto.randomUUID()}`;
   const expiresAt = str(body.expires_at) || addMinutesIso(clampInt(body.expires_in_minutes, 1, 240, 30));
-  if (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now() || Date.parse(expiresAt) > Date.now() + 240 * 60 * 1000) throw schemaPatchError("grant_expiry_invalid",400,"Grant expiry must be within four hours.");
   const fields = tables.flashGrants.fields;
   const previewPolicy = resolvePrivatePreviewPolicy(body);
   const viewLimit = previewPolicy.view_limit;
@@ -2846,7 +2751,6 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
     consume_on: previewPolicy.consume_on,
     authorization_basis: basis,
     t: rawT,
-    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view#t=${encodeURIComponent(rawT)}`,
     token_storage: "sha256_hash_only",
   };
 }
@@ -2864,9 +2768,6 @@ async function assertFlashAuthorizationBasis(env, body, tables) {
   if (!payment || !isVerifiedDepositRecord(payment, tables)) {
     throw schemaPatchError("verified_deposit_required", 423, "Flash preview requires verified deposit or manual admin unlock.");
   }
-  const paymentClient = payment.fields?.Client || payment.fields?.client_record_id;
-  const clientIds = Array.isArray(paymentClient) ? paymentClient : paymentClient ? [paymentClient] : [];
-  if (clientIds.length !== 1 || clientIds[0] !== str(body.client_id || body.client_record_id)) throw schemaPatchError("payment_customer_mismatch",403,"Verified payment must belong to the grant recipient.");
   return "verified_deposit";
 }
 
