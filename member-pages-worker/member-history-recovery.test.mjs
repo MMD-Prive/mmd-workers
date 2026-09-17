@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   legacyCandidate,
   privateCandidate,
+  consoleInboxCandidate,
   detectExplicitCancellation,
   findOrphanPaymentProofs,
   notePointSummary,
@@ -88,6 +89,7 @@ test("legacy note is a completed occurrence without requiring an old slip", asyn
 
 test("an explicit cancel marker excludes the job and points", async () => {
   assert.equal(detectExplicitCancellation("งานยกเลิก ลูกค้าแจ้งแล้ว"), true);
+  assert.equal(detectExplicitCancellation("เลื่อนคิวไปสัปดาห์หน้า"), true);
   const candidate = legacyCandidate({
     id: "recBBBBBBBBBBBBBB",
     fields: {
@@ -116,6 +118,22 @@ test("an explicit cancel marker excludes the job and points", async () => {
     rate_thb_per_point: 100,
     expires: false,
   });
+});
+
+test("LINE OFC note is authoritative even when no slip exists", () => {
+  const candidate = consoleInboxCandidate({
+    id: "recLINEOFCHISTORY1",
+    createdTime: "2026-08-03T03:00:00.000Z",
+    fields: {
+      line_user_id: LINE_ID,
+      intent: "note_only",
+      admin_note: "งานเสร็จ Model A 30,000 บาท",
+    },
+  }, CLIENT_ID, LINE_ID);
+  assert.equal(candidate.source_kind, "line_ofc");
+  assert.equal(candidate.service_amount_thb, 30000);
+  assert.equal(candidate.cancelled, false);
+  assert.equal(notePointSummary([candidate]).points, 300);
 });
 
 test("historical points use the combined note total and do not expire", () => {

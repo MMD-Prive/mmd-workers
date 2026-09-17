@@ -14,6 +14,7 @@ const TABLES = Object.freeze({
   MEMBERS: "tblgWc5VRon5o8Mhk",
   LEGACY_STAGING: "tbl1u0foFBvgFpT9G",
   PRIVATE_STAGING: "tblOs8yyLK09SKrCt",
+  CONSOLE_INBOX: "tblFHmfpB2TTrzO2e",
   REVIEWS: "tblnpDFQMpo8AmNQv",
   PAYMENT_PROOFS: "tblfJfM4Sqag9zrLi",
   SESSIONS: "tblC98mKWbzmPuNzX",
@@ -103,7 +104,9 @@ export async function handleMemberHistoryRecoveryRequest(request, env = {}, ctx)
 export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = {}, ctx, trigger = "login") {
   if (!hasBindings(env) || !safeToken(token)) return false;
   const session = await readSessionByToken(token, env);
-  if (!session || session.member_exists !== true || !safeLineUserId(session.line_user_id)) return false;
+  // LINE OFC history is the source of truth from the first login. Do not gate
+  // the background scan on a pre-existing Member/Airtable wallet or a slip.
+  if (!session || !safeLineUserId(session.line_user_id)) return false;
   const existing = await readRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
   await markQueued(env, session.line_user_id, trigger);
@@ -165,13 +168,15 @@ export async function runMemberHistoryRecovery({
     const client = clients[0];
     const clientId = clean(client.id);
     const wallet = await resolveMemberWallet(db, { memberId, client });
-    const [legacyRows, privateRows, verifiedProofs] = await Promise.all([
+    const [legacyRows, privateRows, lineOfcRows, verifiedProofs] = await Promise.all([
       db.list(TABLES.LEGACY_STAGING, { formula: `{line_user_id}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PRIVATE_STAGING, { formula: `{LINE User ID}=${formulaString(lineUserId)}` }),
+      db.list(TABLES.CONSOLE_INBOX, { formula: `{line_user_id}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PAYMENT_PROOFS, { formula: `{status}=${formulaString("verified")}` }),
     ]);
 
     const rawCandidates = [
+      ...lineOfcRows.map((record) => consoleInboxCandidate(record, clientId, lineUserId)).filter(Boolean),
       ...legacyRows.map((record) => legacyCandidate(record, clientId, lineUserId)),
       ...privateRows.map((record) => privateCandidate(record, clientId, lineUserId)),
     ].filter(Boolean);
@@ -231,7 +236,9 @@ export async function runMemberHistoryRecovery({
         };
 
     const detailPendingCount = acceptedCandidates.filter((candidate) => !candidate.service_date || !(candidate.points_eligible_amount_thb > 0)).length;
-    counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count + Number(!wallet) + Number(sourcePending);
+    // Missing slips are never a reason to withhold points. Only unresolved
+    // identity/details and an unavailable wallet remain review conditions.
+    counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count + Number(!wallet);
     const state = counters.pending_review_count > 0 ? "review_required" : "reconciled";
     const done = statusPayload(state, {
       ...counters,
@@ -530,10 +537,88 @@ export function privateCandidate(record, clientId, lineUserId = "") {
   };
 }
 
+// LINE OFC notes are authoritative evidence of an occurrence. Payment/slip
+// records are optional enrichment only; a note that has no matching slip still
+// produces a history candidate and eligible spend when an amount is present.
+export function consoleInboxCandidate(record, clientId, lineUserId = "") {
+  const fields = record?.fields || {};
+  const payload = parseObject(fields.payload_json);
+  const rawNote = clean([
+    fields.admin_note,
+    fields.note,
+    fields.message,
+    fields.text,
+    typeof fields.payload_json === "string" ? fields.payload_json : "",
+    payload.note,
+    payload.message,
+    payload.text,
+    payload.admin_note,
+  ].filter(Boolean).join("\n"));
+  const intent = clean(fields.intent || payload.intent).toLowerCase();
+  if (!rawNote && !intent) return null;
+  const cancellationText = `${intent}\n${rawNote}\n${fields.status || payload.status || ""}`;
+  const cancelled = detectExplicitCancellation(cancellationText);
+  const amount = money(
+    fields.service_amount_thb ?? fields.points_eligible_amount_thb ?? fields.amount_thb
+      ?? payload.service_amount_thb ?? payload.points_eligible_amount_thb ?? payload.amount_thb,
+  ) || extractAmount(rawNote);
+  const explicitDate = yyyyMmDd(fields.service_date || fields.job_date || payload.service_date || payload.job_date || extractDate(rawNote));
+  const likelyJob = isLikelyJobNote(rawNote, intent, amount, explicitDate);
+  if (!likelyJob && !cancelled) return null;
+  const createdDate = yyyyMmDd(fields.created_at || fields.timestamp || record.createdTime);
+  const serviceDate = explicitDate || (likelyJob ? createdDate : "");
+  const sourceRecordId = clean(record.id);
+  const sourceRef = clean(fields.event_id || fields.message_id || fields.inbox_id || sourceRecordId);
+  const details = parseObject(payload.service_details);
+  return {
+    source_kind: "line_ofc",
+    source_record_id: sourceRecordId,
+    source_ref: sourceRef,
+    source_fingerprint_seed: rawNote || stableJson({ sourceRef, intent, amount, serviceDate }),
+    client_id: clientId,
+    line_user_id: lineUserId,
+    client_display_name: bounded(fields.line_display_name || fields.display_name || payload.display_name, 120),
+    note_present: Boolean(rawNote || intent),
+    service_date: serviceDate,
+    service_amount_thb: amount,
+    points_eligible_amount_thb: amount,
+    payment_ref: clean(fields.payment_ref || payload.payment_ref),
+    model_text: bounded(fields.model_name || payload.model_name || details.model_text, 100),
+    location_text: bounded(fields.location_name || payload.location || details.location_text, 120),
+    service_type: bounded(fields.service_type || fields.job_type || intent || payload.service_type || "historical_service", 80),
+    cancelled,
+    detail_review_needed: !serviceDate,
+    evidence_summary: `source=line_ofc;record=${sourceRecordId || "unknown"};intent=${intent || "note"};note_present=${Boolean(rawNote || intent)};slip_optional=true;policy=line_ofc_source_truth`,
+  };
+}
+
+function isLikelyJobNote(rawNote, intent, amount, date) {
+  if (["service", "booking", "job", "completed", "session", "history", "used_service"].some((token) => intent.includes(token))) return true;
+  if (date && amount > 0) return true;
+  if (amount > 0 && /(?:งาน|บริการ|ใช้บริการ|คิว|นัด|จอง|session|booking|job|service|completed|เสร็จ|เรียบร้อย)/i.test(rawNote)) return true;
+  return /(?:งานเสร็จ|ใช้บริการแล้ว|บริการเรียบร้อย|ปิดงาน|completed service)/i.test(rawNote);
+}
+
+function extractAmount(value) {
+  const matches = String(value || "").match(/(?:฿|บาท|thb)?\s*([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,7})(?:\s*(?:บาท|thb|฿))?/gi) || [];
+  return matches.map((item) => money(item)).filter((item) => item > 0).sort((a, b) => b - a)[0] || 0;
+}
+
+function extractDate(value) {
+  const text = String(value || "");
+  const iso = text.match(/\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b/);
+  if (iso) return iso[0].replace(/\//g, "-");
+  const dmy = text.match(/\b\d{1,2}[/-]\d{1,2}[/-](?:20)?\d{2}\b/);
+  if (!dmy) return "";
+  const parts = dmy[0].split(/[/-]/).map(Number);
+  const year = parts[2] < 100 ? 2000 + parts[2] : parts[2] > 2400 ? parts[2] - 543 : parts[2];
+  return `${year}-${String(parts[1]).padStart(2, "0")}-${String(parts[0]).padStart(2, "0")}`;
+}
+
 export function detectExplicitCancellation(value) {
   const text = clean(value).toLowerCase().replace(/\s+/g, " ");
   if (!text) return false;
-  return /(?:ยกเลิก(?:งาน|คิว|นัด|บริการ)?|งานยกเลิก|คิวยกเลิก|cancel(?:led|ed)?(?:\s+(?:job|booking|session))?|job\s+cancel(?:led|ed)?|booking\s+cancel(?:led|ed)?)/i.test(text);
+  return /(?:ยกเลิก(?:งาน|คิว|นัด|บริการ)?|งานยกเลิก|คิวยกเลิก|cancel(?:led|ed)?(?:\s+(?:job|booking|session))?|job\s+cancel(?:led|ed)?|booking\s+cancel(?:led|ed)?|เลื่อน(?:งาน|คิว|นัด|บริการ)?|งานเลื่อน|คิวเลื่อน|reschedul(?:e|ed|ing)?|postpon(?:e|ed|ing)?)/i.test(text);
 }
 
 export function notePointSummary(candidates = []) {
@@ -924,7 +1009,9 @@ function normalizeEmail(value) {
 }
 
 function money(value) {
-  const number = Number(value);
+  const number = typeof value === "number"
+    ? value
+    : Number(String(value || "").replace(/,/g, "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(number) && number > 0 ? roundMoney(number) : 0;
 }
 
@@ -987,5 +1074,6 @@ export const __test = Object.freeze({
   postedPoints,
   reconcileHistoricalPointsTotal,
   processNoteCandidate,
+  consoleInboxCandidate,
   historyCutoff,
 });

@@ -153,3 +153,26 @@ test("Partner-Present golden lifecycle remains non-granting until the independen
   const posted = await resolve({ ...base, POINTS_LEDGER: [{ points: 200, transaction_status: "posted", posted_at: "2026-08-26T03:00:00.000Z", idempotency_key: "partner-complete-200" }] });
   assert.equal(posted.customer_360.points.active_points, 200);
 });
+
+test("LINE OFC is the source of truth for jobs and points without a slip", async () => {
+  const profile = await buildCustomer360MemberProfile({
+    env: { AIRTABLE_TABLE_CONSOLE_INBOX: "CONSOLE_INBOX" },
+    memberFields: MEMBER,
+    lineUserId: LINE_ID,
+    listRecords: listFrom({
+    MEMBER_PACKAGES: [],
+    POINTS_LEDGER: [],
+    SESSIONS: [{ line_user_id: LINE_ID, job_number: "OLD", job_date: "2026-08-20", job_type: "Dinner", "Session Status": "completed" }],
+    CONSOLE_INBOX: [
+      { line_user_id: LINE_ID, intent: "note_only", admin_note: "งานเสร็จ 30,000 บาท", created_at: "2026-08-21" },
+      { line_user_id: LINE_ID, intent: "note_only", admin_note: "เลื่อนงาน 20,000 บาท", created_at: "2026-08-22" },
+    ],
+    PAYMENTS: [],
+    }),
+    now: NOW,
+  });
+  assert.equal(profile.customer_360.points.active_points, 300);
+  assert.equal(profile.customer_360.jobs.completed_jobs.length, 1);
+  assert.equal(profile.customer_360.jobs.completed_jobs[0].source, "line_ofc_history");
+  assert.equal(profile.customer_360.jobs.completed_jobs[0].amount_due_thb, 30000);
+});

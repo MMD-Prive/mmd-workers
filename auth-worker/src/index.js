@@ -1302,6 +1302,7 @@ function requireAirtable(env) {
 }
 
 function table(env, key) {
+  if (key === "CONSOLE_INBOX") return env.AIRTABLE_TABLE_CONSOLE_INBOX || "MMD — Console Inbox";
   return env[`AIRTABLE_TABLE_${key}`] || key.toLowerCase();
 }
 
