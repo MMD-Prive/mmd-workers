@@ -6,6 +6,7 @@ import {
   consoleInboxCandidate,
   detectExplicitCancellation,
   findOrphanPaymentProofs,
+  runMemberHistoryRecovery,
   notePointSummary,
   __test,
 } from "./src/member-history-recovery.js";
@@ -134,6 +135,31 @@ test("LINE OFC note is authoritative even when no slip exists", () => {
   assert.equal(candidate.service_amount_thb, 30000);
   assert.equal(candidate.cancelled, false);
   assert.equal(notePointSummary([candidate]).points, 300);
+});
+
+test("first LINE login is source-ready even when no Client or Member wallet is linked", async () => {
+  const db = new FakeDb();
+  db.rows("tblFHmfpB2TTrzO2e").push({
+    id: "recLINEOFCUNLINKED1",
+    createdTime: "2026-08-03T03:00:00.000Z",
+    fields: {
+      line_user_id: LINE_ID,
+      intent: "note_only",
+      admin_note: "งานเสร็จ Model A 30,000 บาท วันที่ 3/8/2026",
+    },
+  });
+  const result = await runMemberHistoryRecovery({
+    env: {},
+    store: db,
+    lineUserId: LINE_ID,
+    trigger: "login",
+    now: new Date("2026-09-14T03:00:00Z"),
+  });
+  assert.notEqual(result.reason, "identity_not_linked");
+  assert.equal(result.state, "reconciled");
+  assert.equal(result.historical_points_recovered, 300);
+  assert.equal(result.current_points_total, 300);
+  assert.equal(result.materialized_count, 0);
 });
 
 test("historical points use the combined note total and do not expire", () => {
