@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { LINE_GROUP_INGRESS_INTERNALS } from "../src/line-group-ingress-front-gate.js";
-import { classifyPaymentImageEvidence, inferServicePaymentPurpose } from "../src/payment-proof-intelligence.mjs";
+import { classifyPaymentImageEvidence, inferServicePaymentPurpose, paymentTrackingKind } from "../src/payment-proof-intelligence.mjs";
 
 const {
   alertsOpsThreadId,
@@ -109,6 +109,13 @@ test("service purpose fails closed when two sessions match equally", () => {
   assert.equal(result.ambiguous, true);
 });
 
+test("tracking kind separates membership, job deposit, and job final payment", () => {
+  assert.equal(paymentTrackingKind({ inferred_stage: "membership", inferred_intent: "renewal" }), "membership_renewal");
+  assert.equal(paymentTrackingKind({ inferred_stage: "deposit" }), "job_deposit");
+  assert.equal(paymentTrackingKind({ inferred_stage: "final" }), "job_final");
+  assert.equal(paymentTrackingKind({ inferred_stage: "unknown" }), "unresolved_payment");
+});
+
 test("Telegram payment topic helpers keep Membership, Confirm and Alerts separate", () => {
   assert.equal(membershipOpsThreadId({}), 20);
   assert.equal(paymentOpsThreadId({}), 21);
@@ -152,14 +159,70 @@ test("LINE conflicting membership/service wording stays in Confirm and also rais
   assert.equal(h.messages[1].message_thread_id, 9);
 });
 
-test("direct image becomes bounded candidate when recent payment context is absent", async () => {
+test("direct LINE image is visually checked and tracked immediately without waiting for follow-up text", async () => {
   const r2 = memoryR2();
-  const env = { LINE_SLIP_EVIDENCE: r2, AIRTABLE_BASE_ID: "appTestBase000001", AIRTABLE_API_KEY: "token" };
-  const event = { type: "message", timestamp: Date.now(), webhookEventId: "evt-1", source: { type: "user", userId: "U123" }, message: { type: "image", id: "img-1" } };
-  const result = await captureDirectUserImageEvidence(env, event, { recentPaymentContext: false });
-  assert.equal(result.candidate, true);
-  assert.equal(result.captured, false);
-  assert.equal(result.reason, "awaiting_payment_followup");
+  const previousFetch = globalThis.fetch;
+  let proofPost = null;
+  let proofPatch = null;
+  const lineUserId = "U1234567890abcdef1234567890abcdef";
+  globalThis.fetch = async (input, init = {}) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api-data.line.me") return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } });
+    if (url.hostname !== "api.airtable.com") throw new Error(`unexpected_fetch:${request.method}:${request.url}`);
+    const table = decodeURIComponent(url.pathname.split("/").filter(Boolean)[2] || "");
+    if (request.method === "GET" && table === "proofs") return Response.json({ records: [] });
+    if (request.method === "GET" && table === "members") return Response.json({ records: [{ id: "recMember12345678", fields: { member_id: "bookei", line_id: lineUserId, "Contact Email": "book@example.com" } }] });
+    if (request.method === "GET" && table === "clients") return Response.json({ records: [{ id: "recClient12345678", fields: { line_user_id: lineUserId, "Client Name": "Book EI" } }] });
+    if (request.method === "GET" && table === "renewals") return Response.json({ records: [{ id: "recRenewal123456", fields: { renewal_session_id: "renew-book-1", line_user_id: lineUserId, requested_package: "standard", renewal_amount_thb: 1000 } }] });
+    if (request.method === "GET" && table === "sessions") return Response.json({ records: [] });
+    if (request.method === "POST" && table === "proofs") {
+      proofPost = await request.json();
+      return Response.json({ id: "recProof12345678", fields: proofPost.fields });
+    }
+    if (request.method === "PATCH" && table === "proofs") {
+      proofPatch = await request.json();
+      return Response.json({ id: "recProof12345678", fields: proofPatch.fields });
+    }
+    throw new Error(`unexpected_airtable:${request.method}:${table}`);
+  };
+  const env = {
+    LINE_SLIP_EVIDENCE: r2,
+    LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+    AIRTABLE_BASE_ID: "appTestBase000001",
+    AIRTABLE_API_KEY: "token",
+    AIRTABLE_TABLE_PAYMENT_PROOFS_ID: "proofs",
+    AIRTABLE_TABLE_MEMBERS_ID: "members",
+    AIRTABLE_TABLE_CLIENTS_ID: "clients",
+    AIRTABLE_TABLE_LIFF_RENEWAL_SESSIONS_ID: "renewals",
+    AIRTABLE_TABLE_SESSIONS_ID: "sessions",
+    INTERNAL_TOKEN: "internal-token",
+    SLIP_EXTRACTOR: { async fetch(request) {
+      if (new URL(request.url).pathname.endsWith("/qr")) return Response.json({ result: { payment_ref: "REF-DIRECT-1", amount_thb: 1000, paid_at: "2026-09-17T10:00:00+07:00", provider: "promptpay", confidence_score: 0.99 } });
+      return Response.json({ result: {} });
+    } },
+    PAYMENTS_WORKER: { async fetch(request) {
+      const body = await request.json();
+      assert.equal(body.source, "line_ofc_payment_ingress");
+      assert.equal(body.payment_stage, "membership");
+      assert.equal(body.member_email, "book@example.com");
+      return Response.json({ ok: true, entitlement_materialized: true, entitlement_record_id: "recEntitle123456", membership_expire_at: "2028-06-28T00:00:00.000Z", membership_term: "1_year_plus_180_days", membership_expiry_rule: "1_year_from_current_expiry_plus_care_back_private_standard_2026", membership_write_through: { promotion: { code: "care_back_private_standard_2026", bonus_days: 180 } } });
+    } },
+  };
+  const event = { type: "message", timestamp: Date.now(), webhookEventId: "evt-1", source: { type: "user", userId: lineUserId }, message: { type: "image", id: "img-1" } };
+  try {
+    const result = await captureDirectUserImageEvidence(env, event, { recentPaymentContext: false });
+    assert.equal(result.captured, true);
+    assert.equal(result.trackingKind, "membership_renewal");
+    assert.equal(result.settlementStatus, "materialized");
+    assert.equal(result.verified, true);
+    assert.equal(proofPost.fields.status, "pending");
+    assert.equal(proofPatch.fields.status, "verified");
+    assert.equal(JSON.parse(proofPost.fields.note).payment_intelligence.tracking_kind, "membership_renewal");
+    assert.equal(JSON.parse(proofPatch.fields.note).settlement.status, "materialized");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
   assert.equal(r2.store.size, 1);
 });
 

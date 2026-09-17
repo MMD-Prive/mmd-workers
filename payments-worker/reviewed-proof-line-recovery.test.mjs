@@ -100,15 +100,17 @@ function harness() {
   };
 }
 
-function request() {
+function request({ source = "payment_review_console", token = "service-test", caller = "" } = {}) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+  if (caller) headers["X-MMD-Service-Caller"] = caller;
   return new Request("https://payments.example.test/v1/internal/payments/reviewed-proof", {
     method: "POST",
-    headers: {
-      Authorization: "Bearer service-test",
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify({
-      source: "payment_review_console",
+      source,
       decision: "approved",
       proof_id: PROOF_ID,
       evidence_record_id: PROOF_RECORD,
@@ -149,6 +151,9 @@ test("email-less canonical LINE recovery materializes entitlement only after tru
   assert.equal(result.context_source, "liff_renewal_recovery");
   assert.equal(result.recovery_context, true);
   assert.equal(result.entitlement_materialized, true);
+  assert.equal(result.membership_expire_at, "2029-09-07T15:16:21.000Z");
+  assert.equal(result.membership_term, "2_years_plus_1_year");
+  assert.equal(result.membership_promotion.code, "care_back_private_premium_2026");
   assert.equal(notifyCalls, 1);
 
   assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 1);
@@ -163,6 +168,28 @@ test("email-less canonical LINE recovery materializes entitlement only after tru
   assert.equal(h.tables.tblgWc5VRon5o8Mhk[0].fields["Membership Status"], "Active");
   assert.equal(h.tables.tblXjQFwo0A2cHseh[0].fields.renewal_flow_status, "materialized");
   assert.equal(h.tables.tblfJfM4Sqag9zrLi[0].fields.status, "verified");
+});
+
+test("member dashboard service may settle only a canonical LINE OFC membership proof", async () => {
+  const h = harness();
+  const response = await handleReviewedProof(request({
+    source: "line_ofc_payment_ingress",
+    token: "internal-test",
+    caller: "member-dashboard-chat-worker",
+  }), h.env, {}, async () => Response.json({ ok: true, payment_ref: PAYMENT_REF, payment_stage: "membership" }));
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.ok, true);
+  assert.equal(result.entitlement_materialized, true);
+  assert.equal(result.membership_promotion.code, "care_back_private_premium_2026");
+});
+
+test("LINE OFC settlement source rejects callers without the service identity", async () => {
+  const h = harness();
+  const response = await handleReviewedProof(request({ source: "line_ofc_payment_ingress" }), h.env, {}, async () => Response.json({ ok: true }));
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, "line_ofc_membership_settlement_only");
+  assert.equal(h.tables.tblNImdF9PKAxhXGi.length, 0);
 });
 
 test("email-less recovery does not materialize entitlement if trusted notify fails", async () => {

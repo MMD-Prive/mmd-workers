@@ -1,4 +1,7 @@
+import { applyMembershipPromotion, currentPrivateMembershipPromotion } from "../shared/membership-promotion-policy.mjs";
+
 const REVIEW_SOURCE = "payment_review_console";
+const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -20,7 +23,10 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
   const method = request.method.toUpperCase();
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: jsonHeaders() });
   if (!isReviewedProofRequest(new URL(request.url).pathname, method)) return json({ ok: false, error: "not_found" }, 404);
-  if (!(await serviceAuthed(request, env.AUTH_SERVICE_ADMIN_TO_PAYMENTS))) {
+  const lineOfcCaller = request.headers.get("x-mmd-service-caller") === "member-dashboard-chat-worker";
+  const adminAuthed = await serviceAuthed(request, env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  const lineOfcAuthed = lineOfcCaller && await serviceAuthed(request, env.AUTH_SERVICE_LINE_TO_PAYMENTS || env.INTERNAL_TOKEN);
+  if (!adminAuthed && !lineOfcAuthed) {
     return json({ ok: false, error: "service_auth_required", authority: "payments-worker" }, 401);
   }
   if (typeof notifyTrusted !== "function") {
@@ -55,7 +61,10 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
     const lineUserId = lineId(body.line_user_id);
     const emailLessRecovery = paymentStage === "membership" && contextSource === RECOVERY_CONTEXT && !memberEmail;
 
-    if (source !== REVIEW_SOURCE) throw httpError(400, "invalid_payment_review_source");
+    if (source !== REVIEW_SOURCE && source !== LINE_OFC_SOURCE) throw httpError(400, "invalid_payment_review_source");
+    if (source === LINE_OFC_SOURCE && (!lineOfcAuthed || paymentStage !== "membership")) {
+      throw httpError(403, "line_ofc_membership_settlement_only");
+    }
     if (decision !== "approved") throw httpError(400, "explicit_approved_decision_required");
     if (!proofId) throw httpError(400, "proof_id_required");
     if (!paymentRef) throw httpError(400, "payment_ref_required");
@@ -123,8 +132,8 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       receipt_url: evidenceUrl(fields) || undefined,
       paid_at: text(fields.paid_at || fields["Payment Date"], 80) || undefined,
       notes: recovery
-        ? `payment_review_console proof_id=${proofId}; reviewed_by=${reviewActor}; recovered_member_id=${recovery.member_id}; line_identity=${recovery.line_user_id}`
-        : `payment_review_console proof_id=${proofId}; reviewed_by=${reviewActor}`,
+        ? `${source} proof_id=${proofId}; reviewed_by=${reviewActor}; recovered_member_id=${recovery.member_id}; line_identity=${recovery.line_user_id}`
+        : `${source} proof_id=${proofId}; reviewed_by=${reviewActor}`,
     };
 
     const response = await notifyTrusted(notifyBody, { request, env, ctx });
@@ -151,7 +160,8 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       ...payload,
       ok: true,
       authority: "payments-worker",
-      payment_review_console: true,
+      payment_review_console: source === REVIEW_SOURCE,
+      line_ofc_payment_ingress: source === LINE_OFC_SOURCE,
       proof_id: proofId,
       evidence_record_id: proof.id,
       context_source: recovery ? RECOVERY_CONTEXT : contextSource || undefined,
@@ -161,6 +171,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       membership_expire_at: materialization?.expire_at || undefined,
       membership_term: materialization?.membership_term || undefined,
       membership_expiry_rule: materialization?.membership_expiry_rule || undefined,
+      membership_promotion: materialization?.promotion || undefined,
       downstream_access_reconcile_required: Boolean(materialization),
     }), { status: response.status, headers });
   } catch (error) {
@@ -253,7 +264,15 @@ async function materializeRecoveredMembership(env, input) {
   const startAt = new Date(paidAt);
   const membershipTerm = membershipTermForPackage(input.package_code, startAt);
   if (!membershipTerm) throw httpError(409, "recovery_membership_term_invalid");
-  const expireAt = membershipTerm.expire_at;
+  const promotion = currentPrivateMembershipPromotion({ package_code: input.package_code, verified_at: paidAt.toISOString(), action: "renewal" });
+  const promotedExpireAt = applyMembershipPromotion(membershipTerm.expire_at, promotion);
+  const expireAt = promotedExpireAt || membershipTerm.expire_at;
+  const membershipExpiryRule = promotion
+    ? `${membershipTerm.membership_expiry_rule}_plus_${promotion.code}`
+    : membershipTerm.membership_expiry_rule;
+  const membershipTermLabel = promotion
+    ? `${membershipTerm.membership_term}_plus_${promotion.bonus_years ? `${promotion.bonus_years}_year` : `${promotion.bonus_days}_days`}`
+    : membershipTerm.membership_term;
   const packageLabel = input.package_code === "premium" ? "Premium" : "Standard";
   const entitlementLevel = input.package_code === "premium" ? "premium" : "standard_basic";
 
@@ -271,12 +290,12 @@ async function materializeRecoveredMembership(env, input) {
       start_at: startAt.toISOString(),
       expire_at: expireAt.toISOString(),
       renewal_status: "renewed",
-      membership_expiry_rule: membershipTerm.membership_expiry_rule,
+      membership_expiry_rule: membershipExpiryRule,
       telegram_access_status: "pending_invite",
       source: "renewal",
       source_ref: `payment:${input.payment_ref}`,
       payment_ref: input.payment_ref,
-      notes: `Materialized by payments-worker after official reviewed LINE renewal proof; amount=${input.amount_thb}; member_id=${input.member_id}`,
+      notes: `Materialized by payments-worker after official reviewed LINE renewal proof; amount=${input.amount_thb}; member_id=${input.member_id}${promotion ? `; promotion=${promotion.code}` : ""}`,
     });
   }
 
@@ -304,8 +323,9 @@ async function materializeRecoveredMembership(env, input) {
     entitlement_record_id: entitlement.id,
     start_at: startAt.toISOString(),
     expire_at: expireAt.toISOString(),
-    membership_term: membershipTerm.membership_term,
-    membership_expiry_rule: membershipTerm.membership_expiry_rule,
+    membership_term: membershipTermLabel,
+    membership_expiry_rule: membershipExpiryRule,
+    promotion,
   };
 }
 

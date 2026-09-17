@@ -127,6 +127,44 @@ function clientLabel(record) {
   return clean(f["Client Name"] || f.client_name || f.display_name || f.line_display_name || f.Name || f.name || f.nickname);
 }
 
+function memberEmail(record) {
+  const f = record?.fields || {};
+  const value = clean(f["Contact Email"] || f.email || f.member_email).toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? value : "";
+}
+
+function memberId(record) {
+  return clean(record?.fields?.member_id || record?.fields?.["Member ID"]);
+}
+
+function renewalSessionId(record) {
+  return clean(record?.fields?.renewal_session_id);
+}
+
+function canonicalMembershipPackage(value) {
+  const raw = clean(value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (raw.includes("premium")) return "premium";
+  if (raw.includes("standard") || raw.includes("lite")) return "standard";
+  if (["mmd_member", "member_690", "public_member", "membership"].includes(raw)) return "mmd_member";
+  if (raw.includes("elite")) return "elite";
+  if (raw.includes("red_card") || raw.includes("redcard")) return "red_card";
+  return "";
+}
+
+export function paymentTrackingKind(intelligence = {}) {
+  const stage = clean(intelligence?.inferred_stage).toLowerCase();
+  if (stage === "membership") {
+    return clean(intelligence?.inferred_intent).toLowerCase() === "renewal"
+      ? "membership_renewal"
+      : "membership_signup";
+  }
+  if (stage === "deposit") return "job_deposit";
+  if (stage === "final") return "job_final";
+  if (stage === "full") return "job_full";
+  if (stage === "tips") return "job_tip";
+  return "unresolved_payment";
+}
+
 function sessionAmounts(record) {
   const f = record?.fields || {};
   return {
@@ -222,8 +260,12 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
   }
 
   const service = inferServicePaymentPurpose({ amount_thb: extraction.amount_thb, sessions: [...sessionMap.values()], context_text: contextText });
-  const membership = inferMembershipPayment({ amount_thb: extraction.amount_thb, linked_member: Boolean(member?.id), linked_renewal: Boolean(renewal?.id), source_context: "line_ofc_cloudflare_payment_proof" });
-  const intelligence = choosePurpose({ membership, service, contextText, renewal }) || { inferred_stage: "unknown", inferred_label: "ยังระบุประเภทเงินไม่ได้", confidence: 0, ambiguous: false, match_basis: "no_supported_payment_purpose" };
+  const renewalPackage = canonicalMembershipPackage(renewal?.fields?.requested_package || renewal?.fields?.package_code);
+  const membership = inferMembershipPayment({ amount_thb: extraction.amount_thb, linked_member: Boolean(member?.id), linked_renewal: Boolean(renewal?.id), package_code: renewalPackage, source_context: "line_ofc_cloudflare_payment_proof" });
+  const renewalPackageMismatch = Boolean(renewalPackage && membership && membership.inferred_package_code !== renewalPackage);
+  const intelligence = renewalPackageMismatch
+    ? { inferred_stage: "unknown", inferred_label: "ต้องตรวจแพ็กเกจสมาชิก", confidence: 1, ambiguous: true, match_basis: "renewal_package_amount_collision" }
+    : choosePurpose({ membership, service, contextText, renewal }) || { inferred_stage: "unknown", inferred_label: "ยังระบุประเภทเงินไม่ได้", confidence: 0, ambiguous: false, match_basis: "no_supported_payment_purpose" };
   const sessionRecordId = !intelligence.ambiguous && ["deposit", "final", "full", "tips"].includes(clean(intelligence.inferred_stage)) ? clean(intelligence.session_record_id) : "";
   const links = { member: clean(member?.id), client: clean(client?.id), renewal: clean(renewal?.id), session: sessionRecordId };
   const missing = [];
@@ -233,6 +275,7 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
   if (clean(intelligence.inferred_stage) === "unknown") missing.push("payment_purpose");
   if (["deposit", "final", "full", "tips"].includes(clean(intelligence.inferred_stage)) && !links.session) missing.push("session");
 
+  const trackingKind = paymentTrackingKind(intelligence);
   const opsRoute = classifyPaymentOpsRoute({ payment_stage: intelligence.inferred_stage, amount_thb: extraction.amount_thb, linked_member: Boolean(links.member), linked_renewal: Boolean(links.renewal), package_code: intelligence.inferred_package_code || "", source_context: "line_ofc_cloudflare_payment_proof", context_text: contextText });
   const reasonParts = [intelligence.inferred_label];
   if (client) reasonParts.push(`ลูกค้า ${clientLabel(client) || "matched"}`);
@@ -246,8 +289,16 @@ export async function analyzeProductionPaymentProof({ env = {}, image, lineUserI
     classification,
     links,
     customer: { status: memberLookup.ambiguous || clientLookup.ambiguous ? "ambiguous" : links.member || links.client ? "matched" : "unmatched", member_record_id: links.member || null, client_record_id: links.client || null, display_name: clientLabel(client) || null, source: links.member ? "members.line_id" : links.client ? "clients.line_user_id" : null },
-    payment_intelligence: { ...intelligence, official_verification_required: true, may_mark_paid: false },
-    review_summary: { image_class: classification.image_class, customer_match: links.member ? "member" : links.client ? "client" : "unmatched", client_name: clientLabel(client) || null, payment_stage: intelligence.inferred_stage, payment_label: intelligence.inferred_label, confidence: intelligence.confidence, missing, recommended_admin_reason: reasonParts.filter(Boolean).length ? `ระบบตรวจแล้ว · ${reasonParts.filter(Boolean).join(" · ")}` : "ระบบยังจับคู่ข้อมูลการชำระเงินไม่ครบ" },
+    payment_intelligence: { ...intelligence, tracking_kind: trackingKind, official_verification_required: true, may_mark_paid: false },
+    review_summary: { image_class: classification.image_class, customer_match: links.member ? "member" : links.client ? "client" : "unmatched", client_name: clientLabel(client) || null, payment_stage: intelligence.inferred_stage, tracking_kind: trackingKind, payment_label: intelligence.inferred_label, confidence: intelligence.confidence, missing, recommended_admin_reason: reasonParts.filter(Boolean).length ? `ระบบตรวจแล้ว · ${reasonParts.filter(Boolean).join(" · ")}` : "ระบบยังจับคู่ข้อมูลการชำระเงินไม่ครบ" },
     ops_route: opsRoute,
+    settlement_context: {
+      member_email: memberEmail(member) || null,
+      member_id: memberId(member) || null,
+      member_record_id: links.member || null,
+      client_record_id: links.client || null,
+      renewal_record_id: links.renewal || null,
+      renewal_session_id: renewalSessionId(renewal) || null,
+    },
   };
 }

@@ -173,7 +173,8 @@ test("new Standard 1,199 payment materializes one active canonical entitlement",
   assert.equal(body.membership_write_through.action, "signup");
   assert.equal(body.membership_write_through.package_code, "standard");
   assert.equal(body.membership_write_through.capability, "private_standard");
-  assert.equal(body.membership_write_through.membership_term, "1_year");
+  assert.equal(body.membership_write_through.membership_term, "1_year_plus_180_days");
+  assert.equal(body.membership_write_through.promotion.code, "care_back_private_standard_2026");
   const rows = createdEntitlements(h);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].fields.member_id, MEMBER_ID);
@@ -194,8 +195,8 @@ test("active Standard renewal extends from current expiry rather than approval t
   assert.equal(plan.status, "ready");
   assert.equal(plan.action, "renewal");
   assert.equal(plan.start_at, "2026-12-31T00:00:00.000Z");
-  assert.equal(plan.proposed_expire_at, "2027-12-31T00:00:00.000Z");
-  assert.equal(plan.membership_expiry_rule, "1_year_from_current_expiry");
+  assert.equal(plan.proposed_expire_at, "2028-06-28T00:00:00.000Z");
+  assert.equal(plan.membership_expiry_rule, "1_year_from_current_expiry_plus_care_back_private_standard_2026");
 });
 
 test("legacy discounted Standard renewal amount remains accepted only with matching history", async () => {
@@ -214,15 +215,16 @@ test("legacy discounted Standard renewal amount remains accepted only with match
   assert.equal(review.reason, "renewal_history_not_found");
 });
 
-test("Premium renewal extends two calendar years from latest current expiry", async () => {
+test("Premium renewal extends two calendar years plus the current CARE BACK year", async () => {
   const h = harness({ entitlements: [entitlement({ packageCode: "premium", capability: "private_premium", expireAt: "2027-02-28T08:15:00.000Z" })] });
   const plan = await resolveWriteThroughPlan(h.env, {
     payment_stage: "membership", payment_ref: "PAY-PREM-1", amount_thb: 2500, member_email: EMAIL, package_code: "premium",
   }, { verified_at: NOW });
   assert.equal(plan.status, "ready");
   assert.equal(plan.action, "renewal");
-  assert.equal(plan.proposed_expire_at, "2029-02-28T08:15:00.000Z");
-  assert.equal(plan.membership_term, "2_years");
+  assert.equal(plan.proposed_expire_at, "2030-02-28T08:15:00.000Z");
+  assert.equal(plan.membership_term, "2_years_plus_1_year");
+  assert.equal(plan.promotion.code, "care_back_private_premium_2026");
 });
 
 test("expired membership restarts from Official Verify time instead of expired date", async () => {
@@ -232,8 +234,8 @@ test("expired membership restarts from Official Verify time instead of expired d
   }, { verified_at: NOW });
   assert.equal(plan.status, "ready");
   assert.equal(plan.start_at, NOW);
-  assert.equal(plan.proposed_expire_at, "2027-09-13T04:30:00.000Z");
-  assert.equal(plan.membership_expiry_rule, "1_year_from_verified_payment");
+  assert.equal(plan.proposed_expire_at, "2028-03-11T04:30:00.000Z");
+  assert.equal(plan.membership_expiry_rule, "1_year_from_verified_payment_plus_care_back_private_standard_2026");
 });
 
 test("Public 690 payment maps to public_member without requiring Private package catalog", async () => {

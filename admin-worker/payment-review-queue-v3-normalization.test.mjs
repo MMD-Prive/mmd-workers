@@ -43,9 +43,10 @@ test("review queue understands v3 nested extraction and treats a linked Session 
           error: "",
         },
         payment_intelligence: {
-          schema: "mmd_payment_proof_intelligence_v1",
+          schema: "mmd_payment_proof_intelligence_v2",
           inferred_stage: "final",
           inferred_label: "ค่าจบงาน / ยอดคงเหลือ",
+          tracking_kind: "job_final",
           confidence: 0.98,
           match_basis: "session_balance_exact",
         },
@@ -65,6 +66,7 @@ test("review queue understands v3 nested extraction and treats a linked Session 
   assert.equal(payload.items.length, 1);
   const item = payload.items[0];
   assert.equal(item.payment_stage, "final");
+  assert.equal(item.tracking_kind, "job_final");
   assert.equal(item.inferred_label, "ค่าจบงาน / ยอดคงเหลือ");
   assert.equal(item.extraction_method, "qr");
   assert.equal(item.extraction_confidence, 0.97);
@@ -105,6 +107,7 @@ test("service-stage fallback labels never fall through to a membership label", a
   const item = payload.items[0];
 
   assert.equal(item.inferred_label, "ค่าจอง / มัดจำ");
+  assert.equal(item.tracking_kind, "job_deposit");
   assert.equal(item.extraction_method, "ocr");
   assert.equal(item.extraction_confidence, 0.91);
   assert.equal(item.can_approve, true);
