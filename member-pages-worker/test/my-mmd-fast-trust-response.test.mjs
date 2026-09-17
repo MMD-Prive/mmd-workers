@@ -111,6 +111,22 @@ test("Fast Trust Black Card patches direct member dashboard while history remain
   assert.equal(body.data.messages.some((item) => item.code === "history_recovery_pending"), true);
 });
 
+test("Fast Trust patches the LIFF profile so protected tiers survive safe serialization", async () => {
+  const env = await makeEnv("คิว - SVIP -");
+  const response = Response.json({ ok: true, data: {
+    display_name: "คิว",
+    tier: "Member",
+    membership_status: "checking",
+    customer_360: { member: { display_name: "คิว", tier: "Member", membership_status: "checking" } },
+  }});
+  const patched = await applyMyMmdFastTrustResponse(request("/member/api/liff/profile"), response, env);
+  const body = await patched.json();
+  assert.equal(body.data.tier, "SVIP");
+  assert.equal(body.data.membership_status, "active");
+  assert.equal(body.data.customer_360.member.tier, "SVIP");
+  assert.match(body.data.membership_expires_at, /^\d{4}-\d{2}-\d{2}$/);
+});
+
 test("non trusted rename leaves response unchanged", async () => {
   const env = await makeEnv("ลูกค้า Premium");
   const original = { membership: { level: "unknown", levelVerified: false, status: "checking", access: "checking" } };
