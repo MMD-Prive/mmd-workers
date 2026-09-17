@@ -3,26 +3,35 @@ const CLIENTS_TABLE = "Clients";
 const SESSIONS_TABLE = "Sessions";
 const PAYMENTS_TABLE = "Payments";
 const LEGACY_STAGING_TABLE = "tbl1u0foFBvgFpT9G";
+const CONSOLE_INBOX_TABLE = "MMD — Console Inbox";
 const HISTORY_MAX_RECORDS = 2000;
 
 const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
 const COMMITTED_LINE_DECISION = "link_existing_client";
 const COMMITTED_LINE_REVIEW_STATUS = "committed";
 
+import { consoleInboxCandidate } from "./member-history-recovery.js";
+
 export async function readClientBackedHistory(env = {}, lineUserId = "", now = new Date()) {
   return (await readClientBackedHistoryResult(env, lineUserId, now)).items;
 }
 
-export async function readClientBackedHistoryResult(env = {}, lineUserId = "", now = new Date()) {
+export async function readClientBackedHistoryResult(env = {}, lineUserId = "", now = new Date(), { requireLinkedClient = false } = {}) {
   const lineId = canonicalLineId(lineUserId);
   if (!lineId || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
     return { state: "checking", source: "canonical_client_history", items: [], summary: emptyHistorySummary() };
   }
 
   try {
-    const client = await resolveCanonicalClientForLine(env, lineId);
+    const [client, lineOfcRows] = await Promise.all([
+      resolveCanonicalClientForLine(env, lineId),
+      readLineOfcRows(env, lineId),
+    ]);
+    const lineOfcItems = lineOfcRows
+      .map((record) => lineOfcHistoryItem(record, client?.id || `line:${lineId}` , lineId, now))
+      .filter(Boolean);
     if (!client) {
-      return { state: "resolved", source: "canonical_client_history", items: [], summary: emptyHistorySummary() };
+      return { state: "resolved", source: "line_ofc_history", items: lineOfcItems, summary: buildHistorySummary(lineOfcItems) };
     }
 
     const fields = client?.fields || {};
@@ -40,14 +49,64 @@ export async function readClientBackedHistoryResult(env = {}, lineUserId = "", n
     if (clientName) paymentQueries.push(airtableList(env, paymentsTable, { filterByFormula: `ARRAYJOIN({Client})=${formulaString(clientName)}`, maxRecords: HISTORY_MAX_RECORDS }).catch(() => []));
 
     const [sessionGroups, paymentGroups] = await Promise.all([Promise.all(sessionQueries), Promise.all(paymentQueries)]);
-    const sessions = dedupeRecords(sessionGroups.flat());
+    const sessions = dedupeRecords(sessionGroups.flat()).filter((record) => !requireLinkedClient || linkedIds(record?.fields?.Client).includes(String(client.id)));
     const payments = dedupeRecords(paymentGroups.flat());
-    const items = buildHistoryItems({ sessions, payments, now });
-    return { state: "resolved", source: "canonical_client_history", clientId: String(client?.id || "") || null, items, summary: buildHistorySummary(items) };
+    const items = lineOfcRows.length
+      ? mergeHistoryItems(lineOfcItems, buildHistoryItems({ sessions: [], payments, now }))
+      : buildHistoryItems({ sessions, payments, now });
+    return { state: "resolved", source: lineOfcRows.length ? "line_ofc_history" : "canonical_client_history", clientId: String(client?.id || "") || null, items, summary: buildHistorySummary(items) };
   } catch (error) {
     console.warn({ event: "my_mmd_client_history_lookup_failed", failure_class: safeFailure(error) });
     return { state: "checking", source: "canonical_client_history", items: [], summary: emptyHistorySummary() };
   }
+}
+
+async function readLineOfcRows(env, lineId) {
+  const table = String(env.AIRTABLE_TABLE_CONSOLE_INBOX || CONSOLE_INBOX_TABLE).trim();
+  try { return await airtableList(env, table, { filterByFormula: `{line_user_id}=${formulaString(lineId)}`, maxRecords: HISTORY_MAX_RECORDS }); }
+  catch (error) { console.warn({ event: "my_mmd_line_ofc_history_lookup_failed", failure: safeFailure(error) }); return []; }
+}
+
+function lineOfcHistoryItem(record, clientId, lineId, now) {
+  const candidate = consoleInboxCandidate(record, clientId, lineId);
+  if (!candidate || candidate.cancelled || !candidate.service_date) return null;
+  const date = dateOnly(candidate.service_date);
+  const today = dateOnly(now);
+  if (!date || !today || date > today) return null;
+  const title = serviceTitle(candidate.service_type || "MMD service");
+  return {
+    id: `line-ofc-service-${safeId(record?.id, candidate.source_fingerprint_seed)}`,
+    kind: "booking",
+    occurredAt: date,
+    title,
+    detail: [candidate.model_text, candidate.location_text].filter(Boolean).join(" · ") || null,
+    statusLabel: "Completed",
+    model: candidate.model_text || null,
+    canonicalModelIds: [],
+    serviceCodes: parseJobCodes(candidate.service_type).serviceCodes,
+    chargeComponents: parseJobCodes(candidate.service_type).chargeComponents,
+    rawJobType: candidate.service_type || null,
+    location: candidate.location_text || null,
+    mapUrl: null,
+    startTime: null,
+    endTime: null,
+    durationMinutes: null,
+    totalAmountThb: candidate.service_amount_thb > 0 ? candidate.service_amount_thb : null,
+    depositAmountThb: null,
+    balanceAmountThb: null,
+    currency: candidate.service_amount_thb > 0 ? "THB" : null,
+    source: "line_ofc_history",
+  };
+}
+
+function mergeHistoryItems(primary = [], recovered = []) {
+  const all = [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(recovered) ? recovered : [])];
+  const seen = new Set();
+  return all.filter((item) => {
+    const key = String(item?.id || `${item?.kind}|${item?.occurredAt}|${item?.title}|${item?.model}|${item?.totalAmountThb}`);
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).sort((a, b) => String(b?.occurredAt || "").localeCompare(String(a?.occurredAt || "")));
 }
 
 export async function resolveCanonicalClientForLine(env = {}, lineUserId = "") {
