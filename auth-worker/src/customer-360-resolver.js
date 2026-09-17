@@ -207,7 +207,7 @@ async function readPoints(env, identity, listRecords, window) {
       sort: [{ field: configuredField(env, "AIRTABLE_POINTS_HISTORY_DATE_FIELD", "created_at"), direction: "desc" }],
       maxRecords: 200,
     }) : [];
-    const lineRows = identity.line_user_id
+    const lineRows = identity.line_user_id && env.AIRTABLE_TABLE_CONSOLE_INBOX
       ? await listRecords(LINE_OFC_CONSOLE_INBOX_KEY, {
         filterByFormula: `{line_user_id}=${formulaString(identity.line_user_id)}`,
         maxRecords: 500,
@@ -313,7 +313,7 @@ async function readJobs(env, identity, listRecords, window) {
       sort: [{ field: configuredField(env, "AIRTABLE_SESSIONS_HISTORY_DATE_FIELD", "job_date"), direction: "desc" }],
       maxRecords: 200,
     });
-    const lineRows = identity.line_user_id
+    const lineRows = identity.line_user_id && env.AIRTABLE_TABLE_CONSOLE_INBOX
       ? await listRecords(LINE_OFC_CONSOLE_INBOX_KEY, {
         filterByFormula: `{line_user_id}=${formulaString(identity.line_user_id)}`,
         maxRecords: 500,
