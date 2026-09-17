@@ -12,6 +12,7 @@ const COMMITTED_LINE_REVIEW_STATUS = "committed";
 const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
 const FAST_TRUST_LABEL = { vip: "VIP", svip: "SVIP", black_card: "Black Card" };
+const FAST_TRUST_DURATION_YEARS = 2;
 
 export default {
   async fetch(request, env = {}, ctx) {
@@ -70,7 +71,7 @@ export default {
 };
 
 export function trustedTierFromRenamedName(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = normalizeRenamedName(value);
   if (!text) return null;
   if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
   if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
@@ -79,11 +80,19 @@ export function trustedTierFromRenamedName(value) {
 }
 
 export function displayNameFromRenamedName(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = normalizeRenamedName(value);
   const stripped = text
     .replace(/(?:\s|[-–—|/])*(?:black\s*card|svip|vip)\s*$/i, "")
     .trim();
   return stripped.slice(0, 120) || "สมาชิก MMD";
+}
+
+function normalizeRenamedName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\s*[-–—|/]\s*)+$/, "")
+    .trim();
 }
 
 export async function resolveLineOaFastTrust(env = {}, lineUserId) {
@@ -115,6 +124,8 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
       displayName: displayNameFromRenamedName(winner.renamedName),
       source: FAST_TRUST_SOURCE,
       evidenceCount: candidates.length,
+      membershipStart: todayDate(),
+      membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
       reason: "trusted_line_oa_renamed_name",
     };
   } catch (error) {
@@ -132,6 +143,9 @@ async function fastTrustStatusResponse(firstResponse, firstPayload, fastTrust) {
       fast_trust: true,
       tier: fastTrust.label,
       tier_source: FAST_TRUST_SOURCE,
+      membership_start: fastTrust.membershipStart,
+      membership_expires_at: fastTrust.membershipExpiresAt,
+      active_through: fastTrust.membershipExpiresAt,
       history_recovery_state: "pending",
     },
   };
@@ -157,6 +171,8 @@ async function fastTrustProfileResponse(firstResponse, firstPayload, lineUserId,
       member_id: memberId,
       profile,
       fast_trust: true,
+      membership_start: fastTrust.membershipStart,
+      membership_expires_at: fastTrust.membershipExpiresAt,
       tier_source: FAST_TRUST_SOURCE,
       history_recovery_state: "pending",
     },
@@ -193,8 +209,9 @@ export function overlayFastTrustProfile(existingProfile, { label, displayName, m
     member_id: String(existing.member_id || memberId || "").slice(0, 160),
     tier: label,
     membership_status: "active",
-    membership_start: existing.membership_start || null,
-    membership_expires_at: existing.membership_expires_at || null,
+    membership_start: existing.membership_start || todayDate(),
+    membership_expires_at: existing.membership_expires_at || addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
+    active_through: existing.active_through || existing.membership_expires_at || addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
     points: existing.points != null && String(existing.points).trim() !== "" && Number.isFinite(Number(existing.points)) ? Number(existing.points) : null,
     points_records_count: existing.points_records_count != null && String(existing.points_records_count).trim() !== "" && Number.isInteger(Number(existing.points_records_count)) ? Number(existing.points_records_count) : null,
     payment_status: existing.payment_status || "unavailable",
@@ -353,6 +370,14 @@ function formulaString(value) {
 }
 function safeFailure(error) {
   return String(error?.message || error || "unknown").toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 80) || "unknown";
+}
+
+function todayDate() { return new Date().toISOString().slice(0, 10); }
+function addYearsDate(value, years) {
+  const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime())) return null;
+  date.setUTCFullYear(date.getUTCFullYear() + Number(years || 0));
+  return date.toISOString().slice(0, 10);
 }
 
 async function jsonPayload(response) {

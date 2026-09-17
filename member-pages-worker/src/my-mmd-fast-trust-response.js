@@ -4,11 +4,13 @@ const SESSION_COOKIE = "__Host-mmd_liff_session";
 const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
 const FAST_TRUST_LABEL = { vip: "VIP", svip: "SVIP", black_card: "Black Card" };
+const FAST_TRUST_DURATION_YEARS = 2;
 const APP_PREFIX = "/api/member/app/";
 const DASHBOARD_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
+const LIFF_PROFILE_PATHS = new Set(["/member/api/liff/profile", "/member/api/liff/profile/"]);
 
 export function trustedTierFromRenamedName(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = normalizeRenamedName(value);
   if (!text) return null;
   if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
   if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
@@ -17,11 +19,19 @@ export function trustedTierFromRenamedName(value) {
 }
 
 export function displayNameFromRenamedName(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = normalizeRenamedName(value);
   return text
     .replace(/(?:\s|[-–—|/])*(?:black\s*card|svip|vip)\s*$/i, "")
     .trim()
     .slice(0, 120);
+}
+
+function normalizeRenamedName(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\s*[-–—|/]\s*)+$/, "")
+    .trim();
 }
 
 export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
@@ -67,6 +77,8 @@ export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
       label: FAST_TRUST_LABEL[winner.tier],
       displayName: displayNameFromRenamedName(winner.renamedName) || null,
       source: FAST_TRUST_SOURCE,
+      membershipStart: todayDate(),
+      membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
       historyState: "recovery_pending",
     };
   } catch {
@@ -82,7 +94,8 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   try { path = new URL(request.url).pathname; } catch { return response; }
   const isDashboard = DASHBOARD_PATHS.has(path);
   const isMemberApp = path.startsWith(APP_PREFIX);
-  if (!isDashboard && !isMemberApp) return response;
+  const isLiffProfile = LIFF_PROFILE_PATHS.has(path);
+  if (!isDashboard && !isMemberApp && !isLiffProfile) return response;
 
   // Fresh resolver decisions and explicit restrictions outrank recovery markers.
   if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") return response;
@@ -105,6 +118,8 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
 
   const patched = isDashboard
     ? patchDashboardPayload(payload, fastTrust)
+    : isLiffProfile
+      ? patchLiffProfilePayload(payload, fastTrust)
     : patchMemberAppPayload(path, payload, fastTrust);
   if (!patched) return response;
 
@@ -120,6 +135,41 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
     statusText: response.statusText,
     headers,
   });
+}
+
+function patchLiffProfilePayload(payload, fastTrust) {
+  const data = asObject(payload.data);
+  if (!Object.keys(data).length) return payload;
+  const customer360 = asObject(data.customer_360);
+  const member = asObject(customer360.member);
+  const membershipStart = data.membership_start || fastTrust.membershipStart;
+  const membershipExpiresAt = data.membership_expires_at || fastTrust.membershipExpiresAt;
+  return {
+    ...payload,
+    data: {
+      ...data,
+      display_name: asString(data.display_name, 120) || fastTrust.displayName || "สมาชิก MMD",
+      tier: fastTrust.label,
+      membership_status: "active",
+      membership_start: membershipStart,
+      membership_expires_at: membershipExpiresAt,
+      active_through: data.active_through || membershipExpiresAt,
+      tier_source: FAST_TRUST_SOURCE,
+      history_recovery_state: fastTrust.historyState,
+      customer_360: {
+        ...customer360,
+        member: {
+          ...member,
+          display_name: asString(member.display_name, 120) || fastTrust.displayName || "สมาชิก MMD",
+          tier: fastTrust.label,
+          membership_status: "active",
+          membership_start: member.membership_start || membershipStart,
+          membership_expires_at: member.membership_expires_at || membershipExpiresAt,
+        },
+      },
+      fastTrust: fastTrustMeta(fastTrust),
+    },
+  };
 }
 
 function patchDashboardPayload(payload, fastTrust) {
@@ -150,6 +200,8 @@ function patchDashboardPayload(payload, fastTrust) {
         tier_verified: true,
         tier_source: FAST_TRUST_SOURCE,
         history_state: fastTrust.historyState,
+        membership_start: fastTrust.membershipStart,
+        membership_expires_at: fastTrust.membershipExpiresAt,
       },
       messages: nextMessages,
     },
@@ -158,7 +210,7 @@ function patchDashboardPayload(payload, fastTrust) {
 
 function patchMemberAppPayload(path, payload, fastTrust) {
   if (path === `${APP_PREFIX}profile`) {
-    return { ...payload, match_state: "matched", membership_tier: fastTrust.tier, membership_status: "active", actual_access: "granted", fastTrust: fastTrustMeta(fastTrust) };
+    return { ...payload, match_state: "matched", membership_tier: fastTrust.tier, membership_status: "active", active_through: payload.active_through || fastTrust.membershipExpiresAt, member_since: payload.member_since || fastTrust.membershipStart, actual_access: "granted", fastTrust: fastTrustMeta(fastTrust) };
   }
   if (path === `${APP_PREFIX}dashboard`) {
     const membership = patchMembership(asObject(payload.membership), fastTrust);
@@ -167,6 +219,8 @@ function patchMemberAppPayload(path, payload, fastTrust) {
       state: payload.state === "checking" ? "resolved" : payload.state,
       greetingName: asString(payload.greetingName, 120) || fastTrust.displayName || null,
       membership,
+      active_through: payload.active_through || fastTrust.membershipExpiresAt,
+      member_since: payload.member_since || fastTrust.membershipStart,
       lifecycle: "active",
       nextAction: membership.nextAction,
       legacyDisplay: null,
@@ -198,6 +252,9 @@ function patchMembership(membership, fastTrust) {
     displayOnly: false,
     displaySource: FAST_TRUST_SOURCE,
     resolution: "resolved",
+    memberSince: membership.memberSince || fastTrust.membershipStart,
+    expiresAt: membership.expiresAt || fastTrust.membershipExpiresAt,
+    activeThrough: membership.activeThrough || membership.active_through || fastTrust.membershipExpiresAt,
     nextAction,
     fastTrust: fastTrustMeta(fastTrust),
   };
@@ -209,6 +266,8 @@ function fastTrustMeta(fastTrust) {
     tierVerified: true,
     tierSource: FAST_TRUST_SOURCE,
     historyState: fastTrust.historyState,
+    membershipStart: fastTrust.membershipStart,
+    membershipExpiresAt: fastTrust.membershipExpiresAt,
   };
 }
 
@@ -248,6 +307,8 @@ function canonicalLineId(value) {
 function formulaString(value) {
   return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
+function todayDate() { return new Date().toISOString().slice(0, 10); }
+function addYearsDate(value, years) { const date = new Date(`${String(value || "").slice(0, 10)}T00:00:00.000Z`); if (!Number.isFinite(date.getTime())) return null; date.setUTCFullYear(date.getUTCFullYear() + Number(years || 0)); return date.toISOString().slice(0, 10); }
 function cookieValue(request, name) {
   const raw = String(request.headers.get("cookie") || "");
   for (const part of raw.split(";")) {

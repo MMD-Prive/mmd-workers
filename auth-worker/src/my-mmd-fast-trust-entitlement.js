@@ -46,7 +46,11 @@ export async function buildFastTrustEntitlement(env = {}, lineUserId = "", listR
 }
 
 export function trustedTierFromRenamedName(value) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\s*[-–—|/]\s*)+$/, "")
+    .trim();
   if (!text) return null;
   if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
   if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
