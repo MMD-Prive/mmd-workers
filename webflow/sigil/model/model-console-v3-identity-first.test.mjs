@@ -16,6 +16,8 @@ test("Model Console renews verified LINE identity before rendering a session-exp
   assert.match(source, /model_session_\(required\|invalid\|expired\)/);
   assert.doesNotMatch(source, /x\.status==401\|\|x\.status==403/);
   assert.match(source, /setTimeout\(q\)/);
+  assert.match(source, /Verify LINE to return to your job/);
+  assert.match(source, /验证 LINE 后返回工作/);
 });
 
 test("Model Console renders only the authenticated model payout returned by the server", () => {
