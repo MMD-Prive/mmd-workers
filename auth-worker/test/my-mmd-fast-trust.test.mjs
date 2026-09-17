@@ -26,6 +26,7 @@ function envFor(records) {
 test("only terminal MMD renamed-name markers map to Fast Trust tiers", () => {
   assert.equal(trustedTierFromRenamedName("แมค VIP"), "vip");
   assert.equal(trustedTierFromRenamedName("โจ SVIP"), "svip");
+  assert.equal(trustedTierFromRenamedName("คิว - SVIP -"), "svip");
   assert.equal(trustedTierFromRenamedName("โป้ Black Card"), "black_card");
   assert.equal(trustedTierFromRenamedName("โป้ BlackCard"), "black_card");
   assert.equal(trustedTierFromRenamedName("VIP แมค"), null);
@@ -36,6 +37,7 @@ test("only terminal MMD renamed-name markers map to Fast Trust tiers", () => {
 test("display name strips only the trusted terminal marker", () => {
   assert.equal(displayNameFromRenamedName("โจ SVIP"), "โจ");
   assert.equal(displayNameFromRenamedName("โป้ - BlackCard"), "โป้");
+  assert.equal(displayNameFromRenamedName("คิว - SVIP -"), "คิว");
 });
 
 test("exact LINE staging lookup resolves a trusted SVIP marker", async () => {
@@ -46,6 +48,7 @@ test("exact LINE staging lookup resolves a trusted SVIP marker", async () => {
   assert.equal(result.label, "SVIP");
   assert.equal(result.displayName, "โจ");
   assert.equal(result.source, "line_oa_renamed_name_fast_trust");
+  assert.match(result.membershipExpiresAt, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test("strongest MMD-authored trusted marker wins across retained rename history", async () => {
