@@ -171,6 +171,8 @@ function sessionFields(env = {}) {
       env.AT_SESSIONS__SESSION_STATUS || env.AIRTABLE_SESSIONS_STATUS_FIELD || "fldmwuvOaiCFdzzRa",
       100,
     ),
+    modelSessionState: clean(env.AT_SESSIONS__MODEL_SESSION_STATE || "fld57fhdWqIcOy4Jp", 100),
+    modelSessionStateUpdatedAt: clean(env.AT_SESSIONS__MODEL_SESSION_STATE_UPDATED_AT || "fldFJI1Leni6wvzR4", 100),
     clientName: clean(env.AT_SESSIONS__CLIENT_NAME || "fldMvnQ0BzDfHUYjT", 100),
     modelName: clean(env.AT_SESSIONS__MODEL_NAME || "flddVz6eoWRHrzIQr", 100),
     jobType: clean(env.AT_SESSIONS__JOB_TYPE || "fldjK3U9bghnj7xUe", 100),
@@ -256,15 +258,26 @@ async function patchAcknowledgement(env, session, role) {
   const existing = clean(session?.fields?.[fieldId], 200);
   const promoteCustomerStatus =
     role === "customer" && shouldPromoteCustomerStatus(session?.fields?.[fields.sessionStatus]);
+  const currentModelSessionState = clean(session?.fields?.[fields.modelSessionState], 80).toLowerCase();
+  const seedModelSessionState = role === "model" && !currentModelSessionState;
 
-  if (existing && !promoteCustomerStatus) {
-    return { acknowledged_at: existing, idempotent: true, session_status_promoted: false };
+  if (existing && !promoteCustomerStatus && !seedModelSessionState) {
+    return {
+      acknowledged_at: existing,
+      idempotent: true,
+      session_status_promoted: false,
+      model_session_state_seeded: false,
+    };
   }
 
   const acknowledgedAt = existing || new Date().toISOString();
   const patchFields = {};
   if (!existing) patchFields[fieldId] = acknowledgedAt;
   if (promoteCustomerStatus) patchFields[fields.sessionStatus] = "Confirmed";
+  if (seedModelSessionState) {
+    patchFields[fields.modelSessionState] = "confirmed";
+    patchFields[fields.modelSessionStateUpdatedAt] = acknowledgedAt;
+  }
 
   await airtableRequest(env, `${encodeURIComponent(tableId)}/${encodeURIComponent(session.id)}?returnFieldsByFieldId=true`, {
     method: "PATCH",
@@ -274,6 +287,7 @@ async function patchAcknowledgement(env, session, role) {
     acknowledged_at: acknowledgedAt,
     idempotent: Boolean(existing),
     session_status_promoted: promoteCustomerStatus,
+    model_session_state_seeded: seedModelSessionState,
   };
 }
 
@@ -338,6 +352,7 @@ export async function handleConfirmationAck(request, env = {}) {
       acknowledged_at: ack.acknowledged_at,
       idempotent: ack.idempotent,
       session_status_promoted: ack.session_status_promoted,
+      model_session_state_seeded: ack.model_session_state_seeded,
     }));
   } catch (error) {
     return withCors(request, env, json({ ok: false, error: clean(error?.message || "confirmation_ack_failed", 200) }, errorStatus(error)));
