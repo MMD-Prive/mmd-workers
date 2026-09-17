@@ -45,6 +45,12 @@ jobs:
             jobDate: 'fldpnqoIsUMfN7y3c',
             location: 'fldIiRpaxoafjTkFt',
           };
+          const cellText = (value) => {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+              return String(value.name ?? value.value ?? '').trim();
+            }
+            return String(value ?? '').trim();
+          };
           const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
           const url = new URL(`https://api.airtable.com/v0/${base}/${table}`);
           url.searchParams.set('maxRecords', '2');
@@ -57,16 +63,16 @@ jobs:
           if (records.length !== 1) throw new Error(`book_ei_session_count_${records.length}`);
           const record = records[0];
           const fields = record.fields || {};
-          const model = String(fields[F.modelName] || '').trim();
+          const model = cellText(fields[F.modelName]);
           if (!/^Book\s*(?:EI|IE)$/i.test(model)) throw new Error(`unexpected_model:${model}`);
-          if (String(fields[F.sessionStatus] || '').trim().toLowerCase() !== 'confirmed') {
-            throw new Error(`session_status_not_confirmed:${fields[F.sessionStatus] || ''}`);
+          if (cellText(fields[F.sessionStatus]).toLowerCase() !== 'confirmed') {
+            throw new Error(`session_status_not_confirmed:${cellText(fields[F.sessionStatus])}`);
           }
-          if (!String(fields[F.modelAckAt] || '').trim()) throw new Error('model_ack_missing');
+          if (!cellText(fields[F.modelAckAt])) throw new Error('model_ack_missing');
           if (Number(fields[F.payout]) !== 10000) throw new Error(`unexpected_payout:${fields[F.payout]}`);
-          if (!String(fields[F.jobDate] || '').startsWith('2026-09-17')) throw new Error(`unexpected_job_date:${fields[F.jobDate]}`);
+          if (!cellText(fields[F.jobDate]).startsWith('2026-09-17')) throw new Error(`unexpected_job_date:${cellText(fields[F.jobDate])}`);
 
-          const current = String(fields[F.modelSessionState] || '').trim().toLowerCase();
+          const current = cellText(fields[F.modelSessionState]).toLowerCase();
           if (!current) {
             const now = new Date().toISOString();
             const patch = await fetch(`https://api.airtable.com/v0/${base}/${table}/${record.id}?returnFieldsByFieldId=true`, {
@@ -78,7 +84,7 @@ jobs:
             });
             const patchBody = await patch.json().catch(() => ({}));
             if (!patch.ok) throw new Error(`airtable_patch_http_${patch.status}`);
-            if (String(patchBody?.fields?.[F.modelSessionState] || '').toLowerCase() !== 'confirmed') {
+            if (cellText(patchBody?.fields?.[F.modelSessionState]).toLowerCase() !== 'confirmed') {
               throw new Error('canonical_state_patch_not_persisted');
             }
             console.log('PASS Book EI canonical model_session_state repaired: confirmed');
@@ -88,7 +94,7 @@ jobs:
             console.log('PASS Book EI canonical model_session_state already confirmed');
           }
 
-          const modelUrl = String(fields[F.modelUrl] || '').trim();
+          const modelUrl = cellText(fields[F.modelUrl]);
           const parsed = new URL(modelUrl);
           if (!['mmdbkk.com', 'www.mmdbkk.com'].includes(parsed.hostname)) throw new Error('model_url_host_invalid');
           if (parsed.pathname !== '/sigil/confirm/job-model') throw new Error('model_url_path_invalid');
@@ -96,7 +102,7 @@ jobs:
           if (!signedT) throw new Error('model_token_missing');
           console.log(`::add-mask::${signedT}`);
           fs.appendFileSync(process.env.GITHUB_ENV, `BOOK_EI_MODEL_T=${signedT}\n`);
-          console.log(`PASS real Book EI source model=${model} job_date=${String(fields[F.jobDate] || '')} location=${String(fields[F.location] || '')}`);
+          console.log(`PASS real Book EI source model=${model} job_date=${cellText(fields[F.jobDate])} location=${cellText(fields[F.location])}`);
           NODE
 
       - name: Smoke production signed-token Model session path
