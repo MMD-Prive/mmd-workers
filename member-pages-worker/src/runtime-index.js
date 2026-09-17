@@ -6,6 +6,7 @@ import { withDriveBootstrapDiagnostic } from "./drive-bootstrap-debug.js";
 import { withDashboardLiffChannelCompatibility } from "./liff-dashboard-channel-compat.js";
 import { withStatusFirstMemberResolver } from "./liff-status-first-member-resolver.js";
 import { applyMyMmdFastTrustResponse } from "./my-mmd-fast-trust-response.js";
+import { augmentMemberModelWishNotes } from "./member-model-wish-notes.js";
 import { recoverVerifiedLiffStartAsPendingIdentity } from "./liff-start-pending-identity-fallback.js";
 import { attachTraceId, createLiffResolutionTrace, createLiffShellBoundaryTrace } from "./liff-resolution-trace.js";
 import {
@@ -103,6 +104,7 @@ export default {
     const bootstrapRequest = request.clone();
     let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
+    firstResponse = await augmentMemberModelWishNotes(request, firstResponse, env);
     let firstPayload = await jsonPayload(firstResponse);
 
     const recoveredResponse = await recoverVerifiedLiffStartAsPendingIdentity({
@@ -146,6 +148,7 @@ export default {
       if (bootstrap.mapped) {
         let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
         retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
+        retriedResponse = await augmentMemberModelWishNotes(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
         trace?.finish(retriedResponse.ok ? "resolved" : "failed", retriedResponse.ok ? "drive_bootstrap_mapped" : "member_retry_failed");
         const rewritten = await rewritePendingStatusStartResponse(request, retriedResponse, trace?.traceId || "");

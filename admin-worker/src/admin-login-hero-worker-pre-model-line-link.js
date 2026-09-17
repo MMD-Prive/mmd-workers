@@ -22,6 +22,14 @@ import {
   isModelYear6WishRequest,
 } from "./model-year6-wish.js";
 import {
+  augmentModelDirectWishReviewQueue,
+  handleModelDirectWishRequest,
+  isModelDirectWishAdminQueueRequest,
+  isModelDirectWishAdminReviewRequest,
+  isModelDirectWishRequest,
+  maybeHandleModelDirectWishReview,
+} from "./model-direct-wish.js";
+import {
   ADMIN_SAFETY_LOCATION_PATH,
   MODEL_LOCATION_CAPABILITY_PATH,
   augmentModelLocationCapability,
@@ -56,6 +64,13 @@ const AI_OPS_WORKER_PAGES = new Set([
 export default {
   async fetch(request, env, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+
+    // /sigil/model/wish uses the existing query-safe current-session route but
+    // remains independent of any active job. A valid Model session is still
+    // required, and every submission enters manual review before delivery.
+    if (isModelDirectWishRequest(request)) {
+      return handleModelDirectWishRequest(request, env);
+    }
 
     // Optional Year 6 Model Wish is a post-separation sidecar only. It never
     // transitions session state and never gates payout. The canonical session
@@ -117,6 +132,12 @@ export default {
     const recoveryRequest = path === PAYMENT_REVIEW_PATH && request.method.toUpperCase() === "POST"
       ? request.clone()
       : null;
+    const modelDirectWishQueueRequest = isModelDirectWishAdminQueueRequest(path, request.method)
+      ? request.clone()
+      : null;
+    const modelDirectWishReviewRequest = isModelDirectWishAdminReviewRequest(path, request.method)
+      ? request.clone()
+      : null;
 
     let response = await coreWorker.fetch(request, env, ctx);
     if (membershipActionContext) {
@@ -127,6 +148,15 @@ export default {
       if (actor) {
         response = await tryHandleEmailLessLineRenewalRecovery(recoveryRequest, env, actor, response);
       }
+    }
+    // Core keeps credential-bound authority. The direct campaign can only extend
+    // an already-authorized queue response or replace core's campaign-mismatch
+    // 409 for the specifically validated direct Model Wish record.
+    if (modelDirectWishQueueRequest) {
+      response = await augmentModelDirectWishReviewQueue(modelDirectWishQueueRequest, response, env);
+    }
+    if (modelDirectWishReviewRequest) {
+      response = await maybeHandleModelDirectWishReview(modelDirectWishReviewRequest, response, env);
     }
     return injectAdminAiOpsPage(recoveryRequest || request, response);
   },
