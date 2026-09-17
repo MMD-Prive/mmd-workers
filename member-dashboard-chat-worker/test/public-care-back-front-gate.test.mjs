@@ -88,7 +88,7 @@ test("wrangler claims the public Wish and link routes on apex and www", async ()
   ]) {
     assert.ok(wrangler.includes(`pattern = "${route}"`), `missing Worker route: ${route}`);
   }
-  assert.match(wrangler, /main = "src\/mms-line-front-gate\.js"/);
+  assert.match(wrangler, /main = "src\/my-mms-customer-front-gate-entry\.js"/);
 });
 
 test('public member Wish feed GET reaches the existing Worker owner without a login gate', async () => {

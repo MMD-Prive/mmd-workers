@@ -1,5 +1,5 @@
 name = "member-dashboard-chat-worker"
-main = "src/mms-line-front-gate.js"
+main = "src/my-mms-customer-front-gate-entry.js"
 compatibility_date = "2026-07-02"
 workers_dev = false
 
@@ -119,6 +119,85 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
+# MY MMS customer app. The exact /male-massage route becomes the authenticated
+# customer workspace sourced from MMD-Prive/my-mms-therapist. Public marketing
+# pages such as /male-massage/home and /male-massage/how-to-use remain Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/male-massage"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/bookings*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/bookings*"
+zone_name = "mmdbkk.com"
+
+# Exact Therapist directory app route only. Do not wildcard this route: the
+# nested /therapists/login, /me, /app and public service pages have separate owners.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/payment*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/payment*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/after-service*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/after-service*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/profile*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/profile*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/support*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/support*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage-assets/*"
+zone_name = "mmdbkk.com"
+
+# Same-origin BFF for MY MMS customer identity + booking reads. Unsupported
+# customer contracts fail closed until their backend authority is connected.
+[[routes]]
+pattern = "mmdbkk.com/api/mms/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/mms/app/*"
 zone_name = "mmdbkk.com"
 
 # MMS Therapist auth is a separate role-scoped identity surface. The public
