@@ -34,9 +34,27 @@ jobs:
           node scripts/line-ofc-email-resolution-v2.js --self-test
       - name: Audit full Airtable evidence without mutation
         run: node scripts/line-ofc-email-resolution-v2.js --report /tmp/line-ofc-email-resolution-v2.json
+      - name: Apply resolved member email to Clients, Members, and Per-Rename index
+        run: node scripts/line-ofc-email-resolution-v2.js --apply --report /tmp/line-ofc-email-resolution-v2-apply.json
+      - name: Verify Per-Rename email index idempotency
+        run: |
+          node scripts/line-ofc-email-resolution-v2.js --report /tmp/line-ofc-email-resolution-v2-idempotency.json
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('/tmp/line-ofc-email-resolution-v2-idempotency.json', 'utf8'));
+          const pending = Number(report.planned_client_updates || 0)
+            + Number(report.planned_member_updates || 0)
+            + Number(report.planned_current_staging_updates || 0)
+            + Number(report.planned_per_rename_email_updates || 0);
+          if (pending !== 0) throw new Error(`email_index_not_idempotent:${pending}`);
+          console.log(JSON.stringify({ ok: true, planned_mutations: pending }));
+          NODE
       - name: Upload aggregate-only report
         uses: actions/upload-artifact@v4
         with:
           name: line-ofc-email-resolution-v2-audit
-          path: /tmp/line-ofc-email-resolution-v2.json
+          path: |
+            /tmp/line-ofc-email-resolution-v2.json
+            /tmp/line-ofc-email-resolution-v2-apply.json
+            /tmp/line-ofc-email-resolution-v2-idempotency.json
           retention-days: 14
