@@ -14,6 +14,7 @@ test("Model Console renews verified LINE identity before rendering a session-exp
   assert.match(source, /x\.status===401/);
   assert.match(source, /model_session_\(required\|invalid\|expired\)/);
   assert.doesNotMatch(source, /x\.status==401\|\|x\.status==403/);
+  assert.match(source, /setTimeout\(q\)/);
 });
 
 test("Model Console gives a LINE-return action instead of instructing the model to reopen HYPE", () => {
