@@ -183,7 +183,7 @@ test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ su
   const runtime = {
     MEMBER_PAGES_WORKER: {
       fetch: async () => new Response(
-        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile"; if (payload && payload.ok === true) window.location.replace(target);</script></body></html>`,
+        `<!doctype html><html><head></head><body><main>SECOND DASHBOARD SHOULD BE COVERED</main><div id="message"></div><div id="actions"></div><script nonce="abc123">const target = "/member/my-mmd/";</script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       ),
     },
@@ -224,7 +224,7 @@ test("non-status LIFF intents keep their existing specialized surfaces", async (
 
 test("wrangler keeps canonical My MMD, BFF and legacy redirect routes Worker-owned", async () => {
   const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
-  assert.match(wrangler, /^main = "src\/mms-line-front-gate\.js"$/m);
+  assert.match(wrangler, /^main = "src\/my-mms-customer-front-gate-entry\.js"$/m);
   for (const route of [
     "mmdbkk.com/my-mmd*",
     "www.mmdbkk.com/my-mmd*",
