@@ -2,6 +2,12 @@ name: Deploy telegram-worker
 
 on:
   workflow_dispatch:
+    inputs:
+      smoke_topics:
+        description: "Send one silent redacted check to every MMD Telegram topic after deploy"
+        required: false
+        default: false
+        type: boolean
   push:
     branches:
       - main
@@ -55,5 +61,20 @@ jobs:
           set -euo pipefail
           body="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://telegram-worker.malemodel-bkk.workers.dev/health)"
           echo "$body"
-          printf '%s' "$body" | grep -q '"ok":true'
-          printf '%s' "$body" | grep -q '"worker":"telegram"'
+          printf '%s' "$body" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'
+          printf '%s' "$body" | grep -Eq '"worker"[[:space:]]*:[[:space:]]*"telegram"'
+
+      - name: Smoke every Telegram topic
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.smoke_topics }}
+        env:
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$INTERNAL_API_TOKEN"
+          body="$(curl --retry 3 --retry-delay 2 --retry-all-errors -fsS \
+            -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/topics/smoke' \
+            -H "Authorization: Bearer ${INTERNAL_API_TOKEN}" \
+            -H 'Content-Type: application/json' \
+            --data '{"confirm":"SEND_REDACTED_TOPIC_SMOKE","disable_notification":true}')"
+          echo "$body"
+          node -e 'const d=JSON.parse(process.argv[1]); if (!d.ok || d.failed !== 0 || Number(d.tested) < 7) process.exit(1);' "$body"

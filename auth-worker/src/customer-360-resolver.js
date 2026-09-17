@@ -354,6 +354,7 @@ function customerSafeJob(fields = {}, env = {}) {
     location_customer_safe: customerSafeText(readField(fields, [configuredOptionalField(env, "AIRTABLE_SESSIONS_LOCATION_CUSTOMER_SAFE_FIELD"), "customer_location"]), 120),
     customer_safe_note: customerSafeText(readField(fields, [configuredOptionalField(env, "AIRTABLE_SESSIONS_CUSTOMER_SAFE_NOTE_FIELD"), "customer_safe_note"]), 240),
     payment_status: customerSafePaymentStatus(readField(fields, [configuredOptionalField(env, "AIRTABLE_SESSIONS_PAYMENT_STATUS_FIELD"), "payment_status", "Payment Status"]), readField(fields, [configuredOptionalField(env, "AIRTABLE_SESSIONS_VERIFICATION_STATUS_FIELD"), "verification_status", "Verification Status"])),
+    amount_due_thb: safeMoney(readField(fields, [configuredOptionalField(env, "AIRTABLE_SESSIONS_AMOUNT_DUE_FIELD"), "balance_due_calc", "Balance Due"])),
   });
 }
 

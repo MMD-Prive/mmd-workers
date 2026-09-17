@@ -2,30 +2,10 @@ const { clean } = require("./canonical-parser.js");
 
 const POINT_RATE_THB = 100;
 const THAI_MONTH_PATTERN = [
-  "ม.ค.",
-  "มกราคม",
-  "ก.พ.",
-  "กุมภาพันธ์",
-  "มี.ค.",
-  "มีนาคม",
-  "เม.ย.",
-  "เมษายน",
-  "พ.ค.",
-  "พฤษภาคม",
-  "มิ.ย.",
-  "มิถุนายน",
-  "ก.ค.",
-  "กรกฎาคม",
-  "ส.ค.",
-  "สิงหาคม",
-  "ก.ย.",
-  "กันยายน",
-  "ต.ค.",
-  "ตุลาคม",
-  "พ.ย.",
-  "พฤศจิกายน",
-  "ธ.ค.",
-  "ธันวาคม",
+  "ม.ค.", "มกราคม", "ก.พ.", "กุมภาพันธ์", "มี.ค.", "มีนาคม",
+  "เม.ย.", "เมษายน", "พ.ค.", "พฤษภาคม", "มิ.ย.", "มิถุนายน",
+  "ก.ค.", "กรกฎาคม", "ส.ค.", "สิงหาคม", "ก.ย.", "กันยายน",
+  "ต.ค.", "ตุลาคม", "พ.ย.", "พฤศจิกายน", "ธ.ค.", "ธันวาคม",
 ].map((month) => month.replace(/\./g, "\\.")).join("|");
 
 const CANCEL_PATTERNS = [
@@ -54,8 +34,8 @@ function numberFromAmount(value) {
 }
 
 function contextWindow(text, index, length) {
-  const start = Math.max(0, index - 56);
-  const end = Math.min(text.length, index + length + 56);
+  const start = Math.max(0, index - 48);
+  const end = Math.min(text.length, index + length + 48);
   return text.slice(start, end);
 }
 
@@ -95,6 +75,22 @@ function detectAmounts(note) {
   });
 }
 
+function isClearlyNonMoneyBareNumber(raw, match) {
+  const token = String(match?.[0] || "").replace(/,/g, "");
+  const amount = Number(token);
+  if (!Number.isFinite(amount)) return true;
+
+  const before = raw.slice(Math.max(0, match.index - 30), match.index).toLowerCase();
+  const after = raw.slice(match.index + match[0].length, Math.min(raw.length, match.index + match[0].length + 30)).toLowerCase();
+  const local = `${before} ${match[0]} ${after}`;
+
+  if ((amount >= 1900 && amount <= 2100) || (amount >= 2500 && amount <= 2700)) return true;
+  if (/(?:อายุ|age|สูง|height|น้ำหนัก|weight|นน\.?|size|ไซ[ซส์]|ขนาด|เสื้อ|shirt|อก|เอว|waist)\s*[:=\-]?\s*$/i.test(before)) return true;
+  if (/^\s*(?:cm|cms|ซม\.?|kg|kgs|กก\.?|ปี|years?|y\/o|นิ้ว|inch|inches|xl|xxl|[sml])\b/i.test(after)) return true;
+  if (/(?:profile|ข้อมูลลูกค้า|customer|client).{0,24}(?:age|อายุ|height|สูง|weight|น้ำหนัก|size|ขนาด)/i.test(local)) return true;
+  return false;
+}
+
 function detectBareAmbiguousAmounts(note, knownAmounts) {
   const raw = clean(note);
   const ambiguous = [];
@@ -102,16 +98,9 @@ function detectBareAmbiguousAmounts(note, knownAmounts) {
   let match = pattern.exec(raw);
   while (match) {
     const overlapsKnown = knownAmounts.some((item) => match.index >= item.index && match.index < item.end);
-    if (!overlapsKnown) {
+    if (!overlapsKnown && !isClearlyNonMoneyBareNumber(raw, match)) {
       const amount = numberFromAmount(match[0]);
-      if (amount > 0) {
-        ambiguous.push({
-          amount,
-          token: match[0],
-          index: match.index,
-          context: contextWindow(raw, match.index, match[0].length),
-        });
-      }
+      if (amount > 0) ambiguous.push({ amount, token: match[0], index: match.index, context: contextWindow(raw, match.index, match[0].length) });
     }
     match = pattern.exec(raw);
   }
@@ -135,18 +124,100 @@ function detectPaymentRefs(note) {
   return unique(refs);
 }
 
-function detectCancellation(note) {
+function normalizeClock(value) {
+  const match = clean(value).match(/^(\d{1,2})[.:](\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function detectTimes(note) {
   const raw = String(note == null ? "" : note);
-  const evidence = [];
-  for (const pattern of CANCEL_PATTERNS) {
-    const matches = raw.match(pattern) || [];
-    evidence.push(...matches);
+  const pairs = [];
+  const ranges = /(?:เวลา\s*)?(\d{1,2}[.:]\d{2})\s*(?:-|–|—|ถึง|to)\s*(\d{1,2}[.:]\d{2})/gi;
+  let range = ranges.exec(raw);
+  while (range) {
+    const start = normalizeClock(range[1]);
+    const end = normalizeClock(range[2]);
+    if (start && end) pairs.push({ start, end, token: range[0] });
+    range = ranges.exec(raw);
   }
-  const ambiguous = /(?:อาจ(?:จะ)?ยกเลิก|ยังไม่แน่ใจ[^\n]{0,40}ยกเลิก|ยกเลิก(?:งาน)?(?:ไหม|หรือไม่)|ไม่ยกเลิก|maybe\s+cancel|may\s+cancel|might\s+cancel|cancel\?)/i.test(raw);
+
+  if (pairs.length === 1) return { start: pairs[0].start, end: pairs[0].end, candidates: pairs };
+  if (pairs.length > 1) return { start: "", end: "", candidates: pairs };
+
+  const labeled = [];
+  const pattern = /(?:เวลา|time|start|เริ่ม)\s*[:=\-]?\s*(\d{1,2}[.:]\d{2})/gi;
+  let match = pattern.exec(raw);
+  while (match) {
+    const time = normalizeClock(match[1]);
+    if (time) labeled.push(time);
+    match = pattern.exec(raw);
+  }
+  const single = unique(labeled);
+  return { start: single.length === 1 ? single[0] : "", end: "", candidates: single.map((start) => ({ start, end: "" })) };
+}
+
+function durationMinutes(start, end) {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0 && minutes >= -720) minutes += 1440;
+  return minutes > 0 && minutes <= 1440 ? minutes : 0;
+}
+
+function detectLabelValues(note, labels, max = 120) {
+  const raw = String(note == null ? "" : note);
+  const label = labels.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const pattern = new RegExp(`(?:^|\\n|[|;])\\s*(?:${label})\\s*[:=\\-]?\\s*([^\\n|;]{2,${max}})`, "gi");
+  const values = [];
+  let match = pattern.exec(raw);
+  while (match) {
+    const value = clean(match[1]).replace(/\s{2,}/g, " ");
+    if (value) values.push(value);
+    match = pattern.exec(raw);
+  }
+  return unique(values);
+}
+
+function detectServiceType(note) {
+  const raw = String(note == null ? "" : note);
+  const labeled = detectLabelValues(raw, ["service", "job type", "ประเภทงาน", "บริการ"], 80);
+  if (labeled.length === 1) return { value: labeled[0], candidates: labeled };
+  if (labeled.length > 1) return { value: "", candidates: labeled };
+  const keywords = [
+    ["companion", /\bcompanion\b/i],
+    ["dinner", /\bdinner\b|ทานข้าว|กินข้าว/i],
+    ["appearance", /\bappearance\b|ออกงาน/i],
+    ["travel", /\btravel\b|ทริป|เดินทาง/i],
+    ["massage", /\bmassage\b|นวด/i],
+  ];
+  const matches = keywords.filter(([, pattern]) => pattern.test(raw)).map(([value]) => value);
+  return { value: matches.length === 1 ? matches[0] : "", candidates: matches };
+}
+
+function detectServiceDetails(note) {
+  const times = detectTimes(note);
+  const modelCandidates = detectLabelValues(note, ["model", "models", "talent", "นายแบบ", "โมเดล"], 100);
+  const locationCandidates = detectLabelValues(note, ["location", "venue", "สถานที่", "โรงแรม", "hotel", "คอนโด", "condo"], 120);
+  const areaCandidates = detectLabelValues(note, ["area", "zone", "โซน", "ย่าน", "เขต"], 80);
+  const service = detectServiceType(note);
   return {
-    cancelled: evidence.length > 0 && !ambiguous,
-    ambiguous: evidence.length > 0 && ambiguous,
-    evidence: unique(evidence),
+    model_text: modelCandidates.length === 1 ? modelCandidates[0] : "",
+    model_candidates: modelCandidates,
+    start_time: times.start,
+    end_time: times.end,
+    time_candidates: times.candidates,
+    location_text: locationCandidates.length === 1 ? locationCandidates[0] : "",
+    location_candidates: locationCandidates,
+    area_text: areaCandidates.length === 1 ? areaCandidates[0] : "",
+    area_candidates: areaCandidates,
+    service_type: service.value,
+    service_type_candidates: service.candidates,
+    duration_minutes: durationMinutes(times.start, times.end),
   };
 }
 
@@ -200,52 +271,6 @@ function sumBy(events, type) {
   return events.filter((event) => event.type === type).reduce((sum, event) => sum + event.amount, 0);
 }
 
-function reconcileServiceSpend({ cancelled, amounts, amountEvents }) {
-  if (cancelled) {
-    return {
-      amount: 0,
-      basis: "cancelled_zero",
-      reviewRequired: false,
-      roles: [],
-    };
-  }
-
-  const serviceAmountItems = amounts.filter((item) => classifyAmount(item) === "service");
-  const roles = serviceAmountItems.map((item) => ({ amount: item.amount, role: classifyServiceRole(item), token: item.token, context: item.context }));
-  const byRole = (role) => roles.filter((item) => item.role === role).map((item) => item.amount);
-  const uniqueFinal = Array.from(new Set(byRole("final_total")));
-  if (uniqueFinal.length === 1) {
-    return { amount: uniqueFinal[0], basis: "explicit_final_total", reviewRequired: false, roles };
-  }
-  if (uniqueFinal.length > 1) {
-    return { amount: 0, basis: "review_required", reviewRequired: true, roles };
-  }
-
-  const deposits = byRole("deposit");
-  const balances = byRole("balance");
-  if (deposits.length === 1 && balances.length === 1) {
-    return { amount: deposits[0] + balances[0], basis: "deposit_plus_balance", reviewRequired: false, roles };
-  }
-  if (deposits.length > 1 || balances.length > 1) {
-    return { amount: 0, basis: "review_required", reviewRequired: true, roles };
-  }
-
-  const genericService = byRole("service_amount");
-  if (genericService.length === 1) {
-    return { amount: genericService[0], basis: "single_service_amount", reviewRequired: false, roles };
-  }
-  if (genericService.length > 1) {
-    return { amount: 0, basis: "review_required", reviewRequired: true, roles };
-  }
-
-  const fallbackService = amountEvents.filter((event) => event.type === "service").map((event) => event.amount);
-  if (fallbackService.length === 1) {
-    return { amount: fallbackService[0], basis: "single_service_amount", reviewRequired: false, roles };
-  }
-
-  return { amount: 0, basis: fallbackService.length ? "review_required" : "no_service_amount", reviewRequired: fallbackService.length > 0, roles };
-}
-
 function parseHistoricalNote(note) {
   const rawNote = String(note == null ? "" : note);
   const parseNote = clean(rawNote);
@@ -255,31 +280,15 @@ function parseHistoricalNote(note) {
   const amounts = detectAmounts(parseNote);
   const bareAmbiguous = detectBareAmbiguousAmounts(parseNote, amounts);
   const amountEvents = amounts.map((item) => ({ type: classifyAmount(item), amount: item.amount, token: item.token, context: item.context }));
-
-  for (const item of bareAmbiguous) {
-    amountEvents.push({ type: "unknown", amount: item.amount, token: item.token, context: item.context });
-  }
+  for (const item of bareAmbiguous) amountEvents.push({ type: "unknown", amount: item.amount, token: item.token, context: item.context });
 
   const dates = detectDates(parseNote);
   const paymentRefs = detectPaymentRefs(parseNote);
+  const serviceDetails = detectServiceDetails(rawNote);
   const referralBonusCandidate = hasAny(lower, [/referral/, /\brefer\b/, /แนะนำ/]);
   const promotionBonusCandidate = hasAny(lower, [/promotion/, /\bpromo\b/, /campaign/, /แคมเปญ/, /โปรโมชั่น/]);
-  const membershipAction = hasAny(lower, [/renew/, /renewal/, /ต่ออายุ/])
-    ? "renewal"
-    : hasAny(lower, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/])
-      ? "membership_signup"
-      : "";
-  const detectedPackage = hasAny(lower, [/\blite\b/, /standard/])
-    ? "standard_lite"
-    : hasAny(lower, [/premium/])
-      ? "premium"
-      : hasAny(lower, [/blackcard/, /black card/])
-        ? "blackcard"
-        : hasAny(lower, [/svip/])
-          ? "svip"
-          : hasAny(lower, [/\bvip\b/])
-            ? "vip"
-            : "";
+  const membershipAction = hasAny(lower, [/renew/, /renewal/, /ต่ออายุ/]) ? "renewal" : hasAny(lower, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/]) ? "membership_signup" : "";
+  const detectedPackage = hasAny(lower, [/\blite\b/, /standard/]) ? "standard_lite" : hasAny(lower, [/premium/]) ? "premium" : hasAny(lower, [/blackcard/, /black card/]) ? "blackcard" : hasAny(lower, [/svip/]) ? "svip" : hasAny(lower, [/\bvip\b/]) ? "vip" : "";
 
   const rawServiceAmount = sumBy(amountEvents, "service");
   const tipAmountMmd = sumBy(amountEvents, "tip_mmd");
@@ -300,17 +309,13 @@ function parseHistoricalNote(note) {
   if (renewalFeeAmount > 0) warnings.push("renewal_fee_not_auto_counted");
   if (referralBonusCandidate) warnings.push("referral_bonus_review_required");
   if (promotionBonusCandidate) warnings.push("promotion_bonus_review_required");
-  if (parseNote && dates.length && !amountEvents.length && !cancellation.cancelled) warnings.push("date_without_classified_amount_review_required");
+  if (parseNote && dates.length && !amountEvents.length) warnings.push("date_without_classified_amount_review_required");
+  if (serviceDetails.model_candidates.length > 1) warnings.push("multiple_models_require_review");
+  if (serviceDetails.location_candidates.length > 1) warnings.push("multiple_locations_require_review");
+  if (serviceDetails.time_candidates.length > 1) warnings.push("multiple_time_ranges_require_review");
+  if (serviceDetails.service_type_candidates.length > 1) warnings.push("multiple_service_types_require_review");
 
-  const pointsReviewRequired = warnings.length > 0;
-  const historicalServiceStatus = cancellation.cancelled
-    ? "cancelled"
-    : cancellation.ambiguous || reconciliation.reviewRequired
-      ? "review_required"
-      : serviceAmount > 0
-        ? "completed"
-        : "unknown";
-
+  const pointsReviewRequired = warnings.some((warning) => !warning.startsWith("multiple_") || warning === "multiple_service_types_require_review");
   const customerDetails = {
     generosity_signal: tipAmountMmd > 0 || tipAmountDirect > 0,
     tip_amount_mmd: tipAmountMmd,
@@ -323,6 +328,7 @@ function parseHistoricalNote(note) {
     amounts: amountEvents,
     dates,
     payment_refs: paymentRefs,
+    service_details: serviceDetails,
     referral_bonus_candidate: referralBonusCandidate,
     promotion_bonus_candidate: promotionBonusCandidate,
     cancellation: {
@@ -346,6 +352,14 @@ function parseHistoricalNote(note) {
     note_detected_membership_action: membershipAction,
     note_detected_service_count: cancellation.cancelled ? 0 : amountEvents.filter((event) => event.type === "service").length,
     note_detected_payment_refs: paymentRefs,
+    note_detected_model_text: serviceDetails.model_text,
+    note_detected_start_time: serviceDetails.start_time,
+    note_detected_end_time: serviceDetails.end_time,
+    note_detected_location_text: serviceDetails.location_text,
+    note_detected_area_text: serviceDetails.area_text,
+    note_detected_service_type: serviceDetails.service_type,
+    note_detected_duration_minutes: serviceDetails.duration_minutes,
+    service_detail_candidates: serviceDetails,
     service_amount: serviceAmount,
     reconciled_service_amount: serviceAmount,
     reconciliation_basis: reconciliation.basis,
@@ -392,7 +406,9 @@ function parseHistoricalNote(note) {
 
 module.exports = {
   POINT_RATE_THB,
-  detectCancellation,
+  detectServiceDetails,
+  durationMinutes,
+  normalizeClock,
   parseHistoricalNote,
   reconcileServiceSpend,
 };

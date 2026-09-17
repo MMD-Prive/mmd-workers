@@ -1,5 +1,5 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 4000;
+const DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS = 10000;
 const MIN_AIRTABLE_REQUEST_TIMEOUT_MS = 500;
 const MAX_AIRTABLE_REQUEST_TIMEOUT_MS = 10000;
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
@@ -17,6 +17,7 @@ const TABLE_DEFAULTS = Object.freeze({
   HYPE_LANE_DECISIONS: "tblvUnooDYwVsHY91",
   MODEL_SERVICE_AUDIENCE: "tbluxhFpAAu6yY9mp",
   NON_GAY_PACKAGE_RULES: "tble4VuGT9gPsJ2Sh",
+  PACKAGES: "tblg2z8dENx75yHka",
 });
 
 const LIFF_INTENTS = new Set(["signup", "renew", "status", "promo", "hall", "continue_payment", "unknown"]);
@@ -24,6 +25,22 @@ const SOURCE_CHANNELS = new Set(["telegram_preview", "line_oa", "line_liff", "we
 const HYPE_DECISION_STATUSES = new Set(["not_started", "asking_intent", "asking_audience", "decided", "manual_review", "blocked", "completed"]);
 const HALL_AUDIENCES = new Set(["female_view", "lgbt_view", "manual_review", "unknown"]);
 const MODEL_VISIBILITY_MODES = new Set(["show_female_profiles", "show_lgbt_profiles", "manual_review_only", "hold_until_selected"]);
+const RENEWAL_FLOW_STATUSES = new Set([
+  "started",
+  "identity_linked",
+  "legacy_match_found",
+  "legacy_match_needs_review",
+  "member_id_pending",
+  "profile_preview_ready",
+  "renewal_pending_payment",
+  "payment_proof_uploaded",
+  "renewal_pending_review",
+  "renewal_verified",
+  "materialized",
+  "blocked",
+  "cancelled",
+  "error",
+]);
 
 const SCREEN_KEYS = new Set([
   "start_intent",
@@ -51,6 +68,12 @@ const HYPE_PACKAGE_CONTEXTS = new Set([
   "special_review",
   "unknown",
 ]);
+
+const CORE_PACKAGE_CODES = new Set(["standard", "premium"]);
+const CORE_PACKAGE_PRICING_LANES = Object.freeze({
+  standard: "standard_1199",
+  premium: "premium_2999",
+});
 
 const HYPE_ROUTE_TARGETS = new Set([
   "/hall",
@@ -94,6 +117,15 @@ class AirtableLiffGatewayStore {
     if (!renewalSessionId) throw new LiffGatewayStorageError("LIFF_GATEWAY_SESSION_INVALID");
     const fields = compactFields({
       renewal_session_id: renewalSessionId,
+      ...(recordId ? {} : {
+        line_user_id: lineSubject(session.line_user_id),
+        renewal_flow_status: selectValue(session.renewal_flow_status, RENEWAL_FLOW_STATUSES),
+        // The member-facing LIFF gateway verifies LINE identity only. It must
+        // never write the renewal/payment authority field `verified_at`.
+        // Current in-flight LIFF KV sessions still call the identity timestamp
+        // `verified_at`; map that legacy shape to `identity_linked_at` only.
+        identity_linked_at: identityLinkedTimestamp(session),
+      }),
       liff_intent: selectValue(session.liff_intent, LIFF_INTENTS),
       source_channel: selectValue(session.source_channel, SOURCE_CHANNELS),
       hype_decision_status: selectValue(session.hype_decision_status, HYPE_DECISION_STATUSES),
@@ -115,6 +147,28 @@ class AirtableLiffGatewayStore {
     const resolvedId = String(record?.id || "").trim();
     if (!resolvedId) throw new LiffGatewayStorageError("LIFF_GATEWAY_STORAGE_MALFORMED");
     return { record_id: resolvedId };
+  }
+
+  async resolveMembershipReview(lineUserId) {
+    const subject = lineSubject(lineUserId);
+    if (!subject) throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_IDENTITY_INVALID");
+    const records = await this.list(tableName(this.env, "LIFF_RENEWAL_SESSIONS"), {
+      filterByFormula: `{line_user_id}=${formulaString(subject)}`,
+      maxRecords: 2,
+      // Session recency is identity-link chronology. Payment/renewal
+      // `verified_at` is a separate authority and must never order identity
+      // sessions or make an identity-only row look officially verified.
+      sort: [{ field: "identity_linked_at", direction: "desc" }],
+    });
+    if (!records.length) return membershipReview(false, "none", "none");
+    const latest = records[0]?.fields;
+    if (!latest || typeof latest !== "object") throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_MALFORMED");
+    const latestIdentityLinkedAt = verifiedTimestamp(latest.identity_linked_at);
+    if (!latestIdentityLinkedAt || (records.length > 1 && latestIdentityLinkedAt === verifiedTimestamp(records[1]?.fields?.identity_linked_at))) {
+      throw new LiffGatewayStorageError("LIFF_MEMBERSHIP_REVIEW_AMBIGUOUS");
+    }
+    const sourceState = String(latest.renewal_flow_status || "").trim();
+    return normalizeMembershipReview(sourceState);
   }
 
   async recordDecision(decision) {
@@ -167,12 +221,22 @@ class AirtableLiffGatewayStore {
   async resolvePackage(packageCode) {
     const normalized = normalizePackageCode(packageCode);
     if (!normalized) return null;
+
+    if (CORE_PACKAGE_CODES.has(normalized)) {
+      const records = await this.list(tableName(this.env, "PACKAGES"), {
+        filterByFormula: `{code}=${formulaString(normalized)}`,
+        maxRecords: 2,
+      });
+      if (records.length !== 1) return null;
+      return sanitizeCorePackageRecord(records[0]?.fields, normalized);
+    }
+
     const records = await this.list(tableName(this.env, "NON_GAY_PACKAGE_RULES"), {
       filterByFormula: `{package_rule_code}=${formulaString(normalized)}`,
       maxRecords: 2,
     });
     if (records.length !== 1) return null;
-    return sanitizePackageRecord(records[0]?.fields, normalized);
+    return sanitizeContextPackageRecord(records[0]?.fields, normalized);
   }
 
   async hasHallAudienceInventory(audienceContext) {
@@ -189,8 +253,8 @@ class AirtableLiffGatewayStore {
     return records.length === 1;
   }
 
-  async list(table, { filterByFormula, maxRecords } = {}) {
-    const record = await this.write("GET", table, { query: { filterByFormula, maxRecords } });
+  async list(table, { filterByFormula, maxRecords, sort } = {}) {
+    const record = await this.write("GET", table, { query: { filterByFormula, maxRecords, sort } });
     return Array.isArray(record?.records) ? record.records : [];
   }
 
@@ -198,9 +262,14 @@ class AirtableLiffGatewayStore {
     const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(String(this.env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${recordId ? `/${encodeURIComponent(recordId)}` : ""}`);
     if (query?.filterByFormula) url.searchParams.set("filterByFormula", query.filterByFormula);
     if (query?.maxRecords) url.searchParams.set("maxRecords", String(query.maxRecords));
+    for (const [index, item] of (Array.isArray(query?.sort) ? query.sort : []).entries()) {
+      url.searchParams.set(`sort[${index}][field]`, String(item?.field || ""));
+      url.searchParams.set(`sort[${index}][direction]`, item?.direction === "asc" ? "asc" : "desc");
+    }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), airtableRequestTimeoutMs(this.env));
+    const startedAt = Date.now();
+    const timeout = setTimeout(() => controller.abort(), liffGatewayAirtableTimeoutMs(this.env));
     try {
       const response = await fetch(url.toString(), {
         method,
@@ -217,6 +286,13 @@ class AirtableLiffGatewayStore {
       }
       return payload;
     } catch (error) {
+      const code = error instanceof LiffGatewayStorageError ? error.code : "LIFF_GATEWAY_STORAGE_UNAVAILABLE";
+      console.warn({
+        event: "liff_gateway_airtable_failure",
+        operation: method,
+        failure_class: error?.name === "AbortError" ? "timeout" : code === "LIFF_GATEWAY_STORAGE_FORBIDDEN" ? "forbidden" : "storage_unavailable",
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
       if (error instanceof LiffGatewayStorageError) throw error;
       throw new LiffGatewayStorageError();
     } finally {
@@ -263,7 +339,7 @@ function airtableSessionRoute(value) {
   return route === CANONICAL_MEMBER_ROUTE ? AIRTABLE_MEMBER_ROUTE : route;
 }
 
-function airtableRequestTimeoutMs(env) {
+export function liffGatewayAirtableTimeoutMs(env = {}) {
   const configured = Number(env.AIRTABLE_REQUEST_TIMEOUT_MS);
   if (!Number.isInteger(configured)) return DEFAULT_AIRTABLE_REQUEST_TIMEOUT_MS;
   return Math.min(MAX_AIRTABLE_REQUEST_TIMEOUT_MS, Math.max(MIN_AIRTABLE_REQUEST_TIMEOUT_MS, configured));
@@ -278,6 +354,47 @@ function normalizePackageCode(value) {
   return /^[a-z0-9][a-z0-9_-]{1,62}$/.test(code) ? code : "";
 }
 
+function lineSubject(value) {
+  const subject = String(value || "").trim();
+  return /^U[0-9A-Za-z_-]{8,159}$/.test(subject) ? subject : "";
+}
+
+function verifiedTimestamp(value) {
+  const timestamp = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) return "";
+  return Number.isFinite(Date.parse(timestamp)) ? timestamp : "";
+}
+
+function identityLinkedTimestamp(session = {}) {
+  const explicit = verifiedTimestamp(session.identity_linked_at);
+  if (explicit) return explicit;
+  // Compatibility shim for the current LIFF KV session contract. That
+  // `verified_at` value is LINE identity verification time, not payment or
+  // renewal verification. Restrict the fallback to the identity-link state.
+  return String(session.renewal_flow_status || "").trim() === "identity_linked"
+    ? verifiedTimestamp(session.verified_at)
+    : "";
+}
+
+function membershipReview(exists, state, sourceState) {
+  return {
+    membership_review: { exists, state, authoritative: true },
+    source_state: sourceState,
+  };
+}
+
+function normalizeMembershipReview(sourceState) {
+  if (!RENEWAL_FLOW_STATUSES.has(sourceState)) return membershipReview(true, "incomplete", sourceState || "unknown");
+  if (sourceState === "legacy_match_needs_review") return membershipReview(true, "pending_application", sourceState);
+  if (sourceState === "member_id_pending") return membershipReview(true, "approved_awaiting_member_creation", sourceState);
+  if (["renewal_pending_payment", "payment_proof_uploaded", "renewal_pending_review"].includes(sourceState)) {
+    return membershipReview(true, "pending_payment_review", sourceState);
+  }
+  if (["blocked", "cancelled"].includes(sourceState)) return membershipReview(true, "rejected", sourceState);
+  if (sourceState === "error") return membershipReview(true, "incomplete", sourceState);
+  return membershipReview(true, "none", sourceState);
+}
+
 function sanitizeScreenRecord(fields, screenKey) {
   if (!fields || typeof fields !== "object") return null;
   if (String(fields.screen_key || "").trim() !== screenKey) return null;
@@ -290,7 +407,38 @@ function sanitizeScreenRecord(fields, screenKey) {
   return null;
 }
 
-function sanitizePackageRecord(fields, requestedCode) {
+function sanitizeCorePackageRecord(fields, requestedCode) {
+  if (!fields || typeof fields !== "object") return null;
+  if (!CORE_PACKAGE_CODES.has(requestedCode) || normalizePackageCode(fields.code) !== requestedCode) return null;
+
+  const pricingLane = CORE_PACKAGE_PRICING_LANES[requestedCode];
+  const priceThb = numberField(fields.price);
+  const renewPriceThb = numberField(fields.renew_price);
+  const durationDays = numberField(fields.duration_days);
+  const tier = String(fields.tier || "").trim().toLowerCase();
+  const isActive = fields.is_active === true;
+  const approvalValue = fields.require_approval;
+
+  if (approvalValue !== undefined && typeof approvalValue !== "boolean") return null;
+  if (!isActive || tier !== requestedCode) return null;
+  if (!Number.isInteger(priceThb) || priceThb < 0 || priceThb > 250000) return null;
+  if (!Number.isInteger(renewPriceThb) || renewPriceThb < 0 || renewPriceThb > 250000) return null;
+  if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 3660) return null;
+
+  // Standard/Premium are only eligible in the current LIFF renewal and
+  // continue-payment branches. Use the canonical renewal amount while keeping
+  // the base price validated in Airtable for catalog consistency.
+  return {
+    package_code: requestedCode,
+    pricing_lane: pricingLane,
+    amount_thb: renewPriceThb,
+    duration_days: durationDays,
+    points_after_verification: 0,
+    requires_manual_review: approvalValue === true,
+  };
+}
+
+function sanitizeContextPackageRecord(fields, requestedCode) {
   if (!fields || typeof fields !== "object") return null;
   if (normalizePackageCode(fields.package_rule_code) !== requestedCode) return null;
   const pricingLane = String(fields.pricing_lane || "").trim();

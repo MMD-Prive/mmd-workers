@@ -1,6 +1,6 @@
 import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
-import { sendTelegramMessage, telegramNotify } from "../lib/telegram.js";
+import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
@@ -8,6 +8,7 @@ const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
+const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 
 export default {
   async fetch(req, env) {
@@ -27,7 +28,9 @@ export default {
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
+            topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
           },
+          telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
       }
 
@@ -46,6 +49,8 @@ export default {
                 "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
                 "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
                 "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+                "AUTH_SERVICE_AUTH_TO_TELEGRAM",
+                "AUTH_SERVICE_LINE_TO_TELEGRAM",
               ]
             : [],
         });
@@ -53,6 +58,20 @@ export default {
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
+      }
+
+      if (isTopicSmokePath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (body.confirm !== TOPIC_SMOKE_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "topic_smoke_confirmation_required",
+            required_confirmation: TOPIC_SMOKE_CONFIRMATION,
+          }, 400);
+        }
+        const result = await smokeTelegramTopics(body, env);
+        return json(result, result.ok ? 200 : 502);
       }
 
       if (isComplaintInternalPath(path) && req.method === "POST") {
@@ -80,6 +99,55 @@ export default {
   },
 };
 
+async function smokeTelegramTopics(body, env) {
+  const chatId = clean(body.chat_id || env.TELEGRAM_CHAT_ID);
+  if (!chatId) return { ok: false, error: "missing_telegram_chat_id", results: [] };
+
+  const configured = telegramTopics(env);
+  const requested = Array.isArray(body.topics)
+    ? new Set(body.topics.map((value) => clean(value).toLowerCase()).filter(Boolean))
+    : null;
+  const selected = requested ? configured.filter((topic) => requested.has(topic.key)) : configured;
+  if (!selected.length) return { ok: false, error: "no_matching_topics", results: [] };
+
+  const runId = `tg-smoke-${Date.now().toString(36)}`;
+  const results = [];
+  for (const topic of selected) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      message_thread_id: topic.thread_id,
+      text: [
+        "🧪 <b>MMD TELEGRAM TOPIC CHECK</b>",
+        `<b>Topic:</b> ${escapeHtml(topic.label)}`,
+        `<b>Route:</b> <code>${escapeHtml(topic.key)}</code> → <code>${topic.thread_id}</code>`,
+        `<b>Run:</b> <code>${runId}</code>`,
+        "Synthetic / no customer data",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      disable_notification: body.disable_notification !== false,
+    }, env);
+    results.push({
+      key: topic.key,
+      label: topic.label,
+      thread_id: topic.thread_id,
+      ok: telegram?.ok === true,
+      status: telegram?.status || null,
+      error: telegram?.error?.description || telegram?.reason || null,
+      message_id: telegram?.result?.message_id || null,
+    });
+  }
+
+  return {
+    ok: results.every((item) => item.ok),
+    run_id: runId,
+    tested: results.length,
+    passed: results.filter((item) => item.ok).length,
+    failed: results.filter((item) => !item.ok).length,
+    results,
+  };
+}
+
 async function handleTelegramWebhook(update, env) {
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
@@ -87,7 +155,7 @@ async function handleTelegramWebhook(update, env) {
   const chatId = clean(message.chat?.id);
   if (!chatId) return { handled: false, reason: "missing_chat_id" };
 
-  const joinCleanup = await cleanupStandardGroupJoinMessage(message, env);
+  const joinCleanup = await cleanupConfiguredGroupJoinMessage(message, env);
   if (joinCleanup) return joinCleanup;
 
   const text = clean(message.text || "");
@@ -122,17 +190,18 @@ async function handleTelegramWebhook(update, env) {
   return { handled: false, reason: "no_matching_command" };
 }
 
-async function cleanupStandardGroupJoinMessage(message, env) {
+async function cleanupConfiguredGroupJoinMessage(message, env) {
   if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
 
-  const standardGroupId = clean(env.TELEGRAM_STANDARD_GROUP_ID);
-  if (!standardGroupId) {
-    return { handled: false, reason: "standard_group_cleanup_not_configured" };
+  const cleanupChats = configuredJoinCleanupChats(env);
+  if (cleanupChats.size === 0) {
+    return { handled: false, reason: "join_cleanup_not_configured" };
   }
 
   const chatId = clean(message.chat?.id);
-  if (chatId !== standardGroupId) {
-    return { handled: false, reason: "join_message_outside_standard_group" };
+  const surface = cleanupChats.get(chatId);
+  if (!surface) {
+    return { handled: false, reason: "join_message_outside_cleanup_groups" };
   }
 
   const messageId = Number(message.message_id);
@@ -143,10 +212,24 @@ async function cleanupStandardGroupJoinMessage(message, env) {
   const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
   return {
     handled: true,
-    flow: "standard_group_join_cleanup",
+    flow: "telegram_group_join_cleanup",
+    surface,
     deleted: deletion.ok === true,
     telegram: deletion,
   };
+}
+
+function configuredJoinCleanupChats(env) {
+  const chats = new Map();
+  const add = (value, surface) => {
+    const chatId = clean(value);
+    if (chatId) chats.set(chatId, surface);
+  };
+
+  add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
+  add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
+  add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
+  return chats;
 }
 
 async function deleteTelegramMessage(payload, env) {
@@ -164,11 +247,7 @@ async function deleteTelegramMessage(payload, env) {
 
   const data = await res.json().catch(() => null);
   if (!res.ok || data?.ok === false) {
-    return {
-      ok: false,
-      status: res.status,
-      error: data || null,
-    };
+    return { ok: false, status: res.status, error: data || null };
   }
 
   return { ok: true, result: data?.result ?? true };
@@ -197,6 +276,7 @@ async function postComplaintNotification(body, env) {
   ].join("\n");
 
   const telegram = await telegramNotify({
+    flow: "recovery",
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -283,7 +363,7 @@ function previewButtonMarkup(env) {
         url: publicUrl(env, "/profiles"),
       }, {
         text: "Apply / Renew Membership",
-        url: publicUrl(env, "/pay/membership"),
+        url: publicUrl(env, "/sigil/member/membership"),
       }],
       [{
         text: "Help / How It Works",
@@ -338,6 +418,10 @@ function isTelegramWebhookPath(path) {
 
 function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isTopicSmokePath(path) {
+  return path === "/telegram/internal/topics/smoke" || path === "/v1/internal/topics/smoke";
 }
 
 function isComplaintInternalPath(path) {
