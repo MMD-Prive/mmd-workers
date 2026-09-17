@@ -9,7 +9,10 @@ const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const RESOLVER_SCHEMA = "my_mmd_entitlement_resolver_v1";
 const RESOLVER_SOURCE = "my_mmd_entitlement_resolver_v1";
 const PROFILE_SOURCE = "member_profile_resolver";
+const AIRTABLE_API = "https://api.airtable.com/v0";
 const CONTACT_PROFILE_SOURCE = "canonical_client";
+const LINE_OFC_NOTE_SOURCE = "line_ofc_notes";
+const CONSOLE_INBOX_TABLE = "MMD — Console Inbox";
 
 const ELIGIBLE_PATHS = new Set([
   "/api/member/app/points", "/api/member/app/points/",
@@ -54,10 +57,18 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
     || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
   const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname)
     || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
-  const [clientHistory, contactProfile] = await Promise.all([
+  let [clientHistory, contactProfile, lineOfcNoteScan] = await Promise.all([
     needsClientHistory ? readClientBackedHistoryResult(env, sessionRef.lineUserId) : null,
     needsContactProfile ? readCanonicalContactProfile(env, sessionRef.lineUserId) : null,
+    (needsClientHistory || needsContactProfile) ? readLineOfcNoteScan(env, sessionRef.lineUserId) : null,
   ]);
+  if (!contactProfile && lineOfcNoteScan?.contact) {
+    contactProfile = {
+      ...lineOfcNoteScan.contact,
+      source: LINE_OFC_NOTE_SOURCE,
+      reviewState: "candidate",
+    };
+  }
   const memberProfile = resolved.memberId ? (projection ? overlayProtectedDisplay(serializedProfile, projection, displayName) : serializedProfile) : null;
   const refreshedSession = { ...sessionRef.session, member_exists: Boolean(resolved.memberId), member_id: resolved.memberId, member_profile: memberProfile };
   try {
@@ -67,7 +78,7 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   return {
     profileRefreshed: true, memberId: resolved.memberId, displayName, lineConnected: true,
     membershipStart: presentation.membershipStart, membershipExpiresAt: presentation.membershipExpiresAt,
-    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory, contactProfile,
+    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory, contactProfile, lineOfcNoteScan,
     ...(projection ? { capability: projection.capability, label: projection.label, lifecycle: projection.lifecycle,
       publicServiceAccess: projection.publicServiceAccess, source: RESOLVER_SOURCE } : { capability: null, source: PROFILE_SOURCE }),
   };
@@ -109,6 +120,7 @@ function patchLiffProfilePayload(payload, context) {
     ...(context.membershipExpiresAt && !safeCalendarDate(data.membership_expires_at) ? { membership_expires_at: context.membershipExpiresAt } : {}),
     ...(context.historyRecoveryState ? { history_recovery_state: context.historyRecoveryState } : {}),
     ...(context.contactProfile ? { contactProfile: context.contactProfile } : {}),
+    ...(context.lineOfcNoteScan ? { line_ofc_note_scan: context.lineOfcNoteScan } : {}),
     ...(history ? { history: history.items, history_summary: history.summary } : {}),
   };
   if (context.capability) {
@@ -164,6 +176,65 @@ async function readCanonicalContactProfile(env, lineUserId) {
   }
 }
 
+export async function readLineOfcNoteScan(env = {}, lineUserId = "") {
+  const lineId = canonicalLineId(lineUserId);
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  if (!lineId || !apiKey || !baseId) return null;
+  const table = String(env.AIRTABLE_TABLE_CONSOLE_INBOX || CONSOLE_INBOX_TABLE).trim();
+  const records = [];
+  let offset = "";
+  try {
+    do {
+      const url = new URL(AIRTABLE_API + "/" + encodeURIComponent(baseId) + "/" + encodeURIComponent(table));
+      url.searchParams.set("filterByFormula", "{line_user_id}=" + formulaString(lineId));
+      url.searchParams.set("pageSize", "100");
+      if (offset) url.searchParams.set("offset", offset);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      let response;
+      try {
+        const init = { headers: { authorization: "Bearer " + apiKey, accept: "application/json" }, signal: controller.signal };
+        response = env.AIRTABLE_HTTP?.fetch ? await env.AIRTABLE_HTTP.fetch(new Request(url.toString(), init)) : await fetch(url.toString(), init);
+      } finally { clearTimeout(timeout); }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(payload.records)) return null;
+      records.push(...payload.records);
+      offset = typeof payload.offset === "string" ? payload.offset : "";
+    } while (offset && records.length < 2000);
+  } catch (error) {
+    console.warn({ event: "my_mmd_line_ofc_note_scan_failed", failure_class: safeFailureClass(error) });
+    return null;
+  }
+  const ordered = records.slice().sort((a, b) => String(a?.createdTime || a?.fields?.created_at || "").localeCompare(String(b?.createdTime || b?.fields?.created_at || "")));
+  const emails = new Set();
+  const phones = new Set();
+  for (const record of ordered) {
+    const fields = isPlainObject(record?.fields) ? record.fields : {};
+    const directEmail = safeEmail(fields.member_email);
+    const directPhone = safePhone(fields.member_phone);
+    if (directEmail) emails.add(directEmail);
+    if (directPhone) phones.add(directPhone);
+    const scanText = [fields.admin_note, fields.payload_json].filter(Boolean).join("\n");
+    for (const match of scanText.matchAll(/[A-Z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,24}/gi)) {
+      const email = safeEmail(match[0]); if (email) emails.add(email);
+    }
+    for (const match of scanText.matchAll(/(?:phone|mobile|tel(?:ephone)?|เบอร์|โทรศัพท์)[\s:=-]{0,8}((?:\+?66|0)[\d\s().-]{8,16})/gi)) {
+      const phone = safePhone(match[1]); if (phone) phones.add(phone);
+    }
+  }
+  const firstNoteAt = ordered[0] ? String(ordered[0].createdTime || ordered[0].fields?.created_at || "") : null;
+  const lastNoteAt = ordered.length ? String(ordered[ordered.length - 1].createdTime || ordered[ordered.length - 1].fields?.created_at || "") : null;
+  const email = [...emails][0] || null;
+  const phone = [...phones][0] || null;
+  return {
+    state: "resolved", source: LINE_OFC_NOTE_SOURCE, scannedCount: ordered.length,
+    firstNoteAt: firstNoteAt || null, lastNoteAt: lastNoteAt || null,
+    emailCandidates: [...emails].slice(0, 8), phoneCandidates: [...phones].slice(0, 8),
+    contact: email || phone ? { email, phone, lineHandle: null, telegramUsername: null } : null,
+  };
+}
+
 function patchProfilePayload(payload, context) {
   const history = resolvedClientHistory(context);
   const serviceItems = history ? history.items.filter((item) => item?.kind === "booking").map(profileServiceItem) : null;
@@ -175,6 +246,7 @@ function patchProfilePayload(payload, context) {
     ...(context.packageLabel && !safeDisplayName(payload.package_label) ? { package_label: context.packageLabel } : {}),
     ...(context.historyRecoveryState ? { history_recovery_state: context.historyRecoveryState } : {}),
     ...(context.contactProfile ? { contactProfile: context.contactProfile } : {}),
+    ...(context.lineOfcNoteScan ? { line_ofc_note_scan: context.lineOfcNoteScan } : {}),
     ...(history ? { verified_service_count: history.summary.verifiedServiceCount,
       service_history_summary: { items: serviceItems, verified_service_count: history.summary.verifiedServiceCount,
         verified_service_spend_thb: history.summary.verifiedServiceSpendThb, last_service_date: history.summary.lastServiceDate } } : {}),
@@ -210,6 +282,7 @@ function patchDashboardPayload(payload, context) {
   return { ...payload, ok: true, data: { ...data,
     ...(context.capability ? { dashboard_state: data.dashboard_state === "checking" ? "partial" : data.dashboard_state,
       data_status: data.data_status === "checking" ? "partial" : data.data_status } : {}), member: patchedMember,
+    ...(context.lineOfcNoteScan ? { line_ofc_note_scan: context.lineOfcNoteScan } : {}),
     ...(context.capability ? { messages } : {}) } };
 }
 
@@ -386,6 +459,7 @@ function remainingSessionTtl(session = {}) { const remaining = Math.ceil((Number
 function highestProtected(values) { const set = new Set(values); return PROTECTED_PRIORITY.find((value) => set.has(value)) || null; }
 function safeTokens(value) { if (!Array.isArray(value)) return []; return value.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean).slice(0, 20); }
 function canonicalLineId(value) { const lineId = String(value || "").trim(); return /^U[0-9a-f]{32}$/i.test(lineId) ? lineId : ""; }
+function formulaString(value) { return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`; }
 function safeIdentifier(value) { const text = String(value || "").trim(); return /^[A-Za-z0-9][A-Za-z0-9_-]{2,159}$/.test(text) ? text : ""; }
 function safeDisplayName(value) { return String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120); }
 function cookieValue(request, name) { const raw = String(request.headers.get("cookie") || ""); for (const part of raw.split(";")) { const index = part.indexOf("="); if (index < 0) continue; if (part.slice(0, index).trim() === name) return part.slice(index + 1).trim(); } return ""; }
