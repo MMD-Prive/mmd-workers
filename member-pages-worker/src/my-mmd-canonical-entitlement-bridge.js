@@ -50,8 +50,10 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   const displayName = safeDisplayName(resolved.profile?.display_name);
   const serializedProfile = resolved.memberId ? serializeCustomer360Profile(resolved.profile) : null;
   const presentation = canonicalPresentationContext(serializedProfile, resolved.profile, projection);
-  const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname);
-  const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname);
+  const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname)
+    || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
+  const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname)
+    || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
   const [clientHistory, contactProfile] = await Promise.all([
     needsClientHistory ? readClientBackedHistoryResult(env, sessionRef.lineUserId) : null,
     needsContactProfile ? readCanonicalContactProfile(env, sessionRef.lineUserId) : null,
@@ -84,6 +86,7 @@ export async function applyMyMmdCanonicalEntitlementResponse(request, response, 
   let patched = payload;
   if (path === "/api/member/dashboard" || path === "/api/member/dashboard/") patched = patchDashboardPayload(payload, context);
   else if (/^\/api\/member\/app\/profile\/?$/.test(path)) patched = patchProfilePayload(payload, context);
+  else if (/^\/member\/api\/liff\/profile\/?$/.test(path)) patched = patchLiffProfilePayload(payload, context);
   else if (historyPath) patched = patchHistoryPayload(payload, context);
   else if (path === "/api/member/app/dashboard" || path === "/api/member/app/dashboard/" || path === "/api/member/app/membership" || path === "/api/member/app/membership/") patched = patchMemberAppPayload(payload, context, /\/membership\/?$/.test(path));
   if (JSON.stringify(patched) === JSON.stringify(payload)) return response;
@@ -93,6 +96,27 @@ export async function applyMyMmdCanonicalEntitlementResponse(request, response, 
   headers.set("cache-control", "no-store");
   headers.set("x-mmd-member-display-authority", context.capability ? RESOLVER_SOURCE : PROFILE_SOURCE);
   return new Response(JSON.stringify(patched), { status: response.status, statusText: response.statusText, headers });
+}
+
+function patchLiffProfilePayload(payload, context) {
+  const data = isPlainObject(payload.data) ? payload.data : {};
+  if (!Object.keys(data).length) return payload;
+  const history = resolvedClientHistory(context);
+  const patched = {
+    ...data,
+    ...(context.lineConnected === true ? { line_connected: true } : {}),
+    ...(context.membershipStart && !safeCalendarDate(data.membership_start) ? { membership_start: context.membershipStart } : {}),
+    ...(context.membershipExpiresAt && !safeCalendarDate(data.membership_expires_at) ? { membership_expires_at: context.membershipExpiresAt } : {}),
+    ...(context.historyRecoveryState ? { history_recovery_state: context.historyRecoveryState } : {}),
+    ...(context.contactProfile ? { contactProfile: context.contactProfile } : {}),
+    ...(history ? { history: history.items, history_summary: history.summary } : {}),
+  };
+  if (context.capability) {
+    patched.tier = context.label;
+    patched.membership_status = context.lifecycle;
+    patched.actual_access = context.publicServiceAccess ? "granted" : "restricted";
+  }
+  return { ...payload, data: patched };
 }
 
 export function projectProtectedEntitlement(snapshot = {}) {
