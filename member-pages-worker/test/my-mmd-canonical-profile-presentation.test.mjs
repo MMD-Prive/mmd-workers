@@ -4,11 +4,38 @@ import test from "node:test";
 import {
   applyMyMmdCanonicalEntitlementResponse,
   projectProtectedEntitlement,
+  readLineOfcNoteScan,
 } from "../src/my-mmd-canonical-entitlement-bridge.js";
 
 const jsonResponse = (payload) => new Response(JSON.stringify(payload), {
   status: 200,
   headers: { "content-type": "application/json; charset=utf-8" },
+});
+
+test("LINE OFC note scan reads every page through the latest note and extracts labelled contact data", async () => {
+  const calls = [];
+  const scan = await readLineOfcNoteScan({
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "app12345678901234",
+    AIRTABLE_HTTP: { fetch: async (request) => {
+      calls.push(String(request.url));
+      const url = new URL(request.url);
+      if (!url.searchParams.has("offset")) {
+        return jsonResponse({
+          records: [{ createdTime: "2026-09-16T00:00:00.000Z", fields: { admin_note: "เบอร์: 081-234-5678", payload_json: "{}" } }],
+          offset: "next-page",
+        });
+      }
+      return jsonResponse({
+        records: [{ createdTime: "2026-09-17T00:00:00.000Z", fields: { admin_note: "email: que@example.com", payload_json: "{}" } }],
+      });
+    } },
+  }, "Ue4dfe745be2cae8cc8876f20fd275679");
+
+  assert.equal(calls.length, 2);
+  assert.equal(scan.scannedCount, 2);
+  assert.equal(scan.lastNoteAt, "2026-09-17T00:00:00.000Z");
+  assert.deepEqual(scan.contact, { email: "que@example.com", phone: "0812345678", lineHandle: null, telegramUsername: null });
 });
 
 test("protected entitlement projection carries only resolver-proven dates and package", () => {
