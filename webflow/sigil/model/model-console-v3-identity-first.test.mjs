@@ -18,16 +18,16 @@ test("Model Console renews verified LINE identity before rendering a session-exp
   assert.match(source, /setTimeout\(q\)/);
 });
 
-test("Model Console gives a LINE-return action instead of instructing the model to reopen HYPE", () => {
-  assert.match(source, /ยืนยัน LINE เพื่อกลับเข้างาน/);
-  assert.match(source, /ยืนยัน LINE แล้วกลับเข้างาน/);
-  assert.match(source, /ระบบจะกลับไปที่งานเดิมให้อัตโนมัติ/);
-});
-
 test("Model Console renders only the authenticated model payout returned by the server", () => {
   assert.match(source, /session\?\.pay_model_thb/);
   assert.match(source, /data-model-payout-row/);
   assert.match(source, /เรทถึงตัว/);
   assert.match(source, /currency:\"THB\"/);
   assert.doesNotMatch(source, /customer_amount_due_thb/);
+});
+
+test("Model Console gives a LINE-return action instead of instructing the model to reopen HYPE", () => {
+  assert.match(source, /ยืนยัน LINE เพื่อกลับเข้างาน/);
+  assert.match(source, /ยืนยัน LINE แล้วกลับเข้างาน/);
+  assert.match(source, /ระบบจะกลับไปที่งานเดิมให้อัตโนมัติ/);
 });

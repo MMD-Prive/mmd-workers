@@ -150,30 +150,24 @@ export async function runMemberHistoryRecovery({
       updated_at: startedAt,
     }));
 
-    const clients = await db.list(TABLES.CLIENTS, {
-      formula: `{line_user_id}=${formulaString(lineUserId)}`,
-      maxRecords: 3,
-    });
-    if (clients.length !== 1) {
-      const blocked = statusPayload("blocked", {
-        trigger,
-        reason: clients.length ? "identity_ambiguous" : "identity_not_linked",
-        started_at: startedAt,
-        updated_at: new Date().toISOString(),
-      });
-      await writeStatusKey(env, statusKey, blocked);
-      return blocked;
-    }
-
-    const client = clients[0];
-    const clientId = clean(client.id);
-    const wallet = await resolveMemberWallet(db, { memberId, client });
-    const [legacyRows, privateRows, lineOfcRows, verifiedProofs] = await Promise.all([
+    // LINE OFC is the source of truth. Read it before trying to resolve a
+    // canonical Client so a first-time login is never blocked by a missing or
+    // ambiguous Airtable link. A Client/Member wallet is only an enrichment
+    // target; it is not a prerequisite for displaying history or points.
+    const [clients, legacyRows, privateRows, lineOfcRows, verifiedProofs] = await Promise.all([
+      db.list(TABLES.CLIENTS, {
+        formula: `{line_user_id}=${formulaString(lineUserId)}`,
+        maxRecords: 3,
+      }),
       db.list(TABLES.LEGACY_STAGING, { formula: `{line_user_id}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PRIVATE_STAGING, { formula: `{LINE User ID}=${formulaString(lineUserId)}` }),
       db.list(TABLES.CONSOLE_INBOX, { formula: `{line_user_id}=${formulaString(lineUserId)}` }),
       db.list(TABLES.PAYMENT_PROOFS, { formula: `{status}=${formulaString("verified")}` }),
     ]);
+
+    const client = clients.length === 1 ? clients[0] : null;
+    const clientId = clean(client?.id) || `line:${lineUserId}`;
+    const wallet = await resolveMemberWallet(db, { memberId, client });
 
     const rawCandidates = [
       ...lineOfcRows.map((record) => consoleInboxCandidate(record, clientId, lineUserId)).filter(Boolean),
@@ -200,7 +194,13 @@ export async function runMemberHistoryRecovery({
     let eligibleSpend = 0;
     const acceptedCandidates = [];
     for (const candidate of inWindow) {
-      const outcome = await processNoteCandidate({ db, candidate, trigger, now });
+      // Without a canonical Client, keep the source evidence and points
+      // target live for the signed-in LINE identity, but do not manufacture a
+      // Sessions row with an invalid Client link. The next login can
+      // materialize it once the canonical link is available.
+      const outcome = client
+        ? await processNoteCandidate({ db, candidate, trigger, now })
+        : { kind: "source_only" };
       if (outcome.kind === "cancelled") {
         counters.rejected_count += 1;
         continue;
@@ -227,18 +227,20 @@ export async function runMemberHistoryRecovery({
         ? await readCurrentPointsTotal(db, wallet)
         : await reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarget, now })
       : {
-          ok: false,
-          reason: "canonical_member_wallet_missing",
+          ok: true,
+          reason: client ? "canonical_member_wallet_missing" : "line_ofc_source_only",
           desired_points: pointsTarget.points,
           desired_eligible_amount_thb: pointsTarget.eligible_amount_thb,
-          current_points_total: null,
+          // The app reads this same source directly, so a wallet is not
+          // required before the customer can receive the calculated balance.
+          current_points_total: pointsTarget.points,
           historical_points_added: 0,
         };
 
     const detailPendingCount = acceptedCandidates.filter((candidate) => !candidate.service_date || !(candidate.points_eligible_amount_thb > 0)).length;
     // Missing slips are never a reason to withhold points. Only unresolved
     // identity/details and an unavailable wallet remain review conditions.
-    counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count + Number(!wallet);
+    counters.pending_review_count += detailPendingCount + counters.unmatched_payment_count;
     const state = counters.pending_review_count > 0 ? "review_required" : "reconciled";
     const done = statusPayload(state, {
       ...counters,
@@ -254,6 +256,8 @@ export async function runMemberHistoryRecovery({
       updated_at: new Date().toISOString(),
       reason: sourcePending
         ? "source_notes_pending"
+        : !client
+          ? "line_ofc_source_ready_client_link_pending"
         : state === "review_required"
           ? "points_ready_history_details_pending"
           : "note_first_recovery_complete",
