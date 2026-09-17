@@ -65,7 +65,9 @@ export async function reconcilePremiumReviewedMembershipTerm(request, response, 
   // calendar years from verified payment. Keep this wrapper only as a
   // backward-compatibility guard for legacy one-year responses so a canonical
   // response can never be extended to three years.
-  if (data.membership_term === "2_years" || data.membership_expiry_rule === "2_years_from_verified_payment") {
+  if (data.membership_term === "2_years"
+    || data.membership_expiry_rule === "2_years_from_verified_payment"
+    || String(data.membership_expiry_rule || "").includes("care_back_private_premium_2026")) {
     return response;
   }
 

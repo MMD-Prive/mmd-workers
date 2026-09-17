@@ -38,6 +38,13 @@ service = "telegram-worker"
 binding = "SLIP_EXTRACTOR"
 service = "mmd-slip-extractor"
 
+# Exact LINE OFC membership slips are handed to payments-worker only after the
+# visual proof, canonical LINE identity, package, amount, and payment reference
+# all match. Service/job payments remain in Official Verify review.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
 [[r2_buckets]]
 binding = "LINE_SLIP_EVIDENCE"
 bucket_name = "mmd-line-slip-evidence"

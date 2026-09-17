@@ -549,6 +549,7 @@ function safeQueueItem(record) {
     session_id: safeText(fields.session_id, 180),
     member_email: normalizeEmail(fields.member_email || fields.email),
     payment_stage: safeCode(fields.payment_stage || fields.payment_type || paymentIntelligence?.inferred_stage || ""),
+    tracking_kind: paymentTrackingKind(paymentIntelligence),
     payment_intelligence: paymentIntelligence,
     inferred_label: paymentInferenceLabel(paymentIntelligence),
     inferred_intent: safeCode(paymentIntelligence?.inferred_intent || ""),
@@ -854,6 +855,26 @@ function paymentInferenceLabel(inference) {
   };
   if (serviceLabels[stage]) return serviceLabels[stage];
   return membershipInferenceLabel(inference);
+}
+
+function paymentTrackingKind(inference) {
+  if (!inference || typeof inference !== "object" || Array.isArray(inference)) return "unresolved_payment";
+  const explicit = safeCode(inference.tracking_kind);
+  if (explicit) return explicit;
+  const stage = safeCode(inference.inferred_stage || inference.payment_stage || "");
+  const serviceKinds = {
+    deposit: "job_deposit",
+    final: "job_final",
+    full: "job_full",
+    tips: "job_tip",
+  };
+  if (serviceKinds[stage]) return serviceKinds[stage];
+  if (stage === "membership") {
+    const intent = safeCode(inference.inferred_intent || inference.intent || "");
+    if (intent === "signup") return "membership_signup";
+    if (intent === "renewal") return "membership_renewal";
+  }
+  return "unresolved_payment";
 }
 
 function confidenceOrNull(value) {
