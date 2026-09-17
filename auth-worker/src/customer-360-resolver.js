@@ -7,6 +7,7 @@ const JOBS_MAX_ITEMS = 50;
 const REQUESTS_MAX_ITEMS = 20;
 const POINTS_THB_PER_POINT = 100;
 const POINTS_EXPIRING_SOON_DAYS = 30;
+const LINE_OFC_CONSOLE_INBOX_KEY = "CONSOLE_INBOX";
 
 const MEMBER_STATES = new Set(["active", "grace", "expired", "checking"]);
 const PACKAGE_STATES = new Set(["active", "grace", "expired", "cancelled", "refunded", "checking"]);
@@ -198,14 +199,21 @@ async function readPoints(env, identity, listRecords, window) {
     email: { field: configuredField(env, "AIRTABLE_POINTS_EMAIL_FIELD", "member_email"), value: identity.email, lower: true },
     memberId: { field: configuredOptionalField(env, "AIRTABLE_POINTS_MEMBER_ID_FIELD"), value: identity.member_id },
   });
-  if (!formula) return emptyPointsResult("checking", window);
+  if (!formula && !identity.line_user_id) return emptyPointsResult("checking", window);
 
   try {
-    const records = await listRecords("POINTS_LEDGER", {
+    const records = formula ? await listRecords("POINTS_LEDGER", {
       filterByFormula: formula,
       sort: [{ field: configuredField(env, "AIRTABLE_POINTS_HISTORY_DATE_FIELD", "created_at"), direction: "desc" }],
       maxRecords: 200,
-    });
+    }) : [];
+    const lineRows = identity.line_user_id && env.AIRTABLE_TABLE_CONSOLE_INBOX
+      ? await listRecords(LINE_OFC_CONSOLE_INBOX_KEY, {
+        filterByFormula: `{line_user_id}=${formulaString(identity.line_user_id)}`,
+        maxRecords: 500,
+      }).catch(() => [])
+      : [];
+    const lineEvents = lineRows.map((record) => lineOfcPointsEvent(record, window)).filter(Boolean);
     const today = window.to;
     const seen = new Set();
     const events = [];
@@ -217,14 +225,16 @@ async function readPoints(env, identity, listRecords, window) {
       events.push(event);
     }
     events.sort((a, b) => b.date.localeCompare(a.date));
-    const active = events.filter((event) => event.active);
-    const activePoints = Math.max(0, active.reduce((total, event) => total + event.points_delta, 0));
+    const active = events.filter((event) => event.active && !isLineOfcLedgerEvent(event));
+    const activePoints = Math.max(0, active.reduce((total, event) => total + event.points_delta, 0)
+      + lineEvents.filter((event) => event.active).reduce((total, event) => total + event.points_delta, 0));
     const expiring = events.filter((event) => event.points_delta > 0 && event.expires_at && event.expires_at >= today && event.expires_at <= addCalendarDays(today, POINTS_EXPIRING_SOON_DAYS));
     const nearestExpiry = events
       .filter((event) => event.points_delta > 0 && event.expires_at && event.expires_at >= today)
       .map((event) => event.expires_at)
       .sort()[0] || null;
-    const history = events.slice(0, POINTS_HISTORY_MAX_ITEMS).map((event) => ({
+    const history = [...lineEvents, ...events.filter((event) => !isLineOfcLedgerEvent(event))]
+      .sort((a, b) => b.date.localeCompare(a.date)).slice(0, POINTS_HISTORY_MAX_ITEMS).map((event) => ({
       date: event.date,
       title: event.points_delta >= 0 ? "Points added" : "Points adjusted",
       points_delta: event.points_delta,
@@ -237,7 +247,7 @@ async function readPoints(env, identity, listRecords, window) {
       customer: {
         status: "verified",
         active_points: activePoints,
-        records_count: events.length,
+        records_count: events.filter((event) => !isLineOfcLedgerEvent(event)).length + lineEvents.length,
         rate_policy: { currency: "THB", thb_per_point: POINTS_THB_PER_POINT, rounding: "floor" },
         history,
         expiring_points: expiring.reduce((total, event) => total + event.points_delta, 0),
@@ -286,7 +296,7 @@ function pointsRecord(fields = {}, env = {}, today = "") {
     "session_id",
   ]));
   const active = pointsDelta < 0 ? date >= addCalendarDays(today, -HISTORY_DAYS) : expiresAt >= today;
-  return { date, points_delta: pointsDelta, expires_at: expiresAt, dedupe_key: dedupeKey, active };
+  return { date, points_delta: pointsDelta, expires_at: expiresAt, dedupe_key: dedupeKey, active, source: String(fields.source || "").trim() };
 }
 
 async function readJobs(env, identity, listRecords, window) {
@@ -298,12 +308,22 @@ async function readJobs(env, identity, listRecords, window) {
   if (!formula) return emptyJobsResult("checking");
 
   try {
-    const records = await listRecords("SESSIONS", {
+    const sessionRecords = await listRecords("SESSIONS", {
       filterByFormula: formula,
       sort: [{ field: configuredField(env, "AIRTABLE_SESSIONS_HISTORY_DATE_FIELD", "job_date"), direction: "desc" }],
       maxRecords: 200,
     });
-    const jobs = (Array.isArray(records) ? records : [])
+    const lineRows = identity.line_user_id && env.AIRTABLE_TABLE_CONSOLE_INBOX
+      ? await listRecords(LINE_OFC_CONSOLE_INBOX_KEY, {
+        filterByFormula: `{line_user_id}=${formulaString(identity.line_user_id)}`,
+        maxRecords: 500,
+      }).catch(() => [])
+      : [];
+    const lineJobs = lineRows.map((record) => lineOfcJob(record, window)).filter(Boolean);
+    // LINE OFC owns the occurrence decision. Canonical Sessions remain an
+    // enrichment fallback only when no LINE OFC record exists.
+    const records = lineRows.length ? lineRows : sessionRecords;
+    const jobs = lineRows.length ? lineJobs : (Array.isArray(records) ? records : [])
       .map((record) => customerSafeJob(record?.fields, env))
       .filter(Boolean)
       .filter((job) => job.date >= window.from)
@@ -326,6 +346,67 @@ async function readJobs(env, identity, listRecords, window) {
     return emptyJobsResult("checking");
   }
 }
+
+function lineOfcJob(record, window) {
+  const fields = record?.fields || {};
+  const payload = parseJsonObject(fields.payload_json);
+  const text = [fields.admin_note, fields.note, fields.message, fields.text, fields.payload_json, payload.note, payload.message, payload.text].filter(Boolean).join(" ");
+  const intent = String(fields.intent || payload.intent || "").trim().toLowerCase();
+  const statusText = `${intent} ${fields.status || payload.status || ""} ${text}`.toLowerCase();
+  if (lineOfcExcluded(statusText)) return null;
+  const amount = lineOfcAmount(fields, payload, text);
+  const date = strictDate(fields.service_date || fields.job_date || payload.service_date || payload.job_date || fields.created_at || record?.createdTime);
+  const isJob = ["service", "booking", "job", "completed", "session", "history"].some((token) => intent.includes(token))
+    || (amount > 0 && /(?:งาน|บริการ|ใช้บริการ|คิว|นัด|จอง|service|booking|job|completed)/i.test(text))
+    || /(?:งานเสร็จ|ใช้บริการแล้ว|บริการเรียบร้อย|ปิดงาน|completed service|service completed)/i.test(text);
+  if (!isJob || !date || date < window.from || date > window.to) return null;
+  return compactObject({
+    job_number: customerSafeIdentifier(`line_ofc_${String(record?.id || "").replace(/[^A-Za-z0-9_-]/g, "")}`),
+    date,
+    start_time: "",
+    end_time: "",
+    duration: null,
+    model_display_name: customerSafeText(fields.model_name || payload.model_name, 80),
+    service_title: customerSafeServiceTitle(fields.service_type || fields.job_type || payload.service_type || "MMD service"),
+    status: "completed",
+    location_customer_safe: customerSafeText(fields.location_name || payload.location, 120),
+    customer_safe_note: "Recorded by LINE OFC; payment slip optional.",
+    payment_status: "unavailable",
+    amount_due_thb: amount || null,
+    source: "line_ofc_history",
+  });
+}
+
+function lineOfcPointsEvent(record, window) {
+  const fields = record?.fields || {};
+  const payload = parseJsonObject(fields.payload_json);
+  const text = [fields.admin_note, fields.note, fields.message, fields.text, fields.payload_json, payload.note, payload.message, payload.text].filter(Boolean).join(" ");
+  const intent = String(fields.intent || payload.intent || "").trim().toLowerCase();
+  const statusText = `${intent} ${fields.status || payload.status || ""} ${text}`.toLowerCase();
+  if (lineOfcExcluded(statusText)) return null;
+  const amount = lineOfcAmount(fields, payload, text);
+  const date = strictDate(fields.service_date || fields.job_date || payload.service_date || payload.job_date || fields.created_at || record?.createdTime);
+  const isJob = ["service", "booking", "job", "completed", "session", "history"].some((token) => intent.includes(token))
+    || (amount > 0 && /(?:งาน|บริการ|ใช้บริการ|คิว|นัด|จอง|service|booking|job|completed)/i.test(text))
+    || /(?:งานเสร็จ|ใช้บริการแล้ว|บริการเรียบร้อย|ปิดงาน|completed service|service completed)/i.test(text);
+  if (!isJob || !date || date < window.from || date > window.to || amount <= 0) return null;
+  return { date, points_delta: Math.floor(amount / POINTS_THB_PER_POINT), expires_at: null, dedupe_key: `line_ofc:${String(record?.id || "")}`, active: true, source: "line_ofc_history" };
+}
+
+function lineOfcAmount(fields, payload, text) {
+  for (const value of [fields.service_amount_thb, fields.points_eligible_amount_thb, fields.amount_thb, payload.service_amount_thb, payload.points_eligible_amount_thb, payload.amount_thb]) {
+    const parsed = safeMoney(value); if (parsed !== null && parsed > 0) return parsed;
+  }
+  const values = String(text || "").match(/(?:฿|บาท|thb)?\s*([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,7})(?:\s*(?:บาท|thb|฿))?/gi) || [];
+  return values.map((value) => Number(value.replace(/,/g, "").replace(/[^0-9.]/g, ""))).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => b - a)[0] || 0;
+}
+
+function lineOfcExcluded(value) {
+  return /(?:ยกเลิก|งานยกเลิก|คิวยกเลิก|cancel(?:led|ed)?|เลื่อน|งานเลื่อน|คิวเลื่อน|reschedul(?:e|ed|ing)?|postpon(?:e|ed|ing)?)/i.test(String(value || ""));
+}
+
+function isLineOfcLedgerEvent(event) { return String(event?.source || "").toLowerCase() === "line_ofc_history"; }
+function parseJsonObject(value) { if (value && typeof value === "object" && !Array.isArray(value)) return value; try { const parsed = JSON.parse(String(value || "")); return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; } }
 
 function emptyJobsResult(status) {
   return {
