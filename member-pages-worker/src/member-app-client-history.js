@@ -13,7 +13,7 @@ export async function readClientBackedHistory(env = {}, lineUserId = "", now = n
   return (await readClientBackedHistoryResult(env, lineUserId, now)).items;
 }
 
-export async function readClientBackedHistoryResult(env = {}, lineUserId = "", now = new Date(), { requireLinkedClient = false } = {}) {
+export async function readClientBackedHistoryResult(env = {}, lineUserId = "", now = new Date()) {
   const lineId = canonicalLineId(lineUserId);
   if (!lineId || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) {
     return { state: "checking", source: "canonical_client_history", items: [], summary: emptyHistorySummary() };
@@ -40,7 +40,7 @@ export async function readClientBackedHistoryResult(env = {}, lineUserId = "", n
     if (clientName) paymentQueries.push(airtableList(env, paymentsTable, { filterByFormula: `ARRAYJOIN({Client})=${formulaString(clientName)}`, maxRecords: HISTORY_MAX_RECORDS }).catch(() => []));
 
     const [sessionGroups, paymentGroups] = await Promise.all([Promise.all(sessionQueries), Promise.all(paymentQueries)]);
-    const sessions = dedupeRecords(sessionGroups.flat()).filter((record) => !requireLinkedClient || linkedIds(record?.fields?.Client).includes(String(client.id)));
+    const sessions = dedupeRecords(sessionGroups.flat());
     const payments = dedupeRecords(paymentGroups.flat());
     const items = buildHistoryItems({ sessions, payments, now });
     return { state: "resolved", source: "canonical_client_history", clientId: String(client?.id || "") || null, items, summary: buildHistorySummary(items) };
