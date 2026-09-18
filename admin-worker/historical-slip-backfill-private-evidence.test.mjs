@@ -77,10 +77,10 @@ function makeEnv({ withExtractor = true, withStorage = true } = {}) {
   return { env, createdProofs, extractorCalls, r2Writes, r2Deletes };
 }
 
-function intakeRequest() {
+function intakeRequest({ sourceType = "line_archive", sourceRef = "line-archive:test-001" } = {}) {
   const form = new FormData();
-  form.set("source_type", "line_archive");
-  form.set("source_ref", "line-archive:test-001");
+  form.set("source_type", sourceType);
+  form.set("source_ref", sourceRef);
   form.set("file", new Blob([new Uint8Array([1, 2, 3, 4, 5])], { type: "image/png" }), "old-slip.png");
   return new Request("https://mmdbkk.com/v1/admin/payments/historical-backfill/intake", {
     method: "POST",
@@ -124,20 +124,42 @@ test("historical intake uses the private production extractor and stores the ori
 
 test("historical intake fails closed when the private extractor binding is missing", async () => {
   const state = makeEnv({ withExtractor: false, withStorage: true });
-  await assert.rejects(
-    () => handleHistoricalSlipBackfillRequest(intakeRequest(), state.env),
-    /private_extractor_binding_missing/,
-  );
+  const response = await handleHistoricalSlipBackfillRequest(intakeRequest(), state.env);
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error, "private_extractor_binding_missing");
+  assert.match(payload.trace_id, /^historical-[0-9a-f-]{36}$/);
   assert.equal(state.createdProofs.length, 0);
   assert.equal(state.r2Writes.length, 0);
 });
 
 test("historical intake fails closed when private R2 evidence storage is missing", async () => {
   const state = makeEnv({ withExtractor: true, withStorage: false });
-  await assert.rejects(
-    () => handleHistoricalSlipBackfillRequest(intakeRequest(), state.env),
-    /historical_evidence_storage_unavailable/,
-  );
+  const response = await handleHistoricalSlipBackfillRequest(intakeRequest(), state.env);
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error, "historical_evidence_storage_unavailable");
+  assert.match(payload.trace_id, /^historical-[0-9a-f-]{36}$/);
   assert.equal(state.createdProofs.length, 0);
   assert.equal(state.extractorCalls.length, 0);
+});
+
+test("historical intake accepts the documented LINE group album source and preserves Unicode context", async () => {
+  const state = makeEnv();
+  const sourceRef = "LINE OFC · champ · Simba · 18 Sep 2026";
+  const response = await handleHistoricalSlipBackfillRequest(intakeRequest({
+    sourceType: "line_group_album",
+    sourceRef,
+  }), state.env);
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.ok, true);
+  assert.equal(state.r2Writes.length, 1);
+  assert.equal(state.r2Writes[0].options.customMetadata.source_type, "line_album");
+  assert.equal(state.r2Writes[0].options.customMetadata.source_ref, sourceRef);
+  assert.equal(state.createdProofs.length, 1);
+  const note = JSON.parse(state.createdProofs[0].fields.note);
+  assert.equal(note.source_type, "line_album");
+  assert.equal(note.source_ref, sourceRef);
 });
