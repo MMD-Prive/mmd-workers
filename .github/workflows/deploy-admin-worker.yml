@@ -75,7 +75,8 @@ jobs:
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
           node --check src/model-media-e2e-smoke.js
-          node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs service-auth-contract.test.mjs
+          node --check src/model-owner-review-queue.js
+          node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs
           node --test model-session-runtime-v1a.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
@@ -287,6 +288,7 @@ jobs:
             "/v1/admin/auth/me",
             "/v1/admin/payment-issuer-diagnostic",
             "/v1/admin/model-media/e2e-smoke",
+            "/v1/admin/models/review-queue*",
             "/v1/admin/membership/payment-entitlement/approve",
             "/v1/admin/payments/review-queue*",
             "/v1/admin/payments/evidence*",
@@ -402,6 +404,14 @@ jobs:
               "$origin/v1/admin/payment-issuer-diagnostic")"
             test "$diagnostic_code" = "401"
             grep -q '"error":"unauthorized"' "$diagnostic_body"
+
+            # Unified Model owner review queue must reach admin-worker and stay behind the owner browser session.
+            model_review_queue_body="$(mktemp)"
+            model_review_queue_code="$(curl -sS --max-time 20 -o "$model_review_queue_body" -w "%{http_code}" \
+              "$origin/v1/admin/models/review-queue?limit=1")"
+            cat "$model_review_queue_body"
+            test "$model_review_queue_code" = "401"
+            grep -q '"error":"unauthorized"' "$model_review_queue_body"
 
             # Real-model media E2E smoke route must also stay behind the owner browser session.
             model_media_smoke_body="$(mktemp)"
