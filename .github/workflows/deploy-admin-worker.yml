@@ -73,7 +73,8 @@ jobs:
           node --check src/admin-login-hero-worker.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
-          node --test payment-issuer-diagnostic.test.mjs service-auth-contract.test.mjs
+          node --check src/model-media-e2e-smoke.js
+          node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs service-auth-contract.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
           node --check src/mms-admin-runtime.js
@@ -283,6 +284,7 @@ jobs:
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/payment-issuer-diagnostic",
+            "/v1/admin/model-media/e2e-smoke",
             "/v1/admin/membership/payment-entitlement/approve",
             "/v1/admin/payments/review-queue*",
             "/v1/admin/payments/evidence*",
@@ -398,6 +400,15 @@ jobs:
               "$origin/v1/admin/payment-issuer-diagnostic")"
             test "$diagnostic_code" = "401"
             grep -q '"error":"unauthorized"' "$diagnostic_body"
+
+            # Real-model media E2E smoke route must also stay behind the owner browser session.
+            model_media_smoke_body="$(mktemp)"
+            model_media_smoke_code="$(curl -sS --max-time 20 -o "$model_media_smoke_body" -w "%{http_code}" \
+              -X POST -H "Origin: $origin" -H "Content-Type: application/json" \
+              --data '{"model_record_id":"recBKaHfxUKs8fkMV"}' \
+              "$origin/v1/admin/model-media/e2e-smoke")"
+            test "$model_media_smoke_code" = "401"
+            grep -q '"error":"unauthorized"' "$model_media_smoke_body"
 
             # Check the real browser ingress on both allowed production hosts.
             body_file="$(mktemp)"
