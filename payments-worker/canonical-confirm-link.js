@@ -222,7 +222,10 @@ export async function handleCanonicalConfirmLink(request, env) {
     const paymentFields = compact({
       [field(env.AT_PAYMENTS__PAYMENT_REF, PAYMENT_FIELDS.paymentRef)]: paymentRef,
       [PAYMENT_FIELDS.sessionId]: sessionId,
-      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: paymentStage === "deposit" ? fixedDepositThb : amountThb,
+      // Combined membership renewal keeps its separately itemized full
+      // customer payment contract. Ordinary jobs store only the fixed rounded
+      // service deposit as the initial Payment intent.
+      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: paymentStage === "deposit" && !components ? fixedDepositThb : amountThb,
       [field(env.AT_PAYMENTS__PAYMENT_STATUS, PAYMENT_FIELDS.paymentStatus)]: "Pending",
       [field(env.AT_PAYMENTS__PAYMENT_METHOD, PAYMENT_FIELDS.paymentMethod)]: paymentMethod,
       [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: note || undefined,
