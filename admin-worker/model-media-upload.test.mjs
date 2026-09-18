@@ -9,22 +9,22 @@ import {
 
 const MB = 1024 * 1024;
 
-test("MMD MODEL self-managed upload accepts public photos up to 10MB", () => {
+test("MMD MODEL self-managed upload accepts public photos up to 15MB", () => {
   assert.equal(normalizeModelMediaType("public_gallery"), "public_gallery");
-  const accepted = normalizeModelMediaUploadSpec("public_gallery", "image/webp", 10 * MB);
+  const accepted = normalizeModelMediaUploadSpec("public_gallery", "image/webp", 15 * MB);
   assert.deepEqual(accepted, {
     ok: true,
     kind: "image",
     mediaType: "public_gallery",
     mime: "image/webp",
-    size: 10 * MB,
-    maxBytes: 10 * MB,
+    size: 15 * MB,
+    maxBytes: 15 * MB,
     ext: "webp",
     assetRole: "gallery_candidate",
   });
   assert.deepEqual(
-    normalizeModelMediaUploadSpec("public_gallery", "image/webp", 10 * MB + 1),
-    { ok: false, error: "file_size_invalid", max_bytes: 10 * MB },
+    normalizeModelMediaUploadSpec("public_gallery", "image/webp", 15 * MB + 1),
+    { ok: false, error: "file_size_invalid", max_bytes: 15 * MB },
   );
 });
 
