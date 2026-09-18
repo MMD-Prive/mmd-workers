@@ -5211,6 +5211,17 @@ export {
 /* =========================
    Job create
 ========================= */
+const CUSTOMER_DEPOSIT_PERCENT = 30;
+const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 500;
+
+export function computeCustomerDepositAmount(serviceAmountThb) {
+  const total = Number(serviceAmountThb);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
+  const rounded = Math.ceil(raw / CUSTOMER_DEPOSIT_ROUND_STEP_THB) * CUSTOMER_DEPOSIT_ROUND_STEP_THB;
+  return Math.min(total, rounded);
+}
+
 async function createAdminJob(env, body) {
   const work = body?.work || {};
   const model = body?.model || {};
@@ -5243,9 +5254,12 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const payment_type = str(body.payment_type || payment.payment_type || "full");
+  const payment_type = "deposit";
   const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
-  const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
+  const amount_thb = numReq(body.service_amount_thb || body.amount_thb || payment.amount_thb, "amount_thb");
+  const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
+  const deposit_amount_thb = computeCustomerDepositAmount(amount_thb);
+  const balance_amount_thb = Math.max(0, amount_thb - deposit_amount_thb);
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
@@ -5262,9 +5276,13 @@ async function createAdminJob(env, body) {
     google_map_url,
     amount_thb,
     pay_model_thb: body.pay_model_thb,
-    service_amount_thb: body.service_amount_thb,
+    service_amount_thb: amount_thb,
+    deposit_percent,
+    deposit_amount_thb,
+    balance_amount_thb,
     operational_status: jobDetails.operational_status === "pending_client_link" ? "pending_client_link" : undefined,
     payment_type,
+    payment_stage: payment_type,
     payment_method,
     note,
     confirm_page,
@@ -5322,6 +5340,8 @@ async function createAdminJob(env, body) {
     end_time,
     location_name,
     amount_thb,
+    deposit_amount_thb,
+    balance_amount_thb,
     customer_confirmation_url,
     model_confirmation_url,
     });
@@ -5339,6 +5359,9 @@ async function createAdminJob(env, body) {
     raw: minted,
     notification_status: notificationStatus,
     owner_job_grant_status: ownerJobGrantStatus,
+    deposit_percent,
+    deposit_amount_thb,
+    balance_amount_thb,
   };
 }
 
@@ -5376,6 +5399,8 @@ async function notifyJobCreated(env, data) {
     `Time: <b>${escHtml(data.start_time)} - ${escHtml(data.end_time)}</b>`,
     `Location: <b>${escHtml(data.location_name)}</b>`,
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
+    data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,
     "",
