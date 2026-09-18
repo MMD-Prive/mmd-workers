@@ -4,6 +4,9 @@ const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
 const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
+const SESSION_FIELD = Object.freeze({
+  paymentProofs: "fldOsqqVtG9ocCyMD",
+});
 const PROOF_FIELD = Object.freeze({
   createdAt: "fldzoCd4ogkXwxhhL",
   channel: "fldheBc6tI8wEdYRe",
@@ -165,27 +168,42 @@ async function findModelPaymentProof(env, sessionRecordId) {
   if (!env?.AIRTABLE_API_KEY || !env?.AIRTABLE_BASE_ID || !/^rec[A-Za-z0-9]{14}$/.test(sessionRecordId)) {
     return { status: "none" };
   }
-  const table = clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || DEFAULT_PAYMENT_PROOFS_TABLE);
-  const params = new URLSearchParams({
-    maxRecords: "5",
-    sort: JSON.stringify([{ field: "created_at", direction: "desc" }]),
-    filterByFormula: `FIND("${escapeFormula(sessionRecordId)}",ARRAYJOIN({session}))`,
-    returnFieldsByFieldId: "true",
-  });
-  const response = await fetch(
-    `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`,
+
+  const sessionsTable = clean(env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE);
+  const sessionResponse = await fetch(
+    `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(sessionsTable)}/${encodeURIComponent(sessionRecordId)}?returnFieldsByFieldId=true`,
     { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}` } },
   );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) return { status: "unknown" };
-  const rows = Array.isArray(data.records) ? data.records : [];
+  const sessionData = await sessionResponse.json().catch(() => ({}));
+  if (!sessionResponse.ok) return { status: "unknown" };
+
+  const linkedProofIds = Array.isArray(sessionData?.fields?.[SESSION_FIELD.paymentProofs])
+    ? sessionData.fields[SESSION_FIELD.paymentProofs]
+      .map((item) => clean(typeof item === "string" ? item : item?.id))
+      .filter((id) => /^rec[A-Za-z0-9]{14}$/.test(id))
+    : [];
+  if (!linkedProofIds.length) return { status: "none" };
+
+  const proofsTable = clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || DEFAULT_PAYMENT_PROOFS_TABLE);
+  const rows = [];
+  for (const proofId of linkedProofIds.slice(0, 8)) {
+    const response = await fetch(
+      `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(proofsTable)}/${encodeURIComponent(proofId)}?returnFieldsByFieldId=true`,
+      { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}` } },
+    );
+    if (!response.ok) continue;
+    const record = await response.json().catch(() => null);
+    if (record?.id) rows.push(record);
+  }
+
   const ranked = rows
     .map((record) => ({
       status: normalizeProofStatus(record?.fields?.[PROOF_FIELD.status]),
       created_at: clean(record?.fields?.[PROOF_FIELD.createdAt]),
       channel: clean(record?.fields?.[PROOF_FIELD.channel]),
     }))
-    .filter((record) => record.status === "pending" || record.status === "verified");
+    .filter((record) => record.status === "pending" || record.status === "verified")
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   return ranked[0] || { status: "none" };
 }
 
