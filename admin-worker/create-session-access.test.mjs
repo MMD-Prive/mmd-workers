@@ -280,16 +280,27 @@ const gaySearch = await searchCreateSessionModels(env, new URL("https://worker/v
 assert.deepEqual(gaySearch.items.map((item) => item.model_name), ["VIP Gay"]);
 
 const expiredSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_expired&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
-assert.deepEqual(expiredSearch.items, []);
+assert.deepEqual(expiredSearch.items.map((item) => item.model_name), ["Exclusive Both", "Drive Lazy Exclusive"]);
+assert.equal(expiredSearch.private_access.eligibility_result, "blocked");
+assert.equal(expiredSearch.private_access.inventory_preview_only, true);
+assert.equal(expiredSearch.private_access.entitlement_recheck_required, true);
 
 const inactiveSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_inactive&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
-assert.deepEqual(inactiveSearch.items, []);
+assert.deepEqual(inactiveSearch.items.map((item) => item.model_name), ["Exclusive Both", "Drive Lazy Exclusive"]);
+assert.equal(inactiveSearch.private_access.eligibility_result, "blocked");
 
 const guestSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_guest&allowed_model_folders=standard&normalized_membership_tier=standard"));
-assert.deepEqual(guestSearch.items, []);
+assert.deepEqual(guestSearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(guestSearch.private_access.eligibility_result, "blocked");
+
+const unresolvedSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing"));
+assert.deepEqual(unresolvedSearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(unresolvedSearch.private_access.eligibility_result, "unresolved");
+assert.equal(unresolvedSearch.private_access.inventory_preview_only, true);
+assert.equal(unresolvedSearch.private_access.entitlement_recheck_required, true);
 
 await rejectsWithCode(
-  searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing")),
+  enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01")),
   "AUTHORITATIVE_MEMBER_NOT_FOUND",
 );
 

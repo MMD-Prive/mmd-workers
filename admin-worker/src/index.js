@@ -4972,9 +4972,16 @@ async function searchCreateSessionModels(env, url) {
   const wantMk = flag("mk");
   const wantLive = flag("live");
 
-  let allowedFolders = null;
+  let allowedFolders = [];
   let memberSummary = null;
   if (bookingVisibility === "private") {
+    if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+    if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
+
+    // Internal Admin model search is inventory discovery, not an entitlement grant.
+    // Operators must be able to find/select a canonical Model while a Client identity
+    // or entitlement is still being reconciled. The real job mutation remains
+    // fail-closed in enforcePrivateCreateAccess().
     const ids = {
       member_id: str(url.searchParams.get("member_id")),
       client_id: str(url.searchParams.get("client_id")),
@@ -4984,27 +4991,25 @@ async function searchCreateSessionModels(env, url) {
       member_email: str(url.searchParams.get("member_email")),
       telegram_username: str(url.searchParams.get("customer_telegram_username")),
     };
-    if (!Object.values(ids).some(Boolean)) {
-      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
-    }
-    const memberAccess = await resolveAuthoritativeMemberAccess(env, ids);
-    if (!memberAccess.resolved) {
-      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
-    }
-    allowedFolders = memberAccess.allowed_folders;
+    const hasIdentity = Object.values(ids).some(Boolean);
+    const memberAccess = hasIdentity
+      ? await resolveAuthoritativeMemberAccess(env, ids)
+      : { resolved: false, allowed_folders: [], tier: "" };
+
+    allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+      ? memberAccess.allowed_folders
+      : [];
+    const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
     memberSummary = {
-      eligibility_checked: true,
-      eligibility_result: allowedFolders.length ? "allowed" : "blocked",
-      private_access_level: memberAccess.tier || "blocked",
+      eligibility_checked: memberAccess.resolved === true,
+      eligibility_result: memberAccess.resolved
+        ? (canCreateSelectedFolder ? "allowed" : "blocked")
+        : "unresolved",
+      private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
       allowed_private_folders: allowedFolders.slice(),
+      inventory_preview_only: !canCreateSelectedFolder,
+      entitlement_recheck_required: true,
     };
-    if (!allowedFolders.length) {
-      // blocked or unknown-entitlement members receive no protected model names
-      return { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items: [], private_access: memberSummary };
-    }
-    if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
-    if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
-    if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
   } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
     throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
   }
@@ -5030,7 +5035,8 @@ async function searchCreateSessionModels(env, url) {
       if (profile.bookingVisibility !== "private") continue;
       if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
       if (profile.accessFolder !== selectedFolder) continue;
-      if (!allowedFolders.includes(profile.accessFolder)) continue;
+      // Search is owner/admin inventory discovery. Client entitlement never filters
+      // the inventory list here; create-time authority re-checks the selected folder.
       const effectiveLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
       if (effectiveLane !== lane && effectiveLane !== "both") continue;
     } else {
