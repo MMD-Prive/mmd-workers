@@ -167,7 +167,7 @@ test("Private Model upload-url validates private_model metadata before issuing u
   assert.equal(body.fields.application_type, "must be private_model");
 });
 
-test("Private Model upload-url accepts MP4, MOV and WEBM intro videos up to 50MB", async () => {
+test("Private Model upload-url accepts MP4, MOV and WEBM intro videos up to 10MB", async () => {
   const cases = [
     ["intro.mp4", "video/mp4"],
     ["intro.mov", "video/quicktime"],
@@ -208,7 +208,7 @@ test("Private Model upload-url accepts MP4, MOV and WEBM intro videos up to 50MB
   assert.match(body.upload_url, /\/sigil\/api\/private-model\/upload-file/);
 });
 
-test("Private Model upload-url rejects intro videos above 50MB", async () => {
+test("Private Model upload-url rejects intro videos above 10MB", async () => {
   const { response } = await call(PRIVATE_MODEL_UPLOAD_URL_PATH, {
     method: "POST",
     headers: { "content-type": "application/json" },
