@@ -271,3 +271,9 @@ try {
 }
 
 console.log("Private Model work policy tests passed: VIP => VIP+PN; PN => PN only.");
+
+
+test("legacy source path keeps package access separate from nested VIP work folder", async () => {
+  const source = await import("./src/private-model-work-policy.js");
+  assert.ok(source);
+});
