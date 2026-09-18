@@ -114,9 +114,11 @@ test("owner-gated smoke exercises model session, upload, registry, R2 read-back 
     byte_match: true,
     cleanup_deleted_record_and_object: true,
     post_cleanup_404: true,
+    stale_smoke_media_removed: 0,
   });
   assert.deepEqual(modelWorker.calls, [
     "GET /v1/model/profile",
+    "GET /v1/model/media",
     "POST /v1/model/media/upload",
     "GET /v1/model/media",
     "GET /v1/model/media/media_smokee2e12345678/file",
