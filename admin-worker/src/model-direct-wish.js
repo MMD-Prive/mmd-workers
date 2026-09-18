@@ -83,7 +83,7 @@ export async function handleModelDirectWishRequest(request, env = {}) {
 
   const parsed = await readInput(request);
   if (!parsed.ok) return json({ ok: false, error: parsed.error }, parsed.status, request, env);
-  const input = normalizeInput(parsed.body);
+  const input = normalizeModelDirectWishInput(parsed.body);
   if (!input.ok) return json({ ok: false, error: input.error }, input.status, request, env);
 
   const modelRecordId = clean(auth.payload.model_record_id);
@@ -122,8 +122,9 @@ export async function handleModelDirectWishRequest(request, env = {}) {
     private_note_scope: "per_only",
     telegram_consent: input.telegramConsent,
     past_clients_consent: input.pastClientsConsent,
-    photo_media_ids: input.photoMediaIds,
-    photo_count: input.photoMediaIds.length,
+    // Profile media belongs to the authenticated MMD MODEL Gallery flow.
+    // Legacy photo fields may still arrive during rollout, but they are never
+    // stored as direct-Wish delivery authority.
     consent_version: input.consentVersion,
     source: "/sigil/model/wish",
     delivery: { telegram: { state: "pending_review" }, past_clients: { state: "pending_review" } },
@@ -312,7 +313,7 @@ async function listDirectReviewQueue(env) {
   };
 }
 
-function normalizeInput(body) {
+export function normalizeModelDirectWishInput(body) {
   const birthdayWish = clean(body.birthday_wish).slice(0, MAX_BIRTHDAY + 1);
   const mmdMessage = clean(body.mmd_message).slice(0, MAX_MMD_MESSAGE + 1);
   const privateNotePer = clean(body.private_note_per).slice(0, MAX_PRIVATE_NOTE + 1);
@@ -324,11 +325,26 @@ function normalizeInput(body) {
     return { ok: false, status: 400, error: "model_wish_invalid" };
   }
   if (clean(body.private_note_scope || "per_only") !== "per_only") return { ok: false, status: 400, error: "private_note_scope_invalid" };
-  const photoMediaIds = Array.isArray(body.photo_media_ids) ? body.photo_media_ids.map((id) => clean(id).slice(0, 160)).filter(Boolean) : [];
-  if (photoMediaIds.length !== 5 || new Set(photoMediaIds).size !== 5 || Number(body.photo_count) !== 5) {
-    return { ok: false, status: 400, error: "five_profile_photos_required" };
+  // Direct Wish submission must never be blocked by profile photos.
+  // Keep a narrow compatibility lane for the previously published page:
+  // either no photo payload at all, or one complete legacy set of 5 Gallery
+  // media IDs. The IDs are validated but deliberately not returned/stored.
+  const photoMediaIds = Array.isArray(body.photo_media_ids)
+    ? body.photo_media_ids.map((id) => clean(id).slice(0, 160)).filter(Boolean)
+    : [];
+  const declaredPhotoCount =
+    body.photo_count === undefined || body.photo_count === null || body.photo_count === ""
+      ? photoMediaIds.length
+      : Number(body.photo_count);
+  if (![0, 5].includes(photoMediaIds.length) || new Set(photoMediaIds).size !== photoMediaIds.length) {
+    return { ok: false, status: 400, error: "photo_media_ids_invalid" };
   }
-  if (photoMediaIds.some((id) => !/^media_[a-zA-Z0-9-]{8,}$/.test(id))) return { ok: false, status: 400, error: "photo_media_id_invalid" };
+  if (!Number.isFinite(declaredPhotoCount) || declaredPhotoCount !== photoMediaIds.length) {
+    return { ok: false, status: 400, error: "photo_count_mismatch" };
+  }
+  if (photoMediaIds.some((id) => !/^media_[a-zA-Z0-9-]{8,}$/.test(id))) {
+    return { ok: false, status: 400, error: "photo_media_id_invalid" };
+  }
   return {
     ok: true,
     birthdayWish,
@@ -336,8 +352,7 @@ function normalizeInput(body) {
     privateNotePer,
     telegramConsent: body.telegram_consent === true,
     pastClientsConsent: body.past_clients_consent === true,
-    photoMediaIds,
-    consentVersion: clean(body.consent_version || "model_wish_v3").slice(0, 80),
+    consentVersion: clean(body.consent_version || "model_wish_v4").slice(0, 80),
   };
 }
 
