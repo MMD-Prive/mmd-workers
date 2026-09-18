@@ -30,6 +30,7 @@ import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
+const MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS = ["working_name", "nickname", "unique_key", "drive_folder_id", "folder_scope_key"];
 const MODEL_SEARCH_FIELDS = [
   "name",
   "Name",
@@ -2712,12 +2713,20 @@ async function searchCreateSessionModels(env, url) {
   }
 
   const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
-  const records = await airtableList(env, modelsTable, {
+  let records = await airtableList(env, modelsTable, {
     q,
     limit: 100,
-    matchFields: getModelSearchFields(env),
-    fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS,
+    matchFields: q ? MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS : getModelSearchFields(env),
+    fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
   });
+  if (q && records.length === 0) {
+    records = await airtableList(env, modelsTable, {
+      q,
+      limit: 100,
+      matchFields: getModelSearchFields(env),
+      fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
+    });
+  }
 
   const items = [];
   const seenInventoryKeys = new Set();
