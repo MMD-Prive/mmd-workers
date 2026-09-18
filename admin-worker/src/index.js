@@ -5256,10 +5256,13 @@ async function createAdminJob(env, body) {
   const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
   const payment_type = "deposit";
   const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
-  const amount_thb = numReq(body.service_amount_thb || body.amount_thb || payment.amount_thb, "amount_thb");
+  // amount_thb may include a separately itemized membership renewal. The
+  // customer deposit is always calculated from service money only.
+  const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
+  const service_amount_thb = numReq(body.service_amount_thb || payment.service_amount_thb || amount_thb, "service_amount_thb");
   const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
-  const deposit_amount_thb = computeCustomerDepositAmount(amount_thb);
-  const balance_amount_thb = Math.max(0, amount_thb - deposit_amount_thb);
+  const deposit_amount_thb = computeCustomerDepositAmount(service_amount_thb);
+  const balance_amount_thb = Math.max(0, service_amount_thb - deposit_amount_thb);
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
@@ -5276,7 +5279,7 @@ async function createAdminJob(env, body) {
     google_map_url,
     amount_thb,
     pay_model_thb: body.pay_model_thb,
-    service_amount_thb: amount_thb,
+    service_amount_thb,
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,
