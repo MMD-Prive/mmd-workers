@@ -99,5 +99,22 @@ const server = createServer(async (request, response) => {
   }
 });
 
-const port = Number(process.env.PORT) || 8080;
-server.listen(port, "0.0.0.0");
+const parsedPort = Number.parseInt(process.env.PORT || "8080", 10);
+const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort <= 65535 ? parsedPort : 8080;
+
+server.on("error", (error) => {
+  console.error(JSON.stringify({
+    event: "mmd_slip_extractor_server_error",
+    message: error instanceof Error ? error.message : String(error),
+    port
+  }));
+  process.exitCode = 1;
+});
+
+server.listen(port, "0.0.0.0", () => {
+  console.log(JSON.stringify({
+    event: "mmd_slip_extractor_server_listening",
+    host: "0.0.0.0",
+    port
+  }));
+});

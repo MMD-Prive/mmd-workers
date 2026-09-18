@@ -1,0 +1,69 @@
+name: LINE OFC Per-Rename Exact Matcher v1
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply_results:
+        description: Write private exact/ambiguous/unmatched match rows to Airtable result table
+        required: true
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - scripts/line-ofc-per-rename-exact-matcher-v1.js
+      - .github/workflows/line-ofc-per-rename-exact-matcher-v1.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-per-rename-exact-matcher-v1.js
+      - .github/workflows/line-ofc-per-rename-exact-matcher-v1.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-per-rename-exact-matcher-v1
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate matcher
+        run: |
+          node --check scripts/line-ofc-per-rename-exact-matcher-v1.js
+          node scripts/line-ofc-per-rename-exact-matcher-v1.js --self-test
+
+  production-match:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run exact matcher with count-only logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARGS=(--report /tmp/per-rename-match-report.json)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.apply_results }}" == "true" ]]; then
+            ARGS+=(--apply-results)
+          fi
+          node scripts/line-ofc-per-rename-exact-matcher-v1.js "${ARGS[@]}"
+      - name: Upload count-only matcher report
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-per-rename-exact-match-report-v1
+          path: /tmp/per-rename-match-report.json
+          retention-days: 30

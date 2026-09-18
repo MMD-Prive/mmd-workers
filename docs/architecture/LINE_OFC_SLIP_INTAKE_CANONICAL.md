@@ -11,53 +11,128 @@ Current approval state:
 - Technical privacy review: PASS
 - Privacy/DPA for Cloudflare preview: PASS
 - Cloudflare processor/DPA acceptance for the locked preview scope: APPROVED
-- Preview deployment authorization: PASS
-- Production deployment approval: PENDING
+- Preview source implementation authorization: PASS
+- Production LINE integration approval: PENDING
 
 ## Preview topology
 
+The Cloudflare preview is split into two isolated services.
+
+### Extraction service
+
 ```text
 synthetic/redacted image
-  -> authenticated HTTPS request
-  -> mmd-slip-extractor-staging Worker
+  -> authenticated mmd-slip-extractor-staging Worker
   -> private Container binding
   -> local QR or OCR
   -> normalized extraction evidence only
 ```
 
-The staging Worker is deployed on its workers.dev hostname with no custom routes. It authenticates the caller, enforces the staging scope, filters routes and request metadata, removes the bearer token, and proxies to one Container instance.
+The extractor source lives under `services/mmd-slip-extractor/cloudflare`. It is workers.dev-only with no custom production route. It authenticates the caller, enforces staging scope, removes the bearer token before Container forwarding, and runs the existing provider-neutral extraction library with `sharp`, `jsQR`, Tesseract.js, and packaged Thai/English language data. Container outbound internet access is disabled.
 
-The Container runs the existing `services/mmd-slip-extractor/lib/extractor.mjs` implementation with `sharp`, `jsQR`, Tesseract.js, and packaged Thai/English language data. Container outbound internet access is disabled.
+Do not infer deployment readiness from source presence. Actual Cloudflare deployment, secret readiness, Container health, and remote smoke must be proven separately.
 
-## Public contract
+### Queue-backed intake service
 
-- `GET /health` checks the Worker-to-Container path and exposes service state only.
-- `POST /v1/extract/qr` requires the staging bearer secret and accepts JPEG, PNG, or WebP.
-- `POST /v1/extract/ocr` requires the staging bearer secret and accepts JPEG, PNG, or WebP.
+```text
+synthetic/redacted image
+  -> authenticated mmd-line-slip-intake-staging Worker
+  -> private dev R2
+  -> mmd-line-slip-intake-staging Queue
+  -> sequential Queue consumer
+  -> mmd-slip-extractor-staging service binding
+  -> MMD — Payment Proofs Staging = pending
+  -> redacted HYPE payment alert
+```
+
+The Queue intake source lives under `services/mmd-line-slip-intake/cloudflare`.
+
+Its preview boundary is locked to:
+
+- synthetic or redacted images only;
+- workers.dev only, no custom route;
+- private staging R2 only;
+- `MMD — Payment Proofs Staging` only;
+- staging `source=synthetic_isolated` and `status=pending` only;
+- deterministic SHA-256 proof IDs and duplicate-safe replay checks;
+- R2 byte-size and SHA-256 verification before extraction;
+- QR first, OCR fallback when QR does not provide a transaction reference;
+- redacted HYPE alert only;
+- no production LINE channel token;
+- no payment, membership, points, entitlement, booking, or session mutation.
+
+## Public preview contracts
+
+### Extractor
+
+- `GET /health` checks service state only.
+- `POST /v1/extract/qr` requires the staging extractor bearer secret and accepts JPEG, PNG, or WebP.
+- `POST /v1/extract/ocr` requires the staging extractor bearer secret and accepts JPEG, PNG, or WebP.
 - Binary input is capped at four MiB.
 - Responses include normalized evidence fields and no payment decision field.
 - Errors use stable codes and `cache-control: no-store`.
 
+### Queue intake
+
+- `GET /health` returns staging service state only.
+- `POST /v1/staging/intake` requires its own staging bearer secret.
+- JPEG, PNG, or WebP only, maximum four MiB.
+- Success returns `202 queued` with a synthetic proof ID and run ID only.
+- The response must never expose the private R2 key, OCR text, decoded QR payload, Airtable record ID, or payment decision.
+- The Queue consumer rechecks evidence integrity before it calls extraction.
+- Invalid/corrupt evidence retries and cannot create a pending proof.
+
 ## Isolation and data handling
 
-- Synthetic or redacted preview fixtures only.
-- The extractor does not persist raw images.
-- The extractor has no R2 binding. Dev R2 belongs to the future isolated staging intake layer, not the extraction service.
-- The extractor has no LINE, Airtable, Telegram, payment, membership, points, session, or entitlement credentials or bindings.
+- Raw images are persisted only in the designated private staging R2 bucket by the Queue intake layer.
+- The extractor itself has no R2, LINE, Airtable, Telegram, payment, membership, points, session, or entitlement binding.
 - Raw images, OCR text, decoded QR payloads, tokens, and normalized payment fields are not logged.
-- Telegram notification payloads remain outside the extractor and must be redacted by the future staging intake layer.
+- The staging Airtable row stores evidence metadata and redacted extraction-state metadata only.
+- HYPE/Telegram remains downstream notification and receives a masked payment reference at most.
+- Queue delivery is at-least-once; the staging proof ID is deterministic from evidence SHA-256 and the consumer checks existing staging evidence before extracting/writing/alerting again.
 
 ## Production integration boundary
 
-This staging extractor is not wired into `member-dashboard-chat-worker` and does not receive production LINE traffic. A later integration PR must preserve the current production webhook owner, use a Cloudflare service binding or another explicitly approved private path, store originals only in the designated private R2 bucket, and create pending/review evidence only.
+The Queue-backed staging worker is **not** the production LINE webhook owner and must not be pointed to by LINE Developers.
 
-Production integration requires:
+The production integration is a later, separate gate. It must preserve `member-dashboard-chat-worker` as `/webhooks/line` owner and enqueue only after the existing LINE signature-verification path accepts the request. The webhook must not wait for OCR.
 
-1. Cloudflare staging deployment and health readiness.
-2. Staging-only secret configuration.
-3. Synthetic QR and OCR smoke results.
-4. Dev R2 intake path and idempotency verification.
-5. Redacted Telegram Ops validation.
-6. Explicit production deployment approval.
+The later production design is:
 
-There is no `paid` or `verified` transition in the extractor.
+```text
+real LINE image event
+  -> member-dashboard-chat-worker verifies LINE signature
+  -> payment-context detector
+  -> Queue producer (minimal internal identifiers only)
+  -> Queue consumer
+  -> private production R2 evidence
+  -> QR/OCR evidence extraction
+  -> MMD — Payment Proofs = pending/review
+  -> HYPE payment alert
+  -> official verification / payments-worker
+  -> Payment verified alert
+  -> canonical downstream entitlement/points paths only after official verification
+```
+
+Production integration must never:
+
+- re-enable Netlify;
+- set `LINE_WEBHOOK_UPSTREAM_URL`;
+- create a second LINE webhook owner;
+- acknowledge `paid` or `verified` from a slip, QR, OCR, Telegram message, or Queue state;
+- let image evidence directly mutate entitlement, points, membership, booking, or session truth.
+
+## Gates before production integration
+
+1. Provision the staging Queue, DLQ, and private dev R2 with the names in the Queue intake config.
+2. Configure staging-only secrets without reusing browser/customer credentials.
+3. Prove extractor health + QR/OCR synthetic smoke.
+4. Prove synthetic intake -> dev R2 -> Queue -> extractor -> pending staging proof.
+5. Prove replay idempotency and corrupt-evidence retry behavior.
+6. Prove redacted HYPE payment-topic notification.
+7. Record safe request/run IDs only; do not put raw slips or payment references in GitHub.
+8. Obtain explicit production integration approval.
+9. Implement the production Queue producer only after step 8.
+10. Run a real LINE E2E only after the production path is deployed and separately approved.
+
+No synthetic staging run counts as proof that real production LINE slip intake has passed.

@@ -21,8 +21,8 @@ await build({
 
 const worker = (await import(pathToFileURL(outfile).href)).default;
 
-async function call(path, init, host = "mmdbkk.com") {
-  return worker.fetch(new Request(`https://${host}${path}`, init), {});
+async function call(path, init, host = "mmdbkk.com", env = {}) {
+  return worker.fetch(new Request(`https://${host}${path}`, init), env);
 }
 
 try {
@@ -88,9 +88,62 @@ try {
   assert.equal(protectedControlRoom.headers.get("x-mmd-admin-login-canonical"), "/internal/admin/login");
   assert.equal(protectedControlRoom.headers.get("cache-control"), "no-store");
 
+  const protectedCeo = await call("/internal/ceo?view=today");
+  assert.ok(protectedCeo.status >= 300 && protectedCeo.status < 400);
+  const protectedCeoLocation = new URL(protectedCeo.headers.get("location"));
+  assert.equal(protectedCeoLocation.pathname, "/internal/admin/login");
+  assert.equal(protectedCeoLocation.searchParams.get("next"), "/internal/ceo?view=today");
+  assert.equal(protectedCeo.headers.get("x-mmd-ceo-route-owner"), "immigrate-worker");
+  assert.equal(protectedCeo.headers.get("x-mmd-ceo-auth"), "required");
+  assert.equal(protectedCeo.headers.get("cache-control"), "no-store");
+
+  const ceoPost = await call("/internal/ceo", { method: "POST", body: "unsafe=1" });
+  assert.equal(ceoPost.status, 405);
+  assert.equal(ceoPost.headers.get("allow"), "GET, HEAD");
+  assert.equal(ceoPost.headers.get("x-mmd-ceo-route-owner"), "immigrate-worker");
+  assert.deepEqual(await ceoPost.json(), { ok: false, error: "ceo_route_method_not_allowed" });
+
   const distinctSigilControlRoom = await call("/sigil/control-room");
   assert.notEqual(distinctSigilControlRoom.status, 308);
   assert.notEqual(distinctSigilControlRoom.headers.get("x-mmd-admin-canonical"), "/internal/admin/control-room");
+
+  const assetEnv = {
+    ASSETS: {
+      async fetch(request) {
+        const url = new URL(request.url);
+        assert.equal(url.pathname, "/a/create-session.js");
+        assert.equal(url.search, "");
+        return new Response('const flow_version = "mmd_sigil_create_session_external_js_v3";', {
+          status: 200,
+          headers: { "content-type": "application/javascript" },
+        });
+      },
+    },
+  };
+
+  const core = await call("/internal/admin/jobs/create-session/core", undefined, "mmdbkk.com", assetEnv);
+  assert.equal(core.status, 200);
+  assert.equal(core.headers.get("content-type"), "application/javascript; charset=utf-8");
+  assert.equal(core.headers.get("cache-control"), "no-store");
+  assert.equal(core.headers.get("x-mmd-create-session-core"), "worker-owned");
+  assert.equal(core.headers.get("x-mmd-create-session-core-route"), "extensionless-v1");
+  assert.equal(core.headers.get("x-mmd-create-session-business"), "mmd");
+  assert.match(await core.text(), /mmd_sigil_create_session_external_js_v3/);
+
+  const coreHead = await call("/internal/admin/jobs/create-session/core", { method: "HEAD" }, "www.mmdbkk.com", assetEnv);
+  assert.equal(coreHead.status, 200);
+  assert.equal(coreHead.headers.get("x-mmd-create-session-core"), "worker-owned");
+  assert.equal(await coreHead.text(), "");
+
+  const corePost = await call(
+    "/internal/admin/jobs/create-session/core",
+    { method: "POST", body: "nope=1" },
+    "mmdbkk.com",
+    assetEnv,
+  );
+  assert.equal(corePost.status, 405);
+  assert.equal(corePost.headers.get("allow"), "GET, HEAD");
+  assert.equal(corePost.headers.get("x-mmd-create-session-business"), "mmd");
 } finally {
   await rm(tmp, { recursive: true, force: true });
 }
