@@ -801,6 +801,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/payment-issuer-diagnostic"
 zone_name = "mmdbkk.com"
 
+# Owner-only authenticated Model media E2E smoke. This route creates a tiny
+# public-gallery fixture through the real Model session/media runtime, verifies
+# Airtable + R2 read-back, then deletes the temporary record/object.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/model-media/e2e-smoke"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/model-media/e2e-smoke"
+zone_name = "mmdbkk.com"
+
 # Private media review: Worker-owned, credential-bound admin only.
 
 [[routes]]
