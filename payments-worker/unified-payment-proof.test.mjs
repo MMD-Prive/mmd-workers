@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
+import { canonicalProofLinks, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
@@ -11,6 +11,18 @@ test("payment ref is stable for the same session and stage", async () => {
   assert.equal(a, b);
   assert.notEqual(a, c);
   assert.match(a, /^pay_[a-f0-9]{24}$/);
+});
+
+test("web payment proof links canonical Payment, Session, and Client records", () => {
+  const links = canonicalProofLinks(
+    { id: "recPayment", fields: { Client: ["recClient"] } },
+    { id: "recSession", fields: { Client: ["recClient"] } },
+  );
+  assert.deepEqual(links, {
+    payment: ["recPayment"],
+    session: ["recSession"],
+    client: ["recClient"],
+  });
 });
 
 test("web membership proof routes to Membership topic 20", () => {
