@@ -401,7 +401,7 @@ function isPrivateModel(fields) {
   return path.includes("exclusive") || path.includes("private models") || path.startsWith("private ");
 }
 
-function inferAccessFolder(fields) {
+export function inferAccessFolder(fields) {
   const explicit = normalizeAccessFolder(first(fields, ["access_folder", "model_access_folder", "model_folder", "Access Folder"]));
   if (explicit) return explicit;
   const tier = normalizeToken([
