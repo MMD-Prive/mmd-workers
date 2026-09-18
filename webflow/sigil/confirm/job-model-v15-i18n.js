@@ -249,10 +249,23 @@
 
   function setLanguage(next) {
     lang = normalizeLang(next);
+
+    // Switch the visible UI first. LINE/iOS WebViews may restrict history
+    // mutation; that must never prevent TH/EN/ZH from changing in-place.
+    applyLanguage();
+
     const url = new URL(window.location.href);
     url.searchParams.set("lang", lang);
-    window.history.replaceState(null, "", url);
-    applyLanguage();
+    const relativeUrl = `${url.pathname}${url.search}${url.hash}`;
+    try {
+      window.history.replaceState(window.history.state, "", relativeUrl);
+    } catch (_) {
+      // Keep the selected language for this view even when URL mutation fails.
+    }
+
+    root.dispatchEvent(new CustomEvent("mmd:sigil-language-change", {
+      detail: { lang }
+    }));
   }
 
   function money(value) {
