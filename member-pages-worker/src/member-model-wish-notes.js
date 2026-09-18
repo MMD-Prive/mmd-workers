@@ -8,7 +8,6 @@ const SESSIONS_TABLE_DEFAULT = "tblC98mKWbzmPuNzX";
 const MAX_NOTES = 12;
 const MAX_WISH = 700;
 const CLIENT_SESSION_LINK_FIELDS = ["Sessions", "Sessions_v2", "Sessions V2"];
-const CLIENT_SESSION_LINK_FIELDS = ["Sessions", "Sessions_v2", "Sessions V2"];
 
 export function isMemberModelWishDashboardRequest(request) {
   if (!(request instanceof Request) || request.method.toUpperCase() !== "GET") return false;
@@ -142,38 +141,10 @@ export function linkedSessionIdsForClient(client) {
   return out;
 }
 
-export function linkedSessionIdsForClient(client) {
-  const fields = client?.fields || {};
-  const out = [];
-  const seen = new Set();
-  for (const fieldName of CLIENT_SESSION_LINK_FIELDS) {
-    for (const id of linkedIds(fields[fieldName])) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
-}
-
 async function listApprovedDirectWishes(env) {
   const table = clean(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || WISH_TABLE_DEFAULT);
   const formula = `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed')`;
   return airtableList(env, table, formula, { sortField: "submitted_at", sortDirection: "desc", maxRecords: 100 });
-}
-
-async function airtableGetRecord(env, table, recordId) {
-  const baseId = clean(env.AIRTABLE_BASE_ID);
-  const apiKey = clean(env.AIRTABLE_API_KEY);
-  if (!baseId || !apiKey || !table || !/^rec[a-zA-Z0-9]{14}$/.test(recordId)) return null;
-  try {
-    const url = `https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`;
-    const response = await fetch(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
-    const body = await response.json().catch(() => null);
-    return response.ok && body?.id ? body : null;
-  } catch {
-    return null;
-  }
 }
 
 async function airtableGetRecord(env, table, recordId) {
