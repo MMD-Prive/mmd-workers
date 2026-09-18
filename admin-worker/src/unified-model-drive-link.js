@@ -42,6 +42,55 @@ export async function listUnifiedModelLineCandidates(env, url) {
   };
 }
 
+export async function materializeApprovedDriveModel(env, driveFolderId, actor = null) {
+  const safeFolderId = clean(driveFolderId, 180);
+  if (!/^[A-Za-z0-9_-]{10,180}$/.test(safeFolderId)) {
+    return { ok: false, status: 400, error: "drive_folder_id_invalid", record: null, materialized: false };
+  }
+
+  // Always re-resolve against the approved Drive roots. A browser-provided path,
+  // folder name, or lane is never accepted as authority.
+  const drive = await resolveDriveDirectory(env, safeFolderId);
+  if (!drive.ok || !drive.item) {
+    return {
+      ok: false,
+      status: drive.status || 409,
+      error: drive.error || "drive_folder_not_approved",
+      record: null,
+      materialized: false,
+    };
+  }
+  const folder = drive.item;
+  const lane = normalizeLane(folder.lane);
+  if (lane === "all") {
+    return { ok: false, status: 409, error: "drive_folder_lane_unresolved", record: null, materialized: false };
+  }
+
+  const existing = await findCanonicalByDriveFolder(env, folder.drive_folder_id, folder.folder_scope_key);
+  if (!existing.ok) {
+    return { ok: false, status: existing.status || 503, error: "canonical_model_lookup_unavailable", record: null, materialized: false };
+  }
+  if (existing.records.length > 1) {
+    return { ok: false, status: 409, error: "canonical_model_drive_conflict", record: null, materialized: false };
+  }
+  if (existing.records.length === 1) {
+    return { ok: true, status: 200, record: existing.records[0], materialized: false, source: "drive", lane, folder };
+  }
+
+  const created = await createCanonicalModelFromDrive(env, folder, actor || { id: "owner_drive_materializer" });
+  if (!created.ok || !created.record?.id) {
+    return {
+      ok: false,
+      status: created.status || 503,
+      error: created.error || "canonical_model_create_failed",
+      record: null,
+      materialized: false,
+    };
+  }
+
+  return { ok: true, status: 200, record: created.record, materialized: true, source: "drive", lane, folder };
+}
+
 export async function materializeDriveAndBindVerifiedModelLineClaim(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || body.mode !== MODEL_LINE_LINK_MATERIALIZE_MODE) return json({ ok: false, error: "unsupported_mode" }, 400);
@@ -259,9 +308,27 @@ async function findCanonicalByDriveFolder(env, driveFolderId, folderScopeKey) {
   return { ok: true, records: [...records.values()] };
 }
 
+export function inferDrivePrivateServiceLevel(folder = {}) {
+  const lane = normalizeLane(folder?.lane);
+  if (lane !== "private" && lane !== "exclusive") return "";
+  const path = clean(folder?.folder_path || folder?.source_folder || folder?.folder_name, 1400)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\\/]+/g, " ")
+    .replace(/[^a-z0-9ก-๙]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!path) return "";
+  if (path.includes("exclusive vip") || /(^| )vip( |$)/.test(path)) return "vip";
+  if (path.includes("exclusive pn") || /(^| )pn( |$)/.test(path)) return "pn";
+  return "";
+}
+
 async function createCanonicalModelFromDrive(env, folder, actor) {
   const lane = normalizeLane(folder.lane);
   const actorId = clean(actor?.id || actor?.email || "owner", 80) || "owner";
+  const privateServiceLevel = inferDrivePrivateServiceLevel(folder);
   const fields = {
     working_name: clean(folder.folder_name, 240),
     status: "Active",
@@ -274,6 +341,19 @@ async function createCanonicalModelFromDrive(env, folder, actor) {
     folder_scope_key: clean(folder.folder_scope_key, 300) || `${lane}:drive:${clean(folder.drive_folder_id, 180)}`,
     can_work_public: lane === "public",
     can_work_private: lane === "private" || lane === "exclusive",
+    ...(lane === "private" || lane === "exclusive" ? {
+      sales_layer: "private",
+      visibility: "private",
+    } : {}),
+    ...(lane === "exclusive" ? {
+      private_tier: "Exclusive Models",
+      model_tier: "Exclusive Models",
+    } : {}),
+    ...(privateServiceLevel ? {
+      private_service_level: privateServiceLevel.toUpperCase(),
+      private_work_format: privateServiceLevel === "vip" ? "VIP + PN" : "PN",
+      approved_for_private_sales: true,
+    } : {}),
   };
 
   const result = await airtableCreate(env, modelsTable(env), fields, true);

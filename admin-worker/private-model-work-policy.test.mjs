@@ -54,10 +54,40 @@ assert.equal(isPrivateModelSearchRequest(new Request(
   "https://mmdbkk.com/v1/admin/models/search?booking_visibility=public",
 )), false);
 
+const driveCandidate = {
+  source: "drive",
+  materialized: false,
+  lane: "exclusive",
+  lanes: ["exclusive", "private"],
+  drive_folder_id: "19Gt19oczQj7qc0omY4XNeGAJ_yEtS5wH",
+  folder_name: "EMs21 J Dye",
+  drive_folder_url: "https://drive.google.com/drive/folders/19Gt19oczQj7qc0omY4XNeGAJ_yEtS5wH",
+  folder_path: "MMD Exclusive Models / Exclusive VIP / Active / EMs21 J Dye",
+  folder_scope_key: "exclusive:drive:19Gt19oczQj7qc0omY4XNeGAJ_yEtS5wH",
+};
+
 const env = {
   AIRTABLE_API_KEY: "test-key",
   AIRTABLE_BASE_ID: "appTest1234567890",
   AIRTABLE_TABLE_MODELS: "Models",
+  MODEL_DRIVE_DIRECTORY: {
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (request.method === "GET" && url.pathname === "/__internal/model-drive/search") {
+        return new Response(JSON.stringify({ ok: true, count: 1, items: [driveCandidate] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (request.method === "POST" && url.pathname === "/__internal/model-drive/resolve") {
+        return new Response(JSON.stringify({ ok: true, item: driveCandidate }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: false, error: "not_found" }), { status: 404 });
+    },
+  },
 };
 
 const vipRecord = {
@@ -80,6 +110,26 @@ const pnRecord = {
     private_service_level: "PN",
   },
 };
+const driveMaterializedRecord = {
+  id: "recEms21JDye001",
+  fields: {
+    working_name: "EMs21 J Dye",
+    status: "Active",
+    sales_layer: "private",
+    visibility: "private",
+    model_tier: "Exclusive Models",
+    private_tier: "Exclusive Models",
+    private_service_level: "VIP",
+    private_work_format: "VIP + PN",
+    approved_for_private_sales: true,
+    can_work_private: true,
+    drive_folder_id: driveCandidate.drive_folder_id,
+    drive_folder_url: driveCandidate.drive_folder_url,
+    source_folder: driveCandidate.folder_path,
+    folder_scope_key: driveCandidate.folder_scope_key,
+  },
+};
+
 const rossiRecord = {
   id: "recRossi001",
   fields: {
@@ -96,15 +146,34 @@ const rossiRecord = {
 
 const originalFetch = globalThis.fetch;
 try {
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url);
+    const method = String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     if (url.pathname.endsWith("/recVipModel001")) {
       return new Response(JSON.stringify(vipRecord), { status: 200, headers: { "content-type": "application/json" } });
     }
     if (url.pathname.endsWith("/recPnModel001")) {
       return new Response(JSON.stringify(pnRecord), { status: 200, headers: { "content-type": "application/json" } });
     }
+    if (url.pathname.endsWith("/recEms21JDye001")) {
+      return new Response(JSON.stringify(driveMaterializedRecord), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (method === "POST" && url.pathname.endsWith("/Models")) {
+      const rawBody = typeof init?.body === "string" ? init.body : (input instanceof Request ? await input.clone().text() : "{}");
+      const body = JSON.parse(rawBody || "{}");
+      return new Response(JSON.stringify({
+        id: driveMaterializedRecord.id,
+        fields: { ...driveMaterializedRecord.fields, ...(body.fields || {}) },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     if (url.searchParams.has("filterByFormula")) {
+      const formula = String(url.searchParams.get("filterByFormula") || "");
+      if (formula.includes("RECORD_ID()")) {
+        return new Response(JSON.stringify({ records: [vipRecord, pnRecord] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (formula.toLowerCase().includes("ems21") || formula.includes(driveCandidate.drive_folder_id) || formula.includes(driveCandidate.folder_scope_key)) {
+        return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       return new Response(JSON.stringify({ records: [vipRecord, pnRecord] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     return new Response(JSON.stringify({ records: [rossiRecord] }), { status: 200, headers: { "content-type": "application/json" } });
@@ -148,6 +217,19 @@ try {
   assert.equal(rossiPayload.items.length, 1);
   assert.equal(rossiPayload.items[0].model_name, "EMs20 - Rossi");
   assert.deepEqual(rossiPayload.items[0].private_work_capabilities, ["vip", "pn"]);
+
+  const driveOnlySearch = new Request(
+    "https://mmdbkk.com/v1/admin/models/search?booking_visibility=private&private_work=pn&selected_access_folder=exclusive&q=EMs21",
+  );
+  const driveOnlyRecovered = await enforcePrivateModelSearchPolicy(driveOnlySearch, memberMissing.clone(), env);
+  const driveOnlyPayload = await driveOnlyRecovered.json();
+  assert.equal(driveOnlyRecovered.status, 200, "owner search must not be blocked by missing Member");
+  assert.equal(driveOnlyPayload.owner_discovery, true);
+  assert.equal(driveOnlyPayload.items.length, 1);
+  assert.equal(driveOnlyPayload.items[0].model_id, driveMaterializedRecord.id);
+  assert.equal(driveOnlyPayload.items[0].model_name, "EMs21 J Dye");
+  assert.equal(driveOnlyPayload.items[0].drive_materialized, true);
+  assert.deepEqual(driveOnlyPayload.items[0].private_work_capabilities, ["vip", "pn"]);
 
   const pnJob = new Request("https://mmdbkk.com/v1/admin/job/create", {
     method: "POST",
