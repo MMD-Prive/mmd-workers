@@ -29,7 +29,7 @@ POST /v1/model/session/current?mode=year6_direct_wish
 
 Identity authority is the signed `mmd_model_session_v1` session.
 
-Profile media are optional and remain owned by the authenticated MMD MODEL Gallery upload flow. On the same `/sigil/model/wish` screen the Model may add up to 5 update files total: photos (JPG/PNG/WEBP/HEIC/HEIF, max 10 MB each) and/or intro clips (MP4/MOV/WEBM, max 50 MB each). Photos are written as `public_gallery`; clips are written as `intro_video`. The direct Wish never stores those media IDs as Telegram/Past-Client delivery authority and submission still works when no media are selected.
+Profile media are optional and remain owned by the authenticated MMD MODEL Gallery upload flow. On the same `/sigil/model/wish` screen the Model may add up to 5 update files total: photos (JPG/PNG/WEBP/HEIC/HEIF, max 15 MB each) and/or intro clips (MP4/MOV/WEBM, max 50 MB each). Photos are written as `public_gallery`; clips are written as `intro_video`. The direct Wish never stores those media IDs as Telegram/Past-Client delivery authority and submission still works when no media are selected.
 
 Visible Q1 copy is locked:
 

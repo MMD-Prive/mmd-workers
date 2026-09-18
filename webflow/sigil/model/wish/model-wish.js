@@ -156,7 +156,7 @@
     for (const file of files) {
       const kind = fileKind(file);
       if (!kind) return 'รองรับ JPG, PNG, WEBP, HEIC, HEIF, MP4, MOV และ WEBM ครับ';
-      if (kind === 'image' && file.size > IMAGE_MAX) return 'รูปแต่ละไฟล์รองรับสูงสุด 10 MB ครับ';
+      if (kind === 'image' && file.size > IMAGE_MAX) return 'รูปแต่ละไฟล์รองรับสูงสุด 15 MB ครับ';
       if (kind === 'video' && file.size > VIDEO_MAX) return 'คลิปแต่ละไฟล์รองรับสูงสุด 50 MB ครับ';
       if (!Number.isFinite(Number(file.size)) || Number(file.size) <= 0) return 'มีไฟล์ที่อ่านขนาดไม่ได้ครับ ลองเลือกใหม่อีกครั้ง';
     }
