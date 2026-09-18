@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   normalizeModelMediaType,
   normalizeModelMediaUploadSpec,
+  parseMediaRoute,
+  recordOwnedByCanonicalModel,
 } from "./src/model-liff-worker-legacy.js";
 
 const MB = 1024 * 1024;
@@ -55,5 +57,45 @@ test("photo and clip media types stay explicit", () => {
   assert.deepEqual(
     normalizeModelMediaUploadSpec("intro_video", "image/jpeg", 5 * MB),
     { ok: false, error: "file_type_not_allowed" },
+  );
+});
+
+
+test("canonical Model ownership uses raw linked Airtable record IDs, never display text", () => {
+  const modelId = "recBKaHfxUKs8fkMV";
+  assert.equal(
+    recordOwnedByCanonicalModel({ fields: { Model: [modelId] } }, modelId),
+    true,
+  );
+  assert.equal(
+    recordOwnedByCanonicalModel({ fields: { Model: [{ id: modelId }] } }, modelId),
+    true,
+  );
+  assert.equal(
+    recordOwnedByCanonicalModel({ fields: { Model: ["Mek"] } }, modelId),
+    false,
+  );
+  assert.equal(
+    recordOwnedByCanonicalModel({ fields: { Model: [modelId, "recOther12345678"] } }, modelId),
+    false,
+  );
+  assert.equal(
+    recordOwnedByCanonicalModel({ fields: { Model: ["recOther12345678"] } }, modelId),
+    false,
+  );
+});
+
+test("media delete supports the REST-compatible bare media URL plus legacy /delete alias", () => {
+  assert.deepEqual(
+    parseMediaRoute("/v1/model/media/media_abc12345678"),
+    { mediaId: "media_abc12345678", action: "delete" },
+  );
+  assert.deepEqual(
+    parseMediaRoute("/v1/model/media/media_abc12345678/delete"),
+    { mediaId: "media_abc12345678", action: "delete" },
+  );
+  assert.deepEqual(
+    parseMediaRoute("/v1/model/media/media_abc12345678/file"),
+    { mediaId: "media_abc12345678", action: "file" },
   );
 });

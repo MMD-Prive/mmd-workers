@@ -70,6 +70,18 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
       "Model",
     );
 
+    // A previous failed smoke must never leave campaign/test media behind.
+    // Remove only our uniquely-prefixed fixtures through the same authenticated
+    // Model delete route before creating the next fixture.
+    stage = "stale_cleanup";
+    const staleRemoved = await cleanupStaleSmokeMedia(
+      delegatedWorker,
+      env,
+      url.origin,
+      cookie,
+      origin,
+    );
+
     stage = "upload";
     const fixtureBytes = decodeBase64(PNG_FIXTURE_BASE64);
     fileName = `mmd-model-media-e2e-${Date.now()}.png`;
@@ -161,6 +173,7 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
         byte_match: true,
         cleanup_deleted_record_and_object: true,
         post_cleanup_404: true,
+        stale_smoke_media_removed: staleRemoved,
       },
     }, 200);
   } catch (error) {
@@ -177,6 +190,34 @@ export async function handleModelMediaE2ESmoke(request, env = {}, actor = null, 
       cleanup_ok: cleanupOk,
     }, Number(error?.status) >= 400 && Number(error?.status) <= 599 ? Number(error.status) : 502);
   }
+}
+
+async function cleanupStaleSmokeMedia(delegatedWorker, env, baseOrigin, cookie, origin) {
+  const response = await delegatedWorker.fetch(new Request(`${baseOrigin}/v1/model/media`, {
+    method: "GET",
+    headers: { cookie, origin, accept: "application/json" },
+  }), env);
+  const body = await response.clone().json().catch(() => ({}));
+  if (!response.ok || body?.ok !== true || !Array.isArray(body?.media)) {
+    throw smokeError("stale_cleanup_list", response.status, body?.error || "media_list_failed");
+  }
+
+  const stale = body.media.filter((item) =>
+    /^mmd-model-media-e2e-\d+\.png$/.test(clean(item?.file_name)) &&
+    /^media_[A-Za-z0-9-]+$/.test(clean(item?.media_id))
+  );
+  for (const item of stale) {
+    const deleted = await cleanupMedia(
+      delegatedWorker,
+      env,
+      baseOrigin,
+      cookie,
+      origin,
+      clean(item.media_id),
+    );
+    if (!deleted) throw smokeError("stale_cleanup_delete", 502, "stale_media_cleanup_failed");
+  }
+  return stale.length;
 }
 
 async function cleanupMedia(delegatedWorker, env, baseOrigin, cookie, origin, mediaId) {

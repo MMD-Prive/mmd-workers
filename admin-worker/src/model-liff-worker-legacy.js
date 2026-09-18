@@ -371,11 +371,12 @@ async function handleMediaList(request, env) {
   const auth = await requireModelSession(request, env);
   if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
 
-  const table = mediaTable(env);
-  const formula = `FIND("${escapeFormula(auth.payload.model_record_id)}", ARRAYJOIN({Model}))`;
-  const result = await airtableList(env, table, formula, 100);
+  const result = await listOwnedMedia(env, auth.payload.model_record_id);
   if (!result.ok) return json({ ok: false, error: "media_lookup_unavailable" }, 503, request, env);
-  const media = result.records.map((record) => safeMediaRecord(record));
+  const media = result.records
+    .slice()
+    .sort((a, b) => Date.parse(clean(b?.fields?.uploaded_at)) - Date.parse(clean(a?.fields?.uploaded_at)))
+    .map((record) => safeMediaRecord(record));
   return json({ ok: true, media }, 200, request, env);
 }
 
@@ -639,33 +640,78 @@ function safeMediaRecord(record) {
 }
 
 async function findOwnedMainMedia(env, modelRecordId) {
-  const formula = `AND(FIND("${escapeFormula(modelRecordId)}",ARRAYJOIN({Model})),{asset_role}="profile_main")`;
-  const result = await airtableList(env, mediaTable(env), formula, 10);
+  const result = await listOwnedMedia(env, modelRecordId);
   if (!result.ok) return null;
-  const record = result.records.find((item) => modelMediaPolicy(item.fields || {}).self_managed);
+  const record = result.records.find(
+    (item) =>
+      normalizeWord(item?.fields?.asset_role) === "profile_main" &&
+      modelMediaPolicy(item.fields || {}).self_managed,
+  );
   if (!record) return null;
   return { media_id: firstText(record.fields || {}, ["media_id"]) };
 }
 
+export function recordOwnedByCanonicalModel(record, modelRecordId) {
+  const expected = clean(modelRecordId);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(expected)) return false;
+  const raw = Array.isArray(record?.fields?.Model) ? record.fields.Model : [];
+  const linked = raw
+    .map((value) => clean(typeof value === "string" ? value : value?.id))
+    .filter(Boolean);
+  return linked.length === 1 && linked[0] === expected;
+}
+
 async function listOwnedMedia(env, modelRecordId) {
-  const formula = `FIND("${escapeFormula(modelRecordId)}", ARRAYJOIN({Model}))`;
-  return airtableList(env, mediaTable(env), formula, 100);
+  const expected = clean(modelRecordId);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(expected)) {
+    return { ok: false, status: 400, error: "model_record_id_invalid", records: [] };
+  }
+
+  // Airtable formulas stringify linked-record fields using the linked record's
+  // primary/display value, not its rec... ID. Never authorize ownership by
+  // ARRAYJOIN({Model}). Read the raw linked IDs from the REST payload instead.
+  const result = await airtableListAll(env, mediaTable(env), { pageSize: 100, maxRecords: 2000 });
+  if (!result.ok) return result;
+  return {
+    ok: true,
+    status: 200,
+    records: result.records.filter((record) => recordOwnedByCanonicalModel(record, expected)),
+  };
 }
 
 async function findOwnedMedia(env, modelRecordId, mediaId) {
   const cleanId = clean(mediaId);
-  if (!cleanId || !/^media_[a-zA-Z0-9-]+$/.test(cleanId)) return { ok: false, status: 400, error: "media_id_invalid" };
-  const formula = `AND({media_id}="${escapeFormula(cleanId)}",FIND("${escapeFormula(modelRecordId)}",ARRAYJOIN({Model})))`;
-  const result = await airtableList(env, mediaTable(env), formula, 1);
+  if (!cleanId || !/^media_[a-zA-Z0-9-]+$/.test(cleanId)) {
+    return { ok: false, status: 400, error: "media_id_invalid" };
+  }
+
+  // media_id is safe to query server-side because it is a plain text field.
+  // Ownership is then checked against raw linked Model record IDs.
+  const result = await airtableList(env, mediaTable(env), `{media_id}="${escapeFormula(cleanId)}"`, 2);
   if (!result.ok) return { ok: false, status: 503, error: "media_lookup_unavailable" };
-  if (!result.records[0]) return { ok: false, status: 404, error: "media_not_found" };
-  return { ok: true, status: 200, record: result.records[0] };
+  if (result.records.length !== 1) {
+    return {
+      ok: false,
+      status: result.records.length > 1 ? 409 : 404,
+      error: result.records.length > 1 ? "media_registry_conflict" : "media_not_found",
+    };
+  }
+  const record = result.records[0];
+  if (!recordOwnedByCanonicalModel(record, modelRecordId)) {
+    return { ok: false, status: 404, error: "media_not_found" };
+  }
+  return { ok: true, status: 200, record };
 }
 
-function parseMediaRoute(path) {
+export function parseMediaRoute(path) {
   const prefix = `${MEDIA_PATH}/`;
   if (!path.startsWith(prefix)) return null;
   const rest = path.slice(prefix.length).split("/").filter(Boolean);
+  if (rest.length === 1) {
+    // REST-compatible DELETE /v1/model/media/:mediaId. The dispatcher still
+    // requires the HTTP method to be DELETE, so GET/POST cannot use this alias.
+    return { mediaId: decodeURIComponent(rest[0]), action: "delete" };
+  }
   if (rest.length !== 2) return null;
   const mediaId = decodeURIComponent(rest[0]);
   const action = rest[1];
@@ -803,6 +849,48 @@ async function airtableList(env, table, formula, pageSize) {
     return { ok: false, status: response.status, schemaError: response.status === 422 || /unknown field|invalid.*field/i.test(message), records: [] };
   }
   return { ok: true, status: 200, records: Array.isArray(data.records) ? data.records : [] };
+}
+
+async function airtableListAll(env, table, { formula = "", pageSize = 100, maxRecords = 2000 } = {}) {
+  const apiKey = clean(env.AIRTABLE_API_KEY);
+  const baseId = clean(env.AIRTABLE_BASE_ID);
+  if (!apiKey || !baseId || !table) return { ok: false, status: 503, records: [] };
+
+  const records = [];
+  let offset = "";
+  for (;;) {
+    const remaining = maxRecords - records.length;
+    if (remaining <= 0) {
+      return { ok: false, status: 503, error: "airtable_scan_limit_exceeded", records: [] };
+    }
+
+    const params = new URLSearchParams();
+    params.set("pageSize", String(Math.min(100, Math.max(1, pageSize), remaining)));
+    if (formula) params.set("filterByFormula", formula);
+    if (offset) params.set("offset", offset);
+
+    const response = await fetch(
+      `https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}?${params}`,
+      { headers: { authorization: `Bearer ${apiKey}` } },
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = JSON.stringify(data || {});
+      return {
+        ok: false,
+        status: response.status,
+        schemaError: response.status === 422 || /unknown field|invalid.*field/i.test(message),
+        records: [],
+      };
+    }
+
+    if (Array.isArray(data.records)) records.push(...data.records);
+    offset = clean(data.offset);
+    if (!offset) return { ok: true, status: 200, records };
+    if (records.length >= maxRecords) {
+      return { ok: false, status: 503, error: "airtable_scan_limit_exceeded", records: [] };
+    }
+  }
 }
 
 async function airtableGetRecord(env, table, recordId) {
