@@ -1,0 +1,116 @@
+name: Reprocess Existing Historical Payment Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      proof_id:
+        description: Existing historical Payment Proof ID
+        required: true
+        type: string
+      expected_amount_thb:
+        description: Expected extracted amount in THB
+        required: true
+        type: string
+      expected_payment_stage:
+        description: Expected payment stage
+        required: true
+        default: final
+        type: choice
+        options:
+          - deposit
+          - final
+          - tips
+          - full
+          - membership
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-proof-reprocess-${{ inputs.proof_id }}
+  cancel-in-progress: false
+
+jobs:
+  reprocess-existing-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORIGIN: https://www.mmdbkk.com
+      ADMIN_REPROCESS_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      PROOF_ID: ${{ inputs.proof_id }}
+      EXPECTED_AMOUNT_THB: ${{ inputs.expected_amount_thb }}
+      EXPECTED_PAYMENT_STAGE: ${{ inputs.expected_payment_stage }}
+    steps:
+      - name: Validate guarded inputs and credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_REPROCESS_CREDENTIAL"
+          echo "::add-mask::$ADMIN_REPROCESS_CREDENTIAL"
+          node -e '
+            if (!/^hist_[a-f0-9]{24}$/.test(process.env.PROOF_ID || "")) throw new Error("invalid proof_id");
+            const amount = Number(process.env.EXPECTED_AMOUNT_THB);
+            if (!Number.isFinite(amount) || amount <= 0) throw new Error("invalid expected amount");
+            if (!["deposit", "final", "tips", "full", "membership"].includes(process.env.EXPECTED_PAYMENT_STAGE || "")) throw new Error("invalid payment stage");
+          '
+
+      - name: Reprocess original evidence and assert Pending Review
+        shell: bash
+        run: |
+          set -euo pipefail
+          cookie="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          cleanup() { rm -f "$cookie" "$headers" "$body"; }
+          trap cleanup EXIT
+
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_REPROCESS_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/payments" \
+            "$ORIGIN/internal/admin/login/session")"
+          test "$login_code" = "303"
+          grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+          request_json="$(node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID}))')"
+          reprocess_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data "$request_json" \
+            "$ORIGIN/v1/admin/payments/historical-backfill/reprocess")"
+          test "$reprocess_code" = "200"
+          node -e '
+            const fs = require("node:fs");
+            const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const expectedAmount = Number(process.env.EXPECTED_AMOUNT_THB);
+            const guardrails = p.guardrails || {};
+            if (p.ok !== true || p.created !== false) throw new Error("proof was not reprocessed in place");
+            if (p.proof_id !== process.env.PROOF_ID || !p.proof_record_id) throw new Error("proof identity changed");
+            if (p.status !== "pending" || p.state !== "pending" || p.review_state !== "pending") throw new Error("proof left Pending Review");
+            if (p.money_truth_mutated !== false) throw new Error("Money Truth mutation was reported");
+            if (guardrails.may_mark_paid !== false || guardrails.may_award_points !== false || guardrails.may_extend_membership !== false || guardrails.may_create_entitlement !== false || guardrails.may_confirm_session !== false) throw new Error("guardrail contract failed");
+            if (p.evidence_sha256_verified !== true) throw new Error("evidence SHA was not verified");
+            if (p.extraction_error) throw new Error(`extractor still failed: ${p.extraction_error}`);
+            if (Math.abs(Number(p.amount_thb) - expectedAmount) > 0.009) throw new Error(`unexpected amount: ${p.amount_thb}`);
+            if (p.payment_stage !== process.env.EXPECTED_PAYMENT_STAGE) throw new Error(`unexpected payment stage: ${p.payment_stage}`);
+          ' "$body"
+
+          queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -b "$cookie" -w "%{http_code}" \
+            "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
+          test "$queue_code" = "200"
+          node -e '
+            const fs = require("node:fs");
+            const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            const item = (p.items || []).find((x) => x.proof_id === process.env.PROOF_ID);
+            if (!item) throw new Error("reprocessed proof missing from queue");
+            if (item.status !== "pending" || item.review_state !== "pending") throw new Error("queue no longer shows Pending Review");
+            if (Math.abs(Number(item.amount_thb) - Number(process.env.EXPECTED_AMOUNT_THB)) > 0.009) throw new Error("queue amount mismatch");
+          ' "$body"
+
+          echo "PASS: original private evidence reprocessed into the same Payment Proof; Pending Review preserved; no Verify/Mark Paid action called"
