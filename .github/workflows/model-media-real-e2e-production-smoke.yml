@@ -29,7 +29,14 @@ jobs:
         run: |
           set -euo pipefail
           body="$(mktemp)"
-          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS             -o "$body" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/json"             --data "{"model_record_id":"$MODEL_ID"}"             "$ORIGIN/v1/admin/model-media/e2e-smoke")"
+          printf -v payload '{"model_record_id":"%s"}' "$MODEL_ID"
+          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data-binary "$payload" \
+            "$ORIGIN/v1/admin/model-media/e2e-smoke")"
           echo "unauthenticated route=$code"
           test "$code" = "401"
           grep -q '"error":"unauthorized"' "$body"
@@ -51,7 +58,14 @@ jobs:
           test "$login_code" = "303"
           grep -q 'mmd_admin_gate_v1' "$cookie_jar"
 
-          smoke_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS             -b "$cookie_jar" -o "$smoke_body" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/json"             --data "{"model_record_id":"$MODEL_ID"}"             "$ORIGIN/v1/admin/model-media/e2e-smoke")"
+          printf -v payload '{"model_record_id":"%s"}' "$MODEL_ID"
+          smoke_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$smoke_body" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data-binary "$payload" \
+            "$ORIGIN/v1/admin/model-media/e2e-smoke")"
 
           cat "$smoke_body"
           echo
