@@ -21,13 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.MMD_SLIP_EXTRACTOR_PRODUCTION_CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       WRANGLER_SEND_METRICS: "false"
       NO_COLOR: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Validate production deploy credential
+        run: |
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "::error::MMD_SLIP_EXTRACTOR_PRODUCTION_CLOUDFLARE_API_TOKEN is not configured"
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
