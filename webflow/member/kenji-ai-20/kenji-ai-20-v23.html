@@ -1,0 +1,182 @@
+<!-- MMD_KENJI_AI20_BUILD: kenji-ai-20-v23-sigil-system-20260910 -->
+<section id="mmd-kenji20" class="mmd-k23" data-mmd-kenji23 data-build="kenji-ai-20-v23-sigil-system-20260910" data-dashboard-endpoint="/api/member/app/dashboard" data-knowledge-endpoint="/v1/internal/kenji/knowledge/published" aria-label="Kenji AI 2.0 Member Concierge">
+  <div class="k23-shell">
+    <header class="k23-topbar">
+      <a class="k23-brand" href="/my-mmd/" data-k23-safe-link aria-label="My MMD">
+        <img src="https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.png" width="40" height="40" alt="">
+        <span><small>SĪGIL SYSTEM</small><strong>KENJI · MEMBER CONCIERGE</strong></span>
+      </a>
+      <div class="k23-tools">
+        <span class="k23-live"><i aria-hidden="true"></i><span data-k23-runtime-state data-i18n="runtimeReady">MEMBER LAYER</span></span>
+        <div class="k23-langs" role="group" aria-label="Language">
+          <button type="button" data-k23-lang="th" aria-pressed="true">TH</button>
+          <button type="button" data-k23-lang="en" aria-pressed="false">EN</button>
+          <button type="button" data-k23-lang="zh" aria-pressed="false">中文</button>
+        </div>
+      </div>
+    </header>
+
+    <section class="k23-hero" aria-labelledby="k23-title">
+      <div class="k23-hero-media" aria-hidden="true">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa17210646c5858de50f062_Kenji%20Conciierge.webp" alt="" fetchpriority="high" decoding="async">
+      </div>
+      <div class="k23-hero-shade" aria-hidden="true"></div>
+      <div class="k23-hero-copy">
+        <p class="k23-kicker">MMD PRIVÉ · KENJI AI 2.0</p>
+        <h1 id="k23-title"><span>YOUR NEXT STEP,</span><em>QUIETLY HANDLED.</em></h1>
+        <p class="k23-lead" data-k23-greeting data-i18n="heroLead">บอกผมสั้น ๆ ว่าวันนี้อยากทำอะไรครับ ผมจะเช็กบริบทที่ยืนยันได้ แล้วพาไปยังขั้นตอนที่ถูกต้องโดยไม่ให้คุณต้องไล่หาหน้าเอง</p>
+        <div class="k23-hero-actions">
+          <a class="k23-btn k23-btn--gold" href="#kenji-concierge" data-i18n="askKenji">บอก Kenji ได้เลย</a>
+          <a class="k23-btn k23-btn--glass" href="/my-mmd/" data-k23-safe-link>MY MMD</a>
+        </div>
+        <p class="k23-hero-note" data-i18n="authorityNote">Kenji ช่วยแนะนำและพาไปต่อ การชำระเงิน สิทธิ์ การเปิด Private Access และการยืนยันคิว ใช้สถานะจริงจาก MMD เท่านั้น</p>
+      </div>
+      <div class="k23-hero-index" aria-hidden="true"><b>01</b><span></span><small>PRIVATE CONCIERGE</small></div>
+    </section>
+
+    <main class="k23-main">
+      <section class="k23-workspace" id="kenji-concierge" aria-label="Member concierge workspace">
+        <article class="k23-member-card" aria-labelledby="k23-member-title">
+          <div class="k23-member-media"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a4f769589377f52692a297d_Kenji%20status.webp" alt="" loading="lazy" decoding="async"></div>
+          <div class="k23-member-content">
+            <div class="k23-card-head">
+              <span><small>MEMBER SNAPSHOT</small><h2 id="k23-member-title" data-i18n="statusTitle">สถานะที่ยืนยันได้ของคุณ</h2></span>
+              <b class="k23-state" data-k23-member-state data-state="loading" data-i18n="checking">กำลังตรวจ</b>
+            </div>
+            <div class="k23-person"><span data-i18n="memberLabel">สมาชิก</span><strong data-k23-name class="is-loading">—</strong></div>
+            <dl class="k23-facts" aria-live="polite">
+              <div><dt>TIER</dt><dd data-k23-tier class="is-loading">—</dd></div>
+              <div><dt>STATUS</dt><dd data-k23-status class="is-loading">—</dd></div>
+              <div><dt>POINTS</dt><dd data-k23-points class="is-loading">—</dd></div>
+              <div><dt>ACTUAL ACCESS</dt><dd data-k23-access class="is-loading">—</dd></div>
+            </dl>
+            <p class="k23-data-note" data-k23-data-note data-i18n="statusLoading">กำลังอ่านข้อมูลจากบัญชีสมาชิกที่ยืนยันแล้ว โดยจะไม่เติมค่าที่ระบบยังยืนยันไม่ได้</p>
+            <a class="k23-text-link" href="/my-mmd/profile" data-k23-safe-link><span data-i18n="openProfile">เปิดข้อมูลสมาชิกใน My MMD</span><b aria-hidden="true">↗</b></a>
+          </div>
+        </article>
+
+        <article class="k23-chat" aria-labelledby="k23-chat-title">
+          <div class="k23-chat-head">
+            <div><small>KENJI CONCIERGE</small><h2 id="k23-chat-title" data-i18n="chatTitle">วันนี้อยากให้ผมช่วยเรื่องไหนครับ</h2></div>
+            <span class="k23-knowledge-state" data-k23-knowledge-state data-i18n="knowledgeChecking">CHECKING KNOWLEDGE</span>
+          </div>
+          <div class="k23-reply" aria-live="polite">
+            <span class="k23-avatar" aria-hidden="true">K</span>
+            <p data-k23-reply data-i18n="chatIntro">จองบริการ การชำระเงิน เช็กสมาชิก แต้ม ประวัติ หรือ Male Massage บอกผมได้เลยครับ ผมจะให้หนึ่งขั้นตอนถัดไปที่ชัดเจน</p>
+          </div>
+          <div class="k23-chiprail" aria-label="Quick concierge requests">
+            <button type="button" data-k23-intent="booking" data-i18n="chipBooking">จอง MMD</button>
+            <button type="button" data-k23-intent="private_booking" data-i18n="chipPrivate">Private Request</button>
+            <button type="button" data-k23-intent="proof" data-i18n="chipProof">การชำระเงิน</button>
+            <button type="button" data-k23-intent="membership" data-i18n="chipMembership">สมาชิก / ต่ออายุ</button>
+            <button type="button" data-k23-intent="points" data-i18n="chipPoints">เช็กแต้ม</button>
+            <button type="button" data-k23-intent="history" data-i18n="chipHistory">ประวัติ / สถานะ</button>
+            <button type="button" data-k23-intent="mms" data-i18n="chipMms">Male Massage</button>
+            <button type="button" data-k23-intent="recovery" data-i18n="chipRecovery">Private Care</button>
+          </div>
+          <form class="k23-composer" data-k23-form>
+            <label class="k23-sr" for="k23-input" data-i18n="inputLabel">พิมพ์สิ่งที่ต้องการให้ Kenji ช่วย</label>
+            <textarea id="k23-input" data-k23-input rows="1" maxlength="420" autocomplete="off" data-i18n-placeholder="inputPlaceholder" placeholder="บอกผมสั้น ๆ ได้เลยครับ…"></textarea>
+            <button type="submit" data-k23-send><span data-i18n="send">ส่ง</span><b aria-hidden="true">↗</b></button>
+          </form>
+          <a class="k23-next" href="#" data-k23-next hidden><span data-k23-next-label></span><b aria-hidden="true">↗</b></a>
+          <p class="k23-chat-foot" data-i18n="chatFoot">ผมจะไม่ยืนยันยอด สิทธิ์ คิว หรือข้อมูลที่ยังไม่ผ่านระบบจริงจากข้อความเพียงอย่างเดียวครับ</p>
+        </article>
+      </section>
+
+      <section class="k23-statement" aria-labelledby="k23-statement-title">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a825481b13e7b41163a7625_KENJI_RI%20H_MENU.webp" alt="" loading="lazy" decoding="async">
+        <div class="k23-statement-shade" aria-hidden="true"></div>
+        <article>
+          <p class="k23-kicker">ONE CONCIERGE · MANY DOORS</p>
+          <h2 id="k23-statement-title" data-i18n="statementTitle">คุณไม่จำเป็นต้องรู้ว่าเรื่องนี้อยู่ระบบไหน</h2>
+          <p data-i18n="statementCopy">บอกสิ่งที่ต้องการมาก่อนครับ ผมจะแยกว่าเป็น Booking, Membership, Payment, My MMD, MMS หรือ Private Care แล้วพาไปยังเจ้าของข้อมูลที่ถูกต้อง</p>
+        </article>
+      </section>
+
+      <section class="k23-paths" aria-labelledby="k23-paths-title">
+        <div class="k23-section-head">
+          <div><p class="k23-kicker">A QUIETER WAY THROUGH MMD</p><h2 id="k23-paths-title" data-i18n="pathsTitle">เรื่องที่ใช้บ่อย ไปต่อได้โดยไม่ต้องจำทาง</h2></div>
+          <p data-i18n="pathsCopy">แต่ละทางพาคุณไปยังหน้าที่รับผิดชอบข้อมูลนั้นโดยตรง Kenji ไม่สร้างสถานะใหม่แทนระบบครับ</p>
+        </div>
+        <div class="k23-path-grid">
+          <a class="k23-path" href="/my-mmd/profile" data-k23-safe-link>
+            <div class="k23-path-media"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a72e43d9ea88b919620ed07_Kenji%20-%20Login.webp" alt="" loading="lazy"></div>
+            <div class="k23-path-copy"><small>01 · VERIFIED SELF</small><h3 data-i18n="pathProfileTitle">บัญชีและข้อมูลของคุณ</h3><p data-i18n="pathProfileCopy">เช็กตัวตนและข้อมูลสมาชิกจาก My MMD</p><b aria-hidden="true">↗</b></div>
+          </a>
+          <a class="k23-path" href="/my-mmd/membership" data-k23-safe-link>
+            <div class="k23-path-media k23-path-media--portrait"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a571c5661f12e9fdd42d428_Kenji%20Renewal%2004.webp" alt="" loading="lazy"></div>
+            <div class="k23-path-copy"><small>02 · MEMBERSHIP</small><h3 data-i18n="pathMemberTitle">สมาชิกและการต่ออายุ</h3><p data-i18n="pathMemberCopy">ดูสถานะและทางต่ออายุที่ตรงกับบัญชีจริง</p><b aria-hidden="true">↗</b></div>
+          </a>
+          <a class="k23-path" href="/my-mmd/history" data-k23-safe-link>
+            <div class="k23-path-media k23-path-media--portrait"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a56f9517de7ea880dcda72b_Kenji%20Know033.webp" alt="" loading="lazy"></div>
+            <div class="k23-path-copy"><small>03 · VERIFIED HISTORY</small><h3 data-i18n="pathHistoryTitle">ประวัติและสถานะจริง</h3><p data-i18n="pathHistoryCopy">ย้อนดูสิ่งที่ระบบยืนยันได้จากบัญชีของคุณ</p><b aria-hidden="true">↗</b></div>
+          </a>
+          <a class="k23-path" href="/member/payments" data-k23-safe-link>
+            <div class="k23-path-media k23-path-media--portrait">
+              <picture>
+                <source media="(max-width: 767px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a53fc678a5fd1103021870d_Kenji%20Session04.webp">
+                <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a53f69acbeb7e4ee69f9a9e_Kenji%20Session04.webp" alt="" loading="lazy">
+              </picture>
+            </div>
+            <div class="k23-path-copy"><small>04 · SECURE HANDOFF</small><h3 data-i18n="pathProofTitle">การชำระเงินและหลักฐาน</h3><p data-i18n="pathProofCopy">ดูรายการเดิมและไปต่อจาก payment ref เดิมโดยไม่สร้างหรือส่งหลักฐานซ้ำ</p><b aria-hidden="true">↗</b></div>
+          </a>
+        </div>
+      </section>
+
+      <section class="k23-knowledge" aria-labelledby="k23-knowledge-title">
+        <div class="k23-knowledge-media"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a56f951825c9b71c0900b98_Kenji%20Know05.webp" alt="" loading="lazy"></div>
+        <article>
+          <p class="k23-kicker">PUBLISHED KNOWLEDGE · SAFE ROUTING</p>
+          <h2 id="k23-knowledge-title" data-i18n="knowledgeTitle">ผมตอบจากสิ่งที่ MMD อนุมัติให้ใช้</h2>
+          <p data-i18n="knowledgeCopy">ถ้าข้อมูลที่ต้องใช้ยังไม่ชัด ผมจะไม่เดา ไม่ยืนยันแทนระบบ และจะพาคุณไปยังหน้าที่ตรวจสถานะจริงได้แทนครับ</p>
+          <div class="k23-rule-list">
+            <span><b>01</b><i data-i18n="rule1">Payment proof คือหลักฐาน ไม่ใช่การยืนยันยอด</i></span>
+            <span><b>02</b><i data-i18n="rule2">Membership Level และ Actual Access เป็นคนละสถานะ</i></span>
+            <span><b>03</b><i data-i18n="rule3">คิวและ Availability ต้องรอข้อมูลจริงยืนยัน</i></span>
+          </div>
+        </article>
+      </section>
+
+      <section class="k23-continuity" aria-labelledby="k23-continuity-title">
+        <div class="k23-continuity-copy">
+          <p class="k23-kicker">CONTINUITY, NOT A NEW START</p>
+          <h2 id="k23-continuity-title" data-i18n="continuityTitle">กลับมาเมื่อไหร่ ผมพาไปต่อจากข้อมูลที่ยืนยันได้</h2>
+          <p data-i18n="continuityCopy">สมาชิกเก่า การต่ออายุ CARE BACK หรือเรื่องหลังการใช้บริการ ไม่ควรบังคับให้คุณเริ่มเล่าใหม่ทั้งหมดครับ ประวัติที่เปิดเผยได้จะอยู่ใน My MMD และเรื่องละเอียดอ่อนใช้ Private Care</p>
+          <div class="k23-continuity-actions">
+            <a class="k23-text-link" href="/my-mmd/history" data-k23-safe-link><span data-i18n="openHistory">ดูประวัติใน My MMD</span><b>↗</b></a>
+            <a class="k23-text-link" href="/sigil/recovery" data-k23-safe-link><span data-i18n="openCare">เปิด Private Care</span><b>↗</b></a>
+          </div>
+        </div>
+        <div class="k23-continuity-portrait"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6d297a0ba7bff301b0518d_ChatGPT%20Image%20Aug%201%2C%202026%2C%2001_56_15%20AM.webp" alt="" loading="lazy"></div>
+      </section>
+
+      <section class="k23-careback" aria-labelledby="k23-careback-title">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6d2979803ce40d0b340f51_Kenji%20-%206%20YEARS%20CARE%20BACK%20Desk.webp" alt="" loading="lazy">
+        <div class="k23-careback-shade" aria-hidden="true"></div>
+        <article>
+          <p class="k23-kicker">CARE, AFTER THE FIRST REQUEST</p>
+          <h2 id="k23-careback-title" data-i18n="careTitle">บางเรื่องไม่จบตอนกดส่งครับ</h2>
+          <p data-i18n="careCopy">Kenji ช่วยพากลับไปเช็กสถานะ ต่ออายุ ดู Points หรือส่งเรื่องให้ MMD ดูแลต่อ โดยไม่เปลี่ยนหลักฐานให้กลายเป็นการอนุมัติเอง</p>
+          <a class="k23-btn k23-btn--glass" href="/my-mmd/" data-k23-safe-link data-i18n="openMyMmd">เปิด My MMD</a>
+        </article>
+      </section>
+
+      <section class="k23-safety" aria-labelledby="k23-safety-title">
+        <div class="k23-section-head k23-section-head--compact"><div><p class="k23-kicker">WHAT KENJI WILL NOT GUESS</p><h2 id="k23-safety-title" data-i18n="safetyTitle">เส้นแบ่งที่ทำให้การดูแลปลอดภัยขึ้น</h2></div></div>
+        <div class="k23-accordions">
+          <details><summary><span><small>PAYMENT</small><b data-i18n="safePaymentTitle">สลิปไม่เท่ากับยอดที่ยืนยันแล้ว</b></span><i>+</i></summary><p data-i18n="safePaymentCopy">หลักฐานจะถูกส่งให้ระบบที่รับผิดชอบตรวจยอดและจับคู่รายการก่อน Kenji ไม่ mark paid และไม่เปิดสิทธิ์จากสลิปเอง</p></details>
+          <details><summary><span><small>MEMBERSHIP / ACCESS</small><b data-i18n="safeAccessTitle">Tier ไม่ได้ใช้เดา Actual Access</b></span><i>+</i></summary><p data-i18n="safeAccessCopy">Kenji แสดงสิ่งที่บัญชียืนยันได้ แต่สิทธิ์จริงและ Private Access ใช้ backend resolver และการพิจารณาที่เกี่ยวข้อง</p></details>
+          <details><summary><span><small>BOOKING</small><b data-i18n="safeBookingTitle">คำขอไม่ใช่คิวคอนเฟิร์ม</b></span><i>+</i></summary><p data-i18n="safeBookingCopy">การส่ง request หรือมัดจำเป็นคนละขั้นกับการยืนยันคิว Availability และสถานะคิวต้องมาจากระบบจริง</p></details>
+          <details><summary><span><small>PRIVACY</small><b data-i18n="safePrivacyTitle">ดูเฉพาะข้อมูลของบัญชีที่ยืนยันแล้ว</b></span><i>+</i></summary><p data-i18n="safePrivacyCopy">Kenji ไม่เปิดเผยข้อมูลลูกค้าคนอื่น บันทึกภายใน หรือข้อมูลส่วนตัวของ Model ที่ไม่ได้รับอนุญาต</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="k23-footer">
+      <span>SĪGIL SYSTEM · KENJI AI 2.0</span>
+      <p data-i18n="footer">Member Concierge ช่วยอธิบาย จัดทาง และส่งต่อเท่านั้น ข้อมูลสำคัญยึด Worker-backed truth และการยืนยันของ MMD</p>
+    </footer>
+  </div>
+  <div class="k23-toast" data-k23-toast role="status" aria-live="polite"></div>
+</section>

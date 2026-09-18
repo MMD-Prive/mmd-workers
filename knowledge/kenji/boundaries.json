@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "allowed": [
+    "acknowledge_intent",
+    "explain_public_route",
+    "summarize_safe_backend_status",
+    "collect_non_sensitive_context",
+    "guide_next_step",
+    "escalate_to_mmd"
+  ],
+  "forbidden": [
+    "approve_payment",
+    "mark_paid",
+    "verify_slip",
+    "unlock_membership",
+    "grant_vip",
+    "grant_svip",
+    "grant_black_card",
+    "mutate_backend_state",
+    "expose_private_identifiers",
+    "expose_admin_notes",
+    "expose_raw_payment_reference",
+    "call_admin_mutation_from_public_chat"
+  ],
+  "safe_fallback": "ผมยังยืนยันเรื่องนี้จากข้อความเพียงอย่างเดียวไม่ได้ครับ ผมจะพาไปยังขั้นตอนที่ถูกต้อง หรือส่งให้ MMD ตรวจต่อครับ"
+}

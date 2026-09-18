@@ -7,12 +7,18 @@ import {
   intakeLineClientUpsert,
   listRecordsFromAirtable,
   listSessionsFromAirtable,
-  patchClientMemberstackId,
+  patchClientMemberId,
   previewLineClientUpsert,
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
-import { buildAbsoluteUrl, generateInviteLink, parseInviteIdentity, verifyInviteToken } from "./lib/invite";
+import {
+  buildAbsoluteUrl,
+  generateInviteLink,
+  getConfirmSecret,
+  parseInviteIdentity,
+  verifyInviteToken,
+} from "./lib/invite";
 import { badRequest, internalError, json, makeMeta, redirect, unauthorized } from "./lib/response";
 import { seedLineInboxRecords, seedLogs, seedSessions } from "./lib/seed";
 import type {
@@ -111,6 +117,8 @@ const INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS = new Set([
   "/v1/admin/clients/lineage-lookup",
   "/v1/admin/clients/recent",
   "/v1/admin/models/search",
+  "/v1/admin/models/activation-candidates",
+  "/v1/admin/model/activation/issue",
   "/v1/admin/job/draft",
   "/v1/admin/create-job",
   "/v1/admin/create-session",
@@ -126,7 +134,6 @@ const PUBLIC = {
 } as const;
 
 const ADMIN_GATE_SESSION_KEY = "mmd_admin_gate_v1";
-const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 const ADMIN_GATE_DEFAULT_NEXT = SIGIL_ADMIN.dashboard;
 const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdbkk.com",
@@ -134,15 +141,13 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
   "https://mmdprive.com",
 ]);
 const MEMBER_DASHBOARD_ALIAS_PATH = "/member/dashboard";
-const MEMBER_MEMBERSHIP_ALIAS_PATH = "/member/membership";
+const MEMBER_MEMBERSHIP_ALIAS_PATH = "/sigil/member/membership";
 const MEMBER_ROUTE_BUILD = "member-route-recovery-20260615a";
 
 type AdminGateSession = {
   ok: true;
   at: number;
   baseUrl: string;
-  bearer?: string;
-  confirmKey?: string;
 };
 
 function readSeedRecords(): MigrationRecord[] {
@@ -349,7 +354,7 @@ type InvitePayload = {
   line_user_id?: string;
   telegram_username?: string;
   customer_telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   email?: string;
   gmail?: string;
   invite_page?: string;
@@ -391,7 +396,7 @@ function toInviteIdentityPayload(payload: InvitePayload) {
     folder_name: payload.folder_name || payload.model_name,
     line_user_id: payload.line_user_id,
     telegram_username: payload.telegram_username || payload.customer_telegram_username,
-    memberstack_id: payload.memberstack_id,
+    member_id: payload.member_id,
     email: payload.email,
     gmail: payload.gmail,
   };
@@ -545,7 +550,7 @@ type PublicRenewalStatusRequest = {
   display_name?: string;
   line_user_id?: string;
   line_display_name?: string;
-  memberstack_id?: string;
+  member_id?: string;
   include_context?: boolean;
   source_page?: string;
   search_priority?: string;
@@ -557,7 +562,6 @@ type PublicRenewalStatusResponse = {
     found: boolean;
     email: string;
     member_id: string;
-    memberstack_id: string;
     display_name: string;
     membership_status: string;
     current_tier: string;
@@ -651,7 +655,7 @@ async function buildRenewalStatusProjection(
     email?: string;
     display_name?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     current_tier?: string;
     target_tier?: string;
     membership_status?: string;
@@ -661,19 +665,20 @@ async function buildRenewalStatusProjection(
 ): Promise<{ projection: RenewalStatusProjection; context: ImmigrationLinkContext }> {
   const context = await buildImmigrationLinkContext(env, {
     line_user_id: input.line_user_id,
-    memberstack_id: input.memberstack_id,
+    member_id: input.member_id,
     email: input.email,
     display_name: input.display_name,
     current_tier: input.current_tier,
     target_tier: input.target_tier,
     membership_status: input.membership_status,
+    expire_at: input.expire_at,
   });
 
   const totalSpendTHB = sumTotalSpendFromContext(context);
   const totalSessions = Array.isArray(context.service_history) ? context.service_history.length : 0;
   const lineContextFound = Array.isArray(context.line_history) && context.line_history.length > 0;
-  const memberstackId = toStr(context.membership?.memberstack_id || input.memberstack_id);
-  const found = Boolean(memberstackId || totalSessions > 0 || lineContextFound);
+  const memberId = toStr(context.membership?.member_id || input.member_id);
+  const found = Boolean(memberId || totalSessions > 0 || lineContextFound);
   const membershipExpireAt = toStr(context.membership?.expire_at || input.expire_at);
   const membershipStatus = deriveMembershipStatus({
     current_status_latest_session_status: context.current_status?.latest_session_status || "",
@@ -696,8 +701,7 @@ async function buildRenewalStatusProjection(
     projection: {
       found,
       email: toStr(input.email).toLowerCase(),
-      member_id: memberstackId,
-      memberstack_id: memberstackId,
+      member_id: memberId,
       display_name: toStr(input.display_name),
       membership_status: found ? membershipStatus : "not_found",
       current_tier: currentTier,
@@ -758,7 +762,7 @@ async function handlePublicRenewalStatus(request: Request, env: Env): Promise<Re
     email,
     display_name: displayName,
     line_user_id: toStr(body.line_user_id),
-    memberstack_id: toStr(body.memberstack_id),
+    member_id: toStr(body.member_id),
     intent_hint: toStr(body.search_priority) === "upgrade" ? "upgrade" : "renewal",
   });
 
@@ -784,7 +788,6 @@ type PublicRenewalBody = {
   telegram_username?: string;
   member_ref?: string;
   member_id?: string;
-  memberstack_id?: string;
   current_tier_hint?: string;
   target_tier?: string;
   package?: string;
@@ -834,7 +837,7 @@ function buildPublicRenewalPayload(body: PublicRenewalBody): ImmigrationIntakeRe
     source_channel: sourceChannel,
     intent,
     identity: {
-      member_id: toStr(body.member_id || body.memberstack_id || body.member_ref) || undefined,
+      member_id: toStr(body.member_id || body.member_ref) || undefined,
       line_id: lineId || undefined,
       line_user_id: lineUserId || undefined,
       full_name: displayName || undefined,
@@ -882,7 +885,7 @@ function buildRenewalLineIntakePayload(
 
   return {
     immigration_id: immigrationId,
-    memberstack_id: toStr(body.memberstack_id || body.member_id || body.member_ref),
+    member_id: toStr(body.member_id || body.member_ref),
     source_channel: payload.source_channel,
     intake_source: payload.source_channel === "renewal" ? "renewal_web" : "line",
     display_name: toStr(payload.identity.full_name),
@@ -1234,7 +1237,7 @@ async function promoteLineClientAfterIntake(
     source_channel: "line",
     intent: "contact_import",
     identity: {
-      member_id: toStr(payload.memberstack_id),
+      member_id: toStr(payload.member_id),
       line_id: toStr(payload.line_id || payload.identity?.line_id),
       line_user_id: toStr(payload.line_user_id || payload.identity?.line_user_id),
       full_name: toStr(payload.display_name || payload.identity?.display_name || payload.nickname),
@@ -1317,7 +1320,7 @@ async function promoteLineClientAfterIntake(
 
   const promotedMemberId = toStr(responseJson?.data?.member_id);
   if (promotedMemberId && intakeResult.client.airtable_record_id) {
-    const patchedClient = await patchClientMemberstackId(
+    const patchedClient = await patchClientMemberId(
       env,
       intakeResult.client.airtable_record_id,
       promotedMemberId,
@@ -1357,7 +1360,7 @@ async function createLineLinksAfterPromotion(
     display_name: toStr(payload.display_name || payload.identity?.display_name || payload.nickname),
     email: toStr(payload.member_email || payload.email || payload.identity?.member_email || payload.identity?.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id || payload.identity?.line_user_id),
-    memberstack_id: toStr(promotion.member_id),
+    member_id: toStr(promotion.member_id),
     model_name: toStr(payload.model_name),
     model_record_id: toStr(payload.model_record_id),
     expires_in_hours: Number(payload.expires_in_hours || 24 * 7),
@@ -1783,7 +1786,7 @@ async function buildLinksBundle(
     display_name?: string;
     email?: string;
     line_user_id?: string;
-    memberstack_id?: string;
+    member_id?: string;
     model_name?: string;
     model_record_id?: string;
     rules_url?: string;
@@ -1813,7 +1816,7 @@ async function buildLinksBundle(
     nickname: displayName,
     email: toStr(payload.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
   });
 
   const modelIdentity = parseInviteIdentity({
@@ -1843,7 +1846,7 @@ async function buildLinksBundle(
     mmd_client_name: customerIdentity.mmd_client_name,
     email: toStr(payload.email).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     invite_page: toStr(payload.customer_onboarding_path) || "/sigil/onboarding",
     expires_in_hours: expiresInHours,
     role: "customer",
@@ -1890,7 +1893,7 @@ async function buildLinksBundle(
   const context = await buildImmigrationLinkContext(env, {
     immigration_id: immigrationId,
     line_user_id: toStr(payload.line_user_id),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     email: toStr(payload.email).toLowerCase(),
     display_name: displayName,
     membership_status: toStr(payload.membership_status),
@@ -1934,7 +1937,7 @@ async function handleCreateImmigrationLinks(request: Request, env: Env): Promise
     immigration_id: data.immigration_id,
     display_name: payload.display_name,
     line_user_id: payload.line_user_id,
-    memberstack_id: payload.memberstack_id,
+    member_id: payload.member_id,
     customer_url: data.customer_url,
     model_url: data.model_url,
     customer_rules_url: data.customer_rules_url,
@@ -2052,7 +2055,7 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
     display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
     email: toStr(invitePayload.email || invitePayload.gmail).toLowerCase(),
     line_user_id: toStr(invitePayload.line_user_id),
-    memberstack_id: toStr(invitePayload.memberstack_id),
+    member_id: toStr(invitePayload.member_id),
     model_name: toStr(invitePayload.model_name),
     model_record_id: toStr(invitePayload.model_record_id),
     rules_url: toStr(invitePayload.rules_url),
@@ -2067,10 +2070,17 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
   });
 
   if (upstreamUrl) {
+      const serviceToken = toStr(env.AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS);
+      if (!serviceToken) {
+        return badRequest("create-links service auth is not configured", meta, {
+          field: "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+        });
+      }
       const upstream = await fetch(upstreamUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Internal-Token": serviceToken,
         },
         body: JSON.stringify(upstreamPayload),
       });
@@ -2101,7 +2111,7 @@ async function handleCreateLinks(request: Request, env: Env): Promise<Response> 
           immigration_id: linkBundle.immigration_id,
           display_name: toStr(invitePayload.client_name || invitePayload.mmd_client_name),
           line_user_id: toStr(invitePayload.line_user_id),
-          memberstack_id: toStr(invitePayload.memberstack_id),
+          member_id: toStr(invitePayload.member_id),
           customer_url: linkBundle.customer_url,
           model_url: linkBundle.model_url,
           customer_rules_url: linkBundle.customer_rules_url,
@@ -2239,7 +2249,7 @@ async function handleCreateInvite(request: Request, env: Env): Promise<Response>
     email: toStr(payload.email || payload.gmail).toLowerCase(),
     line_user_id: toStr(payload.line_user_id),
     telegram_username: toStr(payload.telegram_username || payload.customer_telegram_username),
-    memberstack_id: toStr(payload.memberstack_id),
+    member_id: toStr(payload.member_id),
     invite_page: toStr(payload.invite_page),
     expires_in_hours: Number(payload.expires_in_hours || 24 * 7),
     role,
@@ -2271,7 +2281,7 @@ async function handleResolveInvite(request: Request, env: Env): Promise<Response
   const meta = makeMeta(request);
   try {
     const token = requiredString(new URL(request.url).searchParams.get("t"), "t");
-    const invite = await verifyInviteToken(token, String(env.CONFIRM_KEY || env.INTERNAL_TOKEN || ""));
+    const invite = await verifyInviteToken(token, getConfirmSecret(env));
     const prefill: InvitePrefill = {
       username: invite.username,
       nickname: invite.nickname,
@@ -2281,7 +2291,7 @@ async function handleResolveInvite(request: Request, env: Env): Promise<Response
       email: invite.email || "",
       line_user_id: invite.line_user_id || "",
       telegram_username: invite.telegram_username || "",
-      memberstack_id: invite.memberstack_id || "",
+      member_id: invite.member_id || "",
       model_name: invite.model_name || "",
       model_record_id: invite.model_record_id || "",
     };
@@ -2366,20 +2376,6 @@ function isSessionsRoute(pathname: string): boolean {
   return pathname === CONTROL_ROOM.sessions || pathname === CONTROL_ROOM.sessionRefresh;
 }
 
-function parseCookieMap(request: Request): Map<string, string> {
-  const raw = request.headers.get("cookie") || "";
-  const map = new Map<string, string>();
-
-  for (const part of raw.split(";")) {
-    const [name, ...rest] = part.split("=");
-    const key = name.trim();
-    if (!key) continue;
-    map.set(key, rest.join("=").trim());
-  }
-
-  return map;
-}
-
 function isProtectedBrowserRoute(pathname: string): boolean {
   // This worker only gates the immigration control-room surface, not the separate admin console.
   if (pathname === "/internal/admin/console" || pathname.startsWith("/internal/admin/console/")) {
@@ -2445,22 +2441,9 @@ function makeRequestWithPath(request: Request, pathname: string): Request {
 function makeLoginRedirect(request: Request, pathname: string): Response {
   const url = new URL(request.url);
   const next = pathname + url.search;
-  const loginUrl = new URL(SIGIL_ADMIN.login, url.origin);
-  loginUrl.searchParams.set("next", normalizeSigilAdminNextPath(next));
+  const loginUrl = new URL(CONTROL_ROOM.login, "https://mmdbkk.com");
+  loginUrl.searchParams.set("next", normalizeAdminNextPath(next));
   return redirect(loginUrl.toString(), 302);
-}
-
-function encodeGateSession(session: AdminGateSession): string {
-  return btoa(JSON.stringify(session));
-}
-
-function decodeGateSession(value: string): AdminGateSession | null {
-  try {
-    const parsed = JSON.parse(atob(value)) as AdminGateSession;
-    return parsed && parsed.ok === true ? parsed : null;
-  } catch {
-    return null;
-  }
 }
 
 function normalizeAdminBaseUrl(value: unknown, request: Request): string {
@@ -2530,19 +2513,6 @@ async function verifyAdminAuthority(
   return false;
 }
 
-function makeGateSessionCookie(request: Request, session: AdminGateSession): string {
-  const parts = [
-    `${ADMIN_GATE_SESSION_KEY}=${encodeURIComponent(encodeGateSession(session))}`,
-    "Path=/",
-    "HttpOnly",
-    "Secure",
-    "SameSite=Lax",
-    `Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}`,
-  ];
-
-  return parts.join("; ");
-}
-
 function clearGateSessionCookie(request: Request): string {
   const parts = [
     `${ADMIN_GATE_SESSION_KEY}=`,
@@ -2594,26 +2564,6 @@ function normalizeAdminNextPath(value: unknown): string {
   } catch {
     return CONTROL_ROOM.root;
   }
-}
-
-function readGateSession(request: Request): AdminGateSession | null {
-  const cookieValue = parseCookieMap(request).get(ADMIN_GATE_SESSION_KEY);
-  if (!cookieValue) return null;
-  return decodeGateSession(decodeURIComponent(cookieValue));
-}
-
-function isGateSessionValid(session: AdminGateSession | null): session is AdminGateSession {
-  if (!session || session.ok !== true) return false;
-  if (!session.baseUrl || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.baseUrl)) return false;
-  if (!session.bearer && !session.confirmKey) return false;
-  if (!Number.isFinite(session.at)) return false;
-  if (Date.now() - session.at > ADMIN_GATE_TTL_MS) return false;
-  return true;
-}
-
-function getValidatedGateSession(request: Request): AdminGateSession | null {
-  const session = readGateSession(request);
-  return isGateSessionValid(session) ? session : null;
 }
 
 function escapeHtml(value: string): string {
@@ -2787,7 +2737,7 @@ function renderMemberMembershipPage(request: Request): Response {
           ${packages.map(([name, line]) => `<article class="member-packages__card"><div><span>Member option</span><strong>${escapeHtml(name)}</strong></div><p>${escapeHtml(line)}</p><div class="member-packages__actions"><a class="member-packages__btn primary" href="${escapeHtml(paymentHref)}">Select ${escapeHtml(name)}</a></div></article>`).join("")}
         </section>
         <section class="member-packages__note" aria-label="Route lock">
-          <p><strong>Route lock:</strong> /member/membership stays in the member layer. /pay/membership remains the separate payment page.</p>
+          <p><strong>Route lock:</strong> /sigil/member/membership is the canonical member gate. /pay/membership remains the separate payment page.</p>
           <a class="member-packages__btn" href="${escapeHtml(dashboardHref)}">Back to Status Hub</a>
         </section>
       </div>
@@ -3047,7 +2997,10 @@ function renderAdminLoginPage(request: Request): Response {
           void session;
         }
 
+        const lookupInput=document.getElementById("client_lookup_query"),lookupButton=document.getElementById("client_lookup_search"),lookupResults=document.getElementById("client_lookup_results"),selectedClientBox=document.getElementById("selected_client");let selectedClient=null;const escLookup=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));function clientLabel(c){const r=String(c.remembered_name||"").trim(),n=String(c.canonical_name||"").trim();return r&&n&&r.toLowerCase()!==n.toLowerCase()?r+" · "+n:r||n||c.client_name||"Unknown client"}function selectClient(c){selectedClient=c;document.getElementById("display_name").value=c.client_name||c.remembered_name||c.canonical_name||"";document.getElementById("nickname").value=c.username||c.line_display_name||"";document.getElementById("line_user_id").value=c.line_user_id||"";document.getElementById("line_id").value=c.line_display_name||"";document.getElementById("email").value=c.member_email||"";document.getElementById("phone").value=c.phone||"";document.getElementById("current_tier").value=c.tier||c.package_code||"";selectedClientBox.innerHTML="<strong>เลือกแล้ว: "+escLookup(clientLabel(c))+"</strong><small>"+escLookup([c.matched_on?"matched by "+c.matched_on:"",c.membership_status||"",c.package_code||""].filter(Boolean).join(" · ")||"Canonical client lineage selected")+"</small>";selectedClientBox.classList.add("is-visible")}function renderLookup(xs){if(!xs.length){lookupResults.innerHTML='<p class="lookup-empty">ไม่พบลูกค้าที่ตรงกัน — ให้ไปสร้าง/จับคู่ที่ Client Intake ก่อน ไม่ควรสร้าง Job ด้วยชื่อใหม่ลอย ๆ</p>';return}lookupResults.innerHTML=xs.map((c,i)=>{const m=[c.matched_on,c.membership_status,c.package_code,c.confidence?c.confidence+"% confidence":""].filter(Boolean).map(x=>"<span>"+escLookup(x)+"</span>").join(""),d=[c.member_email,c.phone,c.line_display_name,c.customer_telegram_username].filter(Boolean).join(" · ");return '<button type="button" class="lookup-card" data-client-index="'+i+'"><strong>'+escLookup(clientLabel(c))+'</strong><small>'+escLookup(d||"Canonical record")+'</small><div class="lookup-meta">'+m+"</div></button>"}).join("");lookupResults.querySelectorAll("[data-client-index]").forEach(b=>b.addEventListener("click",()=>selectClient(xs[Number(b.dataset.clientIndex)])))}async function lookupClient(){const q=lookupInput.value.trim();if(!q){lookupResults.innerHTML='<p class="lookup-empty">พิมพ์ข้อมูลที่มีของลูกค้าก่อนครับ</p>';return}lookupButton.disabled=true;lookupButton.textContent="Searching…";lookupResults.innerHTML='<p class="lookup-empty">กำลังค้นจาก canonical client lineage…</p>';try{const h=window.__MMD_ADMIN_GATE__?window.__MMD_ADMIN_GATE__.buildHeaders({"Content-Type":"application/json"}):new Headers({"Content-Type":"application/json"}),r=await fetch("/v1/admin/clients/lineage-lookup",{method:"POST",credentials:"same-origin",headers:h,body:JSON.stringify({query:q})}),d=await r.json().catch(()=>null);if(!r.ok||!d||d.ok===false)throw Error((d&&(d.error||d.message))||"ค้นหาลูกค้าไม่สำเร็จ");renderLookup(Array.isArray(d.records)?d.records:[])}catch(e){lookupResults.innerHTML='<p class="lookup-empty">ค้นหาไม่ได้ตอนนี้: '+escLookup(e&&e.message?e.message:e)+"</p>"}finally{lookupButton.disabled=false;lookupButton.textContent="Search"}}lookupButton.addEventListener("click",lookupClient);lookupInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();lookupClient()}});
+
         form.addEventListener("submit", async (event) => {
+          if(!selectedClient||!selectedClient.client_id){event.preventDefault();setStatus("เลือก canonical client จากผลค้นหาก่อนสร้าง Job","error");lookupInput.focus();return;}
           event.preventDefault();
           setError("");
           submit.disabled = true;
@@ -3456,8 +3409,8 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
       <form id="create-session-form">
         <div class="grid">
           <label>
-            Memberstack ID
-            <input id="memberstack_id" name="memberstack_id" type="text" required />
+            Member ID
+            <input id="member_id" name="member_id" type="text" required />
           </label>
           <label>
             Model ID
@@ -3497,7 +3450,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
           </label>
         </div>
 
-        <p class="hint">Required fields are <code>memberstack_id</code>, <code>model_id</code>, and <code>amount_thb</code>. Metadata is optional but must be valid JSON if provided.</p>
+        <p class="hint">Required fields are <code>member_id</code>, <code>model_id</code>, and <code>amount_thb</code>. Metadata is optional but must be valid JSON if provided.</p>
 
         <div class="actions">
           <button id="submit" type="submit">Create Session</button>
@@ -3560,7 +3513,7 @@ function renderCreateSessionPage(request: Request, session: AdminGateSession): R
           }
 
           const payload = {
-            memberstack_id: document.getElementById("memberstack_id").value.trim(),
+            member_id: document.getElementById("member_id").value.trim(),
             model_id: document.getElementById("model_id").value.trim(),
             amount_thb: Number(document.getElementById("amount_thb").value),
             currency: document.getElementById("currency").value.trim() || "THB",
@@ -3797,6 +3750,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
         gap: 12px;
         margin-bottom: 12px;
       }
+      .client-lookup { margin:0 0 8px;padding:18px;border:1px solid rgba(209,166,106,.34);border-radius:22px;background:linear-gradient(145deg,rgba(209,166,106,.10),rgba(7,6,10,.58)); }.client-lookup h2{margin:0;font-size:1.2rem}.client-lookup p{margin:8px 0 0;color:var(--muted);line-height:1.55}.lookup-row{display:flex;gap:10px;margin-top:14px}.lookup-row input{min-height:48px}.lookup-row button{flex:0 0 auto;min-height:48px}.lookup-results{display:grid;gap:9px;margin-top:12px}.lookup-card{width:100%;min-height:0;padding:13px 14px;border-radius:14px;border:1px solid var(--line);background:rgba(7,6,10,.7);text-align:left;text-transform:none;letter-spacing:normal}.lookup-card:hover,.lookup-card:focus{border-color:var(--gold);background:rgba(209,166,106,.12)}.lookup-card strong{display:block;font:600 1rem/1.2 inherit}.lookup-card small{display:block;color:var(--muted);margin-top:5px;font:.82rem/1.45 system-ui,sans-serif}.lookup-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:7px}.lookup-meta span{padding:3px 7px;border:1px solid rgba(247,240,232,.15);border-radius:999px;color:var(--gold);font:600 .68rem/1 system-ui,sans-serif}.selected-client{display:none;margin-top:12px;padding:12px 14px;border-left:3px solid var(--success);background:rgba(154,215,178,.08);border-radius:10px;color:var(--text)}.selected-client.is-visible{display:block}.selected-client small{display:block;margin-top:4px;color:var(--muted)}.lookup-empty{color:var(--muted);font-size:.9rem;margin:10px 0 0}@media(max-width:720px){.lookup-row{flex-direction:column}.lookup-row button{width:100%}}
       .check {
         display: flex;
         gap: 10px;
@@ -3832,31 +3786,32 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
 
       <div class="layout">
         <section>
+          <section class="client-lookup" aria-labelledby="client-lookup-title"><p class="kicker">Step 01 · Client identity</p><h2 id="client-lookup-title">ค้นหาลูกค้าก่อนสร้าง Job</h2><p>ค้นได้จากชื่อที่เปอร์ rename, ชื่อเดิม, LINE, อีเมล, เบอร์โทร หรือ Telegram แล้วเลือกผลที่ตรงจริงก่อนกรอกบรีฟต่อ</p><div class="lookup-row"><input id="client_lookup_query" type="search" autocomplete="off" placeholder="ชื่อ / email / เบอร์ / LINE / Telegram" aria-label="ค้นหาลูกค้า" /><button id="client_lookup_search" type="button">Search</button></div><div id="client_lookup_results" class="lookup-results" aria-live="polite"></div><div id="selected_client" class="selected-client" role="status"></div></section>
           <form id="create-job-form">
             <div class="grid">
               <label>
                 Display Name
-                <input id="display_name" name="display_name" type="text" required />
+                <input id="display_name" name="display_name" type="text" required readonly placeholder="เลือกจาก Client search ด้านบน" />
               </label>
               <label>
                 Nickname
-                <input id="nickname" name="nickname" type="text" />
+                <input id="nickname" name="nickname" type="text" readonly />
               </label>
               <label>
                 LINE User ID
-                <input id="line_user_id" name="line_user_id" type="text" />
+                <input id="line_user_id" name="line_user_id" type="text" readonly />
               </label>
               <label>
                 LINE ID
-                <input id="line_id" name="line_id" type="text" />
+                <input id="line_id" name="line_id" type="text" readonly />
               </label>
               <label>
                 Email
-                <input id="email" name="email" type="email" />
+                <input id="email" name="email" type="email" readonly />
               </label>
               <label>
                 Phone
-                <input id="phone" name="phone" type="text" />
+                <input id="phone" name="phone" type="text" readonly />
               </label>
               <label>
                 Model Name
@@ -4040,6 +3995,7 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
           const threadRaw = document.getElementById("telegram_message_thread_id").value.trim();
 
           const payload = {
+            client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",client_lineage:{client_id:selectedClient.client_id||"",member_id:selectedClient.member_id||"",member_email:selectedClient.member_email||"",client_name:selectedClient.client_name||"",matched_on:selectedClient.matched_on||"",line_user_id:selectedClient.line_user_id||""},
             display_name: document.getElementById("display_name").value.trim(),
             nickname: document.getElementById("nickname").value.trim(),
             line_user_id: document.getElementById("line_user_id").value.trim(),
@@ -4103,141 +4059,46 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
   });
 }
 
-async function handleAdminLoginSession(request: Request, env: Env): Promise<Response> {
+async function handleAdminLoginSession(request: Request, _env: Env): Promise<Response> {
   const meta = makeMeta(request);
-
-  if (request.method === "DELETE") {
-    return json(
-      { ok: true, data: { cleared: true, redirect_to: CONTROL_ROOM.login }, meta },
-      { headers: { "set-cookie": clearGateSessionCookie(request) } },
-    );
-  }
-
-  const body = (await request.json().catch(() => null)) as {
-    baseUrl?: string;
-    accessCode?: string;
-    bearer?: string;
-    confirmKey?: string;
-    next?: string;
-  } | null;
-  const accessCode = toStr(body?.accessCode);
-  const bearer = toStr(body?.bearer) || accessCode;
-  const confirmKey = toStr(body?.confirmKey);
-  const next = normalizeAdminNextPath(body?.next);
-  let baseUrl = "";
-
-  try {
-    baseUrl = normalizeAdminBaseUrl(body?.baseUrl, request);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "invalid_base_url";
-    return badRequest(message, meta, { field: "baseUrl" });
-  }
-
-  if (!bearer && !confirmKey) {
-    return badRequest("accessCode, bearer, or confirmKey is required", meta, {
-      field: "accessCode",
-    });
-  }
-
-  const headers = new Headers();
-  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
-  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
-
-  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
-
-  if (!verified) {
-    return json(
-      {
-        ok: false,
-        error: { code: "ADMIN_VERIFY_FAILED", message: "Admin verification failed" },
-        meta,
-      },
-      { status: 401 },
-    );
-  }
-
-  const session: AdminGateSession = {
-    ok: true,
-    at: Date.now(),
-    baseUrl,
-    ...(bearer ? { bearer } : {}),
-    ...(confirmKey ? { confirmKey } : {}),
-  };
-
   return json(
-    { ok: true, data: { unlocked: true, redirect_to: next, session }, meta },
-    { headers: { "set-cookie": makeGateSessionCookie(request, session) } },
+    {
+      ok: false,
+      error: {
+        code: "LEGACY_ADMIN_SESSION_RETIRED",
+        message: "Use the canonical admin login session.",
+      },
+      canonical_login: CONTROL_ROOM.login,
+      meta,
+    },
+    {
+      status: request.method === "DELETE" ? 200 : 410,
+      headers: {
+        "cache-control": "no-store",
+        "set-cookie": clearGateSessionCookie(request),
+      },
+    },
   );
 }
 
-async function handleSigilAdminLogin(request: Request, env: Env): Promise<Response> {
-  const body = await readSigilLoginBody(request);
-  const gateCode = toStr(body?.gate_code || body?.otp);
-  const password = toStr(body?.password || body?.accessCode);
-  const bearer = toStr(body?.bearer) || gateCode || password;
-  const confirmKey = toStr(body?.confirmKey);
-  const next = normalizeSigilAdminNextPath(body?.next);
-  let baseUrl = "";
-
-  try {
-    baseUrl = normalizeAdminBaseUrl(body?.baseUrl, request);
-  } catch {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Unable to verify SIGIL admin access.",
-    });
-  }
-
-  if (!bearer && !confirmKey) {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Gate Code / OTP is required.",
-    });
-  }
-
-  const headers = new Headers();
-  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
-  if (confirmKey) headers.set("X-Confirm-Key", confirmKey);
-
-  const verified = await verifyAdminAuthority(baseUrl, request, env, headers);
-  if (!verified) {
-    return renderSigilAdminLoginPage(request, {
-      status: 401,
-      error: "Unable to verify SIGIL admin access.",
-    });
-  }
-
-  const session: AdminGateSession = {
-    ok: true,
-    at: Date.now(),
-    baseUrl,
-    ...(bearer ? { bearer } : {}),
-    ...(confirmKey ? { confirmKey } : {}),
-  };
-
-  return redirect(next, 302, {
-    "set-cookie": makeGateSessionCookie(request, session),
-    "cache-control": "no-store",
-  });
-}
-
 function handleSigilAdminMe(request: Request): Response {
-  const session = getValidatedGateSession(request);
-  if (!session) {
-    return json(
-      { ok: false, error: { code: "ADMIN_SESSION_REQUIRED", message: "Admin session required" } },
-      { status: 401, headers: { "cache-control": "no-store" } },
-    );
-  }
-
   return json(
-    { ok: true, data: { authenticated: true, baseUrl: session.baseUrl } },
-    { headers: { "cache-control": "no-store" } },
+    {
+      ok: false,
+      error: { code: "LEGACY_ADMIN_SESSION_RETIRED", message: "Use the canonical admin session." },
+    },
+    {
+      status: 401,
+      headers: {
+        "cache-control": "no-store",
+        "set-cookie": clearGateSessionCookie(request),
+      },
+    },
   );
 }
 
 function handleSigilAdminLogout(request: Request): Response {
-  return redirect(SIGIL_ADMIN.login, 302, {
+  return redirect("https://mmdbkk.com/internal/admin/login", 302, {
     "set-cookie": clearGateSessionCookie(request),
     "cache-control": "no-store",
   });
@@ -4245,16 +4106,17 @@ function handleSigilAdminLogout(request: Request): Response {
 
 function makeLegacyAdminRedirect(request: Request): Response | null {
   const url = new URL(request.url);
-  if (url.pathname === "/admin/login" || url.pathname === CONTROL_ROOM.login) {
-    const target = new URL(SIGIL_ADMIN.login, url.origin);
-    target.searchParams.set("next", normalizeSigilAdminNextPath(url.searchParams.get("next")));
-    return redirect(target.toString(), 302);
+  if (url.pathname === "/admin/login" || url.pathname === CONTROL_ROOM.login || url.pathname === SIGIL_ADMIN.login) {
+    const target = new URL(CONTROL_ROOM.login, "https://mmdbkk.com");
+    const next = normalizeAdminNextPath(url.searchParams.get("next"));
+    const nextUrl = new URL(next, "https://mmdbkk.com");
+    nextUrl.pathname = toInternalAdminPath(nextUrl.pathname);
+    target.searchParams.set("next", `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    return redirect(target.toString(), 308);
   }
 
   if (url.pathname === CONTROL_ROOM.root || url.pathname.startsWith(`${CONTROL_ROOM.root}/`)) {
-    const target = new URL(request.url);
-    target.pathname = SIGIL_ADMIN.controlRoom + url.pathname.slice(CONTROL_ROOM.root.length);
-    return redirect(target.toString(), 302);
+    return null;
   }
 
   return null;
@@ -4347,22 +4209,6 @@ export default {
         return legacyAdminRedirect;
       }
 
-      if ((request.method === "GET" || request.method === "HEAD") && url.pathname === SIGIL_ADMIN.login) {
-        if (request.method === "HEAD") {
-          return new Response(null, {
-            status: 200,
-            headers: {
-              "content-type": "text/html; charset=utf-8",
-              "cache-control": "no-store",
-              "x-mmd-worker": "immigrate-worker",
-              "x-mmd-page": "sigil-admin-login",
-            },
-          });
-        }
-
-        return renderSigilAdminLoginPage(request);
-      }
-
       if ((request.method === "GET" || request.method === "HEAD") && isMemberDashboardAlias(url.pathname)) {
         return renderMemberDashboardPage(request);
       }
@@ -4372,7 +4218,22 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === SIGIL_ADMIN.login) {
-        return await handleSigilAdminLogin(request, env);
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            error: "legacy_admin_login_method_not_allowed",
+            canonical_login: CONTROL_ROOM.login,
+          }),
+          {
+            status: 405,
+            headers: {
+              allow: "GET, HEAD",
+              "content-type": "application/json; charset=utf-8",
+              "cache-control": "no-store",
+              "set-cookie": clearGateSessionCookie(request),
+            },
+          },
+        );
       }
 
       if (request.method === "GET" && url.pathname === SIGIL_ADMIN.authMe) {
@@ -4410,19 +4271,15 @@ export default {
           });
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
-        const session =
-          gateSession ||
-          ({
-            ok: true,
-            at: Date.now(),
-            baseUrl: new URL(request.url).origin,
-            bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
-          } satisfies AdminGateSession);
+        const session = {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        } satisfies AdminGateSession;
 
         return renderCreateSessionPage(request, session);
       }
@@ -4438,19 +4295,15 @@ export default {
           });
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession && !isAuthorized(request, env)) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
-        const session =
-          gateSession ||
-          ({
-            ok: true,
-            at: Date.now(),
-            baseUrl: new URL(request.url).origin,
-            bearer: readInternalToken(request) || env.INTERNAL_TOKEN,
-          } satisfies AdminGateSession);
+        const session = {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        } satisfies AdminGateSession;
 
         return renderCreateJobPage(request, session);
       }
@@ -4460,8 +4313,7 @@ export default {
           return fetch(request);
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -4470,7 +4322,11 @@ export default {
           return upstream;
         }
 
-        return await withInjectedAdminBootstrap(request, upstream, gateSession);
+        return await withInjectedAdminBootstrap(request, upstream, {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        });
       }
 
       if ((request.method === "GET" || request.method === "HEAD") && isSigilProtectedBrowserRoute(url.pathname)) {
@@ -4478,8 +4334,7 @@ export default {
           return fetch(makeRequestWithPath(request, toInternalAdminPath(url.pathname)));
         }
 
-        const gateSession = getValidatedGateSession(request);
-        if (!gateSession) {
+        if (!isAuthorized(request, env)) {
           return makeLoginRedirect(request, url.pathname);
         }
 
@@ -4489,7 +4344,11 @@ export default {
           return upstream;
         }
 
-        return await withInjectedAdminBootstrap(upstreamRequest, upstream, gateSession);
+        return await withInjectedAdminBootstrap(upstreamRequest, upstream, {
+          ok: true,
+          at: Date.now(),
+          baseUrl: new URL(request.url).origin,
+        });
       }
 
       if (!isAuthorized(request, env)) {
