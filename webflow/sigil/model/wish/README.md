@@ -2,9 +2,9 @@
 
 Route: `/sigil/model/wish`
 
-An editorial black, ivory and matte-gold redesign with the requested mini logo, full-aspect-ratio Boss Wish image, three collapsible writing sections and an optional Gallery update. Native details controls remain usable without the runtime. Textareas use 16px text on mobile, keyboard focus is visible and reduced-motion preferences are respected.
+An editorial black, ivory and matte-gold redesign with the requested mini logo, full-aspect-ratio Boss Thanks image, three collapsible writing sections and an optional Gallery update. Native details controls remain usable without the runtime. Textareas use 16px text on mobile, keyboard focus is visible and reduced-motion preferences are respected.
 
-The additional `Gtoip - xaj.webp` image appears after the form/success section as a closing group portrait. Its native 1672×941 frame is preserved; the caption sits below the image on mobile and in its left negative space on wider screens. The original Boss Wish hero and mini logo are retained.
+The additional `Gtoip - xaj.webp` image appears after the form/success section as a closing group portrait. Its native 1672×941 frame is preserved; the caption sits below the image on mobile and in its left negative space on wider screens. The mini logo is retained. The hero now uses the requested Boss Thanks asset at its native 1916×821 ratio, with the full image and embedded text visible.
 
 ## Placement
 

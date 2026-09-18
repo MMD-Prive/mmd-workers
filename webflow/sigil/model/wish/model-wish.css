@@ -45,7 +45,7 @@
 #mmd-model-wish-v1 .mmw-hero h1 em { color: var(--mmw-gold); font-weight: 400; }
 #mmd-model-wish-v1 .mmw-hero-note { margin-top: 22px; color: var(--mmw-muted); font-size: 13px; line-height: 1.9; }
 #mmd-model-wish-v1 .mmw-portrait { margin-top: 28px; }
-#mmd-model-wish-v1 .mmw-hero-img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border: 1px solid var(--mmw-line); border-radius: 4px; background: #17140f; }
+#mmd-model-wish-v1 .mmw-hero-img { display: block; width: 100%; height: auto; aspect-ratio: 1916 / 821; object-fit: contain; border: 1px solid var(--mmw-line); border-radius: 4px; background: #17140f; }
 #mmd-model-wish-v1 .mmw-portrait figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--mmw-line); }
 #mmd-model-wish-v1 .mmw-portrait figcaption > span { max-width: 55%; color: var(--mmw-muted); font-size: 8px; line-height: 1.7; letter-spacing: .14em; }
 #mmd-model-wish-v1 .mmw-portrait figcaption a { display: inline-flex; align-items: center; min-height: 44px; gap: 15px; font-size: 12px; }

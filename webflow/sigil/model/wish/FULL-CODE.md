@@ -26,7 +26,7 @@ HTML — Webflow Embed
         <p class="mmw-hero-note">หกปีที่มีคุณเป็นส่วนหนึ่ง<br>ขอบคุณที่เติบโตไปด้วยกัน</p>
       </div>
       <figure class="mmw-portrait">
-        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aacf3d5af4b67d29457bae2_Boss%20Wish.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1600" height="900" fetchpriority="high">
+        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aad71a234afd75920bbdcc5_Boss%20Thanks.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1916" height="821" fetchpriority="high">
         <figcaption><span>SAME PEOPLE. BRIGHTER TOMORROWS.</span><a href="#mmw-letter">เขียนข้อความถึงเรา <span aria-hidden="true">↓</span></a></figcaption>
       </figure>
     </section>
@@ -201,7 +201,7 @@ CSS — Page Settings → Inside <head>
 #mmd-model-wish-v1 .mmw-hero h1 em { color: var(--mmw-gold); font-weight: 400; }
 #mmd-model-wish-v1 .mmw-hero-note { margin-top: 22px; color: var(--mmw-muted); font-size: 13px; line-height: 1.9; }
 #mmd-model-wish-v1 .mmw-portrait { margin-top: 28px; }
-#mmd-model-wish-v1 .mmw-hero-img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; border: 1px solid var(--mmw-line); border-radius: 4px; background: #17140f; }
+#mmd-model-wish-v1 .mmw-hero-img { display: block; width: 100%; height: auto; aspect-ratio: 1916 / 821; object-fit: contain; border: 1px solid var(--mmw-line); border-radius: 4px; background: #17140f; }
 #mmd-model-wish-v1 .mmw-portrait figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--mmw-line); }
 #mmd-model-wish-v1 .mmw-portrait figcaption > span { max-width: 55%; color: var(--mmw-muted); font-size: 8px; line-height: 1.7; letter-spacing: .14em; }
 #mmd-model-wish-v1 .mmw-portrait figcaption a { display: inline-flex; align-items: center; min-height: 44px; gap: 15px; font-size: 12px; }
