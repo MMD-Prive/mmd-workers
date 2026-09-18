@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import financeWorker, {
   projectModelFinancePayload,
+  projectModelPaymentProofAlertPayload,
   sanitizeModelFinancePayload,
 } from "./src/studio-finance-worker.js";
 
@@ -81,4 +82,42 @@ test("missing or invalid model auth fails closed before finance is added", async
   assert.ok([401, 403, 503].includes(response.status));
   const body = await response.json().catch(() => ({}));
   assert.equal(Object.hasOwn(body?.session || {}, "expected_payout_thb"), false);
+});
+
+
+test("pending customer payment proof becomes a safe Model Console alert", () => {
+  const payload = {
+    ok: true,
+    session: {
+      session_id: "sess_champ_simba",
+      expected_payout_thb: 9000,
+      payout_status: "expected",
+    },
+  };
+  const projected = projectModelPaymentProofAlertPayload(payload, {
+    status: "pending",
+    created_at: "2026-09-18T12:44:05.000Z",
+    channel: "line_ofc",
+  });
+  assert.deepEqual(projected.session.customer_payment_proof, {
+    received: true,
+    status: "pending_verification",
+    received_at: "2026-09-18T12:44:05.000Z",
+  });
+  assert.equal(projected.session.model_console_alerts.length, 1);
+  assert.equal(projected.session.model_console_alerts[0].id, "customer_payment_proof_received");
+  assert.match(projected.session.model_console_alerts[0].title, /ลูกค้าส่งหลักฐาน/);
+  const json = JSON.stringify(projected);
+  assert.doesNotMatch(json, /4500|15000|payment_ref|slip|line_ofc/i);
+});
+
+test("verified customer payment proof becomes a verified status alert without exposing payment details", () => {
+  const payload = { ok: true, session: { session_id: "sess_champ_simba" } };
+  const projected = projectModelPaymentProofAlertPayload(payload, {
+    status: "verified",
+    created_at: "2026-09-18T13:00:00.000Z",
+  });
+  assert.equal(projected.session.customer_payment_proof.status, "verified");
+  assert.equal(projected.session.model_console_alerts[0].id, "customer_payment_verified");
+  assert.equal(projected.session.model_console_alerts[0].status, "verified");
 });
