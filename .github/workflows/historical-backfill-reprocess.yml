@@ -11,6 +11,10 @@ on:
         description: Expected extracted amount in THB
         required: true
         type: string
+      expected_payment_ref:
+        description: Expected payment reference (masked before use)
+        required: true
+        type: string
       expected_payment_stage:
         description: Expected payment stage
         required: true
@@ -47,6 +51,13 @@ jobs:
           set -euo pipefail
           test -n "$ADMIN_REPROCESS_CREDENTIAL"
           echo "::add-mask::$ADMIN_REPROCESS_CREDENTIAL"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          const ref = String(event.inputs?.expected_payment_ref || "").trim();
+          if (!/^[A-Za-z0-9._:/-]{6,180}$/.test(ref)) throw new Error("invalid expected payment reference");
+          process.stdout.write(`::add-mask::${ref}\n`);
+          NODE
           node -e '
             if (!/^hist_[a-f0-9]{24}$/.test(process.env.PROOF_ID || "")) throw new Error("invalid proof_id");
             const amount = Number(process.env.EXPECTED_AMOUNT_THB);
@@ -75,12 +86,18 @@ jobs:
           test "$login_code" = "303"
           grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
 
-          request_json="$(node -e 'process.stdout.write(JSON.stringify({
+          request_json="$(node <<'NODE'
+          const fs = require("node:fs");
+          const event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, "utf8"));
+          process.stdout.write(JSON.stringify({
             proof_id: process.env.PROOF_ID,
+            expected_payment_ref: String(event.inputs.expected_payment_ref || "").trim(),
             expected_amount_thb: process.env.EXPECTED_AMOUNT_THB,
             expected_payment_stage: process.env.EXPECTED_PAYMENT_STAGE,
             context_reason: "Authenticated recovery after production extractor retry; keep Pending Review",
-          }))')"
+          }));
+          NODE
+          )"
           reprocess_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             -X POST \
@@ -103,6 +120,7 @@ jobs:
             if (p.extraction_error && p.pending_context_staged !== true) throw new Error(`extractor failed without guarded pending context: ${p.extraction_error}`);
             if (p.pending_context_staged === true && p.review_required !== true) throw new Error("manual pending context must require review");
             if (!p.payment_ref_masked) throw new Error("stored payment reference is missing");
+            if (p.payment_ref_matches_expected !== true) throw new Error("stored payment reference mismatch");
             if (Math.abs(Number(p.amount_thb) - expectedAmount) > 0.009) throw new Error(`unexpected amount: ${p.amount_thb}`);
             if (p.payment_stage !== process.env.EXPECTED_PAYMENT_STAGE) throw new Error(`unexpected payment stage: ${p.payment_stage}`);
           ' "$body"
@@ -117,6 +135,7 @@ jobs:
             const item = (p.items || []).find((x) => x.proof_id === process.env.PROOF_ID);
             if (!item) throw new Error("reprocessed proof missing from queue");
             if (item.status !== "pending" || item.review_state !== "pending") throw new Error("queue no longer shows Pending Review");
+            if (!item.payment_ref_masked) throw new Error("queue payment reference is missing");
             if (Math.abs(Number(item.amount_thb) - Number(process.env.EXPECTED_AMOUNT_THB)) > 0.009) throw new Error("queue amount mismatch");
           ' "$body"
 
