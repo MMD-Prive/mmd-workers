@@ -27,7 +27,7 @@ function useFixedClock() {
   };
 }
 
-function env() {
+function env(overrides = {}) {
   return {
     AIRTABLE_API_KEY: "test-airtable-key",
     AIRTABLE_BASE_ID: "app_test",
@@ -38,6 +38,7 @@ function env() {
     AIRTABLE_TABLE_POINTS_LEDGER: "MMD — Points Ledger",
     AIRTABLE_MEMBERS_LINE_USER_ID_FIELD: "line_id",
     MEMBER_STATUS_RESOLVER_SECRET: SECRET,
+    ...overrides,
   };
 }
 
@@ -53,7 +54,7 @@ function dateOffset(days) {
   return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
 }
 
-test("LIFF member profile resolver returns only points, tier, and one-year customer-safe history", async () => {
+test("LIFF member profile resolver returns the bounded Customer 360 profile from package and ledger truth", async () => {
   useFixedClock();
   const recent = dateOffset(-10);
   const older = dateOffset(-500);
@@ -114,23 +115,23 @@ test("LIFF member profile resolver returns only points, tier, and one-year custo
   assert.equal(payload.ok, true);
   assert.equal(payload.data.member_exists, true);
   assert.equal(payload.data.member_id, "mmd-per-01");
-  assert.deepEqual(payload.data.profile, {
-    display_name: "เปอร์",
-    tier: "Premium",
-    membership_status: "active",
-    points: 345,
-    payment_status: "verified",
-    membership_expires_at: "2027-08-31",
-    history_window: { from: "2025-08-12", to: "2026-08-12", timezone: "Asia/Bangkok" },
-    history: [
-      { type: "service", date: recent, title: "Dinner", status: "completed" },
-      { type: "membership", date: recent, title: "Premium Membership", status: "active" },
-      { type: "points", date: recent, title: "Points added", points_delta: 25, status: "posted" },
-    ],
-  });
+  const profile = payload.data.profile;
+  assert.equal(profile.display_name, "เปอร์");
+  assert.equal(profile.tier, "Premium");
+  assert.equal(profile.membership_status, "active");
+  assert.equal(profile.membership_expires_at, "2027-08-31");
+  assert.equal(profile.points, 25);
+  assert.equal(profile.points_records_count, 1);
+  assert.equal(profile.payment_status, "verified");
+  assert.equal(profile.customer_360.version, "customer_360_v2");
+  assert.equal(profile.customer_360.points.active_points, 25);
+  assert.equal(profile.customer_360.packages.current_package.code, "premium");
+  assert.equal(profile.customer_360.jobs.completed_jobs[0].service_title, "Dinner");
+  assert.equal(profile.customer_360.jobs.cancelled_jobs.length, 1);
+  assert.equal(profile.customer_360.history.range_days, 365);
   assert.equal(calls.length, 5);
   assert.match(calls[0].searchParams.get("filterByFormula") || "", /\{line_id\}/);
-  assert.doesNotMatch(JSON.stringify(payload), /private|Risk|Internal Notes|payment_ref|amount|per@example\.com|rec_private/i);
+  assert.doesNotMatch(JSON.stringify(payload), /private|Risk|Internal Notes|payment_ref|per@example\.com|rec_private/i);
 });
 
 test("LIFF payment status requires authoritative verification and otherwise fails closed", async () => {
@@ -165,6 +166,52 @@ test("LIFF payment status requires authoritative verification and otherwise fail
   }
 });
 
+test("LIFF points come from posted ledger records, not member summary balance", async () => {
+  useFixedClock();
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: {
+      line_id: LINE_ID,
+      "Contact Email": "per@example.com",
+      "Points Balance": 9999,
+    } }] });
+    if (table === "Sessions" || table === "member_packages" || table === "Payments") return Response.json({ records: [] });
+    if (table === "MMD — Points Ledger") return Response.json({ records: [
+      { fields: { member_email: "per@example.com", points: 10, transaction_status: "posted", posted_at: "2026-08-10T02:00:00.000Z" } },
+      { fields: { member_email: "per@example.com", points: 20, transaction_status: "pending", posted_at: "2026-08-10T02:00:00.000Z" } },
+    ] });
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  const profile = (await response.json()).data.profile;
+
+  assert.equal(profile.points, 10);
+  assert.equal(profile.points_records_count, 1);
+});
+
+test("LIFF points return genuine zero after the points ledger resolves empty", async () => {
+  useFixedClock();
+  globalThis.fetch = async (input) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") return Response.json({ records: [{ id: "rec_member", fields: {
+      line_id: LINE_ID,
+      "Contact Email": "per@example.com",
+      "Points Balance": 9999,
+    } }] });
+    if (table === "Sessions" || table === "member_packages" || table === "Payments" || table === "MMD — Points Ledger") {
+      return Response.json({ records: [] });
+    }
+    throw new Error(`Unexpected Airtable table: ${table}`);
+  };
+
+  const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
+  const profile = (await response.json()).data.profile;
+
+  assert.equal(profile.points, 0);
+  assert.equal(profile.points_records_count, 0);
+});
+
 test("LIFF profile omits unproven expiry and fails payment lookup closed", async () => {
   globalThis.fetch = async (input) => {
     const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
@@ -177,7 +224,7 @@ test("LIFF profile omits unproven expiry and fails payment lookup closed", async
   const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
   const profile = (await response.json()).data.profile;
   assert.equal(profile.payment_status, "unavailable");
-  assert.equal("membership_expires_at" in profile, false);
+  assert.equal(profile.membership_expires_at, null);
 });
 
 test("LIFF payment status does not skip an unknown latest record to expose stale verified state", async () => {
@@ -210,7 +257,7 @@ test("LIFF payment status keeps newest pending authoritative over an older verif
   assert.equal((await response.json()).data.profile.payment_status, "pending_review");
 });
 
-test("LIFF expiry uses the unique newest package and never an older later end date", async () => {
+test("LIFF expiry uses the unique newest package and never derives a tier from Members", async () => {
   useFixedClock();
   const packageCases = [
     {
@@ -232,13 +279,13 @@ test("LIFF expiry uses the unique newest package and never an older later end da
       name: "expired member conflicts with future active package",
       memberStatus: "Expired",
       records: [{ fields: { status: "active", end_date: "2027-01-31" } }],
-      expected: "",
+      expected: "2027-01-31",
     },
     {
       name: "unknown member status",
       memberStatus: "mystery",
       records: [{ fields: { status: "active", end_date: "2027-01-31" } }],
-      expected: "",
+      expected: "2027-01-31",
     },
     { name: "no package", memberStatus: "Active", records: [], expected: "" },
     {
@@ -289,7 +336,7 @@ test("LIFF expiry uses the unique newest package and never an older later end da
     const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
     const profile = (await response.json()).data.profile;
     assert.equal(profile.membership_expires_at || "", scenario.expected, scenario.name);
-    assert.equal(profile.tier, "Premium", `${scenario.name}: tier remains sourced from Members`);
+    assert.equal(profile.tier, "Member", `${scenario.name}: legacy Members tier does not grant a package tier`);
   }
 });
 
@@ -310,9 +357,9 @@ test("pending renewal payment never changes membership status or expiry", async 
   const response = await worker.fetch(request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }), env());
   const profile = (await response.json()).data.profile;
   assert.equal(profile.membership_status, "expired");
-  assert.equal(profile.tier, "Standard");
+  assert.equal(profile.tier, "Member");
   assert.equal(profile.payment_status, "pending_review");
-  assert.equal("membership_expires_at" in profile, false);
+  assert.equal(profile.membership_expires_at, null);
 });
 
 test("LIFF member profile resolver rejects public calls and browser-selected history scope", async () => {
@@ -325,4 +372,64 @@ test("LIFF member profile resolver rejects public calls and browser-selected his
   assert.equal(publicResponse.status, 404);
   assert.equal(widened.status, 400);
   assert.equal(called, false);
+});
+
+test("LIFF member profile returns partial-safe Customer 360 when ancillary reads hit the shared deadline", async () => {
+  let abortedReads = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const table = decodeURIComponent(new URL(String(input)).pathname.split("/").at(-1));
+    if (table === "Members") {
+      return Response.json({ records: [{ id: "rec_member", fields: {
+        line_id: LINE_ID,
+        member_id: "mmd-stage-timeout",
+        "Full Name (Display)": "Deadline Test",
+        "Contact Email": "deadline@example.invalid",
+      } }] });
+    }
+    return new Promise((_resolve, reject) => {
+      const fail = () => {
+        abortedReads += 1;
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+      if (init.signal?.aborted) return fail();
+      init.signal?.addEventListener("abort", fail, { once: true });
+    });
+  };
+
+  const startedAt = Date.now();
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.member_exists, true);
+  assert.equal(payload.data.member_id, "mmd-stage-timeout");
+  assert.equal(payload.data.profile.customer_360.packages.status, "checking");
+  assert.equal(payload.data.profile.customer_360.points.status, "checking");
+  assert.equal(payload.data.profile.customer_360.jobs.status, "checking");
+  assert.ok(abortedReads >= 3);
+  assert.ok(Date.now() - startedAt < 500);
+});
+
+test("LIFF member profile fails closed when the authoritative Members lookup exceeds the shared deadline", async () => {
+  let aborted = false;
+  globalThis.fetch = async (_input, init = {}) => new Promise((_resolve, reject) => {
+    const fail = () => {
+      aborted = true;
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (init.signal?.aborted) return fail();
+    init.signal?.addEventListener("abort", fail, { once: true });
+  });
+
+  const response = await worker.fetch(
+    request({ line_user_id: LINE_ID, purpose: "liff_member_profile_read" }),
+    env({ MEMBER_STATUS_AIRTABLE_TIMEOUT_MS: "50" }),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, "MEMBER_PROFILE_RESOLVER_UNAVAILABLE");
+  assert.equal(aborted, true);
 });

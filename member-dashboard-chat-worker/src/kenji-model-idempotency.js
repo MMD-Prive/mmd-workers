@@ -1,4 +1,6 @@
 const CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
+const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -19,6 +21,36 @@ export class KenjiModelIdempotency {
       input = await request.json();
     } catch (_) {
       return json({ ok: false, error: "invalid_json" }, 400);
+    }
+
+    const path = new URL(request.url).pathname;
+    if (path === "/model-access/pending") {
+      const action = String(input?.action || "");
+      const now = Date.now();
+      if (action === "put") {
+        const query = String(input?.query || "").trim().slice(0, 80);
+        if (!query) return json({ ok: false, error: "invalid_query" }, 400);
+        const expiresAt = now + MODEL_ACCESS_PENDING_TTL_MS;
+        await this.state.storage.put(MODEL_ACCESS_PENDING_KEY, { query, expires_at: expiresAt });
+        if (this.state.storage.getAlarm && this.state.storage.setAlarm) {
+          const currentAlarm = await this.state.storage.getAlarm();
+          if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
+        }
+        return json({ ok: true, stored: true, expires_at: expiresAt });
+      }
+      if (action === "get") {
+        const pending = await this.state.storage.get(MODEL_ACCESS_PENDING_KEY);
+        if (!pending || Number(pending.expires_at) <= now || !String(pending.query || "").trim()) {
+          if (pending) await this.state.storage.delete(MODEL_ACCESS_PENDING_KEY);
+          return json({ ok: true, found: false });
+        }
+        return json({ ok: true, found: true, query: String(pending.query).slice(0, 80) });
+      }
+      if (action === "delete") {
+        await this.state.storage.delete(MODEL_ACCESS_PENDING_KEY);
+        return json({ ok: true, deleted: true });
+      }
+      return json({ ok: false, error: "invalid_action" }, 400);
     }
 
     const key = String(input?.key || "");
@@ -59,6 +91,7 @@ export class KenjiModelIdempotency {
     const now = Date.now();
     const claims = await this.state.storage.list({ prefix: "claim:" });
     const quotas = await this.state.storage.list({ prefix: "quota:" });
+    const pending = await this.state.storage.get(MODEL_ACCESS_PENDING_KEY);
     const expired = [];
     let nextAlarm = 0;
     for (const [key, value] of claims) {
@@ -71,6 +104,9 @@ export class KenjiModelIdempotency {
       if (expiresAt <= now) expired.push(key);
       else if (!nextAlarm || expiresAt < nextAlarm) nextAlarm = expiresAt;
     }
+    const pendingExpiresAt = Number(pending?.expires_at) || 0;
+    if (pending && pendingExpiresAt <= now) expired.push(MODEL_ACCESS_PENDING_KEY);
+    else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
     if (nextAlarm) await this.state.storage.setAlarm(nextAlarm);
   }

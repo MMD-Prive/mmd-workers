@@ -5,7 +5,7 @@
  *
  * Preview-only tool:
  * - reads CSV or JSON rows exported from LINE Official / manual sheets
- * - normalizes labels, tags, and notes into review records
+ * - normalizes labels, tags, notes, and contact-profile evidence into review records
  * - writes JSON preview to stdout
  * - does not write Airtable
  * - does not send LINE
@@ -125,6 +125,121 @@ function noteField(note, label) {
   return match ? clean(match[1]) : "";
 }
 
+function normalizeProfileLabel(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/^[^a-z0-9ก-๙]+/i, "")
+    .replace(/[._]/g, " ")
+    .replace(/\s*[-–—]\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeEmailCandidate(value) {
+  const match = clean(value).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].toLowerCase() : "";
+}
+
+function normalizePhoneCandidate(value) {
+  const match = clean(value).match(/\+?\d[\d\s().-]{6,}\d/);
+  if (!match) return "";
+  const raw = match[0].trim();
+  const hasPlus = raw.startsWith("+");
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 8 || digits.length > 15) return "";
+  return hasPlus ? `+${digits}` : digits;
+}
+
+function normalizeLineHandle(value) {
+  const candidate = clean(value).replace(/^@/, "");
+  if (!candidate || /^u[0-9a-f]{32}$/i.test(candidate)) return "";
+  if (/^(?:username|line\s*id|line)$/i.test(candidate)) return "";
+  return candidate.slice(0, 120);
+}
+
+function normalizeTelegramUsername(value) {
+  const handles = clean(value).match(/@[A-Za-z0-9_]{3,64}/g) || [];
+  const usable = handles
+    .map((item) => item.slice(1))
+    .filter((item) => !/^(?:username|telegram)$/i.test(item));
+  if (usable.length) return usable[usable.length - 1];
+
+  const bare = clean(value).replace(/^@/, "");
+  if (!bare || /^(?:username|telegram)$/i.test(bare)) return "";
+  return /^[A-Za-z0-9_]{3,64}$/.test(bare) ? bare : "";
+}
+
+function parseContactProfileNote(note) {
+  const raw = clean(note);
+  if (!raw) {
+    return {
+      source: "line_official_note",
+      email_candidate: "",
+      phone_candidate: "",
+      line_handle_candidate: "",
+      telegram_username_candidate: "",
+      telegram_name_candidate: "",
+      has_contact_evidence: false,
+      confidence: 0,
+    };
+  }
+
+  const lines = raw.split(/\r?\n/).map((line) => clean(line)).filter(Boolean);
+  let email = "";
+  let phone = "";
+  let lineHandle = "";
+  let telegramUsername = "";
+  let telegramName = "";
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const split = line.match(/^\s*([^:：]+?)\s*[:：]\s*(.*)$/);
+    if (!split) continue;
+
+    const label = normalizeProfileLabel(split[1]);
+    const value = clean(split[2]);
+
+    if (!email && /^(?:email google drive|google drive email|e-mail|email)$/.test(label)) {
+      email = normalizeEmailCandidate(value);
+      continue;
+    }
+
+    if (!phone && /^(?:mob no|mob no\.|mobile|mobile no|mobile number|phone|phone no|phone number|tel|telephone)$/.test(label)) {
+      phone = normalizePhoneCandidate(value);
+      continue;
+    }
+
+    if (!lineHandle && /^(?:line id|line handle|line username)$/.test(label)) {
+      lineHandle = normalizeLineHandle(value);
+      continue;
+    }
+
+    if (/^telegram(?: username)?$/.test(label)) {
+      if (!telegramUsername) telegramUsername = normalizeTelegramUsername(value);
+      if (!telegramUsername && lines[index + 1] && /^@[A-Za-z0-9_]{3,64}$/.test(lines[index + 1])) {
+        telegramUsername = normalizeTelegramUsername(lines[index + 1]);
+      }
+      continue;
+    }
+
+    if (!telegramName && /^(?:telegram first - last name|telegram first last name|telegram name)$/.test(label)) {
+      telegramName = value.slice(0, 160);
+    }
+  }
+
+  const hasContactEvidence = Boolean(email || phone || lineHandle || telegramUsername || telegramName);
+  return {
+    source: "line_official_note",
+    email_candidate: email,
+    phone_candidate: phone,
+    line_handle_candidate: lineHandle,
+    telegram_username_candidate: telegramUsername,
+    telegram_name_candidate: telegramName,
+    has_contact_evidence: hasContactEvidence,
+    confidence: hasContactEvidence ? 0.92 : 0,
+  };
+}
+
 function parseServiceNote(note) {
   const raw = clean(note);
   if (!/MMD Confirmation/i.test(raw)) return [];
@@ -162,6 +277,11 @@ function normalizeRow(row, sourceFile, index) {
   const note = pick(row, ["note", "notes", "memo", "description"]);
   const tags = extractTags(rawLabel, rawTags, note);
   const labelParts = parseLabel(rawLabel);
+  const contactProfile = parseContactProfileNote(note);
+  const emailCandidate = contactProfile.email_candidate || normalizeEmailCandidate(pick(row, ["email", "contact email", "google drive email", "email google drive"]));
+  const phoneCandidate = contactProfile.phone_candidate || normalizePhoneCandidate(pick(row, ["phone", "phone number", "mobile", "mob no"]));
+  const lineHandleCandidate = contactProfile.line_handle_candidate || normalizeLineHandle(lineId || labelParts.parsed_username);
+  const telegramUsernameCandidate = contactProfile.telegram_username_candidate || normalizeTelegramUsername(pick(row, ["telegram", "telegram username", "telegram_username"]));
   const canonical = parseCanonicalLineOfc({
     nickname: rawLabel,
     line_display_name: pick(row, ["line_display_name", "display_name", "display name"]),
@@ -193,6 +313,18 @@ function normalizeRow(row, sourceFile, index) {
     parsed_username: labelParts.parsed_username,
     line_id: lineId || labelParts.parsed_username,
     line_user_id: lineUserId,
+    email_candidate: emailCandidate,
+    phone_candidate: phoneCandidate,
+    line_handle_candidate: lineHandleCandidate,
+    telegram_username_candidate: telegramUsernameCandidate,
+    telegram_name_candidate: contactProfile.telegram_name_candidate,
+    contact_profile_evidence: {
+      ...contactProfile,
+      email_candidate: emailCandidate,
+      phone_candidate: phoneCandidate,
+      line_handle_candidate: lineHandleCandidate,
+      telegram_username_candidate: telegramUsernameCandidate,
+    },
     legacy_tags: tags,
     membership_start_hint: memHints[0] || "",
     membership_latest_hint: memHints[memHints.length - 1] || "",
@@ -208,7 +340,7 @@ function normalizeRow(row, sourceFile, index) {
     spend_total_unverified: serviceHistory.reduce((sum, item) => sum + Number(item.amount_thb || 0), 0),
     points_estimated: 0,
     points_verified: 0,
-    import_confidence: serviceHistory.length ? 0.78 : tags.length ? 0.4 : 0.2,
+    import_confidence: serviceHistory.length || contactProfile.has_contact_evidence ? 0.78 : tags.length ? 0.4 : 0.2,
     canonical_membership: canonical,
     membership_status: canonical.membership_status,
     membership_tier: canonical.membership_tier,
@@ -224,6 +356,7 @@ function normalizeRow(row, sourceFile, index) {
     recommended_actions: [
       "create_internal_legacy_note",
       lineUserId ? "upsert_client_review" : "needs_line_user_id",
+      contactProfile.has_contact_evidence ? "stage_contact_profile_review" : "preserve_identity_context",
       serviceHistory.length ? "stage_service_history_review" : "preserve_identity_context",
       "do_not_send_sigil_dashboard_card_yet",
     ],
@@ -262,6 +395,7 @@ if (require.main === module) main();
 
 module.exports = {
   normalizeRow,
+  parseContactProfileNote,
   parseCsv,
   readRows,
 };

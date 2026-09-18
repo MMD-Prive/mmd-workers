@@ -50,7 +50,7 @@ TELEGRAM_NOTIFY_ENABLED = "true"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
 TELEGRAM_BOOKING_CHAT_ID = "-1003546439681"
 TG_THREAD_BOOKING_DRAFT = "1399"
-INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/console"
+INTERNAL_ADMIN_BOOKING_URL = "https://sigil.mmdbkk.com/internal/admin/control-room"
 ```
 
 The booking chat is a Telegram forum supergroup. `TG_THREAD_BOOKING_DRAFT` is required because booking drafts must land in the `MMD • Booking` topic, not the General topic.

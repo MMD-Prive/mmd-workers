@@ -1,93 +1,137 @@
-import worker from "./index";
+import coreWorker from "./canonical-admin-login-core";
+import {
+  ceoRouteMethodNotAllowed,
+  isCeoRoutePath,
+  markCeoGateResponse,
+  serveCeoRoute,
+} from "./ceo-route-worker";
+import { renderProtocolCenterPage } from "./protocol-center-owner-ui";
 import type { Env } from "./types";
 
-const CANONICAL_ADMIN_LOGIN_PATH = "/internal/admin/login";
-const LEGACY_ADMIN_LOGIN_PATHS = new Set([
-  "/sigil/admin/login",
-  "/sigil/internal/admin/login",
-  "/admin/login",
+const PROTOCOL_PATHS = new Set([
+  "/internal/admin/control-room/protocol",
+  "/internal/admin/protocol",
 ]);
-const LEGACY_ADMIN_BROWSER_ROUTES = new Map([
-  ["/sigil/admin", "/internal/admin/dashboard"],
-  ["/sigil/admin/dashboard", "/internal/admin/dashboard"],
-  ["/sigil/admin/control-room", "/internal/admin/control-room"],
-]);
+const CONTROL_ROOM_PATH = "/internal/admin/control-room";
+const ADMIN_LOGIN_PATH = "/internal/admin/login";
+const MODEL_SEARCH_PATH = "/v1/admin/models/search";
+const INTERNAL_SIGIL_FAVICON =
+  "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp";
 
-function isLegacyAdminLoginPath(pathname: string): boolean {
-  return LEGACY_ADMIN_LOGIN_PATHS.has(pathname);
+function normalizePath(value: string): string {
+  const path = String(value || "/").replace(/\/{2,}/g, "/");
+  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
-function redirectToCanonical(url: URL, canonicalPath: string, headerName: string): Response {
-  const location = new URL(`${canonicalPath}${url.search}`, url.origin).toString();
+function protocolMethodNotAllowed(): Response {
+  return Response.json(
+    { ok: false, error: "protocol_method_not_allowed" },
+    {
+      status: 405,
+      headers: {
+        allow: "GET, HEAD",
+        "cache-control": "no-store",
+      },
+    },
+  );
+}
 
+async function requireInternalAdminGate(request: Request, env: Env): Promise<Response | null> {
+  const probeUrl = new URL(request.url);
+  probeUrl.pathname = CONTROL_ROOM_PATH;
+  probeUrl.search = "";
+  const probe = await coreWorker.fetch(
+    new Request(probeUrl.toString(), {
+      method: "GET",
+      headers: request.headers,
+      redirect: "manual",
+    }),
+    env,
+  );
+
+  if (probe.ok && (probe.headers.get("content-type") || "").includes("text/html")) {
+    return null;
+  }
+
+  const login = new URL(ADMIN_LOGIN_PATH, request.url);
+  const original = new URL(request.url);
+  login.searchParams.set("next", original.pathname + original.search);
   return new Response(null, {
-    status: 308,
+    status: 302,
     headers: {
-      location,
+      location: login.toString(),
       "cache-control": "no-store",
-      [headerName]: canonicalPath,
+      "x-mmd-admin-login-canonical": ADMIN_LOGIN_PATH,
     },
   });
 }
 
-function legacyAdminLoginMethodNotAllowed(): Response {
-  return new Response(
-    JSON.stringify({
-      ok: false,
-      error: "legacy_admin_login_method_not_allowed",
-      canonical_login: CANONICAL_ADMIN_LOGIN_PATH,
-    }),
-    {
-      status: 405,
-      headers: {
-        allow: "GET, HEAD",
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "no-store",
-        "x-mmd-admin-login-canonical": CANONICAL_ADMIN_LOGIN_PATH,
-      },
-    },
-  );
+function applyItemsCompatibility(target: Record<string, unknown>): boolean {
+  const items = target.items;
+  if (!Array.isArray(items)) return false;
+
+  let changed = false;
+  if (!Array.isArray(target.models)) {
+    target.models = items;
+    changed = true;
+  }
+  if (!Array.isArray(target.records)) {
+    target.records = items;
+    changed = true;
+  }
+  return changed;
 }
 
-function legacyAdminBrowserMethodNotAllowed(canonicalPath: string): Response {
-  return new Response(
-    JSON.stringify({
-      ok: false,
-      error: "legacy_admin_browser_method_not_allowed",
-      canonical_path: canonicalPath,
-    }),
-    {
-      status: 405,
-      headers: {
-        allow: "GET, HEAD",
-        "content-type": "application/json; charset=utf-8",
-        "cache-control": "no-store",
-        "x-mmd-admin-canonical": canonicalPath,
-      },
-    },
-  );
-}
-
-function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): Response {
-  if (response.status < 300 || response.status >= 400) return response;
-
-  const rawLocation = response.headers.get("location");
-  if (!rawLocation) return response;
-
-  const requestUrl = new URL(request.url);
-  const redirectUrl = new URL(rawLocation, requestUrl.origin);
-  if (!isLegacyAdminLoginPath(redirectUrl.pathname) && redirectUrl.pathname !== CANONICAL_ADMIN_LOGIN_PATH) {
+async function decorateModelSearchResponse(response: Response): Promise<Response> {
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) {
     return response;
   }
 
-  redirectUrl.pathname = CANONICAL_ADMIN_LOGIN_PATH;
+  try {
+    const data = (await response.clone().json()) as Record<string, unknown>;
+    let changed = applyItemsCompatibility(data);
+    if (data.data && typeof data.data === "object" && !Array.isArray(data.data)) {
+      changed = applyItemsCompatibility(data.data as Record<string, unknown>) || changed;
+    }
+    if (!changed) return response;
+
+    const headers = new Headers(response.headers);
+    headers.set("content-type", "application/json; charset=utf-8");
+    headers.set("cache-control", "no-store");
+    headers.set("x-mmd-model-search-compat", "items-to-models-v1");
+    return new Response(JSON.stringify(data), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    return response;
+  }
+}
+
+async function decorateInternalHtmlResponse(path: string, response: Response): Promise<Response> {
+  if (!path.startsWith("/internal/")) return response;
+  if (!(response.headers.get("content-type") || "").includes("text/html")) return response;
+  if (!response.body) return response;
+
+  const html = await response.text();
+  const icons = [
+    `<link rel="icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`,
+    `<link rel="shortcut icon" type="image/webp" href="${INTERNAL_SIGIL_FAVICON}">`,
+    `<link rel="apple-touch-icon" href="${INTERNAL_SIGIL_FAVICON}">`,
+  ].join("");
+  const withoutExistingIcons = html
+    .replace(/<link\b[^>]*\brel=["'](?:shortcut\s+)?icon["'][^>]*>/gi, "")
+    .replace(/<link\b[^>]*\brel=["']apple-touch-icon["'][^>]*>/gi, "");
+  const rewritten = withoutExistingIcons.includes("</head>")
+    ? withoutExistingIcons.replace("</head>", `${icons}</head>`)
+    : withoutExistingIcons;
 
   const headers = new Headers(response.headers);
-  headers.set("location", redirectUrl.toString());
-  headers.set("cache-control", "no-store");
-  headers.set("x-mmd-admin-login-canonical", CANONICAL_ADMIN_LOGIN_PATH);
+  headers.delete("content-length");
+  headers.set("x-mmd-internal-favicon", "sigil-only-logo-v1");
 
-  return new Response(response.body, {
+  return new Response(rewritten, {
     status: response.status,
     statusText: response.statusText,
     headers,
@@ -97,25 +141,35 @@ function rewriteLegacyAdminLoginRedirect(request: Request, response: Response): 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const path = normalizePath(url.pathname);
 
-    if (isLegacyAdminLoginPath(url.pathname)) {
-      if (request.method === "GET" || request.method === "HEAD") {
-        return redirectToCanonical(url, CANONICAL_ADMIN_LOGIN_PATH, "x-mmd-admin-login-canonical");
+    if (isCeoRoutePath(path)) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return ceoRouteMethodNotAllowed();
       }
-
-      return legacyAdminLoginMethodNotAllowed();
+      const gate = await requireInternalAdminGate(request, env);
+      if (gate) return markCeoGateResponse(gate);
+      const response = await serveCeoRoute(request);
+      return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
     }
 
-    const canonicalBrowserPath = LEGACY_ADMIN_BROWSER_ROUTES.get(url.pathname);
-    if (canonicalBrowserPath) {
-      if (request.method === "GET" || request.method === "HEAD") {
-        return redirectToCanonical(url, canonicalBrowserPath, "x-mmd-admin-canonical");
+    if (PROTOCOL_PATHS.has(path)) {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return protocolMethodNotAllowed();
       }
-
-      return legacyAdminBrowserMethodNotAllowed(canonicalBrowserPath);
+      const gate = await requireInternalAdminGate(request, env);
+      if (gate) return gate;
+      const response = renderProtocolCenterPage({ headOnly: request.method === "HEAD" });
+      return request.method === "GET" ? decorateInternalHtmlResponse(path, response) : response;
     }
 
-    const response = await worker.fetch(request, env);
-    return rewriteLegacyAdminLoginRedirect(request, response);
+    const response = await coreWorker.fetch(request, env);
+    if (request.method === "GET" && path === MODEL_SEARCH_PATH) {
+      return decorateModelSearchResponse(response);
+    }
+    if (request.method === "GET") {
+      return decorateInternalHtmlResponse(path, response);
+    }
+    return response;
   },
 };

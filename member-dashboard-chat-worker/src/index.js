@@ -4,8 +4,13 @@ import {
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
+import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
 import { parseModelKnowledgeIdAllowlist, selectApprovedLineModelKnowledge } from "./kenji-knowledge-policy.js";
+// Canonical member-status voice policy (Per/HITO) is resolved before any generic LINE fallback.
+import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verified-member-concierge.mjs";
+import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
+import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 
 export { KenjiModelIdempotency };
 
@@ -17,11 +22,14 @@ const LINE_RICH_MENU_API_URL = "https://api.line.me/v2/bot/richmenu";
 const LINE_RICH_MENU_DATA_URL = "https://api-data.line.me/v2/bot/richmenu";
 const LINE_DEFAULT_RICH_MENU_URL = "https://api.line.me/v2/bot/user/all/richmenu";
 const WORKER_NAME = "member-dashboard-chat-worker";
+const DEFAULT_HIMAI_SUPPLIERS_TABLE = "tbl81bnFyASeXCj9x";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MEMBER_LIFF_ID = "2010298002-mbx9kqQn";
-const MEMBER_LIFF_DASHBOARD_URL = "https://member-pages-worker.malemodel-bkk.workers.dev/member/liff";
+const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
+const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
+const MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
+const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
 const LINE_RICH_MENU_DEFAULT_PATH = "/v1/internal/line/rich-menu/default";
@@ -34,6 +42,11 @@ const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
 const KENJI_MODEL_QUOTA_DEFAULT_WINDOW_SECONDS = 15 * 60;
+const KENJI_MODEL_ACCESS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/model-access";
+const KENJI_MODEL_ACCESS_TIMEOUT_MS = 900;
+const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/kenji/control/runtime/status";
+const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
+const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
 
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
@@ -133,6 +146,12 @@ function hasBearerInternalAuth(request = null, env = {}) {
   return Boolean(expectedInternalToken && bearer && bearer === expectedInternalToken);
 }
 
+function hasAiServiceSmokeAuth(request = null, env = {}) {
+  const bearer = getBearerToken(request);
+  const expectedSmokeToken = asString(env.AI_SERVICE_SMOKE_TOKEN);
+  return Boolean(expectedSmokeToken && bearer && timingSafeStringEqual(bearer, expectedSmokeToken));
+}
+
 function hasServiceBindingAuth(request = null, allowedCallers = []) {
   const service = asString(request?.headers?.get("x-mmd-service-binding"));
   const internal = asString(request?.headers?.get("x-mmd-internal-call")).toLowerCase();
@@ -220,6 +239,18 @@ function getLineEventText(event = {}) {
   return "";
 }
 
+function matchHimaiSupplierRegistration(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  const match = raw.match(/^REGISTER\s+HIMAI(?:\s+(.+?))?$/i);
+  if (!match) return null;
+  const supplierName = asString(match[1]).replace(/^[ "'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return supplierName.length <= 80 ? supplierName : "";
+}
+
+export function extractHimaiSupplierRegistrationName(text = "") {
+  return matchHimaiSupplierRegistration(text) || "";
+}
+
 function getLineEventId(event = {}) {
   return asString(event?.message?.id || event?.webhookEventId || event?.replyToken || `evt_${Date.now()}`);
 }
@@ -236,6 +267,23 @@ function normalizeLookup(value) {
 
 function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
+}
+
+export function extractKenjiModelLookupQuery(text = "") {
+  const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
+  if (!raw || raw.length > 100) return "";
+  const withoutPolite = raw.replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "").trim();
+  const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
+  if (exactCode) return exactCode[1];
+  const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
+  if (!explicit) return "";
+  const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();
+  return query && query.length <= 48 ? query : "";
+}
+
+export function extractKenjiModelVerificationEmail(text = "") {
+  const value = asString(text).trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254 ? value : "";
 }
 
 export function isKenjiLineCandidate(text = "") {
@@ -277,6 +325,9 @@ export function inferLineIntent(text = "", event = {}) {
     return "line_event";
   }
 
+  if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
+  if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
+
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
   if (/(?:หา|เช็ก|ดู|ขอ).{0,16}(?:model|นายแบบ).{0,20}(?:คืนนี้|วันนี้|พรุ่งนี้|ว่าง|คิว|ตาราง)|(?:model|นายแบบ).{0,20}(?:ว่าง|พร้อม|availability|schedule|ตารางงาน)|(?:ว่างไหม|เช็กคิว|ดูคิว)/i.test(normalized)) return "availability_request";
@@ -288,6 +339,8 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
+  if (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_signup";
+  if (/^(?:ขอ)?\s*ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_renewal";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
   const isPersonalCareBackStatus = /(?:ผม|หนู|ฉัน|ของผม|ของหนู|ของฉัน).{0,16}(?:ได้|มี|เข้า|อยู่).{0,16}(?:180\s*วัน|90\s*วัน|150\s*(?:แต้ม|คะแนน|points?)|250\s*(?:แต้ม|คะแนน|points?)|350\s*(?:แต้ม|คะแนน|points?)|กี่วัน|กี่แต้ม|กี่คะแนน|เท่าไหร่|เท่าไร|กลุ่มไหน|สิทธิ์)|^(?:ผม|หนู|ฉัน)\s*(?:ได้|มี)\s*(?:อะไร|เท่าไหร่|เท่าไร)$|^(?:ของผม|ของหนู|ของฉัน).{0,12}(?:เข้าไหม|ได้ไหม|ได้หรือยัง|อยู่กลุ่มไหน)$/i.test(normalized);
@@ -321,10 +374,12 @@ export function inferLineIntent(text = "", event = {}) {
   if (/^(?:สถานะ(?:สมาชิก)?(?:ของ)?ผม|สถานะ(?:สมาชิก)?(?:ของ)?ฉัน|สถานะ(?:สมาชิก)?(?:ของ)?หนู)(?:เป็นยังไง|เป็นอย่างไร|ตอนนี้)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "membership_status";
   if (/^(?:แต้ม|คะแนน|points?)(?:ของ)?(?:ผม|ฉัน|หนู)?\s*(?:เข้า|เพิ่ม|มา)(?:แล้ว)?(?:หรือยัง|ไหม|หรือเปล่า)?(?:ครับ|ค่ะ)?$/i.test(normalized)) return "points_status";
   if (/(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
+  if (/(?:after\s*care|aftercare|ดูแลหลัง(?:การ)?บริการ|หลัง(?:ใช้|รับ)บริการ|ให้คะแนน(?:บริการ|session|เซสชัน)|(?:feedback|ฟีดแบ็ก).{0,16}(?:บริการ|session|เซสชัน))/i.test(normalized)) return "aftercare";
   if (/(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (/(svip|s vip|super\s*vip)/i.test(normalized)) return "svip";
   if (/(black\s*card|แบล็คการ์ด|บัตรดำ)/i.test(normalized)) return "black_card";
   if (/(vip|วีไอพี)/i.test(normalized)) return "vip";
+  if (/(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i.test(normalized)) return "booking_status";
   if (/(massage|male massage|นวด|คลายกล้าม|recovery|wellness|therapist|เทอราปิส)/i.test(normalized)) return "mms_wellness";
   if (/(relax spa|partner venue|ไม่มีสถานที่|ไม่มีที่|สถานที่พร้อมอุปกรณ์|ใช้ร้าน)/i.test(normalized)) return "partner_venue";
   if (/(private talent|specialist|freelancer|special skill|ทักษะพิเศษ|ล่าม|ภาษา|performance|creative|business presence)/i.test(normalized)) return "private_talent";
@@ -333,6 +388,7 @@ export function inferLineIntent(text = "", event = {}) {
   if (/(ราคา|price|rate|เรท|promotion|โปร|package|แพ็กเกจ|แพคเกจ|เท่าไร|เท่าไหร่)/i.test(normalized)) {
     return "pricing_review";
   }
+  if (extractKenjiModelLookupQuery(text)) return "model_lookup";
   if (/(ใช้บริการยังไง|ใช้บริการอย่างไร|เริ่มยังไง|เริ่มอย่างไร|ขั้นตอน|บริการมีอะไร|how\s+to\s+use|how\s+does\s+it\s+work)/i.test(normalized)) {
     return "service_guidance";
   }
@@ -345,8 +401,6 @@ const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
 const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
-const LINE_FAILURE_FALLBACK = "ขอผมเช็กข้อมูลตรงนี้ก่อนนะครับ";
-const LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS = 10 * 60;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
   payment_slip: "kenji_20_006_payment_proof",
@@ -480,6 +534,165 @@ async function getPublishedPerVoiceReply(env = {}, intent = "") {
   return isSafePerVoiceKnowledge(answer) ? answer : "";
 }
 
+async function modelAccessPending(env = {}, lineUserId = "", action = "get", query = "") {
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get || !asString(lineUserId)) return { ok: false };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_pending_timeout"), KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS);
+  try {
+    const userHash = await sha256Hex(lineUserId);
+    const objectId = env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-model-access-v1:${userHash}`);
+    const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/model-access/pending", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, ...(action === "put" ? { query: asString(query).slice(0, 80) } : {}) }),
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false };
+    const payload = await response.json().catch(() => ({}));
+    return payload?.ok === true ? payload : { ok: false };
+  } catch (_) {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function requestKenjiRuntimeStatus(env = {}) {
+  const closed = {
+    ok: false,
+    controls: { line_oa_auto_reply: false, model_keyword_auto_reply: false, all_kenji_mutations: false },
+  };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN)) return closed;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_runtime_status_timeout"), KENJI_RUNTIME_STATUS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_RUNTIME_STATUS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: "{}",
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return closed;
+    const payload = await response.json().catch(() => null);
+    if (!payload || payload.ok !== true || !payload.controls || typeof payload.controls !== "object") return closed;
+    return {
+      ok: true,
+      controls: {
+        line_oa_auto_reply: payload.controls.line_oa_auto_reply === true,
+        model_keyword_auto_reply: payload.controls.model_keyword_auto_reply === true,
+        all_kenji_mutations: payload.controls.all_kenji_mutations === true,
+      },
+    };
+  } catch (_) {
+    return closed;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", verificationEmail = "") {
+  if (!isEnabled(env.LINE_KENJI_MODEL_ACCESS_ENABLED)) return { status: "silent" };
+  if (!env.ADMIN_WORKER?.fetch || !asString(env.INTERNAL_TOKEN) || !asString(lineUserId) || !asString(query)) return { status: "silent" };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_model_access_timeout"), KENJI_MODEL_ACCESS_TIMEOUT_MS);
+  try {
+    const request = new Request(KENJI_MODEL_ACCESS_RPC_URL, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${asString(env.INTERNAL_TOKEN)}`,
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "member-dashboard-chat-worker",
+      },
+      body: JSON.stringify({
+        line_user_id: asString(lineUserId),
+        query: asString(query),
+        ...(verificationEmail ? { verification_email: asString(verificationEmail).toLowerCase() } : {}),
+      }),
+      signal: controller.signal,
+    });
+    const response = await env.ADMIN_WORKER.fetch(request);
+    if (!response.ok) return { status: "silent" };
+    const payload = await response.json().catch(() => ({}));
+    if (payload?.status === "clarification") return { status: "clarification" };
+    if (payload?.status === "verification_required") return { status: "verification_required" };
+    if (payload?.status === "renewal") return { status: "renewal" };
+    if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
+    const modelCode = asString(payload.model.model_code).slice(0, 80);
+    const workingName = asString(payload.model.working_name).slice(0, 120);
+    const rawSummary = asString(payload.model.summary).slice(0, 500);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
+    const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
+    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+  } catch (_) {
+    return { status: "silent" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isSafeKenjiModelCustomerText(value, max = 500) {
+  const text = asString(value);
+  if (!text || text.length > max) return false;
+  return !(
+    /(?:\b0\d{8,9}\b|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|line\s*(?:id|oa)|telegram|เบอร์(?:โทร)?|อีเมล|ไลน์ส่วนตัว)/i.test(text) ||
+    /(?:availability|available|schedule|ตาราง(?:งาน|คิว)|ว่าง(?:วันนี้|คืนนี้|พรุ่งนี้|ไหม)?|เช็กคิว)/i.test(text) ||
+    /(?:airtable|record[_\s-]?id|admin[_\s-]?note|internal|secret|token|authorization|bearer)/i.test(text)
+  );
+}
+
+function buildKenjiModelAccessReply(model = {}) {
+  const modelCode = asString(model.model_code);
+  const workingName = asString(model.working_name);
+  const summary = asString(model.summary);
+  if (!modelCode || !workingName) return "";
+  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}`;
+}
+
+function buildKenjiModelAccessDecision(access = {}, options = {}) {
+  const base = {
+    fallback: false,
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+  };
+  if (access.status === "match") {
+    const answer = buildKenjiModelAccessReply(access.model);
+    if (answer) return { ...base, text: answer, reply_source: "model_access", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "clarification") {
+    return { ...base, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "verification_required" && options.pendingStored === true) {
+    return {
+      ...base,
+      text: "ขออีเมล Google ที่เคยแจ้งเปอร์ไว้สำหรับเข้าถึงแฟ้ม Premium Model หรือ Standard Models ครับ",
+      reply_source: "model_access_verification",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  if (access.status === "renewal") {
+    return {
+      ...base,
+      text: `สมาชิกของคุณหมดอายุหรือยังไม่ active ครับ จึงยังเปิดชื่อหรือรหัส Private Model ไม่ได้\n\nต่ออายุได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}`,
+      reply_source: "model_access_renewal",
+      guard_blocked: false,
+      guard_reason: "",
+    };
+  }
+  return { ...base, text: "", reply_source: "silent", guard_blocked: true, guard_reason: "model_access_silent" };
+}
+
 function getCachedPublishedPerVoiceReply(env = {}, intent = "") {
   const knowledgeId = LINE_KNOWLEDGE_CARD_BY_INTENT[intent];
   const key = `${asString(env.AIRTABLE_BASE_ID)}:${getKenjiKnowledgeTable(env)}`;
@@ -504,18 +717,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "talk_to_per_ai") {
-    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé นะครับ
-
-อยากสมัครสมาชิก / ต่ออายุ เช็กสถานะ สอบถามบริการ หรือมีเคสส่วนตัวให้เปอร์ช่วยดู พิมพ์มาได้เลยครับ
-
-ตอนนี้อยากให้ช่วยเรื่องไหนก่อนครับ
-1) สมัครสมาชิก / ต่ออายุ
-2) เช็กแพ็กเกจหรือสถานะสมาชิก
-3) สอบถามบริการหรือ Companion
-4) ส่งรูปหรือโปรไฟล์ที่อยากให้ MMD พิจารณา
-5) ให้เปอร์ดูเป็นเคสส่วนตัว
-
-เล่าได้เลยครับ เดี๋ยวเปอร์ช่วยแยกขั้นตอนที่เหมาะให้ครับ`;
+    return `สวัสดีครับ ${prefix}ยินดีต้อนรับสู่ MMD Privé\nผม HITO ครับ\n\nขออนุญาตตรวจสอบสถานะบัญชีผ่าน My MMD ก่อนนะครับ แล้วเปอร์จะช่วยต่อให้ตรงกับสิทธิ์ของบัญชีครับ`;
   }
 
   if (intent === "privacy_request") {
@@ -535,7 +737,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "human_handoff") {
-    return "ผมอยู่ครับ ส่งรายละเอียดสำคัญและสิ่งที่ต้องการให้ช่วยไว้ได้เลยครับ";
+    return "";
   }
 
   if (intent === "context_clarification") {
@@ -594,33 +796,49 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "payment_slip") {
-    return `${prefix}ส่งหลักฐานเข้ามาได้ครับ: https://mmdbkk.com/confirm/payment-proof
+    return `${prefix}ไปต่อจากรายการชำระของคุณได้ที่นี่ครับ: https://mmdbkk.com/member/payments
 
-เดี๋ยว MMD ตรวจยอดและจับคู่รายการให้ก่อนนะครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
+ถ้ามีรายการเดิมหรือส่งหลักฐานไว้แล้ว ให้ใช้รายการเดิมและไม่ต้องส่งซ้ำครับ MMD จะตรวจยอด จับคู่รายการ และอัปเดตสถานะอย่างเป็นทางการก่อนครับ หลักฐานอย่างเดียวยังไม่ถือว่ายืนยันยอดหรืออนุมัติ request ครับ`;
   }
 
   if (intent === "payment_status") {
-    return `ได้ครับ แต่ผมจะไม่ยืนยันจากข้อความอย่างเดียว เช็กสถานะรายการจริงใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ได้ครับ แต่ผมจะไม่ยืนยันการชำระจากข้อความหรือสลิปอย่างเดียว รายการต้องผ่านการตรวจสอบอย่างเป็นทางการของ MMD ก่อนครับ";
   }
 
   if (intent === "membership_status") {
-    return `เช็กสถานะสมาชิกของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ผมยังยืนยันสถานะ ระดับสมาชิก หรือวันหมดอายุจากข้อความนี้ไม่ได้ครับ ข้อมูลส่วนตัวต้องตรวจผ่าน My MMD ที่ยืนยันตัวตนสำเร็จก่อนครับ";
   }
 
   if (intent === "points_status") {
-    return `เช็กแต้มกับประวัติรายการของคุณใน My MMD ผ่าน LINE ได้ตรงนี้ครับ → ${MEMBER_LIFF_DASHBOARD_URL}`;
+    return "ผมยังยืนยันยอดแต้มและประวัติรายการจากข้อความนี้ไม่ได้ครับ ต้องตรวจจากข้อมูลสมาชิกที่ยืนยันตัวตนและ Points Ledger ทางการก่อนครับ";
+  }
+
+  if (intent === "membership_signup") {
+    return `สมัครสมาชิกได้ที่นี่ครับ → ${MEMBER_SIGNUP_URL}`;
+  }
+
+  if (intent === "membership_renewal") {
+    return `เริ่มขั้นตอนต่ออายุสมาชิกได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}\n\nการต่ออายุและสถานะสมาชิกจะมีผลหลัง MMD ตรวจสอบการชำระและข้อมูลทางการเรียบร้อยแล้วครับ`;
   }
 
   if (intent === "points") {
-    return `รับเรื่องคะแนนสมาชิกแล้วครับ ${prefix}เดี๋ยวเปอร์ขอตรวจยอดและประวัติที่เกี่ยวข้องก่อน แล้วจะแจ้งสถานะที่ตรวจได้ครับ`;
+    return `${prefix}อยากดูวิธีสะสมและใช้ Points หรืออยากตรวจยอดคะแนนส่วนตัวครับ`;
   }
 
   if (intent === "vip" || intent === "svip" || intent === "black_card") {
-    return `รับเรื่องระดับสมาชิกพิเศษแล้วครับ ${prefix}เคสนี้เปอร์ขอดูเป็นรอบส่วนตัวก่อนนะครับ ข้อความในแชตยังไม่ถือว่าอนุมัติสิทธิ์ครับ`;
+    return `${prefix}อยากดูข้อมูลทั่วไปของระดับสมาชิก หรือให้ตรวจสถานะส่วนตัวครับ`;
   }
 
   if (intent === "mms_wellness") {
     return `${prefix}ถ้าต้องการ male massage หรือ recovery service เดี๋ยวเปอร์ช่วยแยกเป็น MMS Wellness ให้ครับ เลือกได้ทั้ง hotel / home visit หรือ Partner Venue โดย MMD ต้องตรวจรายละเอียดและความเหมาะสมก่อนครับ`;
+  }
+
+  if (intent === "booking_status") {
+    return `${prefix}ผมยังยืนยันสถานะหรือคอนเฟิร์มการจองจากข้อความอย่างเดียวไม่ได้ครับ เปิดรายการจริงใน My MMD > History เพื่อดูสถานะล่าสุดได้ และถ้ายังรอตรวจ ผมจะไม่สรุปว่าเรียบร้อยแล้วครับ`;
+  }
+
+  if (intent === "aftercare") {
+    return `${prefix}Aftercare จะเปิดจาก Session ที่พร้อมใน My MMD > History ครับ ให้ใช้ปุ่ม Aftercare ของรายการนั้นเพื่อให้คะแนน ส่ง feedback หรือเข้า Private Care โดยลิงก์เฉพาะ Session ต้องมาจากข้อมูลทางการเท่านั้นครับ`;
   }
 
   if (intent === "partner_venue") {
@@ -651,8 +869,6 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
     return `สวัสดีครับ ${prefix}ต้องการสอบถามเรื่องจองงาน ราคา เช็กนายแบบ หรือสมาชิก พิมพ์มาได้เลยนะครับ`;
   }
 
-  if (intent === "manual_review") return LINE_FAILURE_FALLBACK;
-
   return "";
 }
 
@@ -663,45 +879,47 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
   return answer || fallback;
 }
 
-async function getFailureFallbackCooldownRequest(event = {}) {
-  const lineUserId = getLineUserId({ event });
-  if (!lineUserId) return null;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(lineUserId));
-  const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return new Request(`https://line-fallback-cooldown.mmd.invalid/${key}`, { method: "GET" });
-}
-
-async function claimFailureFallbackWindow(event = {}) {
-  // Best-effort anti-spam only: Cache API entries are not persistent and may
-  // disappear after eviction or across colos. Never use this as authorization,
-  // dedupe correctness, or payment/session/member state; the fallback may
-  // occasionally reappear when the cache entry is unavailable.
-  try {
-    const cache = globalThis.caches?.default;
-    if (!cache) return true;
-    const request = await getFailureFallbackCooldownRequest(event);
-    if (!request) return true;
-    if (await cache.match(request)) return false;
-    await cache.put(request, new Response("1", {
-      headers: { "cache-control": `max-age=${LINE_FAILURE_FALLBACK_COOLDOWN_SECONDS}` },
-    }));
-    return true;
-  } catch (_) {
-    return true;
-  }
-}
-
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
   const intent = inferLineIntent(eventText, event);
+  const lineUserId = getLineUserId({ event });
+  const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
+  const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;
   const capabilityDecision = decideKenjiCapability({ text: eventText, intent });
-  const deterministicReply = buildKenjiLineReply(event, profile, options);
+  const modelAccessAllowed = options.modelAccessAllowed !== false;
+
+  if (!modelAccessAllowed && (intent === "model_access_verification" || intent === "model_lookup")) {
+    return buildKenjiModelAccessDecision({ status: "silent" });
+  }
+
+  if (intent === "model_access_verification") {
+    const lineUserId = getLineUserId({ event });
+    const verificationEmail = extractKenjiModelVerificationEmail(eventText);
+    const pending = await modelAccessPending(env, lineUserId, "get");
+    if (!pending.ok || pending.found !== true || !asString(pending.query)) return buildKenjiModelAccessDecision({ status: "silent" });
+    const access = await requestKenjiModelAccess(env, lineUserId, pending.query, verificationEmail);
+    await modelAccessPending(env, lineUserId, "delete");
+    return buildKenjiModelAccessDecision(access);
+  }
+
+  if (intent === "model_lookup") {
+    const query = extractKenjiModelLookupQuery(eventText);
+    const lineUserId = getLineUserId({ event });
+    const access = await requestKenjiModelAccess(env, lineUserId, query);
+    if (access.status !== "verification_required") return buildKenjiModelAccessDecision(access);
+    const pending = await modelAccessPending(env, lineUserId, "put", query);
+    return buildKenjiModelAccessDecision(access, { pendingStored: pending.ok === true && pending.stored === true });
+  }
+
+  const conciergeInput = replyOptions.verifiedMemberContext ? { ...replyOptions.verifiedMemberContext, intent: canonicalRichMenuIntent({ intent, data: event?.postback?.data }) } : null;
+  const conciergeReply = conciergeInput ? generateSafeReply(conciergeInput) : null;
+  const deterministicReply = conciergeReply?.text || buildKenjiLineReply(event, profile, options);
   const deterministicFirst = capabilityDecision.capability !== KENJI_CAPABILITIES.APPROVED_PUBLIC_KNOWLEDGE && capabilityDecision.capability !== KENJI_CAPABILITIES.SAFE_CONVERSATION;
   const cachedKnowledge = isEnabled(env.LINE_KENJI_KNOWLEDGE_ENABLED)
     ? getCachedPublishedPerVoiceReply(env, intent)
     : "";
   const generated = deterministicFirst ? deterministicReply : (cachedKnowledge || deterministicReply);
-  if (generated && intent !== "manual_review") {
+  if (generated) {
     return {
       text: generated,
       fallback: false,
@@ -763,13 +981,13 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
     }
   }
 
-  const needsFallback = intent === "manual_review" || Boolean(getLineEventText(event));
-  if (!needsFallback) return { text: "", fallback: false, reply_source: "system_truth", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
-  const allowed = await claimFailureFallbackWindow(event);
+  // Silence is intentional. If there is no real answer, no necessary
+  // clarification, or the message requires Per/MMD review, acknowledge the
+  // webhook with HTTP 200 but never call LINE Reply or Push APIs.
   return {
-    text: allowed ? LINE_FAILURE_FALLBACK : "",
-    fallback: true,
-    reply_source: intent === "manual_review" ? "manual_review" : "fallback",
+    text: "",
+    fallback: false,
+    reply_source: "silent",
     model_attempted: Boolean(model.attempted),
     model_success: Boolean(model.success),
     model_latency_ms: Number(model.latency_ms) || 0,
@@ -868,6 +1086,107 @@ function getAirtableTable(env = {}) {
 function encodeFormulaValue(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
+
+function getHimaiSuppliersTable(env = {}) {
+  return asString(env.HIMAI_SUPPLIERS_TABLE_ID || env.SHARED_SUPPLIERS_TABLE_ID || DEFAULT_HIMAI_SUPPLIERS_TABLE);
+}
+
+function supplierRegistrationDecision(text = "", guardReason = "", guardBlocked = false) {
+  return {
+    text,
+    fallback: false,
+    reply_source: "supplier_registration",
+    model_attempted: false,
+    model_success: false,
+    model_latency_ms: 0,
+    knowledge_hits: 0,
+    guard_blocked: guardBlocked,
+    guard_reason: guardReason,
+  };
+}
+
+function airtableValues(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => (item && typeof item === "object" ? asString(item.name || item.value) : asString(item))).filter(Boolean);
+  }
+  return value === undefined || value === null ? [] : [asString(value)].filter(Boolean);
+}
+
+function hasHimaiShopScope(value) {
+  const values = airtableValues(value).map((item) => item.toLowerCase());
+  return !values.length || values.includes("himai shop");
+}
+
+async function registerHimaiSupplier(event = {}, env = {}, supplierName = "") {
+  const lineUserId = getLineUserId({ event });
+  if (!supplierName) {
+    return supplierRegistrationDecision("กรุณาพิมพ์ชื่อ Supplier ต่อท้ายคำสั่ง เช่น Register himai ping ครับ", "supplier_name_missing");
+  }
+  if (!lineUserId) {
+    return supplierRegistrationDecision("ไม่สามารถระบุบัญชี LINE นี้ได้ครับ กรุณาส่งข้อความใหม่จากแชตนี้อีกครั้ง", "line_user_missing", true);
+  }
+
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getHimaiSuppliersTable(env);
+  if (!apiKey || !baseId || !table) return supplierRegistrationDecision("", "supplier_registry_unconfigured", true);
+
+  try {
+    const url = new URL("https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table));
+    url.searchParams.set("pageSize", "10");
+    url.searchParams.set("filterByFormula", 'LOWER({Supplier Name})=LOWER("' + encodeFormulaValue(supplierName) + '")');
+    ["Supplier Name", "LINE User ID", "LINE Name", "LINE Status", "Last LINE Linked At", "Brand Scope", "Supplier Status"].forEach((field) => {
+      url.searchParams.append("fields[]", field);
+    });
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: { authorization: "Bearer " + apiKey },
+    });
+    if (!response.ok) return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_lookup_failed", true);
+
+    const payload = await response.json().catch(() => ({}));
+    const records = Array.isArray(payload?.records) ? payload.records : [];
+    if (records.length === 0) return supplierRegistrationDecision("ไม่พบ Supplier ชื่อนี้ในระบบ Himai Shop ครับ กรุณาติดต่อ MMD ให้เพิ่ม Supplier ก่อน", "supplier_not_found", true);
+    if (records.length !== 1) return supplierRegistrationDecision("พบชื่อ Supplier ซ้ำในระบบครับ กรุณาติดต่อ MMD ให้ตรวจสอบก่อนเชื่อมบัญชี", "supplier_name_ambiguous", true);
+
+    const record = records[0];
+    const fields = record?.fields || {};
+    const supplierStatus = asString(fields["Supplier Status"]).toLowerCase();
+    if (supplierStatus && supplierStatus !== "active") return supplierRegistrationDecision("Supplier นี้ยังไม่อยู่ในสถานะใช้งานของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_not_active", true);
+    if (!hasHimaiShopScope(fields["Brand Scope"])) return supplierRegistrationDecision("Supplier นี้ไม่ได้อยู่ในขอบเขตของ Himai Shop ครับ กรุณาติดต่อ MMD", "supplier_scope_mismatch", true);
+
+    const existingLineUserId = asString(fields["LINE User ID"]);
+    if (existingLineUserId && existingLineUserId !== lineUserId) {
+      return supplierRegistrationDecision("ไม่สามารถเชื่อม Supplier นี้กับ LINE บัญชีนี้ได้ครับ เพราะมี LINE บัญชีอื่นเชื่อมอยู่แล้ว กรุณาติดต่อ MMD", "supplier_already_linked", true);
+    }
+
+    const profile = await fetchLineProfile(env, lineUserId);
+    const patchResponse = await fetch(
+      "https://api.airtable.com/v0/" + baseId + "/" + encodeURIComponent(table) + "/" + encodeURIComponent(asString(record.id)),
+      {
+        method: "PATCH",
+        headers: {
+          authorization: "Bearer " + apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            "LINE User ID": lineUserId,
+            "LINE Name": asString(profile?.displayName),
+            "LINE Status": "Connected",
+            "Last LINE Linked At": new Date().toISOString(),
+          },
+        }),
+      },
+    );
+    if (!patchResponse.ok) return supplierRegistrationDecision("พบ Supplier แล้ว แต่บันทึกการเชื่อมต่อไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", "supplier_registry_update_failed", true);
+
+    return supplierRegistrationDecision("เชื่อม Supplier สำเร็จแล้วครับ\nจากนี้ " + (asString(fields["Supplier Name"]) || supplierName) + " จะได้รับรายงานการกระจายสินค้าของ Himai Shop ผ่าน LINE นี้ครับ");
+  } catch (_) {
+    return supplierRegistrationDecision("ระบบ Supplier ยังไม่พร้อมเชื่อมต่อครับ กรุณาลองใหม่อีกครั้งหรือติดต่อ MMD", "supplier_registry_runtime_error", true);
+  }
+}
+
 
 async function findExistingLineEvent(env = {}, eventId = "", inboxId = "", options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
@@ -1575,7 +1894,12 @@ async function handleLineWebhook(request, env, ctx = null) {
   }
 
   const events = Array.isArray(body.events) ? body.events : [];
-  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED);
+  const runtimeStatus = await requestKenjiRuntimeStatus(env);
+  const runtimeControls = runtimeStatus.controls || {};
+  const runtimeAllKill = !runtimeStatus.ok || runtimeControls.all_kenji_mutations === true;
+  const runtimeLineKill = runtimeAllKill || runtimeControls.line_oa_auto_reply === true;
+  const runtimeModelKill = runtimeAllKill || runtimeControls.model_keyword_auto_reply === true;
+  const autoReplyEnabled = isEnabled(env.LINE_AUTO_REPLY_ENABLED) && !runtimeLineKill;
   const kenjiEnabled = isEnabled(env.LINE_KENJI_AI_ENABLED);
   const saved = [];
 
@@ -1584,37 +1908,62 @@ async function handleLineWebhook(request, env, ctx = null) {
     const lineUserId = getLineUserId({ event });
     const intent = inferLineIntent(text, event);
     const eventMode = asString(event?.mode).toLowerCase() || "unknown";
+    const supplierRegistrationName = matchHimaiSupplierRegistration(text);
+    const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
-    const needsModelPreflight = Boolean(canGenerateReply && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
+    const needsModelPreflight = Boolean(!isSupplierRegistration && canGenerateReply && !runtimeModelKill && capabilityDecision.capability === KENJI_CAPABILITIES.SAFE_CONVERSATION && isEnabled(env.LINE_KENJI_MODEL_ENABLED));
     const modelDeadlineAt = needsModelPreflight ? Date.now() + KENJI_TOTAL_DEADLINE_MS : 0;
     const modelPreflight = needsModelPreflight
       ? await claimKenjiModelEvent(env, event)
       : { eligible: true, deduped: false, reason: "", canary_eligible: false, rate_limited: false, quota_window: 0 };
-    const replyDecision = canGenerateReply && !modelPreflight.deduped
-      ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, deadlineAt: modelDeadlineAt })
-      : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" };
+    const supplierRegistration = isSupplierRegistration && canRegisterSupplier
+      ? await registerHimaiSupplier(event, env, supplierRegistrationName)
+      : null;
+    const replyDecision = isSupplierRegistration
+      ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+      : (canGenerateReply && !modelPreflight.deduped
+        ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt })
+        : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
     const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
     const afterReply = syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled);
+    const historyAssessmentPromise = runKenjiFolderHistoryAssessment({ env, event }).catch(() => ({
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: "assessment_runtime_error",
+    }));
     const canDefer = typeof ctx?.waitUntil === "function";
     let record = { pending: canDefer, deduped: false };
+    let historyAssessmentResult = {
+      enabled: false,
+      eligible: false,
+      persisted: false,
+      reason: canDefer ? "assessment_pending" : "assessment_not_run",
+    };
     if (canDefer) {
-      ctx.waitUntil(afterReply.catch(() => {
-        console.log(JSON.stringify({
-          line_webhook: "background_sync_failed",
-          event_type: asString(event?.type) || "unknown",
-          intent,
-        }));
-      }));
+      const backgroundWork = Promise.all([
+        afterReply.catch(() => {
+          console.log(JSON.stringify({
+            line_webhook: "background_sync_failed",
+            event_type: asString(event?.type) || "unknown",
+            intent,
+          }));
+        }),
+        historyAssessmentPromise,
+      ]);
+      ctx.waitUntil(backgroundWork);
     } else {
       try {
         record = await afterReply;
       } catch (_) {
         record = { skipped: true, reason: "airtable_sync_failed", deduped: false };
       }
+      historyAssessmentResult = await historyAssessmentPromise;
     }
 
     // Safe operational telemetry: never log message text, user IDs, reply tokens, or secrets.
@@ -1627,6 +1976,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       intent,
       auto_reply_enabled: autoReplyEnabled,
       per_voice_enabled: kenjiEnabled,
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       reply_token_present: Boolean(getReplyToken(event)),
       inbox_deduped: Boolean(record?.deduped),
       reply_candidate: Boolean(replyText),
@@ -1650,6 +2003,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_canary_eligible: Boolean(modelPreflight.canary_eligible),
       model_rate_limited: Boolean(modelPreflight.rate_limited),
       model_quota_window: Number(modelPreflight.quota_window) || 0,
+      history_assessment_enabled: historyAssessmentResult.enabled === true,
+      history_assessment_eligible: historyAssessmentResult.eligible === true,
+      history_assessment_persisted: historyAssessmentResult.persisted === true,
+      history_assessment_reason: asString(historyAssessmentResult.reason).slice(0, 80) || null,
     }));
 
     saved.push({
@@ -1661,8 +2018,18 @@ async function handleLineWebhook(request, env, ctx = null) {
       record_pending: Boolean(record?.pending),
       record_skipped: Boolean(record?.skipped),
       replied: Boolean(replyResult?.ok),
+      runtime_control_ok: runtimeStatus.ok === true,
+      runtime_line_kill: runtimeLineKill,
+      runtime_model_kill: runtimeModelKill,
+      runtime_all_kill: runtimeAllKill,
       line_user: Boolean(lineUserId),
       message_id: getLineEventId(event),
+      history_assessment: {
+        enabled: historyAssessmentResult.enabled === true,
+        eligible: historyAssessmentResult.eligible === true,
+        persisted: historyAssessmentResult.persisted === true,
+        reason: asString(historyAssessmentResult.reason).slice(0, 80),
+      },
     });
   }
 
@@ -1677,7 +2044,7 @@ export default {
       return renderRenewalResponse(request, env);
     }
 
-    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname)) {
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
     }
 
@@ -1716,6 +2083,12 @@ export default {
 
     if (request.method === "GET" && url.pathname === LINE_RICH_MENU_LIST_PATH) {
       return handleRichMenuList(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
+      if (!hasAiServiceSmokeAuth(request, env)) return json({ ok: false, error: "ai_service_smoke_auth_required" }, 401);
+      const result = await runInternalAiServiceBindingSmoke(env);
+      return json(result.payload, result.status);
     }
 
     if (request.method === "POST" && url.pathname === "/v1/internal/line/public-menu-fallback") {

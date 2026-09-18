@@ -1,0 +1,182 @@
+name: Reconcile My MMD + LIFF production routes
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/reconcile-my-mmd-liff-routes.yml"
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - "member-dashboard-chat-worker/src/my-mmd-bounded-status-front-gate.js"
+      - "member-dashboard-chat-worker/src/my-mmd-lovable-app-front-gate.js"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: reconcile-my-mmd-liff-production-routes
+  cancel-in-progress: false
+
+jobs:
+  reconcile-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
+
+    steps:
+      - name: Normalize Cloudflare route credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => String(value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const token = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          const zoneId = clean(process.env.CLOUDFLARE_ZONE_ID);
+          if (!token || !zoneId) throw new Error("Cloudflare route credentials are missing");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${token}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ZONE_ID=${zoneId}\n`);
+          NODE
+
+      - name: Reconcile canonical My MMD and LIFF route ownership
+        id: route_sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/member/api/liff/*",
+            "www.mmdbkk.com/member/api/liff/*",
+            "mmdbkk.com/api/member/app/*",
+            "www.mmdbkk.com/api/member/app/*",
+            "mmdbkk.com/my-mmd*",
+            "www.mmdbkk.com/my-mmd*",
+            "mmdbkk.com/my-mmd-assets/*",
+            "www.mmdbkk.com/my-mmd-assets/*",
+            "mmdbkk.com/member/my-mmd*",
+            "www.mmdbkk.com/member/my-mmd*",
+            "mmdbkk.com/member/my-mmd-assets/*",
+            "www.mmdbkk.com/member/my-mmd-assets/*",
+            "mmdbkk.com/member/liff*",
+            "www.mmdbkk.com/member/liff*",
+          ];
+          const endpoint = `https://api.cloudflare.com/client/v4/zones/${zoneId}/workers/routes`;
+          const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function cf(options = {}) {
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(endpoint, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+                const text = await response.text();
+                let body = null;
+                try { body = JSON.parse(text); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 180)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
+            }
+            throw lastError || new Error("cloudflare_route_api_failed");
+          }
+
+          const before = await cf();
+          for (const pattern of desired) {
+            const conflict = before.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) {
+              throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}; refusing automatic takeover`);
+            }
+          }
+
+          for (const pattern of desired) {
+            if (before.some((route) => route.pattern === pattern && route.script === worker)) {
+              console.log(`already owned ${pattern}`);
+              continue;
+            }
+            await cf({ method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+
+          const after = await cf();
+          const missing = desired.filter((pattern) => !after.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing canonical routes after reconcile: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} canonical My MMD + LIFF routes`);
+          NODE
+
+      - name: Smoke production membership verification boundary
+        id: smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            bridge_headers="$(mktemp)"
+            bridge_body="$(mktemp)"
+            bridge_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -L -D "$bridge_headers" -o "$bridge_body" -w "%{http_code}" "https://${host}/member/liff?intent=status")"
+            echo "${host} /member/liff?intent=status -> ${bridge_code}"
+            test "$bridge_code" = "200"
+            grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$bridge_headers"
+            grep -qi '^x-mmd-liff-session-check: status-v1' "$bridge_headers"
+            node - "$bridge_body" <<'NODE'
+          const fs = require("node:fs");
+          const html = fs.readFileSync(process.argv[2], "utf8");
+          if (!html.includes("/member/api/liff/status")) throw new Error("live LIFF bridge is not using session status endpoint");
+          if (html.includes("fetch(profileEndpoint,")) throw new Error("live LIFF bridge still gates on member profile");
+          NODE
+
+            status_headers="$(mktemp)"
+            status_body="$(mktemp)"
+            status_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$status_headers" -o "$status_body" -w "%{http_code}" -H 'accept: application/json' "https://${host}/member/api/liff/status" || true)"
+            echo "${host} /member/api/liff/status -> ${status_code}"
+            case "$status_code" in
+              200|401|403) ;;
+              *) cat "$status_body"; exit 1 ;;
+            esac
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$status_headers"
+            grep -qi '^x-mmd-upstream-service: member-pages-worker' "$status_headers"
+            if grep -qi '<html' "$status_body"; then
+              echo "LIFF status fell through to HTML on ${host}" >&2
+              exit 1
+            fi
+
+            app_headers="$(mktemp)"
+            app_body="$(mktemp)"
+            app_code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -L -D "$app_headers" -o "$app_body" -w "%{http_code}" "https://${host}/my-mmd/")"
+            echo "${host} /my-mmd/ -> ${app_code}"
+            test "$app_code" = "200"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$app_headers"
+            grep -qi '^x-mmd-ui-source: lovable-full-app-proxy' "$app_headers"
+            if grep -q 'MY MMD · PRIVATE MEMBER SPACE' "$app_body"; then
+              echo "Webflow fallback still owns ${host}/my-mmd/" >&2
+              exit 1
+            fi
+
+            dashboard_headers="$(mktemp)"
+            dashboard_body="$(mktemp)"
+            dashboard_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$dashboard_headers" -o "$dashboard_body" -w "%{http_code}" -H 'accept: application/json' "https://${host}/api/member/app/dashboard" || true)"
+            echo "${host} /api/member/app/dashboard -> ${dashboard_code}"
+            case "$dashboard_code" in
+              200|401|403) ;;
+              *) cat "$dashboard_body"; exit 1 ;;
+            esac
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$dashboard_headers"
+          done
+
+      - name: Record live route recovery receipt
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD + LIFF MEMBERSHIP VERIFICATION ROUTES LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- worker: \`member-dashboard-chat-worker\`\n- canonical My MMD + LIFF route set: 14/14 verified on apex + www\n- LIFF status bridge: \`auth-bridge-only\` + \`session-check=status-v1\`\n- LIFF bridge uses \`/member/api/liff/status\`, not member-profile gating\n- My MMD UI owner: \`lovable-full-app-proxy\` through MMD Worker\n- same-origin member API ownership verified\n- no membership, entitlement, payment, or customer records mutated by this recovery"

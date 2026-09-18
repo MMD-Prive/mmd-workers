@@ -15,7 +15,7 @@ Policy precedence: `docs/knowledge/CARE_BACK_2026_FINAL_LOCK.md` is authoritativ
 4. A Worker verifies identity and eligibility.
 5. The canonical Birthday Wish service must confirm that the member's Wish was saved successfully.
 6. Only after the Wish is saved may the Worker activate or reveal a personal coupon code. Identity verification alone must never issue or reveal one.
-7. A code is personal, single-use, gives 10% off an eligible participating service, and expires 30 days after activation.
+7. A code is personal and single-use. It gives up to 10% off according to the approved Model level × job format matrix, expires 2 months after activation, and must be redeemed to confirm a booking before expiry. The service date may be up to 90 days from the original booking date.
 8. Approval and benefit application remain canonical owner actions. The browser never writes to Airtable directly.
 
 Telegram `/start preview` is an entry point only. It must not issue a code, claim eligibility, or write a campaign claim before LIFF verification.
@@ -81,7 +81,14 @@ Required fields:
 - `issued_channel = LIFF`
 - `landing_path = /promotion/6-years-care-back`
 - `status`
+- `model_level`
+- `job_format` — `PN` or `VIP`; this is a job format, not customer membership status
+- `approved_discount_percent`
+- `activated_at`
 - `expires_at`
+- `booked_at`
+- `original_booking_at`
+- `service_date`
 - `max_uses = 1`
 - `used_count = 0`
 - benefit fields only after MMD policy is approved
@@ -145,5 +152,7 @@ This contract does not authorize production deployment. Before merge/deploy:
 - the verified LIFF endpoint has a canonical Worker owner
 - Airtable select option names are validated against live schema
 - campaign benefit amount/type and validity match `CARE_BACK_2026_FINAL_LOCK.md`
+- tests prove the approved discount follows the Model level × job format matrix and is not inferred from coupon color
+- tests prove booking occurs within 2 months from activation and the service date remains within 90 days from the original booking date
 - preview and verified states are visually distinct
 - live smoke tests prove single-use and idempotent behavior

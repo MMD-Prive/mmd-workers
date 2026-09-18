@@ -8,6 +8,8 @@
 //   POST /v1/auth/logout
 //   POST /v1/admin/access/grant
 
+import { buildCustomer360MemberProfile } from "./customer-360-resolver.js";
+
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://mmdbkk.com",
   "https://mmdprive.webflow.io",
@@ -26,11 +28,18 @@ const TIER_RANK = {
 };
 
 const MEMBER_STATUS_RESOLVER_PATH = "/__internal/member-status/resolve";
+const MEMBER_STATUS_RESOLVER_DIAGNOSTIC_PATH = "/__internal/member-status/diagnostic";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
 const LIFF_IDENTITY_RESOLUTION_PURPOSE = "liff_identity_resolution";
 const LIFF_MEMBER_PROFILE_PURPOSE = "liff_member_profile_read";
 const MEMBER_STATUS_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const MEMBER_HISTORY_MAX_ITEMS = 50;
+const MEMBER_STATUS_AIRTABLE_TIMEOUT_MS = 10000;
+const MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS = 50;
+const MEMBER_STATUS_RESOLVER_DIAGNOSTIC_SENTINEL = "mmd_internal_noncustomer_resolver_diagnostic_v1";
+const POINTS_THB_PER_POINT = 100;
+const PARTNER_PRESENT_MASSAGE_SESSION = "partner_present_massage_session";
+const PARTNER_PRESENT_MASSAGE_SESSION_LABEL = "Partner-Present Massage Session";
 
 export default {
   async fetch(request, env, ctx) {
@@ -62,6 +71,10 @@ export default {
 
       if (path === MEMBER_STATUS_RESOLVER_PATH && request.method === "POST") {
         return handleInternalMemberStatusResolve(request, env);
+      }
+
+      if (path === MEMBER_STATUS_RESOLVER_DIAGNOSTIC_PATH && request.method === "POST") {
+        return handleInternalMemberStatusDiagnostic(request, env);
       }
 
       if (path === MEMBER_PROFILE_RESOLVER_PATH && request.method === "POST") {
@@ -260,14 +273,71 @@ async function handleInternalMemberStatusResolve(request, env) {
     return json(request, env, 400, { ok: false, error: { code: "INVALID_RESOLVER_REQUEST", message: "A valid resolver request is required." } });
   }
 
+  const startedAt = Date.now();
   try {
-    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
+    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(env, lineUserId, {
+      signal,
+      requireRecordsArray: true,
+      classifyResolverFailures: true,
+    }));
     if (matches.length > 1) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
     return json(request, env, 200, { ok: true, data: { member_exists: matches.length === 1 } });
-  } catch {
+  } catch (error) {
+    console.warn({
+      event: "member_status_resolver_failure",
+      stage: "airtable_members_lookup",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_STATUS_RESOLVER_UNAVAILABLE", message: "Member identity could not be resolved safely." } });
+  }
+}
+
+// Service-authenticated, read-only dependency probe. The lookup value is fixed
+// server-side so callers cannot submit customer identity. Responses and logs
+// intentionally expose no lookup, provider, schema, or credential details.
+async function handleInternalMemberStatusDiagnostic(request, env) {
+  if (!isInternalMemberStatusResolverRequest(request, env)) {
+    return json(request, env, 404, { ok: false, error: { code: "NOT_FOUND", message: "Route not found" } });
+  }
+
+  const startedAt = Date.now();
+  try {
+    const matches = await withMemberStatusAirtableDeadline(request, env, (signal) => findMemberRecordsByLineUserId(
+      env,
+      MEMBER_STATUS_RESOLVER_DIAGNOSTIC_SENTINEL,
+      {
+        signal,
+        requireRecordsArray: true,
+        classifyResolverFailures: true,
+      },
+    ));
+    if (matches.length !== 0) {
+      console.warn({
+        event: "member_status_resolver_diagnostic",
+        stage: "airtable_members_lookup",
+        failure_class: "unknown_provider_failure",
+        duration_ms: Math.max(0, Date.now() - startedAt),
+      });
+      return json(request, env, 503, { ok: false, result: "generic_failure" });
+    }
+    console.info({
+      event: "member_status_resolver_diagnostic",
+      stage: "airtable_members_lookup",
+      failure_class: "none",
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return json(request, env, 200, { ok: true, result: "healthy_zero_match" });
+  } catch (error) {
+    console.warn({
+      event: "member_status_resolver_diagnostic",
+      stage: "airtable_members_lookup",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
+    return json(request, env, 503, { ok: false, result: "generic_failure" });
   }
 }
 
@@ -291,64 +361,48 @@ async function handleInternalMemberProfileRead(request, env) {
     return json(request, env, 400, { ok: false, error: { code: "INVALID_PROFILE_REQUEST", message: "A valid profile request is required." } });
   }
 
+  const startedAt = Date.now();
   try {
-    const matches = await findMemberRecordsByLineUserId(env, lineUserId);
-    if (matches.length > 1) {
+    const data = await withMemberStatusAirtableDeadline(request, env, async (signal) => {
+      const matches = await findMemberRecordsByLineUserId(env, lineUserId, { signal });
+      if (matches.length > 1) return { member_exists: false, ambiguous: true };
+      if (!matches.length) return { member_exists: false };
+
+      const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
+      return buildLiffMemberProfile(env, memberRecord, lineUserId, signal);
+    });
+    if (data.ambiguous) {
       return json(request, env, 409, { ok: false, error: { code: "MEMBER_MATCH_AMBIGUOUS", message: "Member identity could not be resolved safely." } });
     }
-    if (!matches.length) {
-      return json(request, env, 200, { ok: true, data: { member_exists: false } });
-    }
-
-    const memberRecord = { ...matches[0], fields: normalizeMemberRecord(matches[0]) };
-    const data = await buildLiffMemberProfile(env, memberRecord, lineUserId);
     return json(request, env, 200, { ok: true, data });
-  } catch {
+  } catch (error) {
+    console.warn({
+      event: "member_profile_resolver_failure",
+      stage: "customer_360_read",
+      failure_class: memberStatusResolverFailureClass(error),
+      duration_ms: Math.max(0, Date.now() - startedAt),
+    });
     return json(request, env, 503, { ok: false, error: { code: "MEMBER_PROFILE_RESOLVER_UNAVAILABLE", message: "Member profile is temporarily unavailable." } });
   }
 }
 
-async function buildLiffMemberProfile(env, memberRecord, lineUserId) {
+async function buildLiffMemberProfile(env, memberRecord, lineUserId, signal) {
   const fields = memberRecord.fields || {};
-  const email = normalizeEmail(fields.email || fields[env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email"] || "");
-  const memberId = String(fields.member_id || "").trim();
-  const cutoff = memberHistoryCutoff();
-  const membershipStatus = normalizeCustomerMembershipStatus(fields[env.AIRTABLE_MEMBERS_STATUS_FIELD || "Membership Status"]);
-  const [sessions, packageResult, points, payment] = await Promise.all([
-    listMemberServiceHistory(env, { lineUserId, email, cutoff }),
-    listMemberPackageHistory(env, { email, cutoff, membershipStatus }),
-    listMemberPointsHistory(env, { email, cutoff }),
-    listMemberPaymentStatus(env, { email }),
-  ]);
-  const history = [...sessions, ...packageResult.history, ...points]
-    .sort((a, b) => String(b.date).localeCompare(String(a.date)))
-    .slice(0, MEMBER_HISTORY_MAX_ITEMS);
-
-  const profile = {
-    display_name: safeCustomerText(
-      fields[env.AIRTABLE_MEMBERS_DISPLAY_NAME_FIELD || "Full Name (Display)"]
-        || fields[env.AIRTABLE_MEMBERS_NAME_FIELD || "Full Name"]
-        || fields.name,
-      120,
-    ) || "สมาชิก MMD",
-    tier: normalizeCustomerTier(fields[env.AIRTABLE_MEMBERS_TIER_FIELD || "Membership Tier"]),
-    membership_status: membershipStatus,
-    points: nonNegativeInteger(fields[env.AIRTABLE_MEMBERS_POINTS_FIELD || "Points Balance"]),
-    payment_status: payment.status,
-    history_window: { from: cutoff, to: bangkokCalendarDate(), timezone: "Asia/Bangkok" },
-    history,
-  };
-  if (packageResult.membership_expires_at) profile.membership_expires_at = packageResult.membership_expires_at;
-
+  const profile = await buildCustomer360MemberProfile({
+    env,
+    memberFields: fields,
+    lineUserId,
+    listRecords: (key, params = {}) => airtableList(env, table(env, key), { ...params, signal }),
+  });
   return {
     member_exists: true,
-    member_id: memberId,
+    member_id: String(fields.member_id || "").trim(),
     profile,
   };
 }
 
-async function listMemberPaymentStatus(env, { email }) {
-  if (!email) return { status: "unavailable" };
+async function listMemberPaymentHistory(env, { email, cutoff }) {
+  if (!email) return { status: "unavailable", history: [] };
   try {
     const records = await airtableList(env, table(env, "PAYMENTS"), {
       filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
@@ -356,9 +410,22 @@ async function listMemberPaymentStatus(env, { email }) {
       maxRecords: 20,
     });
     const fields = records[0]?.fields || {};
-    return { status: normalizeCustomerPaymentStatus(fields["Payment Status"], fields["Verification Status"]) };
+    return {
+      status: normalizeCustomerPaymentStatus(fields["Payment Status"], fields["Verification Status"]),
+      history: records.map((record) => {
+        const f = record.fields || {};
+        const date = safeHistoryDate(f[env.AIRTABLE_PAYMENTS_HISTORY_DATE_FIELD || "Created At"] || f.created_at || f.paid_at);
+        const status = normalizeCustomerPaymentStatus(f["Payment Status"], f["Verification Status"]);
+        if (!date || date < cutoff || status !== "verified") return null;
+        return {
+          date,
+          title: "Membership payment",
+          status: "verified",
+        };
+      }).filter(Boolean),
+    };
   } catch {
-    return { status: "unavailable" };
+    return { status: "unavailable", history: [] };
   }
 }
 
@@ -378,12 +445,13 @@ async function listMemberServiceHistory(env, { lineUserId, email, cutoff }) {
   return records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f[env.AIRTABLE_SESSIONS_HISTORY_DATE_FIELD || "job_date"] || f["Session Date"] || f.start_time);
-    const status = String(f[env.AIRTABLE_SESSIONS_STATUS_FIELD || "Session Status"] || f.status || "").trim().toLowerCase();
+    const transaction = normalizeMemberServiceTransaction(f, env);
+    const status = transaction.service_status;
     if (!date || date < cutoff || status !== "completed") return null;
     return {
       type: "service",
       date,
-      title: safeCustomerText(f[env.AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD || "job_type"] || f["Session Type"] || "MMD Service", 80),
+      title: transaction.customer_title,
       status: "completed",
     };
   }).filter(Boolean);
@@ -438,19 +506,29 @@ function currentMembershipExpiry(records, membershipStatus, createdField) {
   return strictCalendarDate(fields.end_date);
 }
 
-async function listMemberPointsHistory(env, { email, cutoff }) {
-  if (!email) return [];
+async function listMemberPointsLedger(env, { email, cutoff }) {
+  if (!email) return { total: null, records_count: null, history: [] };
   const records = await airtableList(env, table(env, "POINTS_LEDGER"), {
     filterByFormula: `LOWER({${env.AIRTABLE_POINTS_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
     sort: [{ field: env.AIRTABLE_POINTS_HISTORY_DATE_FIELD || "created_at", direction: "desc" }],
     maxRecords: 100,
   });
-  return records.map((record) => {
+  let total = 0;
+  let recordsCount = 0;
+  const seen = new Set();
+  const history = records.map((record) => {
     const f = record.fields || {};
     const date = safeHistoryDate(f.posted_at || f.created_at);
     const status = String(f.transaction_status || "").trim().toLowerCase();
     const delta = signedInteger(f.points);
     if (!date || date < cutoff || status !== "posted" || delta === null) return null;
+    const dedupeKey = pointsLedgerDedupeKey(f);
+    if (dedupeKey) {
+      if (seen.has(dedupeKey)) return null;
+      seen.add(dedupeKey);
+    }
+    total += delta;
+    recordsCount += 1;
     return {
       type: "points",
       date,
@@ -459,6 +537,119 @@ async function listMemberPointsHistory(env, { email, cutoff }) {
       status: "posted",
     };
   }).filter(Boolean);
+  return {
+    total: Math.max(0, total),
+    records_count: recordsCount,
+    history,
+  };
+}
+
+function normalizeMemberServiceTransaction(fields = {}, env = {}) {
+  const serviceStatus = normalizeServiceStatus(readServiceField(fields, env.AIRTABLE_SESSIONS_STATUS_FIELD || "Session Status", ["status", "service_status"]));
+  const paymentStatus = normalizeServicePaymentStatus(readServiceField(fields, "payment_status", ["Payment Status", "verification_status", "Verification Status"]));
+  const workType = normalizeServiceWorkType(readServiceField(fields, env.AIRTABLE_SESSIONS_SERVICE_TYPE_FIELD || "job_type", ["Session Type", "work_type"]));
+  const addon = safeServiceAddon(readServiceField(fields, "service_addon", ["work_variant", "addon", "Service Addon", "Work Variant"]));
+  const quotedPrice = moneyAmount(readServiceField(fields, "quoted_price", ["quotedPrice", "Quoted Price", "gross_amount", "Gross Amount"]));
+  const agreedFinalPrice = moneyAmount(readServiceField(fields, "agreed_final_price", ["final_price", "finalPrice", "Final Price", "Agreed Final Price", "net_total", "Net Total"]));
+  const depositRequested = moneyAmount(readServiceField(fields, "deposit_requested", ["deposit", "Deposit", "Deposit Requested"]));
+  const depositVerifiedAmount = moneyAmount(readServiceField(fields, "deposit_verified_amount", ["deposit_verified", "Deposit Verified", "verified_deposit_amount"]));
+  const paidTotal = moneyAmount(readServiceField(fields, "paid_total", ["Paid Total", "total_paid", "verified_paid_total"]));
+  const explicitBalance = moneyAmount(readServiceField(fields, "remaining_balance", ["balance", "Remaining Balance"]));
+  const remainingBalance = explicitBalance ?? (
+    agreedFinalPrice !== null && (depositVerifiedAmount ?? depositRequested) !== null
+      ? Math.max(0, agreedFinalPrice - (depositVerifiedAmount ?? depositRequested))
+      : null
+  );
+  const eligibleServiceSpend = serviceEligibleSpend({ serviceStatus, paymentStatus, agreedFinalPrice, paidTotal });
+  const points = Math.floor(eligibleServiceSpend / POINTS_THB_PER_POINT);
+  const warnings = depositMismatchWarnings({ fields, quotedPrice, agreedFinalPrice, depositRequested });
+
+  return {
+    work_type: workType.normalized,
+    customer_title: workType.label,
+    service_addon: addon,
+    service_status: serviceStatus,
+    payment_status: paymentStatus,
+    quoted_price: quotedPrice,
+    agreed_final_price: agreedFinalPrice,
+    deposit_requested: depositRequested,
+    deposit_verified_amount: depositVerifiedAmount ?? 0,
+    remaining_balance: remainingBalance,
+    paid_total: paidTotal,
+    eligible_service_spend: eligibleServiceSpend,
+    points,
+    warnings,
+  };
+}
+
+function readServiceField(fields, primary, aliases = []) {
+  for (const key of [primary, ...aliases]) {
+    if (fields[key] !== undefined && fields[key] !== null && fields[key] !== "") return fields[key];
+  }
+  return "";
+}
+
+function normalizeServiceStatus(value) {
+  const status = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["completed", "complete", "done"].includes(status)) return "completed";
+  if (["cancelled", "canceled"].includes(status)) return "cancelled";
+  if (["confirmed", "upcoming", "scheduled"].includes(status)) return "confirmed";
+  return status || "review_required";
+}
+
+function normalizeServicePaymentStatus(value) {
+  const status = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (["full_payment_verified", "fully_paid", "paid_verified"].includes(status)) return "full_payment_verified";
+  if (["deposit_verified", "deposit_paid_verified"].includes(status)) return "deposit_verified";
+  if (["pending_verification", "pending", "awaiting_verification"].includes(status)) return "pending_verification";
+  if (status === "verified") return "review_required";
+  return status || "review_required";
+}
+
+function normalizeServiceWorkType(value) {
+  const normalized = String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (normalized === PARTNER_PRESENT_MASSAGE_SESSION) {
+    return { normalized: PARTNER_PRESENT_MASSAGE_SESSION, label: PARTNER_PRESENT_MASSAGE_SESSION_LABEL };
+  }
+  return {
+    normalized: normalized || "mmd_service",
+    label: safeCustomerText(value || "MMD Service", 80) || "MMD Service",
+  };
+}
+
+function safeServiceAddon(value) {
+  return safeCustomerText(value, 40);
+}
+
+function moneyAmount(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(String(value).replace(/,/g, "").trim());
+  return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : null;
+}
+
+function serviceEligibleSpend({ serviceStatus, paymentStatus, agreedFinalPrice, paidTotal }) {
+  if (serviceStatus !== "completed") return 0;
+  if (paymentStatus !== "full_payment_verified") return 0;
+  const authoritativeTotal = paidTotal ?? agreedFinalPrice;
+  return authoritativeTotal !== null && authoritativeTotal > 0 ? authoritativeTotal : 0;
+}
+
+function depositMismatchWarnings({ fields, quotedPrice, agreedFinalPrice, depositRequested }) {
+  const basis = String(readServiceField(fields, "deposit_percentage_text", ["deposit_terms", "Deposit Terms", "confirmation_text"]));
+  if (depositRequested === null || !/%/.test(basis)) return [];
+  const match = basis.match(/(\d+(?:\.\d+)?)\s*%/);
+  if (!match) return [];
+  const percent = Number(match[1]);
+  if (!Number.isFinite(percent) || percent <= 0) return [];
+  const candidates = [quotedPrice, agreedFinalPrice].filter((amount) => amount !== null);
+  if (candidates.some((amount) => Math.round((amount * percent) / 100) === depositRequested)) return ["manual_deposit_amount"];
+  return ["manual_deposit_amount", "deposit_percentage_mismatch"];
+}
+
+function pointsLedgerDedupeKey(fields = {}) {
+  const key = readServiceField(fields, "idempotency_key", ["transaction_id", "source_event_id", "service_event_id", "session_id"]);
+  const text = String(key || "").trim();
+  return text ? text.slice(0, 160) : "";
 }
 
 function memberHistoryCutoff(now = new Date()) {
@@ -526,13 +717,15 @@ function normalizeCustomerMembershipStatus(value) {
   return "under_review";
 }
 
-function normalizeCustomerPaymentStatus(paymentValue, verificationValue) {
-  const payment = String(paymentValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  const verification = String(verificationValue || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
-  if (verification === "verified" && payment === "paid") return "verified";
-  // Production writers create pending+pending evidence and paid+verified truth.
-  // No authoritative writer currently establishes paid+pending as a public state.
-  if (verification === "pending" && payment === "pending") return "pending_review";
+function normalizeCustomerPaymentStatus(paymentValue, verificationValue, intentValue = "") {
+  const normalize = (value) => String(value || "").trim().toLowerCase().replace(/[\\s-]+/g, "_");
+  const payment = normalize(paymentValue);
+  const verification = normalize(verificationValue);
+  const intent = normalize(intentValue);
+  if (payment === "paid" && verification === "verified") return "verified";
+  if (payment === "pending" && verification === "pending") return "pending_review";
+  // Payment evidence, intent, or verification alone never grants customer status.
+  void intent;
   return "unavailable";
 }
 
@@ -817,13 +1010,41 @@ async function findMemberById(env, memberId) {
   return record ? { ...record, fields: normalizeMemberRecord(record) } : null;
 }
 
-async function findMemberRecordsByLineUserId(env, lineUserId) {
+async function findMemberRecordsByLineUserId(env, lineUserId, options = {}) {
   const field = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_user_id").trim();
   if (!field) throw new Error("AIRTABLE_MEMBERS_LINE_USER_ID_FIELD is required.");
   return airtableList(env, table(env, "MEMBERS"), {
     filterByFormula: `{${field}}=${formulaString(lineUserId)}`,
     maxRecords: 2,
+    signal: options.signal,
+    requireRecordsArray: options.requireRecordsArray === true,
+    classifyResolverFailures: options.classifyResolverFailures === true,
   });
+}
+
+async function withMemberStatusAirtableDeadline(request, env, operation) {
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort();
+  if (request.signal?.aborted) controller.abort();
+  else request.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = setTimeout(() => controller.abort(), memberStatusAirtableTimeoutMs(env));
+  try {
+    return await operation(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw memberStatusResolverFailure(request.signal?.aborted ? "caller_abort" : "timeout");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+function memberStatusAirtableTimeoutMs(env) {
+  const configured = Number(env.MEMBER_STATUS_AIRTABLE_TIMEOUT_MS);
+  if (!Number.isInteger(configured)) return MEMBER_STATUS_AIRTABLE_TIMEOUT_MS;
+  return Math.min(MEMBER_STATUS_AIRTABLE_TIMEOUT_MS, Math.max(MEMBER_STATUS_AIRTABLE_TIMEOUT_MIN_MS, configured));
 }
 
 function normalizeMemberRecord(record) {
@@ -946,6 +1167,9 @@ function normalizeTelegram(value) {
 }
 
 async function airtableList(env, tableName, params = {}) {
+  if (params.classifyResolverFailures && (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID)) {
+    throw memberStatusResolverFailure("missing_config");
+  }
   requireAirtable(env);
   const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}`);
 
@@ -958,12 +1182,67 @@ async function airtableList(env, tableName, params = {}) {
     });
   }
 
-  const response = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
-  });
+  const fetchOptions = { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } };
+  if (params.signal) fetchOptions.signal = params.signal;
+  let response;
+  try {
+    response = await airtableReadFetch(env, url.toString(), fetchOptions);
+  } catch (error) {
+    if (params.classifyResolverFailures) {
+      if (fetchOptions.signal?.aborted) throw error;
+      throw memberStatusResolverFailure("network_failure");
+    }
+    throw error;
+  }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
+  if (!response.ok) {
+    if (params.classifyResolverFailures) throw memberStatusResolverFailure(providerFailureClass(response.status));
+    throw new Error(`Airtable list failed: ${response.status} ${JSON.stringify(data)}`);
+  }
+  if (params.requireRecordsArray && !Array.isArray(data.records)) {
+    if (params.classifyResolverFailures) throw memberStatusResolverFailure("malformed_response");
+    throw new Error("Airtable list response is malformed");
+  }
   return data.records || [];
+}
+
+const MEMBER_STATUS_RESOLVER_FAILURE_CLASSES = new Set([
+  "missing_config",
+  "timeout",
+  "provider_401",
+  "provider_403",
+  "provider_404",
+  "provider_422",
+  "provider_429",
+  "provider_5xx",
+  "malformed_response",
+  "network_failure",
+  "caller_abort",
+  "unknown_provider_failure",
+]);
+
+function memberStatusResolverFailure(failureClass) {
+  const error = new Error("Member status resolver dependency failed");
+  error.memberStatusResolverFailureClass = MEMBER_STATUS_RESOLVER_FAILURE_CLASSES.has(failureClass)
+    ? failureClass
+    : "unknown_provider_failure";
+  return error;
+}
+
+function memberStatusResolverFailureClass(error) {
+  const failureClass = error?.memberStatusResolverFailureClass;
+  return MEMBER_STATUS_RESOLVER_FAILURE_CLASSES.has(failureClass) ? failureClass : "unknown_provider_failure";
+}
+
+function providerFailureClass(status) {
+  if ([401, 403, 404, 422, 429].includes(status)) return `provider_${status}`;
+  if (status >= 500) return "provider_5xx";
+  return "unknown_provider_failure";
+}
+
+async function airtableReadFetch(env, url, init) {
+  if (env.AIRTABLE_HTTP?.fetch) return env.AIRTABLE_HTTP.fetch(new Request(url, init));
+  return fetch(url, init);
 }
 
 async function airtableFirst(env, tableName, formula) {
@@ -1023,6 +1302,7 @@ function requireAirtable(env) {
 }
 
 function table(env, key) {
+  if (key === "CONSOLE_INBOX") return env.AIRTABLE_TABLE_CONSOLE_INBOX || "MMD — Console Inbox";
   return env[`AIRTABLE_TABLE_${key}`] || key.toLowerCase();
 }
 
@@ -1193,3 +1473,12 @@ function safeAirtableReadDebug(tableName, error) {
     message: message.slice(0, 300),
   };
 }
+
+export const testInternals = {
+  PARTNER_PRESENT_MASSAGE_SESSION,
+  PARTNER_PRESENT_MASSAGE_SESSION_LABEL,
+  POINTS_THB_PER_POINT,
+  normalizeMemberServiceTransaction,
+  normalizeServiceWorkType,
+  pointsLedgerDedupeKey,
+};
