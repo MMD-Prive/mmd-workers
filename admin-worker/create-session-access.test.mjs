@@ -299,6 +299,12 @@ assert.equal(unresolvedSearch.private_access.eligibility_result, "unresolved");
 assert.equal(unresolvedSearch.private_access.inventory_preview_only, true);
 assert.equal(unresolvedSearch.private_access.entitlement_recheck_required, true);
 
+const fastInventorySearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing&inventory_only=1"));
+assert.deepEqual(fastInventorySearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(fastInventorySearch.private_access.eligibility_result, "deferred_to_create");
+assert.equal(fastInventorySearch.private_access.inventory_fast_path, true);
+assert.equal(fastInventorySearch.private_access.entitlement_recheck_required, true);
+
 await rejectsWithCode(
   enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01")),
   "AUTHORITATIVE_MEMBER_NOT_FOUND",

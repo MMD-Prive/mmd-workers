@@ -2660,40 +2660,53 @@ async function searchCreateSessionModels(env, url) {
   const wantBurn = flag("burn");
   const wantMk = flag("mk");
   const wantLive = flag("live");
+  const inventoryOnly = flag("inventory_only");
 
-  let allowedFolders = null;
+  let allowedFolders = [];
   let memberSummary = null;
   if (bookingVisibility === "private") {
-    const ids = {
-      member_id: str(url.searchParams.get("member_id")),
-      client_id: str(url.searchParams.get("client_id")),
-      memberstack_id: str(url.searchParams.get("memberstack_id")),
-      line_record_id: str(url.searchParams.get("line_record_id")),
-      line_user_id: str(url.searchParams.get("line_user_id")),
-      member_email: str(url.searchParams.get("member_email")),
-      telegram_username: str(url.searchParams.get("customer_telegram_username")),
-    };
-    if (!Object.values(ids).some(Boolean)) {
-      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
-    }
-    const memberAccess = await resolveAuthoritativeMemberAccess(env, ids);
-    if (!memberAccess.resolved) {
-      throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
-    }
-    allowedFolders = memberAccess.allowed_folders;
-    memberSummary = {
-      eligibility_checked: true,
-      eligibility_result: allowedFolders.length ? "allowed" : "blocked",
-      private_access_level: memberAccess.tier || "blocked",
-      allowed_private_folders: allowedFolders.slice(),
-    };
-    if (!allowedFolders.length) {
-      // blocked or unknown-entitlement members receive no protected model names
-      return { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items: [], private_access: memberSummary };
-    }
     if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
-    if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
     if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
+
+    if (inventoryOnly) {
+      memberSummary = {
+        eligibility_checked: false,
+        eligibility_result: "deferred_to_create",
+        private_access_level: "deferred",
+        allowed_private_folders: [],
+        inventory_preview_only: true,
+        entitlement_recheck_required: true,
+        inventory_fast_path: true,
+      };
+    } else {
+      const ids = {
+        member_id: str(url.searchParams.get("member_id")),
+        client_id: str(url.searchParams.get("client_id")),
+        memberstack_id: str(url.searchParams.get("memberstack_id")),
+        line_record_id: str(url.searchParams.get("line_record_id")),
+        line_user_id: str(url.searchParams.get("line_user_id")),
+        member_email: str(url.searchParams.get("member_email")),
+        telegram_username: str(url.searchParams.get("customer_telegram_username")),
+      };
+      const hasIdentity = Object.values(ids).some(Boolean);
+      const memberAccess = hasIdentity
+        ? await resolveAuthoritativeMemberAccess(env, ids)
+        : { resolved: false, allowed_folders: [], tier: "" };
+      allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+        ? memberAccess.allowed_folders
+        : [];
+      const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
+      memberSummary = {
+        eligibility_checked: memberAccess.resolved === true,
+        eligibility_result: memberAccess.resolved
+          ? (canCreateSelectedFolder ? "allowed" : "blocked")
+          : "unresolved",
+        private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
+        allowed_private_folders: allowedFolders.slice(),
+        inventory_preview_only: !canCreateSelectedFolder,
+        entitlement_recheck_required: true,
+      };
+    }
   } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
     throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
   }
@@ -2719,7 +2732,6 @@ async function searchCreateSessionModels(env, url) {
       if (profile.bookingVisibility !== "private") continue;
       if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
       if (profile.accessFolder !== selectedFolder) continue;
-      if (!allowedFolders.includes(profile.accessFolder)) continue;
       const effectiveLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
       if (effectiveLane !== lane && effectiveLane !== "both") continue;
     } else {

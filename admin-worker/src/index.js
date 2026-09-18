@@ -4971,6 +4971,7 @@ async function searchCreateSessionModels(env, url) {
   const wantBurn = flag("burn");
   const wantMk = flag("mk");
   const wantLive = flag("live");
+  const inventoryOnly = flag("inventory_only");
 
   let allowedFolders = [];
   let memberSummary = null;
@@ -4978,38 +4979,50 @@ async function searchCreateSessionModels(env, url) {
     if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
     if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
 
-    // Internal Admin model search is inventory discovery, not an entitlement grant.
-    // Operators must be able to find/select a canonical Model while a Client identity
-    // or entitlement is still being reconciled. The real job mutation remains
-    // fail-closed in enforcePrivateCreateAccess().
-    const ids = {
-      member_id: str(url.searchParams.get("member_id")),
-      client_id: str(url.searchParams.get("client_id")),
-      memberstack_id: str(url.searchParams.get("memberstack_id")),
-      line_record_id: str(url.searchParams.get("line_record_id")),
-      line_user_id: str(url.searchParams.get("line_user_id")),
-      member_email: str(url.searchParams.get("member_email")),
-      telegram_username: str(url.searchParams.get("customer_telegram_username")),
-    };
-    const hasIdentity = Object.values(ids).some(Boolean);
-    const memberAccess = hasIdentity
-      ? await resolveAuthoritativeMemberAccess(env, ids)
-      : { resolved: false, allowed_folders: [], tier: "" };
+    if (inventoryOnly) {
+      // Authenticated Admin inventory preview: intentionally skip Client
+      // entitlement resolution so search latency depends only on model inventory.
+      // The actual Create Job mutation still calls enforcePrivateCreateAccess()
+      // and remains fail-closed.
+      memberSummary = {
+        eligibility_checked: false,
+        eligibility_result: "deferred_to_create",
+        private_access_level: "deferred",
+        allowed_private_folders: [],
+        inventory_preview_only: true,
+        entitlement_recheck_required: true,
+        inventory_fast_path: true,
+      };
+    } else {
+      const ids = {
+        member_id: str(url.searchParams.get("member_id")),
+        client_id: str(url.searchParams.get("client_id")),
+        memberstack_id: str(url.searchParams.get("memberstack_id")),
+        line_record_id: str(url.searchParams.get("line_record_id")),
+        line_user_id: str(url.searchParams.get("line_user_id")),
+        member_email: str(url.searchParams.get("member_email")),
+        telegram_username: str(url.searchParams.get("customer_telegram_username")),
+      };
+      const hasIdentity = Object.values(ids).some(Boolean);
+      const memberAccess = hasIdentity
+        ? await resolveAuthoritativeMemberAccess(env, ids)
+        : { resolved: false, allowed_folders: [], tier: "" };
 
-    allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
-      ? memberAccess.allowed_folders
-      : [];
-    const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
-    memberSummary = {
-      eligibility_checked: memberAccess.resolved === true,
-      eligibility_result: memberAccess.resolved
-        ? (canCreateSelectedFolder ? "allowed" : "blocked")
-        : "unresolved",
-      private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
-      allowed_private_folders: allowedFolders.slice(),
-      inventory_preview_only: !canCreateSelectedFolder,
-      entitlement_recheck_required: true,
-    };
+      allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+        ? memberAccess.allowed_folders
+        : [];
+      const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
+      memberSummary = {
+        eligibility_checked: memberAccess.resolved === true,
+        eligibility_result: memberAccess.resolved
+          ? (canCreateSelectedFolder ? "allowed" : "blocked")
+          : "unresolved",
+        private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
+        allowed_private_folders: allowedFolders.slice(),
+        inventory_preview_only: !canCreateSelectedFolder,
+        entitlement_recheck_required: true,
+      };
+    }
   } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
     throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
   }
