@@ -45,6 +45,19 @@ const tables = {
     model("recVipModel000001", "VIP Gay", "vip", "gay"),
     model("recExclusiveModel1", "Exclusive Both", "exclusive", "both"),
     {
+      id: "recDriveLazyModel1",
+      fields: {
+        display_name: "Drive Lazy Exclusive",
+        booking_visibility: "private",
+        private_tier: "Exclusive Models",
+        raw_import_tag: "drive_lazy_materialized_v1",
+        folder_scope_key: "exclusive:drive:1DriveLazyModelFolder",
+        status: "active",
+        availability_status: "available",
+        available_now: true,
+      },
+    },
+    {
       id: "recPublicTravel001",
       fields: {
         display_name: "Public Travel",
@@ -207,6 +220,14 @@ await rejectsWithCode(
   enforcePrivateCreateAccess(env, privateBody("client_vip", "vip", "recExclusiveModel1")),
   "private_model_folder_denied",
 );
+
+{
+  const driveLazy = await enforcePrivateCreateAccess(
+    env,
+    privateBody("client_black", "exclusive", "recDriveLazyModel1", { orientation: "straight", modelTelegram: "missing" }),
+  );
+  assert.equal(driveLazy.selectedOrientation, "straight");
+}
 
 const standardSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_standard"));
 assert.deepEqual(standardSearch.items.map((item) => item.model_name), ["Standard Straight"]);
