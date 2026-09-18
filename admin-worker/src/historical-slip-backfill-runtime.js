@@ -1,5 +1,6 @@
 const API_PREFIX = "/v1/admin/payments/historical-backfill";
 const INTAKE_PATH = `${API_PREFIX}/intake`;
+const REPROCESS_PATH = `${API_PREFIX}/reprocess`;
 const REVIEW_PATH = `${API_PREFIX}/review`;
 const SCHEMA = "mmd_historical_slip_backfill_v1";
 const DEFAULT_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -12,7 +13,9 @@ export function isHistoricalSlipBackfillRequest(path, method = "GET") {
   const normalized = normalizePath(path);
   const verb = String(method || "GET").toUpperCase();
   if (normalized === API_PREFIX) return verb === "GET" || verb === "OPTIONS";
-  if (normalized === INTAKE_PATH || normalized === REVIEW_PATH) return verb === "POST" || verb === "OPTIONS";
+  if (normalized === INTAKE_PATH || normalized === REPROCESS_PATH || normalized === REVIEW_PATH) {
+    return verb === "POST" || verb === "OPTIONS";
+  }
   return false;
 }
 
@@ -29,6 +32,7 @@ export async function handleHistoricalSlipBackfillRequest(request, env = {}, ctx
     // as the API's structured JSON contract instead of escaping as a Worker 500.
     if (path === API_PREFIX && method === "GET") return await listBackfillProofs(request, env);
     if (path === INTAKE_PATH && method === "POST") return await ingestHistoricalProof(request, env, ctx);
+    if (path === REPROCESS_PATH && method === "POST") return await reprocessHistoricalProof(request, env);
     if (path === REVIEW_PATH && method === "POST") return await reviewHistoricalProof(request, env, ctx);
     return json({ ok: false, error: "method_not_allowed" }, 405);
   } catch (error) {
@@ -210,6 +214,127 @@ async function ingestHistoricalProof(request, env, ctx) {
   else await notifyPromise.catch(() => null);
 
   return json(result, 201);
+}
+
+async function reprocessHistoricalProof(request, env) {
+  requireAirtable(env);
+  requirePrivateReprocessRuntime(env);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_reprocess_request");
+
+  const proofId = safeText(body.proof_id, 120);
+  const recordId = safeText(body.proof_record_id, 120);
+  if (!proofId && !recordId) throw httpError(400, "proof_id_required");
+
+  const proof = await loadHistoricalProof(env, { proofId, recordId });
+  if (!proof) throw httpError(404, "historical_proof_not_found");
+  const canonicalProofId = safeText(proof.fields?.proof_id || proofId, 120);
+  const note = parseNote(proof.fields?.note);
+  if (note.schema !== SCHEMA) throw httpError(409, "historical_proof_schema_mismatch");
+  if (safeCode(proof.fields?.status || "pending") !== "pending") {
+    throw httpError(409, "historical_proof_not_pending");
+  }
+  if (safeCode(note.review_state || "pending") !== "pending") {
+    throw httpError(409, "historical_proof_not_pending_review");
+  }
+
+  const r2Key = safeEvidenceKey(note.r2_key);
+  if (!r2Key) throw httpError(409, "historical_evidence_key_invalid");
+  const evidenceSha256 = safeText(note.evidence_sha256, 64).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) throw httpError(409, "historical_evidence_sha_invalid");
+
+  const object = await env.LINE_SLIP_EVIDENCE.get(r2Key);
+  if (!object || typeof object.arrayBuffer !== "function") throw httpError(404, "historical_evidence_not_found");
+  const maxBytes = Math.min(Math.max(Number(env.HISTORICAL_SLIP_MAX_IMAGE_BYTES) || DEFAULT_MAX_IMAGE_BYTES, 1), 20 * 1024 * 1024);
+  if (Number(object.size || 0) > maxBytes) throw httpError(413, "slip_image_too_large");
+  const bytes = new Uint8Array(await object.arrayBuffer());
+  if (!bytes.byteLength) throw httpError(409, "historical_evidence_empty");
+  if (bytes.byteLength > maxBytes) throw httpError(413, "slip_image_too_large");
+  const actualSha256 = await sha256Hex(bytes);
+  if (actualSha256 !== evidenceSha256) throw httpError(409, "historical_evidence_sha_mismatch");
+
+  const mimeType = clean(note.mime_type || object.httpMetadata?.contentType).toLowerCase().split(";", 1)[0];
+  if (!IMAGE_TYPES.has(mimeType)) throw httpError(415, "unsupported_slip_image_type");
+  const extraction = await extractSlip(env, { bytes, mimeType });
+  const previousExtraction = note.extraction && typeof note.extraction === "object" ? note.extraction : {};
+  const candidate = {
+    payment_ref: extraction.payment_ref || safeText(proof.fields?.payment_ref || previousExtraction.payment_ref, 180),
+    session_id: extraction.session_id || safeText(note.explicit_context?.session_id || note.payments_worker_handoff?.session_id, 180),
+    line_user_id: "",
+    member_email: normalizeEmail(note.explicit_context?.member_email),
+    payment_stage: extraction.payment_stage || normalizePaymentStage(
+      note.explicit_context?.payment_stage || note.payments_worker_handoff?.payment_stage,
+      true,
+    ),
+    amount_thb: extraction.amount_thb ?? normalizeAmount(proof.fields?.amount_thb ?? previousExtraction.amount_thb),
+    paid_at: extraction.paid_at || safeText(proof.fields?.paid_at || previousExtraction.paid_at, 80),
+    payer_name: extraction.payer_name || safeText(proof.fields?.payer_name || previousExtraction.payer_name, 180),
+  };
+
+  const resolvedLinks = await resolveDeterministicLinks(env, candidate);
+  const links = {
+    payment: resolvedLinks.payment || linkedRecordId(proof.fields?.payment) || linkedRecordId(note.match?.payment),
+    session: resolvedLinks.session || linkedRecordId(proof.fields?.session) || linkedRecordId(note.match?.session),
+    member: resolvedLinks.member || linkedRecordId(proof.fields?.member) || linkedRecordId(note.match?.member),
+    client: resolvedLinks.client || linkedRecordId(note.match?.client),
+    ambiguous: resolvedLinks.ambiguous === true,
+  };
+  const threshold = Math.max(0.5, Math.min(1, Number(env.HISTORICAL_SLIP_CONFIDENCE_THRESHOLD) || 0.85));
+  const reconciliationComplete = Boolean(candidate.payment_ref && candidate.amount_thb != null);
+  const deterministicMatch = Boolean(links.payment || links.session || links.member || links.client);
+  const reviewRequired = Boolean(
+    links.ambiguous ||
+    extraction.confidence_score < threshold ||
+    extraction.extraction_error ||
+    !reconciliationComplete ||
+    !deterministicMatch
+  );
+  const reprocessedAt = new Date().toISOString();
+  const nextNote = {
+    ...note,
+    extraction: safeExtractionForNote(extraction),
+    match: links,
+    review_required: reviewRequired,
+    review_state: "pending",
+    reprocessed_at: reprocessedAt,
+    reprocess_count: Math.max(0, Number(note.reprocess_count) || 0) + 1,
+    reprocess_previous_error: safeText(previousExtraction.extraction_error, 240) || null,
+    payments_worker_handoff: stagedHandoff({
+      proofId: canonicalProofId,
+      evidenceSha256,
+      candidate,
+      reviewRequired,
+    }),
+  };
+  const fields = { status: "pending", note: JSON.stringify(nextNote) };
+  if (candidate.payment_ref) fields.payment_ref = candidate.payment_ref;
+  if (candidate.amount_thb != null) fields.amount_thb = candidate.amount_thb;
+  if (candidate.payer_name) fields.payer_name = candidate.payer_name;
+  if (candidate.paid_at && !Number.isNaN(Date.parse(candidate.paid_at))) fields.paid_at = dateOnly(candidate.paid_at);
+  if (links.member) fields.member = [links.member];
+  if (links.session) fields.session = [links.session];
+  if (links.payment) fields.payment = [links.payment];
+  await airtableUpdate(env, paymentProofTable(env), proof.id, fields);
+
+  return json({
+    ok: true,
+    created: false,
+    proof_id: canonicalProofId,
+    proof_record_id: proof.id,
+    status: "pending",
+    state: "pending",
+    review_state: "pending",
+    review_required: reviewRequired,
+    extraction_method: extraction.extraction_method,
+    extraction_error: safeCode(extraction.extraction_error),
+    payment_ref_masked: maskRef(candidate.payment_ref),
+    amount_thb: candidate.amount_thb,
+    payment_stage: candidate.payment_stage || null,
+    match: safeMatch(links),
+    evidence_sha256_verified: true,
+    money_truth_mutated: false,
+    guardrails: guardrails(),
+  });
 }
 
 async function reviewHistoricalProof(request, env, ctx) {
@@ -547,6 +672,13 @@ function requirePrivateEvidenceRuntime(env) {
   if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw httpError(503, "historical_evidence_storage_unavailable");
 }
 
+function requirePrivateReprocessRuntime(env) {
+  if (!env.SLIP_EXTRACTOR || typeof env.SLIP_EXTRACTOR.fetch !== "function") throw httpError(503, "private_extractor_binding_missing");
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.get !== "function") {
+    throw httpError(503, "historical_evidence_storage_unavailable");
+  }
+}
+
 async function resolveDeterministicLinks(env, candidate) {
   const result = { payment: "", session: "", member: "", client: "", ambiguous: false };
   const checks = [];
@@ -687,6 +819,12 @@ function safeMatch(links = {}) {
     client: links.client ? "matched" : "",
     ambiguous: links.ambiguous === true,
   };
+}
+
+function linkedRecordId(value) {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  const recordId = safeText(candidate, 120);
+  return /^rec[A-Za-z0-9]{8,}$/.test(recordId) ? recordId : "";
 }
 
 async function notifyOps(env, { title, proofId, amount, paymentRef, sourceRef }) {
