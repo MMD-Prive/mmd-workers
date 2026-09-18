@@ -8,10 +8,12 @@ test("historical backfill route matcher stays exact inside the canonical subtree
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill", "GET"), true);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill", "OPTIONS"), true);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/intake", "POST"), true);
+  assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/reprocess", "POST"), true);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/review", "POST"), true);
 
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill", "POST"), false);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/intake", "GET"), false);
+  assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/reprocess", "GET"), false);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill/review", "GET"), false);
   assert.equal(isHistoricalSlipBackfillRequest("/v1/admin/payments/historical-backfill-anything", "GET"), false);
 });
@@ -42,6 +44,24 @@ test("historical review mutation also fails closed before parsing review body", 
         decision: "approve",
         review_reason: "must never reach runtime without admin auth",
       }),
+    },
+  ), {}, {});
+
+  assert.equal(response.status, 401);
+  const payload = await response.json();
+  assert.equal(payload?.error, "unauthorized");
+});
+
+test("historical reprocess mutation fails closed before reading private evidence", async () => {
+  const response = await adminEntry.fetch(new Request(
+    "https://mmdbkk.com/v1/admin/payments/historical-backfill/reprocess",
+    {
+      method: "POST",
+      headers: {
+        Origin: "https://mmdbkk.com",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ proof_id: "hist_must_not_reach_private_evidence" }),
     },
   ), {}, {});
 
