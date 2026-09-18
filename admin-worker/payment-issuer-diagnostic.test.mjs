@@ -157,8 +157,6 @@ test('owner existing-session issuance builds deposit pricing server-side and nev
   const response = await worker.fetch(await request(h.env, { body: {
     mode: ISSUE_EXISTING_SESSION_MODE,
     session_id: 'sess_fixture',
-    payment_type: 'deposit',
-    deposit_percent: 30,
   } }), h.env, {});
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -179,8 +177,8 @@ test('owner existing-session issuance builds deposit pricing server-side and nev
   assert.equal(payload.confirm_page, 'https://mmdbkk.com/sigil/confirm/job-confirmation');
   assert.equal(payload.model_confirm_page, 'https://mmdbkk.com/sigil/confirm/job-model');
   assert.match(payload.note, /\[SIGIL Pricing v1\]/);
-  assert.match(payload.note, /"deposit_due_thb":8250/);
-  assert.match(payload.note, /"balance_thb":19250/);
+  assert.match(payload.note, /"deposit_due_thb":8500/);
+  assert.match(payload.note, /"balance_thb":19000/);
 });
 
 test('existing-session deposit uses the job total when an outstanding balance is recorded', async () => {
@@ -191,13 +189,13 @@ test('existing-session deposit uses the job total when an outstanding balance is
   }) });
   installAdminAirtable(h.env, validSessionFields({ fldhwC79ndbnEXSZz: 25500, fldvJowquu8RrsOMc: 17850 }));
   const response = await worker.fetch(await request(h.env, { body: {
-    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture',
   } }), h.env, {});
   assert.equal(response.status, 200);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].body.amount_thb, 25500);
-  assert.match(h.calls[0].body.note, /"deposit_due_thb":7650/);
-  assert.match(h.calls[0].body.note, /"balance_thb":17850/);
+  assert.match(h.calls[0].body.note, /"deposit_due_thb":8000/);
+  assert.match(h.calls[0].body.note, /"balance_thb":17500/);
   assert.match(h.calls[0].body.note, /"deposit_received_thb":0/);
 });
 
@@ -209,7 +207,7 @@ test('existing complete confirmation state is idempotent and never mints again',
     fld0mFma9J9yfEaKb: 'https://mmdbkk.com/sigil/confirm/job-model?t=existing-model',
   }));
   const response = await worker.fetch(await request(h.env, { body: {
-    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture',
   } }), h.env, {});
   assert.equal(response.status, 200);
   const body = await response.json();
@@ -222,7 +220,7 @@ test('existing-session issuance fails closed without canonical Client or with a 
   const missingClient = setup({ binding: () => { throw new Error('must_not_mint'); } });
   installAdminAirtable(missingClient.env, validSessionFields({ fld6P6if0vDZCeV0C: [] }));
   let response = await worker.fetch(await request(missingClient.env, { body: {
-    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture',
   } }), missingClient.env, {});
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, 'canonical_client_link_required');
@@ -231,7 +229,7 @@ test('existing-session issuance fails closed without canonical Client or with a 
   const collision = setup({ binding: () => { throw new Error('must_not_mint'); } });
   installAdminAirtable(collision.env, validSessionFields(), { paymentRecords: [{ id: 'recPaymentExisting', fields: {} }] });
   response = await worker.fetch(await request(collision.env, { body: {
-    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture', payment_type: 'deposit', deposit_percent: 30,
+    mode: ISSUE_EXISTING_SESSION_MODE, session_id: 'sess_fixture',
   } }), collision.env, {});
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, 'existing_payment_without_session_links');

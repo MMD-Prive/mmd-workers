@@ -75,21 +75,15 @@ async function handleEmptyDiagnostic(env) {
 }
 
 async function handleIssueExistingSession(env, body) {
-  const allowedKeys = new Set(["mode", "session_id", "payment_type", "deposit_percent"]);
+  const allowedKeys = new Set(["mode", "session_id"]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
     return json({ ok: false, error: "unsupported_issue_field" }, 400);
   }
 
   const sessionId = clean(body.session_id, 200);
   if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
-  const paymentType = clean(body.payment_type || "full", 40).toLowerCase();
-  if (!new Set(["full", "deposit"]).has(paymentType)) {
-    return json({ ok: false, error: "payment_type_invalid" }, 400);
-  }
-  const depositPercent = Number(body.deposit_percent);
-  if (paymentType === "deposit" && (!Number.isFinite(depositPercent) || depositPercent <= 0 || depositPercent >= 100)) {
-    return json({ ok: false, error: "deposit_percent_invalid" }, 400);
-  }
+  const paymentType = "deposit";
+  const depositPercent = 30;
 
   let session;
   try {
@@ -165,8 +159,11 @@ async function handleIssueExistingSession(env, body) {
     google_map_url: googleMapUrl,
     amount_thb: amountThb,
     ...(payModelThb === null ? {} : { pay_model_thb: payModelThb }),
-    payment_type: paymentType,
-    payment_stage: paymentType,
+    payment_type: "deposit",
+    payment_stage: "deposit",
+    deposit_percent: 30,
+    deposit_amount_thb: Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500),
+    balance_amount_thb: Math.max(0, amountThb - Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500)),
     payment_method: "promptpay",
     note,
     confirm_page: "https://mmdbkk.com/sigil/confirm/job-confirmation",
@@ -207,9 +204,9 @@ async function handleIssueExistingSession(env, body) {
   });
 }
 
-function appendPricingMarker(note, amountThb, depositPercent) {
-  const depositDue = Math.round(amountThb * depositPercent) / 100;
-  const balance = Math.round((amountThb - depositDue) * 100) / 100;
+function appendPricingMarker(note, amountThb, depositPercent = 30) {
+  const depositDue = Math.min(amountThb, Math.ceil(((amountThb * depositPercent) / 100) / 500) * 500);
+  const balance = Math.max(0, amountThb - depositDue);
   const pricing = {
     full_price_thb: amountThb,
     discount_mode: "none",
@@ -221,6 +218,8 @@ function appendPricingMarker(note, amountThb, depositPercent) {
     deposit_due_thb: depositDue,
     deposit_received_thb: 0,
     balance_thb: balance,
+    deposit_round_step_thb: 500,
+    deposit_rounding: "ceil",
   };
   return [note, `[SIGIL Pricing v1] ${JSON.stringify(pricing)}`].filter(Boolean).join("\n");
 }
@@ -327,13 +326,7 @@ function diagnosticPage() {
 <form id="issue-form">
 <label for="issue-session">รหัส Session ของงาน</label>
 <input id="issue-session" name="session_id" type="text" maxlength="200" required autocomplete="off" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
-<label for="issue-payment-type">รูปแบบชำระเงิน</label>
-<select id="issue-payment-type" name="payment_type" required style="display:block;width:100%;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit">
-<option value="" selected>เลือกรูปแบบชำระเงิน</option>
-<option value="deposit">มัดจำ</option>
-<option value="full">เต็มจำนวน</option>
-</select>
-<div id="issue-deposit-fields" hidden><label for="issue-deposit">มัดจำ (%)</label><input id="issue-deposit" name="deposit_percent" type="number" min="0.01" max="99.99" step="0.01" disabled style="display:block;padding:12px;margin:8px 0 20px;background:#191713;color:#f5f1e8;border:1px solid #70624c;border-radius:8px;font:inherit"></div>
+<p style="padding:12px;border:1px solid #70624c;border-radius:8px;background:#191713"><strong>มัดจำลูกค้า 30%</strong><br>ระบบปัดยอดขึ้นทุก 500 บาทอัตโนมัติ</p>
 <button id="issue" type="submit">ออกลิงก์ของงานเดิม</button>
 </form>
 <pre id="issue-result" role="status" aria-live="polite">ยังไม่ได้ออกลิงก์</pre>
@@ -356,14 +349,6 @@ document.getElementById('probe').addEventListener('click', async function () {
   }
 });
 const issueForm = document.getElementById('issue-form');
-const paymentType = document.getElementById('issue-payment-type');
-const depositInput = document.getElementById('issue-deposit');
-paymentType.addEventListener('change', function () {
-  const deposit = this.value === 'deposit';
-  document.getElementById('issue-deposit-fields').hidden = !deposit;
-  depositInput.disabled = !deposit;
-  depositInput.required = deposit;
-});
 issueForm.addEventListener('submit', async function (event) {
   event.preventDefault();
   const button = document.getElementById('issue');
@@ -371,8 +356,7 @@ issueForm.addEventListener('submit', async function (event) {
   const sessionId = document.getElementById('issue-session').value.trim();
   const result = document.getElementById('issue-result');
   if (!sessionId) { result.textContent = 'กรอกรหัส Session ก่อนออกลิงก์'; return; }
-  const body = { mode: '${ISSUE_EXISTING_SESSION_MODE}', session_id: sessionId, payment_type: paymentType.value };
-  if (paymentType.value === 'deposit') body.deposit_percent = Number(depositInput.value);
+  const body = { mode: '${ISSUE_EXISTING_SESSION_MODE}', session_id: sessionId };
   button.disabled = true;
   result.textContent = 'กำลังตรวจรายการเดิมและออกลิงก์…';
   try {

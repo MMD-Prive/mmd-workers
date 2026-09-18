@@ -137,6 +137,59 @@ test("canonical confirm-link writes only real Sessions/Payments schema fields", 
   assert.equal(Object.hasOwn(paymentFields, "fldlTO5aNfqUmlNWm"), false);
 });
 
+
+test("deposit confirmation stores full session amount but only rounded 30 percent payment intent", async () => {
+  const { env, calls } = envWithAirtableRecorder();
+  const result = await handleCanonicalConfirmLink(post({
+    session_id: "sess_deposit_rounding",
+    payment_ref: "pay_deposit_rounding",
+    client_name: "Client",
+    model_name: "Model",
+    job_type: "vip",
+    job_date: "2026-09-18",
+    start_time: "20:00",
+    end_time: "22:00",
+    location_name: "Bangkok",
+    amount_thb: 15500,
+    service_amount_thb: 15500,
+    deposit_percent: 30,
+    deposit_amount_thb: 5000,
+    payment_type: "deposit",
+  }), env);
+
+  assert.equal(result.status, 200);
+  const payload = await result.json();
+  assert.equal(payload.pricing_breakdown.deposit_percent, 30);
+  assert.equal(payload.pricing_breakdown.deposit_due_thb, 5000);
+  assert.equal(payload.pricing_breakdown.balance_thb, 10500);
+  assert.equal(payload.pricing_breakdown.deposit_round_step_thb, 500);
+
+  const sessionPost = calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblC98mKWbzmPuNzX"));
+  const paymentPost = calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblWGGJJOx5eBvBZJ"));
+  assert.equal(sessionPost.body.records[0].fields.fldhwC79ndbnEXSZz, 15500);
+  assert.equal(paymentPost.body.records[0].fields.fldvCSwrUW8OMAooS, 5000);
+  assert.equal(paymentPost.body.records[0].fields.fldrr9g8ZZjqAbdKQ, "deposit");
+});
+
+test("deposit confirmation rejects caller attempts to change the fixed 30 percent policy", async () => {
+  const { env } = envWithAirtableRecorder();
+  const badPercent = await handleCanonicalConfirmLink(post({
+    client_name: "Client", model_name: "Model", job_type: "vip", job_date: "2026-09-18",
+    start_time: "20:00", end_time: "22:00", location_name: "Bangkok",
+    amount_thb: 15000, payment_type: "deposit", deposit_percent: 50,
+  }), env);
+  assert.equal(badPercent.status, 400);
+  assert.equal((await badPercent.json()).error, "deposit_percent_must_be_30");
+
+  const badAmount = await handleCanonicalConfirmLink(post({
+    client_name: "Client", model_name: "Model", job_type: "vip", job_date: "2026-09-18",
+    start_time: "20:00", end_time: "22:00", location_name: "Bangkok",
+    amount_thb: 15000, payment_type: "deposit", deposit_percent: 30, deposit_amount_thb: 4000,
+  }), env);
+  assert.equal(badAmount.status, 400);
+  assert.equal((await badAmount.json()).error, "deposit_amount_mismatch");
+});
+
 test("canonical confirm-link advances an overnight time-only end into the next Bangkok day", async () => {
   const { env, calls } = envWithAirtableRecorder();
   const result = await handleCanonicalConfirmLink(post({
