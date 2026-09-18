@@ -27,6 +27,18 @@ test("owner-review worker preserves the existing session implementation", async 
   assert.match(text, /return legacyWorker\.fetch\(delegated, env, ctx\)/);
 });
 
+test("Model LINE identity claims use deterministic Airtable upsert instead of read-then-create", async () => {
+  for (const path of [
+    "src/model-liff-manual-review-worker.js",
+    "src/model-liff-worker-pre-manual-review.js",
+  ]) {
+    const text = await source(path);
+    assert.match(text, /performUpsert:\s*\{ fieldsToMergeOn: \["claim_id"\] \}/);
+    assert.match(text, /claim_id:\s*claimId/);
+    assert.doesNotMatch(text, /search\.records\.length > 1\) return \{ ok: false, status: 409/);
+  }
+});
+
 for (const file of [
   "src/model-liff-worker-pre-manual-review.js",
   "src/model-liff-worker-legacy.js",
