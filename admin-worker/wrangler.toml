@@ -669,6 +669,7 @@ AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
 AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
 AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID = "tblJ52hVu0f4uhEmS"
 AIRTABLE_TABLE_MODEL_MEDIA = "tblrpQXhHnbTU9RhW"
+AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
@@ -799,6 +800,15 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/payment-issuer-diagnostic"
+zone_name = "mmdbkk.com"
+
+# Owner/admin-only model payout adjustment ledger.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/model-payout/adjustments"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/model-payout/adjustments"
 zone_name = "mmdbkk.com"
 
 # Owner-only authenticated Model media E2E smoke. This route creates a tiny
