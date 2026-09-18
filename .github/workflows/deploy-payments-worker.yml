@@ -44,6 +44,7 @@ jobs:
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/payment-instructions-v1.js
+          node --check payments-worker/final-payment-flow.js
           node --check payments-worker/double-moment-purchase-v1.js
           node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
           node --check shared/membership-promotion-policy.mjs
@@ -51,6 +52,7 @@ jobs:
           node --test payments-worker/confirmation-ack.test.mjs
           node --test payments-worker/confirmation-details.test.mjs
           node --test payments-worker/payment-instructions-v1.test.mjs
+          node --test payments-worker/final-payment-flow.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
           node --test payments-worker/double-moment-purchase-v1.test.mjs
           node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs

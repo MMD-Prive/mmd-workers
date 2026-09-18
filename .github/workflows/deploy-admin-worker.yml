@@ -76,6 +76,7 @@ jobs:
           node --check src/payment-issuer-diagnostic.js
           node --check src/model-media-e2e-smoke.js
           node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs service-auth-contract.test.mjs
+          node --test model-session-runtime-v1a.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
           node --check src/mms-admin-runtime.js

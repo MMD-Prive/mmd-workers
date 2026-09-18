@@ -1,4 +1,5 @@
 import { verifyConfirmToken } from "./index.js";
+import { stablePaymentRef } from "./unified-payment-proof.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_DETAILS_PATH = "/v1/confirm/details";
@@ -69,7 +70,8 @@ export async function handleConfirmationDetails(request, env = {}) {
 
     const fields = session.fields || {};
     const sessionPaymentRef = text(fields[field(env.AT_SESSIONS__PAYMENT_REF, SESSION_FIELDS.paymentRef)], 200);
-    if (sessionPaymentRef && sessionPaymentRef !== text(claims.payment_ref, 200)) {
+    const finalPaymentRef = await stablePaymentRef(claims.session_id, "final");
+    if (sessionPaymentRef && !new Set([text(claims.payment_ref, 200), finalPaymentRef]).has(sessionPaymentRef)) {
       return withCors(request, env, json({ ok: false, error: "confirmation_session_mismatch" }, 409));
     }
 
@@ -102,12 +104,20 @@ export async function handleConfirmationDetails(request, env = {}) {
       const net = numberOrNull(fields[field(env.AT_SESSIONS__AMOUNT_THB, SESSION_FIELDS.amountThb)]);
       const safePricing = customerPricing(pricing, net);
       let paymentRecord = null;
+      let activePaymentRef = text(claims.payment_ref, 200);
       try {
-        paymentRecord = await findPayment(env, claims.payment_ref, claims.session_id);
+        const finalPayment = await findPayment(env, finalPaymentRef, claims.session_id);
+        if (finalPayment?.id) {
+          paymentRecord = finalPayment;
+          activePaymentRef = finalPaymentRef;
+        } else {
+          paymentRecord = await findPayment(env, claims.payment_ref, claims.session_id);
+        }
       } catch {}
       const customerAmountDue = numberOrNull(fields[SESSION_FIELDS.customerAmountDueThb]);
       return withCors(request, env, json({
         ...common,
+        payment_ref: activePaymentRef,
         amount_thb: net,
         pricing: safePricing,
         payment: customerPaymentDisplay({
@@ -116,7 +126,7 @@ export async function handleConfirmationDetails(request, env = {}) {
           customerAmountDue,
           claimedPaymentType: claims.payment_type,
           sessionPaymentStatus: common.payment_status,
-          paymentRef: claims.payment_ref,
+          paymentRef: activePaymentRef,
         }),
       }));
     }
@@ -222,7 +232,6 @@ function isProofReceived(...values) {
     "pending_review",
     "reviewing",
     "manual_slip_evidence_received",
-    "pending_confirmation",
   ]);
   return values.some((value) => accepted.has(text(value, 80).toLowerCase().replace(/[\s-]+/g, "_")));
 }

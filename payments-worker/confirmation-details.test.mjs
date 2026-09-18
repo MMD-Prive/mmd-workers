@@ -6,6 +6,7 @@ import {
   signConfirmToken,
 } from "./index.js";
 import { handleConfirmationDetails } from "./confirmation-details.js";
+import { stablePaymentRef } from "./unified-payment-proof.js";
 
 const F = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
@@ -226,6 +227,30 @@ test("customer payment display recognizes evidence metadata without treating it 
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.payment.proof_received, true);
+  assert.equal(data.payment.verified, false);
+});
+
+test("original signed customer link resolves the separate final intent after arrival", async () => {
+  const finalRef = await stablePaymentRef("sess_confirm_details_test", "final");
+  const finalPayment = paymentRecord({
+    [P.paymentRef]: finalRef,
+    [P.amountThb]: 27000,
+    [P.paymentType]: "Final",
+    [P.paymentStage]: "final",
+    [P.intentStatus]: "Pending Confirmation",
+    [P.verificationStatus]: "pending",
+    [P.paymentStatus]: "Pending",
+    [P.promptPayUrl]: "https://payments.example.com/qr/final.png",
+  });
+  const { env, customerToken } = await envAndTokens({ payment: finalPayment, paymentType: "deposit" });
+  const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.payment_ref, finalRef);
+  assert.notEqual(data.payment_ref, "pay_confirm_details_test");
+  assert.equal(data.payment.stage, "final");
+  assert.equal(data.payment.amount_due_thb, 27000);
+  assert.equal(data.payment.proof_received, false);
   assert.equal(data.payment.verified, false);
 });
 
