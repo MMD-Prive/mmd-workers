@@ -24,6 +24,11 @@ import {
   isKenjiLv5OperationalRpcRequest,
 } from "./kenji-lv5-operational-rpc.js";
 import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import {
+  handleModelPayoutAdjustments,
+  isModelPayoutAdjustmentRequest,
+} from "./model-payout-adjustments.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -163,6 +168,11 @@ export default {
     // own strict caller + internal bearer checks and never becomes domain truth.
     if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
       return handleKenjiLv5OperationalRpc(request, env);
+    }
+
+    if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, env);
+      return handleModelPayoutAdjustments(request, env, actor);
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
