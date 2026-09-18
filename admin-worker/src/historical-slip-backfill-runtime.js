@@ -19,21 +19,29 @@ export function isHistoricalSlipBackfillRequest(path, method = "GET") {
 export async function handleHistoricalSlipBackfillRequest(request, env = {}, ctx = null) {
   const path = normalizePath(new URL(request.url).pathname);
   const method = request.method.toUpperCase();
+  const traceId = `historical-${crypto.randomUUID()}`;
 
   if (method === "OPTIONS") return new Response(null, { status: 204, headers: responseHeaders() });
   if (!isHistoricalSlipBackfillRequest(path, method)) return json({ ok: false, error: "not_found" }, 404);
 
   try {
-    if (path === API_PREFIX && method === "GET") return listBackfillProofs(request, env);
-    if (path === INTAKE_PATH && method === "POST") return ingestHistoricalProof(request, env, ctx);
-    if (path === REVIEW_PATH && method === "POST") return reviewHistoricalProof(request, env, ctx);
+    // Await inside this try block so async validation/storage errors are returned
+    // as the API's structured JSON contract instead of escaping as a Worker 500.
+    if (path === API_PREFIX && method === "GET") return await listBackfillProofs(request, env);
+    if (path === INTAKE_PATH && method === "POST") return await ingestHistoricalProof(request, env, ctx);
+    if (path === REVIEW_PATH && method === "POST") return await reviewHistoricalProof(request, env, ctx);
     return json({ ok: false, error: "method_not_allowed" }, 405);
   } catch (error) {
+    const requestedStatus = Number(error?.status || 500);
+    const status = Number.isInteger(requestedStatus) && requestedStatus >= 400 && requestedStatus <= 599
+      ? requestedStatus
+      : 500;
     return json({
       ok: false,
       error: safeCode(error?.message || error || "historical_slip_backfill_failed"),
+      trace_id: traceId,
       authority: "payments-worker",
-    }, Number(error?.status || 500));
+    }, status);
   }
 }
 
@@ -748,6 +756,10 @@ function clientTable(env) { return clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AI
 function normalizeSourceType(value) {
   const source = safeCode(value || "line_archive");
   if (source === "line_album" || source === "line_archive") return source;
+  // History Intake v1 and the production Webflow form use these legacy names.
+  // Normalize them at the boundary while keeping the stored schema canonical.
+  if (source === "line_group_album") return "line_album";
+  if (source === "line_ofc" || source === "line_crew") return "line_archive";
   throw httpError(400, "source_type_must_be_line_album_or_line_archive");
 }
 
