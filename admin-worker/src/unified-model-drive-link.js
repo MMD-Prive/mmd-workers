@@ -322,11 +322,16 @@ export function inferDrivePrivateAccessFolder(folder = {}) {
     .trim();
 
   if (!path) return "";
-  // The deepest/specific model group wins over broad package ancestors.
+  // Access tier and work format are separate axes.
+  // Package/group ancestors decide access. Nested VIP/PN folders decide work
+  // capability in inferDrivePrivateServiceLevel().
   if (path.includes("exclusive") || path.includes("black card")) return "exclusive";
-  if (/(^| )vip( models?)?( |$)/.test(path)) return "vip";
+  if (path.includes("standard package") || path.includes("standard models") || path.includes("standard model") || path.includes("lite")) return "standard";
+  if (path.includes("premium package") || path.includes("premium models") || path.includes("premium model")) return "premium";
+  if (path.includes("vip package") || path.includes("vip models") || path.includes("vip model")) return "vip";
+  if (path.includes("standard")) return "standard";
   if (path.includes("premium")) return "premium";
-  if (path.includes("standard") || path.includes("lite")) return "standard";
+  if (/(^| )vip( |$)/.test(path)) return "vip";
   return "";
 }
 
@@ -368,7 +373,6 @@ async function createCanonicalModelFromDrive(env, folder, actor) {
       sales_layer: "private",
       visibility: "private",
       ...(privateAccessFolder ? {
-        access_folder: privateAccessFolder,
         private_tier: privateAccessFolder === "exclusive"
           ? "Exclusive Models"
           : privateAccessFolder === "vip"
