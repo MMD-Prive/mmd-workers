@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isMemberModelWishDashboardRequest,
+  linkedSessionIdsForClient,
   projectPastClientModelWish,
 } from "./src/member-model-wish-notes.js";
 
@@ -69,4 +70,22 @@ test("past-client projection requires explicit consent and completed direct camp
 
 test("Per-only note never becomes the customer note when birthday Wish is missing", () => {
   assert.equal(projectPastClientModelWish(wishRecord({ birthday_wish: "" }), new Set([MODEL_ID])), null);
+});
+
+
+test("Past Clients can resolve exact canonical Sessions without email or display-name anchors", () => {
+  const ids = linkedSessionIdsForClient({
+    id: "recClient1234567",
+    fields: {
+      Sessions: ["recSessA12345678", "recSessB12345678"],
+      Sessions_v2: [{ id: "recSessB12345678" }, { id: "recSessC12345678" }],
+      "Sessions V2": ["recSessD12345678"],
+    },
+  });
+  assert.deepEqual(ids, [
+    "recSessA12345678",
+    "recSessB12345678",
+    "recSessC12345678",
+    "recSessD12345678",
+  ]);
 });
