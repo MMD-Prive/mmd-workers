@@ -257,7 +257,7 @@ function linkedRecordIds(value) {
   return value.map((item) => clean(typeof item === "string" ? item : item?.id, 80)).filter(Boolean);
 }
 
-function canonicalProofLinks(payment, session) {
+export function canonicalProofLinks(payment, session) {
   const paymentFields = payment?.fields || {};
   const sessionFields = session?.fields || {};
   const clients = [
