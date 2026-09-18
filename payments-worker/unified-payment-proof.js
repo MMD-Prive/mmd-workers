@@ -192,6 +192,7 @@ export async function handleUnifiedPaymentIntent(request, env, downstream) {
 
 function airtableTable(env, kind) {
   if (kind === "proofs") return clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi");
+  if (kind === "sessions") return clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
   return clean(env.AIRTABLE_TABLE_PAYMENTS_ID || env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ");
 }
 
@@ -244,6 +245,30 @@ async function findPayment(env, paymentRef) {
 
 async function findProof(env, paymentRef) {
   return findFirstByFields(env, airtableTable(env, "proofs"), ["payment_ref", "transaction_ref"], paymentRef);
+}
+
+async function findSession(env, sessionId) {
+  if (!clean(sessionId)) return null;
+  return findFirstByFields(env, airtableTable(env, "sessions"), ["session_id", "Session ID"], sessionId);
+}
+
+function linkedRecordIds(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => clean(typeof item === "string" ? item : item?.id, 80)).filter(Boolean);
+}
+
+function canonicalProofLinks(payment, session) {
+  const paymentFields = payment?.fields || {};
+  const sessionFields = session?.fields || {};
+  const clients = [
+    ...linkedRecordIds(paymentFields.Client || paymentFields.client),
+    ...linkedRecordIds(sessionFields.Client || sessionFields.client),
+  ];
+  return {
+    payment: payment?.id ? [payment.id] : [],
+    session: session?.id ? [session.id] : [],
+    client: [...new Set(clients)],
+  };
 }
 
 async function createProof(env, fields) {
@@ -402,8 +427,9 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   };
 }
 
-async function buildProofFields(env, form, payment, paymentRef, file) {
+async function buildProofFields(env, form, payment, paymentRef, file, session = null) {
   const snapshot = paymentSnapshot(payment, form);
+  const links = canonicalProofLinks(payment, session);
   if (!snapshot.amount_thb) {
     const error = new Error("canonical_payment_amount_missing");
     error.status = 409;
@@ -433,6 +459,9 @@ async function buildProofFields(env, form, payment, paymentRef, file) {
       session_id: snapshot.session_id,
       member_email: snapshot.member_email,
       payment_stage: snapshot.payment_stage,
+      payment: links.payment,
+      session: links.session,
+      Client: links.client,
       created_at: new Date().toISOString(),
     }),
   };
@@ -480,7 +509,11 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
     }
 
     let proofBundle = null;
-    if (payment) proofBundle = await buildProofFields(env, form, payment, paymentRef, file);
+    if (payment) {
+      const snapshot = paymentSnapshot(payment, form);
+      const session = await findSession(env, snapshot.session_id);
+      proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session);
+    }
 
     const downstreamResponse = await downstream(request);
     if (!downstreamResponse.ok) return downstreamResponse;
