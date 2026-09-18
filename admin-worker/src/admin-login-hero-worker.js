@@ -23,6 +23,7 @@ import {
   handleKenjiLv5OperationalRpc,
   isKenjiLv5OperationalRpcRequest,
 } from "./kenji-lv5-operational-rpc.js";
+import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -186,6 +187,10 @@ export default {
     if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
     if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, env);
     response = await enforceOwnerDashboardFirst(request, response);
+
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      response = await augmentOwnerJobGrantCreateError(request, response, env);
+    }
 
     if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
       const headers = new Headers(response.headers);
