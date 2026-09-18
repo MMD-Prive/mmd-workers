@@ -1,5 +1,6 @@
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
+import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
@@ -5426,6 +5427,11 @@ async function createAdminJob(env, body) {
 
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
+
+  // Defense in depth: the issuer may only continue when each canonical route
+  // carries the token role it is meant to serve. This is a routing/dispatch
+  // contract check; backend signature verification remains authoritative.
+  assertConfirmationUrlPair(customer_confirmation_url, model_confirmation_url);
 
   let ownerJobGrantStatus = privateGate?.ownerJobGrant ? "reserved" : "not_used";
   if (privateGate?.ownerJobGrant) {
