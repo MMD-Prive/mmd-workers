@@ -12,8 +12,8 @@ const LEGACY_UPLOAD_URL_PATH = "/v1/private-model/upload-url";
 const LEGACY_UPLOAD_FILE_PATH = "/v1/private-model/upload-file";
 const APPLY_BODY_LIMIT = 64 * 1024;
 const UPLOAD_META_BODY_LIMIT = 16 * 1024;
-const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = MAX_UPLOAD_BYTES;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:private-model:upload:v1:";
@@ -989,7 +989,7 @@ function renderApplyPage(env) {
 <div><label for="age">อายุ</label><input id="age" name="age" inputmode="numeric" type="number" min="18" max="100"></div>
 <div class="full"><label for="reason">เหตุผลที่ต้องการสมัคร Private Model</label><textarea id="reason" name="reason" maxlength="1500" required></textarea></div>
 <div class="full"><label for="note">ข้อมูลเพิ่มเติม / ประสบการณ์ / เงื่อนไขที่อยากแจ้ง</label><textarea id="note" name="note" maxlength="2000"></textarea></div>
-<div class="full"><label for="files">รูปสมัคร / Portfolio / เอกสาร (JPG, PNG, WEBP, PDF · สูงสุดไฟล์ละ 8MB)</label><input id="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"><div class="note">ระบบจะอัปโหลดเข้า Private R2 ก่อนสร้างใบสมัคร</div></div>
+<div class="full"><label for="files">รูปสมัคร / Portfolio / เอกสาร (JPG, PNG, WEBP, PDF · สูงสุดไฟล์ละ 10MB)</label><input id="files" type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf"><div class="note">ระบบจะอัปโหลดเข้า Private R2 ก่อนสร้างใบสมัคร</div></div>
 <div class="full consent"><input id="consent" type="checkbox" required><label for="consent">ยินยอมให้ MMD ใช้ข้อมูลนี้เพื่อการคัดกรองและติดต่อเกี่ยวกับการสมัคร Private Model</label></div>
 </div><div class="actions"><button id="submit" type="submit">Submit Private Application</button><div id="status" class="status" aria-live="polite"></div></div></form></main>
 <script>
@@ -1010,7 +1010,7 @@ function renderApplyPage(env) {
     const refs = [];
     let photoIndex = 0;
     for (const file of files) {
-      if (file.size > 8 * 1024 * 1024) throw new Error('file_too_large');
+      if (file.size > 10 * 1024 * 1024) throw new Error('file_too_large');
       const kind = file.type === 'application/pdf' ? 'document' : 'photo';
       const role = kind === 'document' ? 'portfolio' : photoRoles[Math.min(photoIndex++, photoRoles.length - 1)];
       status.textContent = 'Uploading ' + file.name + '…';
