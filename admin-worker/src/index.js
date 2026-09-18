@@ -4897,6 +4897,72 @@ async function resolveCreateSessionModel(env, { model_id = "", model_key = "" } 
   return null;
 }
 
+
+const OWNER_PRIVATE_JOB_GRANT_ACTION = "owner_private_job_grant";
+const OWNER_PRIVATE_JOB_GRANT_PENDING_REASON = "owner_approved_single_job_unconsumed";
+const OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON = "owner_approved_single_job_reserved";
+const OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON = "owner_approved_single_job_consumed";
+
+function ownerGrantMoneyToken(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  return String(Math.round((parsed + Number.EPSILON) * 100) / 100);
+}
+
+export function ownerPrivateJobGrantTarget(body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const lineage = body?.client_lineage || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+
+  const clientId = str(body.client_id || lineage.client_id);
+  const modelId = str(model.model_id || body.model_id);
+  const jobDate = str(body.job_date || jobDetails.job_date);
+  const startTime = str(body.start_time || jobDetails.start_time);
+  const endTime = str(body.end_time || jobDetails.end_time);
+  const folder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const orientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const privateWork = accessToken(work.job_type || work.private_work || body.job_type || jobDetails.private_work);
+  const amount = ownerGrantMoneyToken(body.service_amount_thb ?? body.amount_thb ?? payment.service_amount_thb ?? payment.amount_thb);
+  const payout = ownerGrantMoneyToken(body.pay_model_thb ?? body.model_payout_thb ?? body?.model_payout?.amount_thb);
+
+  if (!clientId || !modelId || !jobDate || !startTime || !endTime || !folder || !orientation || !privateWork || !amount || !payout) return "";
+  return ["jobgrant","v1",clientId,modelId,jobDate,startTime,endTime,folder,orientation,privateWork,amount,payout].join(":");
+}
+
+async function findOwnerPrivateJobGrant(env, body = {}) {
+  const target = ownerPrivateJobGrantTarget(body);
+  if (!target) return null;
+  const table = str(env.AIRTABLE_TABLE_ACCESS_LOG || "System — Access Log");
+  const formula = `AND({Action}=${formulaText(OWNER_PRIVATE_JOB_GRANT_ACTION)},{Target}=${formulaText(target)},{Result}=${formulaText("success")},{Reason}=${formulaText(OWNER_PRIVATE_JOB_GRANT_PENDING_REASON)})`;
+  const record = await airtableFindOne(env, table, formula);
+  return record ? { ...record, target, table } : null;
+}
+
+async function reserveOwnerPrivateJobGrant(env, grant) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON,
+    "After JSON": JSON.stringify({ state: "reserved", target: grant.target, reserved_at: new Date().toISOString() }).slice(0, 4000),
+  });
+}
+
+async function consumeOwnerPrivateJobGrant(env, grant, result = {}) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON,
+    "After JSON": JSON.stringify({
+      state: "consumed",
+      target: grant.target,
+      session_id: str(result.session_id),
+      payment_ref: str(result.payment_ref),
+      consumed_at: new Date().toISOString(),
+    }).slice(0, 4000),
+  });
+}
+
 async function enforcePrivateCreateAccess(env, body = {}) {
   const work = body?.work || {};
   const model = body?.model || {};
@@ -4922,6 +4988,12 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   };
 
   // Membership comes from the backend ledger; frontend tier/status fields never grant access.
+  // An exact owner one-job grant may bridge this Job only. It is stored in
+  // System — Access Log, matched on the complete Job fingerprint, and never
+  // materializes standing membership or Client entitlement.
+  if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+  if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
+
   const memberAccess = await resolveAuthoritativeMemberAccess(env, {
     member_id: str(body.member_id || lineage.member_id),
     client_id: str(body.client_id || lineage.client_id),
@@ -4931,14 +5003,22 @@ async function enforcePrivateCreateAccess(env, body = {}) {
     member_email: str(lineage.member_email || body.member_email || lineage.email),
     telegram_username: str(telegramGate.customer_telegram_username || lineage.customer_telegram_username),
   });
-  if (!memberAccess.resolved) {
+  const standingAllowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+    ? memberAccess.allowed_folders
+    : [];
+  const standingAllowsSelectedFolder = memberAccess.resolved && standingAllowedFolders.includes(selectedFolder);
+  const ownerJobGrant = standingAllowsSelectedFolder ? null : await findOwnerPrivateJobGrant(env, body);
+
+  if (!memberAccess.resolved && !ownerJobGrant) {
     throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
   }
-  const allowedFolders = memberAccess.allowed_folders;
-  if (!allowedFolders.length) throw new CreateSessionAccessError("private_eligibility_blocked", "Client membership is not active for private work.");
-  if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
-  if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
-  if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
+  if (memberAccess.resolved && !standingAllowedFolders.length && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_eligibility_blocked", "Client membership is not active for private work.");
+  }
+  if (memberAccess.resolved && standingAllowedFolders.length && !standingAllowsSelectedFolder && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
+  }
+  const allowedFolders = ownerJobGrant ? [selectedFolder] : standingAllowedFolders;
 
   // Never trust browser-submitted model metadata; re-resolve the model record.
   const modelRecord = await resolveCreateSessionModel(env, {
@@ -4956,7 +5036,7 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
   if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
 
-  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState };
+  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState, ownerJobGrant };
 }
 
 async function searchCreateSessionModels(env, url) {
@@ -5144,10 +5224,13 @@ async function createAdminJob(env, body) {
   const jobVisibility = [work.job_visibility, body.job_visibility, body.booking_visibility,
     body.visibility, jobDetails.world].some(value => str(value).toLowerCase() === "private") ? "private" : "public";
 
+  let privateGate = null;
   if (jobVisibility === "private") {
-    // Authoritative gate: resolves the member from the backend ledger and the
-    // model from Airtable. Browser-supplied membership/model fields never grant access.
-    await enforcePrivateCreateAccess(env, body);
+    privateGate = await enforcePrivateCreateAccess(env, body);
+    if (privateGate?.ownerJobGrant) {
+      const reserved = await reserveOwnerPrivateJobGrant(env, privateGate.ownerJobGrant);
+      if (!reserved?.ok) throw new CreateSessionAccessError("owner_job_grant_reservation_failed", "Owner one-job grant could not be reserved.", 503);
+    }
   }
 
   const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
@@ -5220,6 +5303,12 @@ async function createAdminJob(env, body) {
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
 
+  let ownerJobGrantStatus = privateGate?.ownerJobGrant ? "reserved" : "not_used";
+  if (privateGate?.ownerJobGrant) {
+    const consumed = await consumeOwnerPrivateJobGrant(env, privateGate.ownerJobGrant, { session_id, payment_ref });
+    ownerJobGrantStatus = consumed?.ok ? "consumed" : "reserved_consume_failed";
+  }
+
   let notificationStatus = "not_configured";
   try {
     const notification = await notifyJobCreated(env, {
@@ -5249,6 +5338,7 @@ async function createAdminJob(env, body) {
     model_confirmation_url,
     raw: minted,
     notification_status: notificationStatus,
+    owner_job_grant_status: ownerJobGrantStatus,
   };
 }
 
