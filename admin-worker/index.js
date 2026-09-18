@@ -2340,8 +2340,8 @@ function modelAccessProfile(fields = {}) {
 function isDriveLazyPrivateModel(fields = {}) {
   const tag = accessToken(fields.raw_import_tag);
   const scope = accessToken(fields.folder_scope_key);
-  return tag === "drive lazy materialized v1" &&
-    (scope.startsWith("exclusive drive ") || scope.startsWith("private drive "));
+  return tag === "drive_lazy_materialized_v1" &&
+    (scope.startsWith("exclusive_drive_") || scope.startsWith("private_drive_"));
 }
 
 function effectivePrivateModelLane(profile, fields, selectedLane) {
