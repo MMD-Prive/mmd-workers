@@ -52,7 +52,7 @@
   let selected = null;
 
   function errorMessage(error) {
-    const code = text(error?.message || error);
+    const code = text(error?.code || error?.message || error);
     const labels = {
       payment_ref_required: 'ยังไม่มีเลขอ้างอิงการโอน',
       amount_thb_required: 'ยังไม่มียอดเงิน',
@@ -64,7 +64,16 @@
       historical_proof_rejected: 'รายการนี้ถูก Reject แล้ว',
       payments_worker_handoff_failed: 'ส่งเข้า payments-worker ไม่สำเร็จ',
     };
-    return labels[code] || code || 'ไม่สามารถดำเนินการได้';
+    const message = labels[code] || code || 'ไม่สามารถดำเนินการได้';
+    return error?.traceId ? `${message} · Trace ${error.traceId}` : message;
+  }
+
+  function responseError(payload, status) {
+    const error = new Error(payload?.error || status);
+    error.code = text(payload?.error || status);
+    error.traceId = text(payload?.trace_id);
+    error.status = status;
+    return error;
   }
 
   function installLinks() {
@@ -190,9 +199,7 @@
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload.ok !== true) {
-        const error = new Error(payload.error || response.status);
-        error.status = response.status;
-        throw error;
+        throw responseError(payload, response.status);
       }
       items = Array.isArray(payload.items) ? payload.items : [];
       if (badge) badge.textContent = 'LIVE · PAYMENT CONTROL PLANE';
@@ -222,7 +229,7 @@
     try {
       const response = await fetch(`${API}/intake`, { method: 'POST', credentials: 'include', body: data });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok !== true) throw new Error(payload.error || response.status);
+      if (!response.ok || payload.ok !== true) throw responseError(payload, response.status);
       status.textContent = payload.duplicate
         ? 'พบหลักฐานเดิม · ไม่สร้างซ้ำ'
         : `รับหลักฐานแล้ว · ${payload.review_required ? 'ต้อง Review ต่อ' : 'พร้อม Review'}`;
@@ -269,7 +276,7 @@
         body: JSON.stringify(reviewBody(decision)),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.ok !== true) throw new Error(payload.error || response.status);
+      if (!response.ok || payload.ok !== true) throw responseError(payload, response.status);
       status.textContent = decision === 'approve'
         ? `สำเร็จ · payments-worker ยืนยัน ${STAGE_LABELS[payload.payment_stage] || payload.payment_stage || 'รายการ'}${payload.payment_ref ? ` · Ref ${payload.payment_ref}` : ''}${payload.duplicate ? ' · ตรวจซ้ำแล้ว' : ''}`
         : 'บันทึก Reject แล้ว · Money Truth ไม่เปลี่ยน';
