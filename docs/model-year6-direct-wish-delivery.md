@@ -29,6 +29,8 @@ POST /v1/model/session/current?mode=year6_direct_wish
 
 Identity authority is the signed `mmd_model_session_v1` session.
 
+Profile photos are not a prerequisite for this campaign. They remain owned by the authenticated MMD MODEL Gallery upload flow. During rollout the backend may accept the previous complete 5-photo payload for compatibility, but the direct Wish never stores those media IDs as delivery authority and never blocks submission when photos are absent.
+
 Visible Q1 copy is locked:
 
 ```text
@@ -97,7 +99,7 @@ The Worker requires all of the following:
 - `past_clients_consent === true`,
 - authenticated MY MMD member session,
 - exact canonical Client resolution,
-- a completed canonical Session linked to that exact Client,
+- a completed canonical Session linked to that exact Client (prefer direct Client → Sessions reverse links; email/name lookup is compatibility enrichment only),
 - the exact `Canonical Model` record on that completed Session equals the Wish Model.
 
 If exact canonical linkage is unavailable, the projection fails closed and returns no note.
