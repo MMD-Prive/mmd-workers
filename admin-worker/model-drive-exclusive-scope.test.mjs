@@ -45,12 +45,12 @@ test("Approved Exclusive PN Drive path materializes PN-only capability", () => {
 });
 
 
-test("Private legacy path uses the most specific VIP subfolder as access group", () => {
+test("Private Standard Package keeps Standard access while nested VIP grants VIP work capability", () => {
   const folder = {
     lane: "private",
     folder_path: "Private Models / Standard Package / MMD Variety / MMD Farang / VIP / Simba",
   };
-  assert.equal(inferDrivePrivateAccessFolder(folder), "vip");
+  assert.equal(inferDrivePrivateAccessFolder(folder), "standard");
   assert.equal(inferDrivePrivateServiceLevel(folder), "vip");
 });
 
@@ -62,4 +62,14 @@ test("Private Premium package without a deeper VIP group stays Premium access", 
     }),
     "premium",
   );
+});
+
+
+test("Private Premium Package can also contain VIP-capable models without widening access tier", () => {
+  const folder = {
+    lane: "private",
+    folder_path: "Private Models / Premium Package / Straight / VIP / Example",
+  };
+  assert.equal(inferDrivePrivateAccessFolder(folder), "premium");
+  assert.equal(inferDrivePrivateServiceLevel(folder), "vip");
 });
