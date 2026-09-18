@@ -172,7 +172,7 @@ test("worker route accepts bearer internal auth plus trusted event", async () =>
   }
 });
 
-test("worker route accepts X-Confirm-Key internal auth plus trusted body", async () => {
+test("worker route rejects retired X-Confirm-Key internal auth", async () => {
   const calls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
@@ -186,8 +186,9 @@ test("worker route accepts X-Confirm-Key internal auth plus trusted body", async
       body: { line_user_id: LINE_USER_ID, trusted_event: true },
     }), AUTH_ENV);
 
-    assert.equal(response.status, 200);
-    assert.equal(calls.length, 1);
+    assert.equal(response.status, 401);
+    assert.equal(calls.length, 0);
+    assert.deepEqual(await response.json(), { ok: false, error: "internal_auth_required" });
   } finally {
     globalThis.fetch = originalFetch;
   }

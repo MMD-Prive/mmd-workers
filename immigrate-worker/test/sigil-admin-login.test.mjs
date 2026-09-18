@@ -2,14 +2,17 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const tmp = await mkdtemp(join(tmpdir(), "sigil-admin-login-"));
 const outfile = join(tmp, "worker.mjs");
+const workerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 await build({
-  entryPoints: ["src/index.ts"],
+  entryPoints: [join(workerRoot, "src/index.ts")],
   outfile,
   bundle: true,
   format: "esm",
@@ -56,55 +59,22 @@ async function call(path, init) {
 try {
   {
     const response = await call("/sigil/admin/login");
-    const html = await response.text();
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
-    assert.equal(response.headers.get("x-mmd-page"), "sigil-admin-login");
-    assert.match(html, /class="sigil-admin-login-v1"/);
-    assert.match(html, /Gate Code \/ OTP/);
-    assert.match(html, /method="post" action="\/sigil\/admin\/login"/);
-    assert.match(html, /name="gate_code"/);
-    assert.doesNotMatch(html, /localStorage|sessionStorage|\?mock|name="token"/);
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room");
+    assert.equal(response.headers.get("cache-control"), "no-store");
   }
 
   {
     const form = new FormData();
-    form.set("gate_code", "wrong");
+    form.set("gate_code", "must-not-be-consumed");
     form.set("next", "/sigil/admin/dashboard");
     const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    const html = await response.text();
-    assert.equal(response.status, 401);
-    assert.equal(response.headers.get("set-cookie"), null);
-    assert.match(html, /Unable to verify SIGIL admin access/);
-  }
-
-  {
-    const form = new FormData();
-    form.set("gate_code", "valid-gate");
-    form.set("next", "/sigil/admin/control-room");
-    const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/sigil/admin/control-room");
-    const cookie = response.headers.get("set-cookie") || "";
-    assert.match(cookie, /mmd_admin_gate_v1=/);
-    assert.match(cookie, /HttpOnly/);
-    assert.match(cookie, /Secure/);
-    assert.match(cookie, /SameSite=Lax/);
-  }
-
-  for (const next of [
-    "https://evil.example/sigil/admin/control-room",
-    "//evil.example/sigil/admin/control-room",
-    "/member/login",
-    "/pay/membership",
-    "/trust/inme",
-  ]) {
-    const form = new FormData();
-    form.set("gate_code", "valid-gate");
-    form.set("next", next);
-    const response = await call("/sigil/admin/login", { method: "POST", body: form });
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "/sigil/admin/dashboard");
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET, HEAD");
+    assert.match(response.headers.get("set-cookie") || "", /mmd_admin_gate_v1=;/);
+    const body = await response.json();
+    assert.equal(body.error, "legacy_admin_login_method_not_allowed");
+    assert.equal(body.canonical_login, "/internal/admin/login");
   }
 
   {
@@ -126,12 +96,12 @@ try {
     assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
     assert.equal(response.headers.get("x-mmd-page"), "member-dashboard");
     assert.match(html, /Member Home \/ Status Hub/);
-    assert.ok(html.includes("/member/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
+    assert.ok(html.includes("/sigil/member/membership?t=abc&amp;code=gold&amp;promo=vip&amp;debug=recovery"));
     assert.doesNotMatch(html, /name="token"/);
   }
 
   {
-    const response = await call("/member/membership?t=abc&code=gold&promo=vip&debug=recovery");
+    const response = await call("/sigil/member/membership?t=abc&code=gold&promo=vip&debug=recovery");
     const html = await response.text();
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("x-mmd-worker"), "immigrate-worker");
@@ -144,14 +114,36 @@ try {
 
   {
     const response = await call("/admin/login?next=/sigil/admin/control-room");
-    assert.equal(response.status, 302);
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/admin/login?next=%2Fsigil%2Fadmin%2Fcontrol-room");
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room");
   }
 
   {
-    const response = await call("/internal/admin/control-room");
+    const forged = btoa(JSON.stringify({
+      ok: true,
+      at: Date.now(),
+      baseUrl: "https://mmdbkk.com",
+      bearer: "arbitrary",
+    }));
+    const response = await call("/internal/admin/control-room", {
+      headers: { cookie: `mmd_admin_gate_v1=${encodeURIComponent(forged)}` },
+    });
     assert.equal(response.status, 302);
     assert.equal(response.headers.get("location"), "/internal/admin/login?next=%2Finternal%2Fadmin%2Fcontrol-room");
+  }
+
+  {
+    const response = await call("/internal/admin/login/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ bearer: "must-not-be-stored", confirmKey: "must-not-be-stored" }),
+    });
+    assert.equal(response.status, 410);
+    const body = await response.json();
+    assert.equal(body.error.code, "LEGACY_ADMIN_SESSION_RETIRED");
+    assert.equal(body.canonical_login, "/internal/admin/login");
+    assert.match(response.headers.get("set-cookie") || "", /mmd_admin_gate_v1=;/);
+    assert.doesNotMatch(JSON.stringify(body), /must-not-be-stored/);
   }
 
   {
@@ -188,7 +180,7 @@ try {
 
   {
     bindingCalls.length = 0;
-    const payload = JSON.stringify({ session_id: "sess_public_safe", source: "test" });
+    const payload = JSON.stringify({ session_id: "sess_public_safe", amount_thb: 9000, source: "test" });
     const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/create-job?source=worker-page", {
       method: "POST",
       headers: {
@@ -200,11 +192,20 @@ try {
     }), bridgeEnv);
     assert.equal(response.status, 200);
     assert.equal(bindingCalls.length, 1);
-    assert.equal(bindingCalls[0].url, "https://mmdbkk.com/v1/admin/create-job?source=worker-page");
+    assert.equal(bindingCalls[0].url, "https://mmdbkk.com/v1/admin/job/create?source=worker-page");
     assert.equal(bindingCalls[0].method, "POST");
     assert.equal(bindingCalls[0].headers.get("authorization"), null);
     assert.equal(bindingCalls[0].headers.get("content-type"), "application/json");
-    assert.equal(await bindingCalls[0].text(), payload);
+    const forwardedPayload = JSON.parse(await bindingCalls[0].text());
+    assert.equal(forwardedPayload.session_id, "sess_public_safe");
+    assert.equal(forwardedPayload.client_name, "sess_public_safe");
+    assert.equal(forwardedPayload.model_name, "model_pending");
+    assert.equal(forwardedPayload.job_type, "public_work");
+    assert.equal(forwardedPayload.job_date, "pending_date");
+    assert.equal(forwardedPayload.start_time, "00:00");
+    assert.equal(forwardedPayload.end_time, "01:30");
+    assert.equal(forwardedPayload.location_name, "pending_location");
+    assert.equal(forwardedPayload.amount_thb, 9000);
   }
 } finally {
   await rm(tmp, { recursive: true, force: true });

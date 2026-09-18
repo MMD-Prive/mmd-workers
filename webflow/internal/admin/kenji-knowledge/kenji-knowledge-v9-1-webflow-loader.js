@@ -59,7 +59,7 @@
       do_rules: ["แนะนำให้ตรวจสถานะผ่านช่องทาง MMD", "ใช้ภาษารอ review"],
       dont_rules: ["ห้ามยืนยัน active", "ห้าม unlock สิทธิ์"],
       escalation_rule: "ให้ MMD ตรวจข้อมูลสมาชิกก่อนยืนยันสถานะ",
-      related_routes: ["/member/dashboard", "/member/membership"]
+      related_routes: ["/member/dashboard", "/sigil/member/membership"]
     }
   ];
   var campaignTemplates = [
@@ -387,7 +387,7 @@
         do_rules: ["แนะนำขั้นตอนอย่างปลอดภัย", "ย้ำว่าต้องรอระบบ MMD ตรวจสอบ"],
         dont_rules: ["ห้ามบอกว่า active แล้ว", "ห้าม unlock หรือเปิดสิทธิ์แทนระบบ"],
         escalation_rule: "ถ้าเกี่ยวกับสถานะจริงหรือสิทธิ์สมาชิก ให้ MMD ตรวจจากระบบก่อน",
-        related_routes: ["/member/dashboard", "/member/membership"]
+        related_routes: ["/member/dashboard", "/sigil/member/membership"]
       });
       toast("ใส่เทมเพลต Membership แล้ว");
     }

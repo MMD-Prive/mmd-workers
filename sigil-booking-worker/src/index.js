@@ -152,9 +152,19 @@ async function handleBookingIntake(req, env) {
 
   const rec = await upsertBookingRequest(env, bookingRef, fields);
   const nextUrl = buildNextUrl(env, body, { bookingRef, sessionId });
-  const telegram = await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl });
+  const telegram = bool(body.suppress_telegram_notify)
+    ? { ok: false, skipped: true, reason: "silent_booking_intent_collection" }
+    : await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl });
 
-  return { ok: true, record_id: rec?.id || null, booking_ref: bookingRef, session_id: sessionId, next_url: nextUrl, telegram_notify: telegram };
+  return {
+    ok: true,
+    record_id: rec?.id || null,
+    booking_ref: bookingRef,
+    session_id: sessionId,
+    next_url: nextUrl,
+    telegram_notify: telegram,
+    intake_snapshot: bookingIntakeSnapshot(rec, { bookingRef, sessionId }),
+  };
 }
 
 async function resolveMemberAccess(env, input) {
@@ -268,8 +278,56 @@ function sanitizeModelForBooking(record, { scope, privateAllowed, env }) {
 async function upsertBookingRequest(env, bookingRef, fields) {
   const table = env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID || env.AIRTABLE_TABLE_BOOKING_REQUESTS || "SIGIL Booking Requests";
   const existing = await firstWorkingFormula(env, table, [`{booking_ref}=${formulaText(bookingRef)}`, `{Request ID}=${formulaText(bookingRef)}`]);
-  if (existing?.id) return airtablePatch(env, table, existing.id, fields);
+  if (existing?.id) return airtablePatch(env, table, existing.id, mergeBookingRequestFields(existing.fields || {}, fields));
   return airtableCreate(env, table, fields);
+}
+
+function parseJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(str(value) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function meaningful(value) {
+  return value !== "" && value !== null && value !== undefined && !(typeof value === "number" && !Number.isFinite(value));
+}
+
+function mergeObjects(previous = {}, incoming = {}) {
+  const merged = { ...previous };
+  for (const [key, value] of Object.entries(incoming || {})) {
+    if (!meaningful(value)) continue;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      merged[key] = mergeObjects(parseJsonObject(previous?.[key]), value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+export function mergeBookingRequestFields(previous = {}, incoming = {}) {
+  const next = compact({ ...incoming });
+  delete next["Created At"];
+  const priorResolver = parseJsonObject(previous.resolver_payload_json);
+  const incomingResolver = parseJsonObject(incoming.resolver_payload_json);
+  next.resolver_payload_json = safeStringify(mergeObjects(priorResolver, incomingResolver));
+  return next;
+}
+
+export function bookingIntakeSnapshot(record = {}, ids = {}) {
+  const fields = record?.fields || {};
+  const resolver = parseJsonObject(fields.resolver_payload_json);
+  return {
+    booking_ref: str(fields.booking_ref || fields["Request ID"] || ids.bookingRef),
+    session_id: str(fields.session_id || ids.sessionId),
+    intent: resolver.intent && typeof resolver.intent === "object" ? resolver.intent : {},
+    job_creation_state: str(resolver.job_creation_state),
+    job_receipt: resolver.job_receipt && typeof resolver.job_receipt === "object" ? resolver.job_receipt : null,
+  };
 }
 
 function buildNextUrl(env, body, ids) {

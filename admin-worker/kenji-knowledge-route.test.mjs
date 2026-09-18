@@ -4,11 +4,12 @@ import test from "node:test";
 
 import worker from "./src/dashboard-worker.js";
 
-const CANONICAL = "/internal/admin/kenji-knowledge";
+const CANONICAL = "/internal/admin/kenji";
+const LEGACY = "/internal/admin/kenji-knowledge";
 const LEGACY_SIGIL = "/sigil/internal/admin/kenji-knowledge";
-const ROOT = "<div id=\"mmdKenjiKnowledgeV9\"></div>";
-const CSS = "https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-board-bridge.css";
-const LOADER = "https://models.mmdbkk.com/webflow/internal/admin/kenji-knowledge/kenji-knowledge-v9-1-webflow-loader-board196.js";
+const ROOT = "<div id=\"mmdKenjiAdminV1\" aria-live=\"polite\"></div>";
+const CSS = "https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css";
+const LOADER = "https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js";
 
 async function request(path, init) {
   return worker.fetch(new Request(`https://mmdbkk.com${path}`, init), {}, {});
@@ -26,7 +27,7 @@ async function withOriginFetchMock(mock, run) {
 
 function assertSharedHeaders(response, kind) {
   assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
-  assert.equal(response.headers.get("x-mmd-page"), "kenji-knowledge-admin");
+  assert.equal(response.headers.get("x-mmd-page"), "kenji-admin");
   assert.equal(response.headers.get("x-mmd-worker"), "admin-worker");
   assert.equal(response.headers.get("x-mmd-route-canonical"), CANONICAL);
   assert.equal(response.headers.get("x-mmd-route-kind"), kind);
@@ -63,18 +64,37 @@ for (const path of [CANONICAL, `${CANONICAL}/`, `${CANONICAL}?source=head-test`]
 
 test("legacy sigil internal admin route redirects to canonical with query preserved", async () => {
   for (const [path, location] of [
-    [LEGACY_SIGIL, CANONICAL],
-    [`${LEGACY_SIGIL}/`, `${CANONICAL}/`],
-    [`${LEGACY_SIGIL}?source=legacy-test`, `${CANONICAL}?source=legacy-test`],
-    [`${LEGACY_SIGIL}/foo?source=legacy-test`, `${CANONICAL}/foo?source=legacy-test`],
+    [LEGACY_SIGIL, `https://mmdbkk.com${CANONICAL}`],
+    [`${LEGACY_SIGIL}/`, `https://mmdbkk.com${CANONICAL}/`],
+    [`${LEGACY_SIGIL}?abc=123`, `https://mmdbkk.com${CANONICAL}?abc=123`],
+    [`${LEGACY_SIGIL}/foo?source=legacy-test`, `https://mmdbkk.com${CANONICAL}/foo?source=legacy-test`],
+    ["/sigil/internal/admin/console?x=1", "https://mmdbkk.com/internal/admin/console?x=1"],
   ]) {
     const response = await request(path);
 
     assert.equal(response.status, 308, path);
     assert.equal(response.headers.get("location"), location, path);
-    assert.equal(response.headers.get("x-mmd-route-canonical"), location, path);
+    assert.equal(response.headers.get("x-mmd-route-canonical"), location.replace("https://mmdbkk.com", ""), path);
     assert.equal(await response.text(), "");
   }
+});
+
+test("legacy Kenji Knowledge route redirects to canonical with query preserved", async () => {
+  for (const [path, location] of [
+    [LEGACY, `https://mmdbkk.com${CANONICAL}`],
+    [`${LEGACY}?source=legacy`, `https://mmdbkk.com${CANONICAL}?source=legacy`],
+  ]) {
+    const response = await request(path);
+    assert.equal(response.status, 308);
+    assert.equal(response.headers.get("location"), location);
+  }
+});
+
+test("SIGIL login is the one legacy namespace exception and renders directly", async () => {
+  const response = await request("/sigil/internal/admin/login?next=/internal/admin/kenji-knowledge");
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
 });
 
 test("canonical query request serves without redirecting or changing its URL", async () => {
@@ -89,14 +109,14 @@ test("canonical query request serves without redirecting or changing its URL", a
 });
 
 for (const path of [
-  "/sigil/internal/admin/kenji",
+  "/sigil/internal/admin/other-kenji",
   "/sigil/internal/admin/other",
 ]) {
   test(`legacy sigil internal admin sibling redirects to canonical namespace: ${path}`, async () => {
     const response = await request(path);
 
     assert.equal(response.status, 308);
-    assert.equal(response.headers.get("location"), path.replace("/sigil/internal/admin", "/internal/admin"));
+    assert.equal(response.headers.get("location"), `https://mmdbkk.com${path.replace("/sigil/internal/admin", "/internal/admin")}`);
   });
 }
 
@@ -185,10 +205,19 @@ test("canonical and alias route ownership is narrow and isolated", async () => {
     readFile(new URL("../immigrate-worker/wrangler.toml", import.meta.url), "utf8"),
     readFile(new URL("../immigrate-worker/src/index.ts", import.meta.url), "utf8"),
   ]);
-  const canonicalPatterns = routePatterns(CANONICAL);
+  const canonicalPatterns = exactRoutePatterns(CANONICAL);
   const legacySigilPatterns = routePatterns(LEGACY_SIGIL);
+  const legacySigilRedirectPatterns = [
+    "mmdbkk.com/sigil/internal/admin*",
+    "www.mmdbkk.com/sigil/internal/admin*",
+  ];
 
   for (const pattern of [...canonicalPatterns, ...legacySigilPatterns]) {
+    assert.equal(count(adminConfig, `pattern = "${pattern}"`), 1, pattern);
+    assert.equal(count(redirectConfig, `pattern = "${pattern}"`), 0, pattern);
+    assert.equal(count(immigrateConfig, pattern), 0, pattern);
+  }
+  for (const pattern of legacySigilRedirectPatterns) {
     assert.equal(count(adminConfig, `pattern = "${pattern}"`), 1, pattern);
     assert.equal(count(redirectConfig, `pattern = "${pattern}"`), 0, pattern);
     assert.equal(count(immigrateConfig, pattern), 0, pattern);
@@ -199,8 +228,6 @@ test("canonical and alias route ownership is narrow and isolated", async () => {
   const forbidden = [
     "mmdbkk.com/sigil/*",
     "www.mmdbkk.com/sigil/*",
-    "mmdbkk.com/sigil/internal/admin/*",
-    "www.mmdbkk.com/sigil/internal/admin/*",
     "mmdbkk.com/internal/admin/*",
     "www.mmdbkk.com/internal/admin/*",
     "mmdbkk.com/*",
@@ -219,6 +246,7 @@ test("PR 206 readiness API route declarations remain exact", async () => {
     "/v1/internal/kenji/knowledge/published",
     "/v1/admin/kenji/knowledge/meta",
     "/v1/admin/kenji/knowledge/list",
+    "/v1/admin/kenji/knowledge/*",
     "/v1/admin/kenji/knowledge/draft",
   ];
 
@@ -236,6 +264,15 @@ function routePatterns(path) {
     `www.mmdbkk.com${path}`,
     `www.mmdbkk.com${path}/`,
     `www.mmdbkk.com${path}*`,
+  ];
+}
+
+function exactRoutePatterns(path) {
+  return [
+    `mmdbkk.com${path}`,
+    `mmdbkk.com${path}/`,
+    `www.mmdbkk.com${path}`,
+    `www.mmdbkk.com${path}/`,
   ];
 }
 

@@ -1,0 +1,57 @@
+name: LINE OFC direct contact recovery
+
+on:
+  pull_request:
+    paths:
+      - scripts/line-ofc-direct-contact-recovery.js
+      - .github/workflows/line-ofc-direct-contact-recovery.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-direct-contact-recovery.js
+      - .github/workflows/line-ofc-direct-contact-recovery.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-direct-contact-recovery-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate resolver
+        run: |
+          node --check scripts/line-ofc-direct-contact-recovery.js
+          node scripts/line-ofc-direct-contact-recovery.js --self-test
+      - name: Audit exact LINE contact history
+        run: node scripts/line-ofc-direct-contact-recovery.js --report /tmp/line-direct-contact-audit.json
+      - name: Apply exact LINE contact recovery
+        if: github.event_name != 'pull_request'
+        run: node scripts/line-ofc-direct-contact-recovery.js --apply --report /tmp/line-direct-contact-apply.json
+      - name: Verify idempotency
+        if: github.event_name != 'pull_request'
+        run: node scripts/line-ofc-direct-contact-recovery.js --assert-idempotent --report /tmp/line-direct-contact-idempotency.json
+      - name: Upload aggregate-only reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-direct-contact-recovery-report
+          path: |
+            /tmp/line-direct-contact-audit.json
+            /tmp/line-direct-contact-apply.json
+            /tmp/line-direct-contact-idempotency.json
+          if-no-files-found: warn
+          retention-days: 14

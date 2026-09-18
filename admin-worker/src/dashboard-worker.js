@@ -6,12 +6,20 @@
 // - Add GET /v1/admin/dashboard without touching the large core router.
 // - Delegate every other request to the existing admin-worker implementation.
 // - Keep the dashboard endpoint read-only and safe for Webflow.
+// - Project backend-owned pre-job reconfirm state for SIGIL Jobs / Per Ops.
+// - Reuse canonical Payment Review + Historical Recovery queues for money counts.
 // =========================================================
 
 import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
+import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
+import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
+const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
+const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
+const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
+const HISTORICAL_PENDING_STATES = new Set(["pending", "review", "review_required", "needs_review", "unmatched", "new", "submitted"]);
 
 export default {
   async fetch(req, env, ctx) {
@@ -44,33 +52,71 @@ export default {
   },
 };
 
-async function buildAdminDashboard(env) {
+export async function buildAdminDashboard(env) {
   const now = new Date();
+  const tomorrow = bangkokDateOffset(now, 1);
+  const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [proofsResult, sessionsResult, membersResult] = await Promise.allSettled([
-    airtableList(env, env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi", 30),
-    airtableList(env, env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX", 30),
-    airtableList(env, env.AIRTABLE_TABLE_MEMBERS || "members", 30),
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
+    loadCanonicalPaymentReviewQueue(env),
+    loadCanonicalHistoricalQueue(env),
+    airtableList(env, sessionsTable, 100),
+    airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
+    airtableListSessionsForDate(env, sessionsTable, tomorrow),
   ]);
 
-  const proofRecords = settledRecords(proofsResult);
+  const paymentQueue = settledRecords(paymentQueueResult);
+  const historicalQueue = settledRecords(historicalQueueResult);
+  const historicalPending = historicalQueue.filter(isHistoricalPending);
   const sessionRecords = settledRecords(sessionsResult);
   const memberRecords = settledRecords(membersResult);
 
-  const money = buildMoneyList(proofRecords);
+  const money = buildMoneyList(paymentQueue);
   const jobs = buildJobList(sessionRecords, now);
   const members = buildMemberList(memberRecords, now);
-  const boss = buildBossList({ money, jobs, members, proofRecords, sessionRecords, memberRecords });
-  const todos = buildTodos({ money, jobs, members, boss });
+  const reconfirm = reconfirmSessionsResult.status === "fulfilled"
+    ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
+    : unavailableReconfirmOverview(tomorrow, resultReason(reconfirmSessionsResult));
+  const boss = buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords });
+  const todos = buildTodos({ money, historicalPending, jobs, members, boss });
 
   const counts = {
     urgent: todos.length + boss.length,
-    payments: money.length,
+    payments: paymentQueue.length,
+    payment_review: paymentQueue.length,
+    historical_recovery: historicalPending.length,
     jobs: jobs.length,
+    jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
     members: members.length,
+    membership_review: members.length,
+    reconfirm_pending: reconfirm.pending,
+    reconfirm_overdue: reconfirm.overdue,
   };
 
-  const focus = buildFocus({ money, jobs, members, boss });
+  const queues = {
+    payment_review: {
+      count: paymentQueue.length,
+      href: "/internal/admin/payments",
+      authority: "payment-review-runtime",
+    },
+    historical_recovery: {
+      count: historicalPending.length,
+      href: "/internal/admin/payments/historical-backfill",
+      authority: "historical-slip-backfill-runtime",
+    },
+    jobs_need_confirm: {
+      count: counts.jobs_need_confirm,
+      href: "/internal/admin/jobs",
+      authority: "session-reconfirm-runtime",
+    },
+    membership_review: {
+      count: members.length,
+      href: "/internal/admin/member-intelligence",
+      authority: "canonical-members",
+    },
+  };
+
+  const focus = buildFocus({ money, historicalPending, jobs, members, boss });
 
   return {
     ok: true,
@@ -79,33 +125,80 @@ async function buildAdminDashboard(env) {
     generated_at: now.toISOString(),
     focus,
     counts,
+    queues,
     todos,
     jobs,
     money,
+    historical_recovery: historicalPending.slice(0, 6),
     members,
     boss,
+    reconfirm,
     status: {
       admin: "พร้อม",
-      payments: proofRecords.length ? "พร้อม" : statusFromResult(proofsResult),
+      payments: statusFromResult(paymentQueueResult),
+      historical_recovery: statusFromResult(historicalQueueResult),
       telegram: "พร้อม",
-      data: dataMode([proofsResult, sessionsResult, membersResult]),
+      data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
+      reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
     },
     debug: {
-      payments_loaded: proofRecords.length,
+      payment_review_loaded: paymentQueue.length,
+      historical_loaded: historicalQueue.length,
+      historical_pending: historicalPending.length,
       sessions_loaded: sessionRecords.length,
       members_loaded: memberRecords.length,
-      payment_source: resultReason(proofsResult),
+      reconfirm_sessions_loaded: reconfirm.items.length,
+      payment_source: resultReason(paymentQueueResult),
+      historical_source: resultReason(historicalQueueResult),
       session_source: resultReason(sessionsResult),
       member_source: resultReason(membersResult),
+      reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
     },
   };
 }
 
-function buildFocus({ money, jobs, members, boss }) {
+async function loadCanonicalPaymentReviewQueue(env) {
+  const response = await handlePaymentReviewRequest(
+    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100"),
+    env,
+    { id: "dashboard", role: "admin" },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
+    throw new Error(`payment_review_queue_${response.status}_${payload?.error || "invalid"}`);
+  }
+  return payload.items;
+}
+
+async function loadCanonicalHistoricalQueue(env) {
+  const response = await handleHistoricalSlipBackfillRequest(
+    new Request("https://admin.internal/v1/admin/payments/historical-backfill?limit=100"),
+    env,
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
+    throw new Error(`historical_recovery_queue_${response.status}_${payload?.error || "invalid"}`);
+  }
+  return payload.items;
+}
+
+function isHistoricalPending(item) {
+  const state = normalizeWord(item?.review_state || item?.status || "pending");
+  return HISTORICAL_PENDING_STATES.has(state || "pending");
+}
+
+function buildFocus({ money, historicalPending, jobs, members, boss }) {
   if (money.length) {
     return {
       title: "ตรวจเงินก่อน",
-      text: `มีรายการรอตรวจ ${money.length} รายการ อย่าเพิ่งเปิดสิทธิ์หรือเริ่มงานที่ผูกกับยอดนี้จนกว่าจะตรวจเสร็จ`,
+      text: `มี Payment Review รอตรวจ ${money.length} รายการ อย่าเพิ่งเปิดสิทธิ์หรือเริ่มงานที่ผูกกับยอดนี้จนกว่าจะตรวจเสร็จ`,
+    };
+  }
+
+  if (historicalPending.length) {
+    return {
+      title: "ตรวจ Historical Recovery",
+      text: `มีสลิปย้อนหลังรอตรวจ ${historicalPending.length} รายการ เปิด Historical Backfill เพื่อจับคู่และยืนยันหลักฐาน`,
     };
   }
 
@@ -136,7 +229,7 @@ function buildFocus({ money, jobs, members, boss }) {
   };
 }
 
-function buildTodos({ money, jobs, members, boss }) {
+function buildTodos({ money, historicalPending, jobs, members, boss }) {
   const todos = [];
 
   if (money[0]) {
@@ -145,8 +238,23 @@ function buildTodos({ money, jobs, members, boss }) {
       text: money[0].text,
       href: "/internal/admin/payments",
       icon: "฿",
-      tag: "ตรวจเงิน",
+      tag: "Payment Review",
       color: "red",
+    });
+  }
+
+  if (historicalPending[0]) {
+    const proof = historicalPending[0];
+    todos.push({
+      title: `Historical Recovery · ${proof.proof_id || proof.source_ref || "สลิปย้อนหลัง"}`,
+      text: compactJoin([
+        proof.amount_thb ? `${amountText(proof.amount_thb)} บาท` : "ยังอ่านยอดไม่ครบ",
+        proof.payment_ref_masked ? `ref ${proof.payment_ref_masked}` : "",
+      ], " · "),
+      href: "/internal/admin/payments/historical-backfill",
+      icon: "↺",
+      tag: "Historical",
+      color: "yellow",
     });
   }
 
@@ -173,7 +281,7 @@ function buildTodos({ money, jobs, members, boss }) {
     });
   }
 
-  if (boss[0]) {
+  if (boss[0] && todos.length < 4) {
     todos.push({
       title: boss[0].title,
       text: boss[0].text,
@@ -187,65 +295,158 @@ function buildTodos({ money, jobs, members, boss }) {
   return todos.slice(0, 4);
 }
 
-function buildMoneyList(records) {
-  return records
-    .filter((record) => {
-      const fields = record.fields || {};
-      const status = lower(fields.status || fields.verification_status || fields.payment_status);
-      return !status || /pending|รอ|review|unmatched|new/.test(status);
-    })
+function buildMoneyList(items) {
+  return (Array.isArray(items) ? items : [])
     .slice(0, 6)
-    .map((record) => {
-      const fields = record.fields || {};
-      const name = firstText(fields.payer_name, fields.member_name, fields.client_name, fields.name, "ลูกค้า");
-      const amount = amountText(fields.amount_thb, fields.amount, fields.total_thb);
-      const ref = firstText(fields.payment_ref, fields.proof_id, fields.session_id, record.id);
+    .map((item) => {
+      const name = firstText(item.customer_name, item.payer_name, "ลูกค้า");
+      const amount = amountText(item.evidence_amount_thb);
+      const ref = firstText(item.payment_ref, item.proof_id);
+      const issues = Array.isArray(item.context_issues) ? item.context_issues.length : 0;
       return {
         title: name,
-        text: compactJoin([firstText(fields.note, fields.channel, "รอตรวจสลิป"), ref ? `ref ${ref}` : ""], " · "),
+        text: compactJoin([
+          firstText(item.inferred_label, item.payment_stage, "รอตรวจสลิป"),
+          ref ? `ref ${maskPaymentRef(ref)}` : "",
+          issues ? `ต้องเติม ${issues} จุด` : "พร้อมตรวจ",
+        ], " · "),
         amount,
+        proof_id: firstText(item.proof_id),
+        can_approve: item.can_approve === true,
         href: "/internal/admin/payments",
       };
     });
 }
 
-function buildJobList(records, now) {
-  return records
-    .slice(0, 6)
-    .map((record, index) => {
-      const fields = record.fields || {};
-      const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
-      const model = firstText(fields.model_name, fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
-      const customer = firstText(fields.member_name, fields.customer_name, fields.client_name, fields.name, "ลูกค้า");
-      const status = firstText(fields.session_state, fields.status, fields.job_status, "กำลังดำเนินการ");
-      const time = timeLabel(fields.start_time || fields.start_at || fields.scheduled_at || fields.date_time, now, index);
-      return {
-        id: sessionId,
-        title: `${model} · ${customer}`,
-        text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields.work_type, "")], " · "),
-        time,
-        status: thaiStatus(status),
-        progress: progressFromStatus(status),
-        href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
-      };
-    });
+export function buildJobList(records, now = new Date()) {
+  const items = (Array.isArray(records) ? records : []).map((record) => {
+    const fields = record.fields || {};
+    const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
+    const model = firstText(fields.model_name, fields["Assigned Model"], fields["Model Name"], fields.model, fields.assigned_model, "ยังไม่ระบุ model");
+    const customer = firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า");
+    const status = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status, "กำลังดำเนินการ");
+    const jobDateSource = firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]);
+    const scheduleSource = firstText(fields.start_at, fields.scheduled_at, fields.date_time);
+    const startTimeSource = firstText(fields.start_time, fields["Start Time"], scheduleSource);
+    const jobDate = normalizeDateOnly(jobDateSource) || normalizeDateOnly(scheduleSource);
+    const dateLabel = jobDateLabel(jobDate || jobDateSource || scheduleSource);
+    const timeOnly = timeLabel(startTimeSource);
+    const when = compactJoin([dateLabel, timeOnly], " · ") || "ยังไม่มีวันเวลา";
+
+    return {
+      id: sessionId,
+      title: `${model} · ${customer}`,
+      text: compactJoin([status, firstText(fields.service_type, fields.package_code, fields["Session Type"], fields.work_type, "")], " · "),
+      job_date: jobDate,
+      date_label: dateLabel,
+      start_time: firstText(fields.start_time, fields["Start Time"]),
+      time_only: timeOnly,
+      time: when,
+      when,
+      status: thaiStatus(status),
+      progress: progressFromStatus(status),
+      href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
+    };
+  });
+
+  return sortDashboardJobs(items, now).slice(0, 6);
+}
+
+export function buildReconfirmOverview(records, now = new Date(), jobDate = bangkokDateOffset(now, 1)) {
+  const nowMs = now instanceof Date ? now.getTime() : new Date(now).getTime();
+  const items = (Array.isArray(records) ? records : [])
+    .map((record) => projectReconfirmItem(record, nowMs, jobDate))
+    .filter(Boolean)
+    .sort((a, b) => String(a.start_time || "99:99").localeCompare(String(b.start_time || "99:99")));
+
+  const counts = { scheduled: 0, pending: 0, acknowledged: 0, overdue: 0, checking: 0 };
+  for (const item of items) counts[item.status] += 1;
+
+  return {
+    available: true,
+    scope: "tomorrow",
+    job_date: jobDate,
+    total: items.length,
+    ...counts,
+    items,
+  };
+}
+
+function unavailableReconfirmOverview(jobDate, reason) {
+  return {
+    available: false,
+    scope: "tomorrow",
+    job_date: jobDate,
+    total: 0,
+    scheduled: 0,
+    pending: 0,
+    acknowledged: 0,
+    overdue: 0,
+    checking: 0,
+    items: [],
+    reason: str(reason) || "reconfirm_source_unavailable",
+  };
+}
+
+function projectReconfirmItem(record, nowMs, expectedJobDate) {
+  const fields = record?.fields || {};
+  const lifecycle = normalizeWord(firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status));
+  if (!RECONFIRM_LIFECYCLE_STATES.has(lifecycle)) return null;
+
+  const jobDate = firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]);
+  if (expectedJobDate && normalizeDateOnly(jobDate) && normalizeDateOnly(jobDate) !== expectedJobDate) return null;
+
+  const requiredAt = firstText(fields.reconfirm_required_at);
+  const reminderAt = firstText(fields.reconfirm_reminder_at);
+  const overdueAt = firstText(fields.reconfirm_overdue_at);
+  const acknowledgedAt = firstText(fields.reconfirm_acknowledged_at);
+  const explicitStatus = normalizeWord(fields.reconfirm_status);
+  const status = deriveDashboardReconfirmStatus({ explicitStatus, requiredAt, overdueAt, acknowledgedAt }, nowMs);
+
+  return {
+    session_id: firstText(fields.session_id, fields.sid, record.id),
+    job_id: firstText(fields.job_id),
+    job_date: normalizeDateOnly(jobDate) || expectedJobDate || "",
+    start_time: firstText(fields.start_time, fields["Start Time"]),
+    model_name: firstText(fields.model_name, fields["Model Name"], fields.assigned_model, "Model"),
+    client_name: firstText(fields.client_name, fields.member_name, fields.customer_name, fields.name, "ลูกค้า"),
+    status,
+    required_at: requiredAt || null,
+    reminder_at: reminderAt || null,
+    overdue_at: overdueAt || null,
+    acknowledged_at: acknowledgedAt || null,
+    followup_status: firstText(fields.followup_status) || null,
+    risk_level: firstText(fields.risk_level) || null,
+  };
+}
+
+export function deriveDashboardReconfirmStatus({ explicitStatus, requiredAt, overdueAt, acknowledgedAt }, nowMs = Date.now()) {
+  if (acknowledgedAt) return "acknowledged";
+  const overdueMs = Date.parse(overdueAt || "");
+  const requiredMs = Date.parse(requiredAt || "");
+  if (Number.isFinite(overdueMs) && nowMs >= overdueMs) return "overdue";
+  if (Number.isFinite(requiredMs) && nowMs >= requiredMs) return "pending";
+  if (explicitStatus === "acknowledged") return "acknowledged";
+  if (["scheduled", "pending", "overdue"].includes(explicitStatus)) return explicitStatus;
+  if (requiredAt || overdueAt) return "scheduled";
+  return "checking";
 }
 
 function buildMemberList(records, now) {
   return records
     .filter((record) => {
       const fields = record.fields || {};
-      const status = lower(fields.status || fields.member_status || fields.membership_status);
-      const expiry = parseDate(fields.expire_at || fields.expiry || fields.end_date || fields.expires_at);
+      const status = lower(firstText(fields["Membership Status"], fields["Verification Status"], fields.status, fields.member_status, fields.membership_status));
+      const expiry = parseDate(firstText(fields["Membership Expiry"], fields["Membership End Date"], fields["Expire At"], fields.expire_at, fields.expiry, fields.end_date, fields.expires_at));
       const nearExpiry = expiry ? expiry.getTime() - now.getTime() < 1000 * 60 * 60 * 24 * 30 : false;
       return /expired|pending|hold|รอ|หมด/.test(status) || nearExpiry;
     })
     .slice(0, 6)
     .map((record) => {
       const fields = record.fields || {};
-      const name = firstText(fields.name, fields.mmd_client_name, fields.nickname, fields.email, "สมาชิก");
-      const tier = firstText(fields.tier, fields.package_code, fields.member_tier, "Member");
-      const status = firstText(fields.status, fields.member_status, fields.membership_status, "ควรตรวจ");
+      const name = firstText(fields["Full Name (Display)"], fields["Full Name"], fields.mmd_client_name, fields.name, fields.nickname, fields.email, "สมาชิก");
+      const tier = firstText(fields["Membership Tier"], fields.tier, fields.package_code, fields.member_tier, "Member");
+      const status = firstText(fields["Membership Status"], fields["Verification Status"], fields.status, fields.member_status, fields.membership_status, "ควรตรวจ");
       return {
         title: name,
         text: `${tier} · ${thaiStatus(status)}`,
@@ -255,24 +456,26 @@ function buildMemberList(records, now) {
     });
 }
 
-function buildBossList({ money, jobs, members, proofRecords, sessionRecords, memberRecords }) {
+function buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords }) {
   const out = [];
 
   const blackCardMember = memberRecords.find((record) => /black|vip|svip/i.test(JSON.stringify(record.fields || {})));
   if (blackCardMember) {
     const fields = blackCardMember.fields || {};
     out.push({
-      title: `Black Card Review · ${firstText(fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
+      title: `Black Card Review · ${firstText(fields["Full Name (Display)"], fields["Full Name"], fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
       text: "มีข้อมูลระดับ VIP / Black Card ควรให้ Boss Per ตรวจเอง",
       href: "/internal/admin/black-card-review",
     });
   }
 
-  const unmatchedPayment = proofRecords.find((record) => /unmatched|จับคู่ไม่ได้|missing/i.test(JSON.stringify(record.fields || {})));
+  const unmatchedPayment = (Array.isArray(paymentQueue) ? paymentQueue : []).find((item) =>
+    Array.isArray(item?.context_issues) && item.context_issues.includes("customer_or_job_not_linked")
+  );
   if (unmatchedPayment) {
     out.push({
       title: "ยอดโอนจับคู่ไม่ได้",
-      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ session หรือสมาชิกไม่ได้",
+      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ Session หรือสมาชิกไม่ได้",
       href: "/internal/admin/payments",
     });
   }
@@ -303,12 +506,13 @@ async function airtableList(env, tableName, maxRecords = 20) {
   }
 
   const qs = new URLSearchParams({ maxRecords: String(maxRecords) });
-  const res = await fetch(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
+  const request = new Request(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
     headers: {
       Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
       "Content-Type": "application/json",
     },
   });
+  const res = await airtableFetch(env, request);
 
   if (!res.ok) {
     throw new Error(`airtable_${tableName}_${res.status}`);
@@ -316,6 +520,35 @@ async function airtableList(env, tableName, maxRecords = 20) {
 
   const data = await res.json();
   return Array.isArray(data.records) ? data.records : [];
+}
+
+async function airtableListSessionsForDate(env, tableName, jobDate) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !tableName) {
+    throw new Error("missing_airtable_env");
+  }
+  const field = str(env.AT_SESSIONS__JOB_DATE || "job_date").replace(/[{}]/g, "");
+  if (!field) throw new Error("reconfirm_job_date_field_missing");
+  const qs = new URLSearchParams({
+    maxRecords: "100",
+    filterByFormula: `IS_SAME({${field}}, DATETIME_PARSE('${jobDate}'), 'day')`,
+  });
+  const request = new Request(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID}/${encodeURIComponent(tableName)}?${qs.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const res = await airtableFetch(env, request);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`airtable_reconfirm_${res.status}${detail ? `:${detail.slice(0, 120)}` : ""}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.records) ? data.records : [];
+}
+
+async function airtableFetch(env, request) {
+  return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(request) : fetch(request);
 }
 
 function settledRecords(result) {
@@ -402,6 +635,10 @@ function lower(value) {
   return str(value).toLowerCase();
 }
 
+function normalizeWord(value) {
+  return lower(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
 function firstText(...values) {
   for (const value of values) {
     const text = str(Array.isArray(value) ? value[0] : value);
@@ -424,6 +661,13 @@ function amountText(...values) {
   return "-";
 }
 
+function maskPaymentRef(value) {
+  const ref = str(value);
+  if (!ref) return "";
+  if (ref.length <= 8) return `${ref.slice(0, 2)}…${ref.slice(-2)}`;
+  return `${ref.slice(0, 4)}…${ref.slice(-4)}`;
+}
+
 function parseDate(value) {
   const raw = str(Array.isArray(value) ? value[0] : value);
   if (!raw) return null;
@@ -431,13 +675,81 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function timeLabel(value, now, index) {
-  const date = parseDate(value);
-  if (date) {
-    return new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(date);
+function normalizeDateOnly(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
+function bangkokDateOffset(value, days) {
+  const base = value instanceof Date ? value : new Date(value);
+  const shifted = new Date(base.getTime() + Number(days || 0) * 86400000);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(shifted);
+  const get = (type) => parts.find((part) => part.type === type)?.value || "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+function jobDateLabel(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  if (!raw) return "";
+  const normalized = normalizeDateOnly(raw);
+  const date = normalized ? new Date(`${normalized}T12:00:00+07:00`) : parseDate(raw);
+  if (!date) return "";
+  return new Intl.DateTimeFormat("th-TH", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
+function timeLabel(value) {
+  const raw = str(Array.isArray(value) ? value[0] : value);
+  if (!raw) return "";
+
+  const timeOnly = raw.match(/^(\d{1,2})[:.](\d{2})(?::\d{2})?$/);
+  if (timeOnly) {
+    const hour = Number(timeOnly[1]);
+    const minute = Number(timeOnly[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
   }
-  const fallback = new Date(now.getTime() + (index + 1) * 60 * 60 * 1000);
-  return new Intl.DateTimeFormat("th-TH", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Bangkok" }).format(fallback);
+
+  const date = parseDate(raw);
+  if (!date) return "";
+  return new Intl.DateTimeFormat("th-TH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Bangkok",
+  }).format(date);
+}
+
+function sortDashboardJobs(items, now) {
+  const today = bangkokDateOffset(now, 0);
+  const bucket = (job) => {
+    if (!job.job_date) return 3;
+    if (job.job_date === today) return 0;
+    if (job.job_date > today) return 1;
+    return 2;
+  };
+
+  return [...items].sort((a, b) => {
+    const aBucket = bucket(a);
+    const bBucket = bucket(b);
+    if (aBucket !== bBucket) return aBucket - bBucket;
+    if (a.job_date !== b.job_date) {
+      if (aBucket === 2) return String(b.job_date).localeCompare(String(a.job_date));
+      return String(a.job_date).localeCompare(String(b.job_date));
+    }
+    return String(a.time_only || "99:99").localeCompare(String(b.time_only || "99:99"));
+  });
 }
 
 function thaiStatus(value) {
