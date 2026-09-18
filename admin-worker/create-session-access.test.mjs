@@ -27,7 +27,7 @@ const tables = {
       fields: {
         "Client Name": "Que",
         line_user_id: "client_svip_line_user",
-        "MMD — Member Entitlements": ["recEntSvip000001"],
+        "MMD — Member Entitlements": ["recEntSvip000001XX"],
       },
     },
   ],
@@ -42,7 +42,7 @@ const tables = {
     member("recMemGuest00001", "client_guest", "mem_guest", "guest@example.test"),
   ],
   member_entitlements: [
-    entitlement("recEntSvip000001", "mem_svip", "svip", future),
+    entitlement("recEntSvip000001XX", "mem_svip", "svip", future),
   ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
