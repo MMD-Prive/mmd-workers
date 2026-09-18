@@ -167,4 +167,6 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /สร้าง Model \+ เชื่อม LINE/);
   assert.match(html, /ไม่เดาหรือเชื่อม LINE ให้อัตโนมัติ/);
   assert.match(html, /confirm:true/);
+  assert.match(html, /reconcileClaim\(claimId\)/);
+  assert.match(html, /ยืนยันจากสถานะล่าสุดบน server/);
 });
