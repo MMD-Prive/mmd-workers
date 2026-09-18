@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import worker, {
   CreateSessionAccessError,
   enforcePrivateCreateAccess,
+  ownerPrivateJobGrantTarget,
   resolveAuthoritativeMemberAccess,
   searchCreateSessionModels,
 } from "./src/index.js";
@@ -15,6 +16,7 @@ const env = {
   AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "member_entitlements",
   AIRTABLE_TABLE_CLIENTS: "clients",
   AIRTABLE_TABLE_MODELS: "models",
+  AIRTABLE_TABLE_ACCESS_LOG: "access_log",
 };
 
 const future = "2099-01-01";
@@ -53,6 +55,17 @@ const tables = {
     pkg("recPkgExpired001", "expired@example.test", "Black Card", past),
     pkg("recPkgInactive01", "inactive@example.test", "Black Card", future, "inactive"),
     pkg("recPkgGuest0001", "guest@example.test", "Guest", future),
+  ],
+  access_log: [
+    {
+      id: "recOwnerGrant00001",
+      fields: {
+        Action: "owner_private_job_grant",
+        Target: "jobgrant:v1:client_missing:recStandardModel01:2026-09-18:20:00:22:00:standard:straight:vip:15000:9000",
+        Result: "success",
+        Reason: "owner_approved_single_job_unconsumed",
+      },
+    },
   ],
   models: [
     model("recStandardModel01", "Standard Straight", "standard", "straight"),
@@ -175,6 +188,10 @@ function formulaMatches(fields, formula) {
     const field = String(search[2] || "");
     return String(fields[field] ?? "").toLowerCase().includes(needle);
   }
+  const equals = [...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g)];
+  if (equals.length > 1 || /^AND\(/i.test(formula)) {
+    return equals.every(([, field, value]) => String(fields[field] ?? "") === value);
+  }
   const value = (formula.match(/=\s*"([^"]*)"/) || [])[1] || "";
   const field = (formula.match(/\{([^}]+)\}/) || [])[1] || "";
   if (!field) return true;
@@ -191,6 +208,11 @@ function jsonResponse(data, status = 200) {
 
 function privateBody(clientId, folder, modelId, overrides = {}) {
   return {
+    job_date: overrides.jobDate || "2026-09-18",
+    start_time: overrides.startTime || "20:00",
+    end_time: overrides.endTime || "22:00",
+    amount_thb: overrides.amountThb ?? 15000,
+    model_payout_thb: overrides.modelPayoutThb ?? 9000,
     client_lineage: {
       client_id: clientId,
       membership_status: overrides.forgedMembershipStatus || "expired",
@@ -200,6 +222,7 @@ function privateBody(clientId, folder, modelId, overrides = {}) {
     work: {
       job_visibility: "private",
       model_folder: folder,
+      job_type: overrides.privateWork || "vip",
     },
     private_access: {
       eligibility_checked: true,
@@ -315,8 +338,17 @@ assert.equal(fastInventorySearch.private_access.eligibility_result, "deferred_to
 assert.equal(fastInventorySearch.private_access.inventory_fast_path, true);
 assert.equal(fastInventorySearch.private_access.entitlement_recheck_required, true);
 
+assert.equal(
+  ownerPrivateJobGrantTarget(privateBody("client_missing", "standard", "recStandardModel01")),
+  "jobgrant:v1:client_missing:recStandardModel01:2026-09-18:20:00:22:00:standard:straight:vip:15000:9000",
+);
+{
+  const granted = await enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01"));
+  assert.equal(granted.ownerJobGrant?.id, "recOwnerGrant00001");
+  assert.equal(granted.selectedFolder, "standard");
+}
 await rejectsWithCode(
-  enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01")),
+  enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01", { startTime: "21:00", endTime: "23:00" })),
   "AUTHORITATIVE_MEMBER_NOT_FOUND",
 );
 
