@@ -2513,7 +2513,7 @@ export async function verifyStartWorkPaymentTruth(env, session) {
   const configuredUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
   if (!configuredUrl && !env.PAYMENTS_WORKER?.fetch) return { ok: false, error: "payment_gate_not_ready" };
   const truthUrl = configuredUrl || "https://sigil.mmdbkk.com/v1/internal/payments/final/status";
-  const request = new Request(truthUrl, {
+  const init = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -2523,10 +2523,10 @@ export async function verifyStartWorkPaymentTruth(env, session) {
       session_id: session.session_id,
       action: "start_work_preflight",
     }),
-  });
+  };
   const res = env.PAYMENTS_WORKER?.fetch && !configuredUrl
-    ? await env.PAYMENTS_WORKER.fetch(request)
-    : await fetch(request);
+    ? await env.PAYMENTS_WORKER.fetch(new Request(truthUrl, init))
+    : await fetch(truthUrl, init);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) return { ok: false, error: "payment_not_confirmed" };
   const confirmed =
