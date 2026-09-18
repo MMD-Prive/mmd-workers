@@ -9,7 +9,10 @@ import {
 } from "../lib/extractor.mjs";
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
-const INTERNAL_EDGE_MARKER = "mmd-slip-extractor-staging-edge";
+const INTERNAL_EDGE_MARKERS = new Set([
+  "mmd-slip-extractor-staging-edge",
+  "mmd-slip-extractor-edge",
+]);
 const EXTRACTION_PATHS = new Set(["/v1/extract/qr", "/v1/extract/ocr"]);
 
 function clean(value) {
@@ -63,7 +66,7 @@ const server = createServer(async (request, response) => {
     return writeJson(response, { error: "not_found" }, 404, id);
   }
 
-  if (request.headers["x-mmd-internal-edge"] !== INTERNAL_EDGE_MARKER) {
+  if (!INTERNAL_EDGE_MARKERS.has(clean(request.headers["x-mmd-internal-edge"]))) {
     return writeJson(response, { error: "internal_edge_required" }, 401, id);
   }
 
