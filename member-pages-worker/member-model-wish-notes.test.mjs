@@ -77,15 +77,15 @@ test("Past Clients can resolve exact canonical Sessions without email or display
   const ids = linkedSessionIdsForClient({
     id: "recClient1234567",
     fields: {
-      Sessions: ["recSessA12345678", "recSessB12345678"],
-      Sessions_v2: [{ id: "recSessB12345678" }, { id: "recSessC12345678" }],
-      "Sessions V2": ["recSessD12345678"],
+      Sessions: ["recSessA123456789", "recSessB123456789"],
+      Sessions_v2: [{ id: "recSessB123456789" }, { id: "recSessC123456789" }],
+      "Sessions V2": ["recSessD123456789"],
     },
   });
   assert.deepEqual(ids, [
-    "recSessA12345678",
-    "recSessB12345678",
-    "recSessC12345678",
-    "recSessD12345678",
+    "recSessA123456789",
+    "recSessB123456789",
+    "recSessC123456789",
+    "recSessD123456789",
   ]);
 });
