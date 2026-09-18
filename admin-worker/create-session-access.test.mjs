@@ -299,6 +299,11 @@ assert.equal(unresolvedSearch.private_access.eligibility_result, "unresolved");
 assert.equal(unresolvedSearch.private_access.inventory_preview_only, true);
 assert.equal(unresolvedSearch.private_access.entitlement_recheck_required, true);
 
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01")),
+  "AUTHORITATIVE_MEMBER_NOT_FOUND",
+);
+
 const routeRes = await worker.fetch(
   new Request("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_standard", {
     headers: { Authorization: "Bearer admin-test" },
