@@ -260,7 +260,10 @@
     try {
       window.history.replaceState(window.history.state, "", relativeUrl);
     } catch (_) {
-      // Keep the selected language for this view even when URL mutation fails.
+      // Some LINE/iOS WebViews restrict history mutation. Reloading the same
+      // signed URL with only the safe lang query keeps the switch deterministic.
+      window.location.replace(relativeUrl);
+      return;
     }
 
     root.dispatchEvent(new CustomEvent("mmd:sigil-language-change", {
