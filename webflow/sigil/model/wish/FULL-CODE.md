@@ -135,6 +135,15 @@ HTML — Webflow Embed
       <a class="mmw-back" href="/sigil/model/dashboard">กลับ MMD MODEL <span aria-hidden="true">↗</span></a>
     </section>
 
+    <figure class="mmw-closing">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aad6929f58f4dd5c050d251_Gtoip%20-%20xaj.webp" width="1672" height="941" loading="lazy" decoding="async" alt="ชายสี่คนในชุดสูทสีดำนั่งร่วมกัน ท่ามกลางวิวกรุงเทพฯ ยามเย็น">
+      <figcaption>
+        <p class="mmw-eyebrow">OUR STORY CONTINUES</p>
+        <span class="mmw-closing-title">Still, <em>together.</em></span>
+        <p class="mmw-closing-note">ขอบคุณที่เป็นส่วนหนึ่งของ MMD</p>
+      </figcaption>
+    </figure>
+
     <footer class="mmw-footer"><span>MMD PRIVÉ</span><span>SIX YEARS. AND STILL, TOGETHER.</span><a href="/sigil/model/dashboard">MMD MODEL <span aria-hidden="true">↗</span></a></footer>
   </div>
 </main>
@@ -284,6 +293,12 @@ CSS — Page Settings → Inside <head>
 #mmd-model-wish-v1 .mmw-success > p:not(.mmw-eyebrow) { color: var(--mmw-muted); font-size: 13px; line-height: 1.9; }
 #mmd-model-wish-v1 .mmw-success .mmw-success-scope { margin: 20px 0 28px; font-size: 11px; }
 #mmd-model-wish-v1 .mmw-back { display: inline-flex; align-items: center; justify-content: space-between; gap: 30px; min-height: 48px; padding: 12px 22px; border: 1px solid var(--mmw-gold); color: var(--mmw-gold); font-size: 12px; }
+#mmd-model-wish-v1 .mmw-closing { position: relative; margin: 0 0 40px; overflow: hidden; border: 1px solid var(--mmw-line); border-radius: 4px; background: var(--mmw-panel); }
+#mmd-model-wish-v1 .mmw-closing > img { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
+#mmd-model-wish-v1 .mmw-closing figcaption { padding: 22px; }
+#mmd-model-wish-v1 .mmw-closing-title { display: block; margin-top: 10px; color: var(--mmw-cream); font-family: var(--mmw-serif); font-size: 38px; font-weight: 400; line-height: 1.1; letter-spacing: -.025em; }
+#mmd-model-wish-v1 .mmw-closing-title em { color: var(--mmw-gold); }
+#mmd-model-wish-v1 .mmw-closing .mmw-closing-note { margin-top: 12px; color: var(--mmw-muted); font-size: 12px; line-height: 1.8; }
 #mmd-model-wish-v1 .mmw-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 25px 0 32px; border-top: 1px solid var(--mmw-line); font-size: 10px; }
 #mmd-model-wish-v1 .mmw-footer > span:first-child { letter-spacing: .18em; }
 #mmd-model-wish-v1 .mmw-footer > span:nth-child(2) { order: 3; width: 100%; color: var(--mmw-muted); font-size: 8px; letter-spacing: .15em; }
@@ -321,6 +336,11 @@ CSS — Page Settings → Inside <head>
   #mmd-model-wish-v1 .mmw-option-copy strong { font-size: 14px; }
   #mmd-model-wish-v1 .mmw-option-copy small { font-size: 12px; }
   #mmd-model-wish-v1 .mmw-footer > span:nth-child(2) { order: 0; width: auto; }
+  #mmd-model-wish-v1 .mmw-closing { margin-bottom: 56px; }
+  #mmd-model-wish-v1 .mmw-closing figcaption { position: absolute; left: 4%; top: 50%; width: 34%; padding: 0; transform: translateY(-50%); }
+  #mmd-model-wish-v1 .mmw-closing-title { font-size: clamp(34px, 4.6vw, 60px); }
+  #mmd-model-wish-v1 .mmw-closing-title em { display: block; }
+  #mmd-model-wish-v1 .mmw-closing .mmw-closing-note { color: #d5cdbd; }
 }
 @media (min-width: 900px) {
   #mmd-model-wish-v1 .mmw-hero h1 { font-size: 82px; }
