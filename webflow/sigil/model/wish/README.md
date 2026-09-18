@@ -27,5 +27,5 @@ The runtime now locks submission before authentication/upload to prevent double 
 - `node --test webflow/sigil/model/wish/model-wish.test.mjs`: 8 passing behavioral tests using local DOM/network fixtures.
 - `node --test admin-worker/model-direct-wish.test.mjs member-pages-worker/member-model-wish-notes.test.mjs`: 13 passing existing contract tests.
 - HTML IDs and accessibility references validated; Webflow Embed/head/footer read back and compared with source.
-- Responsive CSS covers mobile first, 600px and 900px layouts. Actual browser layout is unverified: local preview was blocked by the cloud browser and the Webflow Designer snapshot returned status false. Real LINE authentication, actual uploads and production submissions were not exercised.
-- Staged as a Webflow draft on 2026-09-18. This redesign has not been published or merged. No Worker/backend changes are required by this patch.
+- Responsive CSS covers mobile first, 600px and 900px layouts. After publication, the live page was inspected in a 1363×936 browser viewport: the new mini logo and Boss Thanks hero loaded, the redesign rendered and there was no horizontal overflow. Mobile viewport, real LINE authentication, actual uploads and production submissions remain unverified.
+- Full-site publish completed at 2026-09-18T17:23:17.161Z on www.mmdbkk.com, mmdbkk.com and the Webflow subdomain. The production /sigil/model/wish response includes the new hero, group image, mini logo, stylesheet and runtime. Source PR #1246 remains a draft; no Worker/backend deployment was required.

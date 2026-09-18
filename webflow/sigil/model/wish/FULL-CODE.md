@@ -643,4 +643,4 @@ JavaScript — Page Settings → Before </body>
 </script>
 ```
 
-Replace the existing page Embed, head and footer blocks; do not append this runtime to the old one. Backend endpoints, LINE LIFF ID and full return URL are preserved. Draft only; visual browser review and a real authenticated LINE submission remain unverified.
+Replace the existing page Embed, head and footer blocks; do not append this runtime to the old one. Backend endpoints, LINE LIFF ID and full return URL are preserved. Published to production on 2026-09-18T17:23:17.161Z. Desktop rendering verified; mobile viewport and a real authenticated LINE submission remain unverified.
