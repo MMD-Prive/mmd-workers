@@ -273,7 +273,7 @@ export async function handleCanonicalConfirmLink(request, env) {
       model_confirmation_url: modelConfirmationUrl,
       payment_write: paymentWrite,
       session_write: sessionWrite,
-      pricing_breakdown: components,
+      pricing_breakdown: pricing || components,
     });
   } catch (error) {
     const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
