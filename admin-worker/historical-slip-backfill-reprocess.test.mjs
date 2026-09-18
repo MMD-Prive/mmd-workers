@@ -129,6 +129,7 @@ function reprocessRequest({ withExpectedContext = false } = {}) {
     body: JSON.stringify({
       proof_id: PROOF_ID,
       ...(withExpectedContext ? {
+        expected_payment_ref: "016261212049AOR09688",
         expected_amount_thb: 10500,
         expected_payment_stage: "final",
         context_reason: "authenticated pending-only recovery",
@@ -194,8 +195,8 @@ test("reprocess rejects an R2 SHA mismatch before extraction or Airtable writes"
   assert.equal(state.calls.patches.length, 0);
 });
 
-test("reprocess can stage an expected amount only when extraction stays empty and review remains pending", async () => {
-  const state = makeState({ paymentRef: "016261212049AOR09688" });
+test("reprocess can stage expected pending context when extraction stays empty and review remains pending", async () => {
+  const state = makeState();
   state.env.SLIP_EXTRACTOR.fetch = async (request) => {
     state.calls.extractor += 1;
     return Response.json({ result: { payment_ref: "", amount_thb: null, confidence_score: 0 } });
@@ -213,6 +214,7 @@ test("reprocess can stage an expected amount only when extraction stays empty an
   assert.equal(payload.amount_thb, 10500);
   assert.equal(payload.payment_stage, "final");
   assert.equal(payload.payment_ref_masked, "0162…9688");
+  assert.equal(payload.payment_ref_matches_expected, true);
   assert.equal(payload.extraction_error, "extractor_unavailable");
   assert.equal(payload.money_truth_mutated, false);
   assert.equal(payload.guardrails?.may_mark_paid, false);
@@ -220,12 +222,30 @@ test("reprocess can stage an expected amount only when extraction stays empty an
   assert.equal(state.calls.patches.length, 1);
   const patch = state.calls.patches[0];
   assert.equal(patch.status, "pending");
+  assert.equal(patch.payment_ref, "016261212049AOR09688");
   assert.equal(patch.amount_thb, 10500);
   const note = JSON.parse(patch.note);
   assert.equal(note.review_state, "pending");
   assert.equal(note.review_required, true);
   assert.equal(note.reprocess_expected_context.amount_thb, 10500);
+  assert.equal(note.reprocess_expected_context.payment_ref_masked, "0162…9688");
   assert.equal(note.reprocess_expected_context.payment_stage, "final");
   assert.equal(note.reprocess_expected_context.pending_review_only, true);
   assert.equal(note.payments_worker_handoff.state, "pending");
+});
+
+test("reprocess rejects an expected payment reference that conflicts with stored proof", async () => {
+  const state = makeState({ paymentRef: "STORED-REFERENCE-01" });
+  state.env.SLIP_EXTRACTOR.fetch = async () => {
+    state.calls.extractor += 1;
+    return Response.json({ result: { payment_ref: "", amount_thb: null, confidence_score: 0 } });
+  };
+
+  const response = await handleHistoricalSlipBackfillRequest(reprocessRequest({ withExpectedContext: true }), state.env);
+  const payload = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.error, "expected_payment_ref_conflicts_with_stored_proof");
+  assert.equal(state.calls.creates, 0);
+  assert.equal(state.calls.patches.length, 0);
 });
