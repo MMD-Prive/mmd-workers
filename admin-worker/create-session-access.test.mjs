@@ -13,6 +13,7 @@ const env = {
   AIRTABLE_TABLE_MEMBERS: "members",
   AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
   AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "member_entitlements",
+  AIRTABLE_TABLE_CLIENTS: "clients",
   AIRTABLE_TABLE_MODELS: "models",
 };
 
@@ -20,6 +21,16 @@ const future = "2099-01-01";
 const past = "2000-01-01";
 
 const tables = {
+  clients: [
+    {
+      id: "recClientQue00001",
+      fields: {
+        "Client Name": "Que",
+        line_user_id: "client_svip_line_user",
+        "MMD — Member Entitlements": ["recEntSvip000001XX"],
+      },
+    },
+  ],
   members: [
     member("recMemStandard0001", "client_standard", "mem_standard", "standard@example.test"),
     member("recMemPremium0001", "client_premium", "mem_premium", "premium@example.test"),
@@ -31,7 +42,7 @@ const tables = {
     member("recMemGuest00001", "client_guest", "mem_guest", "guest@example.test"),
   ],
   member_entitlements: [
-    entitlement("recEntSvip000001", "mem_svip", "svip", future),
+    entitlement("recEntSvip000001XX", "mem_svip", "svip", future),
   ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
@@ -220,6 +231,12 @@ assert.equal(svip.tier, "black_card");
 assert.equal(svip.entitlement_authority, "my_mmd_entitlement_resolver_v1");
 assert.equal(svip.package_code, "svip");
 assert.deepEqual(svip.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+const svipByCanonicalClient = await resolveAuthoritativeMemberAccess(env, { client_id: "recClientQue00001" });
+assert.equal(svipByCanonicalClient.tier, "black_card");
+assert.equal(svipByCanonicalClient.entitlement_authority, "my_mmd_entitlement_resolver_v1");
+assert.equal(svipByCanonicalClient.canonical_client_record_id, "recClientQue00001");
+assert.deepEqual(svipByCanonicalClient.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
 
 await rejectsWithCode(
   enforcePrivateCreateAccess(env, privateBody("client_standard", "premium", "recPremiumModel001", { forgedAccessLevel: "black_card" })),

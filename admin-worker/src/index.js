@@ -4527,6 +4527,39 @@ async function airtableListByFormula(env, tableName, filterByFormula, limit = 50
 
 async function resolveAuthoritativeMemberAccess(env, ids = {}) {
   const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
+
+  // A Create Job client_id is the canonical Airtable Client record ID. Prefer
+  // its explicit Client -> Member Entitlements links before any legacy Member
+  // lookup. This is the same authority boundary used by My MMD and avoids
+  // requiring the browser to know an internal Member join key.
+  const directClientAccess = await resolveCanonicalClientLinkedPrivateAccess(env, ids.client_id);
+  if (directClientAccess.found) {
+    return {
+      resolved: true,
+      member_record_id: directClientAccess.member_record_id || "",
+      member_id: directClientAccess.member_id || "",
+      member_email: directClientAccess.member_email || "",
+      membership_status: directClientAccess.tier ? "active" : directClientAccess.membership_status,
+      tier: directClientAccess.tier,
+      package_code: directClientAccess.package_code,
+      expire_at: directClientAccess.expire_at,
+      allowed_folders: directClientAccess.tier ? PRIVATE_ACCESS_FOLDERS[directClientAccess.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: directClientAccess.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+      canonical_client_record_id: directClientAccess.client_record_id,
+    };
+  }
+
+  // Hydrate missing identity fields from the canonical Client record so the
+  // Member fallback can still resolve old rows that are linked by LINE/email.
+  if (directClientAccess.identity) {
+    ids = {
+      ...ids,
+      line_user_id: str(ids.line_user_id || directClientAccess.identity.line_user_id),
+      member_email: str(ids.member_email || directClientAccess.identity.member_email),
+      telegram_username: str(ids.telegram_username || directClientAccess.identity.telegram_username),
+    };
+  }
   const lookups = [
     ["client_id", ids.client_id, false],
     ["member_id", ids.member_id, false],
@@ -4623,6 +4656,101 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
   };
 }
 
+async function resolveCanonicalClientLinkedPrivateAccess(env, clientRecordId) {
+  const id = str(clientRecordId);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    return { found: false, identity: null };
+  }
+
+  const clientsTable = env.AIRTABLE_TABLE_CLIENTS || "Clients";
+  const fetched = await airtableFetch(env, `/${encodeURIComponent(clientsTable)}/${encodeURIComponent(id)}`);
+  if (!fetched.ok || !fetched.data?.id) {
+    return { found: false, identity: null };
+  }
+
+  const fields = fetched.data.fields || {};
+  const identity = {
+    line_user_id: str(fields.line_user_id || fields.line_id),
+    member_email: str(fields.email || fields["Contact Email"]).toLowerCase(),
+    telegram_username: str(fields.telegram_username),
+  };
+
+  const entitlementIds = []
+    .concat(fields["MMD — Member Entitlements"] || [])
+    .concat(fields["MMD - Member Entitlements"] || [])
+    .map((value) => str(value && typeof value === "object" ? value.id : value))
+    .filter((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+
+  if (!entitlementIds.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = [];
+  for (const entitlementId of [...new Set(entitlementIds)]) {
+    const row = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(entitlementId)}`);
+    if (row.ok && row.data?.id) records.push(row.data);
+  }
+  if (!records.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const access = canonicalPrivateAccessFromRows(records);
+  return {
+    ...access,
+    found: true,
+    identity,
+    client_record_id: id,
+    member_email: access.member_email || identity.member_email,
+  };
+}
+
+function canonicalPrivateAccessFromRows(rows) {
+  const snapshot = resolveMemberEntitlements(rows, { now: Date.now() });
+  const envelope = accessToken(snapshot?.access?.private_visibility_envelope);
+  const tier = envelope === "black_card" || envelope === "svip"
+    ? "black_card"
+    : envelope === "vip" || envelope === "premium" || envelope === "standard"
+      ? envelope
+      : "";
+
+  const currentRows = (snapshot?.entitlements || []).filter((row) =>
+    row && (row.lifecycle === "active" || row.lifecycle === "expiring_soon")
+  );
+  const expireAt = currentRows
+    .map((row) => str(row.expire_at))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || "";
+  const packageCode = currentRows
+    .map((row) => str(row.relationship_tier || row.package_code || row.capability))
+    .find(Boolean) || tier;
+
+  let memberRecordId = "";
+  let memberId = "";
+  let memberEmail = "";
+  for (const row of rows) {
+    const f = row?.fields || {};
+    const linked = Array.isArray(f.member) ? f.member : [];
+    const candidate = linked
+      .map((value) => str(value && typeof value === "object" ? value.id : value))
+      .find((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+    if (!memberRecordId && candidate) memberRecordId = candidate;
+    if (!memberId) memberId = str(f.member_id);
+    if (!memberEmail) memberEmail = str(f.member_email).toLowerCase();
+  }
+
+  return {
+    tier,
+    package_code: packageCode,
+    expire_at: expireAt,
+    member_record_id: memberRecordId,
+    member_id: memberId,
+    member_email: memberEmail,
+    membership_status: snapshot?.member_blocked ? "blocked" : tier ? "active" : "no_active_private_entitlement",
+    snapshot,
+  };
+}
+
 async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail) {
   const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
   const records = new Map();
@@ -4662,33 +4790,11 @@ async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, id
   const rows = [...records.values()];
   if (!rows.length) return { found: false, tier: "", membership_status: "no_canonical_entitlement", snapshot: null };
 
-  const snapshot = resolveMemberEntitlements(rows, { now: Date.now() });
-  const envelope = accessToken(snapshot?.access?.private_visibility_envelope);
-  const tier = envelope === "black_card" || envelope === "svip"
-    ? "black_card"
-    : envelope === "vip" || envelope === "premium" || envelope === "standard"
-      ? envelope
-      : "";
-
-  const currentRows = (snapshot?.entitlements || []).filter((row) =>
-    row && (row.lifecycle === "active" || row.lifecycle === "expiring_soon")
-  );
-  const expireAt = currentRows
-    .map((row) => str(row.expire_at))
-    .filter(Boolean)
-    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || "";
-  const packageCode = currentRows
-    .map((row) => str(row.relationship_tier || row.package_code || row.capability))
-    .find(Boolean) || tier;
-
+  const access = canonicalPrivateAccessFromRows(rows);
   return {
+    ...access,
     found: true,
-    tier,
-    package_code: packageCode,
-    expire_at: expireAt,
-    member_id: memberIdCandidates[0] || "",
-    membership_status: snapshot?.member_blocked ? "blocked" : tier ? "active" : "no_active_private_entitlement",
-    snapshot,
+    member_id: access.member_id || memberIdCandidates[0] || "",
   };
 }
 
@@ -4912,6 +5018,7 @@ async function searchCreateSessionModels(env, url) {
   });
 
   const items = [];
+  const seenInventoryKeys = new Set();
   for (const record of records) {
     const profile = modelAccessProfile(record.fields || {});
     if (!profile.statusActive) continue;
@@ -4931,6 +5038,9 @@ async function searchCreateSessionModels(env, url) {
       if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) continue;
       if (lane && profile.lane && profile.lane !== lane && profile.lane !== "both") continue;
     }
+    const inventoryKey = str(record.fields?.drive_folder_id || record.fields?.folder_scope_key || "");
+    if (inventoryKey && seenInventoryKeys.has(inventoryKey)) continue;
+    if (inventoryKey) seenInventoryKeys.add(inventoryKey);
     const item = sanitizeCreateSessionModel(record, profile);
     if (bookingVisibility === "private" && !item.orientation) {
       const fallbackLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
