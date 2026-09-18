@@ -7,6 +7,7 @@ const WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
 const SESSIONS_TABLE_DEFAULT = "tblC98mKWbzmPuNzX";
 const MAX_NOTES = 12;
 const MAX_WISH = 700;
+const CLIENT_SESSION_LINK_FIELDS = ["Sessions", "Sessions_v2", "Sessions V2"];
 
 export function isMemberModelWishDashboardRequest(request) {
   if (!(request instanceof Request) || request.method.toUpperCase() !== "GET") return false;
@@ -90,8 +91,23 @@ async function completedCanonicalModelIdsForClient(env, client) {
   const clientName = clean(fields["Client Name"] || fields.nickname);
   const sessionsTable = clean(env.AIRTABLE_TABLE_SESSIONS || SESSIONS_TABLE_DEFAULT);
   const groups = [];
+
+  // Prefer the exact canonical Client -> Sessions links when available.
+  // This removes the old dependency on email/name being populated and keeps
+  // Past Clients matching anchored to canonical Airtable record linkage.
+  const directSessionIds = linkedSessionIdsForClient(client).slice(0, 200);
+  if (directSessionIds.length) {
+    groups.push(
+      (await Promise.all(directSessionIds.map((id) => airtableGetRecord(env, sessionsTable, id))))
+        .filter(Boolean),
+    );
+  }
+
+  // Keep email/name queries as compatibility enrichment for Clients whose
+  // reverse-linked Sessions field has not been populated yet.
   if (email) groups.push(await airtableList(env, sessionsTable, `LOWER({email}&"")=${formulaString(email)}`));
   if (clientName) groups.push(await airtableList(env, sessionsTable, `ARRAYJOIN({Client})=${formulaString(clientName)}`));
+
   const seen = new Set();
   const models = new Set();
   for (const record of groups.flat()) {
@@ -111,10 +127,38 @@ async function completedCanonicalModelIdsForClient(env, client) {
   return models;
 }
 
+export function linkedSessionIdsForClient(client) {
+  const fields = client?.fields || {};
+  const out = [];
+  const seen = new Set();
+  for (const fieldName of CLIENT_SESSION_LINK_FIELDS) {
+    for (const id of linkedIds(fields[fieldName])) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
 async function listApprovedDirectWishes(env) {
   const table = clean(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || WISH_TABLE_DEFAULT);
   const formula = `AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed')`;
   return airtableList(env, table, formula, { sortField: "submitted_at", sortDirection: "desc", maxRecords: 100 });
+}
+
+async function airtableGetRecord(env, table, recordId) {
+  const baseId = clean(env.AIRTABLE_BASE_ID);
+  const apiKey = clean(env.AIRTABLE_API_KEY);
+  if (!baseId || !apiKey || !table || !/^rec[a-zA-Z0-9]{14}$/.test(recordId)) return null;
+  try {
+    const url = `https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`;
+    const response = await fetch(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
+    const body = await response.json().catch(() => null);
+    return response.ok && body?.id ? body : null;
+  } catch {
+    return null;
+  }
 }
 
 async function airtableList(env, table, filterByFormula, { sortField = "", sortDirection = "asc", maxRecords = 500 } = {}) {
