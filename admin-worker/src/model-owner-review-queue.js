@@ -6,8 +6,11 @@ const ORIGINS = new Set(["https://mmdbkk.com","https://www.mmdbkk.com"]);
 export function isModelOwnerReviewQueueRequest(request) {
   try {
     const u = new URL(request.url);
-    return u.pathname.replace(/\/+$/,"") === MODEL_OWNER_REVIEW_QUEUE_PATH &&
-      ["GET","HEAD"].includes(String(request.method||"GET").toUpperCase());
+    const path = u.pathname.replace(/\/+$/,"");
+    const method = String(request.method||"GET").toUpperCase();
+    if (path === MODEL_OWNER_REVIEW_QUEUE_PATH) return ["GET","HEAD"].includes(method);
+    if (/^\/v1\/admin\/models\/review-queue\/[^/]+\/decision$/.test(path)) return method === "POST";
+    return false;
   } catch { return false; }
 }
 
@@ -17,6 +20,11 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
   const actor = await readCredentialBoundAdminActor(request, env);
   if (!actor) return json({ok:false,error:"unauthorized"},401);
   if (!["owner","admin"].includes(actor.role)) return json({ok:false,error:"admin_required"},403);
+
+  const decisionMatch = url.pathname.replace(/\/+$/,"").match(/^\/v1\/admin\/models\/review-queue\/([^/]+)\/decision$/);
+  if (decisionMatch && request.method.toUpperCase() === "POST") {
+    return decideReview(request, env, actor, decodeURIComponent(decisionMatch[1]));
+  }
 
   const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit")||50)));
   const [reviews, media, models] = await Promise.all([
@@ -58,6 +66,9 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
         request_id: String(r.fields?.request_id || r.id),
         request_status: String(r.fields?.request_status || "pending_review"),
         requested_at: String(r.fields?.requested_at || r.createdTime || ""),
+        decision_by: String(r.fields?.decision_by || ""),
+        decision_at: String(r.fields?.decision_at || ""),
+        decision_note: String(r.fields?.decision_note || ""),
         model_id: modelId,
         model_name: names.get(modelId) || modelId,
         changed_fields: Array.isArray(payload.changed_fields) ? payload.changed_fields : [],
@@ -78,6 +89,57 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
   };
   if (request.method.toUpperCase()==="HEAD") return new Response(null,{status:200,headers:baseHeaders()});
   return json(response,200);
+}
+
+
+async function decideReview(request, env, actor, requestId) {
+  if (request.headers.get("origin") !== new URL(request.url).origin) return json({ok:false,error:"forbidden_origin"},403);
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) return json({ok:false,error:"json_required"},415);
+  const body=await request.json().catch(()=>null);
+  if(!body || !["approve","reject","hold"].includes(String(body.decision||""))) return json({ok:false,error:"invalid_decision"},400);
+  const note=String(body.note||"").trim();
+  if(body.decision!=="approve" && !note) return json({ok:false,error:"decision_note_required"},400);
+
+  const loaded=await findReviewByRequestId(env,requestId);
+  if(!loaded.ok) return json({ok:false,error:"model_review_queue_unavailable"},503);
+  if(!loaded.record) return json({ok:false,error:"review_not_found"},404);
+  const f=loaded.record.fields||{};
+  if(String(f.request_type||"")!=="model_self_service_update") return json({ok:false,error:"review_type_mismatch"},409);
+  if(["approved","rejected"].includes(String(f.request_status||"").toLowerCase())) return json({ok:false,error:"review_already_closed"},409);
+
+  const now=new Date().toISOString();
+  const nextStatus=body.decision==="approve"?"approved":body.decision==="reject"?"rejected":"hold";
+  const version=Number(f.version||0)+1;
+  const patched=await patchRecord(env, env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || "MMD — Model Review Requests", loaded.record.id, {
+    request_status:nextStatus,
+    decision_by:actor.id,
+    decision_at:now,
+    decision_note:note || "Approved by owner/admin.",
+    version,
+  });
+  if(!patched.ok) return json({ok:false,error:"review_decision_write_failed"},503);
+  return json({ok:true,request_id:requestId,request_status:nextStatus,decision_by:actor.id,decision_at:now,version});
+}
+
+async function findReviewByRequestId(env, requestId) {
+  const all=await listRecords(env, env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || "MMD — Model Review Requests", 500);
+  if(!all.ok) return all;
+  const matches=all.records.filter(r=>String(r.fields?.request_id||"")===requestId);
+  if(matches.length>1) return {ok:false,conflict:true};
+  return {ok:true,record:matches[0]||null};
+}
+
+async function patchRecord(env, table, recordId, fields) {
+  const apiKey=String(env.AIRTABLE_API_KEY||"").trim(), baseId=String(env.AIRTABLE_BASE_ID||"").trim();
+  if(!apiKey||!baseId||!table||!recordId) return {ok:false};
+  try{
+    const res=await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`,{
+      method:"PATCH",
+      headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},
+      body:JSON.stringify({records:[{id:recordId,fields}],typecast:false}),
+    });
+    return {ok:res.ok};
+  }catch{return {ok:false};}
 }
 
 function buildMissing(payload, media) {
