@@ -308,6 +308,28 @@ async function findCanonicalByDriveFolder(env, driveFolderId, folderScopeKey) {
   return { ok: true, records: [...records.values()] };
 }
 
+export function inferDrivePrivateAccessFolder(folder = {}) {
+  const lane = normalizeLane(folder?.lane);
+  if (lane === "exclusive") return "exclusive";
+  if (lane !== "private") return "";
+
+  const path = clean(folder?.folder_path || folder?.source_folder || folder?.folder_name, 1400)
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\\/]+/g, " ")
+    .replace(/[^a-z0-9ก-๙]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!path) return "";
+  // The deepest/specific model group wins over broad package ancestors.
+  if (path.includes("exclusive") || path.includes("black card")) return "exclusive";
+  if (/(^| )vip( models?)?( |$)/.test(path)) return "vip";
+  if (path.includes("premium")) return "premium";
+  if (path.includes("standard") || path.includes("lite")) return "standard";
+  return "";
+}
+
 export function inferDrivePrivateServiceLevel(folder = {}) {
   const lane = normalizeLane(folder?.lane);
   if (lane !== "private" && lane !== "exclusive") return "";
@@ -329,6 +351,7 @@ async function createCanonicalModelFromDrive(env, folder, actor) {
   const lane = normalizeLane(folder.lane);
   const actorId = clean(actor?.id || actor?.email || "owner", 80) || "owner";
   const privateServiceLevel = inferDrivePrivateServiceLevel(folder);
+  const privateAccessFolder = inferDrivePrivateAccessFolder(folder);
   const fields = {
     working_name: clean(folder.folder_name, 240),
     status: "Active",
@@ -344,10 +367,23 @@ async function createCanonicalModelFromDrive(env, folder, actor) {
     ...(lane === "private" || lane === "exclusive" ? {
       sales_layer: "private",
       visibility: "private",
-    } : {}),
-    ...(lane === "exclusive" ? {
-      private_tier: "Exclusive Models",
-      model_tier: "Exclusive Models",
+      ...(privateAccessFolder ? {
+        access_folder: privateAccessFolder,
+        private_tier: privateAccessFolder === "exclusive"
+          ? "Exclusive Models"
+          : privateAccessFolder === "vip"
+            ? "VIP Models"
+            : privateAccessFolder === "premium"
+              ? "Premium Models"
+              : "Standard Models",
+        model_tier: privateAccessFolder === "exclusive"
+          ? "Exclusive Models"
+          : privateAccessFolder === "vip"
+            ? "VIP Models"
+            : privateAccessFolder === "premium"
+              ? "Premium Models"
+              : "Standard Models",
+      } : {}),
     } : {}),
     ...(privateServiceLevel ? {
       private_service_level: privateServiceLevel.toUpperCase(),

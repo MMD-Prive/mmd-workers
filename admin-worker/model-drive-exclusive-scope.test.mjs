@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  inferDrivePrivateAccessFolder,
   inferDrivePrivateServiceLevel,
   inferModelLanes,
 } from "./src/unified-model-drive-link.js";
@@ -40,5 +41,25 @@ test("Approved Exclusive PN Drive path materializes PN-only capability", () => {
       folder_path: "MMD Exclusive Models / Exclusive PN / Active / EMs22",
     }),
     "pn",
+  );
+});
+
+
+test("Private legacy path uses the most specific VIP subfolder as access group", () => {
+  const folder = {
+    lane: "private",
+    folder_path: "Private Models / Standard Package / MMD Variety / MMD Farang / VIP / Simba",
+  };
+  assert.equal(inferDrivePrivateAccessFolder(folder), "vip");
+  assert.equal(inferDrivePrivateServiceLevel(folder), "vip");
+});
+
+test("Private Premium package without a deeper VIP group stays Premium access", () => {
+  assert.equal(
+    inferDrivePrivateAccessFolder({
+      lane: "private",
+      folder_path: "Private Models / Premium Package / Straight / Example",
+    }),
+    "premium",
   );
 });
