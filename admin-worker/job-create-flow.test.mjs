@@ -93,7 +93,7 @@ test('active Create Job form reaches canonical Session, Payment and Job with cor
   assert.equal(s.fldlTO5aNfqUmlNWm, 7000);
   assert.equal(s.fldBeG0FkWwa8kgnp, '2026-09-20T22:00:00+07:00');
   assert.equal(s.fldiDSz0wW9Ct9I3P, '2026-09-21T02:00:00+07:00');
-  assert.equal(s.fldEcDkF7CH9VixWM, 'Operator note\nSecond line');
+  assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line\n\[SIGIL Pricing v1\]/);
   assert.equal(h.kv.size, 2);
   assert.match(h.data.customer_confirmation_url, /\?t=/);
 });
