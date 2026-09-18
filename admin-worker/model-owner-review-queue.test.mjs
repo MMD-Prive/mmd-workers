@@ -30,3 +30,22 @@ test("queue requires credential-bound owner/admin session", async()=>{
   const res=await handleModelOwnerReviewQueue(new Request("https://mmdbkk.com"+MODEL_OWNER_REVIEW_QUEUE_PATH),{});
   assert.equal(res.status,401);
 });
+
+
+test("owner decision records actor, timestamp and status", async()=>{
+  const env={AIRTABLE_API_KEY:"x",AIRTABLE_BASE_ID:"appTest0000000000",ADMIN_LOGIN_CREDENTIAL:"admin"};
+  const cookie="mmd_admin_gate_v1="+await createCredentialBoundAdminSession(new Request("https://mmdbkk.com"),{id:"per",role:"owner"},env);
+  const original=globalThis.fetch; let patchBody=null;
+  globalThis.fetch=async(input,init={})=>{
+    const url=new URL(input); const table=decodeURIComponent(url.pathname.split("/").pop());
+    if((init.method||"GET")==="PATCH"){patchBody=JSON.parse(init.body);return Response.json({records:patchBody.records});}
+    if(table==="MMD — Model Review Requests") return Response.json({records:[{id:"recReview000000001",fields:{request_id:"rq1",request_type:"model_self_service_update",request_status:"pending_review",version:1}}]});
+    return Response.json({records:[]});
+  };
+  try{
+    const res=await handleModelOwnerReviewQueue(new Request("https://mmdbkk.com"+MODEL_OWNER_REVIEW_QUEUE_PATH+"/rq1/decision",{method:"POST",headers:{cookie,origin:"https://mmdbkk.com","content-type":"application/json"},body:JSON.stringify({decision:"approve"})}),env);
+    const body=await res.json();
+    assert.equal(res.status,200); assert.equal(body.decision_by,"per"); assert.equal(body.request_status,"approved");
+    assert.equal(patchBody.records[0].fields.decision_by,"per"); assert.ok(patchBody.records[0].fields.decision_at);
+  } finally {globalThis.fetch=original;}
+});
