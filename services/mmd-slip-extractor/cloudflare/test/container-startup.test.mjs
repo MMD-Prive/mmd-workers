@@ -51,3 +51,34 @@ test("container server binds on PORT and serves health", async (t) => {
     runtime: "cloudflare-container-staging"
   });
 });
+
+test("container accepts only the exact staging and production Worker edge markers", async (t) => {
+  const port = 19080 + Math.floor(Math.random() * 1000);
+  const child = spawn(process.execPath, [resolve(cloudflareDir, "container-server.mjs")], {
+    cwd: serviceDir,
+    env: { ...process.env, PORT: String(port) },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  t.after(() => child.kill("SIGTERM"));
+  await waitForHealth(`http://127.0.0.1:${port}/health`, child);
+
+  async function extract(marker) {
+    return fetch(`http://127.0.0.1:${port}/v1/extract/qr`, {
+      method: "POST",
+      headers: {
+        "content-type": "image/png",
+        "x-mmd-internal-edge": marker,
+      },
+      body: new Uint8Array([1, 2, 3]),
+    });
+  }
+
+  const staging = await extract("mmd-slip-extractor-staging-edge");
+  const production = await extract("mmd-slip-extractor-edge");
+  const untrusted = await extract("browser");
+
+  assert.notEqual(staging.status, 401);
+  assert.notEqual(production.status, 401);
+  assert.equal(untrusted.status, 401);
+  assert.deepEqual(await untrusted.json(), { error: "internal_edge_required" });
+});
