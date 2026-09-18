@@ -58,6 +58,7 @@ const tables = {
     model("recStandardModel01", "Standard Straight", "standard", "straight"),
     model("recPremiumModel001", "Premium Both", "premium", "both"),
     model("recVipModel000001", "VIP Gay", "vip", "gay"),
+    model("recVipSimba000001", "Simba", "vip", "straight"),
     model("recExclusiveModel1", "Exclusive Both", "exclusive", "both"),
     {
       id: "recDriveLazyModel1",
@@ -278,6 +279,9 @@ assert.deepEqual(straightSearch.items.map((item) => item.model_name), ["Premium 
 
 const gaySearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=gay&selected_access_folder=vip&client_id=client_black"));
 assert.deepEqual(gaySearch.items.map((item) => item.model_name), ["VIP Gay"]);
+
+const simbaLowercaseSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=vip&client_id=client_black&q=simba&inventory_only=1"));
+assert.deepEqual(simbaLowercaseSearch.items.map((item) => item.model_name), ["Simba"]);
 
 const expiredSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_expired&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
 assert.deepEqual(expiredSearch.items.map((item) => item.model_name), ["Exclusive Both", "Drive Lazy Exclusive"]);
