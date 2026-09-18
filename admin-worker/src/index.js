@@ -4695,7 +4695,17 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   const selectedOrientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
   const customerTelegram = str(telegramGate.customer_telegram_status || body.customer_telegram_status);
   const modelTelegram = str(telegramGate.model_telegram_status || body.model_telegram_status);
-  const telegramOk = ["linked", "verified"].includes(customerTelegram) && ["linked", "verified"].includes(modelTelegram);
+  // Identity channels are completed after confirmation-link issuance. They are
+  // diagnostic context at Create Job time, never a prerequisite for minting the
+  // customer/model confirmation links. Membership + model eligibility remain
+  // authoritative and fail closed below.
+  const identityLinkState = {
+    customer_telegram_status: customerTelegram || "missing",
+    model_telegram_status: modelTelegram || "missing",
+    post_link_identity_required:
+      !["linked", "verified"].includes(customerTelegram) ||
+      !["linked", "verified"].includes(modelTelegram),
+  };
 
   // Membership comes from the backend ledger; frontend tier/status fields never grant access.
   const memberAccess = await resolveAuthoritativeMemberAccess(env, {
@@ -4715,7 +4725,6 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
   if (!allowedFolders.includes(selectedFolder)) throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
   if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
-  if (!telegramOk) throw new CreateSessionAccessError("private_telegram_gate_required", "Customer and model Telegram must be linked or verified for private work.");
 
   // Never trust browser-submitted model metadata; re-resolve the model record.
   const modelRecord = await resolveCreateSessionModel(env, {
@@ -4732,7 +4741,7 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
   if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
 
-  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation };
+  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState };
 }
 
 async function searchCreateSessionModels(env, url) {
@@ -4901,8 +4910,8 @@ async function createAdminJob(env, body) {
   const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
-  const confirm_page = absoluteUrl(body.confirm_page || "/confirm/job-confirmation", webBase);
-  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/confirm/job-model", webBase);
+  const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
+  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/sigil/confirm/job-model", webBase);
 
   const payload = {
     client_name,

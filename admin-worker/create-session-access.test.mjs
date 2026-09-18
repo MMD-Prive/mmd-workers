@@ -246,10 +246,14 @@ assert.equal((await routeRes.json()).ok, true);
 const publicSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&selected_access_folder=travel"));
 assert.deepEqual(publicSearch.items.map((item) => item.model_name), ["Public Travel"]);
 
-await rejectsWithCode(
-  enforcePrivateCreateAccess(env, privateBody("client_black", "exclusive", "recExclusiveModel1", { modelTelegram: "missing" })),
-  "private_telegram_gate_required",
-);
+{
+  const result = await enforcePrivateCreateAccess(
+    env,
+    privateBody("client_black", "exclusive", "recExclusiveModel1", { modelTelegram: "missing" }),
+  );
+  assert.equal(result.identityLinkState.model_telegram_status, "missing");
+  assert.equal(result.identityLinkState.post_link_identity_required, true);
+}
 
 assert.match(await import("node:fs/promises").then((fs) => fs.readFile(new URL("../../assets/sigil/create-session.js", import.meta.url), "utf8")), /saveDraft\(\)/);
 
