@@ -1,3 +1,9 @@
+import {
+  inferDrivePrivateServiceLevel,
+  listUnifiedModelLineCandidates,
+  materializeApprovedDriveModel,
+} from "./unified-model-drive-link.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_MODELS_TABLE = "Models";
 const MODEL_SCAN_LIMIT = 2000;
@@ -83,13 +89,11 @@ export async function enforcePrivateModelSearchPolicy(request, response, env) {
 
   const url = new URL(request.url);
   const requestedWork = normalizePrivateWork(url.searchParams.get("private_work") || url.searchParams.get("job_type"));
-  if (!requestedWork) return response;
 
   const body = await response.clone().json().catch(() => null);
   if (!body) return response;
   const coreItems = arrayItems(body);
   const coreErrorCode = errorCode(body);
-  const canonicalClientId = clean(url.searchParams.get("client_id"));
 
   if (response.ok && body.ok !== false && coreItems.length) {
     const ids = coreItems.map((item) => clean(item?.model_id || item?.id)).filter((id) => /^rec[A-Za-z0-9]+$/.test(id));
@@ -123,7 +127,7 @@ export async function enforcePrivateModelSearchPolicy(request, response, env) {
   }
 
   const q = clean(url.searchParams.get("q") || url.searchParams.get("search"));
-  const mayOwnerDiscover = /^rec[A-Za-z0-9]+$/.test(canonicalClientId) && q.length >= 2;
+  const mayOwnerDiscover = q.length >= 2;
   const eligibleFallback = coreErrorCode === "AUTHORITATIVE_MEMBER_NOT_FOUND" || (response.ok && body.ok !== false && coreItems.length === 0);
   if (!mayOwnerDiscover || !eligibleFallback) return response;
 
@@ -141,7 +145,7 @@ export async function enforcePrivateModelSearchPolicy(request, response, env) {
     discovery_reason: coreErrorCode || "canonical_private_inventory_recovery",
     requested_private_work: requestedWork,
     private_work_policy_version: PRIVATE_MODEL_WORK_POLICY_VERSION,
-    work_rule: requestedWork === "vip" ? "VIP_ONLY" : "PN_PLUS_VIP",
+    work_rule: requestedWork === "vip" ? "VIP_ONLY" : (requestedWork === "pn" ? "PN_PLUS_VIP" : "UNSCOPED_PRIVATE"),
   };
   return jsonResponse(payload, 200, response.headers, "owner-discovery");
 }
@@ -218,7 +222,66 @@ async function discoverCanonicalPrivateModels(env, url, requestedWork) {
   }
 
   ranked.sort((a, b) => b.score - a.score || String(a.item.model_name).localeCompare(String(b.item.model_name), "th"));
-  return { ok: true, items: ranked.slice(0, 50).map((entry) => entry.item) };
+  const canonicalItems = ranked.slice(0, 50).map((entry) => entry.item);
+  if (canonicalItems.length) return { ok: true, items: canonicalItems };
+
+  const driveRecovery = await discoverApprovedDrivePrivateModel(env, url, {
+    requestedWork,
+    selectedFolder,
+    services,
+  });
+  if (!driveRecovery.ok) return { ok: false, items: [] };
+  return { ok: true, items: driveRecovery.item ? [driveRecovery.item] : [] };
+}
+
+async function discoverApprovedDrivePrivateModel(env, url, { requestedWork, selectedFolder, services }) {
+  // Drive inventory is an owner discovery source only. Capability-sensitive add-ons
+  // still fail closed until the Model has canonical capability fields.
+  if (Array.isArray(services) && services.length) return { ok: true, item: null };
+
+  const candidateUrl = new URL(url.toString());
+  candidateUrl.searchParams.set("lane", selectedFolder === "exclusive" ? "exclusive" : "all");
+
+  const unified = await listUnifiedModelLineCandidates(env, candidateUrl);
+  if (!unified.ok) return { ok: true, item: null };
+
+  const driveOnly = (Array.isArray(unified.items) ? unified.items : [])
+    .filter((item) => item?.source === "drive" && item?.materialized === false)
+    .filter((item) => {
+      if (selectedFolder === "exclusive" && normalizeToken(item?.lane) !== "exclusive") return false;
+      const level = inferDrivePrivateServiceLevel(item);
+      return privateWorkAllowed(level, requestedWork);
+    });
+
+  // Never auto-materialize an ambiguous Drive search. The owner can refine the query.
+  if (driveOnly.length !== 1) return { ok: true, item: null };
+
+  const chosen = driveOnly[0];
+  const materialized = await materializeApprovedDriveModel(
+    env,
+    chosen.drive_folder_id,
+    { id: "private_model_owner_discovery" },
+  );
+  if (!materialized.ok || !materialized.record?.id) return { ok: false, item: null };
+
+  const fields = materialized.record.fields || {};
+  const folder = inferAccessFolder(fields) || (normalizeToken(chosen.lane) === "exclusive" ? "exclusive" : "");
+  const lane = inferLane(fields);
+  const derived = derivePrivateServiceLevel(fields, { allowPathFallback: false });
+  if (!privateWorkAllowed(derived.level, requestedWork)) return { ok: true, item: null };
+
+  return {
+    ok: true,
+    item: {
+      ...sanitizeDiscoveryModel(materialized.record, fields, folder, lane, derived),
+      source: materialized.materialized
+        ? "owner_approved_drive_lazy_materialized_v1"
+        : "owner_canonical_inventory_private_work_v1",
+      drive_folder_id: clean(chosen.drive_folder_id),
+      drive_folder_url: clean(chosen.drive_folder_url),
+      drive_materialized: materialized.materialized === true,
+    },
+  };
 }
 
 function sanitizeDiscoveryModel(record, fields, folder, lane, derived) {
