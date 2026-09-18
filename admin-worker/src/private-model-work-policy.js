@@ -416,9 +416,12 @@ function inferAccessFolder(fields) {
 
   const path = normalizeToken(first(fields, ["source_folder", "folder_path", "drive_path"]));
   if (path.includes("exclusive")) return "exclusive";
-  if (path.includes("vip models") || path.includes(" vip ")) return "vip";
-  if (path.includes("premium")) return "premium";
+  if (path.includes("standard package") || path.includes("standard models") || path.includes("standard model") || path.includes("lite")) return "standard";
+  if (path.includes("premium package") || path.includes("premium models") || path.includes("premium model")) return "premium";
+  if (path.includes("vip package") || path.includes("vip models") || path.includes("vip model")) return "vip";
   if (path.includes("standard")) return "standard";
+  if (path.includes("premium")) return "premium";
+  if (path.includes(" vip ")) return "vip";
   return "";
 }
 
