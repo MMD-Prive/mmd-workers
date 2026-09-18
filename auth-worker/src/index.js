@@ -837,11 +837,11 @@ async function buildProfile(env, memberFields) {
 
 async function derivePackageAccess(env, memberFields) {
   const email = normalizeEmail(memberFields.email || "");
-  if (!email) return { tier: "guest", status: "guest", expire_at: "", package_code: "" };
+  if (!email) return { tier: "guest", status: "no_active_membership", start_at: "", expire_at: "", package_code: "" };
 
   const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
-    filterByFormula: `LOWER({member_email})=${formulaString(email)}`,
-    sort: [{ field: "end_date", direction: "desc" }],
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date", direction: "desc" }],
     maxRecords: 20,
   });
 
@@ -849,18 +849,60 @@ async function derivePackageAccess(env, memberFields) {
   let best = null;
   for (const record of records) {
     const f = record.fields || {};
-    if (String(f.status || "").toLowerCase() !== "active") continue;
-    const endAt = Date.parse(f.end_date || "");
+    const statusField = env.AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD || "status";
+    const endDateField = env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date";
+    const startDateField = env.AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD || "start_date";
+    const packageCodeField = env.AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD || "package_code";
+    if (String(f[statusField] || "").toLowerCase() !== "active") continue;
+    const endAt = Date.parse(f[endDateField] || "");
     if (!endAt || endAt < now) continue;
-    const tier = tierFromPackageCode(f.package_code || f.tier || "");
+    const tier = tierFromPackageCode(f[packageCodeField] || f.tier || "");
     const rank = TIER_RANK[tier] || 0;
     if (!best || rank > best.rank || endAt > best.endAt) {
-      best = { tier, rank, endAt, package_code: f.package_code || f.tier || "", expire_at: f.end_date || "" };
+      best = { tier, rank, endAt, package_code: f[packageCodeField] || f.tier || "", start_at: f[startDateField] || "", expire_at: f[endDateField] || "" };
     }
   }
 
-  if (!best) return { tier: "guest", status: "no_active_membership", expire_at: "", package_code: "" };
-  return { tier: best.tier, status: "active", expire_at: best.expire_at, package_code: best.package_code };
+  if (!best) return { tier: "guest", status: "no_active_membership", start_at: "", expire_at: "", package_code: "" };
+  return { tier: best.tier, status: "active", start_at: best.start_at, expire_at: best.expire_at, package_code: best.package_code };
+}
+
+// This is deliberately separate from derivePackageAccess(): account access
+// must remain active-only, while a time-limited promotion may classify a
+// verified member from their most recent completed membership.
+async function deriveLatestMembershipSnapshot(env, memberFields) {
+  const email = normalizeEmail(memberFields.email || "");
+  if (!email) return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
+
+  const records = await airtableList(env, table(env, "MEMBER_PACKAGES"), {
+    filterByFormula: `LOWER({${env.AIRTABLE_MEMBER_PACKAGES_MEMBER_EMAIL_FIELD || "member_email"}})=${formulaString(email)}`,
+    sort: [{ field: env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date", direction: "desc" }],
+    maxRecords: 20,
+  });
+
+  const statusField = env.AIRTABLE_MEMBER_PACKAGES_STATUS_FIELD || "status";
+  const endDateField = env.AIRTABLE_MEMBER_PACKAGES_END_DATE_FIELD || "end_date";
+  const startDateField = env.AIRTABLE_MEMBER_PACKAGES_START_DATE_FIELD || "start_date";
+  const packageCodeField = env.AIRTABLE_MEMBER_PACKAGES_PACKAGE_CODE_FIELD || "package_code";
+  const acceptedStatuses = new Set(["active", "expired"]);
+  const now = Date.now();
+
+  for (const record of records) {
+    const f = record.fields || {};
+    if (!acceptedStatuses.has(String(f[statusField] || "").trim().toLowerCase())) continue;
+    const endAt = Date.parse(f[endDateField] || "");
+    if (!endAt) continue;
+    const packageCode = f[packageCodeField] || f.tier || "";
+    return {
+      tier: tierFromPackageCode(packageCode),
+      status: endAt >= now ? "active" : "expired",
+      start_at: f[startDateField] || "",
+      expire_at: f[endDateField] || "",
+      package_code: packageCode,
+    };
+  }
+
+  return { tier: "guest", status: "none", start_at: "", expire_at: "", package_code: "" };
 }
 
 async function deriveMemberEntitlements(env, memberIdentity) {
