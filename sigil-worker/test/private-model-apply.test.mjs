@@ -167,6 +167,67 @@ test("Private Model upload-url validates private_model metadata before issuing u
   assert.equal(body.fields.application_type, "must be private_model");
 });
 
+test("Private Model upload-url accepts MP4, MOV and WEBM intro videos up to 50MB", async () => {
+  const cases = [
+    ["intro.mp4", "video/mp4"],
+    ["intro.mov", "video/quicktime"],
+    ["intro.webm", "video/webm"],
+  ];
+
+  for (const [fileName, contentType] of cases) {
+    const validation = privateModelTestInternals.validateUploadMetadata({
+      application_type: "private_model",
+      consent: true,
+      kind: "video",
+      role: "intro_video",
+      file_name: fileName,
+      content_type: contentType,
+      file_size: privateModelTestInternals.MAX_VIDEO_UPLOAD_BYTES,
+    });
+    assert.deepEqual(validation, { ok: true, fields: {} });
+  }
+
+  const { response } = await call(PRIVATE_MODEL_UPLOAD_URL_PATH, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      application_type: "private_model",
+      consent: true,
+      kind: "video",
+      role: "intro_video",
+      file_name: "intro.mp4",
+      content_type: "video/mp4",
+      file_size: privateModelTestInternals.MAX_VIDEO_UPLOAD_BYTES,
+    }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "upload_authorized");
+  assert.match(body.upload_ref, /^pmu_ref_/);
+  assert.match(body.upload_url, /\/sigil\/api\/private-model\/upload-file/);
+});
+
+test("Private Model upload-url rejects intro videos above 50MB", async () => {
+  const { response } = await call(PRIVATE_MODEL_UPLOAD_URL_PATH, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      application_type: "private_model",
+      consent: true,
+      kind: "video",
+      role: "intro_video",
+      file_name: "too-large.mp4",
+      content_type: "video/mp4",
+      file_size: privateModelTestInternals.MAX_VIDEO_UPLOAD_BYTES + 1,
+    }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "invalid_payload");
+  assert.equal(body.fields.file_size, "must be positive and within the approved size limit");
+});
+
 test("health exposes private model capabilities", async () => {
   const { response } = await call("/health");
   const body = await response.json();

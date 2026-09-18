@@ -13,6 +13,7 @@ const LEGACY_UPLOAD_FILE_PATH = "/v1/private-model/upload-file";
 const APPLY_BODY_LIMIT = 64 * 1024;
 const UPLOAD_META_BODY_LIMIT = 16 * 1024;
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:private-model:upload:v1:";
@@ -25,8 +26,10 @@ const DEFAULT_API_BASE = "https://sigil-worker.malemodel-bkk.workers.dev";
 const CONTACT_FIELDS = ["contact", "phone", "email", "line", "line_id", "telegram", "social_url", "instagram"];
 const PHOTO_ROLES = new Set(["front_face", "half_body", "full_body", "lifestyle", "body_presentation", "other_photo"]);
 const DOCUMENT_ROLES = new Set(["identity_document", "portfolio", "professional_certificate", "other_document"]);
+const VIDEO_ROLES = new Set(["intro_video"]);
 const PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const DOCUMENT_MIME_TYPES = new Set(["application/pdf", ...PHOTO_MIME_TYPES]);
+const VIDEO_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const FORBIDDEN_FIELDS = new Set([
   "airtable_record_id",
   "application_id",
@@ -344,7 +347,7 @@ async function handleUploadPut(request, env, corsHeaders) {
 
   const contentType = normalizeMime(request.headers.get("content-type"));
   const contentLength = Number(request.headers.get("content-length"));
-  if (contentType !== metadata.contentType || !Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > MAX_UPLOAD_BYTES || !request.body) {
+  if (contentType !== metadata.contentType || !Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > maxUploadBytesFor(metadata.kind) || !request.body) {
     return errorResponse("upload_metadata_mismatch", 400, corsHeaders);
   }
 
@@ -425,10 +428,10 @@ function validateUploadMetadata(body) {
   const mime = normalizeMime(rawMime);
   const size = typeof rawSize === "number" ? rawSize : Number.NaN;
   const name = boundedString(rawName, 240);
-  if (!["photo", "document"].includes(kind)) fields.kind = "unsupported kind";
+  if (!["photo", "document", "video"].includes(kind)) fields.kind = "unsupported kind";
   if (!roleAllowed(kind, role)) fields.role = "unsupported role for kind";
   if (!mimeAllowed(kind, mime)) fields.content_type = "unsupported content type for kind";
-  if (!Number.isFinite(size) || size <= 0 || size > MAX_UPLOAD_BYTES) fields.file_size = "must be positive and within the approved size limit";
+  if (!Number.isFinite(size) || size <= 0 || size > maxUploadBytesFor(kind)) fields.file_size = "must be positive and within the approved size limit";
   if (!name || /[/\\]/.test(name) || name === "." || name === "..") fields.file_name = "plain filename is required";
   if (findForbiddenField(body, new Set(["file_name"]))) fields.upload_payload = "contains unsupported upload field";
   return { ok: Object.keys(fields).length === 0, fields };
@@ -747,16 +750,40 @@ function corsFor(request, env) {
 }
 
 function roleAllowed(kind, role) {
-  return kind === "photo" ? PHOTO_ROLES.has(role) : kind === "document" ? DOCUMENT_ROLES.has(role) : false;
+  return kind === "photo"
+    ? PHOTO_ROLES.has(role)
+    : kind === "document"
+      ? DOCUMENT_ROLES.has(role)
+      : kind === "video"
+        ? VIDEO_ROLES.has(role)
+        : false;
 }
 
 function mimeAllowed(kind, mime) {
-  return kind === "photo" ? PHOTO_MIME_TYPES.has(mime) : kind === "document" ? DOCUMENT_MIME_TYPES.has(mime) : false;
+  return kind === "photo"
+    ? PHOTO_MIME_TYPES.has(mime)
+    : kind === "document"
+      ? DOCUMENT_MIME_TYPES.has(mime)
+      : kind === "video"
+        ? VIDEO_MIME_TYPES.has(mime)
+        : false;
+}
+
+function maxUploadBytesFor(kind) {
+  return kind === "video" ? MAX_VIDEO_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
 }
 
 function objectKeyFor(sessionId, uploadRef, contentType) {
   const now = new Date();
-  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" }[contentType] || "bin";
+  const ext = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "application/pdf": "pdf",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "video/webm": "webm",
+  }[contentType] || "bin";
   return `private-model/v1/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}/${sessionId}/${uploadRef}.${ext}`;
 }
 
@@ -1053,6 +1080,8 @@ export const privateModelTestInternals = {
   APPLICATION_FIELDS,
   UPLOAD_FIELDS,
   MAX_UPLOAD_BYTES,
+  MAX_VIDEO_UPLOAD_BYTES,
+  maxUploadBytesFor,
   validateApplicationPayload,
   validateUploadMetadata,
   normalizeApplication,
