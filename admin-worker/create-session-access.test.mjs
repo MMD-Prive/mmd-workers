@@ -12,6 +12,7 @@ const env = {
   ADMIN_BEARER: "admin-test",
   AIRTABLE_TABLE_MEMBERS: "members",
   AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
+  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "member_entitlements",
   AIRTABLE_TABLE_MODELS: "models",
 };
 
@@ -29,12 +30,15 @@ const tables = {
     member("recMemInactive01", "client_inactive", "mem_inactive", "inactive@example.test"),
     member("recMemGuest00001", "client_guest", "mem_guest", "guest@example.test"),
   ],
+  member_entitlements: [
+    entitlement("recEntSvip000001", "mem_svip", "svip", future),
+  ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
     pkg("recPkgPremium001", "premium@example.test", "Premium", future),
     pkg("recPkgVip0000001", "vip@example.test", "VIP", future),
     pkg("recPkgBlack00001", "black@example.test", "Black Card", future),
-    pkg("recPkgSvip000001", "svip@example.test", "SVIP", future),
+    pkg("recPkgSvip000001", "svip@example.test", "SVIP", past),
     pkg("recPkgExpired001", "expired@example.test", "Black Card", past),
     pkg("recPkgInactive01", "inactive@example.test", "Black Card", future, "inactive"),
     pkg("recPkgGuest0001", "guest@example.test", "Guest", future),
@@ -82,6 +86,21 @@ function member(id, clientId, memberId, email) {
       "Contact Email": email,
       line_record_id: `${clientId}_line_record`,
       line_user_id: `${clientId}_line_user`,
+    },
+  };
+}
+
+function entitlement(id, memberId, relationshipTier, expireAt, accessStatus = "active") {
+  return {
+    id,
+    fields: {
+      entitlement_id: `ent_${memberId}`,
+      member_id: memberId,
+      access_status: accessStatus,
+      member_status: accessStatus,
+      relationship_tier: relationshipTier,
+      expire_at: expireAt,
+      source: "manual",
     },
   };
 }
@@ -198,6 +217,8 @@ assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "clie
 assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_black" })).allowed_folders, ["standard", "premium", "vip", "exclusive"]);
 const svip = await resolveAuthoritativeMemberAccess(env, { client_id: "client_svip" });
 assert.equal(svip.tier, "black_card");
+assert.equal(svip.entitlement_authority, "my_mmd_entitlement_resolver_v1");
+assert.equal(svip.package_code, "svip");
 assert.deepEqual(svip.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
 
 await rejectsWithCode(

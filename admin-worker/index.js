@@ -25,6 +25,7 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./src/routes/demo-links.js";
+import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -2242,7 +2243,29 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
   const memberFields = member.fields || {};
   const memberEmail = str(memberFields["Contact Email"] || memberFields.member_email || memberFields.email || ids.member_email).toLowerCase();
 
-  // member_packages ledger is the membership source of truth (mirrors auth-worker derivePackageAccess)
+  // Canonical authority: My MMD entitlement resolver over MMD — Member Entitlements.
+  // If canonical entitlement rows exist, they decide access even when the legacy
+  // member_packages ledger disagrees. This prevents stale purchase rows from
+  // downgrading or widening current private access.
+  const canonical = await resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail);
+  if (canonical.found) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: canonical.member_id || str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: canonical.tier ? "active" : canonical.membership_status,
+      tier: canonical.tier,
+      package_code: canonical.package_code,
+      expire_at: canonical.expire_at,
+      allowed_folders: canonical.tier ? PRIVATE_ACCESS_FOLDERS[canonical.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: canonical.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+    };
+  }
+
+  // Legacy compatibility only for members that have no canonical entitlement
+  // rows yet. Once an entitlement exists, this ledger must never override it.
   let best = null;
   if (memberEmail) {
     const ledgerTable = env.AIRTABLE_TABLE_MEMBER_PACKAGES || "member_packages";
@@ -2271,6 +2294,7 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
       membership_status: memberEmail ? "no_active_membership" : "no_ledger_identity",
       tier: "",
       allowed_folders: [],
+      entitlement_authority: "legacy_member_packages_fallback",
     };
   }
 
@@ -2284,6 +2308,76 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
     package_code: best.package_code,
     expire_at: best.expire_at,
     allowed_folders: PRIVATE_ACCESS_FOLDERS[best.tier].slice(),
+    entitlement_authority: "legacy_member_packages_fallback",
+  };
+}
+
+async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail) {
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = new Map();
+
+  const linked = []
+    .concat(memberFields["MMD — Member Entitlements"] || [])
+    .concat(memberFields["MMD - Member Entitlements"] || []);
+  for (const value of linked) {
+    const id = str(value && typeof value === "object" ? value.id : value);
+    if (!/^rec[A-Za-z0-9]{14,}$/.test(id) || records.has(id)) continue;
+    const fetched = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(id)}`);
+    if (fetched.ok && fetched.data?.id) records.set(fetched.data.id, fetched.data);
+  }
+
+  const memberIdCandidates = [
+    ids.member_id,
+    memberFields.member_id,
+    memberFields["Member ID"],
+    member?.id ? `mmd_rec_${member.id}` : "",
+  ].map(str).filter(Boolean);
+
+  const lookups = [
+    ...memberIdCandidates.map((value) => ["member_id", value, false]),
+    ["memberstack_id", ids.memberstack_id || memberFields.memberstack_id, false],
+    ["line_user_id", ids.line_user_id || memberFields.line_user_id || memberFields.line_id, false],
+    ["member_email", memberEmail, true],
+  ];
+
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    const rows = await airtableListByFormula(env, table, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`, 50);
+    for (const row of rows) if (row?.id) records.set(row.id, row);
+  }
+
+  const rows = [...records.values()];
+  if (!rows.length) return { found: false, tier: "", membership_status: "no_canonical_entitlement", snapshot: null };
+
+  const snapshot = resolveMemberEntitlements(rows, { now: Date.now() });
+  const envelope = accessToken(snapshot?.access?.private_visibility_envelope);
+  const tier = envelope === "black_card" || envelope === "svip"
+    ? "black_card"
+    : envelope === "vip" || envelope === "premium" || envelope === "standard"
+      ? envelope
+      : "";
+
+  const currentRows = (snapshot?.entitlements || []).filter((row) =>
+    row && (row.lifecycle === "active" || row.lifecycle === "expiring_soon")
+  );
+  const expireAt = currentRows
+    .map((row) => str(row.expire_at))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || "";
+  const packageCode = currentRows
+    .map((row) => str(row.relationship_tier || row.package_code || row.capability))
+    .find(Boolean) || tier;
+
+  return {
+    found: true,
+    tier,
+    package_code: packageCode,
+    expire_at: expireAt,
+    member_id: memberIdCandidates[0] || "",
+    membership_status: snapshot?.member_blocked ? "blocked" : tier ? "active" : "no_active_private_entitlement",
+    snapshot,
   };
 }
 
