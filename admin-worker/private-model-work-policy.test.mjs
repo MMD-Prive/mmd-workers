@@ -5,6 +5,7 @@ import {
   derivePrivateServiceLevel,
   enforcePrivateModelSearchPolicy,
   guardPrivateJobCreateWork,
+  inferAccessFolder,
   isPrivateModelSearchRequest,
   privateWorkAllowed,
   privateWorkCapabilities,
@@ -272,8 +273,13 @@ try {
 
 console.log("Private Model work policy tests passed: VIP => VIP+PN; PN => PN only.");
 
-
-test("legacy source path keeps package access separate from nested VIP work folder", async () => {
-  const source = await import("./src/private-model-work-policy.js");
-  assert.ok(source);
-});
+assert.equal(
+  inferAccessFolder({ source_folder: "Private Models / Standard Package / MMD Variety / MMD Farang / VIP / Simba" }),
+  "standard",
+  "Standard Package controls access while nested VIP is work capability",
+);
+assert.equal(
+  inferAccessFolder({ source_folder: "Private Models / Premium Package / Straight / VIP / Example" }),
+  "premium",
+  "Premium Package controls access even when model is VIP-capable",
+);
