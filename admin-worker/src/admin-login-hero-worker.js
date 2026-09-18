@@ -1,79 +1,206 @@
-import worker from "./studio-telegram-worker.js";
+import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
+import worker from "./job-orchestrator-owner-ops-wrapper.js";
+import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
+import { kickLineOfcConsoleContactBackfill } from "./line-ofc-console-backfill.js";
+import { buildAudienceBriefLive } from "./audience-brief-live.js";
+import { maybeHandleHeldIdentityLinkRefresh } from "./sigil-jobs-identity-link-refresh.js";
 import {
-  ADMIN_LOGIN_SESSION_PATH,
-  APPROVED_ADMIN_LOGIN_HERO,
-  renderApprovedAdminLogin,
-} from "./admin-login-page.js";
+  isPrivateModelAdminRequest,
+  maybeHandlePrivateModelAdminRequest,
+  syncPrivateModelHandoffAfterActivation,
+} from "./private-model-application-handoff.js";
+import {
+  isModelConfirmActionRequest,
+  maybeCreateInternalHoldAfterModelConfirm,
+} from "./model-confirm-cal-hold.js";
+import { enrichLineageWithPerRename } from "./per-rename-client-search.js";
+import {
+  enforcePrivateModelSearchPolicy,
+  guardPrivateJobCreateWork,
+  isPrivateModelSearchRequest,
+} from "./private-model-work-policy.js";
+import {
+  handleKenjiLv5OperationalRpc,
+  isKenjiLv5OperationalRpcRequest,
+} from "./kenji-lv5-operational-rpc.js";
+import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
+export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
-export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
-export { ADMIN_LOGIN_SESSION_PATH, APPROVED_ADMIN_LOGIN_HERO };
+export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
+const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
+const MMS_PARTNER_PATH = "/internal/admin/mms";
+const MODEL_ACTIVATE_PATH = "/v1/model/liff/activate";
+const AUDIENCE_BRIEF_PATH = "/v1/admin/audience/brief";
+const LINEAGE_LOOKUP_PATH = "/v1/admin/clients/lineage-lookup";
+const LINEAGE_RECENT_PATH = "/v1/admin/clients/recent";
+const JOB_CREATE_PATH = "/v1/admin/job/create";
+const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
+let lineOfcContactBackfillKickStarted = false;
 
-const ALLOWED_NEXT_PATHS = [
-  "/internal/admin",
-  "/internal/admin/control-room",
-  "/internal/admin/jobs/create-session",
-  "/internal/admin/create-session",
-  "/internal/admin/kenji-knowledge",
-  "/internal/jobs/create-job",
-];
+function scheduleLineOfcContactBackfill(env, ctx) {
+  if (lineOfcContactBackfillKickStarted || !env?.LINE_OFC_BACKFILL_COORDINATOR) return;
+  lineOfcContactBackfillKickStarted = true;
+  const task = kickLineOfcConsoleContactBackfill(env).catch(() => {
+    lineOfcContactBackfillKickStarted = false;
+  });
+  if (ctx?.waitUntil) ctx.waitUntil(task);
+}
 
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    const path = normalizePath(url.pathname);
-    const method = request.method.toUpperCase();
+function delegatedHeaders(request) {
+  const headers = new Headers({ accept: "application/json" });
+  for (const name of ["cookie", "authorization", "origin", "user-agent"]) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return headers;
+}
 
-    if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
-      return renderAdminLogin(request, {
-        next: normalizeNext(url.searchParams.get("next")),
-      });
-    }
+async function delegatedJson(request, env, ctx, path) {
+  const url = new URL(path, request.url);
+  const response = await worker.fetch(new Request(url.toString(), {
+    method: "GET",
+    headers: delegatedHeaders(request),
+  }), env, ctx);
+  const data = await response.clone().json().catch(() => null);
+  return { ok: response.ok && data?.ok !== false, status: response.status, data };
+}
 
-    if (path === ADMIN_LOGIN_SESSION_PATH && method === "POST") {
-      const formTextPromise = request.clone().text().catch(() => "");
-      const response = await worker.fetch(request, env, ctx);
-      const contentType = response.headers.get("content-type") || "";
-      if (response.status >= 400 && contentType.includes("text/html")) {
-        const form = new URLSearchParams(await formTextPromise);
-        return renderAdminLogin(request, {
-          status: response.status,
-          error: "รหัสยังไม่ถูกต้องครับ ลองตรวจอีกครั้ง",
-          next: normalizeNext(form.get("next")),
-        });
-      }
-      return response;
-    }
+export async function enforceOwnerDashboardFirst(request, response) {
+  if (!(response instanceof Response)) return response;
 
-    return worker.fetch(request, env, ctx);
-  },
-};
+  let requestUrl;
+  try {
+    requestUrl = new URL(request.url);
+  } catch {
+    return response;
+  }
 
-export function renderAdminLogin(request, { status = 200, error = "", next = "/internal/admin/control-room" } = {}) {
-  return renderApprovedAdminLogin(request, {
-    status,
-    error,
-    next: normalizeNext(next),
+  const path = requestUrl.pathname.replace(/\/+$/g, "") || "/";
+  if (path !== ADMIN_LOGIN_SESSION_PATH || String(request.method || "GET").toUpperCase() !== "POST") {
+    return response;
+  }
+
+  const role = String(response.headers.get("x-mmd-admin-role") || "").trim();
+  const sessionCreated = response.headers.get("x-mmd-admin-login") === "session-created";
+  if (!sessionCreated || role === "mms_partner") return response;
+
+  const headers = new Headers(response.headers);
+  headers.set("x-mmd-admin-next", ADMIN_OWNER_DASHBOARD_PATH);
+  headers.set("x-mmd-admin-post-login", "dashboard-first");
+
+  if (response.status >= 300 && response.status < 400) {
+    headers.set("location", new URL(ADMIN_OWNER_DASHBOARD_PATH, requestUrl.origin).toString());
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) return response;
+
+  let payload;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    return response;
+  }
+
+  if (!payload || payload.ok !== true) return response;
+  payload.next = ADMIN_OWNER_DASHBOARD_PATH;
+  headers.set("content-type", "application/json; charset=utf-8");
+  return new Response(JSON.stringify(payload), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
   });
 }
 
-export function normalizeNext(value = "") {
-  const raw = String(value || "").trim();
-  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("..")) return "/internal/admin/control-room";
-  let parsed;
-  try {
-    parsed = new URL(raw, "https://mmdbkk.com");
-  } catch {
-    return "/internal/admin/control-room";
-  }
-  const allowed = ALLOWED_NEXT_PATHS.some((path) => parsed.pathname === path || (path === "/internal/admin/control-room" && parsed.pathname.startsWith(`${path}/`)));
-  if (!allowed) return "/internal/admin/control-room";
-  for (const key of parsed.searchParams.keys()) {
-    if (/token|secret|password|credential|cookie|authorization|bearer|confirm_key/i.test(key)) return "/internal/admin/control-room";
-  }
-  return `${parsed.pathname}${parsed.search}`;
-}
+/*
+Delegated active-entrypoint contract markers.
+The implementation remains in the pre-model-line-link wrapper/core chain; these
+markers keep existing source-contract CI explicit while the outer wrappers add
+owner-reviewed MMD MODEL LINE-link behavior, read-only dashboard summary, verified
+Client Credit carry-forward authority, the canonical owner Job Orchestrator, and
+canonical Private work capability enforcement.
 
-function normalizePath(pathname = "") {
-  const path = String(pathname || "/").replace(/\/{2,}/g, "/");
-  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
-}
+browser_admin_session_required
+forbidden_origin
+isPaymentReviewRequest
+handlePaymentReviewRequest
+isPaymentEntitlementApprovalRequest
+handlePaymentEntitlementApproval
+coreWorker.fetch(request, env, ctx)
+*/
+
+export default {
+  async fetch(request, env, ctx) {
+    if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, env, ctx);
+    scheduleLineOfcContactBackfill(env, ctx);
+    if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
+    let privateModelRequest = null;
+    let privateModelSearchRequest = null;
+    let activationRequest = null;
+    let modelConfirmRequest = null;
+    let perRenameRequest = null;
+    let normalizedPath = "";
+    const method = String(request.method || "GET").toUpperCase();
+    try {
+      normalizedPath = new URL(request.url).pathname.replace(/\/+$/g, "") || "/";
+      if (isPrivateModelAdminRequest(request)) privateModelRequest = request.clone();
+      if (isPrivateModelSearchRequest(request)) privateModelSearchRequest = request.clone();
+      if (isModelConfirmActionRequest(request)) modelConfirmRequest = request.clone();
+      if (normalizedPath === LINEAGE_LOOKUP_PATH && method === "POST") perRenameRequest = request.clone();
+      if (normalizedPath === MODEL_ACTIVATE_PATH && method === "POST") {
+        activationRequest = request.clone();
+      }
+    } catch {
+      // Core worker remains authoritative if URL parsing fails.
+    }
+
+    // Kenji LV5 orchestration is service-binding only. The handler performs its
+    // own strict caller + internal bearer checks and never becomes domain truth.
+    if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
+      return handleKenjiLv5OperationalRpc(request, env);
+    }
+
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), env);
+      if (privateWorkBlocked) return privateWorkBlocked;
+      const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, env);
+      if (refreshed) return refreshed;
+    }
+
+    let response = await worker.fetch(request, env, ctx);
+    if (normalizedPath === AUDIENCE_BRIEF_PATH && method === "GET" && response.status === 404) {
+      response = await buildAudienceBriefLive(
+        request,
+        env,
+        ctx,
+        (path) => delegatedJson(request, env, ctx, path),
+      );
+    }
+    if (privateModelSearchRequest) response = await enforcePrivateModelSearchPolicy(privateModelSearchRequest, response, env);
+    if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
+    if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
+    if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
+    if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, env);
+    response = await enforceOwnerDashboardFirst(request, response);
+
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      response = await augmentOwnerJobGrantCreateError(request, response, env);
+    }
+
+    if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
+      const headers = new Headers(response.headers);
+      headers.set("X-MMD-Manual-Public-Fallback", MANUAL_PUBLIC_FALLBACK_MARKER);
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
+    return response;
+  },
+};

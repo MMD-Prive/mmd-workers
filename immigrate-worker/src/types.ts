@@ -4,6 +4,7 @@ export interface Env {
   BROWSER_GATE_PASSWORD?: string;
   BROWSER_GATE_USERNAME?: string;
   CONFIRM_KEY?: string;
+  LINK_SIGNING_SECRET?: string;
   AIRTABLE_API_KEY?: string;
   AIRTABLE_BASE_ID: string;
   AIRTABLE_TABLE_LINE_INBOX: string;
@@ -11,9 +12,12 @@ export interface Env {
   AIRTABLE_TABLE_SESSIONS?: string;
   AIRTABLE_TABLE_PAYMENTS?: string;
   AIRTABLE_TABLE_POINTS_LEDGER?: string;
+  AIRTABLE_TABLE_MEMBERS?: string;
+  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS?: string;
   ENABLE_AIRTABLE_SYNC?: string;
   JOBS_WORKER_BASE_URL?: string;
   CREATE_LINKS_URL?: string;
+  AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS?: string;
   REALTIME_SESSIONS_URL?: string;
   PUBLIC_WEB_BASE_URL?: string;
   PUBLIC_ALLOWED_ORIGINS?: string;
@@ -43,6 +47,13 @@ export interface Env {
   AIRTABLE_SESSION_FIELD_CONFIRMATION_NOTES?: string;
   AIRTABLE_SESSION_FIELD_CUSTOMER_CONFIRMED_AT?: string;
   AIRTABLE_SESSION_FIELD_EXPIRE_AT?: string;
+  AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD?: string;
+  AIRTABLE_ENTITLEMENT_MEMBER_ID_FIELD?: string;
+  AIRTABLE_MEMBERS_LINE_USER_ID_FIELD?: string;
+  AIRTABLE_MEMBERS_MEMBER_ID_FIELD?: string;
+  AIRTABLE_MEMBERS_EXPIRY_FIELD?: string;
+  AIRTABLE_MEMBERS_END_DATE_FIELD?: string;
+  AIRTABLE_MEMBERS_EXPIRE_AT_FIELD?: string;
 }
 
 export type InviteRole = "customer" | "model";
@@ -184,7 +195,7 @@ export interface ImmigrationIntakeResponse {
 
 export interface LineClientIntakeRequest {
   immigration_id?: string;
-  memberstack_id?: string;
+  member_id?: string;
   source_channel?: string;
   intake_source?: string;
   display_name?: string;
@@ -408,7 +419,7 @@ export interface ImmigrationLinksRequest {
   display_name?: string;
   email?: string;
   line_user_id?: string;
-  memberstack_id?: string;
+  member_id?: string;
   model_name?: string;
   model_record_id?: string;
   rules_url?: string;
@@ -464,7 +475,7 @@ export interface ImmigrationLinkContext {
     entries: ImmigrationContextPointEntry[];
   };
   membership: {
-    memberstack_id: string;
+    member_id: string;
     status: string;
     current_tier: string;
     target_tier: string;
@@ -601,7 +612,7 @@ export interface InvitePrefill {
   email: string;
   line_user_id: string;
   telegram_username: string;
-  memberstack_id: string;
+  member_id: string;
   model_name?: string;
   model_record_id?: string;
 }

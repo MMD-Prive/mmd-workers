@@ -8,8 +8,9 @@ import worker from "./src/dashboard-worker.js";
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 const LOGIN = "/internal/admin/login";
+const SIGIL_LOGIN = "/sigil/internal/admin/login";
 const SESSION = "/internal/admin/login/session";
-const KENJI = "/internal/admin/kenji-knowledge";
+const KENJI = "/internal/admin/kenji";
 const LEGACY_SIGIL_KENJI = "/sigil/internal/admin/kenji-knowledge";
 const ENV = {
   ADMIN_BEARER: "focused_admin_login_test_credential",
@@ -38,6 +39,15 @@ function cookieValue(cookie) {
   return decodeURIComponent(String(cookie || "").split("=", 2)[1] || "");
 }
 
+test("SIGIL login is served by admin-worker while using the canonical session endpoint", async () => {
+  const response = await request(SIGIL_LOGIN);
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("location"), null);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "admin-worker");
+  assert.match(html, /form method="post" action="\/internal\/admin\/login\/session"/);
+});
+
 function decodeCookiePayload(cookie) {
   const [payloadPart] = cookieValue(cookie).split(".");
   return JSON.parse(base64UrlDecode(payloadPart));
@@ -53,7 +63,7 @@ async function withOriginFetchMock(mock, run) {
   }
 }
 
-test("GET login renders a safe server-side POST form", async () => {
+test("GET login renders a safe deterministic browser login form", async () => {
   const response = await request(`${LOGIN}?next=${encodeURIComponent(KENJI)}`);
   const html = await response.text();
 
@@ -61,19 +71,29 @@ test("GET login renders a safe server-side POST form", async () => {
   assert.match(response.headers.get("content-type") || "", /^text\/html\b/);
   assert.match(response.headers.get("cache-control") || "", /no-store/);
   assert.match(response.headers.get("content-security-policy") || "", /form-action 'self'/);
+  assert.match(response.headers.get("content-security-policy") || "", /connect-src 'self'/);
+  assert.equal(response.headers.get("x-mmd-login-ui"), "browser-fetch-v5");
   assert.match(html, /<title>MMD Privé · Internal Login<\/title>/);
   assert.match(html, /data-mmd-page="admin-login-approved-hero"/);
-  assert.match(html, /Create your/);
-  assert.match(html, /Ewvon and Chang in MMD internal administration environment/);
+  assert.match(html, /data-lane="owner"/);
+  assert.match(html, /data-lane="partner"/);
+  assert.doesNotMatch(html, /Internal Admin Chang Ewvon/);
+  assert.match(html, /rel="icon" type="image\/webp"/);
+  assert.match(html, /rel="apple-touch-icon"/);
+  assert.match(html, /data-initial-lane="owner"/);
   assert.match(html, /method="post"/);
   assert.match(html, /action="\/internal\/admin\/login\/session"/);
-  assert.match(html, /name="credential"/);
-  assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
-  assert.match(html, /type="password"/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*name="credential"/);
+  assert.match(html, /body\.set\('credential',credential\)/);
+  assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
+  assert.match(html, /id="adminCredential" type="text" required readonly/);
+  assert.match(html, /id="adminCredential"[^>]*data-mask="true"/);
+  assert.doesNotMatch(html, /id="adminCredential"[^>]*type="password"/);
   assert.doesNotMatch(html, /MMD Admin Sign In/);
   assert.doesNotMatch(html, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(html, /mmdprive\.webflow\.io\/internal\/admin\/login/);
   assert.doesNotMatch(html, /localStorage|sessionStorage|Internal access\.|sigil-internal-login/);
+  assert.doesNotMatch(html, /access_code|\/v1\/admin\/auth\/login|\/kenji\/access-code\/validate/);
 });
 
 test("apex and www query-bearing login pages render without redirecting", async () => {
@@ -85,7 +105,7 @@ test("apex and www query-bearing login pages render without redirecting", async 
     assert.equal(response.status, 200, host);
     assert.equal(response.headers.get("location"), null, host);
     assert.match(html, /action="\/internal\/admin\/login\/session"/, host);
-    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge\?source=query-login"/, host);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji\?source=query-login"/, host);
   }
 });
 
@@ -94,7 +114,7 @@ test("query login sanitizes external, protocol-relative, and unapproved next val
     const response = await request(`${LOGIN}?next=${encodeURIComponent(next)}`);
     const html = await response.text();
     assert.equal(response.status, 200);
-    assert.match(html, /name="next" value="\/internal\/admin\/kenji-knowledge"/);
+    assert.match(html, /name="next" value="\/internal\/admin\/kenji"/);
     assert.equal(html.includes("evil.example"), false);
     assert.equal(html.includes("/unapproved"), false);
   }
@@ -162,6 +182,25 @@ test("dedicated login credential is isolated from API bearer credentials", async
     assert.equal(rejected.status, 401);
     assert.equal(rejected.headers.get("set-cookie"), null);
   }
+});
+
+test("dedicated admin session secret rejects cookies signed by the legacy bearer", async () => {
+  const env = {
+    ...ENV,
+    ADMIN_LOGIN_CREDENTIAL: "focused_dedicated_admin_login_credential",
+    ADMIN_SESSION_SECRET: "focused_dedicated_admin_session_secret",
+  };
+  const issued = await login(env.ADMIN_LOGIN_CREDENTIAL, { env });
+  const valid = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", Cookie: cookiePair(issued) },
+  }, "mmdbkk.com", env);
+  assert.equal(valid.status, 200);
+
+  const legacyCookie = await sessionCookie({}, ENV.ADMIN_BEARER);
+  const rejected = await request("/v1/admin/auth/me", {
+    headers: { Origin: "https://mmdbkk.com", Cookie: legacyCookie },
+  }, "mmdbkk.com", env);
+  assert.equal(rejected.status, 401);
 });
 
 test("issued apex cookie authenticates auth/me and Kenji readiness APIs", async () => {
@@ -416,7 +455,7 @@ test("login ownership routes are query-safe, narrow, unique, and absent from oth
 
 const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
 
-async function sessionCookie(overrides = {}) {
+async function sessionCookie(overrides = {}, secret = ENV.ADMIN_BEARER) {
   const now = Date.now();
   const session = {
     version: 1,
@@ -429,7 +468,7 @@ async function sessionCookie(overrides = {}) {
     ...overrides,
   };
   const payload = base64UrlEncode(JSON.stringify(session));
-  const signature = await signPayload(payload);
+  const signature = await signPayload(payload, secret);
   return `mmd_admin_gate_v1=${encodeURIComponent(`${payload}.${signature}`)}`;
 }
 
@@ -446,11 +485,11 @@ function tamperCookieSignature(cookie) {
   return `mmd_admin_gate_v1=${encodeURIComponent(`${payloadPart}.${signaturePart.slice(0, -1)}${replacement}`)}`;
 }
 
-async function signPayload(payload) {
+async function signPayload(payload, secret = ENV.ADMIN_BEARER) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(ENV.ADMIN_BEARER),
+    encoder.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]

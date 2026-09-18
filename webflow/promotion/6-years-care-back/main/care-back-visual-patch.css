@@ -1,0 +1,23 @@
+/* CARE BACK main page visual patch v1
+ * Scope: anniversary memory framing only.
+ * Business logic, CTA routing and Wish/benefit boundaries are intentionally untouched.
+ */
+
+#mmd-careback-six-v6 .mx-memory-card:nth-child(2),
+#mmd-careback-six-v6 .mx-memory-card:nth-child(3) {
+  flex-basis: min(88vw, 680px);
+  aspect-ratio: 4 / 3;
+}
+
+#mmd-careback-six-v6 .mx-memory-card:nth-child(2) img,
+#mmd-careback-six-v6 .mx-memory-card:nth-child(3) img {
+  object-fit: cover;
+  object-position: 50% 46%;
+}
+
+@media (min-width: 768px) {
+  #mmd-careback-six-v6 .mx-memory-card:nth-child(2),
+  #mmd-careback-six-v6 .mx-memory-card:nth-child(3) {
+    aspect-ratio: 4 / 3;
+  }
+}
