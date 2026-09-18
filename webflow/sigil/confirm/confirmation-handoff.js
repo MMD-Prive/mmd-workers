@@ -12,13 +12,29 @@
   const MODEL_LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq";
   const MEMBER_LIFF_URL = "https://miniapp.line.me/2010862595-yT4DCEMc/?view=jobs";
 
+  function currentModelLang() {
+    const queryLang = new URL(window.location.href).searchParams.get("lang");
+    const raw = String(queryLang || document.documentElement.lang || "th").toLowerCase();
+    if (raw === "en" || raw.startsWith("en-")) return "en";
+    if (raw === "zh" || raw.startsWith("zh-")) return "zh";
+    return "th";
+  }
+
   function wireModel() {
     if (path !== MODEL_CONFIRM_PATH) return;
     const root = document.getElementById("mmd-model-confirm-v15");
     const link = root?.querySelector(".mm15__success a, [data-m-success] a");
     if (!link) return;
-    link.href = MODEL_LIFF_URL;
-    link.textContent = "ไปที่ MMD MODEL ใน LINE";
+
+    const lang = currentModelLang();
+    const target = new URL(MODEL_LIFF_URL);
+    target.searchParams.set("lang", lang);
+    link.href = target.toString();
+    link.textContent = lang === "en"
+      ? "Open MMD MODEL in LINE"
+      : lang === "zh"
+        ? "在 LINE 中打开 MMD MODEL"
+        : "ไปที่ MMD MODEL ใน LINE";
     link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
   }
 
