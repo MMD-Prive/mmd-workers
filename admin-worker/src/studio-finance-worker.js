@@ -3,6 +3,13 @@ import studioWorker from "./studio-real-worker.js";
 const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
+const DEFAULT_PAYMENT_PROOFS_TABLE = "tblfJfM4Sqag9zrLi";
+const PROOF_FIELD = Object.freeze({
+  createdAt: "fldzoCd4ogkXwxhhL",
+  channel: "fldheBc6tI8wEdYRe",
+  status: "fld45QUtZAl3FEmW4",
+  session: "fldiAWyWidvUOXi1q",
+});
 
 export default {
   async fetch(request, env, ctx) {
@@ -59,7 +66,14 @@ async function projectModelCurrentResponse(upstream, env) {
     if (sessionId) finance = await findModelExpectedPayout(env, sessionId).catch(() => ({ status: "checking" }));
   }
 
-  const projected = projectModelFinancePayload(body, finance);
+  let projected = projectModelFinancePayload(body, finance);
+  if (upstream.ok && body.ok !== false) {
+    const sessionRecordId = clean(finance?.session_record_id);
+    if (sessionRecordId) {
+      const proof = await findModelPaymentProof(env, sessionRecordId).catch(() => ({ status: "unknown" }));
+      projected = projectModelPaymentProofAlertPayload(projected, proof);
+    }
+  }
   const headers = new Headers(upstream.headers);
   headers.delete("content-length");
   headers.set("content-type", "application/json; charset=utf-8");
@@ -102,12 +116,85 @@ async function findModelExpectedPayout(env, sessionId) {
     ]);
     return {
       status: "resolved",
+      session_record_id: clean(result.records[0]?.id),
       expected_payout_thb: expected,
       payout_status: normalizePayoutStatus(payoutStatus) || "expected",
     };
   }
 
   return { status: "checking" };
+}
+
+
+export function projectModelPaymentProofAlertPayload(value, proof = { status: "none" }) {
+  const payload = value && typeof value === "object" ? value : {};
+  const session = resolveSessionObject(payload);
+  if (!session) return payload;
+
+  const status = normalizeProofStatus(proof?.status);
+  if (!status || status === "none") {
+    delete session.customer_payment_proof;
+    delete session.model_console_alerts;
+    return payload;
+  }
+
+  const pending = status === "pending";
+  const verified = status === "verified";
+  if (!pending && !verified) return payload;
+
+  session.customer_payment_proof = {
+    received: true,
+    status: pending ? "pending_verification" : "verified",
+    received_at: clean(proof?.created_at) || null,
+  };
+  session.model_console_alerts = [{
+    id: pending ? "customer_payment_proof_received" : "customer_payment_verified",
+    kind: "payment",
+    severity: pending ? "info" : "success",
+    title: pending ? "ลูกค้าส่งหลักฐานการชำระแล้ว" : "MMD ตรวจยอดเรียบร้อยแล้ว",
+    message: pending
+      ? "MMD กำลังตรวจสอบยอดครับ ยังไม่ถือว่า Paid จนกว่าจะยืนยันอย่างเป็นทางการ"
+      : "รายการชำระเงินได้รับการยืนยันจาก MMD แล้วครับ",
+    status: pending ? "pending_verification" : "verified",
+    at: clean(proof?.created_at) || null,
+  }];
+  return payload;
+}
+
+async function findModelPaymentProof(env, sessionRecordId) {
+  if (!env?.AIRTABLE_API_KEY || !env?.AIRTABLE_BASE_ID || !/^rec[A-Za-z0-9]{14}$/.test(sessionRecordId)) {
+    return { status: "none" };
+  }
+  const table = clean(env.AIRTABLE_TABLE_PAYMENT_PROOFS || env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || DEFAULT_PAYMENT_PROOFS_TABLE);
+  const params = new URLSearchParams({
+    maxRecords: "5",
+    sort: JSON.stringify([{ field: "created_at", direction: "desc" }]),
+    filterByFormula: `FIND("${escapeFormula(sessionRecordId)}",ARRAYJOIN({session}))`,
+    returnFieldsByFieldId: "true",
+  });
+  const response = await fetch(
+    `${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${params.toString()}`,
+    { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}` } },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { status: "unknown" };
+  const rows = Array.isArray(data.records) ? data.records : [];
+  const ranked = rows
+    .map((record) => ({
+      status: normalizeProofStatus(record?.fields?.[PROOF_FIELD.status]),
+      created_at: clean(record?.fields?.[PROOF_FIELD.createdAt]),
+      channel: clean(record?.fields?.[PROOF_FIELD.channel]),
+    }))
+    .filter((record) => record.status === "pending" || record.status === "verified");
+  return ranked[0] || { status: "none" };
+}
+
+function normalizeProofStatus(value) {
+  const status = normalizeKey(value);
+  if (status === "verified" || status === "approved") return "verified";
+  if (status === "pending" || status === "submitted" || status === "pending_review" || status === "pending_verification") return "pending";
+  if (!status) return "none";
+  return status;
 }
 
 async function airtableFindBySessionId(env, table, field, sessionId) {
