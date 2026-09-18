@@ -2243,6 +2243,68 @@ async function modelSessionFindOne(env, tableName, filterByFormula) {
   return { ok: true, record: record ? { id: record.id, fields: record.fields || {} } : null };
 }
 
+const MODEL_SESSION_MODEL_CURRENT_STATES = new Set([
+  "offered",
+  "confirmed",
+  "en_route",
+  "nearby",
+  "arrived",
+  "met_customer",
+  "final_payment_pending",
+  "final_payment_confirmed",
+  "work_started",
+  "work_finished",
+  "separated",
+  "under_review",
+  "payout_pending",
+]);
+
+async function modelSessionFindCurrentByModel(env, tables, payload) {
+  if (payload?.kind !== "model_session") return { ok: true, record: null, eligible: false };
+
+  const modelRecordId = str(payload?.model_record_id || payload?.model_id);
+  if (!modelRecordId) return { ok: true, record: null, eligible: false };
+
+  const assignedField = tables.sessions.fields.modelRecordId;
+  if (!assignedField) return { ok: false, detail: { error: "model_assignment_field_missing" } };
+
+  const params = new URLSearchParams();
+  params.set("pageSize", "20");
+  params.set(
+    "filterByFormula",
+    `FIND("${escapeFormulaValue(modelRecordId)}",ARRAYJOIN({${assignedField}}))`,
+  );
+
+  const result = await airtableFetch(
+    env,
+    `/${encodeURIComponent(tables.sessions.table)}?${params.toString()}`,
+  );
+  if (!result.ok) return { ok: false, detail: result };
+
+  const records = Array.isArray(result.data?.records) ? result.data.records : [];
+  for (const raw of records) {
+    const record = { id: raw?.id || "", fields: raw?.fields || {} };
+    const recordModelIds = modelSessionFieldValues(record.fields, [
+      assignedField,
+      "Model Record ID",
+      "model_record_id",
+      "model_id",
+      "Model",
+    ]);
+    // The fallback is identity-bound, not name-bound. If Airtable does not
+    // return the exact canonical Model record id, fail closed for that row.
+    if (!recordModelIds.includes(modelRecordId)) continue;
+
+    const stateInfo = modelSessionStateFromRecord(tables, record);
+    const normalizedState = normalizeSessionState(stateInfo.state);
+    if (!MODEL_SESSION_MODEL_CURRENT_STATES.has(normalizedState)) continue;
+
+    return { ok: true, record, eligible: true };
+  }
+
+  return { ok: true, record: null, eligible: true };
+}
+
 function modelSessionOwnsRecord(env, payload, record) {
   const fields = record?.fields || {};
   const tables = modelSessionTables(env);
@@ -2269,7 +2331,19 @@ async function resolveModelSessionContext(req, env, body = null) {
 
   const tables = modelSessionTables(env);
   const formulas = modelSessionLookupFormulas(env, payload);
-  if (!formulas.length) return { ok: false, status: 403, error: "forbidden" };
+
+  // A LINE-verified Model session is valid even when it was issued before the
+  // Model had an active job. In that case the token intentionally contains the
+  // canonical model_record_id but no session_id/payment_ref. Resolve the current
+  // job from the exact assigned canonical Model relation; if none exists, report
+  // the normal no-active-job state instead of misclassifying identity as forbidden.
+  if (!formulas.length) {
+    const currentByModel = await modelSessionFindCurrentByModel(env, tables, payload);
+    if (!currentByModel.ok) return { ok: false, status: 503, error: "schema_not_ready" };
+    if (!currentByModel.eligible) return { ok: false, status: 403, error: "forbidden" };
+    if (!currentByModel.record) return { ok: false, status: 404, error: "session_not_found" };
+    return { ok: true, payload, session: currentByModel.record, tables };
+  }
 
   for (const formula of formulas) {
     const found = await modelSessionFindOne(env, tables.sessions.table, formula);

@@ -264,6 +264,49 @@ test("GET /v1/model/session/current returns owned job details, model payout, sta
   }
 });
 
+test("LINE-linked model session without job keys resolves the current job by canonical Model id", async () => {
+  const t = await signedModelT({
+    kind: "model_session",
+    session_id: undefined,
+    payment_ref: undefined,
+  });
+  const mock = installRuntimeFetchMock({ initialState: "assigned" });
+  try {
+    const { response, body } = await getCurrent(t);
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.session.session_id, "session_runtime_v1a");
+    assert.equal(body.session.normalized_state, "confirmed");
+    assert.equal(body.session.pay_model_thb, 10000);
+    assert.equal(
+      mock.calls.some((call) =>
+        call.method === "GET" &&
+        decodeURIComponent(call.url).includes('FIND("model_runtime_v1a",ARRAYJOIN({model_record_id}))')
+      ),
+      true,
+    );
+  } finally {
+    mock.restore();
+  }
+});
+
+test("LINE-linked model session without an active job returns session_not_found, not an auth error", async () => {
+  const t = await signedModelT({
+    kind: "model_session",
+    session_id: undefined,
+    payment_ref: undefined,
+  });
+  const mock = installRuntimeFetchMock({ initialState: "closed" });
+  try {
+    const { response, body } = await getCurrent(t);
+    assert.equal(response.status, 404);
+    assert.equal(body.ok, false);
+    assert.equal(body.error, "session_not_found");
+  } finally {
+    mock.restore();
+  }
+});
+
 test("valid transition: offered + accept_job -> confirmed", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "offered" });
