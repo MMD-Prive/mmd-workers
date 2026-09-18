@@ -225,6 +225,14 @@ async function reprocessHistoricalProof(request, env) {
   const proofId = safeText(body.proof_id, 120);
   const recordId = safeText(body.proof_record_id, 120);
   if (!proofId && !recordId) throw httpError(400, "proof_id_required");
+  const expectedAmountSupplied = clean(body.expected_amount_thb) !== "";
+  const expectedAmountThb = normalizeAmount(body.expected_amount_thb);
+  if (expectedAmountSupplied && expectedAmountThb == null) throw httpError(400, "expected_amount_thb_invalid");
+  const expectedPaymentStage = normalizePaymentStage(body.expected_payment_stage, true);
+  const contextReason = safeText(body.context_reason, 600);
+  if ((expectedAmountSupplied || expectedPaymentStage) && contextReason.length < 5) {
+    throw httpError(400, "context_reason_required");
+  }
 
   const proof = await loadHistoricalProof(env, { proofId, recordId });
   if (!proof) throw httpError(404, "historical_proof_not_found");
@@ -257,19 +265,37 @@ async function reprocessHistoricalProof(request, env) {
   if (!IMAGE_TYPES.has(mimeType)) throw httpError(415, "unsupported_slip_image_type");
   const extraction = await extractSlip(env, { bytes, mimeType });
   const previousExtraction = note.extraction && typeof note.extraction === "object" ? note.extraction : {};
+  const storedAmountThb = normalizeAmount(proof.fields?.amount_thb ?? previousExtraction.amount_thb);
+  const storedPaymentStage = normalizePaymentStage(
+    note.explicit_context?.payment_stage || note.payments_worker_handoff?.payment_stage,
+    true,
+  );
+  if (expectedAmountThb != null && extraction.amount_thb != null && Math.abs(expectedAmountThb - extraction.amount_thb) > 0.009) {
+    throw httpError(409, "expected_amount_conflicts_with_extraction");
+  }
+  if (expectedAmountThb != null && storedAmountThb != null && Math.abs(expectedAmountThb - storedAmountThb) > 0.009) {
+    throw httpError(409, "expected_amount_conflicts_with_stored_proof");
+  }
+  if (expectedPaymentStage && extraction.payment_stage && expectedPaymentStage !== extraction.payment_stage) {
+    throw httpError(409, "expected_stage_conflicts_with_extraction");
+  }
+  if (expectedPaymentStage && storedPaymentStage && expectedPaymentStage !== storedPaymentStage) {
+    throw httpError(409, "expected_stage_conflicts_with_stored_proof");
+  }
   const candidate = {
     payment_ref: extraction.payment_ref || safeText(proof.fields?.payment_ref || previousExtraction.payment_ref, 180),
     session_id: extraction.session_id || safeText(note.explicit_context?.session_id || note.payments_worker_handoff?.session_id, 180),
     line_user_id: "",
     member_email: normalizeEmail(note.explicit_context?.member_email),
-    payment_stage: extraction.payment_stage || normalizePaymentStage(
-      note.explicit_context?.payment_stage || note.payments_worker_handoff?.payment_stage,
-      true,
-    ),
-    amount_thb: extraction.amount_thb ?? normalizeAmount(proof.fields?.amount_thb ?? previousExtraction.amount_thb),
+    payment_stage: extraction.payment_stage || storedPaymentStage || expectedPaymentStage,
+    amount_thb: extraction.amount_thb ?? storedAmountThb ?? expectedAmountThb,
     paid_at: extraction.paid_at || safeText(proof.fields?.paid_at || previousExtraction.paid_at, 80),
     payer_name: extraction.payer_name || safeText(proof.fields?.payer_name || previousExtraction.payer_name, 180),
   };
+  const pendingContextStaged = Boolean(
+    (extraction.amount_thb == null && storedAmountThb == null && expectedAmountThb != null) ||
+    (!extraction.payment_stage && !storedPaymentStage && expectedPaymentStage)
+  );
 
   const resolvedLinks = await resolveDeterministicLinks(env, candidate);
   const links = {
@@ -299,6 +325,13 @@ async function reprocessHistoricalProof(request, env) {
     reprocessed_at: reprocessedAt,
     reprocess_count: Math.max(0, Number(note.reprocess_count) || 0) + 1,
     reprocess_previous_error: safeText(previousExtraction.extraction_error, 240) || null,
+    reprocess_expected_context: expectedAmountSupplied || expectedPaymentStage ? compact({
+      amount_thb: expectedAmountThb,
+      payment_stage: expectedPaymentStage || null,
+      reason: contextReason,
+      staged_at: reprocessedAt,
+      pending_review_only: true,
+    }) : note.reprocess_expected_context,
     payments_worker_handoff: stagedHandoff({
       proofId: canonicalProofId,
       evidenceSha256,
@@ -331,6 +364,7 @@ async function reprocessHistoricalProof(request, env) {
     amount_thb: candidate.amount_thb,
     payment_stage: candidate.payment_stage || null,
     match: safeMatch(links),
+    pending_context_staged: pendingContextStaged,
     evidence_sha256_verified: true,
     money_truth_mutated: false,
     guardrails: guardrails(),

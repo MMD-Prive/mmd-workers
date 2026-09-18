@@ -75,7 +75,12 @@ jobs:
           test "$login_code" = "303"
           grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
 
-          request_json="$(node -e 'process.stdout.write(JSON.stringify({proof_id:process.env.PROOF_ID}))')"
+          request_json="$(node -e 'process.stdout.write(JSON.stringify({
+            proof_id: process.env.PROOF_ID,
+            expected_amount_thb: process.env.EXPECTED_AMOUNT_THB,
+            expected_payment_stage: process.env.EXPECTED_PAYMENT_STAGE,
+            context_reason: "Authenticated recovery after production extractor retry; keep Pending Review",
+          }))')"
           reprocess_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
             -X POST \
@@ -95,7 +100,9 @@ jobs:
             if (p.money_truth_mutated !== false) throw new Error("Money Truth mutation was reported");
             if (guardrails.may_mark_paid !== false || guardrails.may_award_points !== false || guardrails.may_extend_membership !== false || guardrails.may_create_entitlement !== false || guardrails.may_confirm_session !== false) throw new Error("guardrail contract failed");
             if (p.evidence_sha256_verified !== true) throw new Error("evidence SHA was not verified");
-            if (p.extraction_error) throw new Error(`extractor still failed: ${p.extraction_error}`);
+            if (p.extraction_error && p.pending_context_staged !== true) throw new Error(`extractor failed without guarded pending context: ${p.extraction_error}`);
+            if (p.pending_context_staged === true && p.review_required !== true) throw new Error("manual pending context must require review");
+            if (!p.payment_ref_masked) throw new Error("stored payment reference is missing");
             if (Math.abs(Number(p.amount_thb) - expectedAmount) > 0.009) throw new Error(`unexpected amount: ${p.amount_thb}`);
             if (p.payment_stage !== process.env.EXPECTED_PAYMENT_STAGE) throw new Error(`unexpected payment stage: ${p.payment_stage}`);
           ' "$body"
