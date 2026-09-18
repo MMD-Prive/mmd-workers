@@ -8,7 +8,7 @@
   "use strict";
 
   const root = document.getElementById("mmd-model-confirm-v15");
-  if (!root || root.dataset.i18nReady === "true") return;
+  if (!root || root.dataset.i18nReady) return;
 
   const API = "https://sigil.mmdbkk.com";
   const STORAGE_KEY = "mmd_sigil_lang";
@@ -31,13 +31,14 @@
     }
   };
 
-  root.dataset.i18nReady = "true";
+  root.dataset.i18nReady = "1";
 
   const COPY = Object.freeze({
     th: {
       loadingPill: "กำลังโหลดรายละเอียด",
       title: "ยืนยันรับงาน",
-      intro: "เช็กวัน เวลา สถานที่ และรายละเอียดงานให้เรียบร้อยก่อนกดยืนยัน",
+      introKicker: "คืนนี้ในกรุงเทพ",
+      intro: "เช็กเวลา สถานที่ รายละเอียดงาน และยอดเงินถึงตัวให้เรียบร้อยก่อนออกเดินทาง",
       details: "รายละเอียดงาน",
       client: "ลูกค้า",
       job: "งาน",
@@ -46,12 +47,15 @@
       location: "สถานที่",
       map: "เปิด Google Maps ↗",
       payout: "ยอดเงินถึงตัว",
+      payoutKicker: "ยอดถึงตัว",
+      readyKicker: "พร้อมสำหรับคืนนี้?",
       loadingStatus: "กำลังโหลดรายละเอียดงาน…",
       retry: "ลองใหม่",
       check: "ผมตรวจสอบรายละเอียดและพร้อมรับงานนี้",
       confirm: "ยืนยันรับงาน",
+      successKicker: "✓ พร้อม",
       successTitle: "ยืนยันเรียบร้อยแล้ว",
-      successText: "งานนี้ถูกบันทึกแล้ว",
+      successText: "งานนี้อยู่ใน Model Dashboard แล้ว เช็กเวลาและสถานที่อีกครั้งก่อนออกเดินทางครับ",
       dashboard: "ไปที่ Model Dashboard",
       readyPill: "พร้อมยืนยัน",
       badLinkPill: "เปิดลิงก์ไม่ได้",
@@ -60,12 +64,14 @@
       detailErrorStatus: "ยังเปิดรายละเอียดงานไม่ได้ กรุณาลองใหม่",
       confirming: "กำลังยืนยัน…",
       confirmed: "ยืนยันแล้ว",
-      confirmError: "ยังยืนยันไม่ได้ กรุณาลองอีกครั้ง"
+      confirmError: "ยังยืนยันไม่ได้ กรุณาลองอีกครั้ง",
+      payoutMissingWarning: "ยังไม่พบเรทถึงตัว Model — ขอให้ MMD ระบุเรทก่อนกดยืนยัน"
     },
     en: {
       loadingPill: "Loading details",
       title: "Confirm this job",
-      intro: "Check the date, time, location, and job details before confirming.",
+      introKicker: "TONIGHT IN BANGKOK",
+      intro: "Check the time, location, job details, and payout before heading out.",
       details: "Job details",
       client: "Client",
       job: "Job",
@@ -74,12 +80,15 @@
       location: "Location",
       map: "Open Google Maps ↗",
       payout: "Your payout",
+      payoutKicker: "YOUR PAYOUT",
+      readyKicker: "READY FOR TONIGHT?",
       loadingStatus: "Loading job details…",
       retry: "Try again",
       check: "I have reviewed the details and I’m ready to accept this job.",
       confirm: "Confirm job",
+      successKicker: "✓ READY",
       successTitle: "Confirmed",
-      successText: "This job has been recorded.",
+      successText: "This job is now in Model Dashboard. Check the time and location once more before heading out.",
       dashboard: "Go to Model Dashboard",
       readyPill: "Ready to confirm",
       badLinkPill: "Link unavailable",
@@ -88,12 +97,14 @@
       detailErrorStatus: "We can’t load the job details right now. Please try again.",
       confirming: "Confirming…",
       confirmed: "Confirmed",
-      confirmError: "Couldn’t confirm yet. Please try again."
+      confirmError: "Couldn’t confirm yet. Please try again.",
+      payoutMissingWarning: "Model payout is not available yet — ask MMD to set the payout before confirming."
     },
     zh: {
       loadingPill: "正在加载详情",
       title: "确认接单",
-      intro: "确认前请检查日期、时间、地点和工作详情。",
+      introKicker: "今晚 · 曼谷",
+      intro: "出发前请确认时间、地点、工作详情和到手金额。",
       details: "工作详情",
       client: "客户",
       job: "工作",
@@ -102,12 +113,15 @@
       location: "地点",
       map: "打开 Google Maps ↗",
       payout: "到手金额",
+      payoutKicker: "到手金额",
+      readyKicker: "今晚准备好了吗？",
       loadingStatus: "正在加载工作详情…",
       retry: "重试",
       check: "我已核对工作详情，并确认可以接单。",
       confirm: "确认接单",
+      successKicker: "✓ 已准备",
       successTitle: "已确认",
-      successText: "此工作已记录。",
+      successText: "此工作现已显示在 Model Dashboard。出发前请再次确认时间和地点。",
       dashboard: "前往 Model Dashboard",
       readyPill: "可以确认",
       badLinkPill: "链接不可用",
@@ -116,7 +130,8 @@
       detailErrorStatus: "暂时无法加载工作详情，请重试。",
       confirming: "正在确认…",
       confirmed: "已确认",
-      confirmError: "暂时无法确认，请再试一次。"
+      confirmError: "暂时无法确认，请再试一次。",
+      payoutMissingWarning: "尚未设置 Model 到手金额 — 请先让 MMD 设置金额再确认接单。"
     }
   });
 
@@ -169,6 +184,10 @@
       #mmd-model-confirm-v15 .mmd-lang{display:inline-flex;gap:2px;padding:3px;border:1px solid rgba(217,185,105,.22);border-radius:999px;background:rgba(0,0,0,.2)}
       #mmd-model-confirm-v15 .mmd-lang button{min-width:34px;min-height:28px;border:0;border-radius:999px;padding:0 8px;background:transparent;color:#aaa29a;font:900 10px/1 inherit;cursor:pointer}
       #mmd-model-confirm-v15 .mmd-lang button[aria-pressed="true"]{background:rgba(217,185,105,.13);color:#fff5b1;-webkit-text-fill-color:#fff5b1}
+      #mmd-model-confirm-v15 .mm15__intro::before{content:attr(data-mmd-i18n-kicker)}
+      #mmd-model-confirm-v15 .mm15__payout::before{content:attr(data-mmd-i18n-kicker)}
+      #mmd-model-confirm-v15 .mm15__confirm::after{content:attr(data-mmd-i18n-kicker)}
+      #mmd-model-confirm-v15 .mm15__success::before{content:attr(data-mmd-i18n-kicker)}
       html[lang="zh-CN"] #mmd-model-confirm-v15{font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei","Noto Sans Thai","Inter",sans-serif}
       @media(max-width:560px){#mmd-model-confirm-v15 .mm15__header{align-items:flex-start}#mmd-model-confirm-v15 .mm15__tools{max-width:58%}}
     `;
@@ -206,6 +225,11 @@
     if (node) node.textContent = value;
   }
 
+  function staticAttr(selector, name, value) {
+    const node = $(selector);
+    if (node) node.setAttribute(name, value);
+  }
+
   function setStatus(key, error = false) {
     statusKey = key || "";
     const text = key ? dict()[key] || key : "";
@@ -227,6 +251,10 @@
     root.querySelectorAll("[data-mmd-lang-switch] button[data-lang]").forEach((button) => {
       button.setAttribute("aria-pressed", button.dataset.lang === lang ? "true" : "false");
     });
+    staticAttr(".mm15__intro", "data-mmd-i18n-kicker", d.introKicker);
+    staticAttr(".mm15__payout", "data-mmd-i18n-kicker", d.payoutKicker);
+    staticAttr(".mm15__confirm", "data-mmd-i18n-kicker", d.readyKicker);
+    staticAttr(".mm15__success", "data-mmd-i18n-kicker", d.successKicker);
     staticText(".mm15__intro h1", d.title);
     staticText(".mm15__intro p", d.intro);
     staticText(".mm15__card h2", d.details);
@@ -242,6 +270,8 @@
     staticText(".mm15__success > strong", d.successTitle);
     staticText(".mm15__success > span", d.successText);
     staticText(".mm15__success > a", d.dashboard);
+    const payoutWarning = $("[data-m-paywarn]");
+    if (payoutWarning) payoutWarning.textContent = d.payoutMissingWarning;
     if (statusKey) setStatus(statusKey, el.status?.classList.contains("is-error"));
     if (pillKey) setPill(pillKey);
     if (currentDetails) render(currentDetails, false);
