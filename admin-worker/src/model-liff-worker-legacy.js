@@ -703,10 +703,15 @@ async function findOwnedMedia(env, modelRecordId, mediaId) {
   return { ok: true, status: 200, record };
 }
 
-function parseMediaRoute(path) {
+export function parseMediaRoute(path) {
   const prefix = `${MEDIA_PATH}/`;
   if (!path.startsWith(prefix)) return null;
   const rest = path.slice(prefix.length).split("/").filter(Boolean);
+  if (rest.length === 1) {
+    // REST-compatible DELETE /v1/model/media/:mediaId. The dispatcher still
+    // requires the HTTP method to be DELETE, so GET/POST cannot use this alias.
+    return { mediaId: decodeURIComponent(rest[0]), action: "delete" };
+  }
   if (rest.length !== 2) return null;
   const mediaId = decodeURIComponent(rest[0]);
   const action = rest[1];
