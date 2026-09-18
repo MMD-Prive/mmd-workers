@@ -111,7 +111,7 @@ jobs:
 
   deploy:
     name: Deploy and smoke isolated staging
-    if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
+    if: (github.event_name == 'workflow_dispatch' && inputs.deploy == true) || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'ops/slip-staging-smoke-20260903' && github.event.pull_request.head.repo.full_name == github.repository)
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -260,12 +260,12 @@ jobs:
         shell: bash
         run: |
           url="${{ steps.deploy.outputs.url }}"
-          unauthorized="$(curl --silent --show-error --output "$RUNNER_TEMP/unauthorized.json" --write-out '%{http_code}'             --request POST --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-qr.png" "$url/v1/extract/qr")"
+          unauthorized="$(curl --silent --show-error --output "$RUNNER_TEMP/unauthorized.json" --write-out '%{http_code}' --request POST --header 'content-type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-qr.png" "$url/v1/extract/qr")"
           test "$unauthorized" = "401"
 
-          curl --fail --silent --show-error             --request POST             --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN"             --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-qr.png"             "$url/v1/extract/qr" > "$RUNNER_TEMP/qr.json"
+          curl --fail --silent --show-error --request POST --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN" --header 'content-type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-qr.png" "$url/v1/extract/qr" > "$RUNNER_TEMP/qr.json"
 
-          curl --fail --silent --show-error             --request POST             --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN"             --header 'content-type: image/png'             --data-binary "@$RUNNER_TEMP/synthetic-ocr.png"             "$url/v1/extract/ocr" > "$RUNNER_TEMP/ocr.json"
+          curl --fail --silent --show-error --request POST --header "authorization: Bearer $MMD_SLIP_EXTRACTOR_TOKEN" --header 'content-type: image/png' --data-binary "@$RUNNER_TEMP/synthetic-ocr.png" "$url/v1/extract/ocr" > "$RUNNER_TEMP/ocr.json"
 
           node <<'NODE'
           const fs = require("node:fs");
