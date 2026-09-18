@@ -15,7 +15,7 @@
   const SUBMIT_PATH = root.dataset.submitPath || "/v1/member/applications";
   const HEALTH_PATH = root.dataset.healthPath || "/ping";
   const DASHBOARD_URL = root.dataset.dashboardUrl || "/member/dashboard";
-  const MEMBERSHIP_URL = root.dataset.membershipUrl || "/member/membership";
+  const MEMBERSHIP_URL = root.dataset.membershipUrl || "/sigil/member/membership";
   const HELP_URL = root.dataset.helpUrl || "https://t.me/mmdapply";
 
   const QUEUE_KEY = "mmd_member_application_queue_v1";

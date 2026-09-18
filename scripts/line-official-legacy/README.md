@@ -71,3 +71,30 @@ npm run line-ofc:dry-run -- --source console-inbox --batch-id line_ofc_console_2
 ```
 
 Set `AIRTABLE_API_KEY` as an environment variable or shell secret before running.
+
+## Historical evidence intake
+
+For historical material coming from LINE OA 1:1, Per's Crew group, or LINE group albums, use `history-evidence-intake.js` instead of pretending Airtable is the historical source.
+
+Dry-run is the default:
+
+```sh
+node scripts/line-official-legacy/history-evidence-intake.js \
+  --file ./history.json \
+  --source line_ofc \
+  --batch-id history_20260903
+```
+
+Evidence-only apply is explicit:
+
+```sh
+node scripts/line-official-legacy/history-evidence-intake.js \
+  --file ./history.json \
+  --source line_crew \
+  --batch-id history_20260903_crew \
+  --apply-evidence
+```
+
+History Intake v1 may write only `LINE OFC Client Import Staging` and `MMD — Payment Proofs` (`pending` evidence only). It never writes current entitlement, Points Ledger, Payments truth, Sessions, or Bookings. Current access remains authoritative only through `my_mmd_entitlement_resolver_v1`.
+
+See `docs/ops/HISTORY_INTAKE_V1.md` for the full contract and input example.

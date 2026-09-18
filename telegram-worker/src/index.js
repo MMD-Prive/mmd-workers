@@ -1,13 +1,14 @@
 import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
-import { sendTelegramMessage, telegramNotify } from "../lib/telegram.js";
+import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
 const DEFAULT_BOT_USERNAME = "mmdprivebot";
-const PREVIEW_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-const PREVIEW_CODE_TTL_SECONDS = 60 * 60 * 24 * 90;
+const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
+const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
+const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 
 export default {
   async fetch(req, env) {
@@ -27,7 +28,9 @@ export default {
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
+            topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
           },
+          telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
       }
 
@@ -40,11 +43,35 @@ export default {
       }
 
       if (isInternalSendPath(path) && req.method === "POST") {
-        requireInternalToken(req, env);
+        requireInternalToken(req, env, {
+          allowServiceSecrets: path === "/telegram/internal/send"
+            ? [
+                "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
+                "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
+                "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+                "AUTH_SERVICE_AUTH_TO_TELEGRAM",
+                "AUTH_SERVICE_LINE_TO_TELEGRAM",
+              ]
+            : [],
+        });
         const body = await safeJson(req);
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
+      }
+
+      if (isTopicSmokePath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (body.confirm !== TOPIC_SMOKE_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "topic_smoke_confirmation_required",
+            required_confirmation: TOPIC_SMOKE_CONFIRMATION,
+          }, 400);
+        }
+        const result = await smokeTelegramTopics(body, env);
+        return json(result, result.ok ? 200 : 502);
       }
 
       if (isComplaintInternalPath(path) && req.method === "POST") {
@@ -72,24 +99,81 @@ export default {
   },
 };
 
+async function smokeTelegramTopics(body, env) {
+  const chatId = clean(body.chat_id || env.TELEGRAM_CHAT_ID);
+  if (!chatId) return { ok: false, error: "missing_telegram_chat_id", results: [] };
+
+  const configured = telegramTopics(env);
+  const requested = Array.isArray(body.topics)
+    ? new Set(body.topics.map((value) => clean(value).toLowerCase()).filter(Boolean))
+    : null;
+  const selected = requested ? configured.filter((topic) => requested.has(topic.key)) : configured;
+  if (!selected.length) return { ok: false, error: "no_matching_topics", results: [] };
+
+  const runId = `tg-smoke-${Date.now().toString(36)}`;
+  const results = [];
+  for (const topic of selected) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      message_thread_id: topic.thread_id,
+      text: [
+        "🧪 <b>MMD TELEGRAM TOPIC CHECK</b>",
+        `<b>Topic:</b> ${escapeHtml(topic.label)}`,
+        `<b>Route:</b> <code>${escapeHtml(topic.key)}</code> → <code>${topic.thread_id}</code>`,
+        `<b>Run:</b> <code>${runId}</code>`,
+        "Synthetic / no customer data",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      disable_notification: body.disable_notification !== false,
+    }, env);
+    results.push({
+      key: topic.key,
+      label: topic.label,
+      thread_id: topic.thread_id,
+      ok: telegram?.ok === true,
+      status: telegram?.status || null,
+      error: telegram?.error?.description || telegram?.reason || null,
+      message_id: telegram?.result?.message_id || null,
+    });
+  }
+
+  return {
+    ok: results.every((item) => item.ok),
+    run_id: runId,
+    tested: results.length,
+    passed: results.filter((item) => item.ok).length,
+    failed: results.filter((item) => !item.ok).length,
+    results,
+  };
+}
+
 async function handleTelegramWebhook(update, env) {
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
 
-  const text = clean(message.text || "");
   const chatId = clean(message.chat?.id);
   if (!chatId) return { handled: false, reason: "missing_chat_id" };
 
+  const joinCleanup = await cleanupConfiguredGroupJoinMessage(message, env);
+  if (joinCleanup) return joinCleanup;
+
+  const text = clean(message.text || "");
   const startArg = parseStartArg(text);
   if (startArg === PREVIEW_START) {
-    const record = await issuePreviewPromo(message, env);
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: previewIssuedText(record),
+      text: previewVerificationRequiredText(),
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      reply_markup: previewButtonMarkup(env),
     }, env);
-    return { handled: true, flow: "preview_start", telegram, code_status: record.status };
+    return {
+      handled: true,
+      flow: "preview_start",
+      telegram,
+      code_status: "verification_required",
+    };
   }
 
   if (text === "/start" || text.toLowerCase().startsWith("/start@")) {
@@ -104,6 +188,69 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function cleanupConfiguredGroupJoinMessage(message, env) {
+  if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
+
+  const cleanupChats = configuredJoinCleanupChats(env);
+  if (cleanupChats.size === 0) {
+    return { handled: false, reason: "join_cleanup_not_configured" };
+  }
+
+  const chatId = clean(message.chat?.id);
+  const surface = cleanupChats.get(chatId);
+  if (!surface) {
+    return { handled: false, reason: "join_message_outside_cleanup_groups" };
+  }
+
+  const messageId = Number(message.message_id);
+  if (!Number.isInteger(messageId) || messageId <= 0) {
+    return { handled: false, reason: "missing_join_message_id" };
+  }
+
+  const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
+  return {
+    handled: true,
+    flow: "telegram_group_join_cleanup",
+    surface,
+    deleted: deletion.ok === true,
+    telegram: deletion,
+  };
+}
+
+function configuredJoinCleanupChats(env) {
+  const chats = new Map();
+  const add = (value, surface) => {
+    const chatId = clean(value);
+    if (chatId) chats.set(chatId, surface);
+  };
+
+  add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
+  add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
+  add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
+  return chats;
+}
+
+async function deleteTelegramMessage(payload, env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  if (!botToken) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: clean(payload.chat_id),
+      message_id: Number(payload.message_id),
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.ok === false) {
+    return { ok: false, status: res.status, error: data || null };
+  }
+
+  return { ok: true, result: data?.result ?? true };
 }
 
 async function postComplaintNotification(body, env) {
@@ -129,6 +276,7 @@ async function postComplaintNotification(body, env) {
   ].join("\n");
 
   const telegram = await telegramNotify({
+    flow: "recovery",
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -147,10 +295,10 @@ async function postPreviewChannelCta(body, env) {
   if (!chatId) return { ok: false, error: "missing_telegram_preview_channel_id" };
 
   const text = clean(body.text) || [
-    "MMD Privé Preview เปิดให้รับสิทธิ์ส่วนตัวแล้วครับ",
+    "MMD Privé Preview เปิดให้เช็กสิทธิ์ 6 YEARS CARE BACK แล้วครับ",
     "",
-    "กดรับโค้ดด้านล่างเพื่อให้ HYPE ตรวจสอบและออกโค้ดส่วนตัวให้คุณ",
-    "โค้ดใช้ได้ 1 ครั้ง และจะมีผลหลังจากระบบตรวจสอบข้อมูลเรียบร้อยแล้วครับ",
+    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อเข้าสู่การยืนยันตัวตนกับ HYPE",
+    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 
   if (body.dry_run === true) {
@@ -159,7 +307,7 @@ async function postPreviewChannelCta(body, env) {
       dry_run: true,
       chat_id: chatId,
       text,
-      reply_markup: previewButtonMarkup(env, body.button_text),
+      reply_markup: previewButtonMarkup(env),
     };
   }
 
@@ -168,7 +316,7 @@ async function postPreviewChannelCta(body, env) {
     text,
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: previewButtonMarkup(env, body.button_text),
+    reply_markup: previewButtonMarkup(env),
   }, env);
 
   return {
@@ -179,84 +327,12 @@ async function postPreviewChannelCta(body, env) {
   };
 }
 
-async function issuePreviewPromo(message, env) {
-  const user = message.from || {};
-  const userId = clean(user.id);
-  if (!userId) {
-    return { status: "blocked", error: "missing_telegram_user_id" };
-  }
-
-  const existing = await readPreviewRecord(env, userId);
-  if (existing?.promo_code) {
-    return { ...existing, status: existing.status || "issued", reissued: true };
-  }
-
-  const promoCode = await makePreviewCode(env, userId);
-  const record = {
-    telegram_user_id: userId,
-    telegram_username: clean(user.username) || undefined,
-    first_name: clean(user.first_name) || undefined,
-    promo_code: promoCode,
-    promo_source: "preview_channel",
-    status: "issued",
-    verification_status: "pending_system_verification",
-    issued_at: new Date().toISOString(),
-  };
-
-  await writePreviewRecord(env, record);
-  return record;
-}
-
-async function readPreviewRecord(env, userId) {
-  if (!env.PREVIEW_PROMO_CODES_KV) return null;
-  return env.PREVIEW_PROMO_CODES_KV.get(previewUserKey(userId), "json").catch(() => null);
-}
-
-async function writePreviewRecord(env, record) {
-  if (!env.PREVIEW_PROMO_CODES_KV) return;
-  const value = JSON.stringify(record);
-  await env.PREVIEW_PROMO_CODES_KV.put(previewUserKey(record.telegram_user_id), value, { expirationTtl: PREVIEW_CODE_TTL_SECONDS });
-  await env.PREVIEW_PROMO_CODES_KV.put(previewCodeKey(record.promo_code), value, { expirationTtl: PREVIEW_CODE_TTL_SECONDS });
-}
-
-async function makePreviewCode(env, userId) {
-  const secret = clean(env.PREVIEW_PROMO_SECRET || env.TELEGRAM_BOT_TOKEN || env.INTERNAL_API_TOKEN || "mmd-preview-channel-v1");
-  const bytes = new TextEncoder().encode(`${secret}:${userId}:preview_channel:v1`);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  let code = "";
-  for (let index = 0; index < 6; index += 1) {
-    code += PREVIEW_CODE_ALPHABET[digest[index] % PREVIEW_CODE_ALPHABET.length];
-  }
-  return code;
-}
-
-function previewIssuedText(record) {
-  if (record.error) {
-    return [
-      "ตอนนี้ระบบยังตรวจสอบข้อมูลไม่สมบูรณ์ครับ",
-      "",
-      "กรุณาลองใหม่อีกครั้ง หรือกลับมากดรับโค้ดภายหลังนะครับ",
-      "สิทธิ์จะมีผลหลังจากระบบตรวจสอบเรียบร้อยแล้วเท่านั้นครับ",
-    ].join("\n");
-  }
-
-  if (record.reissued) {
-    return [
-      "คุณมีโค้ดส่วนตัวอยู่แล้วครับ",
-      "",
-      `<code>${escapeHtml(record.promo_code)}</code>`,
-      "",
-      "โค้ดนี้ใช้ได้ 1 ครั้ง และระบบจะตรวจสอบสิทธิ์ก่อนใช้งานจริงนะครับ",
-    ].join("\n");
-  }
-
+function previewVerificationRequiredText() {
   return [
-    "เข้าสู่ระบบเรียบร้อยครับ",
+    "ยินดีต้อนรับสู่ 6 YEARS CARE BACK ครับ",
     "",
-    "ผมจะออกโค้ดส่วนลดส่วนตัว 6 ตัวให้ทันที",
-    "โค้ดนี้ใช้ได้ 1 ครั้ง และจะมีผลหลังจากระบบตรวจสอบข้อมูลเรียบร้อยแล้วนะครับ",
-    "",
-    `<code>${escapeHtml(record.promo_code)}</code>`,
+    "HYPE จะพาคุณตรวจสอบตัวตนและสิทธิ์ก่อน",
+    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 }
 
@@ -264,20 +340,51 @@ function previewWelcomeText() {
   return [
     "ยินดีต้อนรับสู่ MMD Privé Preview ครับ",
     "",
-    "ช่องนี้สำหรับรับสิทธิ์ Preview และโค้ดส่วนตัวก่อนเข้าใช้งานจริง",
-    "กดรับโค้ดด้านล่างได้เลยนะครับ",
+    "ช่องนี้ใช้สำหรับเริ่มตรวจสอบสิทธิ์ 6 YEARS CARE BACK",
+    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อยืนยันตัวตนกับ HYPE ได้เลยครับ",
     "",
-    "โค้ดเป็นสิทธิ์ส่วนตัว ใช้ได้ 1 ครั้ง และจะมีผลหลังจากระบบตรวจสอบข้อมูลเรียบร้อยแล้วครับ",
+    "โค้ดเป็นสิทธิ์ส่วนตัว ใช้ได้ 1 ครั้ง และจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
   ].join("\n");
 }
 
-function previewButtonMarkup(env, label) {
+function previewButtonMarkup(env) {
   return {
-    inline_keyboard: [[{
-      text: clean(label) || "รับโค้ดส่วนตัว",
-      url: `https://t.me/${botUsername(env)}?start=${PREVIEW_START}`,
-    }]],
+    inline_keyboard: [
+      [{
+        text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
+        url: publicUrl(env, "/promotion/6-years-care-back"),
+      }],
+      [{
+        text: "My Code / Status",
+        url: publicUrl(env, "/member/dashboard"),
+      }],
+      [{
+        text: "Preview Models",
+        url: publicUrl(env, "/profiles"),
+      }, {
+        text: "Apply / Renew Membership",
+        url: publicUrl(env, "/sigil/member/membership"),
+      }],
+      [{
+        text: "Help / How It Works",
+        url: publicUrl(env, "/promotion/6-years-care-back#how-it-works"),
+      }],
+      [{
+        text: "Back to Preview Channel",
+        url: previewChannelUrl(env),
+      }],
+    ],
   };
+}
+
+function publicUrl(env, path) {
+  const base = clean(env.MMD_PUBLIC_BASE_URL || env.PUBLIC_BASE_URL || DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/, "");
+  const normalizedPath = `/${clean(path).replace(/^\/+/, "")}`;
+  return `${base}${normalizedPath}`;
+}
+
+function previewChannelUrl(env) {
+  return clean(env.TELEGRAM_PREVIEW_CHANNEL_URL || env.PREVIEW_CHANNEL_URL) || DEFAULT_PREVIEW_CHANNEL_URL;
 }
 
 function parseStartArg(text) {
@@ -313,6 +420,10 @@ function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
 }
 
+function isTopicSmokePath(path) {
+  return path === "/telegram/internal/topics/smoke" || path === "/v1/internal/topics/smoke";
+}
+
 function isComplaintInternalPath(path) {
   return path === "/telegram/internal/complaint" || path === "/v1/internal/complaint";
 }
@@ -324,14 +435,6 @@ function isPreviewPostPath(path) {
 function normalizePath(path = "") {
   const p = String(path || "/").replace(/\/{2,}/g, "/");
   return p.length > 1 ? p.replace(/\/$/, "") : p;
-}
-
-function previewUserKey(userId) {
-  return `preview:user:${userId}`;
-}
-
-function previewCodeKey(code) {
-  return `preview:code:${code}`;
 }
 
 function botUsername(env) {
