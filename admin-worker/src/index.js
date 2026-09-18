@@ -3666,7 +3666,7 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
 
   if (q && matchFields.length) {
     const safe = q.replace(/"/g, '\\"');
-    const ors = matchFields.map((f) => `FIND("${safe}", {${f}})`).join(",");
+    const ors = matchFields.map((f) => `SEARCH("${safe}", {${f}}&"")`).join(",");
     params.set("filterByFormula", `OR(${ors})`);
   }
 
