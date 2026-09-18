@@ -11,13 +11,14 @@ const EVIDENCE_KEY = `line-ofc/payment-proofs/2026/09/${PROOF_ID}/original.png`;
 const EVIDENCE_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
 const EVIDENCE_SHA256 = createHash("sha256").update(EVIDENCE_BYTES).digest("hex");
 
-function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", reviewState = "pending" } = {}) {
+function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", reviewState = "pending", paymentRef = "" } = {}) {
   const calls = { creates: 0, patches: [], extractor: 0, r2Gets: 0 };
   const proof = {
     id: PROOF_RECORD_ID,
     fields: {
       proof_id: PROOF_ID,
       status,
+      ...(paymentRef ? { payment_ref: paymentRef } : {}),
       session: [SESSION_RECORD_ID],
       note: JSON.stringify({
         schema: "mmd_historical_slip_backfill_v1",
@@ -121,11 +122,18 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
   return { env, calls };
 }
 
-function reprocessRequest() {
+function reprocessRequest({ withExpectedContext = false } = {}) {
   return new Request("https://mmdbkk.com/v1/admin/payments/historical-backfill/reprocess", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ proof_id: PROOF_ID }),
+    body: JSON.stringify({
+      proof_id: PROOF_ID,
+      ...(withExpectedContext ? {
+        expected_amount_thb: 10500,
+        expected_payment_stage: "final",
+        context_reason: "authenticated pending-only recovery",
+      } : {}),
+    }),
   });
 }
 
@@ -184,4 +192,40 @@ test("reprocess rejects an R2 SHA mismatch before extraction or Airtable writes"
   assert.equal(state.calls.extractor, 0);
   assert.equal(state.calls.creates, 0);
   assert.equal(state.calls.patches.length, 0);
+});
+
+test("reprocess can stage an expected amount only when extraction stays empty and review remains pending", async () => {
+  const state = makeState({ paymentRef: "016261212049AOR09688" });
+  state.env.SLIP_EXTRACTOR.fetch = async (request) => {
+    state.calls.extractor += 1;
+    return Response.json({ result: { payment_ref: "", amount_thb: null, confidence_score: 0 } });
+  };
+  const response = await handleHistoricalSlipBackfillRequest(reprocessRequest({ withExpectedContext: true }), state.env);
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.created, false);
+  assert.equal(payload.status, "pending");
+  assert.equal(payload.review_state, "pending");
+  assert.equal(payload.review_required, true);
+  assert.equal(payload.pending_context_staged, true);
+  assert.equal(payload.amount_thb, 10500);
+  assert.equal(payload.payment_stage, "final");
+  assert.equal(payload.payment_ref_masked, "0162…9688");
+  assert.equal(payload.extraction_error, "extractor_unavailable");
+  assert.equal(payload.money_truth_mutated, false);
+  assert.equal(payload.guardrails?.may_mark_paid, false);
+  assert.equal(state.calls.creates, 0);
+  assert.equal(state.calls.patches.length, 1);
+  const patch = state.calls.patches[0];
+  assert.equal(patch.status, "pending");
+  assert.equal(patch.amount_thb, 10500);
+  const note = JSON.parse(patch.note);
+  assert.equal(note.review_state, "pending");
+  assert.equal(note.review_required, true);
+  assert.equal(note.reprocess_expected_context.amount_thb, 10500);
+  assert.equal(note.reprocess_expected_context.payment_stage, "final");
+  assert.equal(note.reprocess_expected_context.pending_review_only, true);
+  assert.equal(note.payments_worker_handoff.state, "pending");
 });
