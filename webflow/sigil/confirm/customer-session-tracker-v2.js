@@ -25,9 +25,17 @@
   let loading = false;
   let mounted = false;
   let lastPayload = null;
+  let instructionsRef = "";
+  let instructionsLoading = false;
 
   const $ = (selector) => root?.querySelector(selector) || null;
   const clean = (value) => String(value == null ? "" : value).trim();
+  const html = (value) => clean(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
   function installStyles() {
     if (document.getElementById("mmd-customer-session-v2-styles")) return;
@@ -60,10 +68,29 @@
 #${ROOT_ID} .mjc16__privacy{display:flex;gap:10px;align-items:flex-start;margin-top:11px;padding:12px 13px;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(255,255,255,.015)}
 #${ROOT_ID} .mjc16__privacy strong{flex:0 0 auto;color:#f0d78f;font-size:10px;font-weight:900}
 #${ROOT_ID} .mjc16__privacy span{color:#aaa29a;font-size:10px;font-weight:650;line-height:1.55}
+#${ROOT_ID} .mjc16__final-pay{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.34);border-radius:24px;background:linear-gradient(155deg,rgba(217,185,105,.09),rgba(255,255,255,.018) 46%),#0c0c10}
+#${ROOT_ID} .mjc16__final-pay[hidden]{display:none!important}
+#${ROOT_ID} .mjc16__final-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+#${ROOT_ID} .mjc16__final-head h3{margin:5px 0 0;color:#fff5b1;font-size:clamp(21px,5vw,30px);line-height:1.2}
+#${ROOT_ID} .mjc16__final-amount{flex:0 0 auto;text-align:right;color:#f0d78f;font-size:clamp(24px,7vw,38px);font-weight:950;letter-spacing:-.04em}
+#${ROOT_ID} .mjc16__final-amount small{display:block;color:#aaa29a;font-size:9px;letter-spacing:.12em}
+#${ROOT_ID} .mjc16__pay-methods{display:grid;gap:10px;margin-top:16px}
+#${ROOT_ID} .mjc16__pay-method{padding:13px 14px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.018);color:#e8e1d7;font-size:12px;font-weight:700;line-height:1.55;overflow-wrap:anywhere}
+#${ROOT_ID} .mjc16__pay-method strong{display:block;color:#fff5b1;font-size:10px;letter-spacing:.08em}
+#${ROOT_ID} .mjc16__pay-qr{width:180px;max-width:70%;margin:4px auto;padding:9px;border-radius:14px;background:#fff}
+#${ROOT_ID} .mjc16__proof-form{display:grid;gap:10px;margin-top:15px;padding-top:15px;border-top:1px solid rgba(255,255,255,.08)}
+#${ROOT_ID} .mjc16__proof-file{width:100%;padding:12px;border:1px dashed rgba(217,185,105,.34);border-radius:14px;background:rgba(0,0,0,.20);color:#e8e1d7;font-size:12px}
+#${ROOT_ID} .mjc16__proof-submit{min-height:52px;border:0;border-radius:16px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108;font-size:14px;font-weight:900;cursor:pointer}
+#${ROOT_ID} .mjc16__proof-submit:disabled{cursor:wait;opacity:.55}
+#${ROOT_ID} .mjc16__proof-status{margin:12px 0 0;padding:13px 14px;border-radius:15px;background:rgba(255,255,255,.025);color:#e8e1d7;font-size:12px;font-weight:700;line-height:1.6}
+#${ROOT_ID} .mjc16__proof-status.is-waiting{border:1px solid rgba(240,215,143,.25);color:#fff5b1}
+#${ROOT_ID} .mjc16__proof-status.is-paid{border:1px solid rgba(156,227,185,.25);color:#9ce3b9}
+#${ROOT_ID} .mjc16__proof-status.is-error{border:1px solid rgba(255,180,168,.25);color:#ffb4a8}
 #${ROOT_ID} .mjc16__aftercare{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;margin-top:12px;border-radius:18px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108!important;-webkit-text-fill-color:#171108!important;font-size:15px;font-weight:900;text-decoration:none;box-shadow:0 16px 36px rgba(201,159,77,.16)}
 #${ROOT_ID} .mjc16__aftercare:focus-visible{outline:3px solid rgba(255,245,177,.24);outline-offset:3px}
 @media(min-width:760px){#${ROOT_ID} .mjc16__tracker{padding:24px}#${ROOT_ID} .mjc16__tracker-focus{grid-template-columns:1.3fr .7fr}#${ROOT_ID} .mjc16__timeline-step{flex:1 1 0;min-width:0}}
 @media(max-width:560px){#${ROOT_ID} .mjc16__tracker-head{display:grid}#${ROOT_ID} .mjc16__tracker-badge{width:max-content}#${ROOT_ID} .mjc16__timeline{margin-right:-4px}#${ROOT_ID} .mjc16__privacy{display:grid}}
+@media(max-width:560px){#${ROOT_ID} .mjc16__final-head{display:grid}#${ROOT_ID} .mjc16__final-amount{text-align:left}}
 @media(prefers-reduced-motion:reduce){#${ROOT_ID} .mjc16__timeline-step{transition:none!important}}
 `;
     document.head.appendChild(style);
@@ -102,6 +129,19 @@
     <strong>PRIVACY BY DESIGN</strong>
     <span>แสดงเฉพาะ ETA ที่ Model ส่ง · ไม่มี GPS live · ไม่มีแผนที่ติดตามตำแหน่ง · Browser ไม่อ่าน event log ดิบ</span>
   </div>
+  <section class="mjc16__final-pay" data-final-payment hidden aria-live="polite">
+    <div class="mjc16__final-head">
+      <div><div class="mjc16__section-kicker">FINAL PAYMENT</div><h3 data-final-title>Model ถึงแล้ว</h3></div>
+      <div class="mjc16__final-amount"><small>ยอดคงเหลือ</small><span data-final-amount>—</span></div>
+    </div>
+    <div class="mjc16__pay-methods" data-final-methods><div class="mjc16__pay-method">กำลังโหลดช่องทางชำระเงิน…</div></div>
+    <form class="mjc16__proof-form" data-final-proof-form>
+      <label class="mjc16__section-kicker" for="mjc16FinalSlip">อัปโหลดหลักฐานการชำระเงิน</label>
+      <input class="mjc16__proof-file" id="mjc16FinalSlip" data-final-proof-file type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required>
+      <button class="mjc16__proof-submit" data-final-proof-submit type="submit">ส่งหลักฐานให้ MMD ตรวจยอด</button>
+    </form>
+    <p class="mjc16__proof-status" data-final-proof-status>หลักฐานจะยังไม่ถือว่าชำระแล้ว จนกว่า MMD จะตรวจและยืนยันยอด</p>
+  </section>
   <a class="mjc16__aftercare" data-session-aftercare href="/aftercare" hidden>ให้คะแนนและ Aftercare ⭐</a>
 </section>`;
   }
@@ -121,7 +161,155 @@
       else root.querySelector(".mjc16__wrap")?.appendChild(tracker);
     }
     mounted = Boolean($('[data-session-tracker]'));
+    const proofForm = $('[data-final-proof-form]');
+    if (mounted && proofForm && proofForm.dataset.bound !== "1") {
+      proofForm.dataset.bound = "1";
+      proofForm.addEventListener("submit", submitFinalProof);
+    }
     return mounted;
+  }
+
+  function money(value) {
+    const amount = Number(value);
+    return Number.isFinite(amount) ? `${amount.toLocaleString("th-TH", { maximumFractionDigits: 2 })} THB` : "—";
+  }
+
+  function setProofStatus(message, mode = "") {
+    const status = $('[data-final-proof-status]');
+    if (!status) return;
+    status.textContent = message;
+    status.classList.remove("is-waiting", "is-paid", "is-error");
+    if (mode) status.classList.add(mode);
+  }
+
+  function renderPaymentMethods(data, expectedRef) {
+    if (expectedRef !== instructionsRef) return;
+    const methods = $('[data-final-methods]');
+    if (!methods) return;
+    if (!data?.available) {
+      methods.innerHTML = `<div class="mjc16__pay-method">${data?.reason === "payment_verified" ? "ยอดนี้ยืนยันแล้ว" : "รับหลักฐานแล้ว · MMD กำลังตรวจยอด"}</div>`;
+      return;
+    }
+    const instruction = data.instructions || {};
+    const rows = [];
+    if (instruction.promptpay?.enabled) {
+      rows.push(`<div class="mjc16__pay-method"><strong>PROMPTPAY</strong>${html(instruction.promptpay.display_ref)}</div>`);
+      if (/^https:\/\//i.test(clean(instruction.promptpay.qr_url))) {
+        rows.push(`<img class="mjc16__pay-qr" src="${html(instruction.promptpay.qr_url)}" alt="PromptPay QR สำหรับยอดคงเหลือ">`);
+      }
+    }
+    if (instruction.bank_transfer?.enabled) {
+      rows.push(`<div class="mjc16__pay-method"><strong>BANK TRANSFER</strong>${html(instruction.bank_transfer.bank_name_th)} · ${html(instruction.bank_transfer.account_name_th)} · ${html(instruction.bank_transfer.account_number)}</div>`);
+    }
+    if (instruction.paypal_card?.enabled && /^https:\/\//i.test(clean(instruction.paypal_card.url))) {
+      rows.push(`<a class="mjc16__pay-method" href="${html(instruction.paypal_card.url)}" target="_blank" rel="noopener"><strong>CARD / PAYPAL</strong>เปิดหน้าชำระเงิน ↗</a>`);
+    }
+    methods.innerHTML = rows.join("") || '<div class="mjc16__pay-method">กรุณาติดต่อ MMD เพื่อรับช่องทางชำระเงิน</div>';
+  }
+
+  async function loadPaymentInstructions(paymentRef) {
+    if (!paymentRef || instructionsLoading) return;
+    instructionsLoading = true;
+    instructionsRef = paymentRef;
+    try {
+      const response = await fetch(`${API}/v1/confirm/payment-instructions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ t: token }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false || clean(data.payment_ref) !== paymentRef) throw new Error("payment_instructions_failed");
+      renderPaymentMethods(data, paymentRef);
+    } catch {
+      if (instructionsRef === paymentRef) {
+        const methods = $('[data-final-methods]');
+        if (methods) methods.innerHTML = '<div class="mjc16__pay-method">โหลดช่องทางชำระเงินไม่สำเร็จ กรุณาลองใหม่หรือติดต่อ MMD</div>';
+      }
+    } finally {
+      instructionsLoading = false;
+    }
+  }
+
+  function renderFinalPayment(payload) {
+    const panel = $('[data-final-payment]');
+    const payment = payload?.payment;
+    const active = Boolean(payment && payment.stage === "final" && clean(payload.payment_ref));
+    if (!panel) return;
+    panel.hidden = !active;
+    if (!active) {
+      instructionsRef = "";
+      return;
+    }
+
+    const amount = $('[data-final-amount]');
+    if (amount) amount.textContent = money(payment.amount_due_thb);
+    const form = $('[data-final-proof-form]');
+    const file = $('[data-final-proof-file]');
+    const submit = $('[data-final-proof-submit]');
+    if (payment.verified) {
+      if (form) form.hidden = true;
+      setProofStatus("ชำระยอดคงเหลือเรียบร้อย · Model สามารถเริ่มงานได้", "is-paid");
+      const methods = $('[data-final-methods]');
+      if (methods) methods.innerHTML = '<div class="mjc16__pay-method"><strong>PAYMENT VERIFIED</strong>MMD ตรวจและยืนยันยอดเรียบร้อยแล้ว</div>';
+      return;
+    }
+    if (payment.proof_received) {
+      if (form) form.hidden = true;
+      setProofStatus("รับหลักฐานแล้ว · MMD กำลังตรวจยอด", "is-waiting");
+      const methods = $('[data-final-methods]');
+      if (methods) methods.innerHTML = '<div class="mjc16__pay-method"><strong>PENDING REVIEW</strong>ไม่ต้องส่งสลิปซ้ำ ระบบจะแจ้งสถานะหลัง MMD ตรวจยอด</div>';
+      return;
+    }
+    if (form) form.hidden = false;
+    if (file) file.disabled = false;
+    if (submit) submit.disabled = false;
+    setProofStatus("หลักฐานจะยังไม่ถือว่าชำระแล้ว จนกว่า MMD จะตรวจและยืนยันยอด");
+    if (instructionsRef !== clean(payload.payment_ref)) loadPaymentInstructions(clean(payload.payment_ref));
+  }
+
+  async function submitFinalProof(event) {
+    event.preventDefault();
+    const payment = lastPayload?.payment;
+    const paymentRef = clean(lastPayload?.payment_ref);
+    const sessionId = clean(lastPayload?.session_id);
+    const fileInput = $('[data-final-proof-file]');
+    const submit = $('[data-final-proof-submit]');
+    const file = fileInput?.files?.[0];
+    if (!paymentRef || !sessionId || payment?.stage !== "final" || !file) {
+      setProofStatus("กรุณาเลือกไฟล์สลิปก่อนส่ง", "is-error");
+      return;
+    }
+    if (Number(file.size || 0) > 15 * 1024 * 1024) {
+      setProofStatus("ไฟล์ใหญ่เกิน 15 MB กรุณาเลือกไฟล์ใหม่", "is-error");
+      return;
+    }
+    if (submit) submit.disabled = true;
+    if (fileInput) fileInput.disabled = true;
+    setProofStatus("กำลังส่งหลักฐานเข้าระบบ…", "is-waiting");
+    const form = new FormData();
+    form.append("file", file, file.name || "final-payment-proof");
+    form.append("payment_ref", paymentRef);
+    form.append("session_id", sessionId);
+    form.append("payment_stage", "final");
+    form.append("proof_type", "payment_slip");
+    form.append("source_page", "job_confirmation");
+    try {
+      const response = await fetch(`${API}/v1/pay/slip/evidence`, {
+        method: "POST",
+        credentials: "omit",
+        body: form,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || "payment_proof_submit_failed");
+      if (lastPayload?.payment) lastPayload.payment.proof_received = true;
+      renderFinalPayment(lastPayload);
+      await load();
+    } catch {
+      if (submit) submit.disabled = false;
+      if (fileInput) fileInput.disabled = false;
+      setProofStatus("ส่งหลักฐานไม่สำเร็จ กรุณาลองใหม่หรือติดต่อ MMD", "is-error");
+    }
   }
 
   function setBadge(text, mode = "") {
@@ -198,6 +386,7 @@
     }
 
     renderTimeline(stage, paymentVerified);
+    renderFinalPayment(payload);
     setBadge(session.source_available === false ? "กำลังเชื่อมต่อ" : "LIVE STATUS", session.source_available === false ? "" : "is-live");
 
     const etaCard = $('[data-session-eta-card]');

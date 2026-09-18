@@ -571,12 +571,19 @@ async function updateSessionFromPayment(env, payload) {
   }
 
   const nextStatus = paymentStatusFromStage(payload.stage);
+  const isFinal = payload.stage === "final" || payload.stage === "full";
+  const sessionFields = session.fields || {};
+  const lifecycleField = ["session_state", "state", "status"]
+    .find((name) => Object.prototype.hasOwnProperty.call(sessionFields, name)) || "status";
 
   const fields = compact({
-    status: nextStatus,
+    [lifecycleField]: isFinal ? "final_payment_confirmed" : nextStatus,
     "Session Status": nextStatus,
     "Payment Status": nextStatus,
-    payment_ref: payload.payment_ref,
+    // The signed customer/model links remain bound to the original payment
+    // stage. Final payment has its own canonical ref and must not replace that
+    // original Session ref.
+    payment_ref: isFinal ? undefined : payload.payment_ref,
     last_payment_ref: payload.payment_ref,
     payment_type: payload.stage,
     amount_thb: payload.amount_thb,

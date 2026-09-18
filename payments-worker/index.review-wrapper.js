@@ -42,6 +42,11 @@ import {
   isDoubleMomentRequest,
   reconcileDoubleMomentReviewedProof,
 } from "./double-moment-purchase-v1.js";
+import {
+  handleFinalPaymentFlow,
+  isFinalPaymentFlowRequest,
+  reconcileReviewedFinalPayment,
+} from "./final-payment-flow.js";
 
 export { PointsPhase1Coordinator };
 
@@ -66,6 +71,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isFinalPaymentFlowRequest(path, method)) {
+      return handleFinalPaymentFlow(request, env);
+    }
 
     if (isDoubleMomentRequest(path, method)) {
       return handleDoubleMomentRequest(request, env, (nextRequest) =>
@@ -107,6 +116,7 @@ export default {
     if (isReviewedProofRequest(path, method)) {
       const reconcileRequest = request.clone();
       const doubleMomentRequest = request.clone();
+      const finalPaymentRequest = request.clone();
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -143,7 +153,8 @@ export default {
       });
       const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
-      return reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
+      const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
+      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);

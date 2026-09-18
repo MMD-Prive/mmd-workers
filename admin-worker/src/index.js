@@ -2508,13 +2508,12 @@ async function handleModelSessionCurrent(req, env) {
 }
 
 export async function verifyStartWorkPaymentTruth(env, session) {
-  const truthUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
-  // Runtime V1a must fail closed until payments-worker exposes a stable final-payment truth endpoint.
-  if (!truthUrl) return { ok: false, error: "payment_gate_not_ready" };
   const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
   if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
-
-  const res = await fetch(truthUrl, {
+  const configuredUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
+  if (!configuredUrl && !env.PAYMENTS_WORKER?.fetch) return { ok: false, error: "payment_gate_not_ready" };
+  const truthUrl = configuredUrl || "https://sigil.mmdbkk.com/v1/internal/payments/final/status";
+  const request = new Request(truthUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -2525,6 +2524,9 @@ export async function verifyStartWorkPaymentTruth(env, session) {
       action: "start_work_preflight",
     }),
   });
+  const res = env.PAYMENTS_WORKER?.fetch && !configuredUrl
+    ? await env.PAYMENTS_WORKER.fetch(request)
+    : await fetch(request);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) return { ok: false, error: "payment_not_confirmed" };
   const confirmed =
@@ -2532,6 +2534,29 @@ export async function verifyStartWorkPaymentTruth(env, session) {
     data.official_final_payment_confirmed === true ||
     normalizeSessionState(data.final_payment_status) === "final_payment_confirmed";
   return confirmed ? { ok: true } : { ok: false, error: "payment_not_confirmed" };
+}
+
+async function activateFinalPaymentAfterArrival(env, session) {
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
+  if (!env.PAYMENTS_WORKER?.fetch) return { ok: false, error: "payment_activation_not_ready" };
+  const request = new Request("https://sigil.mmdbkk.com/v1/internal/payments/final/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Token": serviceToken,
+    },
+    body: JSON.stringify({
+      session_id: session.session_id,
+      action: "model_mark_arrived",
+    }),
+  });
+  const response = await env.PAYMENTS_WORKER.fetch(request);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false || data.activated !== true) {
+    return { ok: false, error: str(data.error || "final_payment_activation_failed") };
+  }
+  return { ok: true, payment: data };
 }
 
 async function handleModelSessionAction(req, env) {
@@ -2563,6 +2588,10 @@ async function handleModelSessionAction(req, env) {
   }
 
   const currentSession = modelSessionResponseSession(reread.tables, reread.session);
+  if (action === "mark_arrived") {
+    const activation = await activateFinalPaymentAfterArrival(env, currentSession);
+    if (!activation.ok) return modelSessionJson({ ok: false, error: activation.error }, 503);
+  }
   if (action === "start_work") {
     const payment = await verifyStartWorkPaymentTruth(env, currentSession);
     if (!payment.ok) return modelSessionJson({ ok: false, error: payment.error }, 403);

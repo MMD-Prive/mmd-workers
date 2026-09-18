@@ -13,6 +13,7 @@ const BASE_ENV = {
   AIRTABLE_API_KEY: "test_airtable_key",
   AIRTABLE_BASE_ID: "appRuntime",
   AIRTABLE_TABLE_SESSIONS: "sessions",
+  AT_SESSIONS__MODEL_RECORD_ID: "model_record_id",
 };
 
 function jsonResponse(body, status = 200) {
@@ -80,6 +81,7 @@ function makeSession(state) {
 function installRuntimeFetchMock({
   initialState = "offered",
   paymentTruth = null,
+  finalActivation = null,
   expectedPaymentServiceToken = AUTH_SERVICE_ADMIN_TO_PAYMENTS,
 } = {}) {
   const previousFetch = globalThis.fetch;
@@ -95,6 +97,21 @@ function installRuntimeFetchMock({
       url: request.url,
       headers: Object.fromEntries(request.headers.entries()),
     });
+
+    if (url.pathname === "/v1/internal/payments/final/activate") {
+      if (request.headers.get("X-Internal-Token") !== expectedPaymentServiceToken) {
+        return jsonResponse({ ok: false, error: "service_auth_required" }, 401);
+      }
+      if (finalActivation instanceof Response) return finalActivation;
+      if (finalActivation) return jsonResponse(finalActivation);
+      return jsonResponse({
+        ok: true,
+        activated: true,
+        payment_ref: "pay_final_runtime_v1a",
+        payment_stage: "final",
+        amount_due_thb: 7000,
+      });
+    }
 
     if (url.hostname === "payments.test") {
       if (request.headers.get("X-Internal-Token") !== expectedPaymentServiceToken) {
@@ -130,6 +147,11 @@ function installRuntimeFetchMock({
     calls,
     get session() {
       return session;
+    },
+    paymentsWorker: {
+      fetch(request) {
+        return globalThis.fetch(request);
+      },
     },
     restore() {
       globalThis.fetch = previousFetch;
@@ -348,7 +370,9 @@ test("valid transition: en_route + mark_arrived -> arrived", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "en_route" });
   try {
-    const { response, body } = await postAction(t, "mark_arrived");
+    const { response, body } = await postAction(t, "mark_arrived", {
+      env: { ...BASE_ENV, PAYMENTS_WORKER: mock.paymentsWorker },
+    });
     assert.equal(response.status, 200);
     assert.equal(body.session.normalized_state, "arrived");
   } finally {
@@ -360,9 +384,32 @@ test("valid transition: nearby + mark_arrived -> arrived", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "nearby" });
   try {
-    const { response, body } = await postAction(t, "mark_arrived");
+    const { response, body } = await postAction(t, "mark_arrived", {
+      env: { ...BASE_ENV, PAYMENTS_WORKER: mock.paymentsWorker },
+    });
     assert.equal(response.status, 200);
     assert.equal(body.session.normalized_state, "arrived");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("mark_arrived fails closed and keeps travel state when final intent activation fails", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({
+    initialState: "nearby",
+    finalActivation: new Response(JSON.stringify({ ok: false, error: "final_payment_amount_missing" }), {
+      status: 409,
+      headers: { "content-type": "application/json" },
+    }),
+  });
+  try {
+    const { response, body } = await postAction(t, "mark_arrived", {
+      env: { ...BASE_ENV, PAYMENTS_WORKER: mock.paymentsWorker },
+    });
+    assert.equal(response.status, 503);
+    assert.equal(body.error, "final_payment_amount_missing");
+    assert.equal(mock.session.fields.state, "nearby");
   } finally {
     mock.restore();
   }
