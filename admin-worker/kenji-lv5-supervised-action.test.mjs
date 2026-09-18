@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildKenjiLv5BookingDraftPayload,
+  buildKenjiCanonicalJobPayload,
   evaluateKenjiLv5BookingAction,
   executeKenjiLv5SupervisedAction,
   KENJI_LV5_ACTION_RPC_PATH,
+  missingKenjiBookingIntentFields,
 } from "./src/kenji-lv5-supervised-action.js";
 import { isKenjiLv5OperationalRpcRequest } from "./src/kenji-lv5-operational-rpc.js";
 
@@ -53,9 +55,33 @@ test("P4 booking payload is a SIGIL draft with canonical evidence and no payment
   assert.equal(payload.selected_model_id, "recModel123");
   assert.equal(payload.resolver_payload_json.canonical_client_id, "recClient123");
   assert.equal(payload.resolver_payload_json.live_truth_complete, true);
+  assert.equal(payload.resolver_payload_json.payment_inference, false);
   assert.equal(Object.hasOwn(payload, "payment"), false);
   assert.equal(Object.hasOwn(payload, "amount_thb"), false);
   assert.deepEqual(payload.resolver_payload_json.protected_actions_pending, ["assign_model", "create_calendar_hold", "confirm_payment", "confirm_job"]);
+});
+
+test("deposit intent requires end time and rate before automatic Create Job", () => {
+  const partial = { ...intent, trigger: "deposit" };
+  assert.deepEqual(missingKenjiBookingIntentFields(partial), ["duration_or_end_time", "rate"]);
+  assert.deepEqual(missingKenjiBookingIntentFields({ ...partial, end_time: "22:00", amount_thb: 9000 }), []);
+});
+
+test("canonical Create Job payload uses canonical records and never treats deposit wording as paid", () => {
+  const payload = buildKenjiCanonicalJobPayload({
+    context,
+    modelAccess: { ...modelAccess, model_access: { ...modelAccess.model_access, visibility: "public" } },
+    intent: { ...intent, trigger: "deposit", end_time: "22:00", amount_thb: 9000, deposit_amount_thb: 3000 },
+    actionId: "line:deposit:123:user",
+    refs: { booking_ref: "kenji_abc123" },
+  });
+  assert.equal(payload.canonical_only, true);
+  assert.equal(payload.client_record_id, "recClient123");
+  assert.equal(payload.model_record_id, "recModel123");
+  assert.equal(payload.schedule.end, "22:00");
+  assert.equal(payload.payment.service_amount_thb, 9000);
+  assert.equal(Object.hasOwn(payload.payment, "paid"), false);
+  assert.match(payload.notes.internal, /Payment not verified/);
 });
 
 test("P4 refuses protected mutations without touching backends", async () => {

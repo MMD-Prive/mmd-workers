@@ -289,18 +289,41 @@ function bangkokDate(input = {}) {
   }).format(date);
 }
 
+function endAtFromIntent(input = {}) {
+  const direct = clean(input.end_at, 80);
+  if (direct) return direct;
+  const date = clean(input.date || input.date_label, 10);
+  const start = clean(input.time || input.time_label, 5);
+  const end = clean(input.end_time, 5);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(end)) return "";
+  const startMinutes = /^\d{2}:\d{2}$/.test(start) ? Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) : -1;
+  const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
+  const base = new Date(`${date}T12:00:00+07:00`);
+  if (startMinutes >= 0 && endMinutes <= startMinutes) base.setUTCDate(base.getUTCDate() + 1);
+  const endDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BANGKOK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(base);
+  return `${endDate}T${end}:00+07:00`;
+}
+
 function normalizeIntent(input = {}) {
   return {
     type: token(input.type || input.intent || "general"),
+    trigger: token(input.trigger),
     model_id: clean(input.model_id, 160),
     model_name: clean(input.model_name, 160),
+    customer_name: clean(input.customer_name, 120),
     service: clean(input.service || input.service_lane, 120),
     date: clean(input.date || input.date_label, 80),
     time: clean(input.time || input.time_label, 40),
     start_at: clean(input.start_at, 80),
-    end_at: clean(input.end_at, 80),
+    end_at: endAtFromIntent(input),
+    end_time: clean(input.end_time, 40),
+    duration_hours: number(input.duration_hours, 0),
     location: clean(input.location || input.location_area || input.zone, 160),
     amount_thb: number(input.amount_thb, 0),
+    deposit_amount_thb: number(input.deposit_amount_thb, 0),
+    raw: clean(input.raw, 1000),
   };
 }
 

@@ -6,6 +6,15 @@ import {
   KENJI_LV5_SCHEMA,
 } from "./kenji-lv5-operational-concierge.mjs";
 
+test("deposit-triggered booking asks for rate and duration without inferring payment", () => {
+  const out = buildKenjiLv5OperationalContext({
+    client: { canonical_client_id: "recClient123", status: "canonical" },
+    intent: { type: "booking", trigger: "deposit", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท" },
+  });
+  assert.deepEqual(out.missing, ["duration_or_end_time", "rate"]);
+  assert.equal(out.guardrails.no_payment_inference_from_slip, true);
+});
+
 test("LV5 fails closed when canonical client is unresolved", () => {
   const out = buildKenjiLv5OperationalContext({
     client: { identity_status: "candidate" },
