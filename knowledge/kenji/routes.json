@@ -1,12 +1,16 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "public_and_member_safe_routes": {
     "/sigil/inme": "Client entry and orientation",
     "/sigil/start": "Guided start",
     "/sigil/guide": "Guide selection and explanation",
     "/sigil/booking": "Booking request flow",
+    "/booking": "Canonical public MMD Companion request entry",
     "/sigil/pay": "Payment and renewal guidance",
     "/member/dashboard": "Member home and safe status surface",
+    "/my-mmd/history": "Verified member booking history and backend-issued Aftercare entry",
+    "/male-massage/home": "Public MMS Wellness overview",
+    "/male-massage/therapists/relax-spa": "Public Partner Venue information",
     "/sigil/member/account": "Member account surface",
     "/sigil/apply": "Model and applicant routing only",
     "/promotion/6-years-care-back": "CARE BACK 2026 campaign entry and Birthday Wish flow"

@@ -64,6 +64,14 @@ function makeSession(state) {
       session_id: "session_runtime_v1a",
       payment_ref: "payment_runtime_v1a",
       model_record_id: "model_runtime_v1a",
+      model_name: "Book EI",
+      job_type: "LIVE JOB",
+      job_date: "2026-09-17",
+      start_time: "2026-09-17T18:00:00.000Z",
+      end_time: "2026-09-17T22:00:00.000Z",
+      location_name: "Bangkok",
+      google_map_url: "https://maps.google.com/?q=Bangkok",
+      pay_model_thb: 10000,
       state,
     },
   };
@@ -231,7 +239,7 @@ test("wrong model/session returns 403 after signed t resolves", async () => {
   }
 });
 
-test("GET /v1/model/session/current returns normalized state, page, route, and allowed actions", async () => {
+test("GET /v1/model/session/current returns owned job details, model payout, state, route, and allowed actions", async () => {
   const t = await signedModelT();
   const mock = installRuntimeFetchMock({ initialState: "assigned" });
   try {
@@ -243,6 +251,13 @@ test("GET /v1/model/session/current returns normalized state, page, route, and a
     assert.equal(body.session.page, "assigned");
     assert.equal(body.session.route, "/model/session/assigned");
     assert.deepEqual(body.session.allowed_actions, ["start_travel"]);
+    assert.equal(body.session.job_type, "LIVE JOB");
+    assert.equal(body.session.job_date, "2026-09-17");
+    assert.equal(body.session.start_time, "2026-09-17T18:00:00.000Z");
+    assert.equal(body.session.end_time, "2026-09-17T22:00:00.000Z");
+    assert.equal(body.session.location_name, "Bangkok");
+    assert.equal(body.session.google_map_url, "https://maps.google.com/?q=Bangkok");
+    assert.equal(body.session.pay_model_thb, 10000);
     assert.equal(body.session.t, undefined);
   } finally {
     mock.restore();

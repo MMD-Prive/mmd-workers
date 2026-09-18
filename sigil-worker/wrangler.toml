@@ -1,5 +1,5 @@
 name = "sigil-worker"
-main = "src/index.js"
+main = "src/index-with-public-model-notify.js"
 compatibility_date = "2026-06-04"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
@@ -9,6 +9,13 @@ workers_dev = true
 # Keeping routes out of wrangler.toml allows deploys to succeed through workers.dev.
 # Temporary public Complaint Evidence intake URL:
 # https://sigil-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
+#
+# Private Model uses the same sigil-worker runtime and canonical paths:
+# - GET  /sigil/apply
+# - POST /sigil/api/private-model/apply
+# - POST /sigil/api/private-model/upload-url
+# - PUT  /sigil/api/private-model/upload-file
+# Webflow remains presentation only; Worker owns validation, upload authorization and persistence.
 #
 # When the Cloudflare route conflict is cleared manually, add the custom route back:
 # routes = [
@@ -22,8 +29,30 @@ head_sampling_rate = 1
 [vars]
 WORKER_NAME = "sigil-worker"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.webflow.io"
+PUBLIC_MODEL_ENABLED = "true"
+PUBLIC_MODEL_UPLOAD_ENABLED = "true"
+PUBLIC_MODEL_UPLOAD_REQUIRED = "false"
+PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/admin/model-applications"
+PRIVATE_MODEL_ENABLED = "true"
+PRIVATE_MODEL_UPLOAD_ENABLED = "true"
+PRIVATE_MODEL_UPLOAD_REQUIRED = "false"
+PRIVATE_MODEL_PUBLIC_API_BASE = "https://sigil-worker.malemodel-bkk.workers.dev"
+TELEGRAM_CHAT_ID = "-1003546439681"
+TELEGRAM_PUBLIC_MODEL_THREAD_ID = "155"
+TG_THREAD_PUBLIC_MODEL = "155"
+TG_THREAD_PAYMENTS_CONFIRM = "22"
+TG_THREAD_CONFIRM = "22"
 
 # Do not put secrets here.
+# TELEGRAM_BOT_TOKEN remains a Cloudflare Worker secret.
+# PRIVATE_MODEL_UPLOAD_SIGNING_SECRET is optional; when absent the private-model flow
+# intentionally reuses PUBLIC_MODEL_UPLOAD_SIGNING_SECRET so no new production secret
+# is required for the first private-model release.
+# Public Model notifications use the existing Telegram group TELEGRAM_CHAT_ID and MUST
+# target TELEGRAM_PUBLIC_MODEL_THREAD_ID / TG_THREAD_PUBLIC_MODEL = 155.
+# There is intentionally no fallback from TELEGRAM_PUBLIC_MODEL_THREAD_ID to
+# Payments (Confirm), so an application cannot land in the payment topic by accident.
+# TELEGRAM_PUBLIC_MODEL_CHAT_ID may be set later only if Public Model is moved to a separate Telegram chat.
 # Board queue reads are read-only:
 # - SIGIL_BOARD_QUEUE_JSON as non-secret JSON for smoke/dev only
 # - SIGIL_BOARD_KV production key: sigil:board:v1:cards
@@ -38,3 +67,15 @@ ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbk
 binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
+
+[[r2_buckets]]
+binding = "PUBLIC_MODEL_UPLOADS_R2"
+bucket_name = "mmd-private-public-model-uploads"
+
+[[durable_objects.bindings]]
+name = "PUBLIC_MODEL_COORDINATOR"
+class_name = "PublicModelCoordinator"
+
+[[migrations]]
+tag = "public-model-coordinator-v1"
+new_sqlite_classes = ["PublicModelCoordinator"]

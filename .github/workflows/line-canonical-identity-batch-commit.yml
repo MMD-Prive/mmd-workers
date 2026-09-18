@@ -1,0 +1,100 @@
+name: LINE canonical identity batch commit
+
+# Closes the gap where a LINE<->Client identity link that has already passed
+# manual review (decision=link_existing_client, decision_source=manual_review,
+# reviewed_by/reviewed_at recorded) sits unmaterialized because committing it
+# today requires a human to run
+# canonical-identity-commit-adapter.js by hand, once per row. This workflow
+# runs the existing, already-tested commit contract in bulk, daily, so
+# first login can resolve through Clients.line_user_id without repeating
+# identity discovery. It never reviews evidence itself -- it only commits
+# rows a human already approved -- and it writes no membership, points,
+# payment, or entitlement state (see
+# docs/architecture/LINE_CANONICAL_IDENTITY_COMMIT_ADAPTER_V1.md).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 2 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-official-legacy/canonical-identity-commit-adapter.js
+      - scripts/line-official-legacy/canonical-identity-batch-commit.js
+      - .github/workflows/line-canonical-identity-batch-commit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-canonical-identity-batch-commit-production
+  cancel-in-progress: false
+
+jobs:
+  batch-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate
+        run: |
+          node --check scripts/line-official-legacy/canonical-identity-commit-adapter.js
+          node --check scripts/line-official-legacy/canonical-identity-batch-commit.js
+          node --test scripts/line-official-legacy/canonical-identity-commit-adapter.test.js
+          node --test scripts/line-official-legacy/canonical-identity-batch-commit.test.js
+          node scripts/line-official-legacy/canonical-identity-batch-commit.js --self-test
+
+      - name: Dry-run every reviewed, not-yet-committed row
+        run: node scripts/line-official-legacy/canonical-identity-batch-commit.js --report /tmp/canonical-identity-batch-commit-dry-run.json
+
+      - name: Commit reviewed rows
+        run: node scripts/line-official-legacy/canonical-identity-batch-commit.js --apply --report /tmp/canonical-identity-batch-commit-apply.json
+
+      - name: Verify no committable row was left behind
+        run: node scripts/line-official-legacy/canonical-identity-batch-commit.js --assert-idempotent --report /tmp/canonical-identity-batch-commit-idempotency.json
+
+      - name: Publish redacted count summary
+        if: always()
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            ['Dry run', '/tmp/canonical-identity-batch-commit-dry-run.json'],
+            ['Apply', '/tmp/canonical-identity-batch-commit-apply.json'],
+            ['Idempotency', '/tmp/canonical-identity-batch-commit-idempotency.json'],
+          ];
+          for (const [label, path] of files) {
+            if (!fs.existsSync(path)) continue;
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const safe = {
+              mode: data.mode,
+              candidates_found: data.candidates_found,
+              newly_committed: data.newly_committed,
+              already_committed: data.already_committed,
+              failed: data.failed,
+              pending_mutations: data.pending_mutations,
+            };
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${label}\n\n\`\`\`json\n${JSON.stringify(safe, null, 2)}\n\`\`\`\n\n`);
+          }
+          NODE
+
+      - name: Upload redacted reports (counts and error codes only, no PII)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-canonical-identity-batch-commit-report-${{ github.run_id }}
+          path: |
+            /tmp/canonical-identity-batch-commit-dry-run.json
+            /tmp/canonical-identity-batch-commit-apply.json
+            /tmp/canonical-identity-batch-commit-idempotency.json
+          if-no-files-found: warn
+          retention-days: 30
