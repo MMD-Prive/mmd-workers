@@ -840,3 +840,13 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/private-media*"
 zone_name = "mmdbkk.com"
+
+
+# Unified owner review queue for Model self-service changes and recent media.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/models/review-queue*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/models/review-queue*"
+zone_name = "mmdbkk.com"

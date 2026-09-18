@@ -359,12 +359,91 @@ async function handleProfileUpdate(request, env) {
   if (!normalized.ok) return json({ ok: false, error: "validation_failed", fields: normalized.errors }, 400, request, env);
   if (!Object.keys(normalized.patch).length) return json({ ok: false, error: "no_supported_fields" }, 400, request, env);
 
+  const beforeResult = await airtableGetRecord(env, modelsTable(env), auth.payload.model_record_id);
+  if (!beforeResult.ok) {
+    return json({ ok: false, error: beforeResult.status === 404 ? "model_not_found" : "model_lookup_unavailable" }, beforeResult.status || 503, request, env);
+  }
+  const beforeProfile = safeModelProfile(beforeResult.record);
+  const changedFields = Object.entries(normalized.patch)
+    .filter(([field, value]) => !reviewValuesEqual(beforeProfile[field], value))
+    .map(([field, value]) => ({ field, before: reviewSafeValue(beforeProfile[field]), after: reviewSafeValue(value) }));
+
+  if (!changedFields.length) {
+    const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
+    if (main?.media_id) beforeProfile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
+    return json({ ok: true, model: beforeProfile, unchanged: true, review_required: false }, 200, request, env);
+  }
+
+  const review = await createModelSelfServiceReview(env, auth.payload.model_record_id, beforeProfile, normalized.patch, changedFields);
+  if (!review.ok) {
+    return json({ ok: false, error: "profile_review_queue_unavailable" }, review.status || 503, request, env);
+  }
+
   const updated = await airtableUpdateRecord(env, modelsTable(env), auth.payload.model_record_id, normalized.patch, true);
-  if (!updated.ok) return json({ ok: false, error: "profile_update_failed" }, updated.status, request, env);
+  if (!updated.ok) {
+    if (review.record?.id) {
+      await airtableUpdateRecord(env, modelReviewTable(env), review.record.id, {
+        request_status: "write_failed",
+        decision_note: "Model profile update failed after review intake.",
+      }, false).catch(() => null);
+    }
+    return json({ ok: false, error: "profile_update_failed" }, updated.status, request, env);
+  }
   const profile = safeModelProfile(updated.record);
   const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
   if (main?.media_id) profile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
-  return json({ ok: true, model: profile }, 200, request, env);
+  return json({
+    ok: true,
+    model: profile,
+    review_required: true,
+    review_request: {
+      request_id: review.requestId,
+      request_status: "pending_review",
+      requested_at: review.requestedAt,
+    },
+  }, 200, request, env);
+}
+
+async function createModelSelfServiceReview(env, modelRecordId, beforeProfile, patch, changedFields) {
+  const requestedAt = new Date().toISOString();
+  const requestId = `model_update_${crypto.randomUUID().replace(/-/g, "")}`;
+  const nextAvailability = {
+    available_now: Object.prototype.hasOwnProperty.call(patch, "available_now") ? Boolean(patch.available_now) : Boolean(beforeProfile.available_now),
+    availability_status: Object.prototype.hasOwnProperty.call(patch, "availability_status")
+      ? clean(patch.availability_status)
+      : clean(beforeProfile.availability_status) || "busy",
+  };
+  const payload = {
+    version: 1,
+    source: "mmd_model_dashboard",
+    changed_fields: changedFields,
+    availability: nextAvailability,
+  };
+  const created = await airtableCreateRecord(env, modelReviewTable(env), {
+    request_id: requestId,
+    Model: [modelRecordId],
+    request_type: "model_self_service_update",
+    request_status: "pending_review",
+    requested_by: "model_self_service",
+    requested_at: requestedAt,
+    payload_json: JSON.stringify(payload),
+  }, false);
+  return { ...created, requestId, requestedAt };
+}
+
+function modelReviewTable(env) {
+  return clean(env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || "MMD — Model Review Requests");
+}
+
+function reviewSafeValue(value) {
+  if (Array.isArray(value)) return value.map((item) => clean(item)).filter(Boolean);
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  return clean(value);
+}
+
+function reviewValuesEqual(left, right) {
+  return JSON.stringify(reviewSafeValue(left)) === JSON.stringify(reviewSafeValue(right));
 }
 
 async function handleMediaList(request, env) {
