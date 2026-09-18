@@ -51,6 +51,15 @@ const PAYMENT_FIELDS = Object.freeze({
 
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
 const PAYMENT_TYPES = new Set(["deposit", "final", "tips", "full"]);
+const CUSTOMER_DEPOSIT_PERCENT = 30;
+const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 500;
+
+export function computeFixedCustomerDeposit(serviceAmountThb) {
+  const total = Number(serviceAmountThb);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
+  return Math.min(total, Math.ceil(raw / CUSTOMER_DEPOSIT_ROUND_STEP_THB) * CUSTOMER_DEPOSIT_ROUND_STEP_THB);
+}
 
 export function isCanonicalConfirmLinkRequest(path, method) {
   return String(method || "").toUpperCase() === "POST" && normalizePath(path) === CONFIRM_LINK_PATH;
@@ -98,9 +107,39 @@ export async function handleCanonicalConfirmLink(request, env) {
     if (body.service_amount_thb != null && positiveNumber(body.service_amount_thb, "service_amount_thb") !== serviceAmountThb) {
       throw httpError(400, "service_amount_component_mismatch");
     }
-    const storedNote = held
-      ? (`[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}\n${note}`).slice(0, 4000)
+    const fixedDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
+    const fixedBalanceThb = Math.max(0, serviceAmountThb - fixedDepositThb);
+    if (paymentStage === "deposit") {
+      if (body.deposit_percent != null && Number(body.deposit_percent) !== CUSTOMER_DEPOSIT_PERCENT) {
+        throw httpError(400, "deposit_percent_must_be_30");
+      }
+      if (body.deposit_amount_thb != null && Number(body.deposit_amount_thb) !== fixedDepositThb) {
+        throw httpError(400, "deposit_amount_mismatch");
+      }
+    }
+    const pricing = paymentStage === "deposit"
+      ? {
+          full_price_thb: serviceAmountThb,
+          discount_mode: "none",
+          discount_percent: 0,
+          discount_thb: 0,
+          net_price_thb: serviceAmountThb,
+          deposit_basis_thb: serviceAmountThb,
+          deposit_percent: CUSTOMER_DEPOSIT_PERCENT,
+          deposit_due_thb: fixedDepositThb,
+          deposit_received_thb: 0,
+          balance_thb: fixedBalanceThb,
+          deposit_round_step_thb: CUSTOMER_DEPOSIT_ROUND_STEP_THB,
+          deposit_rounding: "ceil",
+        }
+      : null;
+    const pricingMarker = pricing ? `[SIGIL Pricing v1] ${JSON.stringify(pricing)}` : "";
+    const noteWithPricing = pricingMarker && !note.includes("[SIGIL Pricing v1]")
+      ? [note, pricingMarker].filter(Boolean).join("\n").slice(0, 4000)
       : note;
+    const storedNote = held
+      ? (`[MMD_JOB_HOLD_V1] ${JSON.stringify({ status: "pending_client_link", confirmation_hold: true, dispatch_hold: true, entitlement_release_hold: true })}\n${noteWithPricing}`).slice(0, 4000)
+      : noteWithPricing;
     const createdAt = new Date().toISOString();
 
     const { startAt, endAt } = canonicalJobWindow(jobDate, startRaw, endRaw);
@@ -176,14 +215,14 @@ export async function handleCanonicalConfirmLink(request, env) {
         session_id: sessionId, payment_ref: null, session_write: sessionWrite,
         operational_status: "pending_client_link", confirmations_held: true,
         dispatch_held: true, entitlement_release_held: true,
-        pricing_breakdown: components,
+        pricing_breakdown: pricing || components,
       });
     }
 
     const paymentFields = compact({
       [field(env.AT_PAYMENTS__PAYMENT_REF, PAYMENT_FIELDS.paymentRef)]: paymentRef,
       [PAYMENT_FIELDS.sessionId]: sessionId,
-      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: amountThb,
+      [field(env.AT_PAYMENTS__AMOUNT, PAYMENT_FIELDS.amount)]: paymentStage === "deposit" ? fixedDepositThb : amountThb,
       [field(env.AT_PAYMENTS__PAYMENT_STATUS, PAYMENT_FIELDS.paymentStatus)]: "Pending",
       [field(env.AT_PAYMENTS__PAYMENT_METHOD, PAYMENT_FIELDS.paymentMethod)]: paymentMethod,
       [field(env.AT_PAYMENTS__NOTES, PAYMENT_FIELDS.notes)]: note || undefined,
@@ -217,6 +256,7 @@ export async function handleCanonicalConfirmLink(request, env) {
         `Model: <b>${escapeHtml(modelName)}</b>`,
         `Type: <b>${escapeHtml(jobType)}</b>`,
         `Amount: <b>${Number(amountThb)} THB</b>`,
+        paymentStage === "deposit" ? `Deposit 30% (rounded): <b>${Number(fixedDepositThb)} THB</b>` : "",
         payModelThb != null ? `Pay Model: <b>${Number(payModelThb)} THB</b>` : "",
       ].filter(Boolean).join("\n"));
     } catch (_) {}
