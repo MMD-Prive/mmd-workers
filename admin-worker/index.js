@@ -2337,6 +2337,19 @@ function modelAccessProfile(fields = {}) {
   return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
 }
 
+function isDriveLazyPrivateModel(fields = {}) {
+  const tag = accessToken(fields.raw_import_tag);
+  const scope = accessToken(fields.folder_scope_key);
+  return tag === "drive_lazy_materialized_v1" &&
+    (scope.startsWith("exclusive_drive_") || scope.startsWith("private_drive_"));
+}
+
+function effectivePrivateModelLane(profile, fields, selectedLane) {
+  if (profile?.lane) return profile.lane;
+  const lane = normalizeCustomerLane(selectedLane);
+  return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
+}
+
 function sanitizeCreateSessionModel(record, profile) {
   const fields = record.fields || {};
   const folders = profile.bookingVisibility === "private"
@@ -2426,7 +2439,8 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_invalid", "The selected model has no canonical private access folder.");
   if (profile.accessFolder !== selectedFolder) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is outside the selected access folder.");
   if (!allowedFolders.includes(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is above the client's membership access.");
-  if (profile.lane !== selectedOrientation && profile.lane !== "both") throw new CreateSessionAccessError("private_model_lane_mismatch", "The selected model does not serve the selected customer lane.");
+  const effectiveLane = effectivePrivateModelLane(profile, modelRecord.fields || {}, selectedOrientation);
+  if (effectiveLane !== selectedOrientation && effectiveLane !== "both") throw new CreateSessionAccessError("private_model_lane_mismatch", "The selected model does not serve the selected customer lane.");
   if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
   if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
 
@@ -2505,13 +2519,22 @@ async function searchCreateSessionModels(env, url) {
       if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
       if (profile.accessFolder !== selectedFolder) continue;
       if (!allowedFolders.includes(profile.accessFolder)) continue;
-      if (profile.lane !== lane && profile.lane !== "both") continue;
+      const effectiveLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (effectiveLane !== lane && effectiveLane !== "both") continue;
     } else {
       if (profile.bookingVisibility === "private") continue;
       if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) continue;
       if (lane && profile.lane && profile.lane !== lane && profile.lane !== "both") continue;
     }
-    items.push(sanitizeCreateSessionModel(record, profile));
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (bookingVisibility === "private" && !item.orientation) {
+      const fallbackLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (fallbackLane) {
+        item.orientation = fallbackLane;
+        item.drive_lane_inferred_for_owner_job = true;
+      }
+    }
+    items.push(item);
     if (items.length >= limit) break;
   }
 
