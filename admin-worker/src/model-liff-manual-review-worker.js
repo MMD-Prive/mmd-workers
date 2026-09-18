@@ -108,16 +108,13 @@ async function findModelsByLineUserId(env, lineUserId) {
 
 async function upsertIdentityClaim(env, input) {
   const table = claimsTable(env);
-  const search = await airtableList(env, table, `{line_user_id}="${escapeFormula(input.lineUserId)}"`, 3);
-  if (!search.ok) return { ok: false, status: search.status || 503 };
-  if (search.records.length > 1) return { ok: false, status: 409 };
-
+  const claimId = `model_line_${input.lineHash.slice(0, 24)}`;
   const fields = {
-    claim_id: `model_line_${input.lineHash.slice(0, 24)}`,
+    claim_id: claimId,
     line_user_id: input.lineUserId,
     line_user_id_hash: input.lineHash,
     line_display_name: input.lineDisplayName || "",
-    line_picture_url: input.linePictureUrl || "",
+    ...(input.linePictureUrl !== undefined ? { line_picture_url: input.linePictureUrl || "" } : {}),
     line_environment: input.environment,
     claim_status: input.status,
     verified_at: input.nowIso,
@@ -125,13 +122,36 @@ async function upsertIdentityClaim(env, input) {
     verification_version: CLAIM_VERSION,
     safe_note: clean(input.safeNote).slice(0, 1000),
   };
-
-  if (search.records[0]) {
-    const updated = await airtableUpdateRecord(env, table, search.records[0].id, fields, true);
-    return updated.ok ? { ok: true, record: updated.record } : { ok: false, status: updated.status || 503 };
+  if (input.linkedModelId) {
+    fields["Linked Model"] = [input.linkedModelId];
+    fields.linked_at = input.nowIso;
   }
-  const created = await airtableCreateRecord(env, table, fields, true);
-  return created.ok ? { ok: true, record: created.record } : { ok: false, status: created.status || 503 };
+
+  return airtableUpsertClaimRecord(env, table, fields);
+}
+
+async function airtableUpsertClaimRecord(env, table, fields) {
+  const apiKey = clean(env.AIRTABLE_API_KEY);
+  const baseId = clean(env.AIRTABLE_BASE_ID);
+  if (!apiKey || !baseId || !table) return { ok: false, status: 503 };
+
+  const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`, {
+    method: "PATCH",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      performUpsert: { fieldsToMergeOn: ["claim_id"] },
+      records: [{ fields }],
+      typecast: true,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  const record = Array.isArray(data?.records) ? data.records[0] : null;
+  return response.ok && record
+    ? { ok: true, status: 200, record }
+    : { ok: false, status: response.status || 503, error: data };
 }
 
 export function normalizeLinePictureUrl(value) {
