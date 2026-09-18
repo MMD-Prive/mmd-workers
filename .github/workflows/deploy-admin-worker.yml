@@ -11,6 +11,7 @@ on:
       - "scripts/ensure-private-media-bucket.mjs"
       - "knowledge/kenji/**"
       - ".github/workflows/deploy-admin-worker.yml"
+      - ".github/workflows/model-media-real-e2e-production-smoke.yml"
 
 concurrency:
   group: deploy-admin-worker-production
