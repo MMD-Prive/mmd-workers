@@ -47,6 +47,7 @@ import {
 import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredential, readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from "./mms-partner-auth-store.js";
 import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
+import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -157,6 +158,10 @@ export default {
 
     if (path === PAYMENT_ISSUER_DIAGNOSTIC_PATH) {
       return handlePaymentIssuerDiagnostic(request, env);
+    }
+
+    if (path === MODEL_MEDIA_E2E_SMOKE_PATH) {
+      return handleModelMediaE2ESmoke(request, env, strictGate.actor);
     }
 
     if (isPublicModelApplicationReviewRequest(path)) {
