@@ -27,6 +27,10 @@ function enabled(value) {
   return ["1", "true", "yes", "on"].includes(text(value, 20).toLowerCase());
 }
 
+function isLineReplyAllowed(env = {}, controls = {}) {
+  return enabled(env.LINE_AUTO_REPLY_ENABLED) && controls.line_oa_auto_reply !== true;
+}
+
 function normalizedModelRef(value = "") {
   return text(value, 120).toLowerCase().normalize("NFKC").replace(/[\s._-]+/g, "");
 }
@@ -121,8 +125,15 @@ function isPreparedBookingDecision(decision = {}, modelGate = {}) {
     && text(modelGate?.parsed?.type, 40) === "booking";
 }
 
+function isDepositBookingIntent(modelGate = {}) {
+  return text(modelGate?.parsed?.type, 40) === "booking"
+    && text(modelGate?.parsed?.trigger, 40) === "deposit";
+}
+
 async function applyP4Action(env, event, modelGate, decision) {
-  if (!isPreparedBookingDecision(decision, modelGate)) return { decision, result: { attempted: false, executed: false, status: "not_eligible" } };
+  if (!isPreparedBookingDecision(decision, modelGate) && !isDepositBookingIntent(modelGate)) {
+    return { decision, result: { attempted: false, executed: false, status: "not_eligible" } };
+  }
   const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => null);
   if (canonical?.resolved !== true || !/^rec[A-Za-z0-9]+$/.test(text(canonical?.client_record_id, 80))) {
     const result = { attempted: true, executed: false, status: "canonical_client_recheck_failed" };
@@ -157,10 +168,11 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   const currentIntent = inferLineIntent(raw, event);
   if (!isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
 
-  if (!enabled(env.LINE_AUTO_REPLY_ENABLED) || !enabled(env.LINE_KENJI_AI_ENABLED)) return null;
+  if (!enabled(env.LINE_KENJI_AI_ENABLED) || !enabled(env.LINE_KENJI_BOOKING_INTENT_ENABLED ?? "true")) return null;
   const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
   const controls = runtime?.controls || {};
-  if (runtime?.ok !== true || controls.all_kenji_mutations === true || controls.line_oa_auto_reply === true) return null;
+  if (runtime?.ok !== true || controls.all_kenji_mutations === true) return null;
+  const replyAllowed = isLineReplyAllowed(env, controls);
 
   const modelGate = await resolveKenjiLv5LineModelGate({ env, event, currentIntent }).catch(() => ({ required: true, status: "unavailable" }));
   let decision;
@@ -186,7 +198,9 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
 
   const p4 = await applyP4Action(env, event, modelGate, decision);
   decision = p4.decision;
-  const delivery = await sendReply(env, replyToken(event), decision.text);
+  const delivery = replyAllowed
+    ? await sendReply(env, replyToken(event), decision.text)
+    : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
   const p4Attempted = p4?.result?.attempted === true;
   return {
     handled: true,
@@ -196,6 +210,7 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
       operational: p4Attempted ? "lv5_p4" : "lv5_p3",
       action_executed: p4?.result?.executed === true,
       delivered: delivery.ok === true,
+      reply_suppressed: delivery.suppressed === true,
     }), {
       status: 200,
       headers: {
@@ -203,14 +218,15 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
         "cache-control": "no-store",
         "x-mmd-worker": "member-dashboard-chat-worker",
         "x-mmd-kenji-operational": p4Attempted ? "lv5-p4" : "lv5-p3",
+        "x-mmd-kenji-reply": delivery.suppressed === true ? "suppressed" : (delivery.ok === true ? "delivered" : "failed"),
       },
     }),
     event,
     decision,
     delivered: delivery.ok === true,
-    attempted: true,
+    attempted: replyAllowed,
     delivery_status: Number.isInteger(delivery.status) ? delivery.status : null,
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, isPreparedBookingDecision });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });

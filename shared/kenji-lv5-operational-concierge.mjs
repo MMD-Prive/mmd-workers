@@ -178,15 +178,20 @@ function normalizeHype(input = {}) {
 function normalizeIntent(input = {}) {
   return {
     type: token(input.type || input.intent || "general"),
+    trigger: token(input.trigger),
     model_id: text(input.model_id, 160),
     model_name: text(input.model_name, 120),
+    customer_name: text(input.customer_name, 120),
     service: text(input.service || input.service_lane, 120),
     date: text(input.date || input.date_label, 80),
     time: text(input.time || input.time_label, 80),
     start_at: text(input.start_at, 80),
-    end_at: text(input.end_at, 80),
+    end_at: text(input.end_at || input.end_time, 80),
+    duration_hours: number(input.duration_hours, 0),
     location: text(input.location || input.location_area || input.zone, 160),
     amount_thb: number(input.amount_thb, 0),
+    deposit_amount_thb: number(input.deposit_amount_thb, 0),
+    raw: text(input.raw, 1000),
   };
 }
 
@@ -196,6 +201,8 @@ function missingBookingInputs(intent) {
   if (!intent.start_at && !intent.date) missing.push("date");
   if (!intent.start_at && !intent.time) missing.push("time");
   if (!intent.location) missing.push("location");
+  if (intent.trigger === "deposit" && !intent.end_at && !intent.duration_hours) missing.push("duration_or_end_time");
+  if (intent.trigger === "deposit" && !intent.amount_thb) missing.push("rate");
   return missing;
 }
 

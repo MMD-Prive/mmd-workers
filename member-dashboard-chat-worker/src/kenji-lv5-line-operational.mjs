@@ -6,7 +6,8 @@ export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/l
 const BOOKING_SIGNAL_RE = /(จอง|book|booking|reserve|นัด|คิว|ว่าง|available|availability|เช็กคิว|เช็คคิว|รับงาน)/i;
 const BOOKING_STATUS_RE = /(?:จอง|booking|request|คิว).{0,20}(?:ถึงไหน|สถานะ|คอนเฟิร์ม|confirm(?:ed)?|เรียบร้อย|หรือยัง)|(?:สถานะ).{0,12}(?:จอง|booking|request)/i;
 const PAYMENT_SIGNAL_RE = /(สลิป|โอน|จ่าย|ชำระ|payment|paid|deposit|มัดจำ|เครดิต|credit)/i;
-const LOCATION_PREFIX_RE = /(?:โซน|แถว|ที่|สถานที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
+const DEPOSIT_TRIGGER_RE = /(?:มัดจำ|deposit)/i;
+const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที่|ที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
 const DATE_WORDS_RE = /(วันนี้|คืนนี้|พรุ่งนี้|มะรืน|วันที่|วัน\s*(?:จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์|อาทิตย์)|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)/i;
 const TIME_WORDS_RE = /(เวลา\s*)?(\d{1,2})[:.](\d{2})|(?:ตี|บ่าย|ทุ่ม)\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|\d{1,2})|เที่ยงคืน|เที่ยง|สองทุ่ม|หนึ่งทุ่ม/i;
 const THAI_MONTHS = Object.freeze({
@@ -95,7 +96,7 @@ export function extractOperationalDate(raw = "", now = new Date()) {
   }
 
   const months = Object.keys(THAI_MONTHS).sort((a, b) => b.length - a.length).map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const thai = value.match(new RegExp(`(?:วันที่\\s*)?(\\d{1,2})\\s*(${months})(?:\\s*(\\d{2,4}))?`, "i"));
+  const thai = value.match(new RegExp(`(?:วันที่\\s*)?(\\d{1,2})\\s*(${months})(?:\\s+(\\d{2,4})(?!:))?`, "i"));
   if (thai) {
     const current = bangkokParts(now);
     const day = Number(thai[1]);
@@ -127,6 +128,12 @@ export function extractOperationalTime(raw = "") {
   }
   if (/เที่ยงคืน/.test(value)) return "00:00";
   if (/เที่ยง(?!คืน)/.test(value)) return "12:00";
+  const reversed = value.match(/(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|\d{1,2})\s*ทุ่ม/i);
+  if (reversed) {
+    const n = thaiNumber(reversed[1]);
+    const hour = 18 + n;
+    return n && hour <= 23 ? `${String(hour).padStart(2, "0")}:00` : "";
+  }
   const thai = value.match(/(ตี|บ่าย|ทุ่ม)\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|\d{1,2})/i);
   if (!thai) return "";
   const n = thaiNumber(thai[2]);
@@ -136,6 +143,75 @@ export function extractOperationalTime(raw = "") {
   if (thai[1] === "บ่าย") hour = n === 12 ? 12 : 12 + n;
   if (thai[1] === "ทุ่ม") hour = 18 + n;
   return hour >= 0 && hour <= 23 ? `${String(hour).padStart(2, "0")}:00` : "";
+}
+
+function minutesFromTime(value = "") {
+  if (!/^\d{2}:\d{2}$/.test(value)) return null;
+  const [hour, minute] = value.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function timeFromMinutes(value) {
+  if (!Number.isFinite(value)) return "";
+  const normalized = ((Math.round(value) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
+}
+
+export function extractOperationalDurationHours(raw = "") {
+  const value = text(raw, 1000);
+  const match = value.match(/(?:ระยะเวลา|duration)?\s*(\d+(?:\.\d+)?)\s*(?:ชั่วโมง|ชม\.?|hours?|hrs?)/i);
+  const duration = Number(match?.[1] || 0);
+  return Number.isFinite(duration) && duration > 0 && duration <= 24 ? duration : 0;
+}
+
+export function extractOperationalEndTime(raw = "", startTime = "") {
+  const value = text(raw, 1000);
+  const range = value.match(/(?:\d{1,2})[:.](?:\d{2})\s*(?:-|–|—|ถึง|to)\s*(\d{1,2})[:.](\d{2})/i);
+  if (range) {
+    const hour = Number(range[1]);
+    const minute = Number(range[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  const explicit = value.match(/(?:ถึง|เลิก|สิ้นสุด|end)\s*(?:เวลา)?\s*(\d{1,2})[:.](\d{2})/i);
+  if (explicit) {
+    const hour = Number(explicit[1]);
+    const minute = Number(explicit[2]);
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  const duration = extractOperationalDurationHours(value);
+  const startMinutes = minutesFromTime(startTime);
+  return duration && startMinutes !== null ? timeFromMinutes(startMinutes + duration * 60) : "";
+}
+
+function parseMoney(value = "", unit = "") {
+  const normalized = text(value, 40).replace(/,/g, "");
+  const amount = Number(normalized);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  return Math.round(amount * (/^(?:k|พัน)$/i.test(text(unit, 10)) ? 1000 : 1));
+}
+
+function extractLabeledMoney(raw = "", labelPattern = "") {
+  const match = text(raw, 1000).match(new RegExp(`(?:${labelPattern})\\s*[:：=]?\\s*(?:บาท\\s*)?([0-9][0-9,]*(?:\\.[0-9]+)?)\\s*(k|พัน|บาท|thb)?`, "i"));
+  return match ? parseMoney(match[1], match[2]) : 0;
+}
+
+export function extractOperationalRate(raw = "") {
+  return extractLabeledMoney(raw, "เรท|ราคา|ค่าตัว|ยอดรวม|rate|total");
+}
+
+export function extractOperationalDepositAmount(raw = "") {
+  return extractLabeledMoney(raw, "มัดจำ|deposit");
+}
+
+export function extractOperationalCustomerName(raw = "") {
+  const value = text(raw, 1000);
+  const match = value.match(/(?:ชื่อลูกค้า|ลูกค้า|client)\s*[:：-]?\s*([^,\n]{2,80})/i);
+  if (!match?.[1]) return "";
+  return match[1]
+    .split(/(?:นายแบบ|model|โมเดล|วันที่|วัน\s|เวลา|ที่|สถานที่|โซน|แถว|เรท|ราคา|ค่าตัว|ยอดรวม|มัดจำ|deposit|rate|total)/i)[0]
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
 }
 
 function stripKnownBookingTokens(raw = "") {
@@ -152,7 +228,7 @@ function stripKnownBookingTokens(raw = "") {
 
 export function extractOperationalModelName(raw = "") {
   const value = text(raw, 1000);
-  const explicit = value.match(/(?:นายแบบ|model|ชื่อ)\s*[:：-]?\s*([A-Za-z0-9ก-๙_-]{2,40})/i);
+  const explicit = value.match(/(?:ชื่อนายแบบ|นายแบบ|model|โมเดล|ชื่อ(?!ลูกค้า))\s*[:：-]?\s*([A-Za-z0-9ก-๙_-]{2,40})/i);
   if (explicit?.[1]) return explicit[1];
   const afterBooking = value.match(/(?:จอง|book|booking|reserve|นัด)\s+([A-Za-z0-9ก-๙_-]{2,40})/i);
   if (afterBooking?.[1] && !/^(?:วันที่|เวลา|วันนี้|คืนนี้|พรุ่งนี้|มะรืน)$/i.test(afterBooking[1])) return afterBooking[1];
@@ -164,7 +240,7 @@ export function extractOperationalLocation(raw = "", modelName = "") {
   const explicit = value.match(LOCATION_PREFIX_RE);
   if (explicit?.[1]) {
     const location = explicit[1]
-      .split(/(?:วันที่|เวลา|วันนี้|คืนนี้|พรุ่งนี้|มะรืน)/i)[0]
+      .split(/(?:วันที่|เวลา|วันนี้|คืนนี้|พรุ่งนี้|มะรืน|เรท|ราคา|ค่าตัว|ยอดรวม|มัดจำ|deposit|rate|total|ถึง\s*\d)/i)[0]
       .replace(modelName, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -179,6 +255,7 @@ export function extractOperationalLocation(raw = "", modelName = "") {
 function operationalType(currentIntent = "", raw = "") {
   const intent = token(currentIntent);
   if (intent === "booking_status") return "booking_status";
+  if (DEPOSIT_TRIGGER_RE.test(raw)) return "booking";
   if (["payment_status", "payment_slip", "payment_dispute", "care_back_payment_points"].includes(intent) || PAYMENT_SIGNAL_RE.test(raw)) return intent === "payment_slip" ? "payment_slip" : "payment";
   if (intent === "availability_request" || BOOKING_SIGNAL_RE.test(raw)) return "booking";
   return "";
@@ -193,13 +270,22 @@ export function parseKenjiLv5LineIntent(event = {}, currentIntent = "", now = ne
   const modelName = extractOperationalModelName(raw);
   const date = extractOperationalDate(raw, now);
   const time = extractOperationalTime(raw);
+  const durationHours = extractOperationalDurationHours(raw);
+  const endTime = extractOperationalEndTime(raw, time);
   const location = extractOperationalLocation(raw, modelName);
+  const depositTriggered = DEPOSIT_TRIGGER_RE.test(raw);
   return {
     type: "booking",
+    ...(depositTriggered ? { trigger: "deposit" } : {}),
     model_name: modelName,
+    customer_name: extractOperationalCustomerName(raw),
     date,
     time,
+    end_time: endTime,
+    duration_hours: durationHours,
     location,
+    amount_thb: extractOperationalRate(raw),
+    deposit_amount_thb: extractOperationalDepositAmount(raw),
     raw,
   };
 }
@@ -253,7 +339,14 @@ function firstAction(context = {}, names = []) {
 }
 
 function missingLabels(values = []) {
-  const labels = { model_or_service: "ชื่อนายแบบหรือบริการ", date: "วันที่", time: "เวลา", location: "โซนหรือสถานที่" };
+  const labels = {
+    model_or_service: "ชื่อนายแบบหรือบริการ",
+    date: "วันที่",
+    time: "เวลา",
+    duration_or_end_time: "เวลาสิ้นสุดหรือจำนวนชั่วโมง",
+    location: "โซนหรือสถานที่",
+    rate: "เรทราคา",
+  };
   return values.map((item) => labels[item] || item).filter(Boolean);
 }
 

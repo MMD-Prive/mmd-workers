@@ -101,6 +101,30 @@ test("P2 detects live model calendar conflict and offers an alternate slot inste
   assert.ok(!result.next_actions.some((item) => item.action === "create_calendar_hold"));
 });
 
+test("deposit booking preserves rate/end-time requirements and checks the full requested interval", () => {
+  const result = buildKenjiLv5LiveFanInProjection(base({
+    intent: {
+      type: "booking", trigger: "deposit", model_name: "Rossi", date: "2026-09-20",
+      time: "20:00", end_time: "22:00", location: "สุขุมวิท", amount_thb: 9000,
+    },
+    calendar: {
+      ok: true,
+      date: "2026-09-20",
+      items: [{
+        session_id: "SES-LATE",
+        start_at: "2026-09-20T21:30:00+07:00",
+        end_at: "2026-09-20T23:00:00+07:00",
+        client: { record_id: "recOther" },
+        model: { name: "Rossi" },
+      }],
+    },
+  }));
+  assert.deepEqual(result.missing, []);
+  assert.equal(result.calendar_live.status, "unavailable");
+  assert.equal(result.intent.trigger, "deposit");
+  assert.equal(result.intent.amount_thb, 9000);
+});
+
 test("P2 fails closed when entitlement truth is unavailable", () => {
   const result = buildKenjiLv5LiveFanInProjection(base({
     entitlement: { status: "unavailable", snapshot: null },

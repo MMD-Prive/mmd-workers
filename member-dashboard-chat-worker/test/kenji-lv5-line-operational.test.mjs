@@ -36,9 +36,32 @@ test("P3 parses model, Thai date, two-thum time and location from a natural book
   assert.deepEqual(parseKenjiLv5LineIntent(event(raw), "mmd_companion", NOW), {
     type: "booking",
     model_name: "Rossi",
+    customer_name: "",
     date: "2026-09-20",
     time: "20:00",
+    end_time: "",
+    duration_hours: 0,
     location: "สุขุมวิท",
+    amount_thb: 0,
+    deposit_amount_thb: 0,
+    raw,
+  });
+});
+
+test("deposit wording starts booking capture and extracts the complete Create Job input", () => {
+  const raw = "มัดจำ งานนายแบบ Rossi ลูกค้า คุณแชมป์ วันที่ 20 ก.ย. 20:00-22:00 ที่สุขุมวิท เรท 9,000 บาท มัดจำ 3,000";
+  assert.deepEqual(parseKenjiLv5LineIntent(event(raw), "payment_status", NOW), {
+    type: "booking",
+    trigger: "deposit",
+    model_name: "Rossi",
+    customer_name: "คุณแชมป์",
+    date: "2026-09-20",
+    time: "20:00",
+    end_time: "22:00",
+    duration_hours: 0,
+    location: "สุขุมวิท",
+    amount_thb: 9000,
+    deposit_amount_thb: 3000,
     raw,
   });
 });
@@ -121,6 +144,11 @@ test("model code or alias must not bypass canonical calendar-name mapping", () =
   });
   assert.equal(same, false);
   assert.equal(alias, true);
+});
+
+test("LINE auto-reply pause suppresses customer delivery without disabling booking mutation flow", () => {
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.isLineReplyAllowed({ LINE_AUTO_REPLY_ENABLED: "true" }, { line_oa_auto_reply: true }), false);
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.isLineReplyAllowed({ LINE_AUTO_REPLY_ENABLED: "true" }, { line_oa_auto_reply: false }), true);
 });
 
 test("HYPE exception routing keeps payment, membership and identity in canonical threads", () => {
