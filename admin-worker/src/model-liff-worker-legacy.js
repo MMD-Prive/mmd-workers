@@ -11,13 +11,15 @@ const COOKIE_NAME = "mmd_model_session_v1";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const MODELS_TABLE_DEFAULT = "Models";
 const MEDIA_TABLE_DEFAULT = "tblrpQXhHnbTU9RhW";
-const MAX_MEDIA_BYTES = 15 * 1024 * 1024;
+const MAX_IMAGE_MEDIA_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_MEDIA_BYTES = 50 * 1024 * 1024;
 const MODEL_LANGUAGE_ALLOWLIST = new Set(["thai", "english"]);
 const MODEL_AVAILABILITY_ALLOWLIST = new Set(["available", "busy", "vacation"]);
-const MODEL_MEDIA_UPLOAD_TYPES = new Set(["profile_photo", "public_gallery"]);
+const MODEL_MEDIA_UPLOAD_TYPES = new Set(["profile_photo", "public_gallery", "intro_video"]);
 const MODEL_MEDIA_PUBLIC_SELF_MANAGED_TYPES = new Set(["profile_photo", "public_gallery", "intro_video"]);
 const MODEL_MEDIA_PER_APPROVAL_TYPES = new Set(["private_gallery", "flash_preview"]);
 const MODEL_IMAGE_MIME_ALLOWLIST = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+const MODEL_VIDEO_MIME_ALLOWLIST = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 const ACTIVE_SESSION_STATES = new Set([
   "confirmed",
   "accepted",
@@ -197,6 +199,48 @@ export function normalizeModelMediaType(value = "") {
   return MODEL_MEDIA_UPLOAD_TYPES.has(normalized) ? normalized : "";
 }
 
+export function normalizeModelMediaUploadSpec(mediaTypeValue = "", mimeValue = "", sizeValue = 0) {
+  const mediaType = normalizeModelMediaType(mediaTypeValue);
+  if (!mediaType) return { ok: false, error: "media_type_invalid" };
+
+  const mime = clean(mimeValue).toLowerCase();
+  const size = Number(sizeValue || 0);
+  const isVideo = MODEL_VIDEO_MIME_ALLOWLIST.has(mime);
+  const isImage = MODEL_IMAGE_MIME_ALLOWLIST.has(mime);
+
+  if (mediaType === "intro_video") {
+    if (!isVideo) return { ok: false, error: "file_type_not_allowed" };
+    if (!Number.isFinite(size) || size <= 0 || size > MAX_VIDEO_MEDIA_BYTES) {
+      return { ok: false, error: "file_size_invalid", max_bytes: MAX_VIDEO_MEDIA_BYTES };
+    }
+    return {
+      ok: true,
+      kind: "video",
+      mediaType,
+      mime,
+      size,
+      maxBytes: MAX_VIDEO_MEDIA_BYTES,
+      ext: mediaExtension(mime),
+      assetRole: "intro_video_candidate",
+    };
+  }
+
+  if (!isImage) return { ok: false, error: "file_type_not_allowed" };
+  if (!Number.isFinite(size) || size <= 0 || size > MAX_IMAGE_MEDIA_BYTES) {
+    return { ok: false, error: "file_size_invalid", max_bytes: MAX_IMAGE_MEDIA_BYTES };
+  }
+  return {
+    ok: true,
+    kind: "image",
+    mediaType,
+    mime,
+    size,
+    maxBytes: MAX_IMAGE_MEDIA_BYTES,
+    ext: mediaExtension(mime),
+    assetRole: mediaType === "profile_photo" ? "profile_candidate" : "gallery_candidate",
+  };
+}
+
 export function modelMediaPolicy(fields = {}) {
   const mediaType = normalizeWord(fields.media_type);
   const role = normalizeWord(fields.asset_role);
@@ -359,19 +403,18 @@ async function handleMediaUpload(request, env) {
   if (MODEL_MEDIA_PER_APPROVAL_TYPES.has(rawMediaType)) {
     return json({ ok: false, error: "per_approval_required", policy: "per_approved_private" }, 403, request, env);
   }
-  const mediaType = normalizeModelMediaType(rawMediaType);
-  if (!mediaType) return json({ ok: false, error: "media_type_invalid" }, 400, request, env);
   if (!file || typeof file !== "object" || typeof file.arrayBuffer !== "function") {
     return json({ ok: false, error: "file_required" }, 400, request, env);
   }
 
-  const mime = clean(file.type).toLowerCase();
-  const size = Number(file.size || 0);
-  if (!MODEL_IMAGE_MIME_ALLOWLIST.has(mime)) return json({ ok: false, error: "file_type_not_allowed" }, 415, request, env);
-  if (!Number.isFinite(size) || size <= 0 || size > MAX_MEDIA_BYTES) return json({ ok: false, error: "file_size_invalid", max_bytes: MAX_MEDIA_BYTES }, 413, request, env);
+  const spec = normalizeModelMediaUploadSpec(rawMediaType, file.type, file.size);
+  if (!spec.ok) {
+    const status = spec.error === "file_type_not_allowed" ? 415 : spec.error === "file_size_invalid" ? 413 : 400;
+    return json({ ok: false, error: spec.error, ...(spec.max_bytes ? { max_bytes: spec.max_bytes } : {}) }, status, request, env);
+  }
+  const { mediaType, mime, size, ext, assetRole } = spec;
 
   const mediaId = `media_${crypto.randomUUID().replace(/-/g, "")}`;
-  const ext = imageExtension(mime);
   const objectKey = `models/${auth.payload.model_record_id}/${mediaType}/${mediaId}.${ext}`;
   const uploadedAt = new Date().toISOString();
 
@@ -394,7 +437,7 @@ async function handleMediaUpload(request, env) {
     Model: [auth.payload.model_record_id],
     media_type: mediaType,
     media_visibility: "public_candidate",
-    asset_role: mediaType === "profile_photo" ? "profile_candidate" : "gallery_candidate",
+    asset_role: assetRole,
     review_status: "active",
     public_safe: true,
     private_safe: false,
@@ -450,6 +493,9 @@ async function handleMediaSetMain(request, env, mediaId) {
   if (!media.ok) return json({ ok: false, error: media.error }, media.status, request, env);
   const policy = modelMediaPolicy(media.record.fields || {});
   if (!policy.self_managed) return json({ ok: false, error: "per_approval_required", policy: policy.policy }, 403, request, env);
+  if (normalizeWord(media.record.fields?.media_type) === "intro_video") {
+    return json({ ok: false, error: "main_media_requires_image" }, 400, request, env);
+  }
 
   const all = await listOwnedMedia(env, auth.payload.model_record_id);
   if (!all.ok) return json({ ok: false, error: "media_lookup_unavailable" }, 503, request, env);
@@ -582,11 +628,13 @@ function safeMediaRecord(record) {
     uploaded_at: clean(fields.uploaded_at),
     preview_url: mediaId && policy.self_managed ? `${MEDIA_PATH}/${encodeURIComponent(mediaId)}/file` : "",
     can_delete: policy.self_managed,
-    can_request_main: policy.self_managed && Boolean(mediaId),
+    can_request_main: policy.self_managed && Boolean(mediaId) && normalizeWord(fields.media_type) !== "intro_video",
     self_managed: policy.self_managed,
     requires_per_approval: policy.requires_per_approval,
     policy: policy.policy,
-    main_action: policy.self_managed ? "set_main" : "request_per_approval",
+    main_action: policy.self_managed
+      ? (normalizeWord(fields.media_type) === "intro_video" ? "none" : "set_main")
+      : "request_per_approval",
   };
 }
 
@@ -909,11 +957,14 @@ function safeAttachmentUrl(value) {
   return safeHttpUrl(value.url || value.thumbnails?.large?.url || value.thumbnails?.full?.url || "");
 }
 
-function imageExtension(mime) {
+function mediaExtension(mime) {
   if (mime === "image/png") return "png";
   if (mime === "image/webp") return "webp";
   if (mime === "image/heic") return "heic";
   if (mime === "image/heif") return "heif";
+  if (mime === "video/mp4") return "mp4";
+  if (mime === "video/quicktime") return "mov";
+  if (mime === "video/webm") return "webm";
   return "jpg";
 }
 
