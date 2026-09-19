@@ -187,6 +187,8 @@ jobs:
             "www.mmdbkk.com/male-massage/therapists/api/auth/*",
             "mmdbkk.com/v1/internal/ai/service-binding-smoke",
             "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "mmdbkk.com/v1/member/payments*",
+            "www.mmdbkk.com/v1/member/payments*",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
