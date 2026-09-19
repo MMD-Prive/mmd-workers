@@ -1,49 +1,51 @@
 (function () {
   "use strict";
 
-  var GATE_KEY = "mmd_board_v70_gate";
-  var ROLE_KEY = "mmd_board_v70_role";
   var UNLOCKED = "unlocked";
-  var ROLE = "boss_per";
+  var ROLE = "member";
 
   function hasElement(selector) {
     return Boolean(document.querySelector(selector));
   }
 
-  function readLocalStorage(key) {
-    try {
-      return localStorage.getItem(key);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function runSmokeTest() {
+  async function runSmokeTest() {
     var helperLoaded = typeof window.mmdBoardV70UnlockGate === "function";
-    var gate = readLocalStorage(GATE_KEY);
+    var runtimeHelperLoaded = typeof window.mmdBoardV70LoadRuntime === "function";
+    var authHelperLoaded = Boolean(window.MMDGate && typeof window.MMDGate.requireMmdAuth === "function");
+    var root = document.querySelector("[data-mmd-board-v70]");
 
-    if (helperLoaded && gate !== UNLOCKED) {
-      window.mmdBoardV70UnlockGate("sigil");
-      gate = readLocalStorage(GATE_KEY);
+    if (helperLoaded && authHelperLoaded && root && root.getAttribute("data-gate") !== UNLOCKED) {
+      await window.mmdBoardV70UnlockGate({ redirect: false });
     }
 
     var result = {
       ok: false,
       root: hasElement("[data-mmd-board-v70]"),
-      passphraseInput: hasElement("[data-v70-gate-passphrase]"),
+      authCheck: hasElement("[data-v70-auth-check]"),
       unlockButton: hasElement("[data-v70-action=\"unlock-gate\"]"),
       status: hasElement("[data-v70-gate-status]"),
+      runtimeStatus: hasElement("[data-v70-runtime-status]"),
+      runtimeMeta: hasElement("[data-v70-runtime-meta]"),
+      runtimeRules: hasElement("[data-v70-runtime-rules]"),
       helperLoaded: helperLoaded,
-      gate: gate,
-      role: readLocalStorage(ROLE_KEY)
+      runtimeHelperLoaded: runtimeHelperLoaded,
+      authHelperLoaded: authHelperLoaded,
+      gate: root ? root.getAttribute("data-gate") : "",
+      role: root ? root.getAttribute("data-role") : "",
+      runtime: root ? root.getAttribute("data-runtime") : ""
     };
 
     result.ok = Boolean(
       result.root &&
-      result.passphraseInput &&
+      result.authCheck &&
       result.unlockButton &&
       result.status &&
+      result.runtimeStatus &&
+      result.runtimeMeta &&
+      result.runtimeRules &&
       result.helperLoaded &&
+      result.runtimeHelperLoaded &&
+      result.authHelperLoaded &&
       result.gate === UNLOCKED &&
       result.role === ROLE
     );
