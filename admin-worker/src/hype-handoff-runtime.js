@@ -472,7 +472,7 @@ export async function handleHypeSupervisedExecutionRpc(request, env = {}) {
   });
 }
 
-async function observeP6Authority(env, receipt = {}, context = {}) {
+export async function observeP6Authority(env, receipt = {}, context = {}) {
   const mode = normalizeTransactionMode(receipt.mode);
   if (mode === "payment_proof") {
     const payment = context?.payment_live || context?.payment || {};
