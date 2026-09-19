@@ -51,6 +51,8 @@ jobs:
           node --check src/mmd-shop-checkout.js
           node --check src/mmd-shop-order-page.js
           node --check src/mmd-shop-product-page.js
+          node --check src/mmd-shop-stock-coordinator.js
+          node --check ../shared/mmd-shop-stock-reservation.mjs
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
 
@@ -59,6 +61,7 @@ jobs:
 
       - name: Upload himai-chat-worker version
         id: upload
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -69,8 +72,37 @@ jobs:
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-upload.log"
 
+      - name: Apply MMD Shop stock coordinator migration
+        id: migration_deploy
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/himai-chat-worker-upload.log"; then
+            echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211." >&2
+            cat "$RUNNER_TEMP/himai-chat-worker-upload.log" >&2
+            exit 1
+          fi
+          migration_config=".wrangler-migration-no-routes.toml"
+          node <<'NODE'
+          const fs = require("node:fs");
+          const input = fs.readFileSync("wrangler.toml","utf8").split(/\r?\n/);
+          const output = [];
+          let skippingRoute = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) { skippingRoute = true; continue; }
+            if (skippingRoute && /^\s*\[/.test(line)) skippingRoute = false;
+            if (!skippingRoute) output.push(line);
+          }
+          fs.writeFileSync(".wrangler-migration-no-routes.toml", output.join("\n")+"\n");
+          NODE
+          trap 'rm -f "$migration_config"' EXIT
+          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" 2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-migration.log"
+          echo "HIMAI_CHAT_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
+
       - name: Resolve uploaded version ID
         id: resolve_version
+        if: steps.upload.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -84,14 +116,23 @@ jobs:
 
       - name: Deploy uploaded himai-chat-worker version
         id: deploy
+        if: steps.resolve_version.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
           npx --yes wrangler@4 versions deploy "${HIMAI_CHAT_WORKER_VERSION_ID}@100%" -y
 
+      - name: Deploy MMD Shop scheduled trigger
+        id: cron_trigger
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 triggers deploy
+
       - name: Sync MMD Shop routes
         id: route_sync
-        if: steps.deploy.outcome == 'success'
+        if: steps.cron_trigger.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
