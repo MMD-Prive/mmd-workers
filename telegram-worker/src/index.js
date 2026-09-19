@@ -422,22 +422,6 @@ async function handleTelegramWebhook(update, env) {
     }, env);
   }
 
-  const activeDraft = clean(message.chat?.type).toLowerCase() === "private"
-    ? await readHypeActiveTransactionDraft(message, env)
-    : null;
-  if (activeDraft?.active === true && activeDraft.complete !== true) {
-    const resumeFields = extractHypeTransactionFields(activeDraft.mode, message);
-    if (Object.keys(resumeFields).length > 0) {
-      return handleHypeTransactionIntake({
-        message,
-        chatId,
-        mode: activeDraft.mode,
-        fields: resumeFields,
-        source: "resume",
-      }, env);
-    }
-  }
-
   const naturalRoute = routeHypeNaturalLanguage(text);
   if (naturalRoute.ambiguous === true) {
     return handleHypeIntentClarification({ chatId, route: naturalRoute }, env);
@@ -453,6 +437,25 @@ async function handleTelegramWebhook(update, env) {
         domain: naturalRoute.domain,
       },
     }, env);
+  }
+
+  // Only look for an unfinished transaction draft after explicit/P4 routing
+  // declines the message. This preserves minimal reads for normal status,
+  // Points/Coupon routing and ambiguous protected-domain questions.
+  const activeDraft = clean(message.chat?.type).toLowerCase() === "private"
+    ? await readHypeActiveTransactionDraft(message, env)
+    : null;
+  if (activeDraft?.active === true && activeDraft.complete !== true) {
+    const resumeFields = extractHypeTransactionFields(activeDraft.mode, message);
+    if (Object.keys(resumeFields).length > 0) {
+      return handleHypeTransactionIntake({
+        message,
+        chatId,
+        mode: activeDraft.mode,
+        fields: resumeFields,
+        source: "resume",
+      }, env);
+    }
   }
 
   if (activeDraft?.active === true && activeDraft.complete !== true && text) {
