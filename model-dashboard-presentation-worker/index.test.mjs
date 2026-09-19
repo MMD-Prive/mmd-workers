@@ -32,7 +32,7 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
 
 test("anonymous dashboard entry hands off to the canonical LINE Mini App before LIFF init", async () => {
   const request = new Request(
-    "https://mmdbkk.com/sigil/model/dashboard?lang=th&flow=verify&activation=signed.token&state=drop-me&access_token=drop-me",
+    "https://mmdbkk.com/sigil/model/dashboard?lang=th&flow=verify&activation=signed.token&unknown=drop-me",
   );
   assert.equal(hasModelSessionCookie(request), false);
   assert.equal(hasLineRedirectContext(request), false);
