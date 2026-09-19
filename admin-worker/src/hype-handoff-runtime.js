@@ -356,10 +356,15 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
       return json({ ok: false, error: "recovery_order_selection_invalid" }, 400);
     }
+    const pickerRevision = body.picker_revision == null ? null : normalizePickerRevision(body.picker_revision);
+    if (body.picker_revision != null && !pickerRevision) {
+      return json({ ok: false, error: "recovery_picker_revision_invalid" }, 400);
+    }
     return selectShopRecoveryOrderForCase(env, {
       telegramUserId,
       handoffId,
       selectionIndex,
+      pickerRevision,
     });
   }
 
@@ -370,10 +375,15 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
       return json({ ok: false, error: "recovery_candidate_selection_invalid" }, 400);
     }
+    const pickerRevision = body.picker_revision == null ? null : normalizePickerRevision(body.picker_revision);
+    if (body.picker_revision != null && !pickerRevision) {
+      return json({ ok: false, error: "recovery_picker_revision_invalid" }, 400);
+    }
     return selectRecoveryCandidateForCase(env, {
       telegramUserId,
       handoffId,
       selectionIndex,
+      pickerRevision,
       domain: operation === "select_recovery_booking" ? "booking" : "mms",
     });
   }
