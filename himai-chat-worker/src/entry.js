@@ -8,6 +8,8 @@ import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
 import {
+  abortPaymentClaimViaMmdShopCoordinator,
+  claimPaymentViaMmdShopCoordinator,
   commitViaMmdShopCoordinator,
   expireViaMmdShopCoordinator,
   releaseViaMmdShopCoordinator,
@@ -27,6 +29,12 @@ export default {
     }
     if (path === "/mmd-shop/internal/reservation/commit" && request.method.toUpperCase() === "POST") {
       return handleInternalReservationMutation(request, env, "commit");
+    }
+    if (path === "/mmd-shop/internal/reservation/claim-payment" && request.method.toUpperCase() === "POST") {
+      return handleInternalReservationMutation(request, env, "claim-payment");
+    }
+    if (path === "/mmd-shop/internal/reservation/abort-payment-claim" && request.method.toUpperCase() === "POST") {
+      return handleInternalReservationMutation(request, env, "abort-payment-claim");
     }
 
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
@@ -102,9 +110,16 @@ async function handleInternalReservationMutation(request, env, action) {
   if (!reservation) return json({ ok: false, error: "reservation_required" }, 400);
 
   try {
-    const result = action === "commit"
-      ? await commitViaMmdShopCoordinator(env, reservation)
-      : await releaseViaMmdShopCoordinator(env, reservation, body?.reason || "released");
+    let result;
+    if (action === "commit") {
+      result = await commitViaMmdShopCoordinator(env, reservation);
+    } else if (action === "claim-payment") {
+      result = await claimPaymentViaMmdShopCoordinator(env, reservation, body?.review_key || "");
+    } else if (action === "abort-payment-claim") {
+      result = await abortPaymentClaimViaMmdShopCoordinator(env, reservation, body?.review_key || "", body?.reason || "payment_review_failed");
+    } else {
+      result = await releaseViaMmdShopCoordinator(env, reservation, body?.reason || "released");
+    }
     return json({ ok: true, ...result }, 200);
   } catch (error) {
     return json({ ok: false, error: String(error?.message || error || "reservation_mutation_failed") }, Number(error?.status || 500));
