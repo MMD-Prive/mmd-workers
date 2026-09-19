@@ -1,4 +1,5 @@
 import {
+  commitMmdShopReservation,
   expireMmdShopReservations,
   releaseMmdShopReservation,
   reserveMmdShopStock,
@@ -27,6 +28,10 @@ export class MmdShopStockCoordinator {
       }
       if (url.pathname === "/release") {
         const result = await releaseMmdShopReservation(this.env, body.reservation, body.reason || "released");
+        return { ok: true, ...result };
+      }
+      if (url.pathname === "/commit") {
+        const result = await commitMmdShopReservation(this.env, body.reservation);
         return { ok: true, ...result };
       }
       if (url.pathname === "/expire") {
@@ -111,6 +116,11 @@ export async function reserveViaMmdShopCoordinator(env, input) {
 
 export async function releaseViaMmdShopCoordinator(env, reservation, reason) {
   const result = await requestCoordinator(env, "/release", { reservation, reason });
+  return result;
+}
+
+export async function commitViaMmdShopCoordinator(env, reservation) {
+  const result = await requestCoordinator(env, "/commit", { reservation });
   return result;
 }
 
