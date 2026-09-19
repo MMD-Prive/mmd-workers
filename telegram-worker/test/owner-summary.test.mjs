@@ -45,10 +45,42 @@ function summary() {
       membership_review: 1,
       jobs_need_confirm: 1,
       jobs: 3,
+      recovery_open: 2,
+      recovery_attention: 1,
+      recovery_overdue: 1,
+      recovery_unassigned: 1,
+      recovery_attention_unassigned: 1,
     },
     review_required: {
       payment: [{ client_name: "ลูกค้า A", amount_thb: 5000, text: "Deposit · พร้อมตรวจ" }],
     },
+    recovery_queue: {
+      available: true,
+      policy_version: "mmd-recovery-queue-sla-v1-20260919",
+      open_count: 2,
+      attention_count: 1,
+      overdue_count: 1,
+      watch_count: 0,
+      assigned_count: 1,
+      unassigned_count: 1,
+      attention_unassigned_count: 1,
+      operational_only: true,
+      business_truth_inferred: false,
+    },
+    what_to_watch_now: [{
+      case_ref: "HYPE-PER-20260919010000-acde1234",
+      client_name: "ลูกค้า Recovery",
+      domain: "booking",
+      state: "reviewing",
+      sla_status: "overdue",
+      since_update_minutes: 420,
+      case_age_minutes: 510,
+      next_attention: "review_and_update_outcome",
+      assignment_status: "unassigned",
+      assigned_to: null,
+      assigned_lane: null,
+      href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919010000-acde1234",
+    }],
     calendar: {
       today_jobs: [{ job_id: "JOB-1", model_name: "Model A", client_name: "ลูกค้า A", status: "รอคอนเฟิร์ม", time: "19:00" }],
       tomorrow_jobs: [],
@@ -59,7 +91,10 @@ function summary() {
     },
     clients: { display_names: ["ลูกค้า A"] },
     alerts: [{ title: "Owner Review", text: "มีเคสพิเศษ 1 รายการ" }],
-    next_actions: [{ priority: 1, label: "ตรวจ Payments", href: "/internal/admin/payments" }],
+    next_actions: [
+      { priority: 1, label: "ตรวจ Payments", href: "/internal/admin/payments" },
+      { priority: 2, label: "รับ Recovery ที่ยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned" },
+    ],
   };
 }
 
@@ -111,6 +146,11 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
     assert.match(sends[0].text, /Payment Review: 2/);
     assert.match(sends[0].text, /ลูกค้า A/);
     assert.match(sends[0].text, /Model A/);
+    assert.match(sends[0].text, /RECOVERY QUEUE · ต้องดูอะไรตอนนี้/);
+    assert.match(sends[0].text, /ลูกค้า Recovery/);
+    assert.match(sends[0].text, /overdue/);
+    assert.match(sends[0].text, /ยังไม่มีคนรับ/);
+    assert.match(sends[0].text, /Assignment\/SLA เป็น coordination metadata เท่านั้น/);
     assert.match(sends[0].text, /Read-only summary/);
   } finally {
     globalThis.fetch = originalFetch;

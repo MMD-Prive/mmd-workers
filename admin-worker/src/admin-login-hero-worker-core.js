@@ -51,7 +51,23 @@ import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-me
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
 import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
 import { HYPE_MEMBER_WALLET_PATH, handleHypeMemberWalletRpc } from "./hype-member-wallet.js";
+import {
+  HYPE_SHOP_ORDERS_PATH,
+  HYPE_SHOP_ORDERS_SMOKE_PATH,
+  handleHypeShopOrdersRpc,
+  handleHypeShopOrdersSmokeRpc,
+} from "./hype-shop-orders.js";
 import { HYPE_OWNER_SUMMARY_PATH, handleHypeOwnerSummaryRpc } from "./hype-owner-summary.js";
+import {
+  handleOwnerMyMmdRecoveryDiagnostic,
+  isOwnerMyMmdRecoveryDiagnosticRequest,
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
+} from "./owner-my-mmd-recovery-diagnostic.js";
+import {
+  handleRecoveryControl,
+  isRecoveryControlRequest,
+  RECOVERY_CONTROL_PAGE_PATH,
+} from "./recovery-control.js";
 import { HYPE_CONTINUITY_PATH, HYPE_HANDOFF_PATH, HYPE_HANDOFF_STATUS_PATH, HYPE_TRANSACTION_INTAKE_PATH, HYPE_SUPERVISED_EXECUTION_PATH, handleHypeContinuityRpc, handleHypeHandoffRpc, handleHypeHandoffStatusRpc, handleHypeTransactionIntakeRpc, handleHypeSupervisedExecutionRpc } from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
@@ -92,6 +108,9 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/create-session",
   "/internal/admin/kenji",
   "/internal/admin/kenji-knowledge",
+  "/internal/ceo/models",
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
+  RECOVERY_CONTROL_PAGE_PATH,
   "/internal/jobs/create-job",
 ];
 
@@ -129,6 +148,12 @@ export default {
     }
     if (path === HYPE_MEMBER_WALLET_PATH) {
       return handleHypeMemberWalletRpc(request, env);
+    }
+    if (path === HYPE_SHOP_ORDERS_PATH) {
+      return handleHypeShopOrdersRpc(request, env);
+    }
+    if (path === HYPE_SHOP_ORDERS_SMOKE_PATH) {
+      return handleHypeShopOrdersSmokeRpc(request, env);
     }
 
     // Service-binding-only owner summary for HYPE. Read-only and derived from
@@ -206,6 +231,14 @@ export default {
 
     if (path === MODEL_MEDIA_E2E_SMOKE_PATH) {
       return handleModelMediaE2ESmoke(request, env, strictGate.actor);
+    }
+
+    if (isOwnerMyMmdRecoveryDiagnosticRequest(path, method)) {
+      return handleOwnerMyMmdRecoveryDiagnostic(request, env, strictGate.actor);
+    }
+
+    if (isRecoveryControlRequest(path, method)) {
+      return handleRecoveryControl(request, env, strictGate.actor);
     }
 
     if (isPublicModelApplicationReviewRequest(path)) {

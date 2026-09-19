@@ -11,18 +11,18 @@ const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที
 const DATE_WORDS_RE = /(วันนี้|คืนนี้|พรุ่งนี้|มะรืน|วันที่|วัน\s*(?:จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์|อาทิตย์)|\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)/i;
 const TIME_WORDS_RE = /(เวลา\s*)?(\d{1,2})[:.](\d{2})|(?:ตี|บ่าย|ทุ่ม)\s*(หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|\d{1,2})|เที่ยงคืน|เที่ยง|สองทุ่ม|หนึ่งทุ่ม/i;
 const THAI_MONTHS = Object.freeze({
-  "ม.ค.": 1, "มกราคม": 1,
-  "ก.พ.": 2, "กุมภาพันธ์": 2,
-  "มี.ค.": 3, "มีนาคม": 3,
-  "เม.ย.": 4, "เมษายน": 4,
-  "พ.ค.": 5, "พฤษภาคม": 5,
-  "มิ.ย.": 6, "มิถุนายน": 6,
-  "ก.ค.": 7, "กรกฎาคม": 7,
-  "ส.ค.": 8, "สิงหาคม": 8,
-  "ก.ย.": 9, "กันยายน": 9,
-  "ต.ค.": 10, "ตุลาคม": 10,
-  "พ.ย.": 11, "พฤศจิกายน": 11,
-  "ธ.ค.": 12, "ธันวาคม": 12,
+  "ม.ค.": 1, "มค": 1, "มกราคม": 1,
+  "ก.พ.": 2, "กพ": 2, "กุมภาพันธ์": 2,
+  "มี.ค.": 3, "มีค": 3, "มีนาคม": 3,
+  "เม.ย.": 4, "เมย": 4, "เมษายน": 4,
+  "พ.ค.": 5, "พค": 5, "พฤษภาคม": 5,
+  "มิ.ย.": 6, "มิย": 6, "มิถุนายน": 6,
+  "ก.ค.": 7, "กค": 7, "กรกฎาคม": 7,
+  "ส.ค.": 8, "สค": 8, "สิงหาคม": 8,
+  "ก.ย.": 9, "กย": 9, "กันยายน": 9,
+  "ต.ค.": 10, "ตค": 10, "ตุลาคม": 10,
+  "พ.ย.": 11, "พย": 11, "พฤศจิกายน": 11,
+  "ธ.ค.": 12, "ธค": 12, "ธันวาคม": 12,
 });
 const THAI_NUMBERS = Object.freeze({ หนึ่ง: 1, สอง: 2, สาม: 3, สี่: 4, ห้า: 5, หก: 6, เจ็ด: 7, แปด: 8, เก้า: 9, สิบ: 10 });
 const OPERATIONAL_INTENTS = new Set([
@@ -196,7 +196,7 @@ function extractLabeledMoney(raw = "", labelPattern = "") {
 }
 
 export function extractOperationalRate(raw = "") {
-  return extractLabeledMoney(raw, "เรท|ราคา|ค่าตัว|ยอดรวม|rate|total");
+  return extractLabeledMoney(raw, "เรท|ราคา|ค่าตัว|ยอดรวม|rate|total|PN");
 }
 
 export function extractOperationalDepositAmount(raw = "") {
@@ -413,9 +413,11 @@ export function renderKenjiLv5LineReply(context = {}, parsedIntent = {}) {
   return "";
 }
 
-export async function resolveKenjiLv5LineOperationalDecision({ env = {}, event = {}, currentIntent = "", continuity = {}, now = new Date() } = {}) {
-  if (!isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
-  const parsedIntent = parseKenjiLv5LineIntent(event, currentIntent, now);
+export async function resolveKenjiLv5LineOperationalDecision({ env = {}, event = {}, currentIntent = "", continuity = {}, parsedIntent: suppliedParsedIntent = null, now = new Date() } = {}) {
+  if (!suppliedParsedIntent && !isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
+  const parsedIntent = suppliedParsedIntent && typeof suppliedParsedIntent === "object"
+    ? suppliedParsedIntent
+    : parseKenjiLv5LineIntent(event, currentIntent, now);
   if (!parsedIntent) return null;
 
   const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => ({ resolved: false, status: "unavailable" }));

@@ -42,6 +42,7 @@ const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-m
 const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
+const SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH = "/__internal/line/shop-shipping-notify/smoke";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
@@ -1877,6 +1878,49 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
   return json({ ok: false, error: "not_found" }, 404);
 }
 
+function buildMmdShopShippingMessage({ customerName = "", orderId = "", courier = "Courier", tracking = "" } = {}) {
+  return [
+    "MMD SHOP · จัดส่งสินค้าแล้ว",
+    customerName ? `คุณ${customerName}` : "",
+    `Order: ${orderId}`,
+    `${courier}: ${tracking}`,
+    "",
+    "ติดตามสถานะเพิ่มเติมได้ที่ MY MMD → Orders",
+    "https://mmdbkk.com/my-mmd/orders",
+  ].filter(Boolean).join("\n");
+}
+
+async function handleServiceBoundShopShippingSmoke(request) {
+  if (!hasServiceBindingAuth(request, ["hype-shop-production-smoke"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const lineUserId = getLineUserId(body);
+  const orderId = asString(body.order_id).slice(0, 180);
+  const courier = asString(body.courier).slice(0, 180) || "Courier";
+  const tracking = asString(body.tracking_number).slice(0, 220);
+  const customerName = asString(body.customer_name).slice(0, 180);
+
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_required" }, 400);
+  if (!orderId) return json({ ok: false, error: "order_id_required" }, 400);
+  if (!tracking) return json({ ok: false, error: "tracking_number_required" }, 400);
+
+  const message = buildMmdShopShippingMessage({ customerName, orderId, courier, tracking });
+  return json({
+    ok: true,
+    status: "dry_run",
+    order_id: orderId,
+    line_push_sent: false,
+    checks: {
+      contains_order: message.includes(`Order: ${orderId}`),
+      contains_tracking: message.includes(tracking),
+      contains_my_mmd_orders: message.includes("https://mmdbkk.com/my-mmd/orders"),
+    },
+  }, 200);
+}
+
 async function handleServiceBoundShopShipping(request, env) {
   if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
@@ -1894,15 +1938,7 @@ async function handleServiceBoundShopShipping(request, env) {
   if (!orderId) return json({ ok: false, error: "order_id_required" }, 400);
   if (!tracking) return json({ ok: false, error: "tracking_number_required" }, 400);
 
-  const message = [
-    "MMD SHOP · จัดส่งสินค้าแล้ว",
-    customerName ? `คุณ${customerName}` : "",
-    `Order: ${orderId}`,
-    `${courier}: ${tracking}`,
-    "",
-    "ติดตามสถานะเพิ่มเติมได้ที่ MY MMD → Orders",
-    "https://mmdbkk.com/my-mmd/orders",
-  ].filter(Boolean).join("\n");
+  const message = buildMmdShopShippingMessage({ customerName, orderId, courier, tracking });
 
   const result = await deliverLineText(env, lineUserId, message, { trusted_event: true });
   return json({
@@ -2103,6 +2139,10 @@ export default {
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
       return handleLineWebhook(request, env, ctx);
+    }
+
+    if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH) {
+      return handleServiceBoundShopShippingSmoke(request);
     }
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_PATH) {

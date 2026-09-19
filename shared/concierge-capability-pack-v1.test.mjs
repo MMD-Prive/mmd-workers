@@ -20,6 +20,7 @@ test("shared concierge capability pack exposes exactly capabilities 1-7", () => 
 test("shared capability detection covers the seven firmware lanes", () => {
   const cases = [
     ["GG Water ของผมถึงไหนแล้ว", "shop_orders"],
+    ["GG Water ยังไม่ถึงเลย", "service_recovery"],
     ["CARE BACK คูปองเปิดหรือยัง", "care_back_coupon"],
     ["ช่วยหา therapist ที่เหมาะหน่อย", "mms_therapist_options"],
     ["งานมีปัญหา น้องยังไม่มา", "service_recovery"],

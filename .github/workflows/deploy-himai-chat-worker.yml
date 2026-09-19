@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "himai-chat-worker/**"
+      - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/mmd-shop-fulfillment.mjs"
       - ".github/workflows/deploy-himai-chat-worker.yml"
 
 concurrency:
@@ -54,7 +56,7 @@ jobs:
           node --check src/mmd-shop-stock-coordinator.js
           node --check ../shared/mmd-shop-stock-reservation.mjs
           node --check ../shared/mmd-shop-fulfillment.mjs
-          grep -Fq 'binding = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
+          grep -Fq 'name = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
           grep -Fq 'binding = "PAYMENTS_WORKER"' wrangler.toml
           grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml
           node --check src/shop-movements.js
@@ -82,7 +84,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/himai-chat-worker-upload.log"; then
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]|pending Durable Object migration|Durable Object migrations must be applied with' "$RUNNER_TEMP/himai-chat-worker-upload.log"; then
             echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211." >&2
             cat "$RUNNER_TEMP/himai-chat-worker-upload.log" >&2
             exit 1
@@ -126,13 +128,18 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4 versions deploy "${HIMAI_CHAT_WORKER_VERSION_ID}@100%" -y
 
-      - name: Deploy MMD Shop scheduled trigger
+      - name: Validate MMD Shop scheduled trigger
         id: cron_trigger
         if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 triggers deploy
+          grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml
+          if [ "${{ steps.migration_deploy.outcome }}" = "success" ]; then
+            echo "Scheduled trigger was applied by the direct wrangler deploy used for the Durable Object migration."
+          else
+            echo "Scheduled trigger is already provisioned at */5; validating canonical config without re-submitting route triggers."
+          fi
 
       - name: Sync MMD Shop routes
         id: route_sync

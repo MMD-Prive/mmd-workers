@@ -39,19 +39,82 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
     ],
     reconfirm: { total: 2, pending: 1, overdue: 0, acknowledged: 1 },
     status: { admin: "พร้อม", payments: "พร้อม", historical_recovery: "พร้อม", telegram: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
-  }, new Date("2026-09-19T07:50:00.000Z"));
+  }, new Date("2026-09-19T07:50:00.000Z"), {
+    ok: true,
+    queue: {
+      policy_version: "mmd-recovery-queue-sla-v1-20260919",
+      open_count: 3,
+      attention_count: 2,
+      overdue_count: 1,
+      watch_count: 1,
+      assigned_count: 1,
+      unassigned_count: 2,
+      attention_unassigned_count: 1,
+      by_domain: { booking: 2, mms: 1 },
+      by_state: { reviewing: 2, resolved: 1 },
+      attention: [
+        {
+          case_ref: "HYPE-PER-20260919010000-acde1234",
+          client_name: "คุณเชน",
+          domain: "booking",
+          state: "reviewing",
+          outcome_code: "awaiting_operations",
+          sla_status: "overdue",
+          since_update_minutes: 420,
+          case_age_minutes: 510,
+          next_attention: "review_and_update_outcome",
+          assignment_status: "unassigned",
+          assigned_to: null,
+          assigned_lane: null,
+          href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919010000-acde1234",
+        },
+        {
+          case_ref: "HYPE-PER-20260919050000-acde5678",
+          client_name: "คุณ MMS",
+          domain: "mms",
+          state: "resolved",
+          outcome_code: "rebooking_arranged",
+          sla_status: "watch",
+          since_update_minutes: 95,
+          case_age_minutes: 270,
+          next_attention: "notify_customer",
+          assignment_status: "assigned",
+          assigned_to: "Per",
+          assigned_lane: "owner",
+          href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919050000-acde5678",
+        },
+      ],
+      operational_only: true,
+      business_truth_inferred: false,
+    },
+  });
 
   assert.equal(summary.ok, true);
   assert.equal(summary.mode, "hype_owner_summary_v1");
   assert.equal(summary.focus.title, "ตรวจเงินก่อน");
   assert.equal(summary.counts.payment_review, 2);
-  assert.equal(summary.review_required.count, 5);
+  assert.equal(summary.counts.recovery_open, 3);
+  assert.equal(summary.counts.recovery_attention, 2);
+  assert.equal(summary.counts.recovery_overdue, 1);
+  assert.equal(summary.counts.recovery_assigned, 1);
+  assert.equal(summary.counts.recovery_unassigned, 2);
+  assert.equal(summary.counts.recovery_attention_unassigned, 1);
+  assert.equal(summary.recovery_queue.available, true);
+  assert.equal(summary.recovery_queue.operational_only, true);
+  assert.equal(summary.recovery_queue.business_truth_inferred, false);
+  assert.equal(summary.what_to_watch_now[0].client_name, "คุณเชน");
+  assert.equal(summary.what_to_watch_now[0].assignment_status, "unassigned");
+  assert.equal(summary.what_to_watch_now[1].assigned_to, "Per");
+  assert.equal(summary.next_actions[1].href, "/internal/admin/recovery?assignment=unassigned");
+  assert.equal(summary.review_required.count, 7);
   assert.equal(summary.calendar.today_jobs.length, 1);
   assert.equal(summary.calendar.tomorrow_jobs.length, 1);
   assert.equal(summary.jobs.items[0].client_name, "คุณเอ็ม");
   assert.equal(summary.jobs.items[0].model_name, "Book EI");
   assert.deepEqual(summary.clients.display_names.slice(0, 4), ["คุณเอ็ม", "คุณก้อง", "คุณโจ", "คุณคิว"]);
   assert.equal(summary.next_actions[0].href, "/internal/admin/payments");
+  assert.equal(summary.authority.recovery_assignment_policy, "mmd-recovery-assignment-v1-20260919");
+  assert.equal(summary.authority.recovery_assignment_grants_authority, false);
   assert.equal(summary.authority.read_only, true);
 
   const serialized = JSON.stringify(summary);

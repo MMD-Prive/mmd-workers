@@ -174,7 +174,7 @@ jobs:
           version_id="$(sed -n 's/.*Current Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/member-pages-worker-deploy.log" | tail -n 1)"
           echo "MEMBER_PAGES_WORKER_VERSION_ID=${version_id:-direct-deploy}" >> "$GITHUB_ENV"
 
-      - name: Smoke production Exclusive EMs15 Drive resolution
+      - name: Smoke production Exclusive EMs15 and EMs16 Drive resolution
         shell: bash
         run: |
           set -euo pipefail
@@ -238,6 +238,43 @@ jobs:
             if (resolved?.item?.folder_scope_key !== expectedScope) throw new Error(`EMs15 re-resolution scope mismatch: ${resolved?.item?.folder_scope_key}`);
 
             console.log(`EMs15 production Drive smoke passed: ${expectedScope}`);
+
+            const ems16Id = "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t";
+            const ems16ReviewId = "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd";
+            const ems16Scope = `exclusive:drive:${ems16Id}`;
+            const ems16Search = new URL("/__internal/model-drive/search", base);
+            ems16Search.searchParams.set("q", "EMs16");
+            ems16Search.searchParams.set("lane", "all");
+
+            const ems16Response = await signedFetch(ems16Search);
+            const ems16Payload = await ems16Response.json().catch(() => ({}));
+            if (!ems16Response.ok || ems16Payload?.ok !== true || !Array.isArray(ems16Payload?.items)) {
+              throw new Error(`EMs16 signed Drive search failed: HTTP ${ems16Response.status} ${JSON.stringify(ems16Payload).slice(0, 300)}`);
+            }
+            const ems16 = ems16Payload.items.find((item) => item?.drive_folder_id === ems16Id);
+            if (!ems16) throw new Error(`EMs16 model root was not returned; count=${ems16Payload.items.length}`);
+            if (ems16Payload.items.some((item) => item?.drive_folder_id === ems16ReviewId)) {
+              throw new Error("Nested Review EMs16 Gohan folder leaked into model candidates");
+            }
+            if (ems16.lane !== "exclusive") throw new Error(`EMs16 lane must be exclusive; got ${ems16.lane}`);
+            if (ems16.folder_scope_key !== ems16Scope) throw new Error(`EMs16 folder_scope_key mismatch: ${ems16.folder_scope_key}`);
+            if (ems16.approved_root_id !== expectedRoot) throw new Error(`EMs16 approved_root_id mismatch: ${ems16.approved_root_id}`);
+            if (!String(ems16.folder_path || "").includes("MMD Exclusive Models / Exclusive PN / EMs16")) {
+              throw new Error(`EMs16 folder_path mismatch: ${ems16.folder_path}`);
+            }
+
+            const ems16Resolve = new URL("/__internal/model-drive/resolve", base);
+            const ems16Body = JSON.stringify({ drive_folder_id: ems16Id });
+            const ems16ResolvedResponse = await signedFetch(ems16Resolve, { method: "POST", body: ems16Body });
+            const ems16Resolved = await ems16ResolvedResponse.json().catch(() => ({}));
+            if (!ems16ResolvedResponse.ok || ems16Resolved?.ok !== true || ems16Resolved?.item?.drive_folder_id !== ems16Id) {
+              throw new Error(`EMs16 exact Drive re-resolution failed: HTTP ${ems16ResolvedResponse.status} ${JSON.stringify(ems16Resolved).slice(0, 300)}`);
+            }
+            if (ems16Resolved?.item?.folder_scope_key !== ems16Scope) {
+              throw new Error(`EMs16 re-resolution scope mismatch: ${ems16Resolved?.item?.folder_scope_key}`);
+            }
+
+            console.log(`EMs16 production Drive smoke passed: ${ems16Scope}; nested review excluded`);
           })().catch((error) => {
             console.error(error?.stack || error);
             process.exit(1);

@@ -30,7 +30,7 @@ test("held job issues role-bound customer and model LINE Mini App links without 
 
   const model = new URL(links.model_identity_url);
   assert.equal(model.origin, "https://miniapp.line.me");
-  assert.equal(model.pathname, "/2010864854-N34SgCqq");
+  assert.equal(model.pathname, "/2010864854-N34SgCqq/");
   assert.ok(model.searchParams.get("job_claim"));
   assert.notEqual(customer.searchParams.get("job_claim"), model.searchParams.get("job_claim"));
 

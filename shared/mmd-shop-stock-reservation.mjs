@@ -509,7 +509,7 @@ async function listRecords(env, tableId, fieldIds) {
     url.searchParams.set("returnFieldsByFieldId", "true");
     for (const fieldId of fieldIds) url.searchParams.append("fields[]", fieldId);
     if (offset) url.searchParams.set("offset", offset);
-    const response = await fetch(url.toString(), {
+    const response = await airtableFetch(env, url.toString(), {
       headers: { authorization: `Bearer ${token(env)}`, accept: "application/json" },
     });
     const data = await response.json().catch(() => ({}));
@@ -525,7 +525,7 @@ async function getRecord(env, tableId, recordId, fieldIds) {
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`);
   url.searchParams.set("returnFieldsByFieldId", "true");
   for (const fieldId of fieldIds) url.searchParams.append("fields[]", fieldId);
-  const response = await fetch(url.toString(), {
+  const response = await airtableFetch(env, url.toString(), {
     headers: { authorization: `Bearer ${token(env)}`, accept: "application/json" },
   });
   if (response.status === 404) return null;
@@ -535,7 +535,7 @@ async function getRecord(env, tableId, recordId, fieldIds) {
 }
 
 async function createRecord(env, tableId, fields) {
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableId)}`, {
+  const response = await airtableFetch(env, `${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableId)}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token(env)}`, "content-type": "application/json" },
     body: JSON.stringify({ records: [{ fields }], typecast: true }),
@@ -548,7 +548,7 @@ async function createRecord(env, tableId, fields) {
 }
 
 async function patchRecord(env, tableId, recordId, fields) {
-  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`, {
+  const response = await airtableFetch(env, `${AIRTABLE_API}/${encodeURIComponent(baseId(env))}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
     headers: { authorization: `Bearer ${token(env)}`, "content-type": "application/json" },
     body: JSON.stringify({ fields, typecast: true }),
@@ -556,6 +556,12 @@ async function patchRecord(env, tableId, recordId, fields) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw reservationError(response.status >= 500 ? 502 : response.status, `airtable_patch_${response.status}`);
   return data;
+}
+
+async function airtableFetch(env, input, init = {}) {
+  const injected = env?.MMD_SHOP_AIRTABLE_FETCH;
+  if (typeof injected === "function") return injected(input, init);
+  return fetch(input, init);
 }
 
 function table(env, kind) {

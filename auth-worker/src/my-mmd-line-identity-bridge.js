@@ -19,6 +19,7 @@ const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
 const FAST_TRUST_LABEL = { vip: "VIP", svip: "SVIP", black_card: "Black Card" };
 const FAST_TRUST_DURATION_YEARS = 2;
+const MY_MMD_ALERT_FLOW = "my_mmd_resolution_alert";
 
 export default {
   async fetch(request, env = {}, ctx) {
@@ -50,6 +51,48 @@ export default {
     // and generic legacy parsing never enter this branch.
     const fastTrust = await resolveLineOaFastTrust(env, lineUserId);
     if (fastTrust.tier) {
+      const upstreamGuest = firstPayload.data.member_exists === false;
+      if (upstreamGuest) {
+        console.error({
+          event: "my_mmd_impossible_guest_state_prevented",
+          severity: "critical",
+          alert: true,
+          component: "auth-worker",
+          route: path,
+          protected_tier: fastTrust.tier,
+          lookup_reason: fastTrust.reason,
+        });
+        console.warn({
+          event: "protected_member_recovery",
+          component: "auth-worker",
+          route: path,
+          protected_tier: fastTrust.tier,
+          recovery_reason: "protected_marker_guest_prevented",
+        });
+        if (path === STATUS_PATH) {
+          const alertTask = notifyImpossibleGuestAlert(env, {
+            route: path,
+            tier: fastTrust.tier,
+            reason: fastTrust.reason,
+          }).then((result) => {
+            if (!result.ok) {
+              console.warn({
+                event: "my_mmd_impossible_guest_alert_failed",
+                component: "auth-worker",
+                failure_class: safeFailure(result.reason || result.error || "alert_failed"),
+              });
+            }
+          }).catch((error) => {
+            console.warn({
+              event: "my_mmd_impossible_guest_alert_failed",
+              component: "auth-worker",
+              failure_class: safeFailure(error),
+            });
+          });
+          if (ctx?.waitUntil) ctx.waitUntil(alertTask);
+          else await alertTask;
+        }
+      }
       if (path === STATUS_PATH) {
         return fastTrustStatusResponse(firstResponse, firstPayload, fastTrust);
       }
@@ -139,9 +182,53 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
       knownCanonicalClient,
     };
   } catch (error) {
-    console.warn({ event: "my_mmd_fast_trust_lookup_failed", failure_class: safeFailure(error) });
+    console.warn({ event: "fast_trust_lookup_error", component: "auth-worker", failure_class: safeFailure(error) });
     return { tier: null, reason: "fast_trust_lookup_unavailable", lookupUnavailable: true };
   }
+}
+
+export async function notifyImpossibleGuestAlert(env = {}, input = {}) {
+  const secret = String(env.AUTH_SERVICE_AUTH_TO_TELEGRAM || "").trim();
+  const service = env.TELEGRAM_ACCESS_RECONCILER;
+  const chatId = String(env.MY_MMD_ALERT_CHAT_ID || "").trim();
+  const threadId = Number(env.MY_MMD_ALERT_THREAD_ID || 0);
+  if (!secret || !service?.fetch || !chatId) {
+    return { ok: false, reason: "my_mmd_alert_not_configured" };
+  }
+
+  const tier = String(input.tier || "protected").replace(/[^a-z0-9_-]+/gi, "_").slice(0, 40);
+  const route = String(input.route || "").replace(/[\r\n]/g, "").slice(0, 160);
+  const reason = String(input.reason || "").replace(/[^a-z0-9_-]+/gi, "_").slice(0, 80);
+  const text = [
+    "🚨 MY MMD impossible Guest state prevented",
+    "Invariant: LINE verified + protected marker must never resolve to Guest.",
+    `Tier: ${tier || "protected"}`,
+    `Route: ${route || "unknown"}`,
+    `Reason: ${reason || "protected_marker_guest_prevented"}`,
+    "Action: response was recovered automatically; review resolver trace and Fast Trust evidence.",
+  ].join("\n");
+
+  const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      flow: MY_MMD_ALERT_FLOW,
+      chat_id: chatId,
+      ...(Number.isInteger(threadId) && threadId > 0 ? { message_thread_id: threadId } : {}),
+      text,
+    }),
+  }));
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.telegram?.ok !== true) {
+    return {
+      ok: false,
+      reason: String(body?.error || body?.telegram?.error || `telegram_http_${response.status}`).slice(0, 160),
+    };
+  }
+  return { ok: true };
 }
 
 async function fastTrustStatusResponse(firstResponse, firstPayload, fastTrust) {

@@ -407,6 +407,74 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
+# Owner-only MY MMD Recovery Diagnostic. Runtime pathname matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
+# Recovery Control owner/operator surface. Runtime pathname/method matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases*"
+zone_name = "mmdbkk.com"
+
 # Kenji Admin canonical control centre.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji"
@@ -674,6 +742,12 @@ service = "member-pages-worker"
 # Identity is resolved in admin-worker first; member-pages-worker owns points/coupon truth.
 [[services]]
 binding = "MEMBER_PAGES_MEMBER_WALLET"
+service = "member-pages-worker"
+
+# Bounded customer-safe MMD Shop order projection for HYPE.
+# member-pages-worker owns order/customer ownership filtering and fulfillment truth.
+[[services]]
+binding = "MEMBER_PAGES_SHOP_ORDERS"
 service = "member-pages-worker"
 
 # ใช้สำหรับ CORS (browser calls)

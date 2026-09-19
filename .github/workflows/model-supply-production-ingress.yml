@@ -135,13 +135,16 @@ jobs:
               "$origin/internal/admin/login/session")"
             test "$login_code" = "303"
             grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+            tr -d '\r' < "$headers" | grep -Fqi 'location: /internal/ceo/models'
 
             page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/ceo/models")"
             test "$page_code" = "200"
-            grep -q 'model-supply-v1' "$body"
-            grep -q 'Model Supply Intelligence' "$body"
+            grep -q 'model-supply-v3' "$body"
+            grep -q 'SUPPLY INTELLIGENCE' "$body"
+            grep -Fq '/v1/admin/models/list?limit=100' "$body"
+            grep -Fq '/v1/admin/models/resolve-source?q=' "$body"
 
             list_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \

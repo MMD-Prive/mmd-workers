@@ -92,6 +92,20 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
       "Public/Private lane lock 2026-09-19: /pay/membership = canonical Public Membership selection for mmd_member / elite / red_card. /sigil/member/membership = canonical Private Membership selection/start/renew/upgrade for Standard / Premium / private access. Private renewal CTA = /sigil/member/membership?source=line&intent=renew. /member/payments = payment list/status/navigation. Exact backend-issued /pay/checkout?t=... = Public/TMIB payment+proof; exact backend-issued /sigil/pay?t=... = Private/Service payment+proof. NEVER use /pay/membership for payment status or Private renewal. NEVER send Public Member/Elite/Red Card to /sigil/member/membership. NEVER send fresh customer CTAs to /sigil/pay/renew, /sigil/pay/renewal, or /pay/renewal; those are redirect-only compatibility routes. Preserve the exact backend-issued signed URL. Never mint payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
   },
   {
+    id: "kenji_20_012_my_mmd_trust_rule",
+    title: "Kenji AI 2.0 — MY MMD Trust Rule",
+    category: "membership",
+    language: "th",
+    status: "active",
+    response_mode: "handoff_required",
+    risk_level: "critical",
+    source_path: "docs/architecture/MY_MMD_TRUST_RULE_V1.md",
+    customer_answer:
+      "MY MMD จะยึดสถานะจากข้อมูลสมาชิกและสิทธิ์ที่ MMD ยืนยันได้ครับ หากระบบกำลังดึงประวัติเดิมจะไม่สรุป Guest หรือแต้มจากค่าชั่วคราว และเมื่อข้อมูลต้องให้ MMD ตรวจต่อ ระบบจะคงสถานะไว้ให้ตรวจโดยไม่ให้ลูกค้าต้องเริ่มใหม่ครับ",
+    internal_instruction:
+      "CANONICAL MY MMD TRUST RULE 2026-09-19: Verified LINE + protected/canonical evidence never resolves to Guest. Guest is only a successful proven negative canonical lookup with no Canonical Client and no protected marker. Historical reconstruction authority is recovery KV state only: checking/in_progress = loading; reconciled = terminal complete; review_required = terminal with bounded manual review; blocked = fail-closed. Missing membership_start or historical expiry alone MUST NOT create recovery_pending. Active VIP/SVIP/Black Card without canonical expiry uses durable first-connect +2y active-through and MUST NOT slide per request. Points MUST remain pending/null while recovery is checking/in_progress and temporary 0 MUST NOT be finalized. Owner QA uses /internal/admin/my-mmd/recovery and server-side evidence instead of repeated customer E2E. Never ask a customer to reopen MY MMD merely for QA when Owner diagnostic/log/KV evidence is sufficient. Re-contact customer only for a real customer-visible blocker. This rule overrides older missing-metadata pending logic.",
+  },
+  {
     id: "kenji_20_007_drop_690_guard",
     title: "Kenji AI 2.0 — Public Membership 690 Safety Guard",
     category: "admin_policy",

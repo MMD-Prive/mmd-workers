@@ -36,6 +36,14 @@ const COMMANDS = Object.freeze([
     summary: "เปิดหลักฐานการชำระเพื่อดูสถานะจาก payments-worker; AI Ops ไม่ mark paid เอง",
   },
   {
+    intent: "my_mmd_recovery",
+    label: "ตรวจ MY MMD Recovery",
+    pattern: /(my\s*mmd|historical\s*reconstruction|history\s*recovery|recovery\s*(state|kv)|reconciled|review_required|mmdacc|guest\s*(bug|status)|active[-\s]*through|ประวัติเดิม|สถานะ\s*my\s*mmd)/i,
+    href: "/internal/admin/my-mmd/recovery",
+    authority: "mmd.owner_my_mmd_recovery_diagnostic.v1",
+    summary: "ตรวจ tier, active-through, recovery KV, points และ mmdacc จาก Owner diagnostic โดยไม่รบกวนลูกค้า",
+  },
+  {
     intent: "membership_access",
     label: "เช็ก Membership Access",
     pattern: /(membership|member|สมาชิก|ต่ออายุ|renew|สิทธิ์|access|entitlement|telegram|drive)/i,
@@ -300,6 +308,7 @@ function waitingDoneToday() {
 
 function guardForIntent(intent) {
   if (intent === "payments") return "paid_state_remains_payments_worker";
+  if (intent === "my_mmd_recovery") return "my_mmd_trust_rule_server_side_read_only";
   if (intent === "membership_access") return "entitlement_remains_resolver_authority";
   if (intent === "models") return "model_eligibility_remains_backend_authority";
   return "preview_only_no_mutation";
@@ -307,6 +316,7 @@ function guardForIntent(intent) {
 
 function authorityForHref(href) {
   if (href.startsWith("/internal/admin/payments")) return "payments-worker";
+  if (href.startsWith("/internal/admin/my-mmd/recovery")) return "mmd.owner_my_mmd_recovery_diagnostic.v1";
   if (href.startsWith("/internal/admin/membership-access")) return "my_mmd_entitlement_resolver_v1";
   if (href.startsWith("/internal/ceo/models") || href.startsWith("/internal/admin/studio")) return "canonical_model_record";
   if (href.startsWith("/internal/admin/kenji")) return "kenji_runtime";

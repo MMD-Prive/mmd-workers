@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readMemberHistoryRecoveryStatus, shouldAutoRunHistoryRecovery } from "./src/member-history-recovery.js";
+
 import {
   ensureMemberHistoryRecoveryOnAccess,
   isMemberHistoryOnAccessPath,
@@ -105,4 +107,36 @@ test("missing member session cookie never schedules recovery", async () => {
   assert.equal(result, false);
   assert.equal(calls, 0);
   assert.equal(kv.puts.length, 0);
+});
+
+
+test("history recovery status reader preserves reconciled as authoritative terminal state", async () => {
+  const env = {
+    LIFF_IDENTITY_KV: {
+      async get(_key, format) {
+        assert.equal(format, "json");
+        return {
+          state: "reconciled",
+          current_points_total: 1250,
+          pending_review_count: 0,
+          reason: "note_first_recovery_complete",
+          updated_at: "2026-09-19T12:00:00.000Z",
+        };
+      },
+    },
+  };
+  const status = await readMemberHistoryRecoveryStatus(env, `U${"a".repeat(32)}`);
+  assert.equal(status.state, "reconciled");
+  assert.equal(status.current_points_total, 1250);
+  assert.equal(status.pending_review_count, 0);
+  assert.equal(status.reason, "note_first_recovery_complete");
+});
+
+
+test("reconciled and review_required stay terminal for automatic access triggers", () => {
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "reconciled" }, "member_app_access"), false);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "review_required" }, "login"), false);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "checking" }, "member_app_access"), true);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "blocked" }, "member_app_access"), true);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "reconciled" }, "manual_refresh"), true);
 });

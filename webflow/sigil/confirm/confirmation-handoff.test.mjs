@@ -9,6 +9,7 @@ test("confirmation handoff uses canonical signed pages and LINE Mini App dashboa
   assert.match(source, /MODEL_CONFIRM_PATH = "\/sigil\/confirm\/job-model"/);
   assert.match(source, /MEMBER_LIFF_URL = "https:\/\/miniapp\.line\.me\/2010862595-yT4DCEMc\/\?view=jobs"/);
   assert.match(source, /MODEL_LIFF_URL = "https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq"/);
+  assert.match(source, /new URL\(\`\$\{MODEL_LIFF_URL\}\\/\`\)/);
   assert.match(source, /ดู Upcoming Job ใน My MMD/);
   assert.match(source, /ไปที่ MMD MODEL ใน LINE/);
 });

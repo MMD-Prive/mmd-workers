@@ -20,6 +20,7 @@ import {
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
 export const SHOP_EXPIRE_INTENT_PATH = "/v1/internal/shop/expire-intent";
+export const SHOP_REFUND_CONFIRM_PATH = "/v1/internal/shop/refund-confirm";
 const SHOP_STAGE = "shop";
 
 const TABLES = Object.freeze({
@@ -61,6 +62,102 @@ const PAYMENT_FIELDS = Object.freeze({
 
 export function isShopIntentRequest(path, method) {
   return normalizePath(path) === SHOP_INTENT_PATH && ["POST", "OPTIONS"].includes(String(method || "POST").toUpperCase());
+}
+
+export async function handleShopRefundConfirm(request, env) {
+  if (normalizePath(new URL(request.url).pathname) !== SHOP_REFUND_CONFIRM_PATH) return null;
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+
+  const expected = text(env.INTERNAL_TOKEN, 5000);
+  const supplied = text(
+    request.headers.get("x-internal-token")
+    || request.headers.get("authorization")
+    || "",
+    5000,
+  ).replace(/^Bearer\s+/i, "");
+  if (!expected || supplied !== expected) return json({ ok: false, error: "internal_auth_required" }, 401, request, env);
+
+  const body = await request.json().catch(() => null);
+  const orderId = text(body?.order_id || body?.session_id, 180);
+  const refundReference = text(body?.refund_reference, 220);
+  const refundMethod = text(body?.refund_method, 120);
+  const refundAmount = positive(body?.refund_amount_thb ?? body?.amount_thb ?? body?.amount);
+  if (!orderId) return json({ ok: false, error: "order_id_required" }, 400, request, env);
+  if (!refundReference) return json({ ok: false, error: "refund_reference_required" }, 400, request, env);
+  if (!refundMethod) return json({ ok: false, error: "refund_method_required" }, 400, request, env);
+  if (refundAmount == null) return json({ ok: false, error: "refund_amount_required" }, 400, request, env);
+
+  try {
+    const order = await findOrderByOrderId(env, orderId);
+    if (!order?.id) throw httpError(404, "shop_order_not_found");
+
+    const orderFields = order.fields || {};
+    const orderPaymentStatus = code(orderFields[ORDER_FIELDS.paymentStatus]);
+    const orderTotal = positive(orderFields[ORDER_FIELDS.total]);
+    if (orderTotal == null) throw httpError(409, "shop_order_total_missing");
+    if (Math.abs(orderTotal - refundAmount) > 0.009) throw httpError(409, "full_refund_amount_must_match_order_total");
+
+    const payment = await findPaymentByOrderId(env, orderId);
+    if (!payment?.id) throw httpError(404, "shop_payment_not_found");
+    const paymentFields = payment.fields || {};
+    const paymentStatus = code(paymentFields[PAYMENT_FIELDS.status]);
+
+    if (orderPaymentStatus === "refunded" || paymentStatus === "refunded") {
+      return json({
+        ok: true,
+        authority: "payments-worker",
+        schema: "mmd_shop_refund_confirmation_v1",
+        order_id: orderId,
+        payment_status: "refunded",
+        refund_reference: refundReference,
+        refund_method: refundMethod,
+        refund_amount_thb: refundAmount,
+        idempotent: true,
+      }, 200, request, env);
+    }
+    if (orderPaymentStatus !== "paid" || !["paid", "full_payment", "verified", "completed"].includes(paymentStatus)) {
+      throw httpError(409, "shop_payment_not_refundable");
+    }
+
+    const now = new Date().toISOString();
+    const paymentNotes = appendNote(
+      paymentFields[PAYMENT_FIELDS.notes],
+      `shop_refund_confirmed_at=${now}; order_id=${orderId}; refund_reference=${refundReference}; refund_method=${refundMethod}; refund_amount_thb=${refundAmount}; authority=payments-worker`,
+    );
+    await patchRecord(env, table(env, "payments"), payment.id, {
+      [PAYMENT_FIELDS.status]: "Refunded",
+      [PAYMENT_FIELDS.verification]: "verified",
+      [PAYMENT_FIELDS.intentStatus]: "Refunded",
+      [PAYMENT_FIELDS.notes]: paymentNotes,
+    });
+
+    const orderNotes = appendNote(
+      orderFields[ORDER_FIELDS.notes],
+      `refund_confirmed_at=${now}; refund_reference=${refundReference}; refund_method=${refundMethod}; refund_amount_thb=${refundAmount}; verified_by=payments-worker`,
+    );
+    await patchRecord(env, table(env, "orders"), order.id, {
+      [ORDER_FIELDS.paymentStatus]: "refunded",
+      [ORDER_FIELDS.notes]: orderNotes,
+    });
+
+    return json({
+      ok: true,
+      authority: "payments-worker",
+      schema: "mmd_shop_refund_confirmation_v1",
+      order_id: orderId,
+      payment_status: "refunded",
+      refund_reference: refundReference,
+      refund_method: refundMethod,
+      refund_amount_thb: refundAmount,
+      idempotent: false,
+    }, 200, request, env);
+  } catch (error) {
+    return json({
+      ok: false,
+      authority: "payments-worker",
+      error: text(error?.message || error || "shop_refund_confirmation_failed", 300),
+    }, Number(error?.status || 500), request, env);
+  }
 }
 
 export async function handleShopIntentExpiry(request, env) {

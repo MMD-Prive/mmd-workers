@@ -54,6 +54,15 @@ test("admin login preserves the canonical secure form contract", async () => {
   assert.doesNotMatch(html, /access_code|\/v1\/admin\/auth\/login|\/kenji\/access-code\/validate/);
 });
 
+test("admin login preserves canonical CEO Models return path", () => {
+  assert.equal(normalizeNext("/internal/ceo/models"), "/internal/ceo/models");
+  assert.equal(normalizeNext("/internal/ceo/models?view=readiness"), "/internal/ceo/models?view=readiness");
+  assert.equal(
+    normalizeNext("/internal/ceo/models?token=secret"),
+    "/internal/admin/control-room",
+  );
+});
+
 test("admin login next route fails closed", () => {
   assert.equal(normalizeNext("https://evil.example/internal/admin/control-room"), "/internal/admin/control-room");
   assert.equal(normalizeNext("//evil.example/internal/admin/control-room"), "/internal/admin/control-room");

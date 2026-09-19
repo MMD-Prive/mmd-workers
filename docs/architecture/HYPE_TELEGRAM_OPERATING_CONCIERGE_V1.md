@@ -522,10 +522,206 @@ Privacy:
 - Standard/Premium/Preview/group surfaces remain route-only and must never read or display Points balances or Coupon codes;
 - HENNA remains route-only for MMD Points/Coupon and must bridge to HYPE/MY MMD.
 
+## MMD Shop bounded Order status + Service Recovery correlation
+
+HYPE private chat may now read a bounded MMD Shop projection through:
+
+`verified Telegram → Canonical Client → canonical LINE identity → admin-worker → member-pages-worker`
+
+The customer-safe projection is limited to owned Order ID/date/status, Payment status, item summary, total, and safe Fulfillment state/courier/tracking. Raw Shop notes, address, phone, internal record ids, and admin-only data are not exposed.
+
+Recovery correlation rules:
+
+1. explicit Order ID → correlate only when that exact Order is owned by the resolved customer;
+2. no Order ID → auto-correlate only when there is exactly one eligible owned recent Order;
+3. multiple candidates → mark correlation ambiguous and never guess;
+4. ambiguous candidates are projected as at most five customer-safe owned Order options;
+5. Telegram picker callback data contains only `Case Ref + option index`, never Order ID or private Order data;
+6. on selection, admin-worker resolves the stored option, re-checks exact canonical ownership, and binds the Order to the existing Case Reference;
+7. customer selection must preserve the current handoff lifecycle state; it cannot reset `sent / acknowledged / reviewing` to `prepared`;
+8. correlated Order / Payment / Fulfillment context shares the same closed-loop HYPE Case Reference;
+9. HYPE may read and preserve bounded context only; it cannot mark paid, shipped, delivered, refunded, or change Fulfillment.
+
+Group/Preview/member-group surfaces remain private-data-safe and do not invoke the Shop projection.
+
+## Canonical Recovery Outcome taxonomy
+
+Recovery cases across MMD Shop, Booking/Job and MMS use:
+
+`mmd-recovery-outcome-taxonomy-v1-20260919`
+
+The lifecycle remains:
+
+`prepared → sent → acknowledged → reviewing → resolved → customer_notified`
+
+Outcome is a separate bounded field. It describes the recovery workflow result, not underlying business truth.
+
+Domains:
+
+- `mmd_shop`
+- `booking`
+- `mms`
+- `unclassified` while the recovery lane cannot yet be grounded
+
+Examples of terminal outcomes:
+
+- Shop: `replacement_arranged`, `reshipment_arranged`, `refund_route_opened`
+- Booking: `rebooking_arranged`, `schedule_adjustment_arranged`, `service_credit_route_opened`
+- MMS: `therapist_replacement_arranged`, `rebooking_arranged`, `service_adjustment_arranged`, `service_credit_route_opened`
+- shared: `information_confirmed`, `no_adjustment_required`, `closed_duplicate`, `closed_withdrawn`
+
+Rules:
+
+- Recovery may not become `resolved` or `customer_notified` without an explicit terminal outcome valid for that domain.
+- Only an allowed operator/owner write may set the outcome.
+- HYPE/HENNA may display the written outcome, but may not infer one from customer chat.
+- `refund_route_opened` means the refund process was routed/opened; it never means refund completed.
+- The taxonomy intentionally contains no `refund_completed`, `payment_confirmed`, or `delivered` outcome.
+- Outcome writes do not mutate Order, Payment, Fulfillment, Job, Calendar, Therapist assignment, MMS booking, or entitlement truth.
+
+## Canonical Booking + MMS Recovery correlation
+
+Recovery now uses the same Case Reference model across Shop, Booking/Job and MMS.
+
+Booking rules:
+
+- an explicit or previously materialized `booking_ref` may be correlated only after the exact Booking Request is read;
+- `resolver_payload_json.canonical_client_id` must match the currently resolved Canonical Client before Session or Job data is followed;
+- after ownership passes, correlation follows the existing exact chain `Booking Request → job_receipt.session_id → Session → Job`;
+- duplicate/conflicting exact records fail closed and are never guessed;
+- only bounded fields such as Booking Ref, Session ID, Job ID and canonical states enter Recovery context.
+
+MMS rules:
+
+- an explicit or previously materialized `mmspre_...` reference is checked through the canonical member-safe MMS pre-booking read;
+- the read is scoped by the currently resolved Canonical Client `member_ref`;
+- the requested Pre-booking must be present in that owned projection before it can be bound;
+- only customer-safe status, service date/time, zone and skills may enter Recovery context; Therapist IDs, LINE hashes and internal records remain excluded.
+
+For both domains:
+
+- the existing active Case Reference is reused only when domain and canonical reference are compatible;
+- `/case` refreshes the canonical authority before presenting Booking or MMS state;
+- failed ownership/authority checks leave correlation unbound without exposing foreign references;
+- correlation never mutates Job, Payment, Calendar, Therapist assignment, MMS booking or entitlement truth.
+
+## Owner / Operator Recovery Control
+
+Recovery workflow controls are available through the credential-bound admin surface:
+
+- page: `/internal/admin/recovery`;
+- API: `/v1/admin/recovery/cases`;
+- actor: credential-bound Owner or Admin only;
+- writes require same-origin browser requests;
+- browser code never receives or manufactures a service-binding credential.
+
+The UI exposes recent canonical Recovery Cases and exact Case Ref lookup. It projects only bounded Recovery metadata plus the already-bounded Shop / Booking / MMS correlation fields.
+
+Control order is deliberately strict:
+
+`prepared/sent → acknowledged → reviewing → resolved → customer_notified`
+
+A Case may only become `resolved` from `reviewing`, with an explicit terminal outcome valid for its domain. Non-terminal outcomes may be written without moving lifecycle state. The UI and Telegram commands share the same canonical transition engine, so taxonomy and monotonic-state checks cannot drift between surfaces.
+
+Recovery Control never mutates Payment, Order/Fulfillment, Job/Calendar, Therapist assignment, MMS booking or entitlement truth. Operators must refresh the corresponding canonical authority before any protected business action.
+
+## Recovery Queue Intelligence
+
+Recovery Control now adds bounded operational queue intelligence without creating or inferring canonical business truth.
+
+Policy version:
+
+`mmd-recovery-queue-sla-v1-20260919`
+
+Queue filters:
+
+- `domain`: `all / mmd_shop / booking / mms / unclassified`;
+- `state`: `open / all / prepared / sent / acknowledged / reviewing / resolved / customer_notified`;
+- filters operate only over canonical Recovery Case records and never search business authorities directly.
+
+Age metadata:
+
+- Case age is derived only from the timestamp encoded in the existing Case Ref;
+- age buckets are `under_1h / 1_4h / 4_12h / 12_24h / 24h_plus`;
+- case age does not imply service failure, payment failure, job lateness or customer impact.
+
+Operational attention windows are measured only from the last Recovery workflow `updated_at`:
+
+- `prepared / sent`: 60 minutes to acknowledgement attention;
+- `acknowledged`: 120 minutes to review attention;
+- `reviewing`: 360 minutes to review/update attention;
+- `resolved`: 120 minutes to customer-notification attention;
+- `customer_notified`: closed, no active attention window.
+
+Indicator semantics:
+
+- `fresh`: below 75% of the current workflow attention window;
+- `watch`: at least 75% but below the attention target;
+- `overdue`: at or beyond the attention target;
+- `unknown`: workflow timestamp is unavailable;
+- `closed`: customer notification has been recorded.
+
+These indicators are internal operational metadata only. They do not mutate or infer Payment, Order/Fulfillment, Job/Calendar, Therapist assignment, MMS booking, entitlement, refund, delivery or service-completion truth.
+
+Owner Summary consumes the same server-side queue projection and exposes:
+
+- open / attention / overdue / watch counts;
+- bounded domain/state counts;
+- up to five `what_to_watch_now` items;
+- the workflow-only next attention such as acknowledge, start review, review/update outcome, or notify customer;
+- a direct link back to `/internal/admin/recovery`.
+
+HYPE only presents this information to verified Owner Mode. It does not auto-transition a case, auto-resolve an outcome or execute protected business actions from an SLA indicator.
+
+## Recovery Queue Assignment
+
+Coordination assignment uses:
+
+`mmd-recovery-assignment-v1-20260919`
+
+Assignment is stored inside the existing Recovery Case payload and is explicitly not an authority grant, lock, business owner record or canonical service assignment.
+
+Supported states:
+
+- `unassigned` — no operator has claimed coordination ownership;
+- `assigned` — one credential-bound Owner/Admin actor is recorded as the current coordinator.
+
+Supported browser actions:
+
+- `claim` — claim an unassigned open Case for yourself;
+- `release` — release your own assignment;
+- `takeover` — Owner-only coordination takeover.
+
+Rules:
+
+- an operator cannot claim over another current assignment;
+- an operator cannot release another actor's assignment;
+- Owner may takeover or release another assignment;
+- closed `customer_notified` Cases cannot be newly claimed/taken over;
+- claim/release/takeover never changes Recovery lifecycle state or outcome;
+- assignment writes do not update Recovery `state_updated_at`, so they cannot reset or extend the operational SLA clock;
+- assignment never gates or grants Resolve authority. Existing protected-action authority checks remain independent.
+
+Queue filters add:
+
+- `assignment=all / assigned / unassigned`.
+
+Queue metrics add:
+
+- assigned open Cases;
+- unassigned open Cases;
+- attention Cases that are still unassigned.
+
+Within the same SLA tier, unassigned Cases are surfaced before assigned Cases so the Owner can see coordination gaps without treating assignment as business truth.
+
+Owner Summary exposes only bounded assignment labels such as `Per`, `Owner` or `Operator`. Internal assignment keys are not projected to Telegram or browser output.
+
+HYPE Owner Summary may recommend opening the unassigned Recovery queue. HYPE itself remains read-only and cannot claim, release or takeover a Case.
+
 ## Next implementation lanes
 
-1. operator acknowledgement state for failed or review-required executions;
-2. optional bounded MMD Shop order-status projection after the same identity/privacy pattern.
+1. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates;
+2. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model.
 
 All future lanes must preserve the same authority and privacy locks.
 

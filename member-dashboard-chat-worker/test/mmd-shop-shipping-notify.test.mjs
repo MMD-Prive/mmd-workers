@@ -72,3 +72,57 @@ test("shop shipping notification route rejects non service-bound callers", async
   assert.equal(response.status, 401);
   assert.equal(payload.error, "internal_auth_required");
 });
+
+
+test("synthetic Shop shipping smoke renders the production message contract without LINE push", async () => {
+  const response = await worker.fetch(new Request(
+    "https://member-dashboard-chat-worker.local/__internal/line/shop-shipping-notify/smoke",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "hype-shop-production-smoke",
+      },
+      body: JSON.stringify({
+        line_user_id: LINE_ID,
+        order_id: "MMD-SMOKE-PAY",
+        customer_name: "Synthetic Customer",
+        courier: "MMD Smoke Courier",
+        tracking_number: "SMOKE-TRACK-260919",
+      }),
+    },
+  ), {}, { waitUntil() {} });
+
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.status, "dry_run");
+  assert.equal(payload.line_push_sent, false);
+  assert.equal(payload.checks.contains_order, true);
+  assert.equal(payload.checks.contains_tracking, true);
+  assert.equal(payload.checks.contains_my_mmd_orders, true);
+});
+
+test("synthetic Shop shipping smoke stays service-binding only", async () => {
+  const response = await worker.fetch(new Request(
+    "https://member-dashboard-chat-worker.local/__internal/line/shop-shipping-notify/smoke",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "admin-worker",
+      },
+      body: JSON.stringify({
+        line_user_id: LINE_ID,
+        order_id: "MMD-SMOKE-PAY",
+        tracking_number: "SMOKE-TRACK-260919",
+      }),
+    },
+  ), {}, { waitUntil() {} });
+
+  const payload = await response.json();
+  assert.equal(response.status, 401);
+  assert.equal(payload.error, "internal_auth_required");
+});

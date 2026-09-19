@@ -253,10 +253,17 @@ async function discoverApprovedDrivePrivateModel(env, url, { requestedWork, sele
       return privateWorkAllowed(level, requestedWork);
     });
 
-  // Never auto-materialize an ambiguous Drive search. The owner can refine the query.
-  if (driveOnly.length !== 1) return { ok: true, item: null };
+  // Never auto-materialize a genuinely ambiguous Drive search. A unique exact
+  // model-root match may safely win over nested review/media folders that repeat
+  // the model code in their folder name.
+  const qNorm = normalizeSearch(url.searchParams.get("q") || url.searchParams.get("search"));
+  const exactDriveOnly = qNorm
+    ? driveOnly.filter((item) => normalizeSearch(item?.folder_name) === qNorm)
+    : [];
+  const selectable = exactDriveOnly.length === 1 ? exactDriveOnly : driveOnly;
+  if (selectable.length !== 1) return { ok: true, item: null };
 
-  const chosen = driveOnly[0];
+  const chosen = selectable[0];
   const materialized = await materializeApprovedDriveModel(
     env,
     chosen.drive_folder_id,

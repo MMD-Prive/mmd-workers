@@ -1,4 +1,5 @@
 import { buildAdminDashboard } from "./dashboard-worker.js";
+import { RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -14,8 +15,13 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
   }
 
   try {
-    const dashboard = await buildAdminDashboard(env);
-    return json(buildHypeOwnerSummaryProjection(dashboard), 200);
+    const now = new Date();
+    const [dashboard, recoveryQueue] = await Promise.all([
+      buildAdminDashboard(env),
+      readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now)
+        .catch(() => ({ ok: false, error: "recovery_queue_unavailable" })),
+    ]);
+    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue), 200);
   } catch {
     return json({
       ok: false,
@@ -26,7 +32,7 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
   }
 }
 
-export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()) {
+export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null) {
   const counts = dashboard?.counts || {};
   const paymentItems = safeItems(dashboard?.money, 4, projectPayment);
   const historicalItems = safeItems(dashboard?.historical_recovery, 3, projectHistorical);
@@ -37,6 +43,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   const reconfirm = dashboard?.reconfirm && typeof dashboard.reconfirm === "object" ? dashboard.reconfirm : {};
   const today = bangkokDate(now, 0);
   const tomorrow = bangkokDate(now, 1);
+  const recovery = projectRecoveryQueueSummary(recoveryQueue);
 
   const todayJobs = jobItems.filter((item) => item.job_date === today).slice(0, 4);
   const tomorrowJobs = jobItems.filter((item) => item.job_date === tomorrow).slice(0, 4);
@@ -47,6 +54,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
     jobs_need_confirm: nn(counts.jobs_need_confirm),
     reconfirm_pending: nn(counts.reconfirm_pending ?? reconfirm.pending),
     reconfirm_overdue: nn(counts.reconfirm_overdue ?? reconfirm.overdue),
+    recovery_attention: nn(recovery.attention_count),
+    recovery_overdue: nn(recovery.overdue_count),
+    recovery_unassigned: nn(recovery.unassigned_count),
+    recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
   };
 
   const affectedClients = dedupe([
@@ -58,9 +69,11 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
 
   const nextActions = [];
   if (reviewCounts.payment_review > 0) nextActions.push(action(1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
-  if (reviewCounts.historical_recovery > 0) nextActions.push(action(2, "ตรวจ Historical Recovery", "/internal/admin/payments/historical-backfill", "historical-slip-backfill-runtime"));
-  if (reviewCounts.jobs_need_confirm > 0 || reviewCounts.reconfirm_overdue > 0) nextActions.push(action(3, "เช็กงานและการคอนเฟิร์ม", "/internal/admin/jobs", "session-reconfirm-runtime"));
-  if (reviewCounts.membership_review > 0) nextActions.push(action(4, "เช็ก Membership", "/internal/admin/member-intelligence", "canonical-members"));
+  if (reviewCounts.recovery_attention_unassigned > 0) nextActions.push(action(2, "รับ Recovery ที่ยังไม่มีคนดู", "/internal/admin/recovery?assignment=unassigned", "recovery_queue_assignment_metadata"));
+  else if (reviewCounts.recovery_attention > 0) nextActions.push(action(2, "ดู Recovery ที่ต้องจัดการ", "/internal/admin/recovery", "recovery_queue_operational_metadata"));
+  if (reviewCounts.historical_recovery > 0) nextActions.push(action(3, "ตรวจ Historical Recovery", "/internal/admin/payments/historical-backfill", "historical-slip-backfill-runtime"));
+  if (reviewCounts.jobs_need_confirm > 0 || reviewCounts.reconfirm_overdue > 0) nextActions.push(action(4, "เช็กงานและการคอนเฟิร์ม", "/internal/admin/jobs", "session-reconfirm-runtime"));
+  if (reviewCounts.membership_review > 0) nextActions.push(action(5, "เช็ก Membership", "/internal/admin/member-intelligence", "canonical-members"));
   if (!nextActions.length) nextActions.push(action(1, "เปิด Owner Control Room", "/internal/admin/control-room", "read_only_observation"));
 
   return {
@@ -76,16 +89,26 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       urgent: nn(counts.urgent),
       ...reviewCounts,
       jobs: nn(counts.jobs),
+      recovery_open: nn(recovery.open_count),
+      recovery_attention: nn(recovery.attention_count),
+      recovery_overdue: nn(recovery.overdue_count),
+      recovery_watch: nn(recovery.watch_count),
+      recovery_assigned: nn(recovery.assigned_count),
+      recovery_unassigned: nn(recovery.unassigned_count),
+      recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
     },
     review_required: {
       count: reviewCounts.payment_review
         + reviewCounts.historical_recovery
         + reviewCounts.membership_review
-        + reviewCounts.jobs_need_confirm,
+        + reviewCounts.jobs_need_confirm
+        + reviewCounts.recovery_attention,
       payment: paymentItems,
       historical: historicalItems,
       membership: memberItems,
     },
+    recovery_queue: recovery,
+    what_to_watch_now: recovery.attention.slice(0, 5),
     calendar: {
       today,
       tomorrow,
@@ -124,10 +147,82 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       entitlement: "my_mmd_entitlement_resolver_v1",
       job_calendar: "canonical_sessions_and_reconfirm",
       client_detail: "canonical_client_360_on_demand",
+      recovery_queue: "recovery_workflow_metadata_only",
+      recovery_sla_policy: RECOVERY_QUEUE_SLA_VERSION,
+      recovery_assignment_policy: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      recovery_assignment_grants_authority: false,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
   };
+}
+
+function projectRecoveryQueueSummary(result = null) {
+  if (!result || result.ok !== true || !result.queue) {
+    return {
+      available: false,
+      policy_version: RECOVERY_QUEUE_SLA_VERSION,
+      open_count: 0,
+      attention_count: 0,
+      overdue_count: 0,
+      watch_count: 0,
+      assigned_count: 0,
+      unassigned_count: 0,
+      attention_unassigned_count: 0,
+      by_domain: {},
+      by_state: {},
+      attention: [],
+      operational_only: true,
+      business_truth_inferred: false,
+    };
+  }
+  const queue = result.queue || {};
+  return {
+    available: true,
+    policy_version: clean(queue.policy_version, 120) || RECOVERY_QUEUE_SLA_VERSION,
+    open_count: nn(queue.open_count),
+    attention_count: nn(queue.attention_count),
+    overdue_count: nn(queue.overdue_count),
+    watch_count: nn(queue.watch_count),
+    assigned_count: nn(queue.assigned_count),
+    unassigned_count: nn(queue.unassigned_count),
+    attention_unassigned_count: nn(queue.attention_unassigned_count),
+    by_domain: safeCountMap(queue.by_domain),
+    by_state: safeCountMap(queue.by_state),
+    attention: (Array.isArray(queue.attention) ? queue.attention : []).slice(0, 5).map((item) => ({
+      case_ref: clean(item.case_ref, 180),
+      client_name: clean(item.client_name, 120) || "Canonical Client",
+      domain: clean(item.domain, 40),
+      state: clean(item.state, 40),
+      sla_status: clean(item.sla_status, 40),
+      since_update_minutes: nullableNonNegative(item.since_update_minutes),
+      case_age_minutes: nullableNonNegative(item.case_age_minutes),
+      next_attention: clean(item.next_attention, 80),
+      assignment_status: clean(item.assignment_status, 40) || "unassigned",
+      assigned_to: clean(item.assigned_to, 120) || null,
+      assigned_lane: clean(item.assigned_lane, 40) || null,
+      href: safeInternalHref(item.href) || "/internal/admin/recovery",
+    })),
+    operational_only: true,
+    business_truth_inferred: false,
+  };
+}
+
+function safeCountMap(value) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const out = {};
+  for (const [key, count] of Object.entries(input).slice(0, 12)) {
+    const safeKey = clean(key, 60);
+    if (!safeKey) continue;
+    out[safeKey] = nn(count);
+  }
+  return out;
+}
+
+function nullableNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : null;
 }
 
 function projectPayment(item = {}) {

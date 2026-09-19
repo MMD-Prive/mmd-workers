@@ -3,6 +3,16 @@ import {
   resolveLiveCanonicalClient,
 } from "./kenji-lv5-live-context.js";
 import { executeKenjiLv5SupervisedAction } from "./kenji-lv5-supervised-action.js";
+import { readBoundedShopOrdersForTelegram } from "./hype-shop-orders.js";
+import {
+  RECOVERY_OUTCOME_TAXONOMY_VERSION,
+  inferRecoveryDomain,
+  isTerminalRecoveryOutcome,
+  normalizeRecoveryDomain,
+  recoveryOutcomeAllowed,
+  recoveryOutcomeCodesForDomain,
+  recoveryOutcomeLabel,
+} from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
@@ -138,7 +148,69 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
   const lineUserId = lineId(identity?.client?.line_user_id);
   const projection = buildCanonicalHandoffProjection(context);
-  const handoffId = await buildHandoffId(canonicalClientId, target);
+
+  let existingRecoveryRecord = null;
+  let priorRecoveryPayload = {};
+  let priorRecoveryCase = null;
+  let priorRecoveryTracking = {};
+  if (lineUserId && sourceCommand === "recovery") {
+    const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+    const existing = await findMatrix(env, hash);
+    if (existing.ok && existing.record) {
+      existingRecoveryRecord = existing.record;
+      priorRecoveryPayload = parseObject(existing.record.fields?.[F.PAYLOAD]);
+      priorRecoveryTracking = handoffTrackingFromRecord(existing.record);
+      priorRecoveryCase = safeRecoveryCase(priorRecoveryPayload.recovery_case, priorRecoveryTracking);
+    }
+  }
+
+  const inferredRecoveryDomain = sourceCommand === "recovery"
+    ? inferRecoveryDomain(customerMessage, null)
+    : "unclassified";
+  const recoveryDomainHint = inferredRecoveryDomain === "unclassified"
+    && priorRecoveryCase
+    && !["resolved", "customer_notified"].includes(token(priorRecoveryTracking.state))
+      ? priorRecoveryCase.domain
+      : inferredRecoveryDomain;
+  let recoveryCorrelation = sourceCommand === "recovery"
+    ? await buildRecoveryCorrelation(env, {
+        domain: recoveryDomainHint,
+        telegramUserId,
+        canonicalClientId,
+        customerMessage,
+        priorPayload: priorRecoveryPayload,
+      })
+    : null;
+  if (!recoveryCorrelation && priorRecoveryCase?.domain === recoveryDomainHint) {
+    recoveryCorrelation = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
+  }
+  const recoveryDomain = sourceCommand === "recovery"
+    ? inferRecoveryDomain(customerMessage, recoveryCorrelation)
+    : "unclassified";
+
+  let handoffId = "";
+  if (existingRecoveryRecord && sourceCommand === "recovery") {
+    const priorRecovery = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
+    const tracking = priorRecoveryTracking;
+    const domainCompatible = priorRecoveryCase
+      && !["resolved", "customer_notified"].includes(token(tracking.state))
+      && (
+        priorRecoveryCase.domain === recoveryDomain
+        || priorRecoveryCase.domain === "unclassified"
+        || recoveryDomain === "unclassified"
+      );
+    const correlationCompatible = recoveryCorrelationCompatible(recoveryDomain, priorRecovery, recoveryCorrelation);
+    if (domainCompatible && correlationCompatible && tracking.id) handoffId = tracking.id;
+  }
+  if (!handoffId) handoffId = await buildHandoffId(canonicalClientId, target);
+  if (recoveryCorrelation) recoveryCorrelation = { ...recoveryCorrelation, case_ref: handoffId };
+  const recoveryCaseSeed = sourceCommand === "recovery"
+    ? {
+        case_ref: handoffId,
+        domain: recoveryDomain,
+        outcome_code: "intake_received",
+      }
+    : null;
 
   let matrix = { ok: false, error: "line_identity_not_linked" };
   if (lineUserId) {
@@ -149,6 +221,8 @@ export async function handleHypeHandoffRpc(request, env = {}) {
       command: sourceCommand,
       customerMessage,
       projection,
+      recoveryCorrelation,
+      recoveryCase: recoveryCaseSeed,
       handoff: {
         id: handoffId,
         target,
@@ -169,12 +243,15 @@ export async function handleHypeHandoffRpc(request, env = {}) {
     matrix_record_id: matrix.record_id || null,
     continuity_version: matrix.version || null,
     context: projection,
+    recovery_correlation: recoveryCorrelation,
+    recovery_case: matrix.recovery_case || recoveryCaseSeed,
     operator_summary: buildOperatorSummary({
       target,
       displayName: context?.client_360?.display_name,
       customerMessage,
       projection,
       handoffId,
+      recoveryCorrelation,
     }),
     resume: {
       customer_does_not_need_to_repeat: true,
@@ -203,7 +280,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!body) return json({ ok: false, error: "invalid_json" }, 400);
 
   const operation = token(body.operation || "read");
-  if (!["read", "transition"].includes(operation)) {
+  if (!["read", "transition", "select_recovery_order"].includes(operation)) {
     return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
   }
 
@@ -212,7 +289,8 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
 
     const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
-    if (identity?.status !== "resolved" || !recordId(identity?.client?.canonical_client_id)) {
+    const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+    if (identity?.status !== "resolved" || !canonicalClientId) {
       return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
     }
     const lineUserId = lineId(identity.client.line_user_id);
@@ -228,6 +306,29 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     const tracking = handoffTrackingFromRecord(matrix.record);
     if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
 
+    const payload = parseObject(matrix.record.fields?.[F.PAYLOAD]);
+    let recoveryCorrelation = safeRecoveryCorrelation(parseObject(payload.recovery_correlation));
+    if (recoveryCorrelation?.correlated === true) {
+      if (recoveryCorrelation.domain === "mmd_shop" && recoveryCorrelation.order_id) {
+        recoveryCorrelation = await refreshShopRecoveryCorrelation(env, telegramUserId, recoveryCorrelation);
+      } else if (recoveryCorrelation.domain === "booking" && recoveryCorrelation.booking_ref) {
+        recoveryCorrelation = await correlateOwnedBookingRecoveryRef(
+          env,
+          canonicalClientId,
+          recoveryCorrelation.booking_ref,
+          recoveryCorrelation.method || "case_refresh",
+        );
+      } else if (recoveryCorrelation.domain === "mms" && recoveryCorrelation.prebooking_id) {
+        recoveryCorrelation = await correlateOwnedMmsRecoveryRef(
+          env,
+          canonicalClientId,
+          recoveryCorrelation.prebooking_id,
+          recoveryCorrelation.method || "case_refresh",
+        );
+      }
+    }
+    const recoveryCase = safeRecoveryCase(payload.recovery_case, tracking);
+
     return json({
       ok: true,
       state: tracking.state || "prepared",
@@ -237,6 +338,8 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       updated_at: tracking.updated_at || null,
       actor_role: tracking.actor_role || null,
       terminal: ["resolved", "customer_notified"].includes(tracking.state),
+      recovery_correlation: recoveryCorrelation,
+      recovery_case: recoveryCase,
       guardrails: handoffStatusGuardrails(),
     });
   }
@@ -245,8 +348,32 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
     return json({ ok: false, error: "handoff_id_invalid" }, 400);
   }
+
+  if (operation === "select_recovery_order") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+    const selectionIndex = Number(body.selection_index);
+    if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
+      return json({ ok: false, error: "recovery_order_selection_invalid" }, 400);
+    }
+    return selectShopRecoveryOrderForCase(env, {
+      telegramUserId,
+      handoffId,
+      selectionIndex,
+    });
+  }
+
+  return transitionRecoveryCase(env, body);
+}
+
+export async function transitionRecoveryCase(env = {}, body = {}) {
+  const handoffId = clean(body.handoff_id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
+    return json({ ok: false, error: "handoff_id_invalid" }, 400);
+  }
+
   const nextState = token(body.state);
-  if (!["sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
+  if (!["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
     return json({ ok: false, error: "handoff_state_invalid" }, 400);
   }
 
@@ -266,7 +393,63 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     }, 409);
   }
 
-  if (currentState === nextState) {
+  const prior = matrix.record.fields || {};
+  const priorPayload = parseObject(prior[F.PAYLOAD]);
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, current);
+  const actorRole = token(body.actor_role || "operator");
+  const requestedOutcome = token(body.recovery_outcome_code);
+  const requestedDomain = body.recovery_domain
+    ? normalizeRecoveryDomain(body.recovery_domain)
+    : priorRecoveryCase?.domain || "unclassified";
+
+  if (priorRecoveryCase && priorRecoveryCase.domain !== "unclassified"
+      && requestedDomain !== priorRecoveryCase.domain) {
+    return json({
+      ok: false,
+      state: "transition_rejected",
+      error: "recovery_domain_change_forbidden",
+      current_domain: priorRecoveryCase.domain,
+      requested_domain: requestedDomain,
+    }, 409);
+  }
+
+  if (requestedOutcome && !["owner", "operator"].includes(actorRole)) {
+    return json({ ok: false, error: "recovery_outcome_authority_required" }, 403);
+  }
+
+  const effectiveDomain = priorRecoveryCase?.domain === "unclassified"
+    ? requestedDomain
+    : priorRecoveryCase?.domain || requestedDomain;
+  const effectiveOutcome = requestedOutcome || priorRecoveryCase?.outcome_code || "";
+
+  if (requestedOutcome && !recoveryOutcomeAllowed(effectiveDomain, requestedOutcome, nextState)) {
+    return json({
+      ok: false,
+      state: "transition_rejected",
+      error: "recovery_outcome_invalid_for_state",
+      recovery_domain: effectiveDomain,
+      requested_outcome: requestedOutcome,
+      requested_state: nextState,
+      allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, {
+        terminal: ["resolved", "customer_notified"].includes(nextState),
+      }),
+    }, 409);
+  }
+
+  if (priorRecoveryCase && ["resolved", "customer_notified"].includes(nextState)) {
+    if (!effectiveOutcome || !isTerminalRecoveryOutcome(effectiveDomain, effectiveOutcome)) {
+      return json({
+        ok: false,
+        state: "transition_rejected",
+        error: "recovery_terminal_outcome_required",
+        recovery_domain: effectiveDomain,
+        allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, { terminal: true }),
+      }, 409);
+    }
+  }
+
+  const noRecoveryChange = !requestedOutcome && !body.recovery_domain;
+  if (currentState === nextState && noRecoveryChange) {
     return json({
       ok: true,
       state: nextState,
@@ -274,14 +457,12 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       handoff_id: handoffId,
       target: current.target || normalizeTargetFromHandoffId(handoffId),
       updated_at: current.updated_at || null,
+      recovery_case: priorRecoveryCase,
       guardrails: handoffStatusGuardrails(),
     });
   }
 
-  const prior = matrix.record.fields || {};
-  const priorPayload = parseObject(prior[F.PAYLOAD]);
   const stamp = new Date().toISOString();
-  const actorRole = token(body.actor_role || "operator");
   const target = current.target || normalizeTargetFromHandoffId(handoffId);
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const tracking = {
@@ -291,18 +472,32 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     updated_at: stamp,
     actor_role: actorRole || "operator",
   };
+  const recoveryCase = priorRecoveryCase
+    ? evolveRecoveryCase(priorRecoveryCase, {
+        caseRef: handoffId,
+        domain: effectiveDomain,
+        state: nextState,
+        outcomeCode: effectiveOutcome,
+        actorRole: actorRole || "operator",
+        stamp,
+      })
+    : null;
 
   const fields = {
-    [F.LAST_KENJI_ACTION]: `handoff_${nextState}`,
-    [F.LAST_OUTCOME]: handoffOutcome(nextState),
-    [F.STAGE]: `handoff_${nextState}`,
+    [F.LAST_KENJI_ACTION]: "handoff_" + nextState,
+    [F.LAST_OUTCOME]: recoveryCase
+      ? handoffOutcome(nextState) + "; recovery=" + recoveryCase.domain + "/" + recoveryCase.outcome_code
+      : handoffOutcome(nextState),
+    [F.STAGE]: "handoff_" + nextState,
     [F.AWAITING]: nextState === "resolved"
       ? "customer_notification"
       : nextState === "customer_notified"
         ? "none"
-        : "mmd_review",
+        : recoveryCase?.outcome_code === "awaiting_customer"
+          ? "customer"
+          : "mmd_review",
     [F.HANDOFF_REQUIRED]: !["resolved", "customer_notified"].includes(nextState),
-    [F.LAST_EVENT]: `hype_handoff_${nextState}:${handoffId}`,
+    [F.LAST_EVENT]: "hype_handoff_" + nextState + ":" + handoffId,
     [F.LAST_INTERACTION]: stamp,
     [F.UPDATED_AT]: stamp,
     [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
@@ -313,6 +508,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       handoff_id: handoffId,
       handoff_target: target,
       handoff_tracking: tracking,
+      recovery_case: recoveryCase,
       live_truth_refresh_required: true,
       business_truth_mutated: false,
     }),
@@ -331,9 +527,11 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     handoff_id: handoffId,
     target,
     updated_at: stamp,
+    recovery_case: recoveryCase,
     guardrails: handoffStatusGuardrails(),
   });
 }
+
 
 export async function handleHypeTransactionIntakeRpc(request, env = {}) {
   const gate = validateRequest(request, HYPE_TRANSACTION_INTAKE_PATH);
@@ -1580,28 +1778,62 @@ async function upsertContinuityMatrix(env, input = {}) {
   const priorTracking = parseObject(priorPayload.handoff_tracking);
   const stamp = new Date().toISOString();
   const handoff = input.handoff;
+  const reusedHandoff = Boolean(
+    handoff
+    && clean(priorTracking.id, 180)
+    && clean(priorTracking.id, 180) === clean(handoff.id, 180)
+    && ["prepared", "sent", "acknowledged", "reviewing"].includes(token(priorTracking.state)),
+  );
   const tracking = handoff
-    ? { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
+    ? reusedHandoff
+      ? {
+          ...priorTracking,
+          id: handoff.id,
+          target: handoff.target,
+          state: token(priorTracking.state),
+          updated_at: clean(priorTracking.updated_at, 80) || stamp,
+          actor_role: token(priorTracking.actor_role) || "hype",
+        }
+      : { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
     : priorTracking;
+  const recoveryCase = mergeRecoveryCase(
+    safeRecoveryCase(priorPayload.recovery_case, tracking),
+    input.recoveryCase,
+    tracking,
+    stamp,
+  );
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const existingLoops = parseList(prior[F.OPEN_LOOPS]);
   const existingDontAsk = parseList(prior[F.DONT_ASK]);
   const loops = unique([
     ...existingLoops,
     ...openLoopsFromProjection(input.projection),
+    ...(input.recoveryCorrelation ? ["service_recovery"] : []),
+    ...(input.recoveryCorrelation?.correlated === true
+      ? [`${normalizeRecoveryDomain(input.recoveryCorrelation.domain)}_recovery`]
+      : []),
     ...(handoff ? ["human_handoff"] : []),
   ]);
+  const correlatedReferenceKey = input.recoveryCorrelation?.correlated === true
+    ? recoveryReferenceMemoryKey(input.recoveryCorrelation)
+    : "";
   const dontAsk = unique([
     ...existingDontAsk,
     "telegram_identity",
     ...(input.customerMessage ? ["latest_customer_request"] : []),
+    ...(correlatedReferenceKey ? [correlatedReferenceKey] : []),
   ]);
-  const stage = handoff ? "handoff" : deriveStage(input.projection);
+  const stage = handoff
+    ? reusedHandoff && token(tracking.state) !== "prepared"
+      ? `handoff_${token(tracking.state)}`
+      : "handoff"
+    : deriveStage(input.projection);
   const targetLabel = handoff?.target === "kenji" ? "Kenji" : handoff?.target === "per" ? "Per" : "none";
   const summary = buildContinuitySummary({
     command: input.command,
     projection: input.projection,
     handoff,
+    recoveryCorrelation: input.recoveryCorrelation,
   });
 
   const fields = {
@@ -1617,9 +1849,13 @@ async function upsertContinuityMatrix(env, input = {}) {
     [F.LAST_INTENT]: clean(input.command, 120) || "general",
     [F.LAST_REQUEST]: input.customerMessage || `HYPE command: ${clean(input.command, 80)}`,
     [F.LAST_CUSTOMER_ACTION]: handoff ? `requested_handoff:${handoff.target}` : `hype_command:${clean(input.command, 80)}`,
-    [F.LAST_KENJI_ACTION]: handoff ? "handoff_context_prepared" : "hype_context_recorded",
+    [F.LAST_KENJI_ACTION]: handoff
+      ? reusedHandoff ? "handoff_context_refreshed" : "handoff_context_prepared"
+      : "hype_context_recorded",
     [F.LAST_OUTCOME]: handoff
-      ? "handoff_pending; protected current truth must be refreshed before action"
+      ? reusedHandoff
+        ? `handoff_${token(tracking.state)}; context refreshed without changing authority state`
+        : "handoff_pending; protected current truth must be refreshed before action"
       : "HYPE read-only status delivered; no business truth changed",
     [F.STAGE]: stage,
     [F.AWAITING]: handoff ? (handoff.target === "per" ? "mmd_review" : "kenji") : awaitingFromProjection(input.projection),
@@ -1651,6 +1887,8 @@ async function upsertContinuityMatrix(env, input = {}) {
       handoff_tracking: Object.keys(tracking).length ? tracking : null,
       display_name: clean(input.displayName, 120),
       projection: input.projection,
+      recovery_correlation: input.recoveryCorrelation || priorPayload.recovery_correlation || null,
+      recovery_case: recoveryCase,
       live_truth_refresh_required: true,
       business_truth_mutated: false,
     }),
@@ -1661,7 +1899,12 @@ async function upsertContinuityMatrix(env, input = {}) {
     : await airtableWrite(env, "POST", { records: [{ fields }], typecast: true });
   if (!write.ok) return { ok: false, error: write.error || "matrix_write_failed" };
   const row = Array.isArray(write.payload?.records) ? write.payload.records[0] : null;
-  return { ok: true, record_id: clean(row?.id || existing.record?.id, 120), version };
+  return {
+    ok: true,
+    record_id: clean(row?.id || existing.record?.id, 120),
+    version,
+    recovery_case: recoveryCase,
+  };
 }
 
 function normalizeProjection(value) {
@@ -1747,7 +1990,8 @@ function openLoopsFromProjection(p = {}) {
 
 function truthDomainsFor(command, p = {}) {
   const domains = ["identity"];
-  if (["status", "next", "handoff", "kenji", "human"].includes(command)) domains.push("membership", "job", "payment");
+  if (["status", "next", "handoff", "kenji", "human", "recovery"].includes(command)) domains.push("membership", "job", "payment");
+  if (command === "recovery") domains.push("shop_order", "shop_payment", "shop_fulfillment");
   if (command === "booking") domains.push("job", "calendar");
   if (command === "payment") domains.push("payment");
   if (p.membership.level || p.membership.lifecycle) domains.push("membership");
@@ -1757,6 +2001,7 @@ function truthDomainsFor(command, p = {}) {
 }
 
 function topicForCommand(command) {
+  if (command === "recovery") return "service_recovery";
   if (command === "payment") return "payment";
   if (command === "booking") return "booking";
   if (command === "next") return "next_action";
@@ -1764,7 +2009,7 @@ function topicForCommand(command) {
   return "account_status";
 }
 
-function buildContinuitySummary({ command, projection, handoff }) {
+function buildContinuitySummary({ command, projection, handoff, recoveryCorrelation }) {
   const chunks = [
     `HYPE ${clean(command, 80) || "status"} context.`,
     projection.membership.level ? `Membership ${projection.membership.level}/${projection.membership.lifecycle || "unknown"}.` : "",
@@ -1777,12 +2022,13 @@ function buildContinuitySummary({ command, projection, handoff }) {
           ? `Payment state ${projection.payment.status}.`
           : "",
     projection.next_action.label ? `Next action: ${projection.next_action.label}.` : "",
+    recoveryContinuityLine(recoveryCorrelation),
     handoff ? `Customer requested supervised handoff to ${handoff.target}; do not ask them to restart the story. Refresh live truth before acting.` : "",
   ].filter(Boolean);
   return chunks.join(" ").slice(0, 1200);
 }
 
-function buildOperatorSummary({ target, displayName, customerMessage, projection, handoffId }) {
+function buildOperatorSummary({ target, displayName, customerMessage, projection, handoffId, recoveryCorrelation }) {
   const lines = [
     `HYPE → ${target === "kenji" ? "Kenji" : "Per"} handoff`,
     `Ref: ${handoffId}`,
@@ -1792,9 +2038,716 @@ function buildOperatorSummary({ target, displayName, customerMessage, projection
     projection.job.active_count ? `Job: ${projection.job.active_count} active/pending · ${projection.job.model_name || "-"} · ${projection.job.next_status || "unknown"}` : "Job: no active job in current snapshot",
     `Payment: ${projection.payment.paid ? "paid" : projection.payment.review_required ? "review_required" : projection.payment.status || "unknown"}`,
     projection.next_action.label ? `Next: ${projection.next_action.label}` : "",
+    recoveryOperatorLine(recoveryCorrelation, handoffId),
     "Context is continuity-only. Refresh canonical truth before any protected action.",
   ].filter(Boolean);
   return lines.join("\n").slice(0, 1800);
+}
+
+function safeRecoveryCorrelation(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const domain = normalizeRecoveryDomain(value.domain);
+  if (!["mmd_shop", "booking", "mms"].includes(domain)) return null;
+
+  const common = {
+    domain,
+    state: token(value.state) || "unknown",
+    correlated: value.correlated === true,
+    case_ref: clean(value.case_ref, 180) || null,
+    method: token(value.method) || "none",
+    source_authority: clean(value.source_authority, 160) || null,
+    live_refresh_status: token(value.live_refresh_status) || null,
+    refreshed_at: clean(value.refreshed_at, 80) || null,
+  };
+
+  if (domain === "booking") {
+    return {
+      ...common,
+      booking_ref: clean(value.booking_ref, 180) || null,
+      session_id: clean(value.session_id, 220) || null,
+      job_id: clean(value.job_id, 180) || null,
+      session_state: token(value.session_state) || null,
+      job_state: token(value.job_state) || null,
+      exact_correlation: value.exact_correlation === true,
+      final_confirmation_observed: value.final_confirmation_observed === true,
+      correlation_scope: token(value.correlation_scope) || "booking_ref_exact",
+    };
+  }
+
+  if (domain === "mms") {
+    return {
+      ...common,
+      prebooking_id: clean(value.prebooking_id, 180) || null,
+      prebooking_status: token(value.prebooking_status || value.status) || "unknown",
+      service_date: clean(value.service_date, 20) || null,
+      service_time: clean(value.service_time, 8) || null,
+      zone: clean(value.zone, 100) || null,
+      skills: Array.isArray(value.skills)
+        ? value.skills.map((item) => clean(item, 80)).filter(Boolean).slice(0, 6)
+        : [],
+      exact_correlation: value.exact_correlation === true,
+      correlation_scope: token(value.correlation_scope) || "member_ref_to_prebooking_exact",
+    };
+  }
+
+  const options = Array.isArray(value.options)
+    ? value.options.map(safeRecoveryOrderOption).filter(Boolean).slice(0, 5)
+    : [];
+  return {
+    ...common,
+    order_id: clean(value.order_id, 180) || null,
+    order_status: token(value.order_status) || null,
+    payment_status: token(value.payment_status) || null,
+    fulfillment_state: token(value.fulfillment_state) || null,
+    delivery_method: token(value.delivery_method) || null,
+    courier: clean(value.courier, 180) || null,
+    tracking_number: clean(value.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(value.total_thb),
+    candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
+    options,
+    selection_locked: value.selection_locked === true,
+    selected_by: token(value.selected_by) || null,
+    selected_at: clean(value.selected_at, 80) || null,
+  };
+}
+
+function recoveryReferenceMemoryKey(correlation = {}) {
+  const domain = normalizeRecoveryDomain(correlation.domain);
+  if (domain === "mmd_shop" && clean(correlation.order_id, 180)) return "shop_order_reference";
+  if (domain === "booking" && clean(correlation.booking_ref, 180)) return "booking_request_reference";
+  if (domain === "mms" && clean(correlation.prebooking_id, 180)) return "mms_prebooking_reference";
+  return "";
+}
+
+function recoveryCorrelationCompatible(domain, prior, next) {
+  if (!prior || !next || prior.correlated !== true || next.correlated !== true) return true;
+  const normalized = normalizeRecoveryDomain(domain);
+  if (normalized === "mmd_shop") {
+    return !prior.order_id || !next.order_id || clean(prior.order_id, 180) === clean(next.order_id, 180);
+  }
+  if (normalized === "booking") {
+    return !prior.booking_ref || !next.booking_ref || clean(prior.booking_ref, 180) === clean(next.booking_ref, 180);
+  }
+  if (normalized === "mms") {
+    return !prior.prebooking_id || !next.prebooking_id || clean(prior.prebooking_id, 180) === clean(next.prebooking_id, 180);
+  }
+  return true;
+}
+
+function recoveryContinuityLine(correlation = null) {
+  if (!correlation) return "";
+  if (correlation.domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return `Shop recovery linked to Order ${clean(correlation.order_id, 180)}; payment=${clean(correlation.payment_status, 80) || "unknown"}; fulfillment=${clean(correlation.fulfillment_state, 80) || "unknown"}; Case Ref ${clean(correlation.case_ref, 180)}.`;
+    }
+    return correlation.state === "ambiguous"
+      ? "Shop recovery detected but multiple owned Order candidates exist; do not guess the Order reference."
+      : "";
+  }
+  if (correlation.domain === "booking" && correlation.correlated === true) {
+    return `Booking recovery linked to owned Booking Ref ${clean(correlation.booking_ref, 180)}; session=${clean(correlation.session_id, 180) || "pending"}; job=${clean(correlation.job_id, 180) || "pending"}; job_state=${clean(correlation.job_state, 80) || "unknown"}.`;
+  }
+  if (correlation.domain === "mms" && correlation.correlated === true) {
+    return `MMS recovery linked to owned Pre-booking ${clean(correlation.prebooking_id, 180)}; status=${clean(correlation.prebooking_status, 80) || "unknown"}; service=${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""}.`;
+  }
+  return "";
+}
+
+function recoveryOperatorLine(correlation = null, handoffId = "") {
+  if (!correlation) return "";
+  if (correlation.domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return `Shop Recovery: Order ${clean(correlation.order_id, 180)} · Payment ${clean(correlation.payment_status, 80) || "unknown"} · Fulfillment ${clean(correlation.fulfillment_state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+    }
+    return correlation.state === "ambiguous"
+      ? `Shop Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Order ID`
+      : "";
+  }
+  if (correlation.domain === "booking" && correlation.correlated === true) {
+    return `Booking Recovery: ${clean(correlation.booking_ref, 180)} · Session ${clean(correlation.session_id, 180) || "pending"} · Job ${clean(correlation.job_id, 180) || "pending"} · State ${clean(correlation.job_state, 80) || clean(correlation.state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+  }
+  if (correlation.domain === "mms" && correlation.correlated === true) {
+    return `MMS Recovery: ${clean(correlation.prebooking_id, 180)} · Status ${clean(correlation.prebooking_status, 80) || "unknown"} · ${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+  }
+  return "";
+}
+
+function safeRecoveryOrderOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const orderId = clean(value.order_id, 180);
+  if (!orderId) return null;
+  return {
+    order_id: orderId,
+    order_date: clean(value.order_date, 40) || null,
+    order_status: token(value.order_status) || "unknown",
+    payment_status: token(value.payment_status) || "unknown",
+    fulfillment_state: token(value.fulfillment_state) || "unknown",
+    total_thb: nullableNonNegative(value.total_thb),
+    item_summary: clean(value.item_summary, 240) || "MMD Shop Order",
+  };
+}
+
+function recoveryOrderOptionFromOrder(order = {}) {
+  const orderId = clean(order.order_id, 180);
+  if (!orderId) return null;
+  const names = (Array.isArray(order.items) ? order.items : [])
+    .map((item) => clean(item?.item_name, 100))
+    .filter(Boolean)
+    .slice(0, 2);
+  const extra = Math.max(0, (Array.isArray(order.items) ? order.items.length : 0) - names.length);
+  return safeRecoveryOrderOption({
+    order_id: orderId,
+    order_date: clean(order.order_date, 40),
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    total_thb: nullableNonNegative(order.total_thb),
+    item_summary: names.length
+      ? `${names.join(", ")}${extra ? ` +${extra}` : ""}`
+      : "MMD Shop Order",
+  });
+}
+
+function safeRecoveryCase(value = {}, tracking = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const caseRef = clean(value.case_ref || tracking.id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)) return null;
+  const domain = normalizeRecoveryDomain(value.domain);
+  const state = token(tracking.state || value.state) || "prepared";
+  const outcomeCode = token(value.outcome_code) || "intake_received";
+  const label = recoveryOutcomeLabel(domain, outcomeCode);
+  return {
+    schema: "mmd.recovery_case.v1",
+    taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+    case_ref: caseRef,
+    domain,
+    state,
+    outcome_code: label ? outcomeCode : "intake_received",
+    outcome_label: label || recoveryOutcomeLabel(domain, "intake_received"),
+    outcome_terminal: isTerminalRecoveryOutcome(domain, label ? outcomeCode : "intake_received"),
+    actor_role: token(value.actor_role || tracking.actor_role) || "hype",
+    updated_at: clean(value.updated_at || tracking.updated_at, 80) || null,
+    business_truth_mutated: false,
+  };
+}
+
+function mergeRecoveryCase(prior, seed, tracking, stamp) {
+  if (!seed && !prior) return null;
+  const caseRef = clean(seed?.case_ref || prior?.case_ref || tracking?.id, 180);
+  if (!caseRef) return null;
+  const priorSame = prior && clean(prior.case_ref, 180) === caseRef;
+  const seedDomain = normalizeRecoveryDomain(seed?.domain);
+  const domain = priorSame && prior.domain !== "unclassified"
+    ? prior.domain
+    : seedDomain;
+  const outcomeCode = priorSame
+    ? prior.outcome_code || "intake_received"
+    : token(seed?.outcome_code) || "intake_received";
+  return safeRecoveryCase({
+    case_ref: caseRef,
+    domain,
+    state: token(tracking?.state) || "prepared",
+    outcome_code: outcomeCode,
+    actor_role: priorSame ? prior.actor_role : "hype",
+    updated_at: priorSame ? prior.updated_at : stamp,
+  }, tracking);
+}
+
+function evolveRecoveryCase(prior, { caseRef, domain, state, outcomeCode, actorRole, stamp }) {
+  return safeRecoveryCase({
+    ...prior,
+    case_ref: caseRef,
+    domain,
+    state,
+    outcome_code: outcomeCode || prior?.outcome_code || "intake_received",
+    actor_role: actorRole,
+    updated_at: stamp,
+  }, {
+    id: caseRef,
+    state,
+    actor_role: actorRole,
+    updated_at: stamp,
+  });
+}
+
+async function selectShopRecoveryOrderForCase(env, { telegramUserId, handoffId, selectionIndex }) {
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+  if (identity?.status !== "resolved" || !canonicalClientId) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const fields = matrix.record.fields || {};
+  const linkedClients = Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT].map((id) => clean(id, 80)) : [];
+  if (!linkedClients.includes(canonicalClientId)) {
+    return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+  }
+
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  if (["resolved", "customer_notified"].includes(token(tracking.state))) {
+    return json({ ok: false, state: "selection_locked", error: "recovery_case_terminal" }, 409);
+  }
+
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (!priorCorrelation || priorCorrelation.domain !== "mmd_shop") {
+    return json({ ok: false, state: "selection_unavailable", error: "shop_recovery_not_active" }, 409);
+  }
+
+  const option = priorCorrelation.options?.[selectionIndex] || null;
+  if (!option?.order_id) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_order_option_stale" }, 409);
+  }
+
+  if (priorCorrelation.correlated === true) {
+    if (clean(priorCorrelation.order_id, 180) === clean(option.order_id, 180)) {
+      return json({
+        ok: true,
+        state: "correlated",
+        replayed: true,
+        handoff_id: handoffId,
+        recovery_correlation: priorCorrelation,
+        recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+        guardrails: handoffStatusGuardrails(),
+      });
+    }
+    return json({ ok: false, state: "selection_locked", error: "recovery_order_already_bound" }, 409);
+  }
+
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, option.order_id);
+  const correlation = read.body?.correlation || {};
+  const order = read.status === 200 && read.body?.ok === true && correlation.exact_owned_match === true
+    ? (Array.isArray(read.body.orders) ? read.body.orders : [])
+        .find((item) => clean(item?.order_id, 180) === clean(option.order_id, 180))
+    : null;
+  if (!order) {
+    return json({ ok: false, state: "selection_unavailable", error: "selected_order_not_owned_or_stale" }, 409);
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = {
+    ...priorCorrelation,
+    state: "correlated",
+    correlated: true,
+    case_ref: handoffId,
+    order_id: clean(order.order_id, 180),
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    candidate_count: Math.max(1, priorCorrelation.candidate_count || 1),
+    method: "customer_selected_owned_order",
+    selection_locked: true,
+    selected_by: "customer",
+    selected_at: stamp,
+    source_authority: clean(read.body.authority, 160) || priorCorrelation.source_authority || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: stamp,
+  };
+
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, tracking);
+  const recoveryCase = evolveRecoveryCase(
+    priorRecoveryCase || safeRecoveryCase({
+      case_ref: handoffId,
+      domain: "mmd_shop",
+      outcome_code: "intake_received",
+    }, tracking),
+    {
+      caseRef: handoffId,
+      domain: "mmd_shop",
+      state: token(tracking.state) || "prepared",
+      outcomeCode: priorRecoveryCase?.outcome_code || "intake_received",
+      actorRole: "customer",
+      stamp,
+    },
+  );
+
+  const version = Math.max(0, Number(fields[F.VERSION]) || 0) + 1;
+  const dontAsk = unique([...parseList(fields[F.DONT_ASK]), "shop_order_reference"]);
+  const loops = unique([...parseList(fields[F.OPEN_LOOPS]), "service_recovery", "shop_recovery", "human_handoff"]);
+  const patch = {
+    [F.LAST_CUSTOMER_ACTION]: `selected_shop_order:${clean(order.order_id, 180)}`,
+    [F.LAST_KENJI_ACTION]: "recovery_order_correlated",
+    [F.LAST_OUTCOME]: `Shop Order selected by customer and bound to existing Case Ref ${handoffId}; handoff state unchanged`,
+    [F.DONT_ASK]: JSON.stringify(dontAsk),
+    [F.OPEN_LOOPS]: JSON.stringify(loops),
+    [F.LAST_EVENT]: `hype_recovery_order_selected:${handoffId}`,
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      recovery_correlation: updatedCorrelation,
+      recovery_case: recoveryCase,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{ id: matrix.record.id, fields: patch }],
+    typecast: true,
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: "correlated",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: safeRecoveryCorrelation(updatedCorrelation),
+    recovery_case: recoveryCase,
+    guardrails: handoffStatusGuardrails(),
+  });
+}
+
+async function refreshShopRecoveryCorrelation(env, telegramUserId, prior = {}) {
+  const orderId = clean(prior.order_id, 180);
+  if (!orderId) return { ...prior, live_refresh_status: "unavailable", refreshed_at: null };
+
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, orderId);
+  const correlation = read.body?.correlation || {};
+  const order = read.status === 200 && read.body?.ok === true && correlation.exact_owned_match === true
+    ? (Array.isArray(read.body.orders) ? read.body.orders : [])
+        .find((item) => clean(item?.order_id, 180) === orderId)
+    : null;
+
+  if (!order) {
+    return {
+      ...prior,
+      live_refresh_status: "unavailable",
+      refreshed_at: null,
+    };
+  }
+
+  return {
+    ...prior,
+    state: "correlated",
+    correlated: true,
+    order_id: orderId,
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    source_authority: clean(read.body.authority, 160) || clean(prior.source_authority, 160) || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: new Date().toISOString(),
+  };
+}
+
+async function buildRecoveryCorrelation(env, input = {}) {
+  const domain = normalizeRecoveryDomain(input.domain);
+  if (domain === "mmd_shop") {
+    return buildShopRecoveryCorrelation(env, input.telegramUserId, input.customerMessage);
+  }
+  if (domain === "booking") {
+    return buildBookingRecoveryCorrelation(env, input);
+  }
+  if (domain === "mms") {
+    return buildMmsRecoveryCorrelation(env, input);
+  }
+  return null;
+}
+
+function exactRecoveryRefFromPayload(priorPayload = {}, domain = "") {
+  const prior = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (domain === "booking" && prior?.domain === "booking" && prior.booking_ref) return prior.booking_ref;
+  if (domain === "mms" && prior?.domain === "mms" && prior.prebooking_id) return prior.prebooking_id;
+
+  const execution = safeExecutionReceipt(parseObject(priorPayload.supervised_execution));
+  if (execution.mode !== domain || execution.status !== "materialized") return "";
+  return clean(execution.canonical_ref, 180);
+}
+
+function extractBookingRecoveryRef(value = "") {
+  const text = clean(value, 500);
+  const direct = /\b(kenji_[a-f0-9]{24})\b/i.exec(text);
+  if (direct?.[1]) return clean(direct[1], 180);
+  const labeled = /(?:booking|request|job)\s*(?:ref|reference|id|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{7,79})/i.exec(text);
+  return labeled?.[1] ? clean(labeled[1], 180) : "";
+}
+
+function extractMmsRecoveryRef(value = "") {
+  const match = /\b(mmspre_[a-f0-9]{24})\b/i.exec(clean(value, 500));
+  return match?.[1] ? clean(match[1].toLowerCase(), 180) : "";
+}
+
+async function buildBookingRecoveryCorrelation(env, input = {}) {
+  const explicitRef = extractBookingRecoveryRef(input.customerMessage);
+  const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "booking");
+  const ref = explicitRef || storedRef;
+  if (!ref) {
+    return {
+      domain: "booking",
+      state: "reference_required",
+      correlated: false,
+      method: "exact_reference_required",
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+  return correlateOwnedBookingRecoveryRef(
+    env,
+    input.canonicalClientId,
+    ref,
+    explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
+  );
+}
+
+async function correlateOwnedBookingRecoveryRef(env, canonicalClientId, bookingRef, method = "owned_booking_ref") {
+  const ref = clean(bookingRef, 180);
+  const owner = recordId(canonicalClientId);
+  const bookingTable = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID, 120) || "tblQa2OK4U69eOCRF";
+  if (!ref || !owner) {
+    return {
+      domain: "booking",
+      state: "reference_invalid",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const booking = await findExactAirtableRecord(env, bookingTable, "booking_ref", ref);
+  if (!booking.ok || !booking.record) {
+    return {
+      domain: "booking",
+      state: booking.conflict ? "booking_ref_conflict" : booking.error || "booking_request_not_found",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const resolver = parseObject(booking.record.fields?.resolver_payload_json);
+  if (recordId(resolver.canonical_client_id) !== owner) {
+    return {
+      domain: "booking",
+      state: "ownership_unverified",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const observed = await observeExactBookingCorrelation(env, {
+    mode: "booking",
+    status: "materialized",
+    canonical_ref: ref,
+  });
+  const stamp = new Date().toISOString();
+  return safeRecoveryCorrelation({
+    domain: "booking",
+    state: token(observed.state) || "booking_request_recorded",
+    correlated: true,
+    booking_ref: ref,
+    session_id: clean(observed.session_id, 220) || null,
+    job_id: clean(observed.job_id, 180) || null,
+    session_state: token(observed.session_state) || null,
+    job_state: token(observed.job_state) || null,
+    exact_correlation: observed.exact_correlation === true,
+    final_confirmation_observed: observed.final_confirmation_observed === true,
+    correlation_scope: clean(observed.correlation_scope, 160) || "booking_ref_exact",
+    method,
+    source_authority: "sigil-booking-worker",
+    live_refresh_status: observed.state === "authority_unavailable" ? "unavailable" : "fresh",
+    refreshed_at: stamp,
+  });
+}
+
+async function buildMmsRecoveryCorrelation(env, input = {}) {
+  const explicitRef = extractMmsRecoveryRef(input.customerMessage);
+  const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "mms");
+  const ref = explicitRef || storedRef;
+  if (!ref) {
+    return {
+      domain: "mms",
+      state: "reference_required",
+      correlated: false,
+      method: "exact_reference_required",
+      source_authority: "mms-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+  return correlateOwnedMmsRecoveryRef(
+    env,
+    input.canonicalClientId,
+    ref,
+    explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
+  );
+}
+
+async function correlateOwnedMmsRecoveryRef(env, canonicalClientId, prebookingId, method = "owned_mms_prebooking") {
+  const owner = recordId(canonicalClientId);
+  const ref = clean(prebookingId, 180).toLowerCase();
+  if (!owner || !/^mmspre_[a-f0-9]{24}$/.test(ref) || !env.MMS_WORKER?.fetch) {
+    return {
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      method,
+      source_authority: "mms-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  try {
+    const url = new URL("https://mms.internal/internal/mms/member/prebookings");
+    url.searchParams.set("member_ref", owner);
+    const response = await env.MMS_WORKER.fetch(new Request(url.toString(), { method: "GET" }));
+    const data = await response.json().catch(() => null);
+    const requests = response.ok && data?.ok === true && Array.isArray(data?.data?.requests)
+      ? data.data.requests
+      : [];
+    const owned = requests.find((item) => clean(item?.prebooking_id, 180).toLowerCase() === ref);
+    if (!owned) {
+      return {
+        domain: "mms",
+        state: response.ok ? "ownership_unverified" : "authority_unavailable",
+        correlated: false,
+        method,
+        source_authority: "mms-worker/member-prebookings",
+        live_refresh_status: "unavailable",
+      };
+    }
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: token(owned.status) || "reviewing",
+      correlated: true,
+      prebooking_id: ref,
+      prebooking_status: token(owned.status) || "reviewing",
+      service_date: clean(owned.service_date, 20),
+      service_time: clean(owned.service_time, 8),
+      zone: clean(owned.zone, 100),
+      skills: Array.isArray(owned.skills) ? owned.skills : [],
+      exact_correlation: true,
+      correlation_scope: "member_ref_to_prebooking_exact",
+      method,
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "fresh",
+      refreshed_at: new Date().toISOString(),
+    });
+  } catch {
+    return {
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      method,
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "unavailable",
+    };
+  }
+}
+
+async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage) {
+  const message = clean(customerMessage, 500);
+  if (!isShopRecoveryMessage(message)) return null;
+
+  const requestedOrderId = extractShopOrderId(message);
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, requestedOrderId);
+  if (read.status !== 200 || read.body?.ok !== true) {
+    return {
+      domain: "mmd_shop",
+      state: read.body?.state === "review_required" ? "review_required" : "unavailable",
+      correlated: false,
+      candidate_count: 0,
+      method: "canonical_read_failed",
+    };
+  }
+
+  const correlation = read.body.correlation || {};
+  const candidateOrderId = clean(correlation.candidate_order_id, 180);
+  const candidateIds = new Set(
+    (Array.isArray(correlation.candidate_order_ids) ? correlation.candidate_order_ids : [])
+      .map((item) => clean(item, 180))
+      .filter(Boolean),
+  );
+  const options = (Array.isArray(read.body.orders) ? read.body.orders : [])
+    .filter((order) => candidateIds.has(clean(order?.order_id, 180)))
+    .map(recoveryOrderOptionFromOrder)
+    .filter(Boolean)
+    .slice(0, 5);
+
+  if (correlation.auto_correlation_allowed !== true || !candidateOrderId) {
+    return {
+      domain: "mmd_shop",
+      state: Number(correlation.candidate_count) > 1 ? "ambiguous" : "unmatched",
+      correlated: false,
+      candidate_count: Number(correlation.candidate_count) || 0,
+      method: clean(correlation.method, 120) || "none",
+      options,
+      source_authority: clean(read.body.authority, 160) || "member-pages-worker",
+      live_truth_refresh_required: true,
+    };
+  }
+
+  const order = (Array.isArray(read.body.orders) ? read.body.orders : [])
+    .find((item) => clean(item?.order_id, 180) === candidateOrderId);
+  if (!order) {
+    return {
+      domain: "mmd_shop",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: Number(correlation.candidate_count) || 0,
+      method: "candidate_not_in_projection",
+    };
+  }
+
+  return {
+    domain: "mmd_shop",
+    state: "correlated",
+    correlated: true,
+    method: clean(correlation.method, 120),
+    order_id: candidateOrderId,
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    candidate_count: Number(correlation.candidate_count) || 1,
+    options,
+    source_authority: clean(read.body.authority, 160) || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: new Date().toISOString(),
+    live_truth_refresh_required: true,
+  };
+}
+
+function isShopRecoveryMessage(value) {
+  const text = clean(value, 500).toLowerCase();
+  const shop = /(?:mmd\s*shop|shop|order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ|gg\s*water|ของที่สั่ง|พัสดุ|tracking|จัดส่ง|ส่งของ)/i.test(text);
+  const problem = /(?:ปัญหา|ยังไม่|ไม่ถึง|ไม่ได้รับ|ผิด|หาย|ช้า|มาช้า|สถานะ|refund|คืนเงิน|complaint|ร้องเรียน|ติดตาม|ถึงไหน)/i.test(text);
+  return shop && problem;
+}
+
+function extractShopOrderId(value) {
+  const text = clean(value, 500);
+  const patterns = [
+    /^\/(?:orders?|support|recovery)(?:@\w+)?\s+([A-Za-z0-9][A-Za-z0-9_-]{3,79})\b/i,
+    /(?:order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ)\s*(?:id|ref|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,79})/i,
+    /\b(MMD[-_][A-Za-z0-9_-]{3,76})\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1]) return clean(match[1], 180);
+  }
+  return "";
 }
 
 async function findMatrix(env, hash) {
@@ -1990,6 +2943,12 @@ function escapeFormula(value) {
 function nn(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function nullableNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function nonNegative(value) {

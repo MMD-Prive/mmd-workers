@@ -32,17 +32,29 @@ Awareness never creates authority.
 
 HYPE and HENNA must recognize questions about MMD Shop orders, including GG Water.
 
-Allowed:
+Current capability boundary:
 
-- route the customer to their member-owned order surface;
-- explain that Order and Payment status must come from the canonical order record;
-- preserve cross-system context when handing off.
+- HYPE private chat may read a bounded member-owned Order projection only after verified Telegram → Canonical Client → canonical LINE identity.
+- The bounded projection may show Order ID/date/status, Payment status, safe item summary, total, and safe Fulfillment state/courier/tracking when those values exist in the canonical Shop record.
+- Ownership is filtered server-side. A supplied Order ID that is not owned by the resolved customer must not match.
+- Group/Preview/member-group surfaces remain route-only and must not read or display private Order data.
+- HENNA remains route-only for MMD Shop and bridges to HYPE / MY MMD.
+
+Recovery correlation:
+
+- an explicit owned Order ID may be correlated exactly;
+- without an explicit Order ID, HYPE may auto-correlate only when exactly one eligible owned recent Order is available;
+- multiple eligible Orders are ambiguous and HYPE must ask the customer to identify the Order rather than guessing;
+- once correlated, Order / Payment / Fulfillment are stored only as bounded recovery context under the same Case Reference used by the closed-loop handoff;
+- an open case for the same Order is reused instead of creating a duplicate case;
+- canonical Shop truth must be refreshed before protected operational action.
 
 Not allowed:
 
-- infer that an order shipped or arrived;
+- infer that an order shipped or arrived from chat;
 - infer payment from chat;
-- mark an order paid/delivered/refunded.
+- mark an order paid/shipped/delivered/refunded;
+- modify Fulfillment, tracking, Payment, refund, or Order truth from HYPE/HENNA.
 
 ---
 
@@ -104,7 +116,14 @@ Required behavior:
 
 - preserve customer message + canonical context;
 - hand off to the correct operations lane;
-- do not force the customer to explain known context again.
+- do not force the customer to explain known context again;
+- for MMD Shop recovery, correlate only exact-owned or single-unambiguous owned Order candidates;
+- when multiple owned recent Orders are eligible, keep the existing Case Reference and show only bounded customer-safe options;
+- Order picker callback data carries only Case Reference + option index; the selected Order is resolved server-side and ownership is re-checked before binding;
+- after selection, carry the bounded Order / Payment / Fulfillment snapshot under that same Case Reference without moving the handoff lifecycle backwards;
+- Shop, Booking and MMS recovery use the same Case lifecycle plus `mmd-recovery-outcome-taxonomy-v1-20260919`;
+- Recovery outcome is workflow metadata written by an allowed authority. It never substitutes for Payment / Order / Job / MMS business truth;
+- refresh canonical Shop truth before any protected follow-up.
 
 Not allowed:
 
@@ -129,9 +148,13 @@ However, only states explicitly written by the owning authority may be presented
 
 Current firmware rule:
 
-- awareness exists;
-- HYPE/HENNA must not invent `acknowledged`, `resolved`, or `customer_notified`;
-- until an acknowledgement contract exists, they may say the handoff was prepared/sent only when the existing receipt proves it.
+- HYPE may present only states explicitly written to the closed-loop handoff record;
+- `sent` is written only after the Ops delivery attempt succeeds;
+- `acknowledged`, `reviewing`, `resolved`, and `customer_notified` require explicit owning-authority state writes;
+- HYPE/HENNA must never infer acknowledgement, resolution, or customer notification from chat text;
+- bounded recovery correlation and recovery outcome metadata share the same Case Reference, but never change Payment, Order, Fulfillment, Job, MMS booking, or entitlement truth;
+- a Recovery case cannot enter `resolved` / `customer_notified` without an explicit terminal outcome valid for its domain;
+- HENNA may preserve MMS recovery context and observe the written state/outcome, but it does not invent or write a final outcome from chat.
 
 ---
 

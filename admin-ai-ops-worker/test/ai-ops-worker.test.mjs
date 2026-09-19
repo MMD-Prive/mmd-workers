@@ -101,6 +101,42 @@ test("plain-language command preview is safe and never mutates protected authori
   }
 });
 
+test("MY MMD recovery command routes Owner to the read-only diagnostic", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.pathname === "/v1/admin/auth/me") {
+      return new Response(JSON.stringify({ ok: true, actor: "per" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const request = new Request("https://mmdbkk.com/v1/admin/ai-ops/command/preview", {
+      method: "POST",
+      headers: { cookie: "mmd_admin_gate_v1=test", "content-type": "application/json" },
+      body: JSON.stringify({ command: "เช็ก MY MMD ของเชนว่า recovery reconciled และ mmdacc เป็นอะไร" }),
+    });
+    const response = await worker.fetch(request, {}, {});
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.matched, true);
+    assert.equal(body.intent, "my_mmd_recovery");
+    assert.equal(body.action_card.href, "/internal/admin/my-mmd/recovery");
+    assert.equal(body.action_card.authority, "mmd.owner_my_mmd_recovery_diagnostic.v1");
+    assert.equal(body.action_card.execution_mode, "handoff_only");
+    assert.equal(body.guard, "my_mmd_trust_rule_server_side_read_only");
+    assert.equal(body.per_confirmation_required, false);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("unsupported command does not invent an action", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async (input) => {

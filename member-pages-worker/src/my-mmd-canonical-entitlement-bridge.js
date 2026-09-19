@@ -1,5 +1,6 @@
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import { readClientBackedHistoryResult, resolveCanonicalClientForLine } from "./member-app-client-history.js";
+import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const SESSION_TTL_SECONDS = 15 * 60;
@@ -41,7 +42,10 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   if (!isMyMmdCanonicalEntitlementPath(url)) return null;
   const sessionRef = await readSessionRef(request, env);
   if (!sessionRef) return null;
-  const resolved = await readCanonicalMemberProfile(env, sessionRef.lineUserId);
+  const [resolved, recoveryStatus] = await Promise.all([
+    readCanonicalMemberProfile(env, sessionRef.lineUserId),
+    readMemberHistoryRecoveryStatus(env, sessionRef.lineUserId),
+  ]);
   if (!resolved) return { unavailable: true };
   if (resolved.entitlementSnapshot?.member_blocked === true && resolved.profile) {
     resolved.profile = { ...resolved.profile, membership_status: "blocked",
@@ -52,7 +56,16 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
   const displayName = safeDisplayName(resolved.profile?.display_name);
   const serializedProfile = resolved.memberId ? serializeCustomer360Profile(resolved.profile) : null;
-  const presentation = canonicalPresentationContext(serializedProfile, resolved.profile, projection);
+  const protectedActiveThrough = projection?.lifecycle === "active" && !projection.expiresAt
+    ? await readOrCreateProtectedActiveThroughAnchor(env, sessionRef.lineUserId, projection)
+    : null;
+  const presentation = canonicalPresentationContext(
+    serializedProfile,
+    resolved.profile,
+    projection,
+    protectedActiveThrough,
+    recoveryStatus,
+  );
   const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname)
     || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
   const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname)
@@ -78,7 +91,11 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   return {
     profileRefreshed: true, memberId: resolved.memberId, displayName, lineConnected: true,
     membershipStart: presentation.membershipStart, membershipExpiresAt: presentation.membershipExpiresAt,
-    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory, contactProfile, lineOfcNoteScan,
+    packageLabel: presentation.packageLabel,
+    historyRecoveryState: presentation.historyRecoveryState,
+    historyRecoveryStatus: presentation.historyRecoveryStatus,
+    historyReviewRequired: presentation.historyReviewRequired,
+    clientHistory, contactProfile, lineOfcNoteScan,
     ...(projection ? { capability: projection.capability, label: projection.label, lifecycle: projection.lifecycle,
       publicServiceAccess: projection.publicServiceAccess, source: RESOLVER_SOURCE } : { capability: null, source: PROFILE_SOURCE }),
   };
@@ -402,7 +419,7 @@ function overlayProtectedDisplay(profile, projection, displayName) {
       ...(membershipExpiresAt ? { membership_expires_at: safeCalendarDate(member.membership_expires_at) || membershipExpiresAt } : {}) } } : {}) } } : {}) };
 }
 
-function canonicalPresentationContext(serializedProfile, rawProfile, projection) {
+function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null, recoveryStatus = null) {
   const source = isPlainObject(serializedProfile) ? serializedProfile : {};
   const customer360 = isPlainObject(source.customer_360) ? source.customer_360 : {};
   const member = isPlainObject(customer360.member) ? customer360.member : {};
@@ -411,11 +428,99 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection)
   const raw = isPlainObject(rawProfile) ? rawProfile : {};
   const raw360 = isPlainObject(raw.customer_360) ? raw.customer_360 : {};
   const rawMember = isPlainObject(raw360.member) ? raw360.member : {};
-  const historyPending = [raw.history_recovery_state, rawMember.history_recovery_state].some((value) => String(value || "").trim().toLowerCase() === "pending");
-  return { membershipStart: safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null,
-    membershipExpiresAt: safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null,
+  const membershipStart = safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
+  const canonicalExpiry = safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
+  const membershipExpiresAt = canonicalExpiry || safeCalendarDate(protectedActiveThrough) || null;
+  const recovery = projectHistoryRecoveryState(recoveryStatus, raw, rawMember);
+  return { membershipStart,
+    membershipExpiresAt,
     packageLabel: safeDisplayName(currentPackage.customer_safe_name) || projection?.packageLabel || null,
-    historyRecoveryState: historyPending ? "recovery_pending" : null };
+    historyRecoveryState: recovery.historyRecoveryState,
+    historyRecoveryStatus: recovery.historyRecoveryStatus,
+    historyReviewRequired: recovery.historyReviewRequired };
+}
+
+export function projectHistoryRecoveryState(recoveryStatus, rawProfile = {}, rawMember = {}) {
+  const state = String(recoveryStatus?.state || "").trim().toLowerCase();
+  if (state === "reconciled") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "reconciled", historyReviewRequired: false };
+  }
+  if (state === "review_required") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "review_required", historyReviewRequired: true };
+  }
+  if (state === "blocked") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "blocked", historyReviewRequired: false };
+  }
+  if (state === "checking" || state === "in_progress") {
+    return { historyRecoveryState: "recovery_pending", historyRecoveryStatus: state, historyReviewRequired: false };
+  }
+
+  // Compatibility fallback only when there is no authoritative recovery state.
+  // Missing membership_start/expiry is metadata absence, not proof that recovery is running.
+  const explicitlyPending = [rawProfile?.history_recovery_state, rawMember?.history_recovery_state]
+    .some((value) => String(value || "").trim().toLowerCase() === "pending");
+  return {
+    historyRecoveryState: explicitlyPending ? "recovery_pending" : null,
+    historyRecoveryStatus: null,
+    historyReviewRequired: false,
+  };
+}
+
+export function protectedConnectNowActiveThrough(projection, anchorDate) {
+  if (!isPlainObject(projection)) return null;
+  if (projection.lifecycle !== "active") return null;
+  const capability = String(projection.capability || "").trim().toLowerCase();
+  if (!PROTECTED_PRIORITY.includes(capability)) return null;
+  const start = safeCalendarDate(anchorDate);
+  if (!start) return null;
+  const anchor = new Date(`${start}T00:00:00.000Z`);
+  anchor.setUTCFullYear(anchor.getUTCFullYear() + 2);
+  return anchor.toISOString().slice(0, 10);
+}
+
+export async function readOrCreateProtectedActiveThroughAnchor(env = {}, lineUserId = "", projection = {}, now = new Date()) {
+  const store = env.LIFF_IDENTITY_KV;
+  const secret = String(env.LIFF_SESSION_SECRET || "");
+  const lineId = canonicalLineId(lineUserId);
+  if (!store?.get || !store?.put || secret.length < 32 || !lineId) return null;
+  try {
+    const fingerprint = (await hmacHex(secret, `protected-active-through:${lineId}`)).slice(0, 32);
+    const key = `my-mmd:protected-active-through:v1:${fingerprint}`;
+    const existing = await store.get(key, "json");
+    const existingDate = safeCalendarDate(existing?.active_through);
+    if (existingDate) return existingDate;
+
+    const connectedOn = now instanceof Date && Number.isFinite(now.getTime())
+      ? now.toISOString().slice(0, 10)
+      : safeCalendarDate(now);
+    const activeThrough = protectedConnectNowActiveThrough(projection, connectedOn);
+    if (!activeThrough) return null;
+    const record = {
+      version: 1,
+      policy: "protected_connect_now_plus_2y_v1",
+      connected_on: connectedOn,
+      active_through: activeThrough,
+      capability_at_connect: String(projection.capability || "").trim().toLowerCase(),
+      contains_raw_line_id: false,
+      created_at: new Date().toISOString(),
+    };
+    await store.put(key, JSON.stringify(record));
+    console.info({
+      event: "my_mmd_protected_active_through_anchor_created",
+      component: "member-pages-worker",
+      policy: record.policy,
+      capability: record.capability_at_connect,
+      active_through: activeThrough,
+    });
+    return activeThrough;
+  } catch (error) {
+    console.warn({
+      event: "my_mmd_protected_active_through_anchor_failed",
+      component: "member-pages-worker",
+      failure_class: safeFailureClass(error),
+    });
+    return null;
+  }
 }
 
 function selectProtectedEntitlement(value, capability, lifecycle) {
