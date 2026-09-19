@@ -105,6 +105,35 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.match(s.fld0mFma9J9yfEaKb, /\/confirm\/job-model\?t=/);
 });
 
+test('Create Job preserves negotiated discount into SIGIL Pricing v1', async () => {
+  const body = form();
+  body.payment = {
+    ...body.payment,
+    amount_thb: 25000,
+    original_amount_thb: 30000,
+    pricing_adjustment: 'discount',
+    payment_type: 'deposit',
+  };
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 1);
+  assert.equal(h.issuances[0].amount_thb, 25000);
+  assert.equal(h.issuances[0].original_amount_thb, 30000);
+  assert.equal(h.issuances[0].pricing_adjustment, 'discount');
+
+  const s = h.records.get(SESSIONS)[0].fields;
+  const marker = String(s.fldEcDkF7CH9VixWM || '').match(/\[SIGIL Pricing v1\]\s+(\{[^\n]+\})/);
+  assert.ok(marker, s.fldEcDkF7CH9VixWM);
+  const pricing = JSON.parse(marker[1]);
+  assert.equal(pricing.full_price_thb, 30000);
+  assert.equal(pricing.discount_mode, 'amount');
+  assert.equal(pricing.discount_thb, 5000);
+  assert.equal(pricing.net_price_thb, 25000);
+  assert.equal(pricing.deposit_basis_thb, 25000);
+  assert.equal(pricing.deposit_due_thb, 7500);
+  assert.equal(pricing.balance_thb, 17500);
+});
+
 for (const visibility of ['private', 'public']) test(`pending ${visibility} creates an operational Job without Payment, tokens, notification or reconfirm`, async () => {
   const body = form();
   delete body.client.client_id; delete body.canonical_only; delete body.create_context;

@@ -2896,6 +2896,17 @@ async function createAdminJob(env, body) {
   const payment_type = str(body.payment_type || payment.payment_type || "full");
   const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
   const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
+  const original_amount_raw = Number(
+    body.original_amount_thb ??
+    payment.original_amount_thb ??
+    payment.payment_original_amount_thb ??
+    amount_thb
+  );
+  const original_amount_thb = Number.isFinite(original_amount_raw) && original_amount_raw >= amount_thb
+    ? original_amount_raw
+    : amount_thb;
+  const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
+    .toLowerCase();
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
@@ -2911,6 +2922,8 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    original_amount_thb,
+    pricing_adjustment,
     payment_type,
     payment_method,
     note,
