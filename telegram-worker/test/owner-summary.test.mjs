@@ -101,7 +101,7 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
 
     const body = await response.json();
     assert.equal(body.flow, "hype_owner_summary");
-    assert.equal(body.ok, true);
+    assert.ok(body.ok === true, JSON.stringify(body));
     assert.deepEqual(memberChecks, [{ chat_id: "-1003546439681", user_id: 111111 }]);
     assert.equal(ownerRead, 1);
     assert.equal(sends.length, 1);
