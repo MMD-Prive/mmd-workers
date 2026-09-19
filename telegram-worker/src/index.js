@@ -2,6 +2,7 @@ import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
+import { routeHypeNaturalLanguage } from "./hype-natural-language-router.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
@@ -401,7 +402,29 @@ async function handleTelegramWebhook(update, env) {
 
   const hypeCommand = parseHypeOperatingCommand(text);
   if (hypeCommand) {
-    return handleHypeOperatingCommand({ message, chatId, command: hypeCommand }, env);
+    return handleHypeOperatingCommand({
+      message,
+      chatId,
+      command: hypeCommand,
+      routing: { source: "explicit", confidence: 1, domain: hypeCommand },
+    }, env);
+  }
+
+  const naturalRoute = routeHypeNaturalLanguage(text);
+  if (naturalRoute.ambiguous === true) {
+    return handleHypeIntentClarification({ chatId, route: naturalRoute }, env);
+  }
+  if (naturalRoute.routed === true && naturalRoute.command) {
+    return handleHypeOperatingCommand({
+      message,
+      chatId,
+      command: naturalRoute.command,
+      routing: {
+        source: "natural_language",
+        confidence: naturalRoute.confidence,
+        domain: naturalRoute.domain,
+      },
+    }, env);
   }
 
   if (text === "/start" || text.toLowerCase().startsWith("/start@")) {
@@ -416,6 +439,44 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handleHypeIntentClarification({ chatId, route }, env) {
+  const labels = {
+    payment: "/payment — การชำระ / สลิป / ยอดคงเหลือ",
+    booking: "/booking — งาน / การจอง / คิว",
+    membership: "/membership — สมาชิก / ต่ออายุ / วันหมดอายุ",
+    points: "/points — แต้ม",
+    coupons: "/coupons — คูปอง",
+    careback: "/careback — CARE BACK",
+    next: "/next — ขั้นตอนต่อไป",
+    status: "/status — ภาพรวมสถานะ",
+  };
+  const candidates = (Array.isArray(route?.candidates) ? route.candidates : [])
+    .slice(0, 3)
+    .map((item) => labels[item.command])
+    .filter(Boolean);
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "ผมเห็นว่าข้อความนี้เกี่ยวได้มากกว่าหนึ่งเรื่องครับ เลยไม่อยากเดาแล้วไปอ่านระบบผิดชุด",
+      "",
+      ...(candidates.length ? candidates : ["/status — ภาพรวมสถานะ", "/booking — งาน/การจอง", "/payment — การชำระ"]),
+      "",
+      "เลือกเรื่องที่ต้องการได้เลยครับ แล้วผมจะอ่านจาก authority ของเรื่องนั้นโดยตรง",
+    ].join("\n"),
+    disable_web_page_preview: true,
+  }, env);
+
+  return {
+    handled: true,
+    flow: "hype_intent_clarification",
+    ok: true,
+    code_status: "ambiguous_intent",
+    candidates: (route?.candidates || []).slice(0, 3).map((item) => item.command),
+    telegram,
+  };
 }
 
 async function handleTelegramIdentityBindStart({ message, chatId, startArg }, env) {
@@ -482,7 +543,7 @@ async function handleTelegramIdentityBindStart({ message, chatId, startArg }, en
   };
 }
 
-async function handleHypeOperatingCommand({ message, chatId, command }, env) {
+async function handleHypeOperatingCommand({ message, chatId, command, routing = {} }, env) {
   if (command === "owner_summary") {
     return handleHypeOwnerSummary({ message, chatId }, env);
   }
@@ -518,7 +579,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -584,14 +645,25 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       body: JSON.stringify({
         telegram_user_id: telegramUserId,
         intent: {
-          type: command === "booking" ? "booking" : command === "payment" ? "payment_status" : "general",
+          type: command === "booking"
+            ? "booking"
+            : command === "payment"
+              ? "payment_status"
+              : command === "membership"
+                ? "membership_status"
+                : "general",
           trigger: command === "next"
             ? "telegram_next"
             : command === "booking"
               ? "telegram_booking"
               : command === "payment"
                 ? "telegram_payment"
-                : "telegram_status",
+                : command === "membership"
+                  ? "telegram_membership"
+                  : "telegram_status",
+          raw: clean(message.text || "").slice(0, 500),
+          routing_source: clean(routing.source || "explicit").slice(0, 40),
+          routing_confidence: Number(routing.confidence || 0),
         },
       }),
     }));
@@ -631,14 +703,18 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       ? renderHypeBookingStatus(result)
       : command === "payment"
         ? renderHypePaymentStatus(result)
-        : renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
+        : command === "membership"
+          ? renderHypeMembershipStatus(result)
+          : renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
     parse_mode: "HTML",
     disable_web_page_preview: true,
     reply_markup: command === "booking"
       ? hypeBookingButtons(env, result)
       : command === "payment"
         ? hypePaymentButtons(env, result)
-        : hypeStatusButtons(env, result),
+        : command === "membership"
+          ? hypeMembershipButtons(env, result)
+          : hypeStatusButtons(env, result),
   }, env);
 
   const continuity = await recordHypeContinuity({
@@ -657,7 +733,9 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
         ? "hype_operating_booking"
         : command === "payment"
           ? "hype_operating_payment"
-          : "hype_operating_status",
+          : command === "membership"
+            ? "hype_operating_membership"
+            : "hype_operating_status",
     ok: true,
     readiness: clean(result.readiness || result.state),
     continuity_recorded: continuity.ok === true,
@@ -690,6 +768,7 @@ function parseHypeOperatingCommand(value) {
     ].includes(normalized)
   ) return "owner_summary";
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
+  if (/^\/membership(?:@\w+)?$/i.test(text) || ["สมาชิก", "สถานะสมาชิก", "เช็กสมาชิก", "เช็คสมาชิก"].includes(normalized)) return "membership";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
   if (/^\/booking(?:@\w+)?$/i.test(text) || ["การจอง", "เช็กการจอง", "เช็กงาน", "งานของฉัน"].includes(normalized)) return "booking";
   if (
@@ -1121,6 +1200,45 @@ function renderHypeOperatingStatus(result = {}, { nextOnly = false } = {}) {
   return lines.join("\n");
 }
 
+function renderHypeMembershipStatus(result = {}) {
+  const member = result.membership || {};
+  const next = result.next_action || null;
+  const lines = ["<b>HYPE · MEMBERSHIP STATUS</b>"];
+
+  if (clean(result.display_name)) lines.push(escapeHtml(result.display_name));
+  lines.push("");
+  lines.push(`<b>สถานะ:</b> ${escapeHtml(membershipLabel(member.level))} · ${escapeHtml(lifecycleLabel(member.lifecycle || member.status))}`);
+
+  if (clean(member.expire_at)) {
+    lines.push(`<b>Active through:</b> ${escapeHtml(formatDateOnly(member.expire_at))}`);
+  }
+
+  if (member.blocked === true) {
+    lines.push("<b>Access:</b> ต้องให้ MMD ตรวจสิทธิ์ก่อน · HYPE จะไม่เปิดสิทธิ์แทนระบบ");
+  }
+
+  lines.push("");
+  lines.push(`<b>ขั้นตอนต่อไป:</b> ${escapeHtml(clean(next?.label) || "ยังไม่มี action เรื่องสมาชิกที่ต้องทำตอนนี้")}`);
+
+  if (result.state === "partial") {
+    lines.push("");
+    lines.push("ข้อมูลบางส่วนยังรอระบบต้นทาง HYPE จะแสดงเฉพาะสถานะสมาชิกที่ยืนยันได้ครับ");
+  }
+
+  lines.push("");
+  lines.push("HYPE อ่านจาก Entitlement Resolver เท่านั้น และจะไม่ grant / renew / upgrade สมาชิกเองครับ");
+  return lines.join("\n");
+}
+
+function hypeMembershipButtons(env, result = {}) {
+  const rows = [];
+  const next = result.next_action || {};
+  if (clean(next.href)) rows.push([{ text: clean(next.label) || "ดำเนินการต่อ", url: publicUrl(env, next.href) }]);
+  rows.push([{ text: "Membership", url: publicUrl(env, "/member/membership") }]);
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
+  return { inline_keyboard: rows };
+}
+
 function renderHypePaymentStatus(result = {}) {
   const payment = result.payment || {};
   const job = result.job || {};
@@ -1353,6 +1471,7 @@ function hypeHelpText() {
     "<b>HYPE · Telegram Operating Concierge</b>",
     "",
     "<b>/status</b> — ดูสถานะสมาชิก งาน และการชำระ",
+    "<b>/membership</b> — ดูระดับสมาชิก สถานะ และวันหมดอายุ",
     "<b>/next</b> — ดูว่าตอนนี้ต้องทำอะไรต่อ",
     "<b>/booking</b> — ดู progress งาน/การจองที่ระบบยืนยันได้",
     "<b>/payment</b> — ดูสถานะการชำระ ยอดคงเหลือ และสถานะตรวจสลิป",
@@ -1363,6 +1482,8 @@ function hypeHelpText() {
     "<b>/human</b> — ส่งต่อให้ Per / ทีม พร้อม context เดิม",
     "<b>/help</b> — ดูเมนูนี้",
     "",
+    "พิมพ์เป็นภาษาคนได้ด้วย เช่น “งานวันศุกร์โอเคยัง”, “สมาชิกหมดเมื่อไหร่”, “สลิปถึงยัง” หรือ “คูปองใช้ได้ไหม”",
+    "HYPE จะ route ไป authority ที่ตรงเรื่อง และถ้าข้อความกำกวมจะถามก่อนแทนการเดาครับ",
     "HYPE ช่วยเชื่อม Telegram Identity, ดูสถานะจากระบบ MMD, พาไป MY MMD / Promotion และจัด route ให้ถูกขั้นตอนได้ครับ",
     "ข้อมูลส่วนตัวจะแสดงเฉพาะในแชตส่วนตัว และ HYPE ไม่ถือ final authority แทน MMD/Per",
   ].join("\n");
