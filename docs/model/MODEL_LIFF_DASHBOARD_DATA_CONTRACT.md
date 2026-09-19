@@ -73,6 +73,7 @@ Allowed in LIFF:
 - compact rating badge only when `review_rating_verified=true` and `review_model_visible=true`
 - one short `liff_summary_th` if `model_visible_liff=true`
 - pending review/action notices such as media review pending or rate request pending
+- direct Year 6 Model Wish status: `manual_review` may be shown as yellow `รอยืนยัน`; this is informational and must never imply Dashboard or job access is blocked
 
 Do not show in LIFF by default:
 
