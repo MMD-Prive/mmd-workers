@@ -30,7 +30,12 @@
   }
 
   if (target && target !== path + (location.search || "") + (location.hash || "")) {
-    window.MMDLegacyPaymentRouteBridgeV1 = { from: path, to: target };
+    window.MMDLegacyPaymentRouteBridgeV1 = {
+      from: path,
+      to: target,
+      canonical: true,
+      updated: "2026-09-19",
+    };
     location.replace(target);
   }
 })();
