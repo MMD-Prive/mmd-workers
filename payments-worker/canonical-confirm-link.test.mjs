@@ -96,8 +96,10 @@ test("canonical confirm-link writes only real Sessions/Payments schema fields", 
   assert.equal(payload.schema, "canonical_confirm_link_v1");
   assert.equal(payload.session_write.record_id, "recSessionCanonical");
   assert.equal(payload.payment_write.record_id, "recPaymentCanonical");
+  assert.match(payload.customer_payment_url, /^https:\/\/mmdbkk\.com\/sigil\/pay\?t=/);
   assert.match(payload.customer_confirmation_url, /^https:\/\/mmdbkk\.com\/confirm\/job-confirmation\?t=/);
   assert.match(payload.model_confirmation_url, /^https:\/\/mmdbkk\.com\/confirm\/job-model\?t=/);
+  assert.notEqual(payload.customer_payment_url, payload.customer_confirmation_url);
   assert.equal(kv.size, 2);
 
   const sessionPost = calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblC98mKWbzmPuNzX"));
