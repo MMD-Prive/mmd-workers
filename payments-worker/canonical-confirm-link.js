@@ -175,6 +175,9 @@ export async function handleCanonicalConfirmLink(request, env) {
     const modelPage = absoluteUrl(body.model_confirm_page || "/confirm/job-model", webBase);
     const customerConfirmationUrl = held ? undefined : `${customerPage}?t=${encodeURIComponent(customerToken)}`;
     const modelConfirmationUrl = held ? undefined : `${modelPage}?t=${encodeURIComponent(modelToken)}`;
+    // The customer payment surface is the only pre-approval URL that may be
+    // handed out. Confirmation URLs are stored for post-payment dispatch.
+    const customerPaymentUrl = held ? undefined : `${webBase}/sigil/pay?t=${encodeURIComponent(customerToken)}`;
 
     const sessionFields = compact({
       [field(env.AT_SESSIONS__SESSION_ID, SESSION_FIELDS.sessionId)]: sessionId,
@@ -252,7 +255,7 @@ export async function handleCanonicalConfirmLink(request, env) {
 
     try {
       await telegramSend(env, [
-        "🔗 <b>CONFIRM LINKS CREATED</b>",
+        "💳 <b>PAYMENT INTENT CREATED</b>",
         `Session: <code>${escapeHtml(sessionId)}</code>`,
         `Payment Ref: <code>${escapeHtml(paymentRef)}</code>`,
         `Client: <b>${escapeHtml(clientName)}</b>`,
@@ -272,6 +275,9 @@ export async function handleCanonicalConfirmLink(request, env) {
       payment_ref: paymentRef,
       customer_t: customerToken,
       model_t: modelToken,
+      customer_payment_url: customerPaymentUrl,
+      // Internal service response only. The admin-worker must hold these until
+      // official payment approval before exposing/dispatching them.
       customer_confirmation_url: customerConfirmationUrl,
       model_confirmation_url: modelConfirmationUrl,
       payment_write: paymentWrite,
