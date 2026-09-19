@@ -21,10 +21,10 @@ export async function handleMmdShopOrderPage(request) {
       redirect: "follow",
     }));
   } catch {
-    return unavailable();
+    return unavailable(request);
   }
 
-  if (!response.ok) return unavailable();
+  if (!response.ok) return unavailable(request);
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "set-cookie", "content-encoding", "etag", "last-modified", "report-to", "nel"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
@@ -44,9 +44,30 @@ function presentationHeaders(request) {
   return headers;
 }
 
-function unavailable() {
-  return new Response("<!doctype html><html lang=\"th\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"robots\" content=\"noindex,nofollow\"><title>MMD Shop Order</title><body style=\"font-family:system-ui;padding:32px;background:#f4efe7;color:#17130f\"><h1>เปิดรายการสั่งซื้อไม่ได้</h1><p>กรุณากลับไปที่ MMD Shop แล้วเปิดรายการอีกครั้ง</p><a href=\"/mmd-shop\">กลับ MMD Shop</a></body></html>", {
-    status: 502,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
-  });
+function unavailable(request) {
+  const lang = requestLanguage(request);
+  const copy = {
+    th: { title: "เปิดรายการสั่งซื้อไม่ได้", body: "กรุณากลับไปที่ MMD Shop แล้วเปิดรายการอีกครั้ง", back: "กลับ MMD Shop" },
+    en: { title: "Order unavailable", body: "Please return to MMD Shop and open the Order again.", back: "Back to MMD Shop" },
+    zh: { title: "无法打开订单", body: "请返回 MMD Shop 后重新打开这张 Order。", back: "返回 MMD Shop" }
+  }[lang];
+  const htmlLang = lang === "zh" ? "zh-CN" : lang;
+  const shopUrl = `/mmd-shop?lang=${encodeURIComponent(lang)}`;
+  return new Response(
+    `<!doctype html><html lang="${htmlLang}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Shop Order</title><body style="font-family:system-ui;padding:32px;background:#f4f5f2;color:#111416"><h1>${copy.title}</h1><p>${copy.body}</p><a href="${shopUrl}">${copy.back}</a></body></html>`,
+    {
+      status: 502,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
+    }
+  );
+}
+
+function requestLanguage(request) {
+  let value = "";
+  try { value = new URL(request.url).searchParams.get("lang") || ""; } catch {}
+  if (!value) value = request.headers.get("accept-language") || "";
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === "zh" || normalized.startsWith("zh-") || normalized.startsWith("zh,")) return "zh";
+  if (normalized === "en" || normalized.startsWith("en-") || normalized.startsWith("en,")) return "en";
+  return "th";
 }
