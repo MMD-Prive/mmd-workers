@@ -378,6 +378,11 @@ function requireHypePreviewIntroToken(req, env) {
 }
 
 async function handleTelegramWebhook(update, env) {
+  const callback = update.callback_query || null;
+  if (callback && /^hrop\|/i.test(clean(callback.data))) {
+    return handleHypeRecoveryOrderCallback(callback, env);
+  }
+
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
 
