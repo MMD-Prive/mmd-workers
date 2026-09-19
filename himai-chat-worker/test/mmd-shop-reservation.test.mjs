@@ -153,7 +153,9 @@ test("payment review claim blocks expiry release and commits inventory out once"
   try{
     const env=makeEnv();
     const reservation=await reserveMmdShopStock(env,{
-      order_id:"MMD-ORDER-CLAIM",
+      order_id:"MMD-ORDER-1",
+      order_record_id:mock.orders[0].id,
+      order_notes:mock.orders[0].fields[F.orderNotes],
       items:[{product_id:mock.productId,quantity:2,stock_status:"tracked"}],
     });
     assert.equal(mock.batch.fields[F.remaining],3);
@@ -181,7 +183,9 @@ test("failed payment review returns claim to reserved before expiry", async () =
   try{
     const env=makeEnv();
     const reservation=await reserveMmdShopStock(env,{
-      order_id:"MMD-ORDER-ABORT",
+      order_id:"MMD-ORDER-1",
+      order_record_id:mock.orders[0].id,
+      order_notes:mock.orders[0].fields[F.orderNotes],
       items:[{product_id:mock.productId,quantity:1,stock_status:"tracked"}],
     });
     const claimed=await claimMmdShopReservationForPayment(env,reservation,"proof-abort-1");
