@@ -1,0 +1,113 @@
+name: HYPE Member Group Intro V1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/hype-member-group-intro-v1.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  introduce-hype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+      STANDARD_GROUP_ID: "-1002073919780"
+      PREMIUM_GROUP_ID: "-1001668261779"
+      HYPE_BOT_USERNAME: "mmdprivebot"
+      MMD_BASE_URL: "https://www.mmdbkk.com"
+    steps:
+      - name: Send one-time HYPE introduction
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # This workflow is intentionally one-shot. A GitHub rerun must not
+          # duplicate the member-group announcement.
+          if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
+            echo "Skipping duplicate introduction on rerun attempt ${GITHUB_RUN_ATTEMPT}"
+            exit 0
+          fi
+
+          bot_token="${TELEGRAM_BOT_TOKEN:-}"
+          test -n "$bot_token"
+
+          send_intro() {
+            group_id="$1"
+            group_label="$2"
+
+            GROUP_ID="$group_id" GROUP_LABEL="$group_label" node <<'NODE'
+          const fs = require("node:fs");
+          const groupId = process.env.GROUP_ID;
+          const groupLabel = process.env.GROUP_LABEL;
+          const bot = process.env.HYPE_BOT_USERNAME;
+          const base = process.env.MMD_BASE_URL;
+
+          const text = [
+            "👋 <b>สวัสดีครับ ผม HYPE</b>",
+            `ผู้ช่วย Telegram ของ MMD Privé ประจำห้อง <b>${groupLabel}</b>`,
+            "",
+            "ตั้งแต่วันนี้ ถ้าต้องการเช็กทางไป หรือให้ผมช่วยดูว่าต้องทำอะไรต่อ เรียกผมได้เลยครับ",
+            "",
+            "<b>ใช้ในกลุ่มนี้ได้</b>",
+            "<b>/commands</b> — ดูคำสั่งทั้งหมดที่ผมช่วยได้",
+            "<b>/points</b> — ไปที่ MY MMD · Points",
+            "<b>/coupons</b> — เปิด Coupon Wallet",
+            "<b>/careback</b> — ดู 6 YEARS CARE BACK · Phase 2",
+            "",
+            "<b>เรื่องส่วนตัว</b>",
+            "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
+            "<b>/next</b> — ตอนนี้ต้องทำอะไรต่อ",
+            "<b>/booking</b> — progress งานและการจอง",
+            "",
+            "ถ้าพิมพ์คำสั่งส่วนตัวในกลุ่ม ผมจะไม่เปิดข้อมูลตรงนี้ครับ ผมจะพาไปคุยกันในแชตส่วนตัวแทน 🔒",
+            "",
+            "ผมอ่านจากระบบ MMD ที่ยืนยันได้เท่านั้น ไม่เดาสถานะ และไม่เปลี่ยนสิทธิ์หรือยืนยันงานแทน MMD/Per ครับ",
+            "",
+            "เริ่มเรียกผมได้เลยครับ → <b>/commands</b>",
+          ].join("\n");
+
+          const payload = {
+            chat_id: groupId,
+            text,
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+            disable_notification: false,
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${bot}` }],
+                [
+                  { text: "MY MMD", url: `${base}/my-mmd/` },
+                  { text: "Booking", url: `${base}/booking` },
+                ],
+              ],
+            },
+          };
+
+          fs.writeFileSync(
+            process.env.RUNNER_TEMP + `/hype-intro-${groupLabel.toLowerCase()}.json`,
+            JSON.stringify(payload),
+          );
+          NODE
+
+            payload="$RUNNER_TEMP/hype-intro-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
+            response="$RUNNER_TEMP/hype-intro-response-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
+            code="$(curl -sS -o "$response" -w '%{http_code}'               -X POST "https://api.telegram.org/bot${bot_token}/sendMessage"               -H 'Content-Type: application/json'               --data-binary "@$payload")"
+
+            test "$code" = "200"
+            node - "$response" "$group_label" <<'NODE'
+          const fs = require("node:fs");
+          const [file, label] = process.argv.slice(2);
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (body.ok !== true || !body.result?.message_id) {
+            throw new Error(`HYPE introduction failed for ${label}`);
+          }
+          console.log(`${label} intro sent: message_id=${body.result.message_id}`);
+          NODE
+          }
+
+          send_intro "$STANDARD_GROUP_ID" "STANDARD"
+          send_intro "$PREMIUM_GROUP_ID" "PREMIUM"
