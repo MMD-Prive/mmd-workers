@@ -50,6 +50,10 @@ function summary() {
       recovery_overdue: 1,
       recovery_unassigned: 1,
       recovery_attention_unassigned: 1,
+      recovery_picker_waiting_reselection: 1,
+      recovery_picker_authority_unavailable: 1,
+      recovery_picker_no_candidates: 0,
+      recovery_picker_watch: 2,
     },
     review_required: {
       payment: [{ client_name: "ลูกค้า A", amount_thb: 5000, text: "Deposit · พร้อมตรวจ" }],
@@ -64,6 +68,11 @@ function summary() {
       assigned_count: 1,
       unassigned_count: 1,
       attention_unassigned_count: 1,
+      picker_waiting_reselection_count: 1,
+      picker_authority_unavailable_count: 1,
+      picker_no_candidates_count: 0,
+      picker_selected_count: 0,
+      picker_watch_count: 2,
       operational_only: true,
       business_truth_inferred: false,
     },
@@ -79,6 +88,12 @@ function summary() {
       assignment_status: "unassigned",
       assigned_to: null,
       assigned_lane: null,
+      picker_state: "authority_unavailable",
+      picker_status: "stale",
+      picker_revision: 3,
+      picker_candidate_count: 2,
+      picker_reissue_count: 2,
+      picker_next_attention: "owner_refresh_picker",
       href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919010000-acde1234",
     }],
     calendar: {
@@ -93,7 +108,8 @@ function summary() {
     alerts: [{ title: "Owner Review", text: "มีเคสพิเศษ 1 รายการ" }],
     next_actions: [
       { priority: 1, label: "ตรวจ Payments", href: "/internal/admin/payments" },
-      { priority: 2, label: "รับ Recovery ที่ยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned" },
+      { priority: 2, label: "ดู Picker ที่ refresh ไม่ได้", href: "/internal/admin/recovery?picker=authority_unavailable" },
+      { priority: 3, label: "รับ Recovery ที่ยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned" },
     ],
   };
 }
@@ -149,8 +165,11 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
     assert.match(sends[0].text, /RECOVERY QUEUE · ต้องดูอะไรตอนนี้/);
     assert.match(sends[0].text, /ลูกค้า Recovery/);
     assert.match(sends[0].text, /overdue/);
+    assert.match(sends[0].text, /Picker: reselection 1 · authority unavailable 1 · no candidates 0/);
+    assert.match(sends[0].text, /Picker r3 refresh authority ไม่ได้/);
+    assert.match(sends[0].text, /Owner refresh choices/);
     assert.match(sends[0].text, /ยังไม่มีคนรับ/);
-    assert.match(sends[0].text, /Assignment\/SLA เป็น coordination metadata เท่านั้น/);
+    assert.match(sends[0].text, /Assignment \/ Picker \/ SLA เป็น operational metadata เท่านั้น/);
     assert.match(sends[0].text, /Read-only summary/);
   } finally {
     globalThis.fetch = originalFetch;
