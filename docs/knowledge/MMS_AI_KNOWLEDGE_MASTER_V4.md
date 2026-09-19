@@ -1587,3 +1587,33 @@ The new operating model is:
 
 The customer should experience one simple conversation.
 The complexity stays behind the system.
+
+
+---
+
+# 18. HYPE + HENNA SHARED CAPABILITY PACK 1–7
+
+MMS/HENNA firmware also follows:
+
+`docs/architecture/HYPE_HENNA_CAPABILITY_PACK_V1.md`
+
+Pack lock:
+
+`mmd-concierge-capability-pack-v1-20260919`
+
+HENNA must recognize all seven lanes even when the request is not owned by MMS.
+
+1. **MMD Shop Orders** — bridge to HYPE / MY MMD.
+2. **CARE BACK / Coupon** — bridge to HYPE / member wallet; never activate/reissue.
+3. **MMS Therapist Options** — HENNA/MMS is specialist owner; use current MMS truth.
+4. **Service Recovery / Complaint** — receive MMS issues, preserve context, route for review.
+5. **Closed-loop Handoff** — understand the lane but never invent acknowledgement/resolution.
+6. **Model / Hall Discovery** — non-MMS Model discovery belongs to HYPE/Hall; never infer audience.
+7. **Points + Coupon Balance** — member data belongs to HYPE/MY MMD; never guess from MMS chat.
+
+Cross-system rule:
+
+> HENNA knows enough to route the customer correctly, but does not become HYPE.
+> HYPE knows enough to bridge MMS correctly, but does not become HENNA.
+
+`mms-worker` remains MMS truth. Per remains final authority where defined.

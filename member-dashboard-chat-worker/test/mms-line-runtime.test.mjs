@@ -15,7 +15,9 @@ const {
   deterministicReply,
   postbackReply,
   protectedTruthReply,
+  sharedCapabilityReply,
   verifyLineSignature,
+  capabilityPackVersion,
 } = MMS_LINE_RUNTIME_INTERNALS;
 
 test("MMS LINE route is isolated from MMD webhook", () => {
@@ -54,6 +56,20 @@ test("support and services stay customer-facing", () => {
   assert.match(postbackReply("mms:menu:support"), /พิมพ์เรื่องที่ต้องการให้ช่วย/);
 });
 
+test("MMS LINE runtime knows capability pack 1-7 and preserves HENNA/HYPE ownership", () => {
+  assert.equal(capabilityPackVersion, "mmd-concierge-capability-pack-v1-20260919");
+  assert.match(deterministicReply("GG Water ของผมถึงไหนแล้ว"), /MY MMD/);
+  assert.match(deterministicReply("CARE BACK คูปองเปิดหรือยัง"), /Coupon Wallet/);
+  assert.match(deterministicReply("ช่วยหา therapist ที่เหมาะหน่อย"), /ตัวเลือก Therapist/);
+  assert.match(deterministicReply("งานมีปัญหา น้องยังไม่มา"), /จะยังไม่สรุปว่าใครผิด/);
+  assert.match(deterministicReply("เรื่องที่ส่งให้เปอร์ถึงไหนแล้ว"), /จะไม่บอกว่าเจ้าหน้าที่รับเรื่องหรือเคสจบแล้ว/);
+  assert.match(deterministicReply("ขอดู model ใน Hall"), /จะไม่เดาเพศ\/มุมมอง/);
+  assert.match(deterministicReply("แต้มคงเหลือเท่าไหร่"), /จะไม่เดายอด/);
+
+  assert.match(sharedCapabilityReply("mms_therapist_options"), /MMS ปัจจุบัน/);
+  assert.match(sharedCapabilityReply("shop_orders"), /HYPE/);
+});
+
 test("LINE signature uses MMS secret", async () => {
   const body = JSON.stringify({ events: [] });
   const secret = "mms-test-secret";
@@ -76,5 +92,6 @@ test("MMS webhook health reports configuration without exposing secrets", async 
   assert.equal(body.ai_enabled, true);
   assert.equal(body.rich_menu_mode, "24/7");
   assert.equal(body.rich_menu_publisher, "raw-or-url-v2");
+  assert.equal(body.capability_pack, "mmd-concierge-capability-pack-v1-20260919");
   assert.equal(JSON.stringify(body).includes("present"), false);
 });

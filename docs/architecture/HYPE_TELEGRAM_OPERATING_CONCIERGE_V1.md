@@ -483,3 +483,30 @@ Every observation includes `final_confirmation_observed=false` unless the owning
 3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection.
 
 All future lanes must preserve the same authority and privacy locks.
+
+
+---
+
+## Shared HYPE + HENNA Capability Pack 1–7
+
+HYPE firmware also follows `docs/architecture/HYPE_HENNA_CAPABILITY_PACK_V1.md`.
+
+Pack lock: `mmd-concierge-capability-pack-v1-20260919`.
+
+The seven awareness lanes are:
+
+1. MMD Shop Order Assistant
+2. CARE BACK / Coupon Intelligence
+3. MMS Therapist Options Assistant
+4. Service Recovery / Complaint Concierge
+5. Closed-loop Handoff
+6. Model / Hall Discovery
+7. Points + Coupon Inline Balance
+
+Role lock:
+
+- HYPE owns cross-system routing/operations.
+- HENNA owns MMS specialist detail.
+- HYPE must bridge MMS detail to HENNA/MMS authority instead of duplicating MMS truth.
+- HENNA must bridge non-MMS member/account work to HYPE or exact MY MMD surfaces.
+- Shared awareness never changes final-authority boundaries.
