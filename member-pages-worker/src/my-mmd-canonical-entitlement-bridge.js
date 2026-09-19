@@ -411,11 +411,27 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection)
   const raw = isPlainObject(rawProfile) ? rawProfile : {};
   const raw360 = isPlainObject(raw.customer_360) ? raw.customer_360 : {};
   const rawMember = isPlainObject(raw360.member) ? raw360.member : {};
-  const historyPending = [raw.history_recovery_state, rawMember.history_recovery_state].some((value) => String(value || "").trim().toLowerCase() === "pending");
-  return { membershipStart: safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null,
-    membershipExpiresAt: safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null,
+  const membershipStart = safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
+  const canonicalExpiry = safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
+  const membershipExpiresAt = canonicalExpiry || protectedConnectNowActiveThrough(projection);
+  const explicitlyPending = [raw.history_recovery_state, rawMember.history_recovery_state]
+    .some((value) => String(value || "").trim().toLowerCase() === "pending");
+  const historyPending = explicitlyPending || Boolean(projection && (!membershipStart || !canonicalExpiry));
+  return { membershipStart,
+    membershipExpiresAt,
     packageLabel: safeDisplayName(currentPackage.customer_safe_name) || projection?.packageLabel || null,
     historyRecoveryState: historyPending ? "recovery_pending" : null };
+}
+
+export function protectedConnectNowActiveThrough(projection, now = new Date()) {
+  if (!isPlainObject(projection)) return null;
+  if (projection.lifecycle !== "active") return null;
+  const capability = String(projection.capability || "").trim().toLowerCase();
+  if (!PROTECTED_PRIORITY.includes(capability)) return null;
+  const anchor = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+  if (!Number.isFinite(anchor.getTime())) return null;
+  anchor.setUTCFullYear(anchor.getUTCFullYear() + 2);
+  return anchor.toISOString().slice(0, 10);
 }
 
 function selectProtectedEntitlement(value, capability, lifecycle) {
