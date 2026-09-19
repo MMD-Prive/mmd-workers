@@ -12,6 +12,7 @@ on:
       - "shared/membership-promotion-policy.mjs"
       - "shared/membership-promotion-policy.test.mjs"
       - ".github/workflows/deploy-payments-worker.yml"
+      - "shared/payment-intelligence.mjs"
 
 concurrency:
   group: deploy-payments-worker-production
