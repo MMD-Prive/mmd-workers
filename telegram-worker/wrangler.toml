@@ -78,3 +78,10 @@ service = "admin-worker"
 [[services]]
 binding = "HYPE_OPERATIONS"
 service = "admin-worker"
+
+# Cross-channel Conversation Matrix continuity + supervised handoff writer.
+# Kept separate from HYPE_OPERATIONS so read-only customer status and
+# conversation-context writes remain distinct contracts.
+[[services]]
+binding = "HYPE_CONTEXT_WRITER"
+service = "admin-worker"

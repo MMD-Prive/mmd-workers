@@ -518,7 +518,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "สถานะบัญชีเป็นข้อมูลส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking หรือ /payment\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -539,6 +539,26 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       reply_markup: hypeConnectButtons(env),
     }, env);
     return { handled: true, flow: "hype_operating_status", ok: false, code_status: "telegram_identity_invalid", telegram };
+  }
+
+  if (command === "handoff_kenji" || command === "handoff_per") {
+    const contextWriter = env.HYPE_CONTEXT_WRITER;
+    if (!contextWriter?.fetch) {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ระบบส่งต่อพร้อม context ยังไม่พร้อมชั่วคราวครับ กรุณาติดต่อ MMD ทาง LINE Official ก่อนครับ",
+        disable_web_page_preview: true,
+        reply_markup: hypeHandoffButtons(env, command === "handoff_kenji" ? "kenji" : "per"),
+      }, env);
+      return { handled: true, flow: "hype_supervised_handoff", ok: false, code_status: "context_writer_unavailable", telegram };
+    }
+    return handleHypeCustomerHandoff({
+      message,
+      chatId,
+      telegramUserId,
+      target: command === "handoff_kenji" ? "kenji" : "per",
+      command,
+    }, env, contextWriter);
   }
 
   const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
@@ -621,6 +641,14 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
         : hypeStatusButtons(env, result),
   }, env);
 
+  const continuity = await recordHypeContinuity({
+    binding: env.HYPE_CONTEXT_WRITER,
+    telegramUserId,
+    command,
+    customerMessage: clean(message.text || ""),
+    projection: result,
+  });
+
   return {
     handled: true,
     flow: command === "next"
@@ -632,6 +660,8 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
           : "hype_operating_status",
     ok: true,
     readiness: clean(result.readiness || result.state),
+    continuity_recorded: continuity.ok === true,
+    continuity_state: continuity.state,
     telegram,
   };
 }
@@ -639,6 +669,14 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
 function parseHypeOperatingCommand(value) {
   const text = clean(value);
   const normalized = text.toLowerCase();
+  if (
+    /^\/kenji(?:@\w+)?$/i.test(text)
+    || ["คุยกับเคนจิ", "ขอคุยกับเคนจิ", "ส่งต่อให้เคนจิ", "ส่งให้เคนจิ", "คุยต่อกับเคนจิ"].includes(normalized)
+  ) return "handoff_kenji";
+  if (
+    /^\/(?:human|handoff)(?:@\w+)?$/i.test(text)
+    || ["คุยกับเปอร์", "ขอคุยกับเปอร์", "ส่งต่อให้เปอร์", "ส่งให้เปอร์", "ขอคุยกับคน", "คุยกับทีม", "ส่งต่อให้ทีม"].includes(normalized)
+  ) return "handoff_per";
   if (
     /^\/(?:owner|today|per)(?:@\w+)?$/i.test(text)
     || [
@@ -674,6 +712,149 @@ function parseHypeOperatingCommand(value) {
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
   if (/^\/(?:help|commands)(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง", "คำสั่ง", "ดูคำสั่ง", "commands"].includes(normalized)) return "help";
   return "";
+}
+
+async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, target, command }, env, binding) {
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        target,
+        command: target === "kenji" ? "kenji" : "human",
+        reason: target === "kenji" ? "customer_requested_kenji" : "customer_requested_per",
+        customer_message: clean(message.text || "").slice(0, 500),
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (status === 404 && result?.state === "connect_required") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: [
+        "ผมยังส่งต่อพร้อมประวัติไม่ได้ครับ เพราะ Telegram นี้ยังไม่ผูกกับ Canonical Client",
+        "",
+        "เปิด MY MMD → Connect Telegram ก่อน แล้วกลับมาพิมพ์คำสั่งส่งต่ออีกครั้งครับ",
+      ].join("\n"),
+      disable_web_page_preview: true,
+      reply_markup: hypeConnectButtons(env),
+    }, env);
+    return { handled: true, flow: "hype_supervised_handoff", ok: false, code_status: "connect_required", telegram };
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ตอนนี้ HYPE เตรียม context สำหรับส่งต่อไม่สำเร็จครับ ผมจะไม่ส่งเคสแบบข้อมูลขาด กรุณาเปิด LINE Official เพื่อติดต่อ MMD โดยตรงครับ",
+      disable_web_page_preview: true,
+      reply_markup: hypeHandoffButtons(env, target),
+    }, env);
+    return { handled: true, flow: "hype_supervised_handoff", ok: false, code_status: "handoff_context_unavailable", telegram };
+  }
+
+  let alert = null;
+  try {
+    alert = await telegramNotify({
+      flow: "human_handoff",
+      text: renderHypeHandoffOperatorAlert(result),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+  } catch {
+    alert = { ok: false, error: "handoff_notify_failed" };
+  }
+
+  const lineReady = result.line_continuity_ready === true;
+  const destination = target === "kenji" ? "Kenji" : "Per";
+  const lines = [
+    `ส่งต่อให้ ${destination} แล้วครับ`,
+    "",
+    lineReady
+      ? "ผมบันทึก context จาก HYPE เข้า Conversation Matrix เดียวกับที่ Kenji ใช้แล้ว คุณไม่ต้องเริ่มเล่าเรื่องใหม่ครับ"
+      : "ผมเก็บ canonical context ของเคสไว้แล้ว แต่ LINE identity ยังไม่พร้อมสำหรับ cross-channel resume อัตโนมัติครับ",
+    target === "kenji"
+      ? "เปิด LINE Official แล้วพิมพ์ต่อจากเรื่องเดิมได้เลย Kenji จะ refresh สถานะจริงก่อนตอบหรือทำขั้นตอนถัดไปครับ"
+      : alert?.ok === true
+        ? "HYPE Ops แจ้ง Per พร้อม context ล่าสุดแล้วครับ ถ้าต้องส่งข้อความเพิ่ม ใช้ LINE Official ได้โดยไม่ต้องเริ่มอธิบายสถานะระบบใหม่ครับ"
+        : "Context ถูกเตรียมไว้แล้ว แต่ HYPE ยังยืนยันการส่ง Alert ถึง Per ไม่ได้ กรุณาเปิด LINE Official เพื่อให้ทีมรับช่วงต่อครับ",
+    "",
+    `Reference: ${clean(result.handoff_id)}`,
+  ];
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: lines.join("\n"),
+    disable_web_page_preview: true,
+    reply_markup: hypeHandoffButtons(env, target),
+  }, env);
+
+  return {
+    handled: true,
+    flow: "hype_supervised_handoff",
+    ok: target === "kenji" ? lineReady : alert?.ok === true,
+    code_status: target === "kenji"
+      ? (lineReady ? "kenji_context_ready" : "kenji_context_without_line_link")
+      : (alert?.ok === true ? "per_notified_with_context" : "per_context_ready_notify_unconfirmed"),
+    target,
+    handoff_id: clean(result.handoff_id),
+    line_continuity_ready: lineReady,
+    operator_notified: alert?.ok === true,
+    telegram,
+  };
+}
+
+async function recordHypeContinuity({ binding, telegramUserId, command, customerMessage, projection }) {
+  if (!binding?.fetch) return { ok: false, state: "context_writer_unavailable" };
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/continuity", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        command,
+        customer_message: clean(customerMessage).slice(0, 500),
+        projection,
+      }),
+    }));
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok && body?.ok === true, state: clean(body?.state) };
+  } catch {
+    return { ok: false, state: "continuity_unavailable" };
+  }
+}
+
+function renderHypeHandoffOperatorAlert(result = {}) {
+  const target = result.target === "kenji" ? "KENJI" : "PER";
+  const summary = clean(result.operator_summary).slice(0, 2400);
+  return [
+    `🤝 <b>HYPE → ${target} HANDOFF</b>`,
+    `<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+    `<b>Client:</b> ${escapeHtml(clean(result.display_name) || "Canonical Client")}`,
+    `<b>Cross-channel continuity:</b> ${result.line_continuity_ready === true ? "READY" : "LINE LINK MISSING"}`,
+    "",
+    escapeHtml(summary),
+    "",
+    "<b>Rule:</b> refresh canonical truth before protected action · customer should not be asked to restart the story",
+  ].join("\n").slice(0, 3900);
+}
+
+function hypeHandoffButtons(env, target) {
+  const rows = [[{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]];
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
+  return { inline_keyboard: rows };
 }
 
 async function handleHypeOwnerSummary({ message, chatId }, env) {
@@ -1178,6 +1359,8 @@ function hypeHelpText() {
     "<b>/points</b> — ไปยังยอด Points canonical ใน MY MMD",
     "<b>/coupons</b> — ไปยัง Coupon Wallet canonical ใน MY MMD",
     "<b>/careback</b> — ดู CARE BACK Phase 2",
+    "<b>/kenji</b> — ส่งต่อให้ Kenji พร้อม context เดิม",
+    "<b>/human</b> — ส่งต่อให้ Per / ทีม พร้อม context เดิม",
     "<b>/help</b> — ดูเมนูนี้",
     "",
     "HYPE ช่วยเชื่อม Telegram Identity, ดูสถานะจากระบบ MMD, พาไป MY MMD / Promotion และจัด route ให้ถูกขั้นตอนได้ครับ",

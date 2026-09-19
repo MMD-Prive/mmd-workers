@@ -261,10 +261,39 @@ Canonical source:
 
 Owner Summary is read-only. HYPE may prioritize and link to actions but must not approve payments, change Job state, grant membership, or perform any protected mutation.
 
+## Supervised Handoff · Priority 3
+
+HYPE can hand a verified private-chat customer to Kenji or Per without forcing the customer to restart the story.
+
+Customer commands:
+
+- `/kenji` — prepare a cross-channel handoff to Kenji / LINE Official
+- `/human` or `/handoff` — prepare a supervised handoff to Per / MMD
+- Thai aliases such as `คุยกับเคนจิ`, `ขอคุยกับเปอร์`, `ส่งต่อให้ทีม`
+
+Continuity contract:
+
+- successful HYPE reads from `/status`, `/next`, `/booking`, and `/payment` write a bounded continuity snapshot to the existing Kenji Conversation Matrix;
+- the Matrix is keyed to the existing LINE conversation hash only after Telegram resolves to one Canonical Client and that Client already has a stable LINE identity;
+- if LINE identity is absent, HYPE reports `canonical_only` / `line_identity_not_linked` and does not create a synthetic LINE conversation;
+- the Matrix carries topic, last customer request, canonical snapshot summary, next action, open loops and handoff state;
+- HYPE does not copy raw private notes, payment references, service secrets, or unrestricted Client 360 data into the Matrix.
+
+Handoff rules:
+
+- every handoff refreshes the canonical HYPE/Kenji live fan-in before preparing the envelope;
+- `handoff_required=true` is conversation state only and does not approve payment, confirm a Job, grant membership, or mutate entitlement;
+- Kenji/Per must refresh canonical truth before any protected action;
+- HYPE Ops receives a bounded internal handoff summary through the existing `human_handoff` / Crew route;
+- customer-facing Telegram receives only the reference, destination and safe next step;
+- when cross-channel continuity is ready, LINE/Kenji resumes from the Matrix and should not ask the customer to repeat information already present there.
+
+Canonical LINE entry for the MMD handoff remains `https://lin.ee/xRqsALs`.
+
 ## Next implementation lanes
 
-1. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
-2. natural-language intent routing over the existing canonical domains
+1. natural-language intent routing over the existing canonical domains
+2. owner/operator acknowledgement and close-loop state for completed handoffs
 3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.
