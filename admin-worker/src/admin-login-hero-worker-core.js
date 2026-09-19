@@ -58,6 +58,11 @@ import {
   handleHypeShopOrdersSmokeRpc,
 } from "./hype-shop-orders.js";
 import { HYPE_OWNER_SUMMARY_PATH, handleHypeOwnerSummaryRpc } from "./hype-owner-summary.js";
+import {
+  handleOwnerMyMmdRecoveryDiagnostic,
+  isOwnerMyMmdRecoveryDiagnosticRequest,
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
+} from "./owner-my-mmd-recovery-diagnostic.js";
 import { HYPE_CONTINUITY_PATH, HYPE_HANDOFF_PATH, HYPE_HANDOFF_STATUS_PATH, HYPE_TRANSACTION_INTAKE_PATH, HYPE_SUPERVISED_EXECUTION_PATH, handleHypeContinuityRpc, handleHypeHandoffRpc, handleHypeHandoffStatusRpc, handleHypeTransactionIntakeRpc, handleHypeSupervisedExecutionRpc } from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
@@ -98,6 +103,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/create-session",
   "/internal/admin/kenji",
   "/internal/admin/kenji-knowledge",
+  OWNER_MY_MMD_RECOVERY_PAGE_PATH,
   "/internal/jobs/create-job",
 ];
 
@@ -218,6 +224,10 @@ export default {
 
     if (path === MODEL_MEDIA_E2E_SMOKE_PATH) {
       return handleModelMediaE2ESmoke(request, env, strictGate.actor);
+    }
+
+    if (isOwnerMyMmdRecoveryDiagnosticRequest(path, method)) {
+      return handleOwnerMyMmdRecoveryDiagnostic(request, env, strictGate.actor);
     }
 
     if (isPublicModelApplicationReviewRequest(path)) {
