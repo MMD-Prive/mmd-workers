@@ -1,5 +1,5 @@
 import { getPublicMembershipPackage, PUBLIC_MEMBERSHIP_CATALOG } from "../../shared/payment-intelligence.mjs";
-import { readMemberAppSession } from "./member-app-api.js";
+import { readMemberAppSession, rememberMemberPaymentSnapshot } from "./member-app-api.js";
 
 const ROOT = "/member/api/liff/public-membership";
 const CATALOG_PATH = ROOT + "/catalog";
@@ -139,6 +139,19 @@ async function handlePurchase(request, env) {
   try {
     const sessionId = await purchaseSessionId(env, session.lineUserId, packageItem.package_code);
     const payment = await createPaymentIntent(env, { sessionId, packageItem });
+    const remembered = await rememberMemberPaymentSnapshot(request, env, {
+      payment_ref: payment.payment_ref,
+      session_id: payment.session_id,
+      payment_stage: "membership",
+      package_code: packageItem.package_code,
+      amount_thb: packageItem.amount_thb,
+      customer_payment_url: payment.customer_payment_url,
+    });
+    if (!remembered) {
+      const error = new Error("PUBLIC_MEMBERSHIP_PAYMENT_STATE_PERSIST_FAILED");
+      error.status = 503;
+      throw error;
+    }
     return json({
       ok: true,
       schema: "mmd_public_membership_purchase_v1",

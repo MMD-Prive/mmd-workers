@@ -28,6 +28,7 @@ const MEMBER_LIFF_PREFIX = "/member/api/liff/";
 const MEMBER_SHOP_API_PREFIX = "/member/api/shop/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
+const MEMBER_PAYMENTS_API_PATHS = new Set(["/v1/member/payments", "/v1/member/payments/"]);
 const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
 const MEMBER_SIGNUP_URL = "https://mmdbkk.com/pay/membership?source=line";
 const PRIVATE_MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
@@ -2052,7 +2053,7 @@ export default {
       return renderRenewalResponse(request, env);
     }
 
-    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || url.pathname.startsWith(MEMBER_SHOP_API_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname)) {
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || url.pathname.startsWith(MEMBER_SHOP_API_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname) || MEMBER_PAYMENTS_API_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
     }
 
