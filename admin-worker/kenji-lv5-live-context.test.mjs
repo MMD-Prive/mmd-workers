@@ -101,6 +101,29 @@ test("P2 detects live model calendar conflict and offers an alternate slot inste
   assert.ok(!result.next_actions.some((item) => item.action === "create_calendar_hold"));
 });
 
+test("P2 standard booking checks the full default 90 minute window when end time is omitted", () => {
+  const result = buildKenjiLv5LiveFanInProjection(base({
+    intent: {
+      type: "booking", model_name: "Rossi", date: "2026-09-20",
+      time: "19:00", location: "Ever Green", amount_thb: 25000,
+    },
+    calendar: {
+      ok: true,
+      date: "2026-09-20",
+      items: [{
+        session_id: "SES-OVERLAP-90M",
+        start_at: "2026-09-20T20:00:00+07:00",
+        end_at: "2026-09-20T21:00:00+07:00",
+        client: { record_id: "recOther" },
+        model: { name: "Rossi" },
+      }],
+    },
+  }));
+  assert.equal(result.intent.duration_hours, 1.5);
+  assert.equal(result.calendar_live.status, "unavailable");
+  assert.equal(result.calendar_live.conflicts.length, 1);
+});
+
 test("deposit booking preserves rate/end-time requirements and checks the full requested interval", () => {
   const result = buildKenjiLv5LiveFanInProjection(base({
     intent: {
