@@ -6,6 +6,12 @@ import {
   isKenjiMemberLineCandidate,
 } from "../../../shared/kenji-member-concierge-core.mjs";
 import { loadKenjiMemberMemoryForLine } from "./kenji-member-memory-context.mjs";
+import {
+  RETRY_SLIP_ACK,
+  loadRecentPaymentContext,
+  looksLikePaymentSlipContext,
+  processPaymentSlipImage,
+} from "./line-payment-slip-intake.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";
@@ -473,7 +479,7 @@ function buildAirtableRecordWithProfile(event, profile) {
   const migrationId = `line_${eventId}`;
   const flags = buildFlags(event, messageText);
   const intent = inferIntent(messageText, event);
-  const airtableIntent = PRICING_REVIEW_INTENTS.has(intent) ? "note_only" : intent;
+  const airtableIntent = PRICING_REVIEW_INTENTS.has(intent) || intent === "payment_slip" || intent === "image_only_model_inquiry" ? "note_only" : intent;
   const messageType = getMessageType(event);
   const adminNote = buildAdminNote(event, messageText);
   const clientTagged = hasClientTag(messageText);
@@ -1047,30 +1053,54 @@ export async function handler(event) {
       item?.source?.type === "user" &&
       lineChannelAccessToken;
     const profile = shouldFetchProfile ? await fetchLineProfile(lineChannelAccessToken, lineUserId) : null;
+    const recentContext = isImageMessage(item)
+      ? await loadRecentPaymentContext({ env: process.env, lineUserId })
+      : [];
+    const paymentSlipCandidate = looksLikePaymentSlipContext(item, recentContext);
+    const paymentSlipProfile = paymentSlipCandidate && !profile && item?.source?.type === "user" && lineChannelAccessToken
+      ? await fetchLineProfile(lineChannelAccessToken, lineUserId)
+      : profile;
+    const paymentSlipResult = paymentSlipCandidate
+      ? await processPaymentSlipImage({ env: process.env, event: item }).catch((error) => ({
+          ok: false,
+          deduped: false,
+          state: "retry_required",
+          error: String(error?.message || error || "payment_slip_intake_failed"),
+          replyText: RETRY_SLIP_ACK,
+        }))
+      : null;
     const record = await writeEventToAirtable({
       baseId: airtableBaseId,
       apiKey: airtableApiKey,
       tableName: airtableTableName,
       event: item,
-      profile,
+      profile: paymentSlipProfile,
     });
-    const replyText = await buildAutoReplyMessage(item, profile, {
-      airtableBaseId,
-      airtableApiKey,
-      adminWorkerBaseUrl,
-      internalToken,
-      confirmKey,
-      lineModelLookupDebug,
-      lineWebhookDebug,
-      lineKenjiAiEnabled,
-      lineKenjiAiDebug,
-      lineOfficialChatUrl,
-      createPricingReviewEnabled: !record?.deduped,
-    });
-    const replied =
-      !record?.deduped && autoReplyEnabled && replyText
-        ? await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText)
-        : false;
+    const replyText = paymentSlipCandidate
+      ? String(paymentSlipResult?.replyText || "")
+      : await buildAutoReplyMessage(item, profile, {
+          airtableBaseId,
+          airtableApiKey,
+          adminWorkerBaseUrl,
+          internalToken,
+          confirmKey,
+          lineModelLookupDebug,
+          lineWebhookDebug,
+          lineKenjiAiEnabled,
+          lineKenjiAiDebug,
+          lineOfficialChatUrl,
+          createPricingReviewEnabled: !record?.deduped,
+        });
+    const isSlipRedelivery = Boolean(paymentSlipCandidate && item?.deliveryContext?.isRedelivery);
+    const shouldReply = Boolean((!record?.deduped || isSlipRedelivery) && autoReplyEnabled && replyText && getReplyToken(item));
+    let replied = false;
+    if (shouldReply) {
+      try { replied = await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText); } catch { replied = false; }
+      if (!replied && paymentSlipCandidate) {
+        console.error(JSON.stringify({ event: "line_payment_slip_reply_failed", category: "line_reply_failed", state: String(paymentSlipResult?.state || "retry_required") }));
+        return json(502, { ok: false, error: "line_payment_slip_reply_failed", processed: saved.length });
+      }
+    }
     saved.push({
       id: record?.id || "",
       deduped: Boolean(record?.deduped),
@@ -1082,6 +1112,17 @@ export async function handler(event) {
       profile_name: String(profile?.displayName || ""),
       line_user_id: lineUserId,
       message_id: String(item?.message?.id || item?.webhookEventId || ""),
+      payment_slip_intake: paymentSlipCandidate
+        ? {
+            ok: Boolean(paymentSlipResult?.ok),
+            deduped: Boolean(paymentSlipResult?.deduped),
+            proof_id: String(paymentSlipResult?.proofId || ""),
+            state: String(paymentSlipResult?.state || "manual_review"),
+            review_required: Boolean(paymentSlipResult?.reviewRequired),
+            duplicate_payment_ref: Boolean(paymentSlipResult?.duplicatePaymentRef),
+            extraction_method: String(paymentSlipResult?.extractionMethod || ""),
+          }
+        : null,
     });
   }
 

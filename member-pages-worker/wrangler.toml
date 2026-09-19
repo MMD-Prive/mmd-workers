@@ -1,7 +1,124 @@
 name = "member-pages-worker"
-main = "src/index.js"
+main = "src/runtime-index.js"
 compatibility_date = "2026-06-20"
 workers_dev = true
+# Explicitly keep this implementation Worker service-only in production.
+# This also prevents stale mmdbkk.com routes from returning on future deploys.
+routes = []
+
+[vars]
+LIFF_VERIFY_TIMEOUT_MS = "5000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
+AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_CONSOLE_INBOX = "MMD — Console Inbox"
+LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
+LINE_LIFF_ID = "2010862595-yT4DCEMc"
+LINE_DASHBOARD_CHANNEL_ID = "2010862595"
+DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
+DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
+DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
+DRIVE_FALLBACK_MEMBERSHIP_OWNER_EMAIL = "mmdprive@gmail.com"
+DRIVE_FALLBACK_PREMIUM_PACKAGE_FOLDER_ID = "1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN"
+DRIVE_FALLBACK_STANDARD_PACKAGE_FOLDER_ID = "141CGk8114pC2EGxTwEdVUWlzmKKG4n9w"
+AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
+AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
+AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
+
+[[kv_namespaces]]
+binding = "LIFF_IDENTITY_KV"
+id = "12f4c4e7357d4019b5e0951be0b984f5"
+
+[[services]]
+binding = "MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker"
+
+# Non-granting payment-intent bridge. member-pages-worker may create/reuse a
+# canonical pending payment_ref and receive the signed /sigil/pay handoff only;
+# Official Verify/payments-worker remains the authority for paid/verified state.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
+
+# Find Your MMD never writes Airtable directly. The verified-member facade
+# delegates request intake and public-safe model search to the canonical owner.
+[[services]]
+binding = "SIGIL_BOOKING_WORKER"
+service = "sigil-booking-worker"
+
+
+[[durable_objects.bindings]]
+name = "CARE_BACK_WISH_COORDINATOR"
+class_name = "CareBackBirthdayWishCoordinator"
+
+[[migrations]]
+tag = "v1-care-back-birthday-wish"
+new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[[r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+[[r2_buckets]]
+binding = "PRIVATE_MODEL_MEDIA"
+bucket_name = "mmd-private-model-media"
+
+[[durable_objects.bindings]]
+name = "PRIVATE_PREVIEW_GATE"
+class_name = "PrivatePreviewGate"
+
+[[migrations]]
+tag = "v2-private-preview-gate"
+new_sqlite_classes = ["PrivatePreviewGate"]
+
+# Required before deployment:
+# - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)
+# - var LINE_DASHBOARD_CHANNEL_ID (dedicated Member Dashboard audience)
+# - secret LIFF_SESSION_SECRET
+# - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
+# - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
+# - service binding PAYMENTS_WORKER -> payments-worker (pending intent + signed /sigil/pay only; no grant authority)
+# - service binding SIGIL_BOOKING_WORKER -> sigil-booking-worker
+# - secret AIRTABLE_API_KEY
+# - var AIRTABLE_BASE_ID = appsV1ILPRfIjkaYg
+# - secret GOOGLE_DRIVE_CLIENT_ID
+# - secret GOOGLE_DRIVE_CLIENT_SECRET
+# - secret GOOGLE_DRIVE_REFRESH_TOKEN authorized by malemodel.bkk@gmail.com
+#   with Google Drive metadata read access. The runtime verifies the authorized
+#   Drive account before trusting package-folder permissions.
+#
+# Legacy fallback Drive (checked only after the main Drive returns a definitive
+# no-access result for the verified LINE email):
+# - owner: mmdprive@gmail.com
+# - Premium mapping: MMD Private Models -> Premium Models + Standard Models
+#   folder id: 1ecvIZUYdjHAsZ-ujDbb1d76MXzx5BseN
+# - Standard mapping: Public Models -> Travel + Extreme
+#   folder id: 141CGk8114pC2EGxTwEdVUWlzmKKG4n9w
+# - optional secret GOOGLE_DRIVE_FALLBACK_REFRESH_TOKEN authorized by
+#   mmdprive@gmail.com. GOOGLE_DRIVE_FALLBACK_CLIENT_ID / CLIENT_SECRET may also
+#   be set; when omitted the primary OAuth client id/secret are reused.
+# - if no fallback refresh token is set, the primary malemodel.bkk@gmail.com
+#   token may inspect the fallback folders only when that account can read them.
+# - the runtime verifies each configured fallback folder is actually owned by
+#   mmdprive@gmail.com before trusting its permissions.
+#
+# Google Drive membership source priority:
+# 1. malemodel.bkk@gmail.com (main)
+# 2. mmdprive@gmail.com (fallback only when main has no package permission)
+#
+# Package hierarchy:
+# - Premium Package grants standard + premium model access.
+# - Standard Package grants standard model access only.
+# - Model inventory/archive/compcard folders are never member identity evidence.
+#
+# No public custom route is attached here. member-dashboard-chat-worker owns the
+# public member front gate and delegates LIFF identity calls through a service
+# binding. Do not restore mmd-redirect-worker or attach this implementation
+# worker directly to mmdbkk.com.
 
 [[services]]
 binding = "PROMOTION_WORKER"
@@ -15,4 +132,57 @@ service = "mmd-auth-worker"
 enabled = true
 head_sampling_rate = 1
 
-# Secrets: INTERNAL_SERVICE_SECRET, LINE_ID_HASH_SECRET
+# Full CARE BACK staging is isolated on workers.dev and intentionally has no
+# mmdbkk.com route. The zero KV id is a CI placeholder and must be replaced by
+# the deploy workflow from CARE_BACK_STAGING_KV_NAMESPACE_ID.
+[env.staging]
+name = "member-pages-worker-staging"
+workers_dev = true
+preview_urls = true
+
+[env.staging.vars]
+CARE_BACK_STAGING_MODE = "synthetic"
+LIFF_VERIFY_TIMEOUT_MS = "5000"
+LIFF_MEMBER_RESOLVER_TIMEOUT_MS = "12000"
+AIRTABLE_REQUEST_TIMEOUT_MS = "10000"
+LINE_LOGIN_CHANNEL_ID = "care-back-staging-channel"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_CARE_BACK_CLAIMS = "MMD — Campaign Claims"
+AIRTABLE_TABLE_CARE_BACK_PROMO_CODES = "MMD — Promo Codes"
+AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES = "tblvMJjYXy29mgDLb"
+
+[[env.staging.kv_namespaces]]
+binding = "LIFF_IDENTITY_KV"
+id = "00000000000000000000000000000000"
+
+[[env.staging.services]]
+binding = "MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker-staging"
+
+[[env.staging.services]]
+binding = "LINE_ID_TOKEN_VERIFIER"
+service = "care-back-staging-fixtures-worker-staging"
+
+[[env.staging.r2_buckets]]
+binding = "MMD_MODEL_ASSETS"
+bucket_name = "mmd-models"
+
+[[env.staging.durable_objects.bindings]]
+name = "PRIVATE_PREVIEW_GATE"
+class_name = "PrivatePreviewGate"
+
+[[env.staging.migrations]]
+tag = "v2-private-preview-gate-staging"
+new_sqlite_classes = ["PrivatePreviewGate"]
+
+[[env.staging.durable_objects.bindings]]
+name = "CARE_BACK_WISH_COORDINATOR"
+class_name = "CareBackBirthdayWishCoordinator"
+
+[[env.staging.migrations]]
+tag = "v1-care-back-birthday-wish-staging"
+new_sqlite_classes = ["CareBackBirthdayWishCoordinator"]
+
+[env.staging.observability]
+enabled = true
+head_sampling_rate = 1

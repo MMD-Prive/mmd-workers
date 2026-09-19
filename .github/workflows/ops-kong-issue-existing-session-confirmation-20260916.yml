@@ -1,0 +1,64 @@
+name: Ops Noom Issue Existing Session Confirmation 20260916
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ops-kong-issue-existing-session-confirmation-20260916.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  issue-existing-session-confirmation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - name: Issue confirmation links for existing Noom Session only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          origin="https://mmdbkk.com"
+          cookie="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $origin" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/jobs/create-job" \
+            "$origin/internal/admin/login/session")"
+          test "$login_code" = "303"
+
+          issue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $origin" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"issue_existing_session","session_id":"sess_mu2e46db_d1a5cb3638f7b00a","payment_type":"deposit","deposit_percent":30}' \
+            "$origin/v1/admin/payment-issuer-diagnostic")"
+
+          echo "issue_existing_session HTTP $issue_code"
+          cat "$body"
+          test "$issue_code" = "200"
+          node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (p?.ok !== true) throw new Error(`issue_not_ok:${p?.error || 'unknown'}`);
+          if (p?.session_id !== 'sess_mu2e46db_d1a5cb3638f7b00a') throw new Error('unexpected_session_id');
+          if (!['issued','existing_links'].includes(String(p?.stage || ''))) throw new Error(`unexpected_stage:${p?.stage}`);
+          if (p?.customer_confirmation_url_present !== true) throw new Error('customer_confirmation_url_missing');
+          console.log(`PASS existing Session confirmation issue stage=${p.stage}`);
+          NODE
+
+          rm -f "$cookie" "$headers" "$body"

@@ -1,0 +1,137 @@
+name: Authenticated real Model media production E2E
+
+on:
+  workflow_run:
+    workflows: ["Deploy admin-worker"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: authenticated-real-model-media-production-e2e
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORIGIN: https://mmdbkk.com
+      MODEL_ID: recBKaHfxUKs8fkMV
+      MODEL_NAME: Mek
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      DEPLOYED_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Verify owner-only route fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          printf -v payload '{"model_record_id":"%s"}' "$MODEL_ID"
+          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data-binary "$payload" \
+            "$ORIGIN/v1/admin/model-media/e2e-smoke")"
+          echo "unauthenticated route=$code"
+          test "$code" = "401"
+          grep -q '"error":"unauthorized"' "$body"
+
+      - name: Run authenticated real-model upload to R2 to registry to read-back smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_LOGIN_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_LOGIN_CREDENTIAL"
+
+          cookie_jar="$(mktemp)"
+          login_headers="$(mktemp)"
+          login_body="$(mktemp)"
+          smoke_body="$(mktemp)"
+
+          login_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS             -D "$login_headers" -c "$cookie_jar" -o "$login_body" -w "%{http_code}"             -X POST             -H "Origin: $ORIGIN"             -H "Content-Type: application/x-www-form-urlencoded"             --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL"             --data-urlencode "next=/internal/admin/control-room"             "$ORIGIN/internal/admin/login/session")"
+          echo "owner login=$login_code"
+          test "$login_code" = "303"
+          grep -q 'mmd_admin_gate_v1' "$cookie_jar"
+
+          printf -v payload '{"model_record_id":"%s"}' "$MODEL_ID"
+          smoke_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -b "$cookie_jar" -o "$smoke_body" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $ORIGIN" \
+            -H "Content-Type: application/json" \
+            --data-binary "$payload" \
+            "$ORIGIN/v1/admin/model-media/e2e-smoke")"
+
+          cat "$smoke_body"
+          echo
+          echo "authenticated model media E2E=$smoke_code"
+          test "$smoke_code" = "200"
+
+          node - "$smoke_body" "$MODEL_ID" "$MODEL_NAME" "$DEPLOYED_SHA" <<'NODE'
+          const fs = require("node:fs");
+          const [file, modelId, modelName, deployedSha] = process.argv.slice(2);
+          const raw = fs.readFileSync(file, "utf8");
+          const body = JSON.parse(raw);
+
+          if (body?.ok !== true || body?.smoke !== "model_media_authenticated_e2e") {
+            throw new Error(`smoke response not successful: ${raw}`);
+          }
+          if (body?.model?.model_record_id !== modelId) {
+            throw new Error(`wrong canonical Model: ${body?.model?.model_record_id || "missing"}`);
+          }
+          if (body?.model?.display_name !== modelName) {
+            throw new Error(`expected real Model ${modelName}; got ${body?.model?.display_name || "missing"}`);
+          }
+
+          const required = [
+            "model_session_authenticated",
+            "real_model_profile_read",
+            "r2_write",
+            "media_record_created",
+            "media_record_read_back",
+            "r2_file_opened",
+            "byte_match",
+            "cleanup_deleted_record_and_object",
+            "post_cleanup_404",
+          ];
+          for (const key of required) {
+            if (body?.checks?.[key] !== true) throw new Error(`missing E2E proof: ${key}`);
+          }
+
+          if (!/^media_[A-Za-z0-9-]+$/.test(body?.upload?.media_id || "")) {
+            throw new Error("media_id missing");
+          }
+          if (body?.upload?.file_type !== "image/png" || Number(body?.upload?.file_size_bytes) <= 0) {
+            throw new Error("fixture upload metadata invalid");
+          }
+
+          for (const forbidden of [
+            "private_original_key",
+            "r2_bucket",
+            "line_user_id",
+            "MODEL_SESSION_SIGNING_SECRET",
+            "mmd_model_session_v1",
+          ]) {
+            if (raw.includes(forbidden)) throw new Error(`sensitive field leaked: ${forbidden}`);
+          }
+
+          console.log(`PASS real-model media E2E model=${modelName} sha=${deployedSha}`);
+          NODE
+
+          {
+            echo "## Authenticated real Model media E2E"
+            echo
+            echo "- deployed SHA: `$DEPLOYED_SHA`"
+            echo "- canonical Model: **$MODEL_NAME**"
+            echo "- model-session auth: ✅"
+            echo "- multipart file upload: ✅"
+            echo "- R2 write + read-back: ✅"
+            echo "- Airtable media registry create + read-back: ✅"
+            echo "- exact bytes reopened: ✅"
+            echo "- temporary media cleanup: ✅"
+          } >> "$GITHUB_STEP_SUMMARY"

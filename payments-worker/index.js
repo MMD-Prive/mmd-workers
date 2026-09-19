@@ -93,6 +93,21 @@ function isInternalAuthed(req, env) {
   return !!env.INTERNAL_TOKEN && headerToken === env.INTERNAL_TOKEN;
 }
 
+function isServiceAuthed(req, env, secretNames) {
+  const expected = (Array.isArray(secretNames) ? secretNames : [secretNames])
+    .map((secretName) => toStr(env[secretName]))
+    .filter(Boolean);
+  if (!expected.length) return false;
+  const direct = toStr(req.headers.get("X-Internal-Token"));
+  const bearer = toStr(req.headers.get("Authorization")).replace(/^Bearer\s+/i, "");
+  return expected.includes(direct || bearer);
+}
+
+function serviceAuthRequired(req, env, secretNames) {
+  if (isServiceAuthed(req, env, secretNames)) return null;
+  return withCors(req, env, jsonResponse({ ok: false, error: "service_auth_required" }, 401));
+}
+
 function assertRequired(value, field) {
   if (!toStr(value)) throw new Error(`${field}_required`);
   return value;
@@ -187,6 +202,14 @@ function base64UrlEncode(input) {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function base64UrlDecode(input) {
+  const value = String(input || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = value.padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 function bytesToHex(buffer) {
   return [...new Uint8Array(buffer)]
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -207,6 +230,24 @@ async function hmacSha256Hex(message, secret) {
   return bytesToHex(sig);
 }
 
+async function verifyHmacSha256Hex(message, signature, secret) {
+  if (!/^[a-f0-9]{64}$/i.test(String(signature || ""))) return false;
+
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(String(secret || "")),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  const signatureBytes = Uint8Array.from(
+    String(signature).match(/.{2}/g) || [],
+    (byte) => Number.parseInt(byte, 16)
+  );
+  return crypto.subtle.verify("HMAC", key, signatureBytes, enc.encode(String(message || "")));
+}
+
 async function sha256Hex(text) {
   const enc = new TextEncoder();
   const digest = await crypto.subtle.digest("SHA-256", enc.encode(String(text || "")));
@@ -225,9 +266,14 @@ async function tokenSig(token) {
 }
 
 function getConfirmKey(env) {
-  const key = toStr(env.CONFIRM_KEY);
-  if (!key) throw new Error("missing_confirm_key");
+  const key = toStr(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY);
+  if (!key) throw new Error("missing_payment_confirmation_signing_secret");
   return key;
+}
+
+function getConfirmTokenTtlSeconds(env) {
+  const requested = Math.floor(toNum(env.PAY_TOKEN_TTL_SECONDS) || 60 * 60 * 24 * 30);
+  return Math.min(Math.max(requested, 60), 60 * 60 * 24 * 30);
 }
 
 function getPayKv(env) {
@@ -254,9 +300,72 @@ function makeSessionId(prefix = "sess") {
 
 async function createConfirmTokenRecord(env, token, payload) {
   const kv = getPayKv(env);
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expirationTtl = Math.min(
+    getConfirmTokenTtlSeconds(env),
+    Math.max(60, Math.floor(Number(payload.exp) - nowSeconds))
+  );
   await kv.put(`sig:${await tokenSig(token)}`, JSON.stringify(payload), {
-    expirationTtl: 60 * 60 * 24 * (toNum(env.PAY_SESSIONS_TTL_DAYS) || 30),
+    expirationTtl,
   });
+}
+
+function validateConfirmClaims(payload, expectedRole = "", nowSeconds = Math.floor(Date.now() / 1000)) {
+  const role = toStr(payload?.role);
+  const kind = toStr(payload?.kind);
+  const validKindForRole =
+    (role === "customer" && kind === "customer_confirm") ||
+    (role === "model" && kind === "model_confirm");
+
+  if (!validKindForRole || (expectedRole && role !== expectedRole)) {
+    throw new Error("invalid_confirmation_token_purpose");
+  }
+  if (!toStr(payload?.session_id) || !toStr(payload?.payment_ref)) {
+    throw new Error("invalid_confirmation_token_subject");
+  }
+  if (!Number.isInteger(payload?.iat) || !Number.isInteger(payload?.exp) || payload.exp <= payload.iat) {
+    throw new Error("invalid_confirmation_token_lifetime");
+  }
+  if (payload.iat > nowSeconds + 60) throw new Error("confirmation_token_not_yet_valid");
+  if (payload.exp <= nowSeconds) throw new Error("confirmation_token_expired");
+}
+
+async function verifyConfirmToken(env, token, options = {}) {
+  const rawToken = toStr(token);
+  const parts = rawToken.split(".");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error("invalid_confirmation_token");
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(base64UrlDecode(parts[0]));
+  } catch {
+    throw new Error("invalid_confirmation_token");
+  }
+
+  const signatureValid = await verifyHmacSha256Hex(parts[0], parts[1], getConfirmKey(env));
+  if (!signatureValid) throw new Error("invalid_confirmation_token_signature");
+
+  validateConfirmClaims(payload, toStr(options.expectedRole), options.nowSeconds);
+
+  const storedRaw = await getPayKv(env).get(`sig:${await tokenSig(rawToken)}`);
+  if (!storedRaw) throw new Error("confirmation_token_not_active");
+
+  let stored;
+  try {
+    stored = JSON.parse(storedRaw);
+  } catch {
+    throw new Error("confirmation_token_record_invalid");
+  }
+
+  for (const field of ["kind", "role", "session_id", "payment_ref", "payment_type", "iat", "exp"]) {
+    if (stored?.[field] !== payload?.[field]) {
+      throw new Error("confirmation_token_record_mismatch");
+    }
+  }
+
+  return payload;
 }
 
 async function createSessionIfMissing(env, payload) {
@@ -271,7 +380,6 @@ async function createSessionIfMissing(env, payload) {
       payment_type: payload.payment_type,
       amount_thb: payload.amount_thb,
       pay_model_thb: payload.pay_model_thb,
-      "Pay Model": payload.pay_model_thb,
       client_name: payload.client_name,
       model_name: payload.model_name,
       job_type: payload.job_type,
@@ -296,7 +404,6 @@ async function createSessionIfMissing(env, payload) {
     payment_type: payload.payment_type,
     amount_thb: payload.amount_thb,
     pay_model_thb: payload.pay_model_thb,
-    "Pay Model": payload.pay_model_thb,
     client_name: payload.client_name,
     model_name: payload.model_name,
     job_type: payload.job_type,
@@ -318,7 +425,7 @@ async function createSessionIfMissing(env, payload) {
 async function telegramSend(env, text, threadId = null) {
   const token = toStr(env.TELEGRAM_BOT_TOKEN);
   const chatId = toStr(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = toStr(threadId || env.TG_THREAD_CONFIRM || "61");
+  const thread = toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
 
   if (!token) {
     return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
@@ -461,8 +568,6 @@ async function createOrUpdatePaymentIntent(env, payload) {
     payment_type: payload.payment_stage,
     amount_thb: payload.amount,
     amount: payload.amount,
-    pay_model_thb: payload.pay_model_thb,
-    "Pay Model": payload.pay_model_thb,
     member_email: payload.member_email || "",
     package_code: payload.package_code || "",
     notes: payload.notes || "",
@@ -494,12 +599,19 @@ async function updateSessionFromPayment(env, payload) {
   }
 
   const nextStatus = paymentStatusFromStage(payload.stage);
+  const isFinal = payload.stage === "final" || payload.stage === "full";
+  const sessionFields = session.fields || {};
+  const lifecycleField = ["session_state", "state", "status"]
+    .find((name) => Object.prototype.hasOwnProperty.call(sessionFields, name)) || "status";
 
   const fields = compact({
-    status: nextStatus,
+    [lifecycleField]: isFinal ? "final_payment_confirmed" : nextStatus,
     "Session Status": nextStatus,
     "Payment Status": nextStatus,
-    payment_ref: payload.payment_ref,
+    // The signed customer/model links remain bound to the original payment
+    // stage. Final payment has its own canonical ref and must not replace that
+    // original Session ref.
+    payment_ref: isFinal ? undefined : payload.payment_ref,
     last_payment_ref: payload.payment_ref,
     payment_type: payload.stage,
     amount_thb: payload.amount_thb,
@@ -574,7 +686,7 @@ async function handlePing(req, env) {
         sessions_table: getSessionsTable(env),
         points_ledger_table: getPointsLedgerTable(env),
         telegram_chat_id: toStr(env.TELEGRAM_CHAT_ID || "-1003546439681"),
-        tg_thread_confirm: toStr(env.TG_THREAD_CONFIRM || "61"),
+        tg_thread_confirm: toStr(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"),
         tg_thread_points: toStr(env.TG_THREAD_POINTS || "17"),
       },
     })
@@ -664,7 +776,7 @@ async function handleVerify(req, env) {
           package_code ? `Package: <b>${esc(package_code)}</b>` : "",
           member_email ? `Member: ${esc(member_email)}` : "",
         ].filter(Boolean).join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 
@@ -763,7 +875,7 @@ async function handleNotify(req, env) {
           member_email ? `Member: ${esc(member_email)}` : "",
           session_updated?.ok ? "Session updated: <b>yes</b>" : "Session updated: <b>no</b>",
         ].filter(Boolean).join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 
@@ -807,6 +919,12 @@ async function handleNotify(req, env) {
 }
 
 async function handleConfirmLink(req, env) {
+  const denied = serviceAuthRequired(req, env, [
+    "AUTH_SERVICE_ADMIN_TO_PAYMENTS",
+    "AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS",
+  ]);
+  if (denied) return denied;
+
   const body = await readJson(req);
 
   try {
@@ -836,6 +954,8 @@ async function handleConfirmLink(req, env) {
 
     const payment_ref = toStr(body.payment_ref || makePaymentRef("pay"));
     const created_at = nowIso();
+    const issuedAt = Math.floor(Date.now() / 1000);
+    const expiresAt = issuedAt + getConfirmTokenTtlSeconds(env);
 
     const base = getWebBaseUrl(env);
     const customerConfirmPage = buildAbsoluteUrl(body.confirm_page || "/confirm/job-confirmation", base);
@@ -849,6 +969,8 @@ async function handleConfirmLink(req, env) {
       session_id,
       payment_ref,
       payment_type,
+      iat: issuedAt,
+      exp: expiresAt,
     };
 
     const modelPayload = {
@@ -857,6 +979,8 @@ async function handleConfirmLink(req, env) {
       session_id,
       payment_ref,
       payment_type,
+      iat: issuedAt,
+      exp: expiresAt,
     };
 
     const customer_t = await signConfirmToken(customerPayload, confirmKey);
@@ -890,7 +1014,6 @@ async function handleConfirmLink(req, env) {
       payment_ref,
       payment_stage: payment_type,
       amount: amount_thb,
-      pay_model_thb,
       payment_method,
       notes: note,
       created_at,
@@ -915,7 +1038,7 @@ async function handleConfirmLink(req, env) {
           `Amount: <b>${Number(amount_thb)} THB</b>`,
           pay_model_thb != null ? `Pay Model: <b>${Number(pay_model_thb)} THB</b>` : "",
         ].join("\n"),
-        env.TG_THREAD_CONFIRM || "61"
+        env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21"
       );
     } catch (_) {}
 
@@ -939,6 +1062,38 @@ async function handleConfirmLink(req, env) {
       req,
       env,
       jsonResponse({ ok: false, error: String(err?.message || err) }, 400)
+    );
+  }
+}
+
+async function handleConfirmVerify(req, env) {
+  const body = await readJson(req);
+
+  try {
+    const claims = await verifyConfirmToken(env, body.t || body.token, {
+      expectedRole: toStr(body.expected_role),
+    });
+    return withCors(
+      req,
+      env,
+      jsonResponse({
+        ok: true,
+        claims: {
+          kind: claims.kind,
+          role: claims.role,
+          session_id: claims.session_id,
+          payment_ref: claims.payment_ref,
+          payment_type: claims.payment_type,
+          iat: claims.iat,
+          exp: claims.exp,
+        },
+      })
+    );
+  } catch (err) {
+    return withCors(
+      req,
+      env,
+      jsonResponse({ ok: false, error: String(err?.message || err) }, 401)
     );
   }
 }
@@ -1096,8 +1251,18 @@ export default {
       return handleInternalPay(req, env);
     }
 
+    if (method === "POST" && path === "/v1/internal/pay/verify") {
+      const denied = serviceAuthRequired(req, env, "AUTH_SERVICE_EVENTS_TO_PAYMENTS");
+      if (denied) return denied;
+      return handleVerify(req, env);
+    }
+
     if (method === "POST" && path === "/v1/confirm/link") {
       return handleConfirmLink(req, env);
+    }
+
+    if (method === "POST" && path === "/v1/confirm/verify") {
+      return handleConfirmVerify(req, env);
     }
 
     if (method === "POST" && path === "/v1/pay/verify") {
@@ -1110,4 +1275,11 @@ export default {
 
     return withCors(req, env, jsonResponse({ ok: false, error: "not_found" }, 404));
   },
+};
+
+export {
+  createConfirmTokenRecord,
+  getConfirmTokenTtlSeconds,
+  signConfirmToken,
+  verifyConfirmToken,
 };

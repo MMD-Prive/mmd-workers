@@ -1,0 +1,88 @@
+name: Kenji Reply Pack V2 rollout
+
+on:
+  push:
+    branches: [main, fix/kenji-care-back-live-20260914]
+    paths:
+      - 'member-dashboard-chat-worker/src/kenji-sales-reply-v2-*.mjs'
+      - 'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs'
+      - 'member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs'
+      - 'member-dashboard-chat-worker/test/kenji-sales-reply-v2.test.mjs'
+      - 'member-dashboard-chat-worker/test/fixtures/kenji-sales-v2-approved.mjs'
+      - 'tools/kenji-sales-v2-publication.mjs'
+      - '.github/workflows/kenji-sales-v2-rollout.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'member-dashboard-chat-worker/src/kenji-sales-reply-v2-*.mjs'
+      - 'member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs'
+      - 'member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs'
+      - 'member-dashboard-chat-worker/test/kenji-sales-reply-v2.test.mjs'
+      - 'member-dashboard-chat-worker/test/fixtures/kenji-sales-v2-approved.mjs'
+      - 'tools/kenji-sales-v2-publication.mjs'
+      - '.github/workflows/kenji-sales-v2-rollout.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kenji-sales-v2-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate source syntax
+        run: |
+          node --check member-dashboard-chat-worker/src/kenji-sales-reply-v2-policy.mjs
+          node --check member-dashboard-chat-worker/src/kenji-sales-reply-v2-runtime.mjs
+          node --check member-dashboard-chat-worker/src/kenji-seed-line-runtime.mjs
+          node --check member-dashboard-chat-worker/src/kenji-line-redelivery-recovery.mjs
+          node --check tools/kenji-sales-v2-publication.mjs
+      - name: Test V2 content, live-member guards, CTA and signed transport
+        run: |
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-sales-reply-v2.test.mjs
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-seed-runtime-cutover.test.mjs
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
+          node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
+      - name: Validate original LINE regression suite
+        run: npm run test:member-dashboard-line
+      - name: Validate exact publication digest manifest without writes
+        run: node tools/kenji-sales-v2-publication.mjs --validate
+
+  publish:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Canonical signed Review QA Publish of eight exact V2 cards
+        env:
+          ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+        run: node tools/kenji-sales-v2-publication.mjs --publish
+      - name: Upload non-sensitive publication evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: kenji-sales-v2-publication
+          path: ${{ runner.temp }}/kenji-sales-v2-publication.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publication summary
+        run: |
+          echo '### Kenji LINE Reply Pack V2' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Eight exact owner-reviewed cards passed signed Review, QA and Publish.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Worker deployment is handled separately by Deploy member-dashboard-chat-worker.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This job does not claim a real customer LINE message was sent.' >> "$GITHUB_STEP_SUMMARY"

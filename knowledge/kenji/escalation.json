@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "required_triggers": [
+    "payment_confirmation",
+    "refund_request",
+    "payment_dispute",
+    "amount_mismatch",
+    "vip_request",
+    "svip_legacy_request",
+    "black_card_request",
+    "complaint",
+    "privacy_concern",
+    "unclear_identity",
+    "account_mismatch",
+    "manual_review",
+    "approval_request",
+    "unlock_request",
+    "access_change",
+    "entitlement_change",
+    "route_ownership_change",
+    "admin_action"
+  ],
+  "destination": "Boss Per / MMD",
+  "public_reply": "เรื่องนี้ต้องให้ Boss Per หรือ MMD ตรวจจากระบบที่เชื่อถือได้ก่อนครับ ผมจะไม่ยืนยันหรือเปลี่ยนสถานะแทนระบบ"
+}

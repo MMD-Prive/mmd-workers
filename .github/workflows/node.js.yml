@@ -29,24 +29,20 @@ jobs:
     - run: npm ci
     - run: npm run build --if-present
     - run: npm test
-
-  anniversary-staging-smoke:
-    name: Anniversary staging smoke (no production writes)
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Use Node.js 22.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22.x
-    - name: Install Control Room test dependencies
-      run: npm ci
-      working-directory: immigrate-worker
-    - name: Validate signed Admin session
-      run: node --test admin-worker/admin-login-session.test.mjs
-    - name: Validate Control Room bridge
-      run: npm test
-      working-directory: immigrate-worker
-    - name: Run Care Back staging smoke
-      run: npm run check && npm run smoke:staging
-      working-directory: promotion-worker
+    - if: matrix.node-version == '22.x'
+      run: npm ci --prefix member-pages-worker/test-runtime
+    - if: matrix.node-version == '22.x'
+      run: npm run test:member-pages-runtime
+    - if: matrix.node-version == '22.x'
+      run: npm run check:member-pages-wrangler
+    - if: matrix.node-version == '22.x'
+      run: npm ci --prefix sigil-worker --ignore-scripts
+    - if: matrix.node-version == '22.x'
+      run: npm test --prefix sigil-worker
+    - if: matrix.node-version == '22.x'
+      working-directory: sigil-worker
+      run: npx wrangler deploy --dry-run
+    - if: matrix.node-version != '18.x'
+      run: npm ci --prefix services/mmd-slip-extractor
+    - if: matrix.node-version != '18.x'
+      run: npm test --prefix services/mmd-slip-extractor

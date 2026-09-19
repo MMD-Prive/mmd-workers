@@ -1,20 +1,33 @@
 name = "immigrate-worker"
-main = "src/canonical-admin-login-wrapper.ts"
+main = "src/customer-360-live-ingress-wrapper.ts"
 compatibility_date = "2026-03-25"
 workers_dev = true
 
 [assets]
 directory = "./public"
 binding = "ASSETS"
+run_worker_first = ["/internal/admin/jobs/create-session/core", "/internal/admin/control-room/member-intelligence-runtime"]
 
 [vars]
+# Secret: LINK_SIGNING_SECRET
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_LINE_INBOX = "Line Inbox"
 AIRTABLE_TABLE_CLIENTS = "Clients"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_MEMBERS = "Members"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "MMD — Member Entitlements"
+AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD = "line_user_id"
+AIRTABLE_ENTITLEMENT_MEMBER_ID_FIELD = "member_id"
+AIRTABLE_MEMBERS_LINE_USER_ID_FIELD = "line_id"
+AIRTABLE_MEMBERS_MEMBER_ID_FIELD = "member_id"
+AIRTABLE_MEMBERS_EXPIRY_FIELD = "Membership Expiry"
+AIRTABLE_MEMBERS_END_DATE_FIELD = "Membership End Date"
+AIRTABLE_MEMBERS_EXPIRE_AT_FIELD = "Expire At"
 ENABLE_AIRTABLE_SYNC = "true"
 JOBS_WORKER_BASE_URL = ""
 CREATE_LINKS_URL = "https://payments-worker.malemodel-bkk.workers.dev/v1/confirm/link"
+
+# Secret: AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS
 REALTIME_SESSIONS_URL = ""
 PUBLIC_WEB_BASE_URL = "https://www.mmdbkk.com"
 PUBLIC_ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
@@ -24,9 +37,24 @@ ADMIN_WORKER_BASE_URL = "https://admin-worker.malemodel-bkk.workers.dev"
 binding = "ADMIN_WORKER"
 service = "admin-worker"
 
-[[services]]
-binding = "PROMOTION_WORKER"
-service = "promotion-worker"
+# Customer 360 is Worker-owned in production. Keep both the rendered page and
+# its same-origin API family on immigrate-worker so the live UI cannot fall
+# through to Webflow 404s.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/customer-data*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/customer-data*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/customer-data*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/customer-data*"
+zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/control-room*"
@@ -37,11 +65,11 @@ pattern = "www.mmdbkk.com/internal/admin/control-room*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "mmdbkk.com/v1/admin/campaigns/anniversary*"
+pattern = "mmdbkk.com/internal/ceo*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
-pattern = "www.mmdbkk.com/v1/admin/campaigns/anniversary*"
+pattern = "www.mmdbkk.com/internal/ceo*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -60,6 +88,9 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/jobs/create-session*"
 zone_name = "mmdbkk.com"
 
+# Webflow keeps ownership of /internal/admin/member-intelligence. Its browser
+# runtime is served under the existing Worker-owned Control Room route family.
+
 [[routes]]
 pattern = "mmdbkk.com/internal/jobs/create-job*"
 zone_name = "mmdbkk.com"
@@ -77,11 +108,37 @@ pattern = "www.mmdbkk.com/a/create-session.js"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/a/create-session-focus-flow-v2.js"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/a/create-session-focus-flow-v2.js"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/ping*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/ping*"
+zone_name = "mmdbkk.com"
+
+# Control Room authenticated read model. immigrate-worker remains the narrow
+# public ingress bridge while admin-worker owns dashboard truth/serialization.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/lineage-lookup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/lineage-lookup*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
@@ -90,6 +147,16 @@ zone_name = "mmdbkk.com"
 
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/clients/recent*"
+zone_name = "mmdbkk.com"
+
+# Member Intelligence advisory facade. The public ingress stays on immigrate-worker
+# and forwards only this narrow read route through the ADMIN_WORKER service binding.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/intelligence*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/intelligence*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
