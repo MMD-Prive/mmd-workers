@@ -42,7 +42,17 @@ test("MMD Shop product API resolves SKU slug and returns server checkout eligibi
       });
     }
     if (url.pathname.includes("tblwFgl4et1TOgtNn")) {
-      return Response.json({ records: [] });
+      return Response.json({
+        records: [{
+          id: "recBatch123456789",
+          fields: {
+            "Product": ["recg8CLsPKT3So4uz"],
+            "Quantity Remaining": 5,
+            "Low Stock Flag": "OK",
+            "Batch Status": "active"
+          }
+        }]
+      });
     }
     if (url.pathname.includes("tbl81bnFyASeXCj9x")) {
       return Response.json({ records: [] });
