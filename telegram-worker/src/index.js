@@ -514,6 +514,139 @@ async function handleTelegramWebhook(update, env) {
   return { handled: false, reason: "no_matching_command" };
 }
 
+async function handleHypeRecoveryOrderCallback(callback, env) {
+  const data = clean(callback?.data);
+  const match = /^hrop\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const callbackId = clean(callback?.id);
+  const chatId = clean(callback?.message?.chat?.id);
+  const chatType = clean(callback?.message?.chat?.type).toLowerCase();
+  const telegramUserId = clean(callback?.from?.id);
+
+  if (!match || !callbackId || !chatId || chatType !== "private" || !/^\d{5,20}$/.test(telegramUserId)) {
+    if (callbackId) {
+      await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "เปิดตัวเลือกนี้ใน private chat ของ HYPE ครับ",
+        show_alert: true,
+      }, env).catch(() => null);
+    }
+    return { handled: true, flow: "hype_recovery_order_picker", ok: false, code_status: "picker_context_invalid" };
+  }
+
+  const handoffId = match[1];
+  const selectionIndex = Number(match[2]);
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: "ระบบเลือก Order ยังไม่พร้อมครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return { handled: true, flow: "hype_recovery_order_picker", ok: false, code_status: "context_writer_unavailable" };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "select_recovery_order",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        selection_index: selectionIndex,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const text = result?.error === "recovery_order_already_bound"
+      ? "Case นี้ผูก Order ไปแล้วครับ"
+      : result?.error === "recovery_order_option_stale"
+        ? "ตัวเลือกนี้หมดอายุแล้วครับ พิมพ์ /case เพื่อตรวจสถานะล่าสุด"
+        : "ยังผูก Order ไม่สำเร็จครับ ระบบคง Case เดิมไว้";
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text,
+      show_alert: true,
+    }, env).catch(() => null);
+    return {
+      handled: true,
+      flow: "hype_recovery_order_picker",
+      ok: false,
+      code_status: clean(result?.error || "recovery_order_selection_failed"),
+    };
+  }
+
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    text: "ผูก Order กับ Case เดิมแล้วครับ",
+    show_alert: false,
+  }, env).catch(() => null);
+
+  const messageId = Number(callback?.message?.message_id);
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    }, env).catch(() => null);
+  }
+
+  const correlation = result.recovery_correlation || {};
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "<b>HYPE · ORDER LINKED</b>",
+      \`<b>Reference:</b> <code>\${escapeHtml(clean(result.handoff_id || handoffId))}</code>\`,
+      \`<b>Order:</b> <code>\${escapeHtml(clean(correlation.order_id) || "-")}</code>\`,
+      \`<b>Payment:</b> \${escapeHtml(clean(correlation.payment_status) || "unknown")}\`,
+      \`<b>Fulfillment:</b> \${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}\`,
+      "",
+      "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า Order / Payment / Fulfillment ซ้ำ",
+      "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้เปลี่ยนสถานะ Order, Payment หรือ Fulfillment",
+    ].join("\\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  try {
+    await telegramNotify({
+      flow: "human_handoff",
+      text: [
+        "🔗 <b>HYPE · RECOVERY CORRELATION UPDATED</b>",
+        \`<b>Case:</b> <code>\${escapeHtml(clean(result.handoff_id || handoffId))}</code>\`,
+        \`<b>Order:</b> <code>\${escapeHtml(clean(correlation.order_id) || "-")}</code>\`,
+        \`<b>Payment:</b> \${escapeHtml(clean(correlation.payment_status) || "unknown")}\`,
+        \`<b>Fulfillment:</b> \${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}\`,
+        "Customer selected this owned Order; handoff lifecycle state was preserved.",
+      ].join("\\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+  } catch {
+    // Case binding is canonical in Conversation Matrix even if the follow-up alert fails.
+  }
+
+  return {
+    handled: true,
+    flow: "hype_recovery_order_picker",
+    ok: telegram?.ok === true,
+    code_status: result.replayed === true ? "order_selection_replayed" : "order_linked_to_existing_case",
+    handoff_id: clean(result.handoff_id || handoffId),
+    order_id: clean(correlation.order_id),
+    telegram,
+  };
+}
+
 async function handleHypeTransactionIntake({ message, chatId, mode, fields = {}, source = "natural_language" }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
