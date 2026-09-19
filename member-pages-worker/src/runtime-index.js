@@ -26,6 +26,10 @@ import {
   isHypeMemberWalletRequest,
 } from "./hype-member-wallet-projection.js";
 import {
+  handleHypeShopOrders,
+  isHypeShopOrdersRequest,
+} from "./hype-shop-orders-projection.js";
+import {
   handleKenjiLineMemberTruthHealth,
   isKenjiLineMemberTruthHealthRequest,
 } from "./kenji-line-member-truth-health.js";
@@ -97,6 +101,9 @@ export default {
     }
     if (isHypeMemberWalletRequest(request)) {
       return handleHypeMemberWallet(request, env);
+    }
+    if (isHypeShopOrdersRequest(request)) {
+      return handleHypeShopOrders(request, env);
     }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);
