@@ -399,3 +399,25 @@ Detail pages tell me why.
 Workers decide what is true.
 Lovable decides how it feels.
 ```
+
+
+## 17. Upload-size and uploader ownership contract
+
+MY MMD does not own a generic payment-proof uploader.
+
+Canonical upload limits are purpose-specific:
+
+```text
+General member/customer image attachment: 15 MB max per image
+Supported member/customer video attachment: 50 MB max per clip
+Payment slip / payment proof image: 10 MB max per image
+```
+
+Rules:
+
+- A 15 MB image or 50 MB video limit applies only when the owning member/customer backend endpoint explicitly supports that attachment type.
+- Payment slips/proofs remain a separate evidence lane and keep the payment backend limit of 10 MB per image.
+- MY MMD must never create a second proof uploader. It may show payment/proof status and open the exact backend-supplied signed `/sigil/pay?t=...` URL.
+- MY MMD must never reuse MMD MODEL media endpoints.
+- Browser copy and client-side validation must never advertise a larger file than the owning backend accepts.
+- Upload size is transport policy only; an accepted upload never creates payment truth, membership, entitlement, Points, access, or verification.
