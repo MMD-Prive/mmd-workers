@@ -790,6 +790,14 @@ function projectRecoveryPicker(value, domain) {
     revision,
     candidate_count: candidateCount,
     reissue_count: reissueCount,
+    delivery_status: ["pending_customer_delivery", "delivered"].includes(token(raw.picker_delivery_status))
+      ? token(raw.picker_delivery_status)
+      : null,
+    delivery_revision: (() => {
+      const value = Number(raw.picker_delivery_revision);
+      return Number.isInteger(value) && value >= 1 && value <= 999999 ? value : null;
+    })(),
+    delivered_at: clean(raw.picker_delivered_at, 80) || null,
     issued_at: clean(raw.picker_issued_at, 80) || null,
     reissued_at: clean(raw.picker_reissued_at, 80) || null,
     live_refresh_status: liveRefresh || null,
