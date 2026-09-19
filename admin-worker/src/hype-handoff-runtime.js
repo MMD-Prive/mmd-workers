@@ -376,12 +376,16 @@ export async function handleHypeSupervisedExecutionRpc(request, env = {}) {
 
   const existingReceipt = parseObject(draft.payload?.supervised_execution);
   if (operation === "status") {
+    const observation = Object.keys(existingReceipt).length
+      ? await observeP6Authority(env, existingReceipt, context)
+      : null;
     return json({
       ok: true,
       state: Object.keys(existingReceipt).length ? "execution_recorded" : "draft_ready",
       mode: draft.mode,
       draft_id: draft.draft_id,
       execution: safeExecutionReceipt(existingReceipt),
+      authority_observation: observation,
       guardrails: p6ExecutionGuardrails(),
     });
   }
@@ -466,6 +470,89 @@ export async function handleHypeSupervisedExecutionRpc(request, env = {}) {
     customer_message: clean(result.customer_message, 1200),
     guardrails: p6ExecutionGuardrails(),
   });
+}
+
+async function observeP6Authority(env, receipt = {}, context = {}) {
+  const mode = normalizeTransactionMode(receipt.mode);
+  if (mode === "payment_proof") {
+    const payment = context?.payment_live || context?.payment || {};
+    return {
+      source: "payments-worker",
+      state: payment.paid === true
+        ? "paid"
+        : payment.review_required === true
+          ? "review_required"
+          : token(payment.status) || "pending",
+      paid: payment.paid === true,
+      review_required: payment.review_required === true,
+      outstanding_amount_thb: nonNegative(payment.outstanding_amount_thb),
+      final_confirmation_observed: payment.paid === true,
+      inference_used: false,
+    };
+  }
+
+  if (mode === "renewal") {
+    const entitlement = context?.entitlement_live || context?.entitlement || {};
+    return {
+      source: "my_mmd_entitlement_resolver_v1",
+      membership_level: token(entitlement.membership_level || entitlement.canonical_membership_level),
+      lifecycle: token(entitlement.lifecycle || entitlement.status),
+      active_through: clean(entitlement.active_through || entitlement.expire_at || entitlement.expires_at, 80),
+      renewal_completion_inferred: false,
+      final_confirmation_observed: false,
+    };
+  }
+
+  if (mode === "mms") {
+    const ref = clean(receipt.canonical_ref, 180);
+    if (!/^mmspre_[a-f0-9]{24}$/.test(ref) || !env.MMS_WORKER?.fetch) {
+      return {
+        source: "mms-worker",
+        state: token(receipt.status) || "unknown",
+        final_confirmation_observed: false,
+        inference_used: false,
+      };
+    }
+    try {
+      const response = await env.MMS_WORKER.fetch(new Request(`https://mms.internal/internal/mms/prebookings/${ref}`, {
+        method: "GET",
+      }));
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.ok === true) {
+        return {
+          source: "mms-worker",
+          state: clean(data?.prebooking?.status, 120) || "unknown",
+          sync_status: clean(data?.prebooking?.sync_status, 120),
+          final_confirmation_observed: false,
+          inference_used: false,
+        };
+      }
+    } catch {}
+    return {
+      source: "mms-worker",
+      state: "unavailable",
+      final_confirmation_observed: false,
+      inference_used: false,
+    };
+  }
+
+  if (mode === "booking") {
+    return {
+      source: "sigil-booking-worker",
+      state: token(receipt.status) || "unknown",
+      canonical_ref: clean(receipt.canonical_ref, 180),
+      final_confirmation_observed: false,
+      correlation_scope: "request_receipt_only",
+      inference_used: false,
+    };
+  }
+
+  return {
+    source: "canonical_authority",
+    state: "unknown",
+    final_confirmation_observed: false,
+    inference_used: false,
+  };
 }
 
 async function executeP6Lane(env, input = {}) {
