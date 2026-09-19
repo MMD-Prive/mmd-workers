@@ -1321,10 +1321,10 @@ function parseHypeOperatingCommand(value) {
     /^\/(?:progress|draftstatus)(?:@\w+)?$/i.test(text)
     || ["สถานะ draft", "สถานะดราฟต์", "เช็ก draft", "เช็กดราฟต์", "รายการนี้ถึงไหนแล้ว"].includes(normalized)
   ) return "transaction_progress";
-  if (/^\/orders?(?:@\w+)?$/i.test(text) || ["ออเดอร์ของฉัน", "ออร์เดอร์ของฉัน", "คำสั่งซื้อของฉัน", "mmd shop orders"].includes(normalized)) return "orders";
+  if (/^\/orders?(?:@\w+)?(?:\s+.+)?$/i.test(text) || ["ออเดอร์ของฉัน", "ออร์เดอร์ของฉัน", "คำสั่งซื้อของฉัน", "mmd shop orders"].includes(normalized)) return "orders";
   if (/^\/hall(?:@\w+)?$/i.test(text) || ["เปิด hall", "เลือกมุมมอง", "ดู hall"].includes(normalized)) return "hall";
   if (/^\/(?:mms-options|therapists)(?:@\w+)?$/i.test(text) || ["mms options", "ตัวเลือก therapist", "หา therapist"].includes(normalized)) return "mms_options";
-  if (/^\/(?:support|recovery)(?:@\w+)?$/i.test(text) || ["แจ้งปัญหา", "ร้องเรียน", "งานมีปัญหา", "บริการมีปัญหา"].includes(normalized)) return "recovery";
+  if (/^\/(?:support|recovery)(?:@\w+)?(?:\s+.+)?$/i.test(text) || ["แจ้งปัญหา", "ร้องเรียน", "งานมีปัญหา", "บริการมีปัญหา"].includes(normalized)) return "recovery";
   if (/^\/(?:case|handoff-status)(?:@\w+)?$/i.test(text) || ["ตามเคส", "สถานะเคส", "ทีมรับเรื่องแล้วไหม"].includes(normalized)) return "handoff_status";
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/membership(?:@\w+)?$/i.test(text) || ["สมาชิก", "สถานะสมาชิก", "เช็กสมาชิก", "เช็คสมาชิก"].includes(normalized)) return "membership";
