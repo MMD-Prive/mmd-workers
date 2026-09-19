@@ -7,6 +7,7 @@ import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
 import { readMmsCustomerHistory } from "./mms-customer-history.js";
 import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
+import { publicMmdShopReservation, readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -325,6 +326,7 @@ export async function handleMmdShopOrders(request, env = {}) {
       const orderStatus = shopCode(fields[SHOP_ORDER_FIELDS.orderStatus]) || "draft";
       const paymentStatus = shopCode(fields[SHOP_ORDER_FIELDS.paymentStatus]) || "pending";
       const fulfillment = readMmdShopFulfillment(fields[SHOP_ORDER_FIELDS.notes]);
+      const reservation = readMmdShopReservation(fields[SHOP_ORDER_FIELDS.notes]);
       const fulfillmentState = fulfillmentStateFromOrder(orderStatus, paymentStatus, fulfillment?.state);
       output.push({
         order_id: orderId,
@@ -336,6 +338,7 @@ export async function handleMmdShopOrders(request, env = {}) {
         fulfillment: fulfillment
           ? publicMmdShopFulfillment({ ...fulfillment, state: fulfillmentState })
           : { schema: "mmd_shop_fulfillment_v1", state: fulfillmentState },
+        reservation: reservation ? publicMmdShopReservation(reservation) : null,
         status_url: token ? `/mmd-shop/order?t=${encodeURIComponent(token)}` : null,
         payment_url: token ? `/pay/checkout?t=${encodeURIComponent(token)}` : null,
       });
