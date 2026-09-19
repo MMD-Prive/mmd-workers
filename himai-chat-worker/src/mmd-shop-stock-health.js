@@ -15,6 +15,7 @@ const PRODUCT_FIELDS = Object.freeze({
   sku: "fldhJE7UEE4VYHjR6",
   brandAvailability: "fldve5nrQmymoZgiX",
   status: "fldxYkkvmK9izvACA",
+  note: "fldAT8hnluV4CtF3c",
   mmdPrice: "fldD6Q5yido7pTlU0",
 });
 
@@ -79,18 +80,22 @@ export async function inspectMmdShopStockHealth(env = {}) {
       const isMmd = brands.some((value) => value.includes("mmd") || value.includes("both"));
       const price = Number(fields[PRODUCT_FIELDS.mmdPrice]);
       const restricted = isRestrictedOnlineCheckout(sku, name);
+      const onDemand = isOnDemandProduct(fields[PRODUCT_FIELDS.note]);
       if (!active || !isMmd || !(Number.isFinite(price) && price > 0) || restricted) return null;
-      return { product_id: record.id, sku: sku || null, product_name: name || null };
+      return { product_id: record.id, sku: sku || null, product_name: name || null, on_demand: onDemand };
     })
     .filter(Boolean);
 
-  const untrackedProducts = checkoutProducts.filter((item) => !activeBatchProductIds.has(item.product_id));
+  const onDemandProducts = checkoutProducts.filter((item) => item.on_demand === true);
+  const inventoryBackedProducts = checkoutProducts.filter((item) => item.on_demand !== true);
+  const untrackedProducts = inventoryBackedProducts.filter((item) => !activeBatchProductIds.has(item.product_id));
   return {
     ...report,
     metrics: {
       ...report.metrics,
       active_checkout_products: checkoutProducts.length,
-      tracked_checkout_products: checkoutProducts.length - untrackedProducts.length,
+      on_demand_checkout_products: onDemandProducts.length,
+      tracked_checkout_products: inventoryBackedProducts.length - untrackedProducts.length,
       untracked_checkout_products: untrackedProducts.length,
     },
     actionable: {
@@ -98,6 +103,7 @@ export async function inspectMmdShopStockHealth(env = {}) {
       untracked_product_ids: untrackedProducts.map((item) => item.product_id),
     },
     untracked_products: untrackedProducts,
+    on_demand_products: onDemandProducts,
   };
 }
 
@@ -209,6 +215,10 @@ function selectList(value) {
   if (!value) return [];
   const list = Array.isArray(value) ? value : [value];
   return list.map((item) => clean(typeof item === "string" ? item : item?.name, 120)).filter(Boolean);
+}
+
+function isOnDemandProduct(note) {
+  return /\bon[-\s]*demand\b/i.test(clean(note, 500));
 }
 
 function isRestrictedOnlineCheckout(sku, productName) {
