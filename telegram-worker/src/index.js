@@ -761,7 +761,7 @@ function configuredJoinCleanupChats(env) {
   };
 
   add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
-  add(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779", "premium_group");
+  add(env.TELEGRAM_PREMIUM_GROUP_ID, "premium_group");
   add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
   add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
   return chats;
