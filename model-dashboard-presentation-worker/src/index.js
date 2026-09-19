@@ -269,6 +269,7 @@ export function shouldHandoffToMiniApp(request) {
   if (!new Set(["GET", "HEAD"]).has(method)) return false;
   if (!isPresentationUiPath(new URL(request.url).pathname)) return false;
   if (hasModelSessionCookie(request)) return false;
+  if (hasLiffPrimaryBootstrapCookie(request)) return false;
   if (hasLineRedirectContext(request)) return false;
   return true;
 }
