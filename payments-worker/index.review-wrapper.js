@@ -47,6 +47,12 @@ import {
   isFinalPaymentFlowRequest,
   reconcileReviewedFinalPayment,
 } from "./final-payment-flow.js";
+import {
+  handleShopIntent,
+  isShopIntentRequest,
+  maybeHandleShopConfirmationDetails,
+  reconcileReviewedShopPayment,
+} from "./shop-payment-v1.js";
 
 export { PointsPhase1Coordinator };
 
@@ -72,6 +78,10 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
 
+    if (isShopIntentRequest(path, method)) {
+      return handleShopIntent(request, env);
+    }
+
     if (isFinalPaymentFlowRequest(path, method)) {
       return handleFinalPaymentFlow(request, env);
     }
@@ -83,9 +93,11 @@ export default {
     }
 
     if (isPaymentInstructionsRequest(path, method)) {
-      return handlePaymentInstructions(request, env, (detailsRequest) =>
-        handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx))
-      );
+      return handlePaymentInstructions(request, env, async (detailsRequest) => {
+        const shopDetails = await maybeHandleShopConfirmationDetails(detailsRequest, env);
+        if (shopDetails) return shopDetails;
+        return handleCustomerSessionDetails(detailsRequest, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      });
     }
 
     if (isCustomerSessionDetailsRequest(path, method)) {
@@ -154,7 +166,8 @@ export default {
       const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
-      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      return reconcileReviewedShopPayment(reconcileRequest.clone(), finalResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
