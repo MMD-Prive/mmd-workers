@@ -5,8 +5,17 @@ import {
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const TABLES = Object.freeze({
+  products: "tblzsmNLfP6J0kQ90",
   inventory: "tblwFgl4et1TOgtNn",
   movements: "tblASifwHdArNKQP2",
+});
+
+const PRODUCT_FIELDS = Object.freeze({
+  name: "fld0oKjoZrb1IqntV",
+  sku: "fldhJE7UEE4VYHjR6",
+  brandAvailability: "fldve5nrQmymoZgiX",
+  status: "fldxYkkvmK9izvACA",
+  mmdPrice: "fldD6Q5yido7pTlU0",
 });
 
 const INVENTORY_FIELDS = Object.freeze({
@@ -26,7 +35,8 @@ const MOVEMENT_FIELDS = Object.freeze({
 });
 
 export async function inspectMmdShopStockHealth(env = {}) {
-  const [inventory, movements] = await Promise.all([
+  const [products, inventory, movements] = await Promise.all([
+    listRecords(env, table(env, "products"), Object.values(PRODUCT_FIELDS)),
     listRecords(env, table(env, "inventory"), Object.values(INVENTORY_FIELDS)),
     listRecords(env, table(env, "movements"), Object.values(MOVEMENT_FIELDS)),
   ]);
@@ -48,11 +58,47 @@ export async function inspectMmdShopStockHealth(env = {}) {
     reference_id: clean(record.fields?.[MOVEMENT_FIELDS.referenceId], 500),
   }));
 
-  return buildMmdShopStockReconciliation({
+  const report = buildMmdShopStockReconciliation({
     batches,
     movements: movementRows,
     low_stock_threshold: Number(env.MMD_SHOP_LOW_STOCK_THRESHOLD || 5),
   });
+
+  const activeBatchProductIds = new Set(
+    batches
+      .filter((row) => row.batch_status === "active" && row.product_id)
+      .map((row) => row.product_id)
+  );
+  const checkoutProducts = products
+    .map((record) => {
+      const fields = record.fields || {};
+      const name = clean(fields[PRODUCT_FIELDS.name], 220);
+      const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
+      const brands = selectList(fields[PRODUCT_FIELDS.brandAvailability]).map((value) => value.toLowerCase());
+      const active = code(fields[PRODUCT_FIELDS.status]) === "active";
+      const isMmd = brands.some((value) => value.includes("mmd") || value.includes("both"));
+      const price = Number(fields[PRODUCT_FIELDS.mmdPrice]);
+      const restricted = isRestrictedOnlineCheckout(sku, name);
+      if (!active || !isMmd || !(Number.isFinite(price) && price > 0) || restricted) return null;
+      return { product_id: record.id, sku: sku || null, product_name: name || null };
+    })
+    .filter(Boolean);
+
+  const untrackedProducts = checkoutProducts.filter((item) => !activeBatchProductIds.has(item.product_id));
+  return {
+    ...report,
+    metrics: {
+      ...report.metrics,
+      active_checkout_products: checkoutProducts.length,
+      tracked_checkout_products: checkoutProducts.length - untrackedProducts.length,
+      untracked_checkout_products: untrackedProducts.length,
+    },
+    actionable: {
+      ...report.actionable,
+      untracked_product_ids: untrackedProducts.map((item) => item.product_id),
+    },
+    untracked_products: untrackedProducts,
+  };
 }
 
 export { mmdShopStockHealthFingerprint };
@@ -66,6 +112,7 @@ export function formatMmdShopStockHealthAlert(report = {}, options = {}) {
       "",
       "Low stock: 0",
       "Mismatch: 0",
+      "Untracked checkout products: 0",
       "Checked: " + new Date().toISOString(),
     ].join("\n");
   }
@@ -73,6 +120,7 @@ export function formatMmdShopStockHealthAlert(report = {}, options = {}) {
   const rows = Array.isArray(report.batches) ? report.batches : [];
   const low = rows.filter((row) => row.low_stock);
   const mismatch = rows.filter((row) => row.reconciliation_status === "mismatch");
+  const untracked = Array.isArray(report.untracked_products) ? report.untracked_products : [];
   const detail = [...new Map(
     [...mismatch, ...low].map((row) => [row.batch_id, row])
   ).values()].slice(0, 8);
@@ -81,6 +129,7 @@ export function formatMmdShopStockHealthAlert(report = {}, options = {}) {
     "MMD SHOP · STOCK HEALTH ALERT",
     "Low stock: " + low.length,
     "Reconciliation mismatch: " + mismatch.length,
+    "Untracked checkout products: " + untracked.length,
     "Available: " + Number(report.metrics?.available_units || 0).toLocaleString("en-US"),
     "Reserved: " + Number(report.metrics?.reserved_units || 0).toLocaleString("en-US"),
     "",
@@ -94,6 +143,9 @@ export function formatMmdShopStockHealthAlert(report = {}, options = {}) {
         + ", reserved " + row.reserved_units
         + (flags ? " · " + flags : "");
     }),
+    ...untracked.slice(0, 8).map((item) =>
+      "UNTRACKED · " + (item.sku || item.product_name || item.product_id)
+    ),
     "",
     "Owner: /internal/admin/shop/inventory",
     "Checked: " + new Date().toISOString(),
@@ -128,6 +180,7 @@ async function listRecords(env, tableId, fieldIds) {
 }
 
 function table(env, kind) {
+  if (kind === "products") return clean(env.SHARED_SHOP_PRODUCTS_TABLE_ID || TABLES.products, 120);
   if (kind === "inventory") return clean(env.MMD_SHOP_INVENTORY_BATCHES_TABLE_ID || TABLES.inventory, 120);
   if (kind === "movements") return clean(env.MMD_SHOP_STOCK_MOVEMENTS_TABLE_ID || TABLES.movements, 120);
   return "";
@@ -150,6 +203,18 @@ function linkedIds(value) {
   return value
     .map((item) => clean(typeof item === "string" ? item : item?.id, 80))
     .filter((id) => /^rec[A-Za-z0-9]{14}$/.test(id));
+}
+
+function selectList(value) {
+  if (!value) return [];
+  const list = Array.isArray(value) ? value : [value];
+  return list.map((item) => clean(typeof item === "string" ? item : item?.name, 120)).filter(Boolean);
+}
+
+function isRestrictedOnlineCheckout(sku, productName) {
+  const codeValue = clean(sku, 120).toUpperCase();
+  const label = clean(productName, 220).toLowerCase();
+  return /^PPP25-/.test(codeValue) || /\bpod\b/.test(label);
 }
 
 function number(value) {
