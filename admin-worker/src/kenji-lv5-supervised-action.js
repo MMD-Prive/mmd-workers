@@ -143,6 +143,7 @@ function memberStatus(context = {}) {
 }
 
 export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {}, intent = {}, actionId = "", refs = {}, action = "create_booking_request", resolver = {} } = {}) {
+  const normalizedIntent = normalizeBookingIntent(intent);
   const client = context?.client_360 || {};
   const model = modelAccess?.model || {};
   const visibility = token(modelAccess?.model_access?.visibility) === "private" ? "private" : "public";
@@ -191,8 +192,9 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
         customer_name_wording: clean(normalizedIntent.customer_name, 120),
         date: isoDate(normalizedIntent.date),
         time: hhmm(normalizedIntent.time),
-        end_time: hhmm(intent.end_time),
-        duration_hours: positiveNumber(intent.duration_hours) || undefined,
+        end_time: hhmm(normalizedIntent.end_time),
+        duration_hours: positiveNumber(normalizedIntent.duration_hours) || STANDARD_BOOKING_MIN_DURATION_HOURS,
+        duration_source: clean(normalizedIntent.duration_source, 80) || "mmd_standard_minimum_90m_default",
         location: clean(normalizedIntent.location, 160),
         amount_thb: positiveNumber(normalizedIntent.amount_thb) || undefined,
         deposit_amount_thb_wording: positiveNumber(normalizedIntent.deposit_amount_thb) || undefined,
@@ -374,7 +376,7 @@ export async function executeKenjiLv5SupervisedAction(env = {}, input = {}) {
   });
   intent.line_user_id = requestedLineId;
   const captureIntent = action === "capture_booking_intent";
-  const completeStandardBooking = Boolean(intent.model_name && normalizedIntent.date && normalizedIntent.time && normalizedIntent.location);
+  const completeStandardBooking = Boolean(intent.model_name && intent.date && intent.time && intent.location);
   if (!actionId || !canonicalClientId || !requestedLineId || (!captureIntent && !completeStandardBooking)) {
     return { ok: false, schema: KENJI_LV5_ACTION_SCHEMA, action, status: "invalid_action_request", executed: false };
   }
