@@ -916,3 +916,8 @@ zone_name = "mmdbkk.com"
 [[routes]]
 pattern = "www.mmdbkk.com/v1/admin/models/review-queue*"
 zone_name = "mmdbkk.com"
+
+
+[[services]]
+binding = "MMD_SHOP_WORKER"
+service = "himai-chat-worker"
