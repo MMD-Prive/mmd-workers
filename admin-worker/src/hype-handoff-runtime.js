@@ -373,7 +373,7 @@ export async function transitionRecoveryCase(env = {}, body = {}) {
   }
 
   const nextState = token(body.state);
-  if (!["sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
+  if (!["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
     return json({ ok: false, error: "handoff_state_invalid" }, 400);
   }
 
