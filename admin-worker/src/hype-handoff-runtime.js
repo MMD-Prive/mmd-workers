@@ -2178,8 +2178,14 @@ function recoveryContinuityLine(correlation = null) {
   if (correlation.domain === "booking" && correlation.correlated === true) {
     return `Booking recovery linked to owned Booking Ref ${clean(correlation.booking_ref, 180)}; session=${clean(correlation.session_id, 180) || "pending"}; job=${clean(correlation.job_id, 180) || "pending"}; job_state=${clean(correlation.job_state, 80) || "unknown"}.`;
   }
+  if (correlation.domain === "booking" && correlation.state === "ambiguous") {
+    return `Booking recovery has ${Number(correlation.candidate_count) || 0} owned candidates; customer selection required and Booking/Job must not be guessed.`;
+  }
   if (correlation.domain === "mms" && correlation.correlated === true) {
     return `MMS recovery linked to owned Pre-booking ${clean(correlation.prebooking_id, 180)}; status=${clean(correlation.prebooking_status, 80) || "unknown"}; service=${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""}.`;
+  }
+  if (correlation.domain === "mms" && correlation.state === "ambiguous") {
+    return `MMS recovery has ${Number(correlation.candidate_count) || 0} owned Pre-booking candidates; customer selection required and MMS reference must not be guessed.`;
   }
   return "";
 }
@@ -2197,8 +2203,14 @@ function recoveryOperatorLine(correlation = null, handoffId = "") {
   if (correlation.domain === "booking" && correlation.correlated === true) {
     return `Booking Recovery: ${clean(correlation.booking_ref, 180)} · Session ${clean(correlation.session_id, 180) || "pending"} · Job ${clean(correlation.job_id, 180) || "pending"} · State ${clean(correlation.job_state, 80) || clean(correlation.state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
   }
+  if (correlation.domain === "booking" && correlation.state === "ambiguous") {
+    return `Booking Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Booking Request`;
+  }
   if (correlation.domain === "mms" && correlation.correlated === true) {
     return `MMS Recovery: ${clean(correlation.prebooking_id, 180)} · Status ${clean(correlation.prebooking_status, 80) || "unknown"} · ${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+  }
+  if (correlation.domain === "mms" && correlation.state === "ambiguous") {
+    return `MMS Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Pre-booking`;
   }
   return "";
 }
