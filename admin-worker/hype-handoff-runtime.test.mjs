@@ -255,6 +255,7 @@ test("HYPE handoff status reads only the explicitly recorded operator state", { 
 test("HYPE handoff transition writes conversation state only and rejects backwards state", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const writes = [];
+  let currentState = "sent";
   globalThis.fetch = async (url, init = {}) => {
     const parsed = new URL(String(url));
     if (parsed.pathname.endsWith("/tblMatrix") && (!init.method || init.method === "GET")) {
@@ -271,7 +272,7 @@ test("HYPE handoff transition writes conversation state only and rejects backwar
               handoff_tracking: {
                 id: "HYPE-PER-20260919120000-deadbeef",
                 target: "per",
-                state: "sent",
+                state: currentState,
                 updated_at: "2026-09-19T12:00:30.000Z",
                 actor_role: "hype",
               },
@@ -283,6 +284,8 @@ test("HYPE handoff transition writes conversation state only and rejects backwar
     if (parsed.pathname.endsWith("/tblMatrix") && init.method === "PATCH") {
       const payload = JSON.parse(String(init.body || "{}"));
       writes.push(payload);
+      const nextPayload = JSON.parse(payload.records[0].fields.payload_json);
+      currentState = nextPayload.handoff_tracking.state;
       return Response.json({ records: [{ id: "recMatrixA1", fields: payload.records[0].fields }] });
     }
     throw new Error(`unexpected fetch ${parsed.pathname} ${init.method || "GET"}`);
@@ -303,16 +306,21 @@ test("HYPE handoff transition writes conversation state only and rejects backwar
 
     const serialized = JSON.stringify(writes[0]);
     assert.match(serialized, /handoff_acknowledged/);
-    assert.match(serialized, /"state":"acknowledged"/);
+    const writtenPayload = JSON.parse(writes[0].records[0].fields.payload_json);
+    assert.equal(writtenPayload.handoff_tracking.state, "acknowledged");
+    assert.equal(writtenPayload.handoff_tracking.actor_role, "owner");
     assert.doesNotMatch(serialized, /payment_status|job_status|membership_status|entitlement_grant/i);
 
     const backwards = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
       operation: "transition",
       handoff_id: "HYPE-PER-20260919120000-deadbeef",
-      state: "prepared",
+      state: "sent",
       actor_role: "owner",
     }), ENV);
-    assert.equal(backwards.status, 400);
+    const backwardsBody = await backwards.json();
+    assert.equal(backwards.status, 409);
+    assert.equal(backwardsBody.error, "handoff_transition_invalid");
+    assert.equal(backwardsBody.current_state, "acknowledged");
   } finally {
     globalThis.fetch = originalFetch;
   }
