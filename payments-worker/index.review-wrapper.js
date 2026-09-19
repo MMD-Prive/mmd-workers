@@ -127,6 +127,7 @@ export default {
 
     if (isReviewedProofRequest(path, method)) {
       const reconcileRequest = request.clone();
+      const shopRequest = request.clone();
       const doubleMomentRequest = request.clone();
       const finalPaymentRequest = request.clone();
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
@@ -167,7 +168,7 @@ export default {
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
       const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
-      return reconcileReviewedShopPayment(reconcileRequest.clone(), finalResponse, env);
+      return reconcileReviewedShopPayment(shopRequest, finalResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
