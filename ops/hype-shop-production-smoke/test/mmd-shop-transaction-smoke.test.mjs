@@ -38,6 +38,7 @@ test("isolated MMD Shop transaction smoke covers reserve expiry payment inventor
   assert.equal(result.checks.inventory_out_once, true);
   assert.equal(result.checks.reservation_movement_sequence, true);
   assert.equal(result.checks.fulfillment_delivery_lifecycle, true);
+  assert.equal(result.checks.aftercare_refund_projection, true);
   assert.equal(result.checks.line_shipping_dry_run, true);
   assert.equal(result.checks.customer_projection_contract, true);
   assert.equal(result.guardrails.production_airtable_called, false);
