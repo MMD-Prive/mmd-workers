@@ -1730,7 +1730,14 @@ function renderHypeHandoffStatus(result = {}) {
   lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || state || "unknown")}`);
   if (result.recovery_correlation?.correlated === true) {
     lines.push(`<b>Order:</b> <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`);
-    lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
+    if (clean(result.recovery_correlation.live_refresh_status) === "fresh") {
+      lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
+      if (clean(result.recovery_correlation.refreshed_at)) {
+        lines.push(`<b>Shop refreshed:</b> ${escapeHtml(formatBangkokDateTime(result.recovery_correlation.refreshed_at))}`);
+      }
+    } else {
+      lines.push("<b>Shop state:</b> ตอนนี้ refresh จาก canonical Shop authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
+    }
   }
   if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
   lines.push("");
