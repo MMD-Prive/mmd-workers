@@ -4,8 +4,14 @@ import assert from "node:assert/strict";
 import {
   HYPE_CONTINUITY_PATH,
   HYPE_HANDOFF_PATH,
+  HYPE_TRANSACTION_INTAKE_PATH,
   handleHypeContinuityRpc,
   handleHypeHandoffRpc,
+  handleHypeTransactionIntakeRpc,
+  normalizeTransactionFields,
+  mergeTransactionDraft,
+  canonicalTransactionRoute,
+  transactionGuardrails,
 } from "./src/hype-handoff-runtime.js";
 
 const ENV = {
@@ -42,6 +48,12 @@ test("HYPE continuity and handoff endpoints are service-binding only", async () 
     ENV,
   );
   assert.equal(wrongCaller.status, 403);
+
+  const transactionWrongCaller = await handleHypeTransactionIntakeRpc(
+    internalRequest(HYPE_TRANSACTION_INTAKE_PATH, { telegram_user_id: "111111", mode: "booking" }, "browser"),
+    ENV,
+  );
+  assert.equal(transactionWrongCaller.status, 403);
 });
 
 test("HYPE continuity writes a bounded cross-channel Matrix row for a linked canonical client", { concurrency: false }, async () => {
@@ -153,4 +165,76 @@ test("HYPE continuity stays canonical-only when LINE identity is not linked", { 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("P5 transaction helpers prepare booking and MMS drafts without protected truth", () => {
+  const booking = mergeTransactionDraft("booking", {}, normalizeTransactionFields("booking", {
+    service_intent: "dining",
+    preferred_date: "2026-09-25",
+    preferred_time: "19:30",
+    area: "Sathorn",
+    model_preference: "Book EI",
+    payment_ref: "must-not-copy",
+    canonical_client_id: "must-not-copy",
+  }));
+
+  assert.equal(booking.complete, true);
+  assert.deepEqual(booking.missing_fields, []);
+  assert.equal(booking.fields.service_intent, "dining");
+  assert.equal(booking.fields.area, "Sathorn");
+  assert.equal(Object.hasOwn(booking.fields, "payment_ref"), false);
+  assert.equal(Object.hasOwn(booking.fields, "canonical_client_id"), false);
+
+  const mms = mergeTransactionDraft("mms", {}, normalizeTransactionFields("mms", {
+    zone: "sathorn_silom",
+    service_date: "2026-09-26",
+    service_time: "20:00",
+    skills: ["aroma_therapy_oil"],
+  }));
+  assert.equal(mms.complete, false);
+  assert.deepEqual(mms.missing_fields, ["recipient_gender"]);
+});
+
+test("P5 payment proof stores evidence presence only and never raw Telegram media identifiers", () => {
+  const proof = normalizeTransactionFields("payment_proof", {
+    evidence_present: true,
+    evidence_type: "photo",
+    file_id: "AgAC-secret-file-id",
+    file_unique_id: "secret-unique-id",
+    payment_ref: "pay-secret",
+  });
+  assert.deepEqual(proof, {
+    evidence_present: true,
+    evidence_type: "photo",
+  });
+
+  const guardrails = transactionGuardrails();
+  assert.equal(guardrails.raw_payment_media_persisted, false);
+  assert.equal(guardrails.payment_verified, false);
+  assert.equal(guardrails.business_truth_mutated, false);
+});
+
+test("P5 canonical transaction routes preserve lane authority and only accept signed payment handoff", () => {
+  const privateRenewal = canonicalTransactionRoute("renewal", {
+    entitlement_live: { membership_level: "private_premium", lifecycle: "active" },
+  });
+  assert.equal(privateRenewal.href, "/sigil/member/membership?intent=renew");
+
+  const publicRenewal = canonicalTransactionRoute("renewal", {
+    entitlement_live: { membership_level: "public_member", lifecycle: "active" },
+  });
+  assert.equal(publicRenewal.href, "/pay/membership");
+
+  const signedProof = canonicalTransactionRoute("payment_proof", {
+    next_actions: [{ href: "/sigil/pay?t=abcDEF_123", action: "continue_payment" }],
+  });
+  assert.equal(signedProof.kind, "signed_payment_proof");
+  assert.equal(signedProof.href, "/sigil/pay?t=abcDEF_123");
+
+  const unsafeProof = canonicalTransactionRoute("payment_proof", {
+    next_actions: [{ href: "https://evil.example/pay?t=secret" }],
+  });
+  assert.equal(unsafeProof.kind, "payment_status_resume");
+  assert.equal(unsafeProof.href, "/member/payments");
 });
