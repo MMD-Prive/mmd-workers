@@ -1,0 +1,378 @@
+import assert from "node:assert/strict";
+import worker, {
+  CreateSessionAccessError,
+  enforcePrivateCreateAccess,
+  ownerPrivateJobGrantTarget,
+  resolveAuthoritativeMemberAccess,
+  searchCreateSessionModels,
+} from "./src/index.js";
+
+const env = {
+  AIRTABLE_API_KEY: "test",
+  AIRTABLE_BASE_ID: "appTest",
+  ADMIN_BEARER: "admin-test",
+  AIRTABLE_TABLE_MEMBERS: "members",
+  AIRTABLE_TABLE_MEMBER_PACKAGES: "member_packages",
+  AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "member_entitlements",
+  AIRTABLE_TABLE_CLIENTS: "clients",
+  AIRTABLE_TABLE_MODELS: "models",
+  AIRTABLE_TABLE_ACCESS_LOG: "access_log",
+};
+
+const future = "2099-01-01";
+const past = "2000-01-01";
+
+const tables = {
+  clients: [
+    {
+      id: "recClientQue00001",
+      fields: {
+        "Client Name": "Que",
+        line_user_id: "client_svip_line_user",
+        "MMD — Member Entitlements": ["recEntSvip000001XX"],
+      },
+    },
+  ],
+  members: [
+    member("recMemStandard0001", "client_standard", "mem_standard", "standard@example.test"),
+    member("recMemPremium0001", "client_premium", "mem_premium", "premium@example.test"),
+    member("recMemVip00000001", "client_vip", "mem_vip", "vip@example.test"),
+    member("recMemBlack000001", "client_black", "mem_black", "black@example.test"),
+    member("recMemSvip0000001", "client_svip", "mem_svip", "svip@example.test"),
+    member("recMemExpired0001", "client_expired", "mem_expired", "expired@example.test"),
+    member("recMemInactive01", "client_inactive", "mem_inactive", "inactive@example.test"),
+    member("recMemGuest00001", "client_guest", "mem_guest", "guest@example.test"),
+  ],
+  member_entitlements: [
+    entitlement("recEntSvip000001XX", "mem_svip", "svip", future),
+  ],
+  member_packages: [
+    pkg("recPkgStandard001", "standard@example.test", "Standard", future),
+    pkg("recPkgPremium001", "premium@example.test", "Premium", future),
+    pkg("recPkgVip0000001", "vip@example.test", "VIP", future),
+    pkg("recPkgBlack00001", "black@example.test", "Black Card", future),
+    pkg("recPkgSvip000001", "svip@example.test", "SVIP", past),
+    pkg("recPkgExpired001", "expired@example.test", "Black Card", past),
+    pkg("recPkgInactive01", "inactive@example.test", "Black Card", future, "inactive"),
+    pkg("recPkgGuest0001", "guest@example.test", "Guest", future),
+  ],
+  access_log: [
+    {
+      id: "recOwnerGrant00001",
+      fields: {
+        Action: "owner_private_job_grant",
+        Target: "jobgrant:v1:client_missing:recStandardModel01:2026-09-18:20:00:22:00:standard:straight:vip:15000:9000",
+        Result: "success",
+        Reason: "owner_approved_single_job_unconsumed",
+      },
+    },
+  ],
+  models: [
+    model("recStandardModel01", "Standard Straight", "standard", "straight"),
+    model("recPremiumModel001", "Premium Both", "premium", "both"),
+    model("recVipModel000001", "VIP Gay", "vip", "gay"),
+    model("recVipSimba000001", "Simba", "vip", "straight"),
+    model("recExclusiveModel1", "Exclusive Both", "exclusive", "both"),
+    {
+      id: "recDriveLazyModel1",
+      fields: {
+        display_name: "Drive Lazy Exclusive",
+        booking_visibility: "private",
+        private_tier: "Exclusive Models",
+        raw_import_tag: "drive_lazy_materialized_v1",
+        folder_scope_key: "exclusive:drive:1DriveLazyModelFolder",
+        status: "active",
+        availability_status: "available",
+        available_now: true,
+      },
+    },
+    {
+      id: "recPublicTravel001",
+      fields: {
+        display_name: "Public Travel",
+        booking_visibility: "public",
+        service_layer: "Travel",
+        customer_lane: "both",
+        status: "active",
+        availability_status: "available",
+        available_now: true,
+      },
+    },
+  ],
+};
+
+function member(id, clientId, memberId, email) {
+  return {
+    id,
+    fields: {
+      client_id: clientId,
+      member_id: memberId,
+      email,
+      "Contact Email": email,
+      line_record_id: `${clientId}_line_record`,
+      line_user_id: `${clientId}_line_user`,
+    },
+  };
+}
+
+function entitlement(id, memberId, relationshipTier, expireAt, accessStatus = "active") {
+  return {
+    id,
+    fields: {
+      entitlement_id: `ent_${memberId}`,
+      member_id: memberId,
+      access_status: accessStatus,
+      member_status: accessStatus,
+      relationship_tier: relationshipTier,
+      expire_at: expireAt,
+      source: "manual",
+    },
+  };
+}
+
+function pkg(id, email, packageCode, endDate, status = "active") {
+  return {
+    id,
+    fields: {
+      member_email: email,
+      package_code: packageCode,
+      status,
+      end_date: endDate,
+    },
+  };
+}
+
+function model(id, name, accessFolder, lane) {
+  return {
+    id,
+    fields: {
+      display_name: name,
+      model_lookup_key: id,
+      booking_visibility: "private",
+      access_folder: accessFolder,
+      customer_lane: lane,
+      status: "active",
+      availability_status: "available",
+      available_now: true,
+      telegram_username: `@${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+    },
+  };
+}
+
+function installAirtableMock() {
+  const calls = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const table = decodeURIComponent(parts[2] || "");
+    const id = parts[3] ? decodeURIComponent(parts[3]) : "";
+    const records = tables[table] || [];
+
+    if (id) {
+      const record = records.find((item) => item.id === id);
+      return jsonResponse(record || { error: "not_found" }, record ? 200 : 404);
+    }
+
+    const formula = url.searchParams.get("filterByFormula") || "";
+    const filtered = formula ? records.filter((record) => formulaMatches(record.fields, formula)) : records;
+    return jsonResponse({ records: filtered.slice(0, Number(url.searchParams.get("pageSize") || 100)) });
+  };
+  return calls;
+}
+
+function formulaMatches(fields, formula) {
+  const search = formula.match(/SEARCH\("([^"]*)",\s*\{([^}]+)\}/i);
+  if (search) {
+    const needle = String(search[1] || "").toLowerCase();
+    const field = String(search[2] || "");
+    return String(fields[field] ?? "").toLowerCase().includes(needle);
+  }
+  const equals = [...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g)];
+  if (equals.length > 1 || /^AND\(/i.test(formula)) {
+    return equals.every(([, field, value]) => String(fields[field] ?? "") === value);
+  }
+  const value = (formula.match(/=\s*"([^"]*)"/) || [])[1] || "";
+  const field = (formula.match(/\{([^}]+)\}/) || [])[1] || "";
+  if (!field) return true;
+  const actual = String(fields[field] ?? "");
+  return /^LOWER\(/.test(formula) ? actual.toLowerCase() === value.toLowerCase() : actual === value;
+}
+
+function jsonResponse(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function privateBody(clientId, folder, modelId, overrides = {}) {
+  return {
+    job_date: overrides.jobDate || "2026-09-18",
+    start_time: overrides.startTime || "20:00",
+    end_time: overrides.endTime || "22:00",
+    amount_thb: overrides.amountThb ?? 15000,
+    model_payout_thb: overrides.modelPayoutThb ?? 9000,
+    client_lineage: {
+      client_id: clientId,
+      membership_status: overrides.forgedMembershipStatus || "expired",
+      normalized_membership_tier: overrides.forgedTier || "blackcard",
+    },
+    line_identity: {},
+    work: {
+      job_visibility: "private",
+      model_folder: folder,
+      job_type: overrides.privateWork || "vip",
+    },
+    private_access: {
+      eligibility_checked: true,
+      eligibility_result: "allowed",
+      private_access_level: overrides.forgedAccessLevel || "black_card",
+      allowed_private_folders: overrides.forgedFolders || ["standard", "premium", "vip", "exclusive"],
+      selected_orientation: overrides.orientation || "straight",
+      selected_private_folder: folder,
+    },
+    model: {
+      model_id: modelId,
+      selected_orientation: overrides.orientation || "straight",
+    },
+    telegram_gate: {
+      customer_telegram_status: overrides.customerTelegram || "linked",
+      model_telegram_status: overrides.modelTelegram || "verified",
+    },
+  };
+}
+
+async function rejectsWithCode(promise, code) {
+  await assert.rejects(
+    promise,
+    (error) => error instanceof CreateSessionAccessError && error.code === code,
+  );
+}
+
+installAirtableMock();
+
+assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_standard" })).allowed_folders, ["standard"]);
+assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_premium" })).allowed_folders, ["standard", "premium"]);
+assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_vip" })).allowed_folders, ["standard", "premium", "vip"]);
+assert.deepEqual((await resolveAuthoritativeMemberAccess(env, { client_id: "client_black" })).allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+const svip = await resolveAuthoritativeMemberAccess(env, { client_id: "client_svip" });
+assert.equal(svip.tier, "black_card");
+assert.equal(svip.entitlement_authority, "my_mmd_entitlement_resolver_v1");
+assert.equal(svip.package_code, "svip");
+assert.deepEqual(svip.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+const svipByCanonicalClient = await resolveAuthoritativeMemberAccess(env, { client_id: "recClientQue00001" });
+assert.equal(svipByCanonicalClient.tier, "black_card");
+assert.equal(svipByCanonicalClient.entitlement_authority, "my_mmd_entitlement_resolver_v1");
+assert.equal(svipByCanonicalClient.canonical_client_record_id, "recClientQue00001");
+assert.deepEqual(svipByCanonicalClient.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_standard", "premium", "recPremiumModel001", { forgedAccessLevel: "black_card" })),
+  "private_folder_not_allowed",
+);
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_expired", "standard", "recStandardModel01", { forgedMembershipStatus: "active" })),
+  "private_eligibility_blocked",
+);
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_standard", "exclusive", "recExclusiveModel1", { forgedTier: "blackcard" })),
+  "private_folder_not_allowed",
+);
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_standard", "exclusive", "recExclusiveModel1", { forgedFolders: ["exclusive"] })),
+  "private_folder_not_allowed",
+);
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_vip", "vip", "recExclusiveModel1")),
+  "private_model_folder_denied",
+);
+
+{
+  const driveLazy = await enforcePrivateCreateAccess(
+    env,
+    privateBody("client_black", "exclusive", "recDriveLazyModel1", { orientation: "straight", modelTelegram: "missing" }),
+  );
+  assert.equal(driveLazy.selectedOrientation, "straight");
+}
+
+const standardSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_standard"));
+assert.deepEqual(standardSearch.items.map((item) => item.model_name), ["Standard Straight"]);
+
+const premiumSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=premium&client_id=client_premium"));
+assert.deepEqual(premiumSearch.items.map((item) => item.model_name), ["Premium Both"]);
+
+const straightSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=premium&client_id=client_black"));
+assert.deepEqual(straightSearch.items.map((item) => item.model_name), ["Premium Both"]);
+
+const gaySearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=gay&selected_access_folder=vip&client_id=client_black"));
+assert.deepEqual(gaySearch.items.map((item) => item.model_name), ["VIP Gay"]);
+
+const simbaLowercaseSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=vip&client_id=client_black&q=simba&inventory_only=1"));
+assert.deepEqual(simbaLowercaseSearch.items.map((item) => item.model_name), ["Simba"]);
+
+const expiredSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_expired&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
+assert.deepEqual(expiredSearch.items.map((item) => item.model_name), ["Exclusive Both", "Drive Lazy Exclusive"]);
+assert.equal(expiredSearch.private_access.eligibility_result, "blocked");
+assert.equal(expiredSearch.private_access.inventory_preview_only, true);
+assert.equal(expiredSearch.private_access.entitlement_recheck_required, true);
+
+const inactiveSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=exclusive&client_id=client_inactive&allowed_model_folders=exclusive&normalized_membership_tier=blackcard"));
+assert.deepEqual(inactiveSearch.items.map((item) => item.model_name), ["Exclusive Both", "Drive Lazy Exclusive"]);
+assert.equal(inactiveSearch.private_access.eligibility_result, "blocked");
+
+const guestSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_guest&allowed_model_folders=standard&normalized_membership_tier=standard"));
+assert.deepEqual(guestSearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(guestSearch.private_access.eligibility_result, "blocked");
+
+const unresolvedSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing"));
+assert.deepEqual(unresolvedSearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(unresolvedSearch.private_access.eligibility_result, "unresolved");
+assert.equal(unresolvedSearch.private_access.inventory_preview_only, true);
+assert.equal(unresolvedSearch.private_access.entitlement_recheck_required, true);
+
+const fastInventorySearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_missing&inventory_only=1"));
+assert.deepEqual(fastInventorySearch.items.map((item) => item.model_name), ["Standard Straight"]);
+assert.equal(fastInventorySearch.private_access.eligibility_result, "deferred_to_create");
+assert.equal(fastInventorySearch.private_access.inventory_fast_path, true);
+assert.equal(fastInventorySearch.private_access.entitlement_recheck_required, true);
+
+assert.equal(
+  ownerPrivateJobGrantTarget(privateBody("client_missing", "standard", "recStandardModel01")),
+  "jobgrant:v1:client_missing:recStandardModel01:2026-09-18:20:00:22:00:standard:straight:vip:15000:9000",
+);
+{
+  const granted = await enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01"));
+  assert.equal(granted.ownerJobGrant?.id, "recOwnerGrant00001");
+  assert.equal(granted.selectedFolder, "standard");
+}
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("client_missing", "standard", "recStandardModel01", { startTime: "21:00", endTime: "23:00" })),
+  "AUTHORITATIVE_MEMBER_NOT_FOUND",
+);
+
+const routeRes = await worker.fetch(
+  new Request("https://worker/v1/admin/models/search?work_type=private&booking_visibility=private&customer_lane=straight&selected_access_folder=standard&client_id=client_standard", {
+    headers: { Authorization: "Bearer admin-test" },
+  }),
+  env,
+);
+assert.equal(routeRes.status, 200);
+assert.equal((await routeRes.json()).ok, true);
+
+const publicSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&selected_access_folder=travel"));
+assert.deepEqual(publicSearch.items.map((item) => item.model_name), ["Public Travel"]);
+
+{
+  const result = await enforcePrivateCreateAccess(
+    env,
+    privateBody("client_black", "exclusive", "recExclusiveModel1", { modelTelegram: "missing" }),
+  );
+  assert.equal(result.identityLinkState.model_telegram_status, "missing");
+  assert.equal(result.identityLinkState.post_link_identity_required, true);
+}
+
+assert.match(await import("node:fs/promises").then((fs) => fs.readFile(new URL("../../assets/sigil/create-session.js", import.meta.url), "utf8")), /saveDraft\(\)/);
+
+console.log("admin create-session access tests passed");

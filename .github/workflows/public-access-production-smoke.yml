@@ -1,0 +1,77 @@
+name: Public Access production smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "Deploy public-access-worker"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-access-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      API_ORIGIN: https://sigil.mmdbkk.com
+      PUBLIC_ORIGIN: https://mmdbkk.com
+    steps:
+      - name: Verify visible Public Access page is live
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -L               -D "$headers" -o "$body" -w "%{http_code}" "https://$host/public/access")"
+            echo "$host /public/access HTTP $code"
+            test "$code" = "200"
+            grep -q 'mmd-access-gate' "$body"
+          done
+
+      - name: Verify intake OPTIONS and allowed-origin contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$RUNNER_TEMP/public-access-options.headers"
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$headers" -o /dev/null -w "%{http_code}"             -X OPTIONS "$API_ORIGIN/public/api/access/intake"             -H "Origin: $PUBLIC_ORIGIN"             -H "Access-Control-Request-Method: POST")"
+          echo "OPTIONS intake HTTP $code"
+          test "$code" = "204"
+          grep -qi '^access-control-allow-origin: https://mmdbkk.com' "$headers"
+          grep -qi '^access-control-allow-methods: .*POST' "$headers"
+
+      - name: Verify disallowed origin fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/public-access-forbidden.json"
+          code="$(curl -sS -o "$body" -w "%{http_code}"             -X POST "$API_ORIGIN/public/api/access/intake"             -H "Origin: https://evil.example"             -F 'name=route-smoke'             -F 'contact_method=line'             -F 'contact_value=route-smoke'             -F 'brief=route smoke only'             -F 'consent=true')"
+          test "$code" = "403"
+          jq -e '.ok == false and .error == "origin_not_allowed"' "$body" >/dev/null
+
+      - name: Verify allowed-origin POST reaches evidence-only intake contract without mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/public-access-bounded-post.json"
+          code="$(curl -sS -o "$body" -w "%{http_code}"             -X POST "$API_ORIGIN/public/api/access/intake"             -H "Origin: $PUBLIC_ORIGIN"             -F 'name=route-smoke'             -F 'contact_method=line'             -F 'contact_value=route-smoke'             -F 'brief=bounded production route smoke; no evidence file'             -F 'consent=true')"
+          echo "bounded POST intake HTTP $code"
+          test "$code" = "400"
+          jq -e '.ok == false and .error == "public_access_intake_failed" and .message == "evidence_required"' "$body" >/dev/null
+
+      - name: Verify unknown Public API subpath fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/public-access-unknown.json"
+          code="$(curl -sS -o "$body" -w "%{http_code}"             -X POST "$API_ORIGIN/public/api/not-implemented"             -H "Origin: $PUBLIC_ORIGIN")"
+          test "$code" = "404"
+          jq -e '.ok == false and .error == "not_found"' "$body" >/dev/null

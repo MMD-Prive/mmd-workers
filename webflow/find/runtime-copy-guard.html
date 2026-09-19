@@ -1,0 +1,24 @@
+<script>
+(function(){
+  var r=document.getElementById('mmd-find');
+  if(!r)return;
+  function f(){
+    var v=r.querySelector('[data-review-intent]');
+    if(v&&v.textContent==='ให้เปอร์ช่วยแนะนำ')v.textContent='ให้ MMD ช่วยแนะนำ';
+
+    var e=r.querySelector('[data-step-error="3"]');
+    if(e&&(e.textContent.indexOf('Production')>-1||e.textContent.indexOf('ระบบรับคำขอ')>-1)){
+      e.textContent='ทัก MMD ได้เลยครับ เดี๋ยวเราช่วยรับรายละเอียดให้';
+    }
+
+    var t=r.querySelector('[data-mmd-toast]');
+    if(t&&t.textContent.indexOf('Booking Request endpoint')>-1){
+      t.textContent='ทัก MMD ได้เลยครับ เดี๋ยวเรารับรายละเอียดให้';
+    }
+  }
+  r.addEventListener('click',function(){setTimeout(f,0)});
+  r.addEventListener('submit',function(){setTimeout(f,0)});
+  new MutationObserver(f).observe(r,{subtree:true,childList:true,characterData:true});
+  f();
+})();
+</script>
