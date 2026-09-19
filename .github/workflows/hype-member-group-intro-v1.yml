@@ -16,6 +16,8 @@ jobs:
     environment: mmd-slip-extractor-staging
     env:
       AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
+      AUTH_SERVICE_AUTH_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_AUTH_TO_TELEGRAM }}
+      TELEGRAM_BOT_TOKEN_GENERIC: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_URL: "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
       STANDARD_GROUP_ID: "-1002073919780"
       PREMIUM_GROUP_ID: "-1001668261779"
@@ -34,17 +36,39 @@ jobs:
             exit 0
           fi
 
-          service_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
-          test -n "$service_token"
+          line_service_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
+          auth_service_token="$(printf '%s' "${AUTH_SERVICE_AUTH_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
+          generic_bot_token="$(printf '%s' "${TELEGRAM_BOT_TOKEN_GENERIC:-}" | tr -d '\r\n' | xargs)"
 
           health_code="$(curl -sS -o "$RUNNER_TEMP/hype-health.json" -w '%{http_code}'             'https://telegram-worker.malemodel-bkk.workers.dev/health' || true)"
           test "$health_code" = "200"
+
+          verify_generic_hype_bot() {
+            if [ -z "$generic_bot_token" ]; then
+              return 1
+            fi
+            echo "::add-mask::${generic_bot_token}"
+            response="$RUNNER_TEMP/hype-getme.json"
+            code="$(curl -sS -o "$response" -w '%{http_code}'               "https://api.telegram.org/bot${generic_bot_token}/getMe" || true)"
+            if [ "$code" != "200" ]; then
+              return 1
+            fi
+            HYPE_BOT_USERNAME="$HYPE_BOT_USERNAME" node - "$response" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          const expected = String(process.env.HYPE_BOT_USERNAME || "").replace(/^@/, "").toLowerCase();
+          const actual = String(body?.result?.username || "").toLowerCase();
+          if (body.ok !== true || !actual || actual !== expected) process.exit(1);
+          console.log(`generic bot verified as @${actual}`);
+          NODE
+          }
 
           send_intro() {
             group_id="$1"
             group_label="$2"
             payload="$RUNNER_TEMP/hype-intro-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
-            response="$RUNNER_TEMP/hype-intro-response-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
+            bot_payload="$RUNNER_TEMP/hype-intro-bot-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
 
             GROUP_ID="$group_id" GROUP_LABEL="$group_label" node <<'NODE'
           const fs = require("node:fs");
@@ -77,9 +101,7 @@ jobs:
             "เริ่มเรียกผมได้เลยครับ → <b>/commands</b>",
           ].join("\n");
 
-          const payload = {
-            flow: "system",
-            source: "hype_member_group_intro_v1",
+          const telegramPayload = {
             chat_id: groupId,
             text,
             parse_mode: "HTML",
@@ -96,37 +118,67 @@ jobs:
           };
 
           fs.writeFileSync(
+            process.env.RUNNER_TEMP + `/hype-intro-bot-${groupLabel.toLowerCase()}.json`,
+            JSON.stringify(telegramPayload),
+          );
+          fs.writeFileSync(
             process.env.RUNNER_TEMP + `/hype-intro-${groupLabel.toLowerCase()}.json`,
-            JSON.stringify(payload),
+            JSON.stringify({
+              ...telegramPayload,
+              flow: "system",
+              source: "hype_member_group_intro_v1",
+            }),
           );
           NODE
 
-            code="$(curl -sS -o "$response" -w '%{http_code}'               -X POST "$TELEGRAM_URL"               -H "Authorization: Bearer ${service_token}"               -H 'Content-Type: application/json'               --data-binary "@$payload" || true)"
-
-            if [ "$code" != "200" ]; then
-              node - "$response" "$group_label" <<'NODE'
+            try_service() {
+              label="$1"
+              token="$2"
+              if [ -z "$token" ]; then
+                echo "${group_label} ${label}: unavailable"
+                return 1
+              fi
+              echo "::add-mask::${token}"
+              response="$RUNNER_TEMP/hype-intro-${group_label,,}-${label}.json"
+              code="$(curl -sS -o "$response" -w '%{http_code}'                 -X POST "$TELEGRAM_URL"                 -H "Authorization: Bearer ${token}"                 -H 'Content-Type: application/json'                 --data-binary "@$payload" || true)"
+              if [ "$code" = "200" ] && node - "$response" "$group_label" "$label" <<'NODE'
           const fs = require("node:fs");
-          const [file, label] = process.argv.slice(2);
-          let body = {};
-          try { body = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-          console.error(`${label} HYPE worker send failed: ${body.detail || body.error || "HTTP failure"}`);
-          NODE
-              exit 1
-            fi
-
-            node - "$response" "$group_label" <<'NODE'
-          const fs = require("node:fs");
-          const [file, label] = process.argv.slice(2);
+          const [file, group, mode] = process.argv.slice(2);
           const body = JSON.parse(fs.readFileSync(file, "utf8"));
           const messageId = body?.telegram?.result?.message_id;
-          if (body.ok !== true || body?.telegram?.ok !== true || !messageId) {
-            throw new Error(`HYPE worker did not confirm ${label} send`);
-          }
-          console.log(`${label} intro sent: message_id=${messageId}`);
+          if (body.ok !== true || body?.telegram?.ok !== true || !messageId) process.exit(1);
+          console.log(`${group} intro sent via ${mode}: message_id=${messageId}`);
           NODE
+              then
+                return 0
+              fi
+              echo "${group_label} ${label}: did not deliver"
+              return 1
+            }
+
+            if try_service "service-line" "$line_service_token"; then return 0; fi
+            if try_service "service-auth" "$auth_service_token"; then return 0; fi
+
+            if verify_generic_hype_bot; then
+              response="$RUNNER_TEMP/hype-intro-${group_label,,}-bot-generic.json"
+              code="$(curl -sS -o "$response" -w '%{http_code}'                 -X POST "https://api.telegram.org/bot${generic_bot_token}/sendMessage"                 -H 'Content-Type: application/json'                 --data-binary "@$bot_payload" || true)"
+              if [ "$code" = "200" ] && node - "$response" "$group_label" <<'NODE'
+          const fs = require("node:fs");
+          const [file, group] = process.argv.slice(2);
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          const messageId = body?.result?.message_id;
+          if (body.ok !== true || !messageId) process.exit(1);
+          console.log(`${group} intro sent via bot-generic: message_id=${messageId}`);
+          NODE
+              then
+                return 0
+              fi
+            fi
+
+            echo "${group_label}: no accepted HYPE delivery credential succeeded" >&2
+            return 1
           }
 
-          # Premium is checked first because it is the less frequently exercised
-          # member group. Standard follows only after Premium is confirmed.
+          # Premium first because this group has been exercised less frequently.
           send_intro "$PREMIUM_GROUP_ID" "PREMIUM"
           send_intro "$STANDARD_GROUP_ID" "STANDARD"
