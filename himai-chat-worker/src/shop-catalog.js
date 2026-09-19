@@ -134,7 +134,11 @@ async function loadProducts(env, shopKey) {
       const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
       const checkoutEligible = shopKey === "mmd-shop"
-        ? status.toLowerCase() === "active" && sellingPrice > 0 && !restricted && !trackedOut
+        ? status.toLowerCase() === "active"
+          && sellingPrice > 0
+          && !restricted
+          && stockTracked
+          && Number(stock.available) > 0
         : false;
       const canonicalSlug = slugify(sku || productName || record.id);
 
@@ -158,13 +162,15 @@ async function loadProducts(env, shopKey) {
         checkout_eligible: checkoutEligible,
         online_checkout_status: restricted
           ? "restricted"
-          : trackedOut
-            ? "out_of_stock"
-            : sellingPrice === null || sellingPrice <= 0
-              ? "ask_shop"
-              : checkoutEligible
-                ? "available"
-                : "unavailable",
+          : !stockTracked
+            ? "stock_untracked"
+            : trackedOut
+              ? "out_of_stock"
+              : sellingPrice === null || sellingPrice <= 0
+                ? "ask_shop"
+                : checkoutEligible
+                  ? "available"
+                  : "unavailable",
         image_url: productImageUrl(sku)
       };
     })

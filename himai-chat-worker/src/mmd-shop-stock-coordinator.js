@@ -63,8 +63,9 @@ export class MmdShopStockCoordinator {
         const fingerprint = mmdShopStockHealthFingerprint(report);
         const previous = String(await this.state.storage.get("stock_health_fingerprint") || "");
         const actionable = Number(report.metrics?.low_stock_batches || 0) > 0
-          || Number(report.metrics?.reconciliation_mismatches || 0) > 0;
-        const healthyFingerprint = JSON.stringify({ low: [], mismatch: [] });
+          || Number(report.metrics?.reconciliation_mismatches || 0) > 0
+          || Number(report.metrics?.untracked_checkout_products || 0) > 0;
+        const healthyFingerprint = JSON.stringify({ low: [], mismatch: [], untracked: [] });
         let alert = { ok: true, skipped: true, reason: "unchanged" };
 
         if (fingerprint !== previous) {

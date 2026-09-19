@@ -80,7 +80,7 @@ test("P5 resumes an existing booking draft without asking the customer to restar
   };
 
   try {
-    const response = await worker.fetch(request({ text: "พรุ่งนี้ 19:00 สาทร" }), env({
+    const response = await worker.fetch(request({ text: "2026-09-20 19:00 สาทร" }), env({
       HYPE_CONTEXT_WRITER: {
         async fetch(req) {
           writerCalls += 1;

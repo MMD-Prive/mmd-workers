@@ -114,7 +114,7 @@ export async function reserveMmdShopStock(env, input) {
     const productId = validRecordId(item?.product_id);
     const qty = integer(item?.quantity);
     if (!productId || !(qty > 0)) throw reservationError(400, "invalid_reservation_item");
-    if (item?.stock_status !== "tracked") continue;
+    if (item?.stock_status !== "tracked") throw reservationError(409, "stock_untracked");
 
     const candidates = batches
       .filter((record) => {

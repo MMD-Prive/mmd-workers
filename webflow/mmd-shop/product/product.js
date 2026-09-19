@@ -66,7 +66,7 @@ function stockText(item){
     if(item.low_stock)return {label:"เหลือน้อย",className:"is-low"};
     if(Number.isFinite(available))return {label:"พร้อมสั่ง · "+available+" ชิ้น",className:""};
   }
-  return {label:"ระบบจะยืนยันสต๊อกก่อนจัดรายการ",className:""};
+  return {label:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",className:""};
 }
 function setQty(next){
   var max=20;
@@ -107,7 +107,10 @@ function render(item){
   if(!allowed&&restrictedPanel){
     var strong=restrictedPanel.querySelector("strong");
     var para=restrictedPanel.querySelector("p");
-    if(trackedOut){
+    if(item.stock_status!=="tracked"){
+      if(strong)strong.textContent="กำลังตรวจสต๊อกก่อนเปิดรับรายการ";
+      if(para)para.textContent="MMD จะเปิดปุ่มสั่งซื้อเมื่อมี Active Inventory Batch ที่ยืนยันแล้ว";
+    }else if(trackedOut){
       if(strong)strong.textContent="สินค้าหมดชั่วคราว";
       if(para)para.textContent="ยังไม่สามารถสร้าง Order สำหรับสินค้านี้ได้ในขณะนี้";
     }else if(!priceOk){
