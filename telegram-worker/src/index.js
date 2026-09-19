@@ -1149,7 +1149,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
       text: renderHypeHandoffStatus(result),
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: hypeHandoffButtons(env, result.target === "kenji" ? "kenji" : "per"),
+      reply_markup: hypeHandoffButtons(env, result.target === "kenji" ? "kenji" : "per", result),
     }, env);
     return {
       handled: true,
@@ -1775,7 +1775,10 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
           "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
         ]
       : result.recovery_correlation?.state === "ambiguous"
-        ? ["พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน"]
+        ? [
+            "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
+            "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
+          ]
         : []),
     `Reference: ${clean(result.handoff_id)}`,
   ];
@@ -1784,7 +1787,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
     chat_id: chatId,
     text: lines.join("\n"),
     disable_web_page_preview: true,
-    reply_markup: hypeHandoffButtons(env, target),
+    reply_markup: hypeHandoffButtons(env, target, result),
   }, env);
 
   return {
@@ -1913,8 +1916,27 @@ async function markHypeHandoffSent(binding, handoffId) {
   }
 }
 
-function hypeHandoffButtons(env, target) {
-  const rows = [[{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]];
+function hypeHandoffButtons(env, target, result = {}) {
+  const rows = [];
+  const correlation = result?.recovery_correlation || {};
+  const caseRef = clean(result?.handoff_id || correlation.case_ref);
+  if (
+    correlation.state === "ambiguous"
+    && Array.isArray(correlation.options)
+    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)
+  ) {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const summary = clean(option.item_summary || "MMD Shop Order").slice(0, 26);
+      const amount = Number(option.total_thb);
+      const amountText = Number.isFinite(amount) ? ` · ฿${amount.toLocaleString("en-US")}` : "";
+      const dateText = clean(option.order_date) ? `${formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("")} · ` : "";
+      rows.push([{
+        text: `${index + 1}. ${dateText}${summary}${amountText}`.slice(0, 64),
+        callback_data: `hrop|${caseRef}|${index}`,
+      }]);
+    }
+  }
+  rows.push([{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };
 }
