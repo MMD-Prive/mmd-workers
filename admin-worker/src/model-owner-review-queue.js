@@ -34,6 +34,7 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
   ]);
   if (!reviews.ok || !media.ok || !models.ok) return json({ok:false,error:"model_review_queue_unavailable"},503);
 
+  const modelById = new Map(models.records.map(r => [r.id, r]));
   const names = new Map(models.records.map(r => [r.id, String(r.fields?.working_name || r.fields?.nickname || r.fields?.display_name || r.id)]));
   const mediaByModel = new Map();
   for (const record of media.records) {
@@ -62,6 +63,10 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
       const modelId = Array.isArray(r.fields?.Model) && r.fields.Model.length === 1 ? r.fields.Model[0] : "";
       let payload = {};
       try { payload = JSON.parse(String(r.fields?.payload_json || "{}")); } catch {}
+      const modelFields = modelById.get(modelId)?.fields || {};
+      const telegramConnected =
+        String(modelFields.telegram_verification_status || "").toLowerCase() === "verified" &&
+        /^\d{5,20}$/.test(String(modelFields.telegram_user_id || "").trim());
       return {
         request_id: String(r.fields?.request_id || r.id),
         request_status: String(r.fields?.request_status || "pending_review"),
@@ -74,7 +79,9 @@ export async function handleModelOwnerReviewQueue(request, env = {}) {
         changed_fields: Array.isArray(payload.changed_fields) ? payload.changed_fields : [],
         availability: payload.availability || null,
         latest_media: mediaByModel.get(modelId) || [],
-        missing: buildMissing(payload, mediaByModel.get(modelId) || []),
+        telegram_connected: telegramConnected,
+        telegram_status: telegramConnected ? "verified" : String(modelFields.telegram_verification_status || "not_connected"),
+        missing: buildMissing(payload, mediaByModel.get(modelId) || [], telegramConnected),
       };
     })
     .sort((a,b)=>Date.parse(b.requested_at||0)-Date.parse(a.requested_at||0))
@@ -142,11 +149,12 @@ async function patchRecord(env, table, recordId, fields) {
   }catch{return {ok:false};}
 }
 
-function buildMissing(payload, media) {
+function buildMissing(payload, media, telegramConnected = false) {
   const missing = [];
   if (!Array.isArray(payload.changed_fields) || !payload.changed_fields.length) missing.push("changed_fields");
   if (!payload.availability || !payload.availability.availability_status) missing.push("availability_status");
   if (!media.length) missing.push("latest_media");
+  if (!telegramConnected) missing.push("telegram_connection");
   return missing;
 }
 

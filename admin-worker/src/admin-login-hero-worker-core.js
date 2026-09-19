@@ -48,6 +48,7 @@ import { createCredentialBoundAdminSession, getCredentialBoundAdminLoginCredenti
 import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from "./mms-partner-auth-store.js";
 import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
+import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -110,6 +111,12 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
     const paymentReviewRequest = isPaymentReviewRequest(path, method);
+
+    // Service-binding-only Telegram identity authority. This path has no public
+    // production route and the handler also requires admin-worker.internal.
+    if (path === TELEGRAM_BIND_INTERNAL_PATH) {
+      return handleTelegramBindAuthorityRpc(request, env);
+    }
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,
     // but admin-worker's active entrypoint is this composed worker. Forward only

@@ -45,6 +45,7 @@ import {
 } from "./liff-client-runtime-diagnostic.js";
 import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
 import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
+import { handleMemberTelegramBind, isMemberTelegramBindPath } from "./member-telegram-bind.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
@@ -59,6 +60,7 @@ export default {
     if (isTmibAct001ContentPath(url)) return handleTmibAct001Content(request, env);
     if (isTmibAct001MediaPath(url)) return handleTmibAct001Media(request, env);
     if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
+    if (isMemberTelegramBindPath(url)) return handleMemberTelegramBind(request, env);
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
     // bound to the server-verified LINE session. It must remain available even
