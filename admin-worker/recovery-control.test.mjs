@@ -223,6 +223,9 @@ test("Recovery Queue derives case age and operational SLA only from workflow tim
 test("Recovery Queue filters domain/state and ranks overdue attention first", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const booking = pickerRecord("reissued", 2, "reviewing");
+  const bookingPayload = JSON.parse(booking.fields.payload_json);
+  delete bookingPayload.recovery_assignment;
+  booking.fields.payload_json = JSON.stringify(bookingPayload);
   const shop = matrixRecord("acknowledged");
   shop.id = "recMatrixShop";
   shop.fields.pending_reference = "HYPE-PER-20260919193000-acde5678";
@@ -273,7 +276,7 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     assert.equal(all.queue.overdue_count, 1);
     assert.equal(all.queue.assigned_count, 1);
     assert.equal(all.queue.unassigned_count, 1);
-    assert.equal(all.queue.attention_unassigned_count, 0);
+    assert.equal(all.queue.attention_unassigned_count, 1);
     assert.equal(all.queue.picker_waiting_reselection_count, 1);
     assert.equal(all.queue.picker_authority_unavailable_count, 0);
     assert.equal(all.queue.picker_no_candidates_count, 0);
