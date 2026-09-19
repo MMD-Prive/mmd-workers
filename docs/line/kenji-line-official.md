@@ -24,51 +24,45 @@ ai-worker = intelligence and answer support
 
 ## Production Webhook Route
 
-LINE Official should keep using the stable MMD domain route:
+LINE Official uses the stable MMD domain route:
 
-```text
+\`\`\`text
 https://mmdbkk.com/webhooks/line
-```
+\`\`\`
 
-This route is owned by the current LINE production owner in MMD memory:
+The Cloudflare owner is \`member-dashboard-chat-worker\`, which handles the signed LINE event directly. The public MMD URL remains stable, and no Netlify or legacy upstream is used.
 
-```text
-member-dashboard-chat-worker
-```
-
-Do not ask LINE Official to point directly to Netlify, Webflow, Memberstack, page scripts, admin-worker, or telegram-worker as the production LINE route.
+\`LINE_WEBHOOK_UPSTREAM_URL\` is retired and must remain unset. \`immigrate-worker\` is not a LINE upstream and must remain migration-only.
 
 ## Required Env
 
-For the active `member-dashboard-chat-worker` LINE webhook implementation:
+Cloudflare secrets only:
 
-```text
-LINE_AUTO_REPLY_ENABLED=false
-LINE_KENJI_AI_ENABLED=true
-LINE_KENJI_AI_DEBUG=true
+\`\`\`text
 LINE_CHANNEL_SECRET=...
 LINE_CHANNEL_ACCESS_TOKEN=...
+INTERNAL_TOKEN=...
 AIRTABLE_API_KEY=...
-AIRTABLE_BASE_ID=appsV1ILPRfIjkaYg
-AIRTABLE_SYNC_TABLE=MMD — Console Inbox
-```
+AIRTABLE_BASE_ID=...
+\`\`\`
 
-For `ai-worker`, keep it as intelligence support only. It should not hold public LINE webhook ownership:
+Cloudflare runtime flags:
 
-```text
-FEATURE_RETRIEVAL=true
-FEATURE_SUMMARIZATION=true
-AI_MAX_RESULTS=...
-AI_TIMEOUT_MS=...
-```
+\`\`\`text
+LINE_AUTO_REPLY_ENABLED=true
+LINE_KENJI_AI_ENABLED=true
+LINE_KENJI_KNOWLEDGE_ENABLED=true
+AIRTABLE_KENJI_KNOWLEDGE_TABLE_ID=tblsLd1uVOtG2kHoU
+\`\`\`
+
+\`LINE_KENJI_KNOWLEDGE_ENABLED\` lets the webhook load only Knowledge Board cards that are \`active\`, \`auto_reply_allowed\`, and approved for \`LINE_OFC\`. If the card source is unavailable or fails the Per Voice guard, the Worker uses the safe local fallback instead.
 
 ## Test Phrases
 
-```text
+\`\`\`text
 Hi Per
 สวัสดี เปอร์
 สวัสดีครับ
-เคนจิ
 คุยกับ Per AI
 จอง
 ส่งสลิปแล้ว
@@ -78,30 +72,27 @@ SVIP
 Black Card
 Rich Menu: Hi Per
 Rich Menu: สวัสดี เปอร์
-```
+\`\`\`
 
 Expected behavior:
 
-- Replies use warm, concise Kenji voice.
-- Booking reply says Kenji can guide booking but must check member status, conditions, and availability first.
-- Payment/slip reply says proof is supporting evidence only and confirmation requires official verification / fund matching.
-- SVIP reply says Boss Per manual decision only, never points-based.
-- Black Card reply says private review, not automatic approval.
-- Pricing messages keep the existing pricing review acknowledgement path.
-- Model availability messages keep the existing model lookup / Per confirmation path.
-- If `LINE_AUTO_REPLY_ENABLED=false`, inbound events should still log/draft/handoff without public auto reply.
+- LINE replies use Per Voice; the customer must not see Kenji’s name.
+- Rich Menu wake-up messages remain navigation only and continue to enter \`talk_to_per_ai\`.
+- The Worker verifies every LINE signature, dedupes events before sending a reply, and writes the inbound event to the existing Console Inbox flow.
+- When \`LINE_KENJI_KNOWLEDGE_ENABLED=true\`, the Worker may use only an Active, auto-reply-approved \`LINE_OFC\` Knowledge Card. It must reject unsafe copy and use the safe fallback.
+- Payment/slip replies treat evidence as supporting evidence only; MMD verifies before any status can be confirmed.
+- VIP, SVIP, and Black Card are review-only; chat cannot grant access.
+- Booking, price, model availability, and membership confirmation remain subject to verified status and Per/MMD review.
 
 ## Safety Notes
 
 - No secrets in Webflow or frontend code.
-- Do not use a query/body field named `token`; use `t` only for tokenized public/member links.
+- No allowlist user ID, probe flag, or diagnostic user identifier is used by the webhook.
+- The route is Cloudflare-only: do not set \`LINE_WEBHOOK_UPSTREAM_URL\` and do not reintroduce Netlify or \`immigrate-worker\` as a LINE upstream.
+- LINE customer copy must use Per Voice and must not introduce Kenji, reveal internal identifiers, or use “ทีม”.
 - Payment slips/proof are supporting evidence only.
 - Payment confirmation requires official verification and fund matching.
-- SVIP is Boss Per manual decision only.
+- SVIP is Per’s private decision only.
 - Black Card is private review only.
-- LINE OA Kenji does not enable real Worker Control POST actions.
+- LINE OA does not enable real Worker Control POST actions.
 - Deduped LINE events must not reply twice.
-- `immigrate-worker` must stay legacy/migration unless explicitly reapproved for LINE production.
-- `admin-worker` must not be the public LINE webhook owner.
-- `telegram-worker` must not be the public chatbot owner.
-- `himai-chat-worker` is pattern reference only and must not be used as MMD production LINE.

@@ -10,3 +10,6 @@ dist
 # Next.js build output
 .next/
 apps/**/.next/
+
+# Local Netlify folder
+.netlify

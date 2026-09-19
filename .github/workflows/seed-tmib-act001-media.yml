@@ -1,0 +1,45 @@
+name: Validate TMIB ACT 001 private media seed
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-pages-worker/src/tmib-media-lazy-seed.js"
+      - "member-pages-worker/src/index.js"
+      - ".github/workflows/seed-tmib-act001-media.yml"
+
+concurrency:
+  group: validate-tmib-act001-private-media
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-lazy-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate protected media source map and runtime syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check member-pages-worker/src/tmib-media-lazy-seed.js
+          node --check member-pages-worker/src/index.js
+          test "$(grep -c 'cdn.prod.website-files.com' member-pages-worker/src/tmib-media-lazy-seed.js)" -eq 17
+          for frame in $(seq -w 4 20); do
+            grep -q "\"$frame\"" member-pages-worker/src/tmib-media-lazy-seed.js
+          done
+          grep -q 'handleTmibStoryAccess(request, env)' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'TMIB_MEDIA_NOT_SEEDED' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'MMD_MODEL_ASSETS' member-pages-worker/src/tmib-media-lazy-seed.js
+          grep -q 'bucket.put' member-pages-worker/src/tmib-media-lazy-seed.js
+
+      - name: Dry-run member-pages Worker
+        working-directory: member-pages-worker
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars

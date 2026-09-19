@@ -1,0 +1,33 @@
+{
+  "id": "payment-proof-under-review-th",
+  "version": 1,
+  "status": "published",
+  "lane": "payment",
+  "audience": ["public_member", "member"],
+  "language": "th",
+  "title": "ลูกค้าส่งสลิปแล้วถามว่าจ่ายสำเร็จหรือยัง",
+  "questions": [
+    "ส่งสลิปแล้ว จ่ายสำเร็จหรือยัง",
+    "ช่วยเช็กยอดให้หน่อย"
+  ],
+  "safe_answer": "ผมรับทราบว่าคุณส่งหลักฐานแล้วครับ แต่ยังยืนยันสถานะชำระเงินจากข้อความเพียงอย่างเดียวไม่ได้ MMD จะตรวจผ่านระบบอย่างเป็นทางการก่อนเปลี่ยนสถานะ คุณสามารถติดตามขั้นตอนต่อได้ที่หน้าชำระเงินครับ",
+  "allowed_actions": [
+    "acknowledge_evidence",
+    "explain_review_process",
+    "route_to_payment_status"
+  ],
+  "forbidden_actions": [
+    "mark_paid",
+    "verify_slip",
+    "unlock_membership"
+  ],
+  "escalate_when": [
+    "amount_mismatch",
+    "refund_request",
+    "payment_dispute"
+  ],
+  "safe_routes": ["/sigil/pay"],
+  "owner": "Boss Per",
+  "final_reviewer": "Boss Per",
+  "change_reason": "ใช้เป็นคำตอบมาตรฐานเมื่อมีหลักฐานการชำระเงินแต่ backend ยังไม่ยืนยันสถานะ"
+}

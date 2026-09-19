@@ -1,3 +1,8 @@
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
+import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
+import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
 // =========================================================
 // admin-worker — Admin API / Core Orchestrator
@@ -25,6 +30,12 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./routes/demo-links.js";
+import { handleKenjiKnowledgeRequest as handleKenjiKnowledgeRuntimeRequest } from "./kenji-knowledge-runtime.js";
+import { renderApprovedAdminLogin } from "./admin-login-page.js";
+import {
+  handleCreateSessionClientLineageRequest,
+  isCreateSessionClientLineageRequest,
+} from "./create-session-client-lineage-runtime.js";
 import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
@@ -36,6 +47,7 @@ import {
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
+const MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS = ["working_name", "nickname", "unique_key", "drive_folder_id", "folder_scope_key"];
 const MODEL_SEARCH_FIELDS = [
   "name",
   "Name",
@@ -83,6 +95,8 @@ const DEFAULT_MODEL_R2_CATEGORY_PATHS = [
   "Public Models/Extreme Models/Straight",
 ];
 export const MODEL_SCHEMA_PATCH_V1_ROUTES = Object.freeze({
+  mediaReviewDecision: "/v1/model/media/review-decision",
+  mediaReviewFile: "/v1/model/media/review-file",
   visibilityUpdate: "/v1/model/visibility/update",
   rateRequest: "/v1/model/rate/request",
   mediaUploadInit: "/v1/model/media/upload-init",
@@ -96,6 +110,45 @@ const MODEL_SCHEMA_PATCH_V1_ROUTE_SET = new Set(Object.values(MODEL_SCHEMA_PATCH
 const MODEL_SESSION_CURRENT_PATH = "/v1/model/session/current";
 const MODEL_SESSION_ACTION_PATH = "/v1/model/session/action";
 const MODEL_SESSION_LINK_PATH = "/v1/admin/model/session/link";
+const ADMIN_RICH_MENU_BASE_PATH = "/v1/admin/line/rich-menu";
+const SIGIL_BOARD_PUBLISH_PATH = "/v1/admin/sigil/board/publish";
+const INTERNAL_ADMIN_PREFIX = "/internal/admin";
+const SIGIL_INTERNAL_ADMIN_PREFIX = "/sigil/internal/admin";
+const KENJI_KNOWLEDGE_CANONICAL_PATH = "/internal/admin/kenji";
+const KENJI_KNOWLEDGE_LEGACY_PATH = "/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH = "/sigil/internal/admin/kenji-knowledge";
+const KENJI_KNOWLEDGE_AUTH_ME_PATH = "/v1/admin/auth/me";
+const KENJI_KNOWLEDGE_META_PATH = "/v1/admin/kenji/knowledge/meta";
+const KENJI_KNOWLEDGE_LIST_PATH = "/v1/admin/kenji/knowledge/list";
+const KENJI_KNOWLEDGE_DRAFT_PATH = "/v1/admin/kenji/knowledge/draft";
+const KENJI_KNOWLEDGE_PUBLISHED_PATH = "/v1/internal/kenji/knowledge/published";
+const KENJI_KNOWLEDGE_DETAIL_PREFIX = "/v1/admin/kenji/knowledge/";
+const KENJI_KNOWLEDGE_DEFAULT_LIMIT = 25;
+const KENJI_KNOWLEDGE_MAX_LIMIT = 100;
+const KENJI_KNOWLEDGE_ALLOWED_STATUS = new Set(["draft", "published", "archived", "review", "ready"]);
+const KENJI_KNOWLEDGE_ALLOWED_LANE = new Set(["client", "model", "partner", "admin", "operations", "brand", "system"]);
+const KENJI_KNOWLEDGE_ALLOWED_LANGUAGE = new Set(["th", "en", "ja", "zh", "ko"]);
+const KENJI_KNOWLEDGE_ALLOWED_AUDIENCE = new Set(["internal", "internal_only", "operator", "client", "model", "partner", "public"]);
+const KENJI_KNOWLEDGE_ALLOWED_SORT = new Set(["updated_at", "created_at", "title", "status", "lane", "language", "audience"]);
+const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
+const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
+const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
+const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
+const ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH = "/internal/admin/create-session";
+const ADMIN_NEXT_CREATE_SESSION_PATH = "/internal/admin/jobs/create-session";
+const ADMIN_NEXT_CREATE_JOB_PATH = "/internal/jobs/create-job";
+const ADMIN_GATE_SESSION_COOKIE = "mmd_admin_gate_v1";
+const ADMIN_GATE_TTL_MS = 8 * 60 * 60 * 1000;
+const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
+  "https://mmdbkk.com",
+  "https://www.mmdbkk.com",
+  "https://mmdprive.webflow.io",
+  "https://mmdprive.com",
+]);
+const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
+const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
+const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
   "mark_final_payment_confirmed",
@@ -117,12 +170,64 @@ const MODEL_SESSION_MODEL_ALLOWED_ACTIONS = new Set([
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    const path = url.pathname;
+    const path = normalizePathname(url.pathname);
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
 
+    if (isLegacySigilInternalAdminPath(path) && path !== SIGIL_ADMIN_LOGIN_PAGE_PATH) {
+      return redirectLegacySigilInternalAdmin(req);
+    }
+
+    if (path === KENJI_KNOWLEDGE_LEGACY_PATH) {
+      return redirectKenjiKnowledgeLegacy(req);
+    }
+
+    if (isKenjiKnowledgeCapturedPath(path) && !isKenjiKnowledgeShellPath(path)) {
+      return adminRouteNotFound();
+    }
+
+    if (
+      path.startsWith(ADMIN_LOGIN_PAGE_PATH) &&
+      path !== ADMIN_LOGIN_PAGE_PATH &&
+      path !== ADMIN_LOGIN_SESSION_PATH
+    ) {
+      return adminRouteNotFound();
+    }
+
     if (method === "OPTIONS") {
       return new Response(null, { status: 204, headers: cors });
+    }
+
+    if (path === ADMIN_LOGIN_ROOT_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginRequiredPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginPage(req);
+    }
+
+    if (path === SIGIL_ADMIN_LOGIN_PAGE_PATH && (method === "GET" || method === "HEAD")) {
+      return adminLoginPage(req);
+    }
+
+    if (path === ADMIN_LOGIN_SESSION_PATH) {
+      if (method === "POST") return handleAdminLogin(req, env);
+      if (method === "DELETE") return handleAdminLogout(req);
+      return methodNotAllowed(["POST", "DELETE"]);
+    }
+
+    if (isKenjiKnowledgeShellPath(path)) {
+      if (method === "GET" || method === "HEAD") {
+        return kenjiKnowledgeAdminShell(req, "canonical");
+      }
+      return methodNotAllowed(["GET", "HEAD"]);
+    }
+
+    if (isKenjiKnowledgeReadinessRoute(path, method)) {
+      if (String(env.KENJI_KNOWLEDGE_RUNTIME_V2_ENABLED || "").toLowerCase() === "true") {
+        return handleKenjiKnowledgeRuntimeRequest(req, env, { isAuthed });
+      }
+      return withCors(await handleKenjiKnowledgeReadinessRoute(req, env, path, method), cors);
     }
 
     // ------------------------------------------------------
@@ -151,8 +256,16 @@ export default {
       return withCors(await demoLinksGet(req, env), cors);
     }
 
+    if (
+      (method === "GET" || method === "HEAD") &&
+      path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize
+    ) {
+      return withCors(modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401), cors);
+    }
+
     if (method === "POST" && MODEL_SCHEMA_PATCH_V1_ROUTE_SET.has(path)) {
-      return withCors(await handleModelSchemaPatchV1Route(req, env, path), cors);
+      const response = await handleModelSchemaPatchV1Route(req, env, path);
+      return path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile ? response : withCors(response, cors);
     }
 
     if (method === "GET" && path === MODEL_SESSION_CURRENT_PATH) {
@@ -175,6 +288,13 @@ export default {
       // IMMIGRATION / WRITER ENDPOINTS
       // STRICT: X-Confirm-Key only
       // ====================================================
+      if (method === "POST" && path === SIGIL_BOARD_PUBLISH_PATH) {
+        if (!(await isAuthed(req, env))) {
+          return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+        }
+        return withCors(json(await publishSigilBoardQueue(env)), cors);
+      }
+
       if (method === "POST" && path === "/v1/admin/console/inbox") {
         if (!isConfirmKeyAuthed(req, env)) {
           return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
@@ -383,8 +503,31 @@ export default {
       // CORE ADMIN AUTH
       // Bearer OR Confirm-Key
       // ====================================================
-      if (!isAuthed(req, env)) {
+      if (!(await isAuthed(req, env))) {
         return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+      }
+
+      // Canonical client lineage is read-only identity evidence. The outer
+      // admin gate above has already verified the signed internal-admin session.
+      if (isCreateSessionClientLineageRequest(path, method)) {
+        return withCors(
+          await handleCreateSessionClientLineageRequest(req, env, { alreadyAuthorized: true }),
+          cors,
+        );
+      }
+
+      if (isAdminRichMenuRoute(path, method)) {
+        return withCors(await handleAdminRichMenuRoute(req, env, path, method), cors);
+      }
+
+      // Model HBD review gate. Submission is stored as manual_review by the
+      // model-session sidecar; only this credential-bound admin route may
+      // promote it to the public completed projection.
+      if (method === "GET" && path === "/v1/admin/model-wishes/review-queue") {
+        return withCors(await handleModelWishReviewQueue(env), cors);
+      }
+      if (method === "POST" && path === "/v1/admin/model-wishes/review") {
+        return withCors(await handleModelWishReview(req, env), cors);
       }
 
       if (method === "POST" && path === MODEL_SESSION_LINK_PATH) {
@@ -570,6 +713,35 @@ export default {
       }
 
       // ----------------------------------------------------
+      // Models search (create-session booking search)
+      // Entitlement-enforced + sanitized; /v1/admin/models/list
+      // stays the raw admin inventory endpoint.
+      // ----------------------------------------------------
+      if (method === "GET" && path === "/v1/admin/models/search") {
+        try {
+          return withCors(json(await searchCreateSessionModels(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "models_search_failed") }, 500), cors);
+        }
+      }
+
+      // Canonical Model-folder selection for Per's LINE activation console.
+      // This is a read-only candidate list; link issuance re-reads the exact Airtable record.
+      if (method === "GET" && path === "/v1/admin/models/activation-candidates") {
+        try {
+          return withCors(json(await listModelActivationCandidates(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "model_activation_candidates_failed") }, 500), cors);
+        }
+      }
+
+      // ----------------------------------------------------
       // Models source resolver
       // ----------------------------------------------------
       if (method === "GET" && path === "/v1/admin/models/resolve-source") {
@@ -643,7 +815,14 @@ export default {
             cors
           );
         } catch (e) {
-          return withCors(json({ ok: false, error: String(e?.message || e || "job_create_failed") }, 500), cors);
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          const error = String(e?.message || e || "job_create_failed");
+          return withCors(json({ ok: false, error,
+            creation_outcome: e.creation_outcome || "unknown",
+            ...(e.session_id ? { session_id: e.session_id, payment_ref: e.payment_ref || null } : {}),
+          }, Number.isInteger(e.status) ? e.status : error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -704,7 +883,9 @@ function withCors(res, cors) {
 /* =========================
    Auth
 ========================= */
-function isAuthed(req, env) {
+export async function isAuthed(req, env) {
+  const actor = await readCredentialBoundAdminActor(req, env);
+  if (actor) return actor.role === "admin" || actor.role === "owner";
   const auth = req.headers.get("Authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   if (env.ADMIN_BEARER && bearer && bearer === env.ADMIN_BEARER) return true;
@@ -713,12 +894,300 @@ function isAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   if (env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY) return true;
 
+  if (await isAdminGateSessionAuthed(req, env)) return true;
+
   return false;
 }
 
 function isConfirmKeyAuthed(req, env) {
   const ck = str(req.headers.get("X-Confirm-Key") || "");
   return Boolean(env.CONFIRM_KEY && ck && ck === env.CONFIRM_KEY);
+}
+
+export async function isAdminGateSessionAuthed(req, env) {
+  const session = await readAdminGateSession(req, env);
+  if (!session || session.version !== 1) return false;
+  if (session.scope !== "internal_admin") return false;
+  if (!session.host || !ADMIN_GATE_ALLOWED_BASE_URLS.has(session.host)) return false;
+  if (session.host !== new URL(req.url).origin) return false;
+  if (!Number.isFinite(session.iat) || !Number.isFinite(session.exp)) return false;
+  const now = Date.now();
+  if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
+  if (!session.nonce || typeof session.nonce !== "string") return false;
+  return true;
+}
+
+async function readAdminGateSession(req, env) {
+  const raw = parseCookieMap(req).get(ADMIN_GATE_SESSION_COOKIE);
+  if (!raw) return null;
+
+  try {
+    const decoded = decodeURIComponent(raw);
+    const [payloadPart, signaturePart] = decoded.split(".");
+    if (!payloadPart || !signaturePart) return null;
+    const expected = await signAdminGatePayload(payloadPart, env);
+    if (!expected || !(await constantTimeEqual(signaturePart, expected))) return null;
+    const parsed = JSON.parse(base64UrlDecode(payloadPart));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function parseCookieMap(req) {
+  const map = new Map();
+  const raw = req.headers.get("Cookie") || "";
+  for (const part of raw.split(";")) {
+    const [name, ...rest] = part.split("=");
+    const key = str(name || "");
+    if (!key) continue;
+    map.set(key, rest.join("=").trim());
+  }
+  return map;
+}
+
+async function handleAdminLogin(req, env) {
+  const origin = req.headers.get("Origin") || "";
+  const requestOrigin = new URL(req.url).origin;
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return adminLoginPage(req, { status: 403, error: "Unable to sign in." });
+  }
+
+  const contentType = (req.headers.get("Content-Type") || "").split(";", 1)[0].trim().toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  let form;
+  try {
+    form = new URLSearchParams(await req.text());
+  } catch (_) {
+    return adminLoginPage(req, { status: 400, error: "Unable to sign in." });
+  }
+
+  const credential = str(form.get("credential") || "");
+  const proof = await resolveAdminSessionProof(credential, env);
+  if (!proof) return adminLoginPage(req, { status: 401, error: "Unable to sign in." });
+
+  const next = normalizeAdminLoginNext(form.get("next"), requestOrigin);
+  const now = Date.now();
+  const session = {
+    version: 1,
+    scope: "internal_admin",
+    host: requestOrigin,
+    iat: now,
+    exp: now + ADMIN_GATE_TTL_MS,
+    nonce: crypto.randomUUID(),
+    auth_method: proof.kind,
+  };
+  const headers = new Headers({
+    "Cache-Control": "no-store, private",
+    Location: next,
+    "Set-Cookie": await makeAdminGateCookie(session, env),
+  });
+  return new Response(null, { status: 303, headers });
+}
+
+function handleAdminLogout(req) {
+  const requestOrigin = new URL(req.url).origin;
+  const origin = req.headers.get("Origin") || "";
+  if (origin !== requestOrigin || !ADMIN_GATE_ALLOWED_BASE_URLS.has(requestOrigin)) {
+    return json({ ok: false, error: "forbidden" }, 403);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "Cache-Control": "no-store, private",
+      Location: ADMIN_LOGIN_PAGE_PATH,
+      "Set-Cookie": `${ADMIN_GATE_SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    },
+  });
+}
+
+async function resolveAdminSessionProof(credential, env) {
+  if (!credential) return null;
+  const loginCredential = str(env.ADMIN_LOGIN_CREDENTIAL || "");
+  const candidates = loginCredential
+    ? [["login", loginCredential]]
+    : [
+        ["bearer", str(env.ADMIN_BEARER || "")],
+        ["bearer", str(env.INTERNAL_TOKEN || "")],
+        ["confirmKey", str(env.CONFIRM_KEY || "")],
+      ];
+  let match = null;
+  for (const [kind, value] of candidates) {
+    if (value && (await constantTimeEqual(credential, value)) && !match) match = { kind, value };
+  }
+  return match;
+}
+
+async function constantTimeEqual(left, right) {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(left)),
+    crypto.subtle.digest("SHA-256", encoder.encode(right)),
+  ]);
+  const aa = new Uint8Array(a);
+  const bb = new Uint8Array(b);
+  let difference = 0;
+  for (let i = 0; i < aa.length; i += 1) difference |= aa[i] ^ bb[i];
+  return difference === 0;
+}
+
+async function makeAdminGateCookie(session, env) {
+  const payload = base64UrlEncode(JSON.stringify(session));
+  const signature = await signAdminGatePayload(payload, env);
+  if (!signature) throw new Error("missing_admin_session_signing_key");
+  const value = encodeURIComponent(`${payload}.${signature}`);
+  return `${ADMIN_GATE_SESSION_COOKIE}=${value}; Path=/; Max-Age=${Math.floor(ADMIN_GATE_TTL_MS / 1000)}; HttpOnly; Secure; SameSite=Lax`;
+}
+
+function getAdminSessionSigningSecret(env) {
+  return str(env.ADMIN_SESSION_SECRET || env.ADMIN_BEARER || env.INTERNAL_TOKEN || env.CONFIRM_KEY || "");
+}
+
+async function signAdminGatePayload(payload, env) {
+  const secret = getAdminSessionSigningSecret(env);
+  if (!secret) return "";
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return base64UrlEncodeBytes(new Uint8Array(signature));
+}
+
+function base64UrlEncode(value) {
+  return base64UrlEncodeBytes(new TextEncoder().encode(value));
+}
+
+function base64UrlEncodeBytes(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function normalizeAdminLoginNext(raw, origin) {
+  const fallback = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  const value = str(raw || fallback);
+  if (!value.startsWith("/") || value.startsWith("//")) return fallback;
+  if (hasTraversalSegment(value)) return fallback;
+  try {
+    const target = new URL(value, origin);
+    const pathname = canonicalizeAdminNextPath(target.pathname);
+    if (target.origin !== origin || !isAllowedAdminNextPath(pathname)) return fallback;
+    if (hasCredentialQuery(target.searchParams)) return fallback;
+    return `${pathname}${target.search}`;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function canonicalizeAdminNextPath(pathname) {
+  if (isLegacySigilInternalAdminPath(pathname)) {
+    return `${INTERNAL_ADMIN_PREFIX}${pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  }
+  return pathname;
+}
+
+function isAllowedAdminNextPath(pathname) {
+  // Approved repository-backed protected destinations only:
+  // - Kenji canonical shell owned by admin-worker.
+  // - Immigrate protected control-room pages that redirect through this login.
+  // - Existing create-session/create-job internal pages linked from control-room.
+  const exact = new Set([
+    ADMIN_LOGIN_ROOT_PATH,
+    KENJI_KNOWLEDGE_CANONICAL_PATH,
+    `${KENJI_KNOWLEDGE_CANONICAL_PATH}/`,
+    ADMIN_NEXT_CREATE_SESSION_LEGACY_PATH,
+    ADMIN_NEXT_CREATE_SESSION_PATH,
+    ADMIN_NEXT_CREATE_JOB_PATH,
+  ]);
+  if (exact.has(pathname)) return true;
+  return pathname === ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH || pathname.startsWith(`${ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH}/`);
+}
+
+function hasCredentialQuery(params) {
+  const blocked = new Set([
+    "access_token",
+    "authorization",
+    "bearer",
+    "confirm_key",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
+    "x-confirm-key",
+  ]);
+  for (const key of params.keys()) {
+    if (blocked.has(str(key).toLowerCase())) return true;
+  }
+  return false;
+}
+
+function hasTraversalSegment(value) {
+  let decoded = value;
+  for (let i = 0; i < 2; i += 1) {
+    if (/(^|\/)\.\.(?:\/|$)/.test(decoded)) return true;
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch (_) {
+      break;
+    }
+  }
+  return /(^|\/)\.\.(?:\/|$)/.test(decoded);
+}
+
+function adminLoginRequiredPage(req) {
+  const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MMD Admin</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"></head><body><main><h1>Admin access required</h1><p><a href="${ADMIN_LOGIN_PAGE_PATH}">Sign in to MMD Admin</a></p></main></body></html>`;
+  return adminHtml(req, body, 401);
+}
+
+function adminLoginPage(req, { status = 200, error = "" } = {}) {
+  const url = new URL(req.url);
+  const next = normalizeAdminLoginNext(url.searchParams.get("next"), url.origin);
+  return renderApprovedAdminLogin(req, { status, error, next });
+}
+
+function adminHtml(req, body, status) {
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, private",
+      "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; style-src 'unsafe-inline'",
+      "Content-Type": "text/html; charset=utf-8",
+      "Referrer-Policy": "no-referrer",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function methodNotAllowed(allowed) {
+  return new Response(JSON.stringify({ ok: false, error: "method_not_allowed" }), {
+    status: 405,
+    headers: {
+      Allow: allowed.join(", "),
+      "Cache-Control": "no-store",
+      "Content-Type": "application/json",
+    },
+  });
 }
 
 /* =========================
@@ -733,6 +1202,317 @@ function json(data, status = 200) {
   });
 }
 
+function kenjiKnowledgeAdminShell(req, routeKind) {
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#080604"><title>KENJI ADMIN · MMD</title><link rel="icon" type="image/webp" href="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a0ea3f9421cae9dd223f50b_SIGIL%20only%20logo.webp"><style>html,body{margin:0;min-height:100%;background:#080604;color:#fff0dc}#mmdKenjiAdminV1{min-height:100svh}</style><link rel="stylesheet" href="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.css"></head><body><div id="mmdKenjiAdminV1" aria-live="polite"></div><script defer src="https://models.mmdbkk.com/webflow/internal/admin/kenji/kenji-admin-v1.js"></script></body></html>`;
+  return new Response(req.method.toUpperCase() === "HEAD" ? null : html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+      "x-mmd-route-owner": "admin-worker",
+      "x-mmd-page": "kenji-admin",
+      "x-mmd-origin": "admin-worker:kenji-admin-shell",
+      "x-mmd-worker": "admin-worker",
+      "x-mmd-route-canonical": KENJI_KNOWLEDGE_CANONICAL_PATH,
+      "x-mmd-route-kind": routeKind,
+    },
+  });
+}
+
+function isKenjiKnowledgeShellPath(path) {
+  return path === KENJI_KNOWLEDGE_CANONICAL_PATH;
+}
+
+function isKenjiKnowledgeCapturedPath(path) {
+  return path === KENJI_KNOWLEDGE_LEGACY_PATH || path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+}
+
+function redirectKenjiKnowledgeLegacy(req) {
+  const url = new URL(req.url);
+  url.pathname = KENJI_KNOWLEDGE_CANONICAL_PATH;
+  return new Response(null, { status: 308, headers: {
+    "cache-control": "no-store",
+    location: `${url.origin}${url.pathname}${url.search}`,
+    "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+  }});
+}
+
+function isLegacySigilInternalAdminPath(path) {
+  return path === SIGIL_INTERNAL_ADMIN_PREFIX || path.startsWith(`${SIGIL_INTERNAL_ADMIN_PREFIX}/`);
+}
+
+function redirectLegacySigilInternalAdmin(req) {
+  const url = new URL(req.url);
+  url.pathname = url.pathname === KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH || url.pathname.startsWith(`${KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH}/`)
+    ? `${KENJI_KNOWLEDGE_CANONICAL_PATH}${url.pathname.slice(KENJI_KNOWLEDGE_LEGACY_SIGIL_PATH.length)}`
+    : `${INTERNAL_ADMIN_PREFIX}${url.pathname.slice(SIGIL_INTERNAL_ADMIN_PREFIX.length)}`;
+  const location = `${url.origin}${url.pathname}${url.search}`;
+  return new Response(null, {
+    status: 308,
+    headers: {
+      "cache-control": "no-store",
+      location,
+      "x-mmd-route-canonical": `${url.pathname}${url.search}`,
+    },
+  });
+}
+
+function adminRouteNotFound() {
+  return json({ ok: false, error: "admin_route_not_found" }, 404);
+}
+
+function isKenjiKnowledgeReadinessRoute(path, method) {
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_AUTH_ME_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_META_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_LIST_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && isKenjiKnowledgeDetailPath(path)) return true;
+  if ((method === "POST" || method === "HEAD") && path === KENJI_KNOWLEDGE_DRAFT_PATH) return true;
+  if ((method === "GET" || method === "HEAD") && path === KENJI_KNOWLEDGE_PUBLISHED_PATH) return true;
+  return false;
+}
+
+function isKenjiKnowledgeDetailPath(path) {
+  if (!path.startsWith(KENJI_KNOWLEDGE_DETAIL_PREFIX)) return false;
+  return ![
+    KENJI_KNOWLEDGE_META_PATH,
+    KENJI_KNOWLEDGE_LIST_PATH,
+    KENJI_KNOWLEDGE_DRAFT_PATH,
+  ].includes(path);
+}
+
+async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
+  if (!isAllowedOrigin(req, env)) {
+    return jsonForMethod(req, { ok: false, error: "origin_not_allowed" }, 403);
+  }
+
+  if (!(await isAuthed(req, env))) {
+    return jsonForMethod(req, { ok: false, authenticated: false, error: "unauthorized" }, 401);
+  }
+
+  if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      authenticated: true,
+      worker: "admin-worker",
+      scope: "internal_admin",
+      source: "admin-worker",
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_PUBLISHED_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "published_runtime_readiness",
+      data_status: "readiness_only",
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+      cards: [],
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_META_PATH) {
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_readiness",
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  if (path === KENJI_KNOWLEDGE_LIST_PATH) {
+    const parsed = parseKenjiKnowledgeListQuery(new URL(req.url).searchParams);
+    if (!parsed.ok) return jsonForMethod(req, kenjiKnowledgeInvalidQuery(parsed.field, parsed.message), 400);
+    return jsonForMethod(req, kenjiKnowledgeEmptyListResponse(parsed.query));
+  }
+
+  if (isKenjiKnowledgeDetailPath(path)) {
+    const parsed = parseKenjiKnowledgeId(path.slice(KENJI_KNOWLEDGE_DETAIL_PREFIX.length));
+    if (!parsed.ok) return jsonForMethod(req, kenjiKnowledgeInvalidIdResponse(parsed.message), 400);
+    return jsonForMethod(req, kenjiKnowledgeReadNotFoundResponse(parsed.id), 404);
+  }
+
+  if (path === KENJI_KNOWLEDGE_DRAFT_PATH) {
+    if (method === "HEAD") {
+      return jsonForMethod(req, {
+        ok: true,
+        source: "admin-worker",
+        mode: "kenji_knowledge_draft",
+      });
+    }
+
+    const parsed = await parseJsonObject(req);
+    if (!parsed.ok) {
+      return jsonForMethod(req, { ok: false, error: "invalid_json" }, 400);
+    }
+
+    return jsonForMethod(req, {
+      ok: true,
+      source: "admin-worker",
+      mode: "kenji_knowledge_draft",
+      draft_received: true,
+      storage: {
+        persisted: false,
+        reason: "not_configured",
+      },
+    });
+  }
+
+  return jsonForMethod(req, { ok: false, error: "not_found" }, 404);
+}
+
+function kenjiKnowledgeStorageStatus() {
+  return { persisted: false, reason: "not_configured" };
+}
+
+function kenjiKnowledgeDefaultQuery() {
+  return {
+    q: null,
+    status: null,
+    lane: null,
+    language: null,
+    audience: null,
+    sort: "updated_at",
+    order: "desc",
+    limit: KENJI_KNOWLEDGE_DEFAULT_LIMIT,
+  };
+}
+
+function parseKenjiKnowledgeListQuery(params) {
+  const query = kenjiKnowledgeDefaultQuery();
+  const singleValue = (field) => {
+    const values = params.getAll(field);
+    if (values.length > 1) {
+      return { ok: false, field, message: `${field} must be provided only once` };
+    }
+    return { ok: true, value: values[0] ?? null };
+  };
+
+  for (const field of ["q", "status", "lane", "language", "audience", "sort", "order", "limit"]) {
+    const result = singleValue(field);
+    if (!result.ok) return result;
+    if (result.value === null || result.value === "") continue;
+
+    const raw = String(result.value);
+    const value = raw.trim();
+    if (raw !== value || /[\u0000-\u001f\u007f]/.test(value)) {
+      return { ok: false, field, message: `${field} is malformed` };
+    }
+
+    if (field === "q") {
+      if (value.length > 120) return { ok: false, field, message: "q is too long" };
+      query.q = value;
+      continue;
+    }
+
+    if (field === "limit") {
+      if (!/^\d+$/.test(value)) return { ok: false, field, message: "limit must be an integer" };
+      const limit = Number(value);
+      if (!Number.isInteger(limit) || limit < 1 || limit > KENJI_KNOWLEDGE_MAX_LIMIT) {
+        return { ok: false, field, message: `limit must be between 1 and ${KENJI_KNOWLEDGE_MAX_LIMIT}` };
+      }
+      query.limit = limit;
+      continue;
+    }
+
+    if (field === "order") {
+      if (value !== "asc" && value !== "desc") return { ok: false, field, message: "order must be asc or desc" };
+      query.order = value;
+      continue;
+    }
+
+    const allowed = {
+      status: KENJI_KNOWLEDGE_ALLOWED_STATUS,
+      lane: KENJI_KNOWLEDGE_ALLOWED_LANE,
+      language: KENJI_KNOWLEDGE_ALLOWED_LANGUAGE,
+      audience: KENJI_KNOWLEDGE_ALLOWED_AUDIENCE,
+      sort: KENJI_KNOWLEDGE_ALLOWED_SORT,
+    }[field];
+    if (!allowed.has(value)) return { ok: false, field, message: `${field} is not supported` };
+    query[field] = value;
+  }
+
+  return { ok: true, query };
+}
+
+function parseKenjiKnowledgeId(value) {
+  const id = String(value || "").trim();
+  if (!id || id !== value || id.includes("/") || !/^[A-Za-z0-9][A-Za-z0-9_-]{2,79}$/.test(id)) {
+    return { ok: false, message: "id must be 3-80 characters using letters, numbers, underscore, or hyphen" };
+  }
+  if (["meta", "list", "draft"].includes(id)) {
+    return { ok: false, message: "id is reserved" };
+  }
+  return { ok: true, id };
+}
+
+function kenjiKnowledgeInvalidQuery(field, message) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_list",
+    error: "invalid_query",
+    field,
+    message,
+  };
+}
+
+function kenjiKnowledgeInvalidIdResponse(message) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_read",
+    error: "invalid_id",
+    field: "id",
+    message,
+  };
+}
+
+function kenjiKnowledgeEmptyListResponse(query = kenjiKnowledgeDefaultQuery()) {
+  return {
+    ok: true,
+    source: "admin-worker",
+    mode: "kenji_knowledge_list",
+    data_status: "no_storage",
+    storage: kenjiKnowledgeStorageStatus(),
+    query,
+    cards: [],
+    items: [],
+    count: 0,
+    total: 0,
+    has_more: false,
+  };
+}
+
+function kenjiKnowledgeReadNotFoundResponse(id) {
+  return {
+    ok: false,
+    source: "admin-worker",
+    mode: "kenji_knowledge_read",
+    error: "not_found",
+    code: "kenji_knowledge_not_found",
+    id,
+    storage: kenjiKnowledgeStorageStatus(),
+  };
+}
+
+function jsonForMethod(req, data, status = 200) {
+  if (req.method.toUpperCase() === "HEAD") {
+    return new Response(null, {
+      status,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  return json(data, status);
+}
+
 async function safeJson(req) {
   try {
     return await req.json();
@@ -741,8 +1521,165 @@ async function safeJson(req) {
   }
 }
 
+const MODEL_WISH_TABLE_DEFAULT = "tblvMJjYXy29mgDLb";
+
+async function handleModelWishReviewQueue(env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const params = new URLSearchParams({
+    maxRecords: "100",
+    filterByFormula: "AND({campaign_id}='mmd_year_6_model_wish',{wish_status}='manual_review')",
+  });
+  const result = await airtableFetch(env, `/${encodeURIComponent(table)}?${params}`);
+  if (!result.ok) return json({ ok: false, error: "model_wish_review_queue_unavailable" }, 503);
+  const records = Array.isArray(result.data?.records) ? result.data.records : [];
+  return json({ ok: true, wishes: records.map((record) => {
+    const fields = record.fields || {};
+    return {
+      record_id: record.id,
+      wish_id: str(fields.wish_id),
+      wish_text: str(fields.wish_text).slice(0, 280),
+      submitted_at: str(fields.submitted_at),
+      source: str(fields.source),
+      payload_json: str(fields.payload_json),
+    };
+  }) });
+}
+
+async function handleModelWishReview(req, env) {
+  const body = await safeJson(req);
+  const recordId = str(body.record_id);
+  const decision = str(body.decision).toLowerCase();
+  if (!/^rec[a-zA-Z0-9]{14}$/.test(recordId) || !["approve", "reject"].includes(decision)) {
+    return json({ ok: false, error: "invalid_model_wish_review" }, 400);
+  }
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const table = str(env.AIRTABLE_TABLE_CARE_BACK_BIRTHDAY_WISHES || MODEL_WISH_TABLE_DEFAULT);
+  const read = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`);
+  const current = read.ok ? read.data : null;
+  const fields = current?.fields || {};
+  if (!read.ok || str(fields.campaign_id) !== "mmd_year_6_model_wish" || str(fields.wish_status) !== "manual_review") {
+    return json({ ok: false, error: "model_wish_review_state_conflict" }, 409);
+  }
+  const now = new Date().toISOString();
+  let audit = {};
+  try { audit = JSON.parse(str(fields.payload_json) || "{}"); } catch { audit = {}; }
+  audit.review = { decision, reviewed_at: now, reviewed_by: str(req.headers.get("X-MMD-Operator") || "admin") };
+  const patch = {
+    wish_status: decision === "approve" ? "completed" : "revoked",
+    public_display_text: decision === "approve" ? str(fields.wish_text).slice(0, 280) : "",
+    payload_json: JSON.stringify(audit),
+    updated_at: now,
+  };
+  const updated = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: patch, typecast: false }),
+  });
+  if (!updated.ok) return json({ ok: false, error: "model_wish_review_write_failed" }, 503);
+  return json({ ok: true, decision, record_id: recordId, public: decision === "approve" });
+}
+
+async function parseJsonObject(req) {
+  try {
+    const data = await req.json();
+    return { ok: Boolean(data && typeof data === "object" && !Array.isArray(data)), data };
+  } catch (_) {
+    return { ok: false, data: null };
+  }
+}
+
+function normalizePathname(pathname = "") {
+  const normalized = String(pathname || "/").replace(/\/{2,}/g, "/");
+  if (normalized.length > 1) return normalized.replace(/\/$/, "");
+  return normalized || "/";
+}
+
+function isAdminRichMenuRoute(path, method) {
+  return (
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/draft`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-minimal`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-no-postback`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-message-only`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-uri-only`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/list`)
+  );
+}
+
+function adminRichMenuServicePath(path) {
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/draft`) return "/public-world/draft";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate`) return "/public-world/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-minimal`) return "/public-world/validate-minimal";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-no-postback`) return "/public-world/validate-no-postback";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-message-only`) return "/public-world/validate-message-only";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/validate-uri-only`) return "/public-world/validate-uri-only";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) return "/public-world/publish";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) return "/private-member/draft";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) return "/private-member/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) return "/default";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/list`) return "/list";
+  return "";
+}
+
+function sanitizeRichMenuAdminPayload(value) {
+  const forbidden = /^(authorization|cookie|set-cookie|token|secret|admin_bearer|internal_token|confirm_key|line_channel_access_token)$/i;
+  if (Array.isArray(value)) return value.map((item) => sanitizeRichMenuAdminPayload(item));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (forbidden.test(key)) continue;
+      out[key] = sanitizeRichMenuAdminPayload(item);
+    }
+    return out;
+  }
+  if (typeof value === "string") return value.replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/g, "Bearer [redacted]");
+  return value;
+}
+
+async function handleAdminRichMenuRoute(req, env, path, method) {
+  const binding = env.MEMBER_DASHBOARD_CHAT_WORKER;
+  if (!binding || typeof binding.fetch !== "function") {
+    return json({ ok: false, error: "service_binding_unavailable" }, 502);
+  }
+
+  const servicePath = adminRichMenuServicePath(path);
+  if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
+
+  const init = {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-service-binding": "admin-worker",
+      "x-mmd-internal-call": "true",
+    },
+  };
+
+  if (method !== "GET") {
+    init.body = JSON.stringify(await safeJson(req));
+  }
+
+  const url = new URL(req.url);
+  const serviceUrl = new URL(`${MEMBER_DASHBOARD_RICH_MENU_BASE_URL}${servicePath}`);
+  if (url.searchParams.get("debug") === "1") serviceUrl.searchParams.set("debug", "1");
+  const upstream = await binding.fetch(new Request(serviceUrl, init));
+  const payload = await upstream.json().catch(() => ({ ok: false, error: "member_dashboard_response_invalid" }));
+  return json(sanitizeRichMenuAdminPayload(payload), upstream.status);
+}
+
 function str(value) {
   return String(value || "").trim();
+}
+
+function truthy(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  const normalized = str(value).toLowerCase();
+  return ["true", "yes", "y", "1"].includes(normalized);
 }
 
 function num(value) {
@@ -1053,18 +1990,25 @@ export function validateModelSchemaPatchV1Payload(route, body = {}) {
     const manualUnlock = input.manual_unlock === true;
     if (!manualUnlock && !str(input.payment_ref || input.payment_record_id)) errors.push("payment_ref");
   }
+  if ([MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision, MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile].includes(route) && !str(input.media_asset_id)) errors.push("media_asset_id");
+  if (route === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision && !["approve", "reject", "revoke"].includes(input.decision)) errors.push("decision");
 
   return { ok: errors.length === 0, errors };
 }
 
 async function handleModelSchemaPatchV1Route(req, env, path) {
   if (!isAllowedOrigin(req, env)) return modelSchemaPatchJson({ ok: false, error: "origin_not_allowed" }, 403);
+  // Cookie-authenticated mutations must carry an exact first-party origin.
+  // Server integrations retain their existing backend-only credentials.
 
   const body = await safeJson(req);
-  const adminAuthed = isAuthed(req, env);
+  const adminAuthed = await isAuthed(req, env);
   const isAuthorizeRoute = path === MODEL_SCHEMA_PATCH_V1_ROUTES.privateFlashAuthorize;
   if (isAuthorizeRoute && !adminAuthed) return modelSchemaPatchJson({ ok: false, error: "unauthorized" }, 401);
   if (!adminAuthed) return modelSchemaPatchJson({ ok: false, error: "signed_t_required" }, 401);
+  const serviceBearer = (req.headers.get("Authorization") || "").replace(/^Bearer /, "");
+  const serviceAuthed = Boolean(serviceBearer && ((env.ADMIN_BEARER && serviceBearer === env.ADMIN_BEARER) || (env.INTERNAL_TOKEN && serviceBearer === env.INTERNAL_TOKEN))) || isConfirmKeyAuthed(req, env);
+  if (!serviceAuthed && req.headers.get("origin") !== new URL(req.url).origin) return modelSchemaPatchJson({ok:false,error:"origin_not_allowed"},403);
 
   const validation = validateModelSchemaPatchV1Payload(path, body || {});
   if (!validation.ok) {
@@ -1077,12 +2021,29 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
     }, 400);
   }
 
+  const verifiedActor = await readCredentialBoundAdminActor(req, env);
   const context = {
-    actor: str(req.headers.get("X-Admin-Actor") || body?.actor || body?.authorized_by || "admin-worker"),
+    actor: str(verifiedActor?.id || "admin-worker-service"),
     actorRole: "admin",
   };
 
   try {
+    if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile || path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewDecision) {
+      const media = await readMediaByRecord(env, body.media_asset_id);
+      if (!ownedBy(media.fields || {}, body.model_id)) return modelSchemaPatchJson({ok:false,error:"media_owner_mismatch"},403);
+      if (!["pending_review", "approved"].includes(media.fields.review_status)) return modelSchemaPatchJson({ok:false,error:"media_review_state_conflict"},409);
+      const asset = await assertPrivateObject(env, media);
+      if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.mediaReviewFile) {
+        const object = await privateBucket(env).get(asset.key);
+        if (!object?.body || object.customMetadata?.sha256 !== asset.sha256) return modelSchemaPatchJson({ok:false,error:"media_unavailable"},503);
+        return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
+      }
+      const status = body.decision === "approve" ? "approved" : "rejected";
+      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
+      const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
+      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
+      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
+    }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));
     }
@@ -1108,6 +2069,7 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
       return modelSchemaPatchJson(await handleModelPrivateFlashAuthorize(env, body || {}, context));
     }
   } catch (error) {
+    if (error?.code && error?.status) return modelSchemaPatchJson({ok:false,error:error.code},error.status);
     if (error?.schemaPatchError) {
       return modelSchemaPatchJson({ ok: false, error: error.code, message: error.message }, error.status || 500);
     }
@@ -1143,6 +2105,13 @@ function modelSessionTables(env = {}) {
         status: str(env.AT_SESSIONS__STATUS || "status"),
         modelRecordId: str(env.AT_SESSIONS__MODEL_RECORD_ID || "Assigned Model"),
         modelName: str(env.AT_SESSIONS__MODEL_NAME || "model_name"),
+        jobType: str(env.AT_SESSIONS__JOB_TYPE || "job_type"),
+        jobDate: str(env.AT_SESSIONS__JOB_DATE || "job_date"),
+        startTime: str(env.AT_SESSIONS__START_TIME || "start_time"),
+        endTime: str(env.AT_SESSIONS__END_TIME || "end_time"),
+        locationName: str(env.AT_SESSIONS__LOCATION_NAME || "location_name"),
+        googleMapUrl: str(env.AT_SESSIONS__GOOGLE_MAP_URL || "google_map_url"),
+        payModelThb: str(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB || "pay_model_thb"),
       },
     },
   };
@@ -1193,15 +2162,22 @@ function isModelSessionPayload(payload) {
   return false;
 }
 
+function modelSessionVerificationSecret(payload, env) {
+  if (payload?.kind === "model_confirm") {
+    return str(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  if (payload?.kind === "customer_invite" && payload?.lane === "model_console") {
+    return str(env.LINK_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  }
+  return str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+}
+
 async function verifyModelSessionT(t, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
-  if (!secret || !t) return null;
+  if (!t) return null;
   const parts = String(t).split(".");
   if (parts.length !== 2) return null;
   const [encoded, signature] = parts;
   if (!encoded || !signature) return null;
-  const expected = await hmacSha256Hex(encoded, secret);
-  if (signature !== expected) return null;
 
   let payload = null;
   try {
@@ -1210,9 +2186,14 @@ async function verifyModelSessionT(t, env) {
     return null;
   }
 
+  if (!isModelSessionPayload(payload)) return null;
+  const secret = modelSessionVerificationSecret(payload, env);
+  if (!secret) return null;
+  const expected = await hmacSha256Hex(encoded, secret);
+  if (!(await constantTimeEqual(signature, expected))) return null;
+
   const exp = Number(payload?.exp || 0);
   if (exp && exp <= Math.floor(Date.now() / 1000)) return null;
-  if (!isModelSessionPayload(payload)) return null;
   return payload;
 }
 
@@ -1263,6 +2244,68 @@ async function modelSessionFindOne(env, tableName, filterByFormula) {
   return { ok: true, record: record ? { id: record.id, fields: record.fields || {} } : null };
 }
 
+const MODEL_SESSION_MODEL_CURRENT_STATES = new Set([
+  "offered",
+  "confirmed",
+  "en_route",
+  "nearby",
+  "arrived",
+  "met_customer",
+  "final_payment_pending",
+  "final_payment_confirmed",
+  "work_started",
+  "work_finished",
+  "separated",
+  "under_review",
+  "payout_pending",
+]);
+
+async function modelSessionFindCurrentByModel(env, tables, payload) {
+  if (payload?.kind !== "model_session") return { ok: true, record: null, eligible: false };
+
+  const modelRecordId = str(payload?.model_record_id || payload?.model_id);
+  if (!modelRecordId) return { ok: true, record: null, eligible: false };
+
+  const assignedField = tables.sessions.fields.modelRecordId;
+  if (!assignedField) return { ok: false, detail: { error: "model_assignment_field_missing" } };
+
+  const params = new URLSearchParams();
+  params.set("pageSize", "20");
+  params.set(
+    "filterByFormula",
+    `FIND("${escapeFormulaValue(modelRecordId)}",ARRAYJOIN({${assignedField}}))`,
+  );
+
+  const result = await airtableFetch(
+    env,
+    `/${encodeURIComponent(tables.sessions.table)}?${params.toString()}`,
+  );
+  if (!result.ok) return { ok: false, detail: result };
+
+  const records = Array.isArray(result.data?.records) ? result.data.records : [];
+  for (const raw of records) {
+    const record = { id: raw?.id || "", fields: raw?.fields || {} };
+    const recordModelIds = modelSessionFieldValues(record.fields, [
+      assignedField,
+      "Model Record ID",
+      "model_record_id",
+      "model_id",
+      "Model",
+    ]);
+    // The fallback is identity-bound, not name-bound. If Airtable does not
+    // return the exact canonical Model record id, fail closed for that row.
+    if (!recordModelIds.includes(modelRecordId)) continue;
+
+    const stateInfo = modelSessionStateFromRecord(tables, record);
+    const normalizedState = normalizeSessionState(stateInfo.state);
+    if (!MODEL_SESSION_MODEL_CURRENT_STATES.has(normalizedState)) continue;
+
+    return { ok: true, record, eligible: true };
+  }
+
+  return { ok: true, record: null, eligible: true };
+}
+
 function modelSessionOwnsRecord(env, payload, record) {
   const fields = record?.fields || {};
   const tables = modelSessionTables(env);
@@ -1272,7 +2315,7 @@ function modelSessionOwnsRecord(env, payload, record) {
   if (sessionValues.length && !sessionValues.some((value) => assignmentKeys.has(value))) return false;
 
   const payloadModelId = str(payload?.model_record_id || payload?.model_id);
-  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_id", "Model"]);
+  const recordModelIds = modelSessionFieldValues(fields, [names.modelRecordId, "Model Record ID", "model_record_id", "model_id", "Model"]);
   if (payloadModelId && recordModelIds.length && !recordModelIds.includes(payloadModelId)) return false;
 
   const payloadModelName = str(payload?.model_name).toLowerCase();
@@ -1289,7 +2332,19 @@ async function resolveModelSessionContext(req, env, body = null) {
 
   const tables = modelSessionTables(env);
   const formulas = modelSessionLookupFormulas(env, payload);
-  if (!formulas.length) return { ok: false, status: 403, error: "forbidden" };
+
+  // A LINE-verified Model session is valid even when it was issued before the
+  // Model had an active job. In that case the token intentionally contains the
+  // canonical model_record_id but no session_id/payment_ref. Resolve the current
+  // job from the exact assigned canonical Model relation; if none exists, report
+  // the normal no-active-job state instead of misclassifying identity as forbidden.
+  if (!formulas.length) {
+    const currentByModel = await modelSessionFindCurrentByModel(env, tables, payload);
+    if (!currentByModel.ok) return { ok: false, status: 503, error: "schema_not_ready" };
+    if (!currentByModel.eligible) return { ok: false, status: 403, error: "forbidden" };
+    if (!currentByModel.record) return { ok: false, status: 404, error: "session_not_found" };
+    return { ok: true, payload, session: currentByModel.record, tables };
+  }
 
   for (const formula of formulas) {
     const found = await modelSessionFindOne(env, tables.sessions.table, formula);
@@ -1338,21 +2393,30 @@ function modelSessionPageSlug(page) {
 
 function modelSessionResponseSession(tables, record) {
   const fields = record?.fields || {};
+  const names = tables.sessions.fields;
   const stateInfo = modelSessionStateFromRecord(tables, record);
   const normalized = normalizeSessionState(stateInfo.state);
   const page = resolveModelSessionPage(normalized);
+  const payModelThb = Number(fields[names.payModelThb]);
   return {
-    session_id: str(fields[tables.sessions.fields.sessionId] || ""),
+    session_id: str(fields[names.sessionId] || ""),
     state: stateInfo.state,
     normalized_state: normalized,
     page: modelSessionPageSlug(page),
     route: page?.path || "",
     allowed_actions: getAllowedModelSessionActions(normalized),
+    job_type: str(fields[names.jobType] || ""),
+    job_date: str(fields[names.jobDate] || ""),
+    start_time: str(fields[names.startTime] || ""),
+    end_time: str(fields[names.endTime] || ""),
+    location_name: str(fields[names.locationName] || ""),
+    google_map_url: str(fields[names.googleMapUrl] || ""),
+    pay_model_thb: Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null,
   };
 }
 
 async function signModelSessionPayload(payload, env) {
-  const secret = str(env.CONFIRM_KEY || env.INTERNAL_TOKEN);
+  const secret = str(env.MODEL_SESSION_SIGNING_SECRET || env.CONFIRM_KEY || env.INTERNAL_TOKEN);
   if (!secret) return "";
   const encoded = base64UrlEncodeUtf8(JSON.stringify(payload));
   return `${encoded}.${await hmacSha256Hex(encoded, secret)}`;
@@ -1444,22 +2508,26 @@ async function handleModelSessionCurrent(req, env) {
   });
 }
 
-async function verifyStartWorkPaymentTruth(env, session) {
-  const truthUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
-  // Runtime V1a must fail closed until payments-worker exposes a stable final-payment truth endpoint.
-  if (!truthUrl) return { ok: false, error: "payment_gate_not_ready" };
-
-  const res = await fetch(truthUrl, {
+export async function verifyStartWorkPaymentTruth(env, session) {
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
+  const configuredUrl = str(env.MODEL_SESSION_PAYMENT_TRUTH_URL || env.PAYMENTS_WORKER_FINAL_PAYMENT_STATUS_URL);
+  if (!configuredUrl && !env.PAYMENTS_WORKER?.fetch) return { ok: false, error: "payment_gate_not_ready" };
+  const truthUrl = configuredUrl || "https://sigil.mmdbkk.com/v1/internal/payments/final/status";
+  const init = {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
+      "X-Internal-Token": serviceToken,
     },
     body: JSON.stringify({
       session_id: session.session_id,
       action: "start_work_preflight",
     }),
-  });
+  };
+  const res = env.PAYMENTS_WORKER?.fetch && !configuredUrl
+    ? await env.PAYMENTS_WORKER.fetch(new Request(truthUrl, init))
+    : await fetch(truthUrl, init);
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false) return { ok: false, error: "payment_not_confirmed" };
   const confirmed =
@@ -1467,6 +2535,29 @@ async function verifyStartWorkPaymentTruth(env, session) {
     data.official_final_payment_confirmed === true ||
     normalizeSessionState(data.final_payment_status) === "final_payment_confirmed";
   return confirmed ? { ok: true } : { ok: false, error: "payment_not_confirmed" };
+}
+
+async function activateFinalPaymentAfterArrival(env, session) {
+  const serviceToken = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!serviceToken) return { ok: false, error: "payment_service_auth_not_ready" };
+  if (!env.PAYMENTS_WORKER?.fetch) return { ok: false, error: "payment_activation_not_ready" };
+  const request = new Request("https://sigil.mmdbkk.com/v1/internal/payments/final/activate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Internal-Token": serviceToken,
+    },
+    body: JSON.stringify({
+      session_id: session.session_id,
+      action: "model_mark_arrived",
+    }),
+  });
+  const response = await env.PAYMENTS_WORKER.fetch(request);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false || data.activated !== true) {
+    return { ok: false, error: str(data.error || "final_payment_activation_failed") };
+  }
+  return { ok: true, payment: data };
 }
 
 async function handleModelSessionAction(req, env) {
@@ -1498,6 +2589,10 @@ async function handleModelSessionAction(req, env) {
   }
 
   const currentSession = modelSessionResponseSession(reread.tables, reread.session);
+  if (action === "mark_arrived") {
+    const activation = await activateFinalPaymentAfterArrival(env, currentSession);
+    if (!activation.ok) return modelSessionJson({ ok: false, error: activation.error }, 503);
+  }
   if (action === "start_work") {
     const payment = await verifyStartWorkPaymentTruth(env, currentSession);
     if (!payment.ok) return modelSessionJson({ ok: false, error: payment.error }, 403);
@@ -1679,6 +2774,7 @@ function safeModelMediaExtension(fileName, contentType) {
 }
 
 async function handleModelMediaUploadInit(env, body) {
+  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) return planPrivateUpload(env, resolveSchemaPatchModelId(body), body);
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = `media_${crypto.randomUUID()}`;
@@ -1718,6 +2814,10 @@ async function handleModelMediaUploadInit(env, body) {
 }
 
 async function handleModelMediaUploadComplete(env, body) {
+  if (["private_gallery", "flash_preview"].includes(normalizeSchemaPatchWord(body.media_type))) {
+    const planned = await readMedia(env, str(body.asset_id));
+    return completePrivateMetadata(env, planned, resolveSchemaPatchModelId(body));
+  }
   const tables = modelSchemaPatchV1Tables(env);
   const modelId = resolveSchemaPatchModelId(body);
   const assetId = str(body.asset_id) || `media_${crypto.randomUUID()}`;
@@ -1809,13 +2909,22 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
   const modelId = resolveSchemaPatchModelId(body);
   const clientId = str(body.client_id || body.client_record_id);
   const basis = await assertFlashAuthorizationBasis(env, body, tables);
+  const policy = resolvePrivatePreviewPolicy(body);
+  const media = await readMediaByRecord(env, str(body.media_asset_id || body.media_record_id));
+  if (!ownedBy(media.fields || {}, modelId)) throw schemaPatchError("media_owner_mismatch",403,"Media must belong to the selected Model.");
+  await assertPrivateObject(env, media, true, policy.preview_kind);
+  const client = await modelSchemaPatchGetById(env,{table:str(env.AIRTABLE_TABLE_CLIENTS || "tblVv58TCbwh5j1fS")},clientId);
+  const cf = client?.fields || {};
+  if (!/^U[a-f0-9]{32}$/i.test(str(cf.line_user_id)) || cf.blocked === true || [cf.status,cf.client_status,cf.member_status].some(value => /^(blocked|suspended|revoked)$/i.test(str(value)))) throw schemaPatchError("verified_customer_required",403,"A verified linked customer is required.");
   const rawT = base64UrlEncodeString(`${crypto.randomUUID()}:${Date.now()}`);
   const tokenHash = await sha256Hex(rawT);
   const grantId = `flash_grant_${crypto.randomUUID()}`;
   const expiresAt = str(body.expires_at) || addMinutesIso(clampInt(body.expires_in_minutes, 1, 240, 30));
+  if (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now() || Date.parse(expiresAt) > Date.now() + 240 * 60 * 1000) throw schemaPatchError("grant_expiry_invalid",400,"Grant expiry must be within four hours.");
   const fields = tables.flashGrants.fields;
-  const viewLimit = clampInt(body.view_limit, 1, 20, 3);
-  const durationSec = clampInt(body.duration_sec || body.expires_in_minutes * 60, 30, 14400, 1800);
+  const previewPolicy = resolvePrivatePreviewPolicy(body);
+  const viewLimit = previewPolicy.view_limit;
+  const durationSec = previewPolicy.duration_sec;
   const rec = await modelSchemaPatchCreate(env, tables.flashGrants, {
     [fields.grantId]: grantId,
     [fields.client]: modelSchemaLinkedRecord(clientId),
@@ -1841,6 +2950,8 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
       authorization_basis: basis,
       payment_ref: str(body.payment_ref),
       token_storage: "sha256_hash_only",
+      preview_kind: previewPolicy.preview_kind,
+      consume_on: previewPolicy.consume_on,
     }),
   });
   return {
@@ -1852,8 +2963,12 @@ async function handleModelPrivateFlashAuthorize(env, body, context) {
     client_id: clientId,
     expires_at: expiresAt,
     view_limit: viewLimit,
+    duration_sec: durationSec,
+    preview_kind: previewPolicy.preview_kind,
+    consume_on: previewPolicy.consume_on,
     authorization_basis: basis,
     t: rawT,
+    viewer_url: `https://www.mmdbkk.com/api/member/app/private-preview/view#t=${encodeURIComponent(rawT)}`,
     token_storage: "sha256_hash_only",
   };
 }
@@ -1871,6 +2986,9 @@ async function assertFlashAuthorizationBasis(env, body, tables) {
   if (!payment || !isVerifiedDepositRecord(payment, tables)) {
     throw schemaPatchError("verified_deposit_required", 423, "Flash preview requires verified deposit or manual admin unlock.");
   }
+  const paymentClient = payment.fields?.Client || payment.fields?.client_record_id;
+  const clientIds = Array.isArray(paymentClient) ? paymentClient : paymentClient ? [paymentClient] : [];
+  if (clientIds.length !== 1 || clientIds[0] !== str(body.client_id || body.client_record_id)) throw schemaPatchError("payment_customer_mismatch",403,"Verified payment must belong to the grant recipient.");
   return "verified_deposit";
 }
 
@@ -1884,6 +3002,17 @@ export function isVerifiedDepositRecord(record, tables) {
   if (officialVerifiedAt) return true;
   return verificationStatus === "official_verified" &&
     Boolean(officialVerificationRef && (officialVerifiedBy || officialMatchReason));
+}
+
+export function resolvePrivatePreviewPolicy(body = {}) {
+  const kind = normalizeSchemaPatchWord(body.preview_kind || body.media_kind || body.kind);
+  if (kind === "private_pic" || kind === "private_picture" || kind === "image") {
+    return { preview_kind: "private_pic", duration_sec: 3, view_limit: 1, consume_on: "open" };
+  }
+  if (kind === "private_clip" || kind === "clip" || kind === "video") {
+    return { preview_kind: "private_clip", duration_sec: 0, view_limit: 1, consume_on: "play_start" };
+  }
+  throw schemaPatchError("preview_kind_required", 400, "preview_kind must be private_pic or private_clip.");
 }
 
 function isPublicCandidateMedia(mediaType) {
@@ -2393,6 +3522,217 @@ function buildSigilAdminNote({
 }
 
 /* =========================
+   SIGIL Board Publisher
+========================= */
+async function publishSigilBoardQueue(env) {
+  if (!env.SIGIL_BOARD_KV || typeof env.SIGIL_BOARD_KV.put !== "function") {
+    return { ok: false, error: "missing_sigil_board_kv" };
+  }
+
+  const records = await collectSigilBoardSourceRecords(env);
+  const cards = records.map((record, index) => sanitizeSigilBoardCard(record, index)).filter(Boolean);
+  const jsonCards = JSON.stringify(cards);
+  const publishedAt = new Date().toISOString();
+
+  await env.SIGIL_BOARD_KV.put(SIGIL_BOARD_CARDS_KV_KEY, jsonCards);
+  await env.SIGIL_BOARD_KV.put(SIGIL_BOARD_META_KV_KEY, JSON.stringify({
+    ok: true,
+    source: "admin-worker",
+    mode: "internal_publish",
+    published: cards.length,
+    published_at: publishedAt,
+  }));
+
+  return {
+    ok: true,
+    published: cards.length,
+    key: SIGIL_BOARD_CARDS_KV_KEY,
+    source: "admin-worker",
+    mode: "internal_publish",
+  };
+}
+
+async function collectSigilBoardSourceRecords(env) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+
+  const sources = [
+    { source: "console_inbox", table: env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || "tblFHmfpB2TTrzO2e" },
+    { source: "payment_proofs", table: env.AIRTABLE_TABLE_PAYMENT_PROOFS_ID || "tblfJfM4Sqag9zrLi" },
+    { source: "sessions", table: env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX" },
+    { source: "payments", table: env.AIRTABLE_TABLE_PAYMENTS || "payments" },
+    { source: "member_packages", table: env.AIRTABLE_TABLE_MEMBER_PACKAGES || env.AIRTABLE_TABLE_MEMBERS || "members" },
+  ];
+
+  const out = [];
+  for (const source of sources) {
+    const records = await airtableList(env, source.table, { limit: 25 });
+    for (const record of records) out.push({ ...record, source: source.source });
+  }
+  return out;
+}
+
+function sanitizeSigilBoardCard(record, index) {
+  if (!record || typeof record !== "object") return null;
+  const fields = record.fields && typeof record.fields === "object" ? record.fields : record;
+  const source = str(record.source || fields.source || "");
+  const lane = sigilBoardLane(fields, source);
+  const status = sigilBoardStatus(fields, lane);
+  const priority = sigilBoardPriority(fields, lane, status);
+  const risk = sigilBoardRisk(fields, lane);
+  const owner = sigilBoardOwner(fields, lane, risk);
+  const needsPerDecision = sigilBoardNeedsPerDecision(fields, lane, risk, owner);
+
+  return {
+    id: sigilBoardCardId(record, fields, source, index),
+    title: sigilBoardTitle(lane, sigilBoardFirstField(fields, ["title", "Title", "subject", "Subject", "inbox_id", "payment_ref", "session_id"])),
+    lane,
+    status,
+    priority,
+    risk,
+    next_action: sigilBoardNextAction(lane),
+    owner,
+    needs_per_decision: needsPerDecision,
+    summary: sigilBoardSummary(lane),
+  };
+}
+
+function sigilBoardLane(fields, source) {
+  const text = sigilBoardSourceText(fields, source);
+  if (source === "payment_proofs" || source === "payments" || /payment|slip|proof|transfer/.test(text)) return "Payment";
+  if (/black\s*card/.test(text)) return "Private Review";
+  if (/vip|svip|private exception|private review|refund/.test(text)) return "Private Review";
+  if (/complaint|privacy|mismatch|sensitive escalation|route\/auth|auth error|route error/.test(text)) return "Risk";
+  if (/booking|session|location|schedule/.test(text)) return "Booking";
+  if (/partner/.test(text)) return "Partner";
+  if (/model/.test(text)) return "Model";
+  if (/member|identity|package|renewal/.test(text)) return "Member";
+  if (/missing|incomplete|need info|reference/.test(text)) return "Need Info";
+  return source === "console_inbox" ? "Need Info" : "Risk";
+}
+
+function sigilBoardStatus(fields, lane) {
+  const status = str(sigilBoardFirstField(fields, ["status", "Status", "state", "State", "verification_status", "Verification Status"]));
+  if (/need[_\s-]?info/i.test(status)) return "Need Info";
+  if (/pending|review|uploaded|new/i.test(status)) return lane === "Payment" ? "Pending Review" : "Ready for Per";
+  if (lane === "Payment" || lane === "Need Info") return "Need Info";
+  if (lane === "Private Review" || lane === "Black Card" || lane === "Risk") return "Ready for Per";
+  return "Read Only";
+}
+
+function sigilBoardPriority(fields, lane, status) {
+  const text = `${sigilBoardSourceText(fields)} ${lane} ${status}`;
+  if (/critical|mismatch|privacy|complaint|auth error|route error|sensitive escalation/.test(text) || lane === "Risk") return "Critical";
+  if (/payment|refund|vip|svip|black card|manual review|private review/.test(text) || lane === "Payment" || lane === "Black Card") return "High";
+  if (/missing|incomplete|need info|booking|partner|model|member/.test(text)) return "Medium";
+  return "Low";
+}
+
+function sigilBoardRisk(fields, lane) {
+  const text = sigilBoardSourceText(fields);
+  if (lane === "Payment") return "Slip evidence only";
+  if (lane === "Black Card") return "Ewvon private review only";
+  if (/svip|vip|private review/.test(text) || lane === "Private Review") return "Per manual decision only";
+  if (lane === "Risk") return "Safety review required";
+  return "Read-only advisory";
+}
+
+function sigilBoardOwner(fields, lane, risk) {
+  const owner = sigilBoardSafeText(sigilBoardFirstField(fields, ["owner", "Owner", "assignee", "Assignee"]), "", 24);
+  if (["MMD", "Per", "Kenji", "Ewvon", "Yuki", "Admin"].includes(owner)) return owner;
+  if (lane === "Black Card" || /ewvon/i.test(risk)) return "Ewvon";
+  if (lane === "Private Review" || lane === "Risk" || /per/i.test(risk)) return "Per";
+  if (lane === "Need Info") return "Kenji";
+  return "MMD";
+}
+
+function sigilBoardNeedsPerDecision(fields, lane, risk, owner) {
+  const explicit = sigilBoardFirstField(fields, ["needs_per_decision", "Needs Per Decision"]);
+  if (explicit !== "") return truthy(explicit);
+  const text = sigilBoardSourceText(fields);
+  return owner === "Per" || owner === "Ewvon" || /mismatch|unknown payer|vip|svip|black card|refund|manual review|complaint|private exception/.test(text) || /per|ewvon/i.test(risk);
+}
+
+function sigilBoardTitle(lane, rawTitle = "") {
+  const title = str(rawTitle);
+  if (/^line_\[masked\]$/i.test(title) || /^line_\[masked\]\b/i.test(title)) return "line_[masked]";
+  if (/^img[_-]/i.test(title)) return "Evidence review";
+  if (/renewal/i.test(title)) return "Renewal review";
+  if (sigilBoardHasBadText(title) || title.length > 90 || /[{}`]|\\n|\\r|payload|form|dump/i.test(title)) return "Board review item";
+  if (lane === "Payment") return "Payment proof review";
+  if (lane === "Black Card") return "Private review item";
+  if (lane === "Private Review") return "Private review queue";
+  if (lane === "Booking") return "Booking context request";
+  if (lane === "Need Info") return "Missing info review";
+  return title || "Operational board item";
+}
+
+function sigilBoardNextAction(lane) {
+  if (lane === "Payment") return "ตรวจยอดจากระบบทางการก่อนตอบ";
+  if (lane === "Black Card") return "ส่งเป็น private review ให้ Ewvon";
+  if (lane === "Private Review" || lane === "Risk") return "สรุป advisory ให้ Per";
+  if (lane === "Need Info" || lane === "Booking") return "ขอข้อมูลเพิ่มก่อนเดินเรื่อง";
+  return "อ่านข้อมูลและจัดลำดับต่อ";
+}
+
+function sigilBoardSummary(lane) {
+  if (lane === "Payment") return "รายการชำระเงินต้องตรวจสอบจากระบบทางการก่อนตอบ";
+  if (lane === "Need Info") return "ต้องขอข้อมูลเพิ่มเติมก่อนเดินเรื่อง";
+  if (lane === "Private Review") return "ต้องสรุปเข้าคิวพิจารณาแบบส่วนตัว";
+  if (lane === "Black Card") return "ต้องตรวจสอบในชั้น private review เท่านั้น";
+  return "รายการนี้เป็น read-only advisory สำหรับตรวจสอบต่อ";
+}
+
+function sigilBoardCardId(record, fields, source, index) {
+  const fingerprint = [
+    source,
+    record.id || "",
+    sigilBoardFirstField(fields, ["inbox_id", "payment_ref", "session_id", "title", "Title", "subject", "Subject"]),
+    sigilBoardFirstField(fields, ["status", "Status", "state", "State"]),
+    index,
+  ].map((value) => str(value)).join("|");
+  return `sigil_card_${shortHash(fingerprint)}`;
+}
+
+function sigilBoardSourceText(fields, source = "") {
+  return [
+    source,
+    sigilBoardFirstField(fields, ["status", "Status", "state", "State", "intent", "Intent", "legacy_tags", "priority"]),
+    sigilBoardFirstField(fields, ["admin_note", "note", "Note", "summary", "Summary", "payload_json", "error_message"]),
+  ].map((value) => str(value)).join(" ").toLowerCase();
+}
+
+function sigilBoardFirstField(fields, names) {
+  for (const name of names) {
+    const value = fields?.[name];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return "";
+}
+
+function sigilBoardSafeText(value, fallback = "", maxLength = 180) {
+  let out = Array.isArray(value) ? value.join(", ") : str(value);
+  out = out.replace(/\s+/g, " ").trim() || fallback;
+  out = out
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[masked]")
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[masked]")
+    .replace(/\bU[a-f0-9]{20,}\b/gi, "[masked]")
+    .replace(/\b\d{7,}:[A-Za-z0-9_-]{20,}\b/g, "[masked]")
+    .replace(/https?:\/\/\S+/gi, "[masked]")
+    .replace(/\b(token|secret|passphrase|api[_ -]?key|bank|slip[_ -]?url|payment[_ -]?ref[_ -]?raw|amount[_ -]?raw)\b/gi, "[redacted]");
+  return out.slice(0, maxLength);
+}
+
+function sigilBoardHasBadText(value) {
+  return /rec[A-Za-z0-9]{10,}|Canonical Client|LINE Official immigration identity|line_user_i|line_user_id|nickname:|emails:|email|phone|telegram:|@[A-Za-z0-9_]|proof_attached|requested_path|payment_method|bank|raw_payload|admin_note|token|secret|passphrase|api_key|SVIP|Black Card|VIP/.test(str(value));
+}
+
+function shortHash(value) {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) hash = ((hash << 5) + hash) ^ value.charCodeAt(index);
+  return (hash >>> 0).toString(36).slice(0, 10);
+}
+
+/* =========================
    Airtable
 ========================= */
 async function airtableFetch(env, path, init) {
@@ -2431,7 +3771,7 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
 
   if (q && matchFields.length) {
     const safe = q.replace(/"/g, '\\"');
-    const ors = matchFields.map((f) => `FIND("${safe}", {${f}})`).join(",");
+    const ors = matchFields.map((f) => `SEARCH("${safe}", {${f}}&"")`).join(",");
     params.set("filterByFormula", `OR(${ors})`);
   }
 
@@ -3227,26 +4567,828 @@ export {
 };
 
 /* =========================
+   Create Session Private Access
+   Authoritative membership + model gate. Frontend membership fields
+   (private_access.*, client_lineage.tier / membership_status,
+   allowed_private_folders) are advisory UX data only and never grant access.
+========================= */
+const PRIVATE_ACCESS_FOLDERS = {
+  standard: ["standard"],
+  premium: ["standard", "premium"],
+  vip: ["standard", "premium", "vip"],
+  black_card: ["standard", "premium", "vip", "exclusive"],
+};
+const PRIVATE_ACCESS_TIER_RANK = { standard: 1, premium: 2, vip: 3, black_card: 4 };
+const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
+const PUBLIC_MODEL_FOLDERS = new Set(["travel", "extreme"]);
+const MODEL_BLOCKED_STATUS_TOKENS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
+const MODEL_UNAVAILABLE_TOKENS = new Set(["unavailable", "not_available", "paused", "busy", "on_hold", "hold"]);
+
+class CreateSessionAccessError extends Error {
+  constructor(code, message, status = 403) {
+    super(message);
+    this.name = "CreateSessionAccessError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function accessToken(value) {
+  return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function membershipTierFromText(value) {
+  const token = accessToken(value);
+  if (!token) return "";
+  // legacy SVIP normalizes to Black Card access; check before the "vip" substring
+  if (token.includes("black") || token.includes("svip")) return "black_card";
+  if (token.includes("vip")) return "vip";
+  if (token.includes("premium")) return "premium";
+  if (token.includes("standard") || token.includes("lite")) return "standard";
+  return "";
+}
+
+function normalizeCustomerLane(value) {
+  const token = accessToken(value);
+  if (token === "gay") return "gay";
+  if (token === "straight") return "straight";
+  if (token === "both" || token === "bi" || token === "all") return "both";
+  return "";
+}
+
+function formulaText(value) {
+  return `"${String(value == null ? "" : value).replace(/"/g, '\\"')}"`;
+}
+
+async function airtableListByFormula(env, tableName, filterByFormula, limit = 50) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+  const params = new URLSearchParams();
+  params.set("pageSize", String(Math.max(1, Math.min(100, limit))));
+  if (filterByFormula) params.set("filterByFormula", filterByFormula);
+  const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!r.ok) return [];
+  return (r.data?.records || []).map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
+}
+
+async function resolveAuthoritativeMemberAccess(env, ids = {}) {
+  const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
+
+  // A Create Job client_id is the canonical Airtable Client record ID. Prefer
+  // its explicit Client -> Member Entitlements links before any legacy Member
+  // lookup. This is the same authority boundary used by My MMD and avoids
+  // requiring the browser to know an internal Member join key.
+  const directClientAccess = await resolveCanonicalClientLinkedPrivateAccess(env, ids.client_id);
+  if (directClientAccess.found) {
+    return {
+      resolved: true,
+      member_record_id: directClientAccess.member_record_id || "",
+      member_id: directClientAccess.member_id || "",
+      member_email: directClientAccess.member_email || "",
+      membership_status: directClientAccess.tier ? "active" : directClientAccess.membership_status,
+      tier: directClientAccess.tier,
+      package_code: directClientAccess.package_code,
+      expire_at: directClientAccess.expire_at,
+      allowed_folders: directClientAccess.tier ? PRIVATE_ACCESS_FOLDERS[directClientAccess.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: directClientAccess.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+      canonical_client_record_id: directClientAccess.client_record_id,
+    };
+  }
+
+  // Hydrate missing identity fields from the canonical Client record so the
+  // Member fallback can still resolve old rows that are linked by LINE/email.
+  if (directClientAccess.identity) {
+    ids = {
+      ...ids,
+      line_user_id: str(ids.line_user_id || directClientAccess.identity.line_user_id),
+      member_email: str(ids.member_email || directClientAccess.identity.member_email),
+      telegram_username: str(ids.telegram_username || directClientAccess.identity.telegram_username),
+    };
+  }
+  const lookups = [
+    ["client_id", ids.client_id, false],
+    ["member_id", ids.member_id, false],
+    ["Member ID", ids.member_id, false],
+    ["memberstack_id", ids.memberstack_id, false],
+    ["line_record_id", ids.line_record_id, false],
+    ["line_record", ids.line_record_id, false],
+    ["line_user_id", ids.line_user_id, false],
+    ["line_id", ids.line_user_id, false],
+    ["email", ids.member_email, true],
+    ["Contact Email", ids.member_email, true],
+    ["telegram_username", ids.telegram_username, true],
+  ];
+
+  let member = null;
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    member = await airtableFindOne(env, membersTable, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`);
+    if (member) break;
+  }
+  if (!member) return { resolved: false, allowed_folders: [] };
+
+  const memberFields = member.fields || {};
+  const memberEmail = str(memberFields["Contact Email"] || memberFields.member_email || memberFields.email || ids.member_email).toLowerCase();
+
+  // Canonical authority: My MMD entitlement resolver over MMD — Member Entitlements.
+  // If canonical entitlement rows exist, they decide access even when the legacy
+  // member_packages ledger disagrees. This prevents stale purchase rows from
+  // downgrading or widening current private access.
+  const canonical = await resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail);
+  if (canonical.found) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: canonical.member_id || str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: canonical.tier ? "active" : canonical.membership_status,
+      tier: canonical.tier,
+      package_code: canonical.package_code,
+      expire_at: canonical.expire_at,
+      allowed_folders: canonical.tier ? PRIVATE_ACCESS_FOLDERS[canonical.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: canonical.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+    };
+  }
+
+  // Legacy compatibility only for members that have no canonical entitlement
+  // rows yet. Once an entitlement exists, this ledger must never override it.
+  let best = null;
+  if (memberEmail) {
+    const ledgerTable = env.AIRTABLE_TABLE_MEMBER_PACKAGES || "member_packages";
+    const now = Date.now();
+    const records = await airtableListByFormula(env, ledgerTable, `LOWER({member_email})=${formulaText(memberEmail)}`, 20);
+    for (const record of records) {
+      const f = record.fields || {};
+      if (accessToken(f.status) !== "active") continue;
+      const endAt = Date.parse(str(f.end_date || f.end_at || f.expire_at || f.expires_at));
+      if (!endAt || endAt < now) continue;
+      const tier = membershipTierFromText(f.package_code || f.tier);
+      if (!tier) continue;
+      const rank = PRIVATE_ACCESS_TIER_RANK[tier] || 0;
+      if (!best || rank > best.rank || (rank === best.rank && endAt > best.endAt)) {
+        best = { tier, rank, endAt, package_code: str(f.package_code || f.tier), expire_at: str(f.end_date || f.end_at || f.expire_at || f.expires_at) };
+      }
+    }
+  }
+
+  if (!best) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: memberEmail ? "no_active_membership" : "no_ledger_identity",
+      tier: "",
+      allowed_folders: [],
+      entitlement_authority: "legacy_member_packages_fallback",
+    };
+  }
+
+  return {
+    resolved: true,
+    member_record_id: member.id,
+    member_id: str(memberFields.member_id || memberFields["Member ID"]),
+    member_email: memberEmail,
+    membership_status: "active",
+    tier: best.tier,
+    package_code: best.package_code,
+    expire_at: best.expire_at,
+    allowed_folders: PRIVATE_ACCESS_FOLDERS[best.tier].slice(),
+    entitlement_authority: "legacy_member_packages_fallback",
+  };
+}
+
+async function resolveCanonicalClientLinkedPrivateAccess(env, clientRecordId) {
+  const id = str(clientRecordId);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    return { found: false, identity: null };
+  }
+
+  const clientsTable = env.AIRTABLE_TABLE_CLIENTS || "Clients";
+  const fetched = await airtableFetch(env, `/${encodeURIComponent(clientsTable)}/${encodeURIComponent(id)}`);
+  if (!fetched.ok || !fetched.data?.id) {
+    return { found: false, identity: null };
+  }
+
+  const fields = fetched.data.fields || {};
+  const identity = {
+    line_user_id: str(fields.line_user_id || fields.line_id),
+    member_email: str(fields.email || fields["Contact Email"]).toLowerCase(),
+    telegram_username: str(fields.telegram_username),
+  };
+
+  const entitlementIds = []
+    .concat(fields["MMD — Member Entitlements"] || [])
+    .concat(fields["MMD - Member Entitlements"] || [])
+    .map((value) => str(value && typeof value === "object" ? value.id : value))
+    .filter((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+
+  if (!entitlementIds.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = [];
+  for (const entitlementId of [...new Set(entitlementIds)]) {
+    const row = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(entitlementId)}`);
+    if (row.ok && row.data?.id) records.push(row.data);
+  }
+  if (!records.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const access = canonicalPrivateAccessFromRows(records);
+  return {
+    ...access,
+    found: true,
+    identity,
+    client_record_id: id,
+    member_email: access.member_email || identity.member_email,
+  };
+}
+
+function canonicalPrivateAccessFromRows(rows) {
+  const snapshot = resolveMemberEntitlements(rows, { now: Date.now() });
+  const envelope = accessToken(snapshot?.access?.private_visibility_envelope);
+  const tier = envelope === "black_card" || envelope === "svip"
+    ? "black_card"
+    : envelope === "vip" || envelope === "premium" || envelope === "standard"
+      ? envelope
+      : "";
+
+  const currentRows = (snapshot?.entitlements || []).filter((row) =>
+    row && (row.lifecycle === "active" || row.lifecycle === "expiring_soon")
+  );
+  const expireAt = currentRows
+    .map((row) => str(row.expire_at))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || "";
+  const packageCode = currentRows
+    .map((row) => str(row.relationship_tier || row.package_code || row.capability))
+    .find(Boolean) || tier;
+
+  let memberRecordId = "";
+  let memberId = "";
+  let memberEmail = "";
+  for (const row of rows) {
+    const f = row?.fields || {};
+    const linked = Array.isArray(f.member) ? f.member : [];
+    const candidate = linked
+      .map((value) => str(value && typeof value === "object" ? value.id : value))
+      .find((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+    if (!memberRecordId && candidate) memberRecordId = candidate;
+    if (!memberId) memberId = str(f.member_id);
+    if (!memberEmail) memberEmail = str(f.member_email).toLowerCase();
+  }
+
+  return {
+    tier,
+    package_code: packageCode,
+    expire_at: expireAt,
+    member_record_id: memberRecordId,
+    member_id: memberId,
+    member_email: memberEmail,
+    membership_status: snapshot?.member_blocked ? "blocked" : tier ? "active" : "no_active_private_entitlement",
+    snapshot,
+  };
+}
+
+async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail) {
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = new Map();
+
+  const linked = []
+    .concat(memberFields["MMD — Member Entitlements"] || [])
+    .concat(memberFields["MMD - Member Entitlements"] || []);
+  for (const value of linked) {
+    const id = str(value && typeof value === "object" ? value.id : value);
+    if (!/^rec[A-Za-z0-9]{14,}$/.test(id) || records.has(id)) continue;
+    const fetched = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(id)}`);
+    if (fetched.ok && fetched.data?.id) records.set(fetched.data.id, fetched.data);
+  }
+
+  const memberIdCandidates = [
+    ids.member_id,
+    memberFields.member_id,
+    memberFields["Member ID"],
+    member?.id ? `mmd_rec_${member.id}` : "",
+  ].map(str).filter(Boolean);
+
+  const lookups = [
+    ...memberIdCandidates.map((value) => ["member_id", value, false]),
+    ["memberstack_id", ids.memberstack_id || memberFields.memberstack_id, false],
+    ["line_user_id", ids.line_user_id || memberFields.line_user_id || memberFields.line_id, false],
+    ["member_email", memberEmail, true],
+  ];
+
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    const rows = await airtableListByFormula(env, table, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`, 50);
+    for (const row of rows) if (row?.id) records.set(row.id, row);
+  }
+
+  const rows = [...records.values()];
+  if (!rows.length) return { found: false, tier: "", membership_status: "no_canonical_entitlement", snapshot: null };
+
+  const access = canonicalPrivateAccessFromRows(rows);
+  return {
+    ...access,
+    found: true,
+    member_id: access.member_id || memberIdCandidates[0] || "",
+  };
+}
+
+function modelAccessProfile(fields = {}) {
+  const rawTags = []
+    .concat(Array.isArray(fields.legacy_tags) ? fields.legacy_tags : String(fields.legacy_tags || "").split(/[,\n]/))
+    .concat(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || "").split(/[,\n]/));
+  const tags = new Set(rawTags.map(accessToken).filter(Boolean));
+
+  const visibilityToken = accessToken(fields.booking_visibility);
+  const salesLayer = accessToken(fields.sales_layer);
+  let bookingVisibility = "";
+  if (visibilityToken === "private" || salesLayer.includes("private")) bookingVisibility = "private";
+  else if (visibilityToken === "public" || salesLayer.includes("public")) bookingVisibility = "public";
+
+  let accessFolder = accessToken(fields.access_folder || fields.model_access_folder || fields.model_folder);
+  if (!CANONICAL_PRIVATE_FOLDERS.has(accessFolder)) {
+    accessFolder = "";
+    const tierSource = accessToken([fields.model_tier, fields.approved_client_visibility, fields.private_tier].filter(Boolean).join(" "));
+    if (tierSource.includes("exclusive") || tierSource.includes("black")) accessFolder = "exclusive";
+    else if (tierSource.includes("vip")) accessFolder = "vip";
+    else if (tierSource.includes("premium")) accessFolder = "premium";
+    else if (tierSource.includes("standard")) accessFolder = "standard";
+  }
+
+  const serviceSource = accessToken([fields.service_layer, fields.job_types, fields.private_tier].filter(Boolean).join(" "));
+  const publicFolders = [];
+  if (serviceSource.includes("travel") || tags.has("travel")) publicFolders.push("travel");
+  if (serviceSource.includes("extreme") || tags.has("extreme")) publicFolders.push("extreme");
+
+  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  const statusActive = !MODEL_BLOCKED_STATUS_TOKENS.has(accessToken(fields.status));
+  const availabilityToken = accessToken(fields.availability_status);
+  const availableNow =
+    fields.available_now === true ||
+    ["yes", "true", "1", "available"].includes(accessToken(fields.available_now)) ||
+    ["available", "active", "bookable"].includes(availabilityToken);
+  const explicitlyUnavailable =
+    fields.available_now === false ||
+    accessToken(fields.available_now) === "no" ||
+    MODEL_UNAVAILABLE_TOKENS.has(availabilityToken);
+
+  // burn / mk / live / pn are operational compatibility flags, never membership access folders
+  const ops = {
+    burn: accessToken(fields.burn_ability) === "yes" || tags.has("burn"),
+    mk: accessToken(fields.mk_ability) === "yes" || tags.has("mk"),
+    live: accessToken(fields.live_ability) === "yes" || tags.has("live"),
+    pn_compatible: accessToken(fields.pn_ability) === "yes" || tags.has("pn"),
+  };
+
+  return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
+}
+
+function isDriveLazyPrivateModel(fields = {}) {
+  const tag = accessToken(fields.raw_import_tag);
+  const scope = accessToken(fields.folder_scope_key);
+  return tag === "drive_lazy_materialized_v1" &&
+    (scope.startsWith("exclusive_drive_") || scope.startsWith("private_drive_"));
+}
+
+function effectivePrivateModelLane(profile, fields, selectedLane) {
+  if (profile?.lane) return profile.lane;
+  const lane = normalizeCustomerLane(selectedLane);
+  return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
+}
+
+function sanitizeCreateSessionModel(record, profile) {
+  const fields = record.fields || {};
+  const folders = profile.bookingVisibility === "private"
+    ? (profile.accessFolder ? [profile.accessFolder] : [])
+    : profile.publicFolders.slice();
+  const telegramStatus = accessToken(fields.telegram_verification_status);
+  const telegramUserId = str(fields.telegram_user_id);
+  const telegramConnected = telegramStatus === "verified" && /^\d{5,20}$/.test(telegramUserId);
+  return {
+    model_id: record.id,
+    model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
+    model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
+    telegram_username: telegramConnected ? str(fields.telegram_username).replace(/^@/, "") : "",
+    telegram_status: telegramConnected ? "verified" : (telegramStatus || "not_connected"),
+    telegram_connected: telegramConnected,
+    readiness: {
+      telegram_connected: telegramConnected,
+      ready_to_work_blocked_by_telegram: !telegramConnected,
+    },
+    folders,
+    orientation: profile.lane,
+    status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
+    available: profile.availableNow && !profile.explicitlyUnavailable,
+    operational: { ...profile.ops },
+  };
+}
+
+async function resolveCreateSessionModel(env, { model_id = "", model_key = "" } = {}) {
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const id = str(model_id);
+  if (/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    const r = await airtableFetch(env, `/${encodeURIComponent(modelsTable)}/${id}`);
+    if (r.ok && r.data?.id) return { id: r.data.id, fields: r.data.fields || {} };
+  }
+  const key = str(model_key || id);
+  if (!key) return null;
+  for (const field of ["model_lookup_key", "unique_key", "model_code"]) {
+    const found = await airtableFindOne(env, modelsTable, `{${field}}=${formulaText(key)}`);
+    if (found) return found;
+  }
+  return null;
+}
+
+
+const OWNER_PRIVATE_JOB_GRANT_ACTION = "owner_private_job_grant";
+const OWNER_PRIVATE_JOB_GRANT_PENDING_REASON = "owner_approved_single_job_unconsumed";
+const OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON = "owner_approved_single_job_reserved";
+const OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON = "owner_approved_single_job_consumed";
+
+function ownerGrantMoneyToken(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  return String(Math.round((parsed + Number.EPSILON) * 100) / 100);
+}
+
+export function ownerPrivateJobGrantTarget(body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const lineage = body?.client_lineage || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+
+  const clientId = str(body.client_id || lineage.client_id);
+  const modelId = str(model.model_id || body.model_id);
+  const jobDate = str(body.job_date || jobDetails.job_date);
+  const startTime = str(body.start_time || jobDetails.start_time);
+  const endTime = str(body.end_time || jobDetails.end_time);
+  const folder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const orientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const privateWork = accessToken(work.job_type || work.private_work || body.job_type || jobDetails.private_work);
+  const amount = ownerGrantMoneyToken(body.service_amount_thb ?? body.amount_thb ?? payment.service_amount_thb ?? payment.amount_thb);
+  const payout = ownerGrantMoneyToken(body.pay_model_thb ?? body.model_payout_thb ?? body?.model_payout?.amount_thb);
+
+  if (!clientId || !modelId || !jobDate || !startTime || !endTime || !folder || !orientation || !privateWork || !amount || !payout) return "";
+  return ["jobgrant","v1",clientId,modelId,jobDate,startTime,endTime,folder,orientation,privateWork,amount,payout].join(":");
+}
+
+async function findOwnerPrivateJobGrant(env, body = {}) {
+  const target = ownerPrivateJobGrantTarget(body);
+  if (!target) return null;
+  const table = str(env.AIRTABLE_TABLE_ACCESS_LOG || "System — Access Log");
+  const formula = `AND({Action}=${formulaText(OWNER_PRIVATE_JOB_GRANT_ACTION)},{Target}=${formulaText(target)},{Result}=${formulaText("success")},{Reason}=${formulaText(OWNER_PRIVATE_JOB_GRANT_PENDING_REASON)})`;
+  const record = await airtableFindOne(env, table, formula);
+  return record ? { ...record, target, table } : null;
+}
+
+async function reserveOwnerPrivateJobGrant(env, grant) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON,
+    "After JSON": JSON.stringify({ state: "reserved", target: grant.target, reserved_at: new Date().toISOString() }).slice(0, 4000),
+  });
+}
+
+async function consumeOwnerPrivateJobGrant(env, grant, result = {}) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON,
+    "After JSON": JSON.stringify({
+      state: "consumed",
+      target: grant.target,
+      session_id: str(result.session_id),
+      payment_ref: str(result.payment_ref),
+      consumed_at: new Date().toISOString(),
+    }).slice(0, 4000),
+  });
+}
+
+async function enforcePrivateCreateAccess(env, body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  const lineage = body?.client_lineage || {};
+  const lineIdentity = body?.line_identity || {};
+
+  const selectedFolder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const selectedOrientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const customerTelegram = str(telegramGate.customer_telegram_status || body.customer_telegram_status);
+  const modelTelegram = str(telegramGate.model_telegram_status || body.model_telegram_status);
+  // Browser-supplied Telegram labels are diagnostic only. Stable Telegram
+  // verification is backend-owned on canonical Client/Model records.
+  // Member Telegram is optional; Model Telegram is a Ready-to-Work requirement,
+  // but neither channel blocks Create Job or LINE identity verification.
+  const identityLinkState = {
+    customer_telegram_status: customerTelegram || "not_connected",
+    model_telegram_status: modelTelegram || "not_connected",
+    member_telegram_optional: true,
+    model_telegram_required_before_ready_to_work: true,
+  };
+
+  // Membership comes from the backend ledger; frontend tier/status fields never grant access.
+  // An exact owner one-job grant may bridge this Job only. It is stored in
+  // System — Access Log, matched on the complete Job fingerprint, and never
+  // materializes standing membership or Client entitlement.
+  if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+  if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
+
+  const memberAccess = await resolveAuthoritativeMemberAccess(env, {
+    member_id: str(body.member_id || lineage.member_id),
+    client_id: str(body.client_id || lineage.client_id),
+    memberstack_id: str(body.memberstack_id || lineage.memberstack_id),
+    line_record_id: str(lineIdentity.line_record_id || body.line_record_id),
+    line_user_id: str(lineIdentity.line_user_id || body.line_user_id),
+    member_email: str(lineage.member_email || body.member_email || lineage.email),
+    telegram_username: str(telegramGate.customer_telegram_username || lineage.customer_telegram_username),
+  });
+  const standingAllowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+    ? memberAccess.allowed_folders
+    : [];
+  const standingAllowsSelectedFolder = memberAccess.resolved && standingAllowedFolders.includes(selectedFolder);
+  const ownerJobGrant = standingAllowsSelectedFolder ? null : await findOwnerPrivateJobGrant(env, body);
+
+  if (!memberAccess.resolved && !ownerJobGrant) {
+    throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
+  }
+  if (memberAccess.resolved && !standingAllowedFolders.length && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_eligibility_blocked", "Client membership is not active for private work.");
+  }
+  if (memberAccess.resolved && standingAllowedFolders.length && !standingAllowsSelectedFolder && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
+  }
+  const allowedFolders = ownerJobGrant ? [selectedFolder] : standingAllowedFolders;
+
+  // Never trust browser-submitted model metadata; re-resolve the model record.
+  const modelRecord = await resolveCreateSessionModel(env, {
+    model_id: str(model.model_id || body.model_id),
+    model_key: str(model.model_lookup_key || body.model_lookup_key || body.model_key),
+  });
+  if (!modelRecord) throw new CreateSessionAccessError("private_model_not_found", "The selected model could not be resolved.", 404);
+  const profile = modelAccessProfile(modelRecord.fields || {});
+  if (profile.bookingVisibility !== "private") throw new CreateSessionAccessError("private_model_not_private", "The selected model is not a private-work model.");
+  if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_invalid", "The selected model has no canonical private access folder.");
+  if (profile.accessFolder !== selectedFolder) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is outside the selected access folder.");
+  if (!allowedFolders.includes(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is above the client's membership access.");
+  const effectiveLane = effectivePrivateModelLane(profile, modelRecord.fields || {}, selectedOrientation);
+  if (effectiveLane !== selectedOrientation && effectiveLane !== "both") throw new CreateSessionAccessError("private_model_lane_mismatch", "The selected model does not serve the selected customer lane.");
+  if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
+  if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
+
+  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState, ownerJobGrant };
+}
+
+async function searchCreateSessionModels(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+  const workType = accessToken(url.searchParams.get("work_type"));
+  const visibilityParam = accessToken(url.searchParams.get("booking_visibility"));
+  const bookingVisibility = visibilityParam === "private" || (!visibilityParam && workType === "private") ? "private" : "public";
+  const lane = normalizeCustomerLane(url.searchParams.get("customer_lane") || url.searchParams.get("orientation"));
+  const selectedFolder = accessToken(url.searchParams.get("selected_access_folder") || url.searchParams.get("folder"));
+  const flag = (name) => ["1", "true", "yes"].includes(accessToken(url.searchParams.get(name)));
+  const availableOnly = flag("available_only");
+  const wantBurn = flag("burn");
+  const wantMk = flag("mk");
+  const wantLive = flag("live");
+  const inventoryOnly = flag("inventory_only");
+
+  let allowedFolders = [];
+  let memberSummary = null;
+  if (bookingVisibility === "private") {
+    if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+    if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
+
+    if (inventoryOnly) {
+      // Authenticated Admin inventory preview: intentionally skip Client
+      // entitlement resolution so search latency depends only on model inventory.
+      // The actual Create Job mutation still calls enforcePrivateCreateAccess()
+      // and remains fail-closed.
+      memberSummary = {
+        eligibility_checked: false,
+        eligibility_result: "deferred_to_create",
+        private_access_level: "deferred",
+        allowed_private_folders: [],
+        inventory_preview_only: true,
+        entitlement_recheck_required: true,
+        inventory_fast_path: true,
+      };
+    } else {
+      const ids = {
+        member_id: str(url.searchParams.get("member_id")),
+        client_id: str(url.searchParams.get("client_id")),
+        memberstack_id: str(url.searchParams.get("memberstack_id")),
+        line_record_id: str(url.searchParams.get("line_record_id")),
+        line_user_id: str(url.searchParams.get("line_user_id")),
+        member_email: str(url.searchParams.get("member_email")),
+        telegram_username: str(url.searchParams.get("customer_telegram_username")),
+      };
+      const hasIdentity = Object.values(ids).some(Boolean);
+      const memberAccess = hasIdentity
+        ? await resolveAuthoritativeMemberAccess(env, ids)
+        : { resolved: false, allowed_folders: [], tier: "" };
+
+      allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+        ? memberAccess.allowed_folders
+        : [];
+      const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
+      memberSummary = {
+        eligibility_checked: memberAccess.resolved === true,
+        eligibility_result: memberAccess.resolved
+          ? (canCreateSelectedFolder ? "allowed" : "blocked")
+          : "unresolved",
+        private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
+        allowed_private_folders: allowedFolders.slice(),
+        inventory_preview_only: !canCreateSelectedFolder,
+        entitlement_recheck_required: true,
+      };
+    }
+  } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
+    throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
+  }
+
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  let records = await airtableList(env, modelsTable, {
+    q,
+    limit: 100,
+    matchFields: q ? MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS : getModelSearchFields(env),
+    fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
+  });
+  if (q && records.length === 0) {
+    records = await airtableList(env, modelsTable, {
+      q,
+      limit: 100,
+      matchFields: getModelSearchFields(env),
+      fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
+    });
+  }
+
+  const items = [];
+  const seenInventoryKeys = new Set();
+  for (const record of records) {
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    if (availableOnly && (!profile.availableNow || profile.explicitlyUnavailable)) continue;
+    if (wantBurn && !profile.ops.burn) continue;
+    if (wantMk && !profile.ops.mk) continue;
+    if (wantLive && !profile.ops.live) continue;
+    if (bookingVisibility === "private") {
+      if (profile.bookingVisibility !== "private") continue;
+      if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
+      if (profile.accessFolder !== selectedFolder) continue;
+      // Search is owner/admin inventory discovery. Client entitlement never filters
+      // the inventory list here; create-time authority re-checks the selected folder.
+      const effectiveLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (effectiveLane !== lane && effectiveLane !== "both") continue;
+    } else {
+      if (profile.bookingVisibility === "private") continue;
+      if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) continue;
+      if (lane && profile.lane && profile.lane !== lane && profile.lane !== "both") continue;
+    }
+    const inventoryKey = str(record.fields?.drive_folder_id || record.fields?.folder_scope_key || "");
+    if (inventoryKey && seenInventoryKeys.has(inventoryKey)) continue;
+    if (inventoryKey) seenInventoryKeys.add(inventoryKey);
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (bookingVisibility === "private" && !item.orientation) {
+      const fallbackLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (fallbackLane) {
+        item.orientation = fallbackLane;
+        item.drive_lane_inferred_for_owner_job = true;
+      }
+    }
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+
+  const out = { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items };
+  if (memberSummary) out.private_access = memberSummary;
+  return out;
+}
+
+
+async function listModelActivationCandidates(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const folder = accessToken(url.searchParams.get("folder") || "");
+  const limit = clampInt(url.searchParams.get("limit") ?? 50, 1, 100, 50);
+  const allowedFolders = new Set([...PUBLIC_MODEL_FOLDERS, ...CANONICAL_PRIVATE_FOLDERS]);
+  if (folder && !allowedFolders.has(folder)) {
+    throw new CreateSessionAccessError("model_folder_invalid", "Folder is not a canonical Model folder.");
+  }
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const records = await airtableList(env, modelsTable, { q, limit: 100, matchFields: getModelSearchFields(env), fallbackMatchFields: MODEL_SAFE_SEARCH_FIELDS });
+  const items = [];
+  for (const record of records) {
+    // Activation selection requires affirmative canonical status. The legacy
+    // booking profile only excludes known blocked statuses and is not an
+    // approval check: blank, pending and unknown values must not pass here.
+    const status = record.fields?.status;
+    if (typeof status !== "string" || status.trim().toLowerCase() !== "active") continue;
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (!item.model_name || (folder && !item.folders.includes(folder))) continue;
+    items.push({ model_record_id: item.model_id, working_name: item.model_name, model_lookup_key: item.model_lookup_key, folders: item.folders, status: item.status });
+    if (items.length >= limit) break;
+  }
+  return { ok: true, layer: "core", folder, items };
+}
+
+export {
+  CreateSessionAccessError,
+  PRIVATE_ACCESS_FOLDERS,
+  membershipTierFromText,
+  normalizeCustomerLane,
+  modelAccessProfile,
+  sanitizeCreateSessionModel,
+  resolveAuthoritativeMemberAccess,
+  resolveCreateSessionModel,
+  enforcePrivateCreateAccess,
+  searchCreateSessionModels,
+  listModelActivationCandidates,
+};
+
+/* =========================
    Job create
 ========================= */
-async function createAdminJob(env, body) {
-  const client_name = strReq(body.client_name, "client_name");
-  const model_name = strReq(body.model_name, "model_name");
-  const job_type = strReq(body.job_type, "job_type");
-  const job_date = strReq(body.job_date, "job_date");
-  const start_time = strReq(body.start_time, "start_time");
-  const end_time = strReq(body.end_time, "end_time");
-  const location_name = strReq(body.location_name, "location_name");
+const CUSTOMER_DEPOSIT_PERCENT = 30;
+const CUSTOMER_DEPOSIT_ROUND_STEP_THB = 500;
 
-  const google_map_url = str(body.google_map_url || "");
-  const note = str(body.note || body.notes || "");
-  const payment_type = str(body.payment_type || "full");
-  const payment_method = str(body.payment_method || "promptpay");
-  const amount_thb = numReq(body.amount_thb, "amount_thb");
+export function computeCustomerDepositAmount(serviceAmountThb) {
+  const total = Number(serviceAmountThb);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  const raw = (total * CUSTOMER_DEPOSIT_PERCENT) / 100;
+  const rounded = Math.ceil(raw / CUSTOMER_DEPOSIT_ROUND_STEP_THB) * CUSTOMER_DEPOSIT_ROUND_STEP_THB;
+  return Math.min(total, rounded);
+}
+
+async function createAdminJob(env, body) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+  const notes = body?.notes || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  // SIGIL Jobs uses visibility/job_details.world. Any private declaration must
+  // pass the existing authoritative access gate, including conflicting aliases.
+  const jobVisibility = [work.job_visibility, body.job_visibility, body.booking_visibility,
+    body.visibility, jobDetails.world].some(value => str(value).toLowerCase() === "private") ? "private" : "public";
+
+  let privateGate = null;
+  if (jobVisibility === "private") {
+    privateGate = await enforcePrivateCreateAccess(env, body);
+    if (privateGate?.ownerJobGrant) {
+      const reserved = await reserveOwnerPrivateJobGrant(env, privateGate.ownerJobGrant);
+      if (!reserved?.ok) throw new CreateSessionAccessError("owner_job_grant_reservation_failed", "Owner one-job grant could not be reserved.", 503);
+    }
+  }
+
+  const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
+  const model_name = strReq(body.model_name || model.model_name, "model_name");
+  const job_type = strReq(body.job_type || work.job_lane || work.work_type, "job_type");
+  const job_date = strReq(body.job_date || jobDetails.job_date, "job_date");
+  const start_time = strReq(body.start_time || jobDetails.start_time, "start_time");
+  const end_time = strReq(body.end_time || jobDetails.end_time, "end_time");
+  const location_name = strReq(body.location_name || jobDetails.location_name, "location_name");
+
+  const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
+  const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const payment_type = "deposit";
+  const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
+  // amount_thb may include a separately itemized membership renewal. The
+  // customer deposit is always calculated from service money only.
+  const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
+  const service_amount_thb = numReq(body.service_amount_thb || payment.service_amount_thb || amount_thb, "service_amount_thb");
+  const original_amount_raw = Number(
+    body.original_amount_thb ??
+    payment.original_amount_thb ??
+    payment.payment_original_amount_thb ??
+    service_amount_thb
+  );
+  const original_amount_thb = Number.isFinite(original_amount_raw) && original_amount_raw >= service_amount_thb
+    ? original_amount_raw
+    : service_amount_thb;
+  const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
+    .toLowerCase();
+  const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
+  const deposit_amount_thb = computeCustomerDepositAmount(service_amount_thb);
+  const balance_amount_thb = Math.max(0, service_amount_thb - deposit_amount_thb);
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
-  const confirm_page = absoluteUrl(body.confirm_page || "/confirm/job-confirmation", webBase);
-  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/confirm/job-model", webBase);
+  const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
+  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/sigil/confirm/job-model", webBase);
 
   const payload = {
     client_name,
@@ -3258,14 +5400,36 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    pay_model_thb: body.pay_model_thb,
+    service_amount_thb,
+    original_amount_thb,
+    pricing_adjustment,
+    deposit_percent,
+    deposit_amount_thb,
+    balance_amount_thb,
+    operational_status: jobDetails.operational_status === "pending_client_link" ? "pending_client_link" : undefined,
     payment_type,
+    payment_stage: payment_type,
     payment_method,
     note,
     confirm_page,
     model_confirm_page,
   };
 
-  const minted = await callPaymentsCreateLink(env, payload);
+  // Older issuers reject this envelope at required-field validation, before
+  // writing anything. Rolling deployments must never mint a held job's links.
+  const issuerPayload = jobDetails.operational_status === "pending_client_link"
+    ? { operational_status: "pending_client_link", held_job: payload }
+    : payload;
+  const minted = await callPaymentsCreateLink(env, issuerPayload);
+
+  if (jobDetails.operational_status === "pending_client_link") {
+    // A held create must never accept a legacy issuer that already minted links.
+    if (minted.operational_status !== "pending_client_link" || minted.payment_ref || minted.customer_t || minted.model_t || minted.customer_confirmation_url || minted.model_confirmation_url) {
+      throw new Error("pending_client_link_issuer_contract_failed");
+    }
+    return { session_id: minted.session_id, payment_ref: null, operational_status: "pending_client_link", raw: minted };
+  }
 
   const session_id = minted.session_id || minted.sessionId || "";
   const payment_ref = minted.payment_ref || minted.paymentRef || "";
@@ -3281,46 +5445,64 @@ async function createAdminJob(env, body) {
     (minted.model_t ? `${model_confirm_page}?t=${encodeURIComponent(minted.model_t)}` : "") ||
     (minted.t ? `${model_confirm_page}?t=${encodeURIComponent(minted.t)}` : "");
 
+  const customer_payment_url =
+    minted.customer_payment_url ||
+    (minted.customer_t ? `${webBase}/sigil/pay?t=${encodeURIComponent(minted.customer_t)}` : "") ||
+    (minted.t ? `${webBase}/sigil/pay?t=${encodeURIComponent(minted.t)}` : "");
+
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
+  if (!customer_payment_url) throw new Error("missing_customer_payment_url");
 
-  await notifyJobCreated(env, {
-    session_id,
-    payment_ref,
-    client_name,
-    model_name,
-    job_type,
-    job_date,
-    start_time,
-    end_time,
-    location_name,
-    amount_thb,
-    customer_confirmation_url,
-    model_confirmation_url,
-  });
+  // Confirmation URLs are minted and stored server-side, but are withheld from
+  // the Create Job browser response until official payment approval.
+  assertConfirmationUrlPair(customer_confirmation_url, model_confirmation_url);
+
+  let ownerJobGrantStatus = privateGate?.ownerJobGrant ? "reserved" : "not_used";
+  if (privateGate?.ownerJobGrant) {
+    const consumed = await consumeOwnerPrivateJobGrant(env, privateGate.ownerJobGrant, { session_id, payment_ref });
+    ownerJobGrantStatus = consumed?.ok ? "consumed" : "reserved_consume_failed";
+  }
+
+  let notificationStatus = "not_configured";
+  try {
+    const notification = await notifyJobCreated(env, {
+      session_id,
+      payment_ref,
+      client_name,
+      model_name,
+      job_type,
+      job_date,
+      start_time,
+      end_time,
+      location_name,
+      amount_thb,
+      deposit_amount_thb,
+      balance_amount_thb,
+      customer_payment_url,
+    });
+    if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
+  } catch (_) {
+    // The job/payment exists. A notification failure is not a failed create.
+    notificationStatus = "failed";
+  }
 
   return {
     session_id,
     payment_ref,
-    customer_confirmation_url,
-    model_confirmation_url,
-    raw: minted,
+    customer_payment_url,
+    payment_dispatch_state: "awaiting_payment_approval",
+    confirmation_release_state: "held_until_payment_approved",
+    notification_status: notificationStatus,
+    owner_job_grant_status: ownerJobGrantStatus,
+    deposit_percent,
+    deposit_amount_thb,
+    balance_amount_thb,
   };
 }
 
-async function callPaymentsCreateLink(env, payload) {
-  const base = str(env.PAYMENTS_WORKER_BASE_URL || "").replace(/\/+$/, "");
-  if (!base) throw new Error("missing_PAYMENTS_WORKER_BASE_URL");
-
-  const res = await fetch(`${base}/v1/confirm/link`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      ...(env.CONFIRM_KEY ? { "X-Confirm-Key": env.CONFIRM_KEY } : {}),
-    },
-    body: JSON.stringify(payload),
-  });
+export async function callPaymentsCreateLink(env, payload) {
+  const res = await requestPaymentsConfirmLink(env, payload);
 
   let data = null;
   try {
@@ -3330,7 +5512,12 @@ async function callPaymentsCreateLink(env, payload) {
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    const error = new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
+    error.status = res.status;
+    error.creation_outcome = data?.creation_outcome || "unknown";
+    error.session_id = data?.session_id;
+    error.payment_ref = data?.payment_ref;
+    throw error;
   }
 
   return data || {};
@@ -3340,7 +5527,7 @@ async function notifyJobCreated(env, data) {
   if (!env.TELEGRAM_INTERNAL_SEND_URL || !env.INTERNAL_TOKEN) return;
 
   const lines = [
-    "🔗 <b>JOB LINKS CREATED</b>",
+    "💳 <b>JOB CREATED · PAYMENT REQUIRED</b>",
     `Client: <b>${escHtml(data.client_name)}</b>`,
     `Model: <b>${escHtml(data.model_name)}</b>`,
     `Type: <b>${escHtml(data.job_type)}</b>`,
@@ -3348,14 +5535,16 @@ async function notifyJobCreated(env, data) {
     `Time: <b>${escHtml(data.start_time)} - ${escHtml(data.end_time)}</b>`,
     `Location: <b>${escHtml(data.location_name)}</b>`,
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
+    data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,
     "",
-    `Customer URL: ${escHtml(data.customer_confirmation_url)}`,
-    `Model URL: ${escHtml(data.model_confirmation_url)}`,
+    `Customer Payment URL: ${escHtml(data.customer_payment_url)}`,
+    "Member + Model URLs: held until official payment approval",
   ];
 
-  await telegramInternalSend(env, {
+  return await telegramInternalSend(env, {
     chat_id: env.TELEGRAM_CHAT_ID || "-1003546439681",
     message_thread_id: env.TG_THREAD_CONFIRM || 61,
     text: lines.join("\n"),
@@ -3363,3 +5552,5 @@ async function notifyJobCreated(env, data) {
     disable_web_page_preview: true,
   });
 }
+
+export { MmsPartnerAuthStore } from "./mms-partner-auth-store.js";
