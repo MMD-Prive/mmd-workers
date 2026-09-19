@@ -128,6 +128,8 @@ test('internal hold writer creates one real Cal projection from confirmed unpaid
       assert.equal(body.start,'2026-10-02T12:00:00.000Z');
       assert.equal(body.lengthInMinutes,90);
       assert.equal(body.attendee.email,'malemodel.bkk@gmail.com');
+      assert.equal(body.location.type,'attendeeDefined');
+      assert.equal(body.location.location,'MMD Internal Hold');
       assert.equal(body.metadata.session_id,'SES-LIVE-1');
       assert.equal(body.metadata.job_id,'JOB-LIVE-1');
       assert.equal(body.metadata.hold_kind,'internal_hold');
