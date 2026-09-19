@@ -687,6 +687,17 @@ async function handleHypeRecoveryCandidateCallback(callback, env) {
     result = null;
   }
 
+  if (["picker_reissued", "no_current_candidates", "authority_unavailable"].includes(clean(result?.state).toLowerCase())) {
+    return handleHypeRecoveryPickerRefreshResult({
+      callback,
+      callbackId,
+      chatId,
+      domain,
+      handoffId,
+      result,
+      env,
+    });
+  }
   if (!(status >= 200 && status < 300 && result?.ok === true)) {
     const error = clean(result?.error);
     const text = error === "recovery_candidate_already_bound"
@@ -852,6 +863,17 @@ async function handleHypeRecoveryOrderCallback(callback, env) {
     result = null;
   }
 
+  if (["picker_reissued", "no_current_candidates", "authority_unavailable"].includes(clean(result?.state).toLowerCase())) {
+    return handleHypeRecoveryPickerRefreshResult({
+      callback,
+      callbackId,
+      chatId,
+      domain: "mmd_shop",
+      handoffId,
+      result,
+      env,
+    });
+  }
   if (!(status >= 200 && status < 300 && result?.ok === true)) {
     const text = result?.error === "recovery_order_already_bound"
       ? "Case นี้ผูก Order ไปแล้วครับ"
