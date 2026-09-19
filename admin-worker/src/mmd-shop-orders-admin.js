@@ -447,7 +447,7 @@ async function notifyShippingCustomer(env, input) {
   return { ok: true, status: "sent", transport: "admin_line_token_fallback" };
 }
 
-function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
+export function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
   if (current === next) return true;
   if (next === "cancelled") return paymentStatus !== "paid" && current !== "completed";
   if (current === "refund_pending" && next === "refunded") return ["paid", "refunded"].includes(paymentStatus);
