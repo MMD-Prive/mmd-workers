@@ -1,0 +1,144 @@
+name: Diagnose Customer Data Airtable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/diag-customer-data-airtable.yml"
+
+concurrency:
+  group: diagnose-customer-data-airtable
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: immigrate-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: immigrate-worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Patch temporary authenticated Airtable diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))')"
+          echo "CUSTOMER_DATA_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
+          CUSTOMER_DATA_DIAG_TOKEN="$token" node <<'NODE'
+          const fs = require("node:fs");
+          const token = process.env.CUSTOMER_DATA_DIAG_TOKEN;
+
+          const routesFile = "src/internal-routes.ts";
+          let routes = fs.readFileSync(routesFile, "utf8");
+          const gateNeedle = '  const gate = await requireAdminGate(request, env);\n  if (gate) return gate;\n  try {';
+          const diagPatch = `  if (path === "/v1/admin/customer-data/_diag" && request.method === "GET") {\n    if (request.headers.get("x-mmd-ci-diagnostic") !== ${JSON.stringify(token)}) return Response.json({ ok: false, error: "not_found" }, { status: 404 });\n    try {\n      const cfg = airtableConfig(env);\n      const staging = tableIds(env).staging;\n      await airtableList(env, staging, { maxRecords: "1", pageSize: "1" });\n      return Response.json({ ok: true, status: "airtable_ok", token_present: Boolean(cfg.token), base_present: Boolean(cfg.base), staging_present: Boolean(staging) }, { headers: { "cache-control": "no-store" } });\n    } catch (error) {\n      const code = str(error?.message) || "customer_data_diag_failed";\n      return Response.json({ ok: false, status: code }, { status: 200, headers: { "cache-control": "no-store" } });\n    }\n  }\n  const gate = await requireAdminGate(request, env);\n  if (gate) return gate;\n  try {`;
+          if (!routes.includes(gateNeedle)) throw new Error("Unable to locate Customer Data gate for diagnostic patch");
+          routes = routes.replace(gateNeedle, diagPatch);
+          fs.writeFileSync(routesFile, routes);
+
+          const indexFile = "src/index.ts";
+          let index = fs.readFileSync(indexFile, "utf8");
+          const apiNeedle = 'if (pathname.startsWith("/a/")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          const apiPatch = 'if (pathname.startsWith("/a/")) return true;\n  if (pathname.startsWith("/v1/admin/customer-data")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          if (!index.includes('pathname.startsWith("/v1/admin/customer-data")')) {
+            if (!index.includes(apiNeedle)) throw new Error("Unable to locate Customer Data API bridge guard");
+            index = index.replace(apiNeedle, apiPatch);
+          }
+          const pageNeedle = 'pathname === CONTROL_ROOM.root ||\n    pathname === ADMIN_JOBS.createSession ||';
+          const pagePatch = 'pathname === CONTROL_ROOM.root ||\n    pathname === "/internal/admin/customer-data" ||\n    pathname.startsWith("/internal/admin/customer-data/") ||\n    pathname === ADMIN_JOBS.createSession ||';
+          if (!index.includes('pathname === "/internal/admin/customer-data"')) {
+            if (!index.includes(pageNeedle)) throw new Error("Unable to locate Customer Data page bridge guard");
+            index = index.replace(pageNeedle, pagePatch);
+          }
+          fs.writeFileSync(indexFile, index);
+          NODE
+
+      - name: Upload temporary diagnostic version
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.128.0 versions upload --keep-vars --tag customer-data-diag --message "Temporary Customer Data Airtable diagnostic" 2>&1 | tee "$RUNNER_TEMP/customer-data-diag-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/customer-data-diag-upload.log" | tail -n 1)"
+          test -n "$version_id"
+          echo "CUSTOMER_DATA_DIAG_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+
+      - name: Deploy temporary diagnostic version
+        run: npx --yes wrangler@4.128.0 versions deploy "${CUSTOMER_DATA_DIAG_VERSION_ID}@100%" -y
+
+      - name: Probe Airtable from production Worker
+        id: probe
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w '%{http_code}' -H "x-mmd-ci-diagnostic: ${CUSTOMER_DATA_DIAG_TOKEN}" "https://mmdbkk.com/v1/admin/customer-data/_diag")"
+          cat "$body"
+          node - "$code" "$body" <<'NODE'
+          const fs = require("node:fs");
+          const [code, file] = process.argv.slice(2);
+          let data = {};
+          try { data = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+          const status = String(data.status || data.error || `http_${code}`);
+          console.log(`CUSTOMER_DATA_AIRTABLE_DIAG=${status}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CUSTOMER_DATA_AIRTABLE_DIAG=${status}\n`);
+          NODE
+
+      - name: Restore clean production Worker
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout -- src/internal-routes.ts src/index.ts
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "src/index.ts";
+          let source = fs.readFileSync(file, "utf8");
+          const apiNeedle = 'if (pathname.startsWith("/a/")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          const apiPatch = 'if (pathname.startsWith("/a/")) return true;\n  if (pathname.startsWith("/v1/admin/customer-data")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          if (!source.includes('pathname.startsWith("/v1/admin/customer-data")')) {
+            if (!source.includes(apiNeedle)) throw new Error("Unable to locate Customer Data API bridge guard");
+            source = source.replace(apiNeedle, apiPatch);
+          }
+          const pageNeedle = 'pathname === CONTROL_ROOM.root ||\n    pathname === ADMIN_JOBS.createSession ||';
+          const pagePatch = 'pathname === CONTROL_ROOM.root ||\n    pathname === "/internal/admin/customer-data" ||\n    pathname.startsWith("/internal/admin/customer-data/") ||\n    pathname === ADMIN_JOBS.createSession ||';
+          if (!source.includes('pathname === "/internal/admin/customer-data"')) {
+            if (!source.includes(pageNeedle)) throw new Error("Unable to locate Customer Data page bridge guard");
+            source = source.replace(pageNeedle, pagePatch);
+          }
+          fs.writeFileSync(file, source);
+          NODE
+          npx --yes wrangler@4.128.0 versions upload --keep-vars --tag customer-data-clean --message "Restore clean Worker after Customer Data diagnostic" 2>&1 | tee "$RUNNER_TEMP/customer-data-clean-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/customer-data-clean-upload.log" | tail -n 1)"
+          test -n "$version_id"
+          npx --yes wrangler@4.128.0 versions deploy "${version_id}@100%" -y
+
+      - name: Report diagnostic result
+        if: always()
+        shell: bash
+        working-directory: .
+        run: |
+          echo "Customer Data Airtable diagnostic: ${CUSTOMER_DATA_AIRTABLE_DIAG:-probe_failed}"
+          test "${CUSTOMER_DATA_AIRTABLE_DIAG:-probe_failed}" = "airtable_ok"

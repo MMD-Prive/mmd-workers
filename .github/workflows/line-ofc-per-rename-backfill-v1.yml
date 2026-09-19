@@ -1,0 +1,84 @@
+name: LINE OFC Per-Rename Full Backfill v1
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/line-ofc-per-rename-backfill-v1.js
+      - scripts/line-ofc-per-rename-backfill-v1-runner.js
+      - scripts/line-ofc-console-fingerprint-export-v1.js
+      - .github/workflows/line-ofc-per-rename-backfill-v1.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-per-rename-backfill-v1.js
+      - scripts/line-ofc-per-rename-backfill-v1-runner.js
+      - scripts/line-ofc-console-fingerprint-export-v1.js
+      - .github/workflows/line-ofc-per-rename-backfill-v1.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-per-rename-full-backfill-v1
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate script
+        run: |
+          node --check scripts/line-ofc-per-rename-backfill-v1.js
+          node --check scripts/line-ofc-per-rename-backfill-v1-runner.js
+          node --check scripts/line-ofc-console-fingerprint-export-v1.js
+          node scripts/line-ofc-per-rename-backfill-v1-runner.js --self-test
+
+  production-audit:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit verified LINE OFC rename coverage
+        run: node scripts/line-ofc-per-rename-backfill-v1-runner.js --audit-existing --dry-run --report /tmp/per-rename-audit.json
+      - name: Upload count-only audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-per-rename-audit-v1
+          path: /tmp/per-rename-audit.json
+          retention-days: 30
+
+  fingerprint-index:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build privacy-safe Console Inbox fingerprint index
+        run: node scripts/line-ofc-console-fingerprint-export-v1.js /tmp/line-ofc-console-fingerprint-index-v1.json
+      - name: Upload salted fingerprint index
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-console-fingerprint-index-v1
+          path: /tmp/line-ofc-console-fingerprint-index-v1.json
+          retention-days: 1

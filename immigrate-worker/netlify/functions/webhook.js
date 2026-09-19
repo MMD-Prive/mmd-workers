@@ -1,4 +1,17 @@
 import crypto from "node:crypto";
+import {
+  buildKenjiMemberReply,
+  classifyKenjiMemberIntent,
+  getSafeMemberSummary,
+  isKenjiMemberLineCandidate,
+} from "../../../shared/kenji-member-concierge-core.mjs";
+import { loadKenjiMemberMemoryForLine } from "./kenji-member-memory-context.mjs";
+import {
+  RETRY_SLIP_ACK,
+  loadRecentPaymentContext,
+  looksLikePaymentSlipContext,
+  processPaymentSlipImage,
+} from "./line-payment-slip-intake.mjs";
 
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const LINE_API_BASE = "https://api.line.me/v2/bot";
@@ -18,9 +31,21 @@ const FAQ_REPLY_INTENTS = new Set([
   "upgrade_question",
   "membership_fee_reason",
   "model_photo_review_question",
+  "talk_to_per_ai",
   "contact_admin",
 ]);
 const PRICING_REVIEW_INTENTS = new Set(["pricing_review", "ask_where_to_get_rate", "image_rate_inquiry"]);
+const KENJI_MEMBER_INTENTS = new Set([
+  "talk_to_per_ai",
+  "payment_slip",
+  "points",
+  "vip",
+  "svip",
+  "black_card",
+  "membership",
+  "create_session",
+  "greeting",
+]);
 const STOP_MODEL_WORDS = new Set([
   "วันที่",
   "เวลา",
@@ -78,6 +103,16 @@ function verifyLineSignature(rawBody, signature, secret) {
 function toTextMessage(event) {
   if (event?.type !== "message" || event?.message?.type !== "text") return "";
   return String(event.message.text || "").trim();
+}
+
+function getLineEventTextForIntent(event) {
+  if (event?.type === "message" && event?.message?.type === "text") {
+    return String(event.message.text || "").trim();
+  }
+  if (event?.type === "postback") {
+    return String(event?.postback?.displayText || event?.postback?.data || "").trim();
+  }
+  return "";
 }
 
 function isImageMessage(event) {
@@ -192,6 +227,32 @@ function looksLikeSpecificModelRequest(text) {
   if (!normalized) return false;
   const hasCandidate = Boolean(extractCandidateName(text));
   return hasCandidate && (BOOKING_SIGNAL_RE.test(text) || TIMING_SIGNAL_RE.test(text) || LOCATION_SIGNAL_RE.test(text));
+}
+
+function isTalkToPerAi(text = "") {
+  const normalized = normalizeLookup(text).replace(/\s+/g, "");
+  const spaced = normalizeLookup(text);
+  return (
+    normalized.includes("kenji") ||
+    normalized.includes("เคนจิ") ||
+    normalized.includes("hiper") ||
+    normalized.includes("helloper") ||
+    normalized.includes("สวัสดีเปอร์") ||
+    /\b(?:hi|hello)\s+per\b/i.test(spaced) ||
+    normalized.includes("คุยกับเปอร์") ||
+    normalized.includes("คุยกับเคนจิ") ||
+    normalized.includes("คุยกับper") ||
+    normalized.includes("คุยกับperai") ||
+    normalized.includes("ขอคุยกับเปอร์") ||
+    normalized.includes("ขอคุยกับper") ||
+    normalized.includes("ติดต่อเปอร์") ||
+    normalized.includes("ติดต่อper") ||
+    normalized.includes("perai")
+  );
+}
+
+function getKenjiCoreIntent(text) {
+  return classifyKenjiMemberIntent(text, {}).intent;
 }
 
 function inferFaqIntent(text) {
@@ -355,6 +416,13 @@ function inferIntent(text, event) {
     return "line_event";
   }
 
+  if (isTalkToPerAi(text)) return "talk_to_per_ai";
+  const kenjiIntent = getKenjiCoreIntent(text);
+  if (kenjiIntent === "black_card") return "black_card";
+  if (kenjiIntent === "svip") return "svip";
+  if (kenjiIntent === "payment_slip") return "payment_slip";
+  if (kenjiIntent === "vip") return "vip";
+  if (kenjiIntent === "points") return "points";
   const faqIntent = inferFaqIntent(text);
   if (faqIntent) {
     return hasPriorImageContext(event) && (faqIntent === "pricing_review" || faqIntent === "ask_where_to_get_rate")
@@ -372,6 +440,8 @@ function inferIntent(text, event) {
 
 function buildAdminNote(event, text) {
   if (text) return text;
+  const intentText = getLineEventTextForIntent(event);
+  if (intentText) return intentText;
   if (event?.type === "follow") return "[follow] user added LINE OA";
   if (event?.type === "unfollow") return "[unfollow] user blocked or removed LINE OA";
   if (event?.type === "postback") return `[postback] ${String(event?.postback?.data || "").trim() || "received"}`;
@@ -403,13 +473,13 @@ function buildAirtableRecord(event) {
 
 function buildAirtableRecordWithProfile(event, profile) {
   const receivedAt = new Date().toISOString();
-  const messageText = toTextMessage(event);
+  const messageText = getLineEventTextForIntent(event);
   const lineUserId = getLineUserId(event);
   const eventId = String(event?.message?.id || event?.webhookEventId || `evt_${Date.now()}`);
   const migrationId = `line_${eventId}`;
   const flags = buildFlags(event, messageText);
   const intent = inferIntent(messageText, event);
-  const airtableIntent = PRICING_REVIEW_INTENTS.has(intent) ? "note_only" : intent;
+  const airtableIntent = PRICING_REVIEW_INTENTS.has(intent) || intent === "payment_slip" || intent === "image_only_model_inquiry" ? "note_only" : intent;
   const messageType = getMessageType(event);
   const adminNote = buildAdminNote(event, messageText);
   const clientTagged = hasClientTag(messageText);
@@ -554,11 +624,13 @@ function buildModelSourceFallbackReply({ prefix, booking, resolution }) {
   return `รับทราบครับ ${prefix}ผมเห็นว่าต้องการเช็ก ${requestedName} เดี๋ยวส่งให้ Per ตรวจสอบจากประวัติ model-side ก่อนยืนยันนะครับ`;
 }
 
-function shouldAutoReplyForIntent(intent, text, event) {
+function shouldAutoReplyForIntent(intent, text, event, options = {}) {
   if (event?.type === "follow") return true;
   if (hasClientTag(text)) return true;
   if (intent === "model_availability") return true;
   if (FAQ_REPLY_INTENTS.has(intent)) return true;
+  if (options.lineKenjiAiEnabled && KENJI_MEMBER_INTENTS.has(intent)) return true;
+  if (options.lineKenjiAiEnabled && isKenjiMemberLineCandidate(text)) return true;
   return false;
 }
 
@@ -622,12 +694,70 @@ Premium จะเหมาะกับคนที่ต้องการเล
 
 แจ้งแนวที่ชอบหรือแพ็กเกจที่สนใจมาได้เลยครับ เดี๋ยวผมส่งให้ Per แนะนำทางที่เหมาะสมต่อครับ`;
   }
+  if (intent === "talk_to_per_ai") {
+    return `สวัสดีครับ ผมคือ Per AI ของ MMD Privé ครับ
+ผมช่วยรับเรื่อง เช็กข้อมูลเบื้องต้นจากระบบ และส่งให้ Per ดูได้ถ้าเป็นเคสที่ต้องดูเป็นพิเศษครับ
+
+ตอนนี้พี่อยากให้ผมช่วยเรื่องไหนก่อนครับ
+1) สมัครสมาชิก / ต่ออายุ
+2) เช็กแพ็กเกจหรือสถานะสมาชิก
+3) สอบถามบริการหรือนายแบบ
+4) ส่งรูปหรือโปรไฟล์คนที่อยากให้ MMD พิจารณา
+5) ให้ Per ดูเป็นเคสส่วนตัว
+
+พิมพ์เล่าได้เลยครับ เดี๋ยวผมช่วยจัดเรื่องให้เป็นขั้นตอนครับ`;
+  }
   if (intent === "contact_admin") {
     return `รับทราบครับ ผมจะส่งคำถามนี้ให้ Per หรือ MMD ดูต่อครับ
 
 ถ้ามีรายละเอียดเพิ่มเติม เช่น แพ็กเกจที่สนใจ วันเวลา หรือแนวนายแบบที่ต้องการ ส่งเพิ่มไว้ในแชทนี้ได้เลยครับ`;
   }
   return "";
+}
+
+function buildLineMemberSummary(event, profile) {
+  return getSafeMemberSummary({
+    display_name: String(profile?.displayName || "").trim(),
+    line_user_id: getLineUserId(event),
+    membership_status: "LINE Member",
+    tier: "Preview",
+    active_points: 0,
+  });
+}
+
+async function buildKenjiLineReply(event, profile, options = {}) {
+  let memberSummary = buildLineMemberSummary(event, profile);
+
+  if (options.airtableBaseId && options.airtableApiKey && getLineUserId(event)) {
+    try {
+      const memory = await loadKenjiMemberMemoryForLine({
+        baseId: options.airtableBaseId,
+        apiKey: options.airtableApiKey,
+        lineUserId: getLineUserId(event),
+        lineDisplayName: String(profile?.displayName || "").trim(),
+        profile,
+      });
+      if (memory?.kenji_safe_context) {
+        memberSummary = memory.kenji_safe_context;
+        logLineWebhookDebug(options, {
+          intent: classifyKenjiMemberIntent(getLineEventTextForIntent(event), memberSummary).intent,
+          reply_sent: false,
+          category: "kenji_member_memory_loaded",
+        });
+      }
+    } catch (error) {
+      logLineWebhookDebug(options, {
+        intent: classifyKenjiMemberIntent(getLineEventTextForIntent(event), memberSummary).intent,
+        reply_sent: false,
+        category: "kenji_member_memory_fallback",
+        error: String(error?.message || error || "unknown"),
+      });
+    }
+  }
+
+  return buildKenjiMemberReply(getLineEventTextForIntent(event), memberSummary, {
+    lineOfficialChatUrl: options.lineOfficialChatUrl || "",
+  });
 }
 
 function parsePricingRequest(text) {
@@ -725,13 +855,13 @@ function logLineWebhookDebug(options, data) {
 }
 
 async function buildAutoReplyMessage(event, profile, options = {}) {
-  const text = toTextMessage(event);
+  const text = getLineEventTextForIntent(event);
   const name = String(profile?.displayName || "").trim();
   const firstName = name ? name.split(/\s+/)[0] : "";
   const prefix = firstName ? `${firstName} ` : "";
   const intent = inferIntent(text, event);
 
-  if (!shouldAutoReplyForIntent(intent, text, event)) {
+  if (!shouldAutoReplyForIntent(intent, text, event, options)) {
     logLineWebhookDebug(options, { intent, reply_sent: false, category: "not_auto_reply_intent" });
     return "";
   }
@@ -772,6 +902,14 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
     return reply;
   }
 
+  if (options.lineKenjiAiEnabled && intent === "talk_to_per_ai") {
+    const reply = await buildKenjiLineReply(event, profile, options);
+    if (options.lineKenjiAiDebug) {
+      logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
+    }
+    return reply;
+  }
+
   if (FAQ_REPLY_INTENTS.has(intent)) {
     let pricingReview = null;
     const adContext = parseAdContextFromText(text);
@@ -787,6 +925,14 @@ async function buildAutoReplyMessage(event, profile, options = {}) {
       pricing_review_created: Boolean(pricingReview?.ok),
       telegram_sent: Boolean(pricingReview?.telegram_sent),
     });
+    return reply;
+  }
+
+  if (options.lineKenjiAiEnabled && (KENJI_MEMBER_INTENTS.has(intent) || isKenjiMemberLineCandidate(text))) {
+    const reply = await buildKenjiLineReply(event, profile, options);
+    if (options.lineKenjiAiDebug) {
+      logLineWebhookDebug(options, { intent, reply_sent: Boolean(reply), category: "kenji_member_concierge" });
+    }
     return reply;
   }
 
@@ -866,6 +1012,9 @@ export async function handler(event) {
   const autoReplyEnabled = String(process.env.LINE_AUTO_REPLY_ENABLED || "false").toLowerCase() === "true";
   const lineModelLookupDebug = process.env.LINE_MODEL_LOOKUP_DEBUG || "";
   const lineWebhookDebug = process.env.LINE_WEBHOOK_DEBUG || "";
+  const lineKenjiAiEnabled = String(process.env.LINE_KENJI_AI_ENABLED || "false").toLowerCase() === "true";
+  const lineKenjiAiDebug = String(process.env.LINE_KENJI_AI_DEBUG || "false").toLowerCase() === "true";
+  const lineOfficialChatUrl = process.env.LINE_OFFICIAL_CHAT_URL || "";
 
   if (!lineChannelSecret || !airtableApiKey || !airtableBaseId) {
     return json(500, {
@@ -896,33 +1045,62 @@ export async function handler(event) {
 
   for (const item of events) {
     const lineUserId = getLineUserId(item);
-    const messageText = toTextMessage(item);
+    const messageText = getLineEventTextForIntent(item);
     const clientTagged = hasClientTag(messageText);
     const intent = inferIntent(messageText, item);
     const shouldFetchProfile =
-      (clientTagged || intent === "model_availability" || FAQ_REPLY_INTENTS.has(intent)) &&
+      (clientTagged || intent === "model_availability" || FAQ_REPLY_INTENTS.has(intent) || (lineKenjiAiEnabled && (KENJI_MEMBER_INTENTS.has(intent) || isKenjiMemberLineCandidate(messageText)))) &&
       item?.source?.type === "user" &&
       lineChannelAccessToken;
     const profile = shouldFetchProfile ? await fetchLineProfile(lineChannelAccessToken, lineUserId) : null;
+    const recentContext = isImageMessage(item)
+      ? await loadRecentPaymentContext({ env: process.env, lineUserId })
+      : [];
+    const paymentSlipCandidate = looksLikePaymentSlipContext(item, recentContext);
+    const paymentSlipProfile = paymentSlipCandidate && !profile && item?.source?.type === "user" && lineChannelAccessToken
+      ? await fetchLineProfile(lineChannelAccessToken, lineUserId)
+      : profile;
+    const paymentSlipResult = paymentSlipCandidate
+      ? await processPaymentSlipImage({ env: process.env, event: item }).catch((error) => ({
+          ok: false,
+          deduped: false,
+          state: "retry_required",
+          error: String(error?.message || error || "payment_slip_intake_failed"),
+          replyText: RETRY_SLIP_ACK,
+        }))
+      : null;
     const record = await writeEventToAirtable({
       baseId: airtableBaseId,
       apiKey: airtableApiKey,
       tableName: airtableTableName,
       event: item,
-      profile,
+      profile: paymentSlipProfile,
     });
-    const replyText = await buildAutoReplyMessage(item, profile, {
-      adminWorkerBaseUrl,
-      internalToken,
-      confirmKey,
-      lineModelLookupDebug,
-      lineWebhookDebug,
-      createPricingReviewEnabled: !record?.deduped,
-    });
-    const replied =
-      !record?.deduped && autoReplyEnabled && replyText
-        ? await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText)
-        : false;
+    const replyText = paymentSlipCandidate
+      ? String(paymentSlipResult?.replyText || "")
+      : await buildAutoReplyMessage(item, profile, {
+          airtableBaseId,
+          airtableApiKey,
+          adminWorkerBaseUrl,
+          internalToken,
+          confirmKey,
+          lineModelLookupDebug,
+          lineWebhookDebug,
+          lineKenjiAiEnabled,
+          lineKenjiAiDebug,
+          lineOfficialChatUrl,
+          createPricingReviewEnabled: !record?.deduped,
+        });
+    const isSlipRedelivery = Boolean(paymentSlipCandidate && item?.deliveryContext?.isRedelivery);
+    const shouldReply = Boolean((!record?.deduped || isSlipRedelivery) && autoReplyEnabled && replyText && getReplyToken(item));
+    let replied = false;
+    if (shouldReply) {
+      try { replied = await sendLineReply(lineChannelAccessToken, getReplyToken(item), replyText); } catch { replied = false; }
+      if (!replied && paymentSlipCandidate) {
+        console.error(JSON.stringify({ event: "line_payment_slip_reply_failed", category: "line_reply_failed", state: String(paymentSlipResult?.state || "retry_required") }));
+        return json(502, { ok: false, error: "line_payment_slip_reply_failed", processed: saved.length });
+      }
+    }
     saved.push({
       id: record?.id || "",
       deduped: Boolean(record?.deduped),
@@ -934,6 +1112,17 @@ export async function handler(event) {
       profile_name: String(profile?.displayName || ""),
       line_user_id: lineUserId,
       message_id: String(item?.message?.id || item?.webhookEventId || ""),
+      payment_slip_intake: paymentSlipCandidate
+        ? {
+            ok: Boolean(paymentSlipResult?.ok),
+            deduped: Boolean(paymentSlipResult?.deduped),
+            proof_id: String(paymentSlipResult?.proofId || ""),
+            state: String(paymentSlipResult?.state || "manual_review"),
+            review_required: Boolean(paymentSlipResult?.reviewRequired),
+            duplicate_payment_ref: Boolean(paymentSlipResult?.duplicatePaymentRef),
+            extraction_method: String(paymentSlipResult?.extractionMethod || ""),
+          }
+        : null,
     });
   }
 
@@ -944,4 +1133,4 @@ export async function handler(event) {
   });
 }
 
-export { buildFaqReply, choosePricingReplyStrategy, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };
+export { buildAutoReplyMessage, buildFaqReply, choosePricingReplyStrategy, getLineEventTextForIntent, inferFaqIntent, inferIntent, parseAdContextFromText, shouldAutoReplyForIntent };

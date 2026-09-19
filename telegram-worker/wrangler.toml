@@ -1,15 +1,87 @@
 name = "telegram-worker"
-main = "src/index.js"
+main = "src/access-runtime.js"
 compatibility_date = "2026-01-20"
 
 [vars]
 TELEGRAM_CHAT_ID = "-1003546439681"
-TG_THREAD_MEMBERSHIP = "20"
-TG_THREAD_CONFIRM = "21"
+TELEGRAM_PREVIEW_CHANNEL_ID = "-1002393788585"
+TELEGRAM_STANDARD_GROUP_ID = "-1002073919780"
+TELEGRAM_PREMIUM_GROUP_ID = "-1001668261779"
+TELEGRAM_PREVIEW_GROUP_ID = "-1002393788585"
+TELEGRAM_MMD_CHAT_GROUP_ID = "-1002073919780"
+TELEGRAM_BOT_USERNAME = "mmdprivebot"
+
+# Canonical MMD Privé Crew forum topic map — 2026-09-13.
+TG_THREAD_BOOKING_DRAFT = "1399"
+TG_THREAD_PAYMENTS_MEMBERSHIP = "20"
 TG_THREAD_POINTS = "17"
+TG_THREAD_PAYMENTS_CONFIRM = "22"
+TG_THREAD_ALERTS = "9"
+TG_THREAD_PUBLIC_MODEL = "155"
+TG_THREAD_HIMAI_ORDERS = "157"
+TG_THREAD_HIMAI_PAYMENTS = "158"
+TG_THREAD_HIMAI_ALERTS = "159"
+TG_THREAD_MMD_SHOP_ORDERS = "160"
+TG_THREAD_MMD_SHOP_PAYMENTS = "161"
+TG_THREAD_MMD_SHOP_ALERTS = "162"
+TG_THREAD_LEGACY_ARCHIVE = "134"
+TG_THREAD_RULES_MODEL = "39"
+TG_THREAD_RULES_CUSTOMER = "29"
+
+# Compatibility aliases for older workers. Keep values identical to canonical map.
+TG_THREAD_MEMBERSHIP = "20"
+TG_THREAD_CONFIRM = "22"
+TG_THREAD_PAYMENT = "22"
+TG_THREAD_SYSTEM_LOG = "134"
+TG_THREAD_BOOKING = "1399"
+
 MEMBERS_TABLE_ID = "tbl_cmjals5ud001e0svfhuamh6kn"
 PACKAGES_TABLE_ID = "tbl_cmjaltwge001q0tvdefxianf1"
-POINTS_RATE = "1000"
+POINTS_RATE = "100"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_PAYMENTS = "payments"
 AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+
+# Protected room IDs are downstream enforcement configuration only.
+# Do not infer membership/entitlement from room membership.
+# TELEGRAM_BLACK_ROOM_ID and TELEGRAM_SVIP_ROOM_ID must be configured before grants.
+# TELEGRAM_VIP_ROOM_ID intentionally remains unset until the VIP room canon is approved.
+
+# Do not put secrets here.
+# Configure these with wrangler secret put:
+# TELEGRAM_BOT_TOKEN
+# TELEGRAM_WEBHOOK_SECRET_TOKEN
+# INTERNAL_API_TOKEN
+# PREVIEW_PROMO_SECRET
+# AUTH_SERVICE_BOOKING_TO_TELEGRAM
+# AUTH_SERVICE_EVENTS_TO_TELEGRAM
+# AUTH_SERVICE_STUDIO_TO_TELEGRAM
+# AUTH_SERVICE_AUTH_TO_TELEGRAM
+# AUTH_SERVICE_LINE_TO_TELEGRAM
+#
+# Optional persistent promo-code ledger:
+# [[kv_namespaces]]
+# binding = "PREVIEW_PROMO_CODES_KV"
+# id = "<production_kv_namespace_id>"
+# preview_id = "<preview_kv_namespace_id>"
+
+
+# Stable Telegram identity binding authority. Bot consumes only opaque one-time
+# tokens; canonical Client/Model writes remain owned by admin-worker.
+[[services]]
+binding = "TELEGRAM_BIND_AUTHORITY"
+service = "admin-worker"
+
+# Read-only customer status fan-in for HYPE Telegram Operating Concierge.
+# The admin-worker endpoint is service-binding-only and exposes a bounded
+# customer-safe projection; HYPE never becomes business-truth authority.
+[[services]]
+binding = "HYPE_OPERATIONS"
+service = "admin-worker"
+
+# Cross-channel Conversation Matrix continuity + supervised handoff writer.
+# Kept separate from HYPE_OPERATIONS so read-only customer status and
+# conversation-context writes remain distinct contracts.
+[[services]]
+binding = "HYPE_CONTEXT_WRITER"
+service = "admin-worker"

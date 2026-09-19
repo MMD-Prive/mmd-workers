@@ -1,0 +1,44 @@
+name = "sigil-board-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-04"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# SIGIL Board API owner only.
+# Do not route sigil.mmdbkk.com/sigil/board* here, because the Webflow page owns
+# the visible /sigil/board surface. This worker owns only API paths used by the
+# board runtime bridge and controlled server-side actions.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/runtime*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/actions/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/board/audit*"
+zone_name = "mmdbkk.com"
+
+[vars]
+WORKER_NAME = "sigil-board-worker"
+RUNTIME_VERSION = "SIGIL_BOARD_RUNTIME_V7_0"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com"
+TELEGRAM_PREVIEW_CHANNEL_ID = "-1002393788585"
+SIGIL_BOARD_URL = "https://sigil.mmdbkk.com/sigil/board"
+SIGIL_RUNTIME_PATH = "/sigil/board/runtime"
+
+# Do not put secrets here.
+# Configure these with wrangler secret put:
+# SIGIL_WORKER_SECRET
+# SIGIL_AUDIT_SECRET
+# TELEGRAM_BOT_TOKEN
+
+[[kv_namespaces]]
+binding = "SIGIL_BOARD_KV"
+id = "7922350083a644db8a48c16c7e48fca7"
+preview_id = "f673c4ab6e4f456baefeab032564db72"
