@@ -151,29 +151,43 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   let recoveryCorrelation = sourceCommand === "recovery"
     ? await buildShopRecoveryCorrelation(env, telegramUserId, customerMessage)
     : null;
+  const recoveryDomain = sourceCommand === "recovery"
+    ? inferRecoveryDomain(customerMessage, recoveryCorrelation)
+    : "unclassified";
 
   let handoffId = "";
-  if (lineUserId && recoveryCorrelation?.correlated === true && clean(recoveryCorrelation.order_id, 180)) {
+  if (lineUserId && sourceCommand === "recovery") {
     const hash = await sha256Hex(`line_ofc:${lineUserId}`);
     const existing = await findMatrix(env, hash);
     if (existing.ok && existing.record) {
       const priorPayload = parseObject(existing.record.fields?.[F.PAYLOAD]);
       const priorRecovery = parseObject(priorPayload.recovery_correlation);
+      const priorCase = safeRecoveryCase(priorPayload.recovery_case, handoffTrackingFromRecord(existing.record));
       const tracking = handoffTrackingFromRecord(existing.record);
-      if (
-        (
-          clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation.order_id, 180)
-          || (priorRecovery.domain === "mmd_shop" && priorRecovery.correlated !== true)
-        )
-        && tracking.id
+      const domainCompatible = priorCase
         && !["resolved", "customer_notified"].includes(token(tracking.state))
-      ) {
-        handoffId = tracking.id;
-      }
+        && (
+          priorCase.domain === recoveryDomain
+          || priorCase.domain === "unclassified"
+          || recoveryDomain === "unclassified"
+        );
+      const shopCompatible = recoveryDomain !== "mmd_shop"
+        || !clean(priorRecovery.order_id, 180)
+        || !clean(recoveryCorrelation?.order_id, 180)
+        || clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation?.order_id, 180)
+        || priorRecovery.correlated !== true;
+      if (domainCompatible && shopCompatible && tracking.id) handoffId = tracking.id;
     }
   }
   if (!handoffId) handoffId = await buildHandoffId(canonicalClientId, target);
   if (recoveryCorrelation) recoveryCorrelation = { ...recoveryCorrelation, case_ref: handoffId };
+  const recoveryCaseSeed = sourceCommand === "recovery"
+    ? {
+        case_ref: handoffId,
+        domain: recoveryDomain,
+        outcome_code: "intake_received",
+      }
+    : null;
 
   let matrix = { ok: false, error: "line_identity_not_linked" };
   if (lineUserId) {
@@ -185,6 +199,7 @@ export async function handleHypeHandoffRpc(request, env = {}) {
       customerMessage,
       projection,
       recoveryCorrelation,
+      recoveryCase: recoveryCaseSeed,
       handoff: {
         id: handoffId,
         target,
@@ -206,6 +221,7 @@ export async function handleHypeHandoffRpc(request, env = {}) {
     continuity_version: matrix.version || null,
     context: projection,
     recovery_correlation: recoveryCorrelation,
+    recovery_case: matrix.recovery_case || recoveryCaseSeed,
     operator_summary: buildOperatorSummary({
       target,
       displayName: context?.client_360?.display_name,
