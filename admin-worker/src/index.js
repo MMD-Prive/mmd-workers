@@ -4971,12 +4971,20 @@ function sanitizeCreateSessionModel(record, profile) {
   const folders = profile.bookingVisibility === "private"
     ? (profile.accessFolder ? [profile.accessFolder] : [])
     : profile.publicFolders.slice();
+  const telegramStatus = accessToken(fields.telegram_verification_status);
+  const telegramUserId = str(fields.telegram_user_id);
+  const telegramConnected = telegramStatus === "verified" && /^\d{5,20}$/.test(telegramUserId);
   return {
     model_id: record.id,
     model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
     model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
-    telegram_username: str(fields.telegram_username),
-    telegram_status: str(fields.telegram_status) || (str(fields.telegram_username) ? "linked" : "missing"),
+    telegram_username: telegramConnected ? str(fields.telegram_username).replace(/^@/, "") : "",
+    telegram_status: telegramConnected ? "verified" : (telegramStatus || "not_connected"),
+    telegram_connected: telegramConnected,
+    readiness: {
+      telegram_connected: telegramConnected,
+      ready_to_work_blocked_by_telegram: !telegramConnected,
+    },
     folders,
     orientation: profile.lane,
     status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
@@ -5079,16 +5087,15 @@ async function enforcePrivateCreateAccess(env, body = {}) {
   const selectedOrientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
   const customerTelegram = str(telegramGate.customer_telegram_status || body.customer_telegram_status);
   const modelTelegram = str(telegramGate.model_telegram_status || body.model_telegram_status);
-  // Identity channels are completed after confirmation-link issuance. They are
-  // diagnostic context at Create Job time, never a prerequisite for minting the
-  // customer/model confirmation links. Membership + model eligibility remain
-  // authoritative and fail closed below.
+  // Browser-supplied Telegram labels are diagnostic only. Stable Telegram
+  // verification is backend-owned on canonical Client/Model records.
+  // Member Telegram is optional; Model Telegram is a Ready-to-Work requirement,
+  // but neither channel blocks Create Job or LINE identity verification.
   const identityLinkState = {
-    customer_telegram_status: customerTelegram || "missing",
-    model_telegram_status: modelTelegram || "missing",
-    post_link_identity_required:
-      !["linked", "verified"].includes(customerTelegram) ||
-      !["linked", "verified"].includes(modelTelegram),
+    customer_telegram_status: customerTelegram || "not_connected",
+    model_telegram_status: modelTelegram || "not_connected",
+    member_telegram_optional: true,
+    model_telegram_required_before_ready_to_work: true,
   };
 
   // Membership comes from the backend ledger; frontend tier/status fields never grant access.
