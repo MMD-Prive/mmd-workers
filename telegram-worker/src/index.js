@@ -363,10 +363,13 @@ async function postPreviewChannelCta(body, env) {
   if (!chatId) return { ok: false, error: "missing_telegram_preview_channel_id" };
 
   const text = clean(body.text) || [
-    "MMD Privé Preview เปิดให้เช็กสิทธิ์ 6 YEARS CARE BACK แล้วครับ",
+    "MMD Privé · 6 YEARS CARE BACK — CARE BACK CONTINUES",
+    "Phase 2 เปิดถึง 30 กันยายน 2026 ครับ",
     "",
-    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อเข้าสู่การยืนยันตัวตนกับ HYPE",
-    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
+    "Phase 2 ใช้สิทธิ์ชุดเดียวกับช่วง Birthday เดิม ไม่ใช่สิทธิ์รอบสอง และไม่สร้าง claim / coupon / points bonus ซ้ำครับ",
+    "กดเช็กสิทธิ์ด้านล่าง → ยืนยันผ่าน LINE/LIFF → ให้ MMD ตรวจสถานะและประวัติที่เชื่อมได้ → ส่ง Birthday Wish ให้บันทึกสำเร็จ",
+    "หลัง Wish saved จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ได้ 1 ครั้ง โดยอัตราจริงขึ้นกับระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ครับ",
+    "คูปองต้องใช้ยืนยันการจองภายใน 2 เดือนหลัง activation และวันรับบริการอยู่ได้ไม่เกิน 90 วันนับจากวันที่จองเดิมครับ",
   ].join("\n");
 
   if (body.dry_run === true) {
@@ -397,10 +400,13 @@ async function postPreviewChannelCta(body, env) {
 
 function previewVerificationRequiredText() {
   return [
-    "ยินดีต้อนรับสู่ 6 YEARS CARE BACK ครับ",
+    "6 YEARS CARE BACK · PHASE 2 — CARE BACK CONTINUES",
+    "เปิด 1–30 กันยายน 2026 ครับ",
     "",
-    "HYPE จะพาคุณตรวจสอบตัวตนและสิทธิ์ก่อน",
-    "โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
+    "HYPE จะพาคุณยืนยันผ่าน LINE/LIFF และให้ MMD ตรวจสถานะสมาชิก ประวัติที่เชื่อมได้ และ Points ที่ตรวจสอบได้ก่อนครับ",
+    "Phase 2 ใช้สิทธิ์ชุดเดียวกับ Phase 1 ไม่ได้สร้างสิทธิ์ซ้ำ",
+    "การยืนยันตัวตนอย่างเดียวยังไม่เปิดคูปอง — ต้องส่ง Birthday Wish และบันทึกสำเร็จก่อนครับ",
+    "หลัง Wish saved จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ได้ 1 ครั้ง โดยอัตราจริงขึ้นกับระดับนายแบบ × รูปแบบงาน และสิทธิ์ที่ตรวจสอบได้ครับ",
   ].join("\n");
 }
 
@@ -408,10 +414,11 @@ function previewWelcomeText() {
   return [
     "ยินดีต้อนรับสู่ MMD Privé Preview ครับ",
     "",
-    "ช่องนี้ใช้สำหรับเริ่มตรวจสอบสิทธิ์ 6 YEARS CARE BACK",
-    "กดตรวจสอบสิทธิ์ด้านล่างเพื่อยืนยันตัวตนกับ HYPE ได้เลยครับ",
+    "6 YEARS CARE BACK ตอนนี้อยู่ใน Phase 2 · CARE BACK CONTINUES ถึง 30 กันยายน 2026",
+    "สำหรับคนที่มาเห็นแคมเปญหรือรอบลงทะเบียนช้า โดยใช้ policy เดียวกับ Phase 1 และไม่ออกสิทธิ์ซ้ำครับ",
     "",
-    "โค้ดเป็นสิทธิ์ส่วนตัว ใช้ได้ 1 ครั้ง และจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้นครับ",
+    "กดเช็กสิทธิ์ด้านล่างเพื่อยืนยันผ่าน LINE/LIFF จากนั้น MMD จะตรวจสถานะและประวัติที่เชื่อมได้",
+    "ต้องส่ง Birthday Wish ให้บันทึกสำเร็จก่อน จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ได้ 1 ครั้งครับ",
   ].join("\n");
 }
 
@@ -419,11 +426,11 @@ function previewButtonMarkup(env) {
   return {
     inline_keyboard: [
       [{
-        text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
+        text: "🎁 CARE BACK Phase 2 · เช็กสิทธิ์",
         url: publicUrl(env, "/promotion/6-years-care-back"),
       }],
       [{
-        text: "My Code / Status",
+        text: "MY MMD / Status",
         url: publicUrl(env, "/member/dashboard"),
       }],
       [{
