@@ -60,6 +60,30 @@ test("Conversation Matrix accumulates model, price, date/time and location acros
   assert.deepEqual(state.draft.source_event_ids, ["m1", "m2", "m3", "m4"]);
 });
 
+test("real Shane SVIP wording accumulates EMs16 Gohan, 2 Oct 2026, Ever Green 19.00 and PN 25,000 discounted from 30,000", () => {
+  let state = merge({}, "s1", "EMs16 Gohan", "unknown");
+  assert.equal(state.accepted, true);
+  assert.equal(state.draft.model_name, "EMs16");
+  assert.equal(state.draft.model_working_name_hint, "Gohan");
+  assert.equal(state.draft.ready, false);
+
+  state = merge(state.draft, "s2", "2 ตค 2026", "unknown");
+  assert.equal(state.draft.date, "2026-10-02");
+  assert.equal(state.draft.ready, false);
+
+  state = merge(state.draft, "s3", "Ever Green 19.00", "unknown");
+  assert.equal(state.draft.location, "Ever Green");
+  assert.equal(state.draft.time, "19:00");
+  assert.equal(state.draft.ready, false);
+
+  state = merge(state.draft, "s4", "PN 25,000 (discount from 30,000)", "pricing_review");
+  assert.equal(state.draft.amount_thb, 25000);
+  assert.equal(state.draft.original_amount_thb, 30000);
+  assert.equal(state.draft.pricing_adjustment, "discount");
+  assert.equal(state.draft.ready, true);
+  assert.deepEqual(state.draft.missing_fields, []);
+});
+
 test("rate is a required action field even though it may arrive before or after schedule fields", () => {
   const draft = {
     model_name: "EMs16",
