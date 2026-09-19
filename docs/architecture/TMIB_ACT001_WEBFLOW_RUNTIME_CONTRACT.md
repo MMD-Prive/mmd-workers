@@ -9,5 +9,5 @@ Frontend rules:
 - On load the page requests `GET /member/api/liff/tmib/episodes/act-001/access` with same-origin credentials.
 - When `granted=true`, the returned `media` map is assigned to the matching protected image elements and all `[data-long-story]` blocks are revealed.
 - The returned identity-bound `watermark` is shown in the private reader.
-- The 299 THB CTA calls `POST /member/api/liff/tmib/episodes/act-001/purchase`; the browser follows only the backend-provided signed `/sigil/pay?t=...` redirect.
+- The 299 THB CTA calls `POST /member/api/liff/tmib/episodes/act-001/purchase`; the browser follows only the backend-provided signed `/pay/checkout?t=...` redirect.
 - The frontend does not independently infer membership eligibility or payment completion.
