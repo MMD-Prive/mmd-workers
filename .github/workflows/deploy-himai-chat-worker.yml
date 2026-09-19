@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "himai-chat-worker/**"
+      - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/mmd-shop-fulfillment.mjs"
       - ".github/workflows/deploy-himai-chat-worker.yml"
 
 concurrency:
