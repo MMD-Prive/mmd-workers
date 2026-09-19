@@ -10,6 +10,7 @@ import {
   writeMmdShopFulfillment,
 } from "../../shared/mmd-shop-fulfillment.mjs";
 import {
+  deriveMmdProductCommerceState,
   isAdminShopOperationsApiRequest,
   isAdminShopOperationsPageRequest,
 } from "../../admin-worker/src/mmd-shop-operations-admin.js";
@@ -81,4 +82,65 @@ test("admin shop operation route ownership is narrow", () => {
   assert.equal(isAdminShopOperationsApiRequest("/v1/admin/shop/products/update", "POST"), true);
   assert.equal(isAdminShopOperationsApiRequest("/v1/admin/shop/products/update", "GET"), false);
   assert.equal(isAdminShopOrdersApiRequest("/v1/admin/shop/orders/fulfillment", "POST"), true);
+});
+
+
+test("product authority derives tracked, out-of-stock, untracked and on-demand eligibility", () => {
+  const tracked = deriveMmdProductCommerceState({
+    sku: "WGG-10",
+    product_name: "Water GG Plus 10ml",
+    shared_status: "active",
+    mmd_enabled: true,
+    mmd_price_thb: 1000,
+    supplier_count: 1,
+    quantity_remaining: 2,
+    active_batches: 1,
+  });
+  assert.equal(tracked.stock_status, "tracked");
+  assert.equal(tracked.online_checkout_status, "available");
+  assert.equal(tracked.checkout_eligible, true);
+
+  const out = deriveMmdProductCommerceState({
+    sku: "WGG-25",
+    product_name: "Water GG Plus 25ml",
+    shared_status: "active",
+    mmd_enabled: true,
+    mmd_price_thb: 2500,
+    supplier_count: 1,
+    quantity_remaining: 0,
+    active_batches: 1,
+  });
+  assert.equal(out.stock_status, "tracked");
+  assert.equal(out.online_checkout_status, "out_of_stock");
+  assert.equal(out.checkout_eligible, false);
+
+  const untracked = deriveMmdProductCommerceState({
+    sku: "TEST-UNTRACKED",
+    product_name: "Untracked Product",
+    shared_status: "active",
+    mmd_enabled: true,
+    mmd_price_thb: 1000,
+    supplier_count: 1,
+    quantity_remaining: 0,
+    active_batches: 0,
+  });
+  assert.equal(untracked.stock_status, "untracked");
+  assert.equal(untracked.online_checkout_status, "stock_untracked");
+  assert.equal(untracked.checkout_eligible, false);
+
+  const onDemand = deriveMmdProductCommerceState({
+    sku: "GLEN-POP15-BLK",
+    product_name: "Glenburgies Pop Plus",
+    product_note: "15ml / black bottle / on-demand / no stock",
+    shared_status: "active",
+    mmd_enabled: true,
+    mmd_price_thb: 1500,
+    supplier_count: 1,
+    quantity_remaining: 0,
+    active_batches: 0,
+  });
+  assert.equal(onDemand.availability_mode, "on_demand");
+  assert.equal(onDemand.stock_status, "on_demand");
+  assert.equal(onDemand.online_checkout_status, "on_demand");
+  assert.equal(onDemand.checkout_eligible, true);
 });
