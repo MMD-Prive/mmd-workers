@@ -110,6 +110,7 @@ test("HYPE shop orders returns only owned bounded Order Payment Fulfillment data
     assert.equal(body.orders[0].items[0].item_name, "GG Water 25ml");
     assert.equal(body.correlation.auto_correlation_allowed, true);
     assert.equal(body.correlation.candidate_order_id, "MMD-ORDER-001");
+    assert.deepEqual(body.correlation.candidate_order_ids, ["MMD-ORDER-001"]);
     assert.equal(body.correlation.method, "single_recent_owned_order");
     assert.equal(body.guardrails.payment_mutation_allowed, false);
     assert.equal(body.guardrails.fulfillment_mutation_allowed, false);
@@ -170,6 +171,7 @@ test("HYPE Shop recovery stays ambiguous when multiple recent owned Orders exist
     assert.equal(body.correlation.auto_correlation_allowed, false);
     assert.equal(body.correlation.candidate_count, 2);
     assert.equal(body.correlation.candidate_order_id, null);
+    assert.deepEqual(body.correlation.candidate_order_ids, ["MMD-ORDER-A", "MMD-ORDER-B"]);
     assert.equal(body.correlation.method, "ambiguous_recent_owned_orders");
     assert.deepEqual(body.orders.map((order) => order.order_id), ["MMD-ORDER-A", "MMD-ORDER-B"]);
   } finally {
@@ -214,6 +216,7 @@ test("explicit Order correlation never matches an Order owned by another custome
     assert.equal(body.orders.length, 0);
     assert.equal(body.correlation.exact_owned_match, false);
     assert.equal(body.correlation.auto_correlation_allowed, false);
+    assert.deepEqual(body.correlation.candidate_order_ids, []);
     assert.equal(body.correlation.method, "explicit_order_id_not_owned_or_missing");
   } finally {
     globalThis.fetch = originalFetch;

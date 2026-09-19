@@ -4,6 +4,11 @@ import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/tele
 import { escapeHtml } from "../lib/util.js";
 import { routeHypeNaturalLanguage } from "./hype-natural-language-router.js";
 import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import {
+  RECOVERY_OUTCOME_TAXONOMY_VERSION,
+  recoveryOutcomeCodesForDomain,
+  recoveryOutcomeLabel,
+} from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 import { detectHypeTransactionStart, extractHypeTransactionFields, transactionMissingQuestion, transactionModeLabel } from "./hype-transaction-assistant.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
@@ -28,6 +33,7 @@ export default {
           preview_channel_configured: Boolean(clean(env.TELEGRAM_PREVIEW_CHANNEL_ID)),
           preview_bot_username: botUsername(env),
           capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+          recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
@@ -372,6 +378,11 @@ function requireHypePreviewIntroToken(req, env) {
 }
 
 async function handleTelegramWebhook(update, env) {
+  const callback = update.callback_query || null;
+  if (callback && /^hrop\|/i.test(clean(callback.data))) {
+    return handleHypeRecoveryOrderCallback(callback, env);
+  }
+
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
 
@@ -501,6 +512,139 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handleHypeRecoveryOrderCallback(callback, env) {
+  const data = clean(callback?.data);
+  const match = /^hrop\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const callbackId = clean(callback?.id);
+  const chatId = clean(callback?.message?.chat?.id);
+  const chatType = clean(callback?.message?.chat?.type).toLowerCase();
+  const telegramUserId = clean(callback?.from?.id);
+
+  if (!match || !callbackId || !chatId || chatType !== "private" || !/^\d{5,20}$/.test(telegramUserId)) {
+    if (callbackId) {
+      await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "เปิดตัวเลือกนี้ใน private chat ของ HYPE ครับ",
+        show_alert: true,
+      }, env).catch(() => null);
+    }
+    return { handled: true, flow: "hype_recovery_order_picker", ok: false, code_status: "picker_context_invalid" };
+  }
+
+  const handoffId = match[1];
+  const selectionIndex = Number(match[2]);
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: "ระบบเลือก Order ยังไม่พร้อมครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return { handled: true, flow: "hype_recovery_order_picker", ok: false, code_status: "context_writer_unavailable" };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "select_recovery_order",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        selection_index: selectionIndex,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const text = result?.error === "recovery_order_already_bound"
+      ? "Case นี้ผูก Order ไปแล้วครับ"
+      : result?.error === "recovery_order_option_stale"
+        ? "ตัวเลือกนี้หมดอายุแล้วครับ พิมพ์ /case เพื่อตรวจสถานะล่าสุด"
+        : "ยังผูก Order ไม่สำเร็จครับ ระบบคง Case เดิมไว้";
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text,
+      show_alert: true,
+    }, env).catch(() => null);
+    return {
+      handled: true,
+      flow: "hype_recovery_order_picker",
+      ok: false,
+      code_status: clean(result?.error || "recovery_order_selection_failed"),
+    };
+  }
+
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    text: "ผูก Order กับ Case เดิมแล้วครับ",
+    show_alert: false,
+  }, env).catch(() => null);
+
+  const messageId = Number(callback?.message?.message_id);
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    }, env).catch(() => null);
+  }
+
+  const correlation = result.recovery_correlation || {};
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "<b>HYPE · ORDER LINKED</b>",
+      `<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id || handoffId))}</code>`,
+      `<b>Order:</b> <code>${escapeHtml(clean(correlation.order_id) || "-")}</code>`,
+      `<b>Payment:</b> ${escapeHtml(clean(correlation.payment_status) || "unknown")}`,
+      `<b>Fulfillment:</b> ${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}`,
+      "",
+      "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า Order / Payment / Fulfillment ซ้ำ",
+      "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้เปลี่ยนสถานะ Order, Payment หรือ Fulfillment",
+    ].join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  try {
+    await telegramNotify({
+      flow: "human_handoff",
+      text: [
+        "🔗 <b>HYPE · RECOVERY CORRELATION UPDATED</b>",
+        `<b>Case:</b> <code>${escapeHtml(clean(result.handoff_id || handoffId))}</code>`,
+        `<b>Order:</b> <code>${escapeHtml(clean(correlation.order_id) || "-")}</code>`,
+        `<b>Payment:</b> ${escapeHtml(clean(correlation.payment_status) || "unknown")}`,
+        `<b>Fulfillment:</b> ${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}`,
+        "Customer selected this owned Order; handoff lifecycle state was preserved.",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+  } catch {
+    // Case binding is canonical in Conversation Matrix even if the follow-up alert fails.
+  }
+
+  return {
+    handled: true,
+    flow: "hype_recovery_order_picker",
+    ok: telegram?.ok === true,
+    code_status: result.replayed === true ? "order_selection_replayed" : "order_linked_to_existing_case",
+    handoff_id: clean(result.handoff_id || handoffId),
+    order_id: clean(correlation.order_id),
+    telegram,
+  };
 }
 
 async function handleHypeTransactionIntake({ message, chatId, mode, fields = {}, source = "natural_language" }, env) {
@@ -1005,7 +1149,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
       text: renderHypeHandoffStatus(result),
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: hypeHandoffButtons(env, result.target === "kenji" ? "kenji" : "per"),
+      reply_markup: hypeHandoffButtons(env, result.target === "kenji" ? "kenji" : "per", result),
     }, env);
     return {
       handled: true,
@@ -1178,7 +1322,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
 
 function parseHypeOwnerHandoffTransition(value) {
   const text = clean(value);
-  const match = /^\/(case-ack|case-review|case-resolve|case-notified)(?:@\w+)?\s+(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})$/i.exec(text);
+  const match = /^\/(case-ack|case-review|case-resolve|case-notified)(?:@\w+)?\s+(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})(?:\s+([a-z0-9_]{3,80}))?$/i.exec(text);
   if (!match) return null;
   const stateByCommand = {
     "case-ack": "acknowledged",
@@ -1190,10 +1334,11 @@ function parseHypeOwnerHandoffTransition(value) {
     command: match[1].toLowerCase(),
     state: stateByCommand[match[1].toLowerCase()],
     handoffId: match[2],
+    outcomeCode: clean(match[3]).toLowerCase(),
   };
 }
 
-async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state, handoffId }, env) {
+async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state, handoffId, outcomeCode = "" }, env) {
   const owner = await verifyHypeOwnerTelegram(telegramUserId, env);
   if (!owner.ok) {
     const telegram = await sendTelegramMessage({
@@ -1236,6 +1381,7 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
         handoff_id: handoffId,
         state,
         actor_role: "owner",
+        ...(outcomeCode ? { recovery_outcome_code: outcomeCode } : {}),
       }),
     }));
     status = response.status;
@@ -1248,7 +1394,14 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
       text: status === 409
-        ? `เปลี่ยนสถานะเคสไม่ได้ครับ · current: ${clean(result?.current_state) || "unknown"} → requested: ${clean(result?.requested_state) || state}`
+        ? result?.error === "recovery_terminal_outcome_required"
+          ? [
+              "เคส Recovery ต้องระบุ outcome ก่อนปิดครับ",
+              Array.isArray(result?.allowed_outcomes) && result.allowed_outcomes.length
+                ? `ใช้ /case-resolve ${handoffId} <outcome> · ตัวเลือก: ${result.allowed_outcomes.join(", ")}`
+                : "กรุณาเลือก outcome ที่ตรงกับผลตรวจจริง",
+            ].join("\n")
+          : `เปลี่ยนสถานะเคสไม่ได้ครับ · current: ${clean(result?.current_state) || "unknown"} → requested: ${clean(result?.requested_state) || state}`
         : "เขียนสถานะเคสไม่สำเร็จครับ ระบบจะคง state เดิมไว้",
       disable_web_page_preview: true,
     }, env);
@@ -1273,8 +1426,14 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
       "<b>HYPE · CASE UPDATED</b>",
       `<b>Reference:</b> <code>${escapeHtml(handoffId)}</code>`,
       `<b>Status:</b> ${escapeHtml(labels[state] || state)}`,
+      ...(result.recovery_case
+        ? [
+            `<b>Recovery:</b> ${escapeHtml(clean(result.recovery_case.domain) || "unclassified")}`,
+            `<b>Outcome:</b> ${escapeHtml(clean(result.recovery_case.outcome_label) || clean(result.recovery_case.outcome_code) || "-")}`,
+          ]
+        : []),
       "",
-      "อัปเดตเฉพาะ handoff conversation state · ไม่เปลี่ยน Payment / Job / Membership truth",
+      "อัปเดตเฉพาะ handoff/recovery case state · ไม่เปลี่ยน Payment / Job / Membership truth และไม่เปลี่ยน Order truth",
     ].join("\n"),
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -1631,7 +1790,10 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
           "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
         ]
       : result.recovery_correlation?.state === "ambiguous"
-        ? ["พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน"]
+        ? [
+            "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
+            "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
+          ]
         : []),
     `Reference: ${clean(result.handoff_id)}`,
   ];
@@ -1640,7 +1802,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
     chat_id: chatId,
     text: lines.join("\n"),
     disable_web_page_preview: true,
-    reply_markup: hypeHandoffButtons(env, target),
+    reply_markup: hypeHandoffButtons(env, target, result),
   }, env);
 
   return {
@@ -1683,12 +1845,23 @@ async function recordHypeContinuity({ binding, telegramUserId, command, customer
 
 function renderHypeHandoffOperatorAlert(result = {}) {
   const target = result.target === "kenji" ? "KENJI" : "PER";
-  const summary = clean(result.operator_summary).slice(0, 2400);
+  const summary = clean(result.operator_summary).slice(0, 2200);
+  const recoveryCase = result.recovery_case || {};
+  const recoveryDomain = clean(recoveryCase.domain);
+  const terminalOutcomes = recoveryDomain
+    ? recoveryOutcomeCodesForDomain(recoveryDomain, { terminal: true })
+    : [];
   return [
     `🤝 <b>HYPE → ${target} HANDOFF</b>`,
     `<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
     `<b>Client:</b> ${escapeHtml(clean(result.display_name) || "Canonical Client")}`,
     `<b>Cross-channel continuity:</b> ${result.line_continuity_ready === true ? "READY" : "LINE LINK MISSING"}`,
+    ...(recoveryDomain
+      ? [
+          `<b>Recovery domain:</b> ${escapeHtml(recoveryDomain)}`,
+          `<b>Outcome:</b> ${escapeHtml(clean(recoveryCase.outcome_label) || clean(recoveryCase.outcome_code) || "รับเคสแล้ว")}`,
+        ]
+      : []),
     "",
     escapeHtml(summary),
     ...(result.recovery_correlation?.correlated === true
@@ -1700,15 +1873,26 @@ function renderHypeHandoffOperatorAlert(result = {}) {
           `Fulfillment: ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`,
           `Case: <code>${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
         ]
-      : []),
+      : result.recovery_correlation?.state === "ambiguous"
+        ? [
+            "",
+            `<b>Shop recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(result.recovery_correlation.candidate_count || 0)} Order ที่เป็นของลูกค้า`,
+            "HYPE ไม่เลือก Order แทนลูกค้า",
+          ]
+        : []),
     "",
     "<b>Owner controls:</b>",
     `<code>/case-ack ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
     `<code>/case-review ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
-    `<code>/case-resolve ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+    ...(recoveryDomain && terminalOutcomes.length
+      ? [
+          `<code>/case-resolve ${escapeHtml(clean(result.handoff_id) || "-")} &lt;outcome&gt;</code>`,
+          `Terminal outcomes: ${escapeHtml(terminalOutcomes.join(", "))}`,
+        ]
+      : [`<code>/case-resolve ${escapeHtml(clean(result.handoff_id) || "-")}</code>`]),
     `<code>/case-notified ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
     "",
-    "<b>Rule:</b> refresh canonical truth before protected action · customer should not be asked to restart the story",
+    "<b>Rule:</b> Case state/outcome is recovery workflow metadata only · refresh canonical truth before protected action",
   ].join("\n").slice(0, 3900);
 }
 
@@ -1720,14 +1904,20 @@ function renderHypeHandoffStatus(result = {}) {
     sent: "ส่งต่อไปยังทีมแล้ว",
     acknowledged: "ทีมรับทราบเคสแล้ว",
     reviewing: "ทีมกำลังตรวจสอบ",
-    resolved: "ทีมบันทึกว่าแก้ไขแล้ว · ยังไม่ยืนยันว่าลูกค้าได้รับแจ้ง",
-    customer_notified: "แก้ไขแล้วและยืนยันว่าแจ้งลูกค้าแล้ว",
+    resolved: "ทีมบันทึกผล Recovery แล้ว · ยังไม่ยืนยันว่าลูกค้าได้รับแจ้ง",
+    customer_notified: "บันทึกผล Recovery และยืนยันว่าแจ้งลูกค้าแล้ว",
     none: "ยังไม่มี handoff ที่กำลังติดตาม",
   };
   const lines = ["<b>HYPE · CASE STATUS</b>", ""];
   if (clean(result.handoff_id)) lines.push(`<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id))}</code>`);
   if (clean(result.target)) lines.push(`<b>Owner:</b> ${escapeHtml(result.target === "kenji" ? "Kenji" : "Per / MMD Ops")}`);
   lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || state || "unknown")}`);
+
+  if (result.recovery_case) {
+    lines.push(`<b>Recovery:</b> ${escapeHtml(clean(result.recovery_case.domain) || "unclassified")}`);
+    lines.push(`<b>Outcome:</b> ${escapeHtml(clean(result.recovery_case.outcome_label) || clean(result.recovery_case.outcome_code) || "รับเคสแล้ว")}`);
+  }
+
   if (result.recovery_correlation?.correlated === true) {
     lines.push(`<b>Order:</b> <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`);
     if (clean(result.recovery_correlation.live_refresh_status) === "fresh") {
@@ -1738,10 +1928,14 @@ function renderHypeHandoffStatus(result = {}) {
     } else {
       lines.push("<b>Shop state:</b> ตอนนี้ refresh จาก canonical Shop authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
     }
+  } else if (result.recovery_correlation?.state === "ambiguous") {
+    lines.push(`<b>Order:</b> ยังไม่ได้เลือก · มี ${Number(result.recovery_correlation.candidate_count || 0)} รายการที่เป็นไปได้`);
+    lines.push("เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ownership ก่อนผูกเข้ากับ Case เดิม");
   }
+
   if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
   lines.push("");
-  lines.push("HYPE แสดงเฉพาะ state ที่ถูกเขียนโดยระบบ/ผู้มีสิทธิ์จริง และจะไม่เดา acknowledgement หรือ resolution เองครับ");
+  lines.push("Case state/outcome เป็น workflow metadata เท่านั้น; HYPE จะไม่ใช้ outcome นี้แทน Payment / Order / Job / MMS truth ครับ");
   return lines.join("\n");
 }
 
@@ -1769,8 +1963,30 @@ async function markHypeHandoffSent(binding, handoffId) {
   }
 }
 
-function hypeHandoffButtons(env, target) {
-  const rows = [[{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]];
+function hypeHandoffButtons(env, target, result = {}) {
+  const rows = [];
+  const correlation = result?.recovery_correlation || {};
+  const caseRef = clean(result?.handoff_id || correlation.case_ref);
+  if (
+    correlation.state === "ambiguous"
+    && Array.isArray(correlation.options)
+    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)
+  ) {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const summary = clean(option.item_summary || "MMD Shop Order").slice(0, 26);
+      const rawAmount = option.total_thb;
+      const amount = rawAmount === null || rawAmount === undefined || rawAmount === ""
+        ? null
+        : Number(rawAmount);
+      const amountText = Number.isFinite(amount) ? ` · ฿${amount.toLocaleString("en-US")}` : "";
+      const dateText = clean(option.order_date) ? `${formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("")} · ` : "";
+      rows.push([{
+        text: `${index + 1}. ${dateText}${summary}${amountText}`.slice(0, 64),
+        callback_data: `hrop|${caseRef}|${index}`,
+      }]);
+    }
+  }
+  rows.push([{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };
 }

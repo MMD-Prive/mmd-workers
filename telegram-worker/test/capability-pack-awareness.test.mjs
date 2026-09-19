@@ -39,6 +39,32 @@ function req(text, {
     }),
   });
 }
+function callbackReq(data, {
+  chatId = 111111,
+  chatType = "private",
+  fromId = 111111,
+} = {}) {
+  return new Request(WEBHOOK_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+    },
+    body: JSON.stringify({
+      update_id: 12001,
+      callback_query: {
+        id: "callback-1",
+        from: { id: fromId, username: "member" },
+        data,
+        message: {
+          message_id: 301,
+          chat: { id: chatId, type: chatType },
+        },
+      },
+    }),
+  });
+}
+
 
 test("HYPE Shop Orders reads bounded member-owned Order Payment Fulfillment truth in private chat", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
@@ -324,6 +350,225 @@ test("HYPE shop delivery problem opens recovery with one correlated Order Paymen
   }
 });
 
+
+test("ambiguous Shop recovery renders customer-safe inline Order picker on the same Case", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/sendMessage")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 3250 + sends.length } });
+    }
+    throw new Error("unexpected fetch " + target);
+  };
+
+  try {
+    const response = await worker.fetch(req("GG Water ยังไม่ถึง ช่วยตามให้หน่อย"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          const pathname = new URL(request.url).pathname;
+          if (pathname === "/__internal/hype/handoff") {
+            return Response.json({
+              ok: true,
+              state: "handoff_ready",
+              target: "per",
+              handoff_id: "HYPE-PER-20260919124500-feedface",
+              display_name: "ลูกค้า A",
+              line_continuity_ready: true,
+              recovery_case: {
+                case_ref: "HYPE-PER-20260919124500-feedface",
+                domain: "mmd_shop",
+                state: "prepared",
+                outcome_code: "intake_received",
+                outcome_label: "รับเคสแล้ว",
+              },
+              recovery_correlation: {
+                domain: "mmd_shop",
+                state: "ambiguous",
+                correlated: false,
+                case_ref: "HYPE-PER-20260919124500-feedface",
+                candidate_count: 2,
+                options: [
+                  {
+                    order_id: "MMD-ORDER-A",
+                    order_date: "2026-09-18T10:00:00.000Z",
+                    total_thb: 2500,
+                    item_summary: "GG Water 25ml",
+                  },
+                  {
+                    order_id: "MMD-ORDER-B",
+                    order_date: "2026-09-17T10:00:00.000Z",
+                    total_thb: 4500,
+                    item_summary: "GG Water 50ml",
+                  },
+                ],
+              },
+              operator_summary: "Shop recovery requires customer Order selection.",
+            });
+          }
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({
+              ok: true,
+              state: "sent",
+              handoff_id: "HYPE-PER-20260919124500-feedface",
+              target: "per",
+            });
+          }
+          return Response.json({ ok: false }, { status: 404 });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_supervised_handoff");
+    const customer = sends.find((item) => String(item.chat_id) === "111111");
+    const ops = sends.find((item) => String(item.chat_id) === "-1003546439681");
+    assert.ok(customer);
+    assert.ok(ops);
+    assert.match(customer.text, /พบมากกว่า 1 Order/);
+    assert.match(customer.text, /HYPE-PER-20260919124500-feedface/);
+
+    const callbacks = customer.reply_markup.inline_keyboard
+      .flat()
+      .map((item) => item.callback_data)
+      .filter(Boolean);
+    assert.deepEqual(callbacks, [
+      "hrop|HYPE-PER-20260919124500-feedface|0",
+      "hrop|HYPE-PER-20260919124500-feedface|1",
+    ]);
+    assert.doesNotMatch(callbacks.join("|"), /MMD-ORDER-A|MMD-ORDER-B/);
+    assert.match(ops.text, /Recovery domain:<\/b> mmd_shop/);
+    assert.match(ops.text, /Terminal outcomes:/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("recovery Order picker callback selects by Case/index, clears buttons, and never sends Order id as callback data", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  let selection = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3260 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrop|HYPE-PER-20260919124500-feedface|1"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          selection = JSON.parse(await request.clone().text());
+          return Response.json({
+            ok: true,
+            state: "correlated",
+            handoff_id: "HYPE-PER-20260919124500-feedface",
+            replayed: false,
+            recovery_correlation: {
+              domain: "mmd_shop",
+              state: "correlated",
+              correlated: true,
+              case_ref: "HYPE-PER-20260919124500-feedface",
+              order_id: "MMD-ORDER-B",
+              payment_status: "paid",
+              fulfillment_state: "shipped",
+              selected_by: "customer",
+            },
+            recovery_case: {
+              case_ref: "HYPE-PER-20260919124500-feedface",
+              domain: "mmd_shop",
+              state: "reviewing",
+              outcome_code: "intake_received",
+            },
+          });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_recovery_order_picker");
+    assert.equal(body.code_status, "order_linked_to_existing_case");
+    assert.equal(selection.operation, "select_recovery_order");
+    assert.equal(selection.telegram_user_id, "111111");
+    assert.equal(selection.handoff_id, "HYPE-PER-20260919124500-feedface");
+    assert.equal(selection.selection_index, 1);
+    assert.equal(Object.hasOwn(selection, "order_id"), false);
+
+    const answer = telegramCalls.find((item) => item.target.includes("/answerCallbackQuery"));
+    const edit = telegramCalls.find((item) => item.target.includes("/editMessageReplyMarkup"));
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(answer);
+    assert.ok(edit);
+    assert.deepEqual(edit.payload.reply_markup, { inline_keyboard: [] });
+    assert.ok(customer);
+    assert.match(customer.payload.text, /MMD-ORDER-B/);
+    assert.match(customer.payload.text, /Case เดิม/);
+    assert.match(customer.payload.text, /ไม่ได้เปลี่ยนสถานะ Order, Payment หรือ Fulfillment/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Owner can resolve a recovery Case only with an explicit taxonomy outcome", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  let transition = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/getChatMember")) {
+      return Response.json({ ok: true, result: { status: "creator" } });
+    }
+    if (target.includes("/sendMessage")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 3271 } });
+    }
+    throw new Error("unexpected fetch " + target);
+  };
+
+  try {
+    const response = await worker.fetch(
+      req("/case-resolve HYPE-PER-20260919120000-deadbeef reshipment_arranged"),
+      env({
+        HYPE_CONTEXT_WRITER: {
+          async fetch(request) {
+            transition = JSON.parse(await request.clone().text());
+            return Response.json({
+              ok: true,
+              state: "resolved",
+              handoff_id: "HYPE-PER-20260919120000-deadbeef",
+              target: "per",
+              recovery_case: {
+                domain: "mmd_shop",
+                outcome_code: "reshipment_arranged",
+                outcome_label: "จัดส่งใหม่แล้ว",
+              },
+            });
+          },
+        },
+      }),
+    );
+    const body = await response.json();
+
+    assert.equal(body.ok, true);
+    assert.equal(transition.operation, "transition");
+    assert.equal(transition.state, "resolved");
+    assert.equal(transition.actor_role, "owner");
+    assert.equal(transition.recovery_outcome_code, "reshipment_arranged");
+    assert.match(sends.at(-1).text, /mmd_shop/);
+    assert.match(sends.at(-1).text, /จัดส่งใหม่แล้ว/);
+    assert.match(sends.at(-1).text, /ไม่เปลี่ยน Payment \/ Job \/ Membership truth/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE owner-only case command writes acknowledgement through the guarded handoff contract", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const sends = [];
@@ -431,6 +676,16 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
             handoff_id: "HYPE-PER-20260919120000-deadbeef",
             target: "per",
             updated_at: "2026-09-19T12:01:00.000Z",
+            recovery_case: {
+              schema: "mmd.recovery_case.v1",
+              taxonomy_version: "mmd-recovery-outcome-taxonomy-v1-20260919",
+              case_ref: "HYPE-PER-20260919120000-deadbeef",
+              domain: "mmd_shop",
+              state: "reviewing",
+              outcome_code: "awaiting_operations",
+              outcome_label: "รอทีมดำเนินการ",
+              outcome_terminal: false,
+            },
             recovery_correlation: {
               domain: "mmd_shop",
               state: "correlated",
@@ -456,6 +711,8 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
     assert.match(sent.text, /HYPE-PER-20260919120000-deadbeef/);
     assert.match(sent.text, /MMD-ORDER-001/);
     assert.match(sent.text, /payment paid · fulfillment shipped/);
+    assert.match(sent.text, /Recovery:<\/b> mmd_shop/);
+    assert.match(sent.text, /รอทีมดำเนินการ/);
     assert.doesNotMatch(sent.text, /แจ้งลูกค้าแล้ว|แก้ไขแล้วและยืนยัน/i);
   } finally {
     globalThis.fetch = originalFetch;

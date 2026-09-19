@@ -41,9 +41,9 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     label: "Service Recovery / Complaint Concierge",
     primary_owner: "HYPE",
     henna_role: "mms_recovery_intake_and_handoff",
-    authority: "canonical_job_payment_mms_shop_plus_human_review",
+    authority: "canonical_job_payment_mms_shop_plus_human_review_plus_recovery_outcome_taxonomy_v1",
     customer_routes: Object.freeze([]),
-    current_mode: "bounded_context_handoff_with_exact_or_unambiguous_shop_recovery_correlation",
+    current_mode: "customer_safe_shop_picker_plus_canonical_shop_booking_mms_recovery_outcomes",
     never_claim: Object.freeze(["case resolved", "refund approved", "staff fault confirmed"]),
   }),
   Object.freeze({
@@ -54,7 +54,7 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     henna_role: "observe_mms_handoff_state",
     authority: "kenji_conversation_matrix_plus_target_authority_ack",
     customer_routes: Object.freeze([]),
-    current_mode: "explicit_authority_written_state_only",
+    current_mode: "explicit_authority_written_state_plus_recovery_outcome_taxonomy",
     never_claim: Object.freeze(["human acknowledged", "review completed", "customer notified", "case resolved"]),
   }),
   Object.freeze({

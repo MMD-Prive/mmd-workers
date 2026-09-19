@@ -205,6 +205,7 @@ function correlationSummary(orders, requestedOrderId) {
       auto_correlation_allowed: matches.length === 1,
       candidate_count: matches.length,
       candidate_order_id: matches.length === 1 ? matches[0].order_id : null,
+      candidate_order_ids: matches.slice(0, 5).map((order) => clean(order.order_id, 180)).filter(Boolean),
       method: matches.length === 1 ? "explicit_owned_order_id" : "explicit_order_id_not_owned_or_missing",
     };
   }
@@ -216,6 +217,7 @@ function correlationSummary(orders, requestedOrderId) {
     auto_correlation_allowed: candidates.length === 1,
     candidate_count: candidates.length,
     candidate_order_id: candidates.length === 1 ? candidates[0].order_id : null,
+    candidate_order_ids: candidates.slice(0, 5).map((order) => clean(order.order_id, 180)).filter(Boolean),
     method: candidates.length === 1 ? "single_recent_owned_order" : candidates.length > 1 ? "ambiguous_recent_owned_orders" : "no_recent_owned_order",
   };
 }

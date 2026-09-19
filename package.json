@@ -18,7 +18,7 @@
     "test:kenji-admin-ui": "node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs",
     "test:mms-admin-ui": "node --experimental-global-webcrypto --test admin-worker/mms-admin-approve-ui.test.mjs admin-worker/mms-admin-application-inbox.test.mjs admin-worker/mms-admin-inline-syntax.test.mjs admin-worker/mms-admin-mobile-bundle.test.mjs admin-worker/mms-admin-session-bounce.test.mjs",
     "test:studio-real-worker": "node --test admin-worker/studio-real-worker.test.mjs",
-    "test:concierge-capabilities": "node --experimental-global-webcrypto --test shared/concierge-capability-pack-v1.test.mjs member-dashboard-chat-worker/test/mms-ai-capability-pack.test.mjs member-dashboard-chat-worker/test/mms-line-runtime.test.mjs",
+    "test:concierge-capabilities": "node --experimental-global-webcrypto --test shared/concierge-capability-pack-v1.test.mjs shared/recovery-outcome-taxonomy-v1.test.mjs member-dashboard-chat-worker/test/mms-ai-capability-pack.test.mjs member-dashboard-chat-worker/test/mms-line-runtime.test.mjs",
     "test:telegram": "node --test telegram-worker/test/*.test.mjs",
     "test:blackcard-confirm": "node --test webflow/blackcard/confirm/confirm-contract.test.mjs",
     "test:auth-liff-profile": "node --experimental-global-webcrypto --test shared/my-mmd-fast-trust-source.test.mjs auth-worker/test/member-status-resolver.test.mjs auth-worker/test/my-mmd-fast-trust.test.mjs auth-worker/test/member-profile-resolver.test.mjs auth-worker/test/member-drive-bootstrap.test.mjs auth-worker/test/member-entitlement-resolver.test.mjs auth-worker/test/operator-payment-event.test.mjs auth-worker/test/customer-360-resolver.test.mjs auth-worker/test/session-finance-role-separation.test.mjs",
