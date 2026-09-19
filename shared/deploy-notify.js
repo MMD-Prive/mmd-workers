@@ -1,277 +1,176 @@
 #!/usr/bin/env node
 
-const { execFileSync } = require("node:child_process");
+const { readFile } = require("node:fs/promises");
 
 const WORKERS = Object.freeze({
-  "mmd-redirect-worker": {
-    config: "mmd-redirect-worker/wrangler.toml",
+  "mmd-redirect-worker": worker("mmd-redirect-worker/wrangler.toml", {
     test: "npm --prefix mmd-redirect-worker test",
     lint: "npm --prefix mmd-redirect-worker run check",
-    smokeUrl: "https://mmdbkk.com/",
-    smokeStatuses: [200, 301, 302, 307, 308],
-    routes: ["mmdbkk.com/*", "www.mmdbkk.com/*"],
-  },
-  "payments-worker": {
-    config: "payments-worker/wrangler.merged.toml",
-    test: "node --check payments-worker/index.with-slip-evidence.js",
-    lint: "node --check payments-worker/index.with-slip-evidence.js",
-    smokeUrl: "https://sigil.mmdbkk.com/v1/pay/health",
-    smokeStatuses: [200, 401, 404],
-    routes: ["sigil.mmdbkk.com/v1/pay/*", "sigil.mmdbkk.com/v1/payments/*", "sigil.mmdbkk.com/v1/confirm/*"],
-  },
-  "member-pages-worker": {
-    config: "member-pages-worker/wrangler.toml",
+  }),
+  "payments-worker": worker("payments-worker/wrangler.merged.toml", {
+    test: "bash payments-worker/checks/run-checks.sh",
+    lint: "node --check payments-worker/index.js",
+  }),
+  "member-pages-worker": worker("member-pages-worker/wrangler.toml", {
     test: "node --test member-pages-worker/test/*.test.mjs",
     lint: "node --check member-pages-worker/src/index.js",
-    smokeUrl: "https://member-pages-worker.malemodel-bkk.workers.dev/",
-    smokeStatuses: [200, 301, 302, 401, 404],
-    routes: ["member-pages-worker.malemodel-bkk.workers.dev/*"],
-  },
-  "member-api-worker": {
-    unavailable: "member-api-worker is not present on origin/main; add its real Wrangler config before enabling deployment",
-  },
-  "sigil-worker": {
-    config: "sigil-worker/wrangler.toml",
-    test: "node --test sigil-worker/test/*.test.mjs",
-    lint: "node --check sigil-worker/src/index.js",
-    smokeUrl: "https://sigil-worker.malemodel-bkk.workers.dev/",
-    smokeStatuses: [200, 401, 404],
-    routes: ["sigil-worker.malemodel-bkk.workers.dev/*"],
-  },
-  "telegram-worker": {
-    config: "telegram-worker/wrangler.toml",
+  }),
+  "member-api-worker": worker("member-api-worker/wrangler.toml"),
+  "sigil-worker": worker("sigil-worker/wrangler.toml", {
+    test: "npm --prefix sigil-worker test",
+    lint: "npm --prefix sigil-worker run check",
+  }),
+  "telegram-worker": worker("telegram-worker/wrangler.toml", {
     test: "node --test telegram-worker/test/*.test.mjs",
     lint: "node --check telegram-worker/src/index.js",
-    smokeUrl: "https://telegram-worker.malemodel-bkk.workers.dev/",
-    smokeStatuses: [200, 401, 404, 405],
-    routes: ["telegram-worker.malemodel-bkk.workers.dev/*"],
-  },
-  "chat-worker": {
-    config: "chat-worker/wrangler 2.toml",
+  }),
+  "chat-worker": worker("chat-worker/wrangler 2.toml", {
     test: "node --test chat-worker/test/*.test.mjs",
     lint: "node --check chat-worker/src/index.js",
-    smokeUrl: "https://chat-worker-ai-integration.malemodel-bkk.workers.dev/",
-    smokeStatuses: [200, 401, 404, 405],
-    routes: ["chat-worker-ai-integration.malemodel-bkk.workers.dev/*"],
-  },
-  "admin-worker": {
-    config: "admin-worker/wrangler.toml",
-    test: "npm run test:admin-login",
-    lint: "node --check admin-worker/src/admin-login-hero-worker.js",
-    smokeUrl: "https://mmdbkk.com/internal/admin/login",
-    smokeStatuses: [200, 301, 302, 307, 308],
-    routes: ["mmdbkk.com/internal/admin*", "www.mmdbkk.com/internal/admin*", "mmdbkk.com/v1/admin/*"],
-  },
+    smoke: "node scripts/smoke-chat-worker.js",
+  }),
+  "admin-worker": worker("admin-worker/wrangler.toml", {
+    test: "npm run test:admin-login && npm run test:studio-real-worker",
+    lint: "node --check admin-worker/src/dashboard-worker.js",
+  }),
+  "events-worker": worker("events-worker/wrangler.toml"),
+  "sigil-booking-worker": worker("sigil-booking-worker/wrangler.toml"),
+  "sigil-board-worker": worker("workers/sigil-board-worker/wrangler.toml", {
+    lint: "npm run check:sigil-board",
+  }),
+  "sigil-booking-proxy-worker": worker("workers/sigil-booking-proxy-worker/wrangler.toml", {
+    test: "npm run test:sigil-booking-proxy",
+    lint: "npm run check:sigil-booking-proxy",
+  }),
 });
 
-const REQUIRED_ENV = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_DEPLOY_CHAT_ID"];
-
-function value(value, fallback = "Unavailable") {
-  return value === undefined || value === null || value === "" ? fallback : String(value);
-}
-
-function section(label, body) {
-  return `${label}:\n${value(body)}`;
-}
-
-function routeLines(routes = []) {
-  return routes.length ? routes.map((route) => `✓ ${route}`).join("\n") : "No route changes";
-}
-
-function tailLines(log, count = 12) {
-  return value(log, "No log output captured").split(/\r?\n/).filter(Boolean).slice(-count).join("\n");
+function worker(config, commands = {}) {
+  return Object.freeze({
+    config,
+    test: commands.test || "",
+    lint: commands.lint || "",
+    smoke: commands.smoke || "",
+  });
 }
 
 function formatSuccess(details) {
-  return [
-    "✅ MMD Deployment Success",
-    section("Worker", details.worker),
-    section("Environment", details.environment),
-    section("Commit", details.gitSha),
-    section("Version", details.versionId),
-    section("Deploy timestamp", details.timestamp),
-    section("Deploy user", details.deployUser),
-    section("Branch", details.branch),
-    section("Routes", routeLines(details.routes)),
-    section("Smoke Test", details.smokeResult),
-    section("Rollback version", details.rollbackVersion),
-  ].join("\n\n");
+  return formatMessage("✅ MMD Deployment Success", [
+    ["Worker", details.worker],
+    ["Environment", details.environment],
+    ["Commit", details.gitSha],
+    ["Version", details.versionId],
+    ["Deploy Timestamp", details.timestamp],
+    ["Deploy User", details.deployUser],
+    ["Branch", details.branch],
+    ["Changed Routes", list(details.routes)],
+    ["Smoke Test", details.smokeResult],
+    ["Rollback Version", details.rollbackVersion || "Not available"],
+  ]);
 }
 
 function formatFailure(details) {
-  return [
-    "❌ MMD Deployment Failure",
-    section("Worker", details.worker),
-    section("Command", details.command),
-    section("Exit code", details.exitCode),
-    section("Git SHA", details.gitSha),
-    section("Last log lines", tailLines(details.log)),
-  ].join("\n\n");
+  return formatMessage("❌ MMD Deployment Failure", [
+    ["Worker", details.worker],
+    ["Command", details.command],
+    ["Exit Code", details.exitCode],
+    ["Git SHA", details.gitSha],
+    ["Last Log Lines", details.lastLogLines || "No log output"],
+  ]);
 }
 
 function formatRollback(details) {
-  return [
-    "↩️ MMD Deployment Rollback",
-    section("Worker", details.worker),
-    section("Previous Version", details.previousVersion),
-    section("New Active Version", details.newActiveVersion),
-    section("Reason", details.reason),
-  ].join("\n\n");
+  return formatMessage("↩️ MMD Deployment Rollback", [
+    ["Worker", details.worker],
+    ["Previous Version", details.previousVersion],
+    ["New Active Version", details.newActiveVersion],
+    ["Reason", details.reason],
+  ]);
 }
 
-function assertNotificationEnvironment(env = process.env) {
-  const missing = REQUIRED_ENV.filter((name) => !env[name]);
-  if (missing.length) throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
-}
+async function sendTelegram(message, env = process.env) {
+  if (env.DEPLOY_NOTIFY_DRY_RUN === "1") {
+    process.stdout.write(`${message}\n`);
+    return { ok: true, dryRun: true };
+  }
 
-async function sendTelegram(text, env = process.env, fetchImpl = fetch) {
-  assertNotificationEnvironment(env);
-  const response = await fetchImpl(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_DEPLOY_CHAT_ID;
+  if (!token || !chatId) {
+    throw new Error("TELEGRAM_BOT_TOKEN and TELEGRAM_DEPLOY_CHAT_ID are required");
+  }
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: env.TELEGRAM_DEPLOY_CHAT_ID, text, disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, text: message.slice(0, 4096), disable_web_page_preview: true }),
   });
-  if (!response.ok) throw new Error(`Telegram API returned HTTP ${response.status}: ${tailLines(await response.text(), 4)}`);
-  return response.json();
-}
-
-function getWorkerConfig(worker) {
-  const config = WORKERS[worker];
-  if (!config) throw new Error(`Unknown worker: ${worker}. Supported: ${Object.keys(WORKERS).join(", ")}`);
-  if (config.unavailable) throw new Error(config.unavailable);
-  return config;
-}
-
-async function runSmokeTest(worker, overrideUrl, fetchImpl = fetch) {
-  const config = getWorkerConfig(worker);
-  const url = overrideUrl || config.smokeUrl;
-  const response = await fetchImpl(url, { redirect: "manual", signal: AbortSignal.timeout(15_000) });
-  if (!config.smokeStatuses.includes(response.status)) {
-    throw new Error(`Smoke test ${url} returned HTTP ${response.status}; expected ${config.smokeStatuses.join(", ")}`);
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.ok !== true) {
+    throw new Error(`Telegram sendMessage failed with HTTP ${response.status}`);
   }
-  return `PASS (HTTP ${response.status}: ${url})`;
+  return result;
 }
 
-function extractVersionId(output) {
-  const patterns = [
-    /"version_id"\s*:\s*"([0-9a-f-]{36})"/i,
-    /"id"\s*:\s*"([0-9a-f-]{36})"/i,
-    /(?:Current\s+)?Version ID:\s*([0-9a-f-]{36})/i,
-    /Deployment ID:\s*([0-9a-f-]{36})/i,
-  ];
-  for (const pattern of patterns) {
-    const match = value(output, "").match(pattern);
-    if (match) return match[1];
+async function configuredRoutes(configPath) {
+  const source = await readFile(configPath, "utf8");
+  const routes = [];
+  for (const match of source.matchAll(/^\s*(?:pattern|route)\s*=\s*["']([^"']+)["']/gm)) {
+    routes.push(match[1]);
   }
-  return "";
-}
-
-function git(...args) {
-  try {
-    return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return "";
+  for (const match of source.matchAll(/^\s*routes\s*=\s*\[([\s\S]*?)\]/gm)) {
+    for (const value of match[1].matchAll(/(?:pattern\s*=\s*)?["']([^"']+)["']/g)) routes.push(value[1]);
   }
+  return [...new Set(routes)];
 }
 
-function deploymentMetadata(env = process.env) {
-  return {
-    environment: env.DEPLOY_ENVIRONMENT || "Production",
-    gitSha: env.GITHUB_SHA || git("rev-parse", "HEAD"),
-    branch: env.GITHUB_REF_NAME || git("branch", "--show-current"),
-    deployUser: env.DEPLOY_USER || env.GITHUB_ACTOR || git("config", "user.name") || env.USER,
-    timestamp: new Date().toISOString(),
-  };
+function formatMessage(title, fields) {
+  return [title, ...fields.flatMap(([label, value]) => ["", `${label}:`, safe(value)])].join("\n");
 }
 
-function argument(name, args) {
-  const index = args.indexOf(`--${name}`);
-  return index >= 0 ? args[index + 1] : "";
+function list(values = []) {
+  return values.length ? values.map((value) => `✓ ${value}`).join("\n") : "No route changes declared";
 }
 
-async function readStdin() {
-  const chunks = [];
-  for await (const chunk of process.stdin) chunks.push(chunk);
-  return Buffer.concat(chunks.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))).toString("utf8");
+function safe(value) {
+  return String(value ?? "Unknown").slice(0, 3500);
 }
 
-async function main(args) {
-  const [command, worker] = args;
-  if (command === "config") {
-    const config = getWorkerConfig(worker);
-    const field = args[2];
+async function cli(argv) {
+  const [action, ...args] = argv;
+  if (action === "config") {
+    const [name, field] = args;
+    const config = WORKERS[name];
+    if (!config) throw new Error(`Unknown worker: ${name}`);
     if (!(field in config)) throw new Error(`Unknown config field: ${field}`);
-    process.stdout.write(Array.isArray(config[field]) ? config[field].join("\n") : String(config[field]));
+    process.stdout.write(String(config[field]));
     return;
   }
-  if (command === "preflight") {
-    getWorkerConfig(worker);
-    assertNotificationEnvironment();
+  if (action === "routes") {
+    const routes = await configuredRoutes(args[0]);
+    process.stdout.write(routes.join("\n"));
     return;
   }
-  if (command === "extract-version") {
-    process.stdout.write(extractVersionId(await readStdin()));
+  if (["success", "failure", "rollback"].includes(action)) {
+    const payload = JSON.parse(await readFile(args[0], "utf8"));
+    const format = { success: formatSuccess, failure: formatFailure, rollback: formatRollback }[action];
+    await sendTelegram(format(payload));
     return;
   }
-  if (command === "smoke") {
-    process.stdout.write(await runSmokeTest(worker, process.env.DEPLOY_SMOKE_URL));
-    return;
-  }
-  if (command === "success") {
-    const config = getWorkerConfig(worker);
-    const message = formatSuccess({
-      worker,
-      ...deploymentMetadata(),
-      versionId: argument("version", args),
-      smokeResult: argument("smoke", args),
-      rollbackVersion: argument("rollback-version", args),
-      routes: config.routes,
-    });
-    await sendTelegram(message);
-    process.stdout.write(message);
-    return;
-  }
-  if (command === "failure") {
-    const message = formatFailure({
-      worker,
-      ...deploymentMetadata(),
-      command: argument("command", args),
-      exitCode: argument("exit-code", args),
-      log: await readStdin(),
-    });
-    await sendTelegram(message);
-    process.stdout.write(message);
-    return;
-  }
-  if (command === "rollback") {
-    const message = formatRollback({
-      worker,
-      previousVersion: argument("previous-version", args),
-      newActiveVersion: argument("new-active-version", args),
-      reason: argument("reason", args),
-    });
-    await sendTelegram(message);
-    process.stdout.write(message);
-    return;
-  }
-  throw new Error("Usage: deploy-notify.js <config|preflight|extract-version|smoke|success|failure|rollback> <worker> [options]");
+  throw new Error("Usage: deploy-notify.js <config|routes|success|failure|rollback> ...");
 }
 
 module.exports = {
-  assertNotificationEnvironment,
-  deploymentMetadata,
-  extractVersionId,
+  WORKERS,
+  configuredRoutes,
   formatFailure,
   formatRollback,
   formatSuccess,
-  getWorkerConfig,
-  runSmokeTest,
   sendTelegram,
 };
 
 if (require.main === module) {
-  main(process.argv.slice(2)).catch((error) => {
-    console.error(error.message);
+  cli(process.argv.slice(2)).catch((error) => {
+    process.stderr.write(`deploy-notify: ${error.message}\n`);
     process.exitCode = 1;
   });
 }

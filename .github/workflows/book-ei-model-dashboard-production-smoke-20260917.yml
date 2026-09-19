@@ -1,0 +1,154 @@
+name: Book EI Model Dashboard production smoke 20260917
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/book-ei-model-dashboard-production-smoke-20260917.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-book-ei:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      BOOK_EI_SESSION_ID: sess_mu2e46db_d1a5cb3638f7b00a
+    steps:
+      - name: Wait for Dashboard Home recovery deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const origin = 'https://mmdmodel.lovable.app';
+          const required = ['/v1/model/liff/exchange', 'model_session_expired', 'line_identity_invalid'];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          function absoluteAsset(base, ref) {
+            try { return new URL(ref, base).toString(); } catch { return null; }
+          }
+
+          async function deployed() {
+            const htmlRes = await fetch(`${origin}/`, { redirect: 'follow', headers: { 'cache-control': 'no-cache' } });
+            if (!htmlRes.ok) return false;
+            const html = await htmlRes.text();
+            const queue = [];
+            const seen = new Set();
+            for (const match of html.matchAll(/(?:src|href)=["']([^"']+\.js(?:\?[^"']*)?)["']/g)) {
+              const url = absoluteAsset(`${origin}/`, match[1]);
+              if (url) queue.push(url);
+            }
+
+            let combined = '';
+            while (queue.length && seen.size < 80) {
+              const url = queue.shift();
+              if (!url || seen.has(url)) continue;
+              seen.add(url);
+              let text = '';
+              try {
+                const res = await fetch(url, { redirect: 'follow', headers: { 'cache-control': 'no-cache' } });
+                if (!res.ok) continue;
+                text = await res.text();
+              } catch { continue; }
+              combined += `\n${text}`;
+              for (const match of text.matchAll(/["']([^"']+\.js(?:\?[^"']*)?)["']/g)) {
+                const child = absoluteAsset(url, match[1]);
+                if (child && child.startsWith(origin) && !seen.has(child)) queue.push(child);
+              }
+            }
+            return required.every((marker) => combined.includes(marker));
+          }
+
+          for (let attempt = 1; attempt <= 36; attempt += 1) {
+            if (await deployed().catch(() => false)) {
+              console.log(`PASS Dashboard recovery bundle detected on production attempt=${attempt}`);
+              process.exit(0);
+            }
+            console.log(`Dashboard deploy not visible yet attempt=${attempt}/36`);
+            await sleep(10_000);
+          }
+          throw new Error('dashboard_recovery_bundle_not_deployed');
+          NODE
+
+      - name: Resolve real Book EI session and signed Model link
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AIRTABLE_API_KEY:-}"
+          echo "::add-mask::$AIRTABLE_API_KEY"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const apiKey = process.env.AIRTABLE_API_KEY;
+          const baseId = process.env.AIRTABLE_BASE_ID;
+          const sessionId = process.env.BOOK_EI_SESSION_ID;
+          const table = 'tblC98mKWbzmPuNzX';
+          const fields = {
+            sessionId: 'fldLTq2kZbyRv22IA',
+            modelName: 'flddVz6eoWRHrzIQr',
+            jobDate: 'fldpnqoIsUMfN7y3c',
+            startTime: 'fldBeG0FkWwa8kgnp',
+            endTime: 'fldiDSz0wW9Ct9I3P',
+            locationName: 'fldIiRpaxoafjTkFt',
+            payModelThb: 'fldlTO5aNfqUmlNWm',
+            modelUrl: 'fld0mFma9J9yfEaKb',
+          };
+
+          const url = new URL(`https://api.airtable.com/v0/${baseId}/${table}`);
+          url.searchParams.set('maxRecords', '2');
+          url.searchParams.set('filterByFormula', `{session_id}="${sessionId}"`);
+          url.searchParams.set('returnFieldsByFieldId', 'true');
+          const response = await fetch(url, { headers: { authorization: `Bearer ${apiKey}`, accept: 'application/json' } });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(`airtable_http_${response.status}`);
+          const records = Array.isArray(payload.records) ? payload.records : [];
+          if (records.length !== 1) throw new Error(`book_ei_session_count_${records.length}`);
+          const f = records[0].fields || {};
+          if (String(f[fields.sessionId] || '') !== sessionId) throw new Error('book_ei_session_id_mismatch');
+          const modelName = String(f[fields.modelName] || '').trim();
+          if (!/^Book\s*(?:EI|IE)$/i.test(modelName)) throw new Error(`unexpected_model_name:${modelName}`);
+          if (Number(f[fields.payModelThb]) !== 10000) throw new Error(`unexpected_model_payout:${f[fields.payModelThb]}`);
+          if (!String(f[fields.jobDate] || '').startsWith('2026-09-17')) throw new Error(`unexpected_job_date:${f[fields.jobDate]}`);
+          const modelUrl = String(f[fields.modelUrl] || '').trim();
+          const parsed = new URL(modelUrl);
+          if (!['mmdbkk.com', 'www.mmdbkk.com'].includes(parsed.hostname)) throw new Error('model_url_host_invalid');
+          if (parsed.pathname !== '/sigil/confirm/job-model') throw new Error('model_url_path_invalid');
+          const token = parsed.searchParams.get('t');
+          if (!token) throw new Error('model_token_missing');
+          console.log(`::add-mask::${token}`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `BOOK_EI_MODEL_T=${token}\n`);
+          console.log(`PASS real Book EI source session model=${modelName} payout=10000 job_date=${String(f[fields.jobDate] || '')} location=${String(f[fields.locationName] || '')}`);
+          NODE
+
+      - name: Smoke real Book EI canonical current job
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body" -w '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Origin: https://mmdbkk.com' \
+            "https://mmdbkk.com/v1/model/session/current?t=${BOOK_EI_MODEL_T}")"
+          test "$code" = "200"
+          node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const session = payload?.session || payload?.data?.session;
+          if (!session) throw new Error('session_missing');
+          if (session.session_id !== 'sess_mu2e46db_d1a5cb3638f7b00a') throw new Error(`unexpected_session:${session.session_id}`);
+          if (Number(session.pay_model_thb) !== 10000) throw new Error(`unexpected_payout:${session.pay_model_thb}`);
+          if (!String(session.job_date || '').startsWith('2026-09-17')) throw new Error(`unexpected_job_date:${session.job_date}`);
+          if (!/Centric|Ratchayothin/i.test(String(session.location_name || ''))) throw new Error(`unexpected_location:${session.location_name}`);
+          if (!Array.isArray(session.allowed_actions)) throw new Error('allowed_actions_missing');
+          for (const forbidden of ['amount_thb', 'customer_amount_due_thb', 'customer_confirmation_url', 'payment_verification']) {
+            if (Object.prototype.hasOwnProperty.call(session, forbidden)) throw new Error(`customer_field_leaked:${forbidden}`);
+          }
+          console.log(`PASS real Book EI session=${session.session_id} state=${session.normalized_state || session.state} payout=${session.pay_model_thb} allowed_actions=${session.allowed_actions.join(',')}`);
+          NODE
+          rm -f "$body"

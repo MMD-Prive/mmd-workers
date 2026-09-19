@@ -1,6 +1,36 @@
 # LINE Rich Menu Membership Mapping
 
+> **Canonical lane correction — 2026-09-19:** Public Membership selection is `/pay/membership` (Member / Elite / Red Card). Private Membership selection / renewal / upgrade is `/sigil/member/membership`. Payment status is `/member/payments`. Renewal compatibility routes `/sigil/pay/renewal` and `/pay/renewal` are redirect-only and must not be used as a Rich Menu destination. Signed Public checkout uses `/pay/checkout?t=...`; signed Private/Service payment uses `/sigil/pay?t=...`.
+
 Status: backend-owned Rich Menu publisher is available for Public World. No Webflow publish and no merge.
+
+> **Status: Superseded for LIFF identity routing.** This document retains the
+> historical Rich Menu and `/member/api/liff/identify` contract for audit
+> context. It must not be used to restore retired member routing.
+
+## Current LIFF Member Identity Flow (Source-Confirmed)
+
+```text
+LIFF
+  -> POST /member/api/liff/start
+  -> secure same-site session
+  -> member-pages-worker
+  -> MEMBER_STATUS_RESOLVER
+  -> mmd-auth-worker
+```
+
+- The browser sends only a LINE ID token to `/member/api/liff/start`.
+  Browser-supplied LINE IDs, member IDs, profile, tier, points, payment, and
+  entitlement claims are rejected.
+- `member-pages-worker` is the canonical owner of the member LIFF shell and
+  `/member/api/liff/*` namespace. It keeps the customer session same-site and
+  calls `MEMBER_STATUS_RESOLVER` through the trusted internal binding.
+- `mmd-auth-worker` is the authoritative resolver owner for the protected
+  member profile read. It is not a public browser endpoint.
+- `/member/api/liff/identify` is a retired historical contract; it is not the
+  canonical LIFF identity entry point and must not be re-enabled.
+- `mmd-redirect-worker` is hard-disabled and retired for member routing. Do
+  not restore member routes, redirects, bindings, UI, or LIFF logic there.
 
 `member-dashboard-chat-worker` owns the Public World Rich Menu publisher through internal API endpoints. Do not use browser/frontend JavaScript for Rich Menu API calls, and do not print LINE tokens or returned Rich Menu IDs in public chat/logs.
 
@@ -51,9 +81,9 @@ The service-bound aliases under `/__internal/line/rich-menu/*` are only for `adm
 
 | Button | URL | Status |
 | --- | --- | --- |
-| สมัครสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=public_membership` | Worker-backed page, LIFF identity remains public membership intent. |
+| สมัครสมาชิก | `https://mmdbkk.com/pay/membership?source=line` | Worker-backed page, LIFF identity remains public membership intent. |
 | ตรวจสอบสถานะสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=member_status` | State-lookup-backed LIFF intent; does not collapse into generic public membership after identify. |
-| ต่ออายุสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=renewal` | LINE LIFF renewal mode; identity/evidence only until payment is officially verified. |
+| ต่ออายุสมาชิก | `https://mmdbkk.com/sigil/member/membership?source=line&intent=renew` | LINE LIFF renewal mode; identity/evidence only until payment is officially verified. |
 | ขอจอง/เลือกโมเดล | `https://mmdbkk.com/member/membership?source=line&entry_route=booking_request` | State-lookup-backed LIFF intent; active/current routes to `/sigil/booking`, expired routes renewal, no paid package stays public. |
 
 ## Private Rich Menu Button URLs
@@ -63,11 +93,14 @@ Private Rich Menu eligibility is a response state, not a dashboard unlock. The w
 | Button | URL | Status |
 | --- | --- | --- |
 | ตรวจสอบสถานะสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=member_status` | State-lookup-backed. Active/current returns private member eligibility. |
-| ต่ออายุสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=renewal` | Opens renewal mode inside LINE. Private menu is still navigation only and never sets membership truth. |
+| ต่ออายุสมาชิก | `https://mmdbkk.com/sigil/member/membership?source=line&intent=renew` | Opens renewal mode inside LINE. Private menu is still navigation only and never sets membership truth. |
 | ขอจอง/เลือกโมเดล | `https://mmdbkk.com/member/membership?source=line&entry_route=booking_request` | State-lookup-backed. Active/current routes `/sigil/booking`. |
 | Member dashboard | Not allowed as a Rich Menu action | Blocked until first real job/session unlock. |
 
-## LIFF Identity Contract
+## Superseded LIFF Identity Contract (Historical)
+
+> The following is retained only to explain prior Rich Menu assumptions. Use
+> **Current LIFF Member Identity Flow** above for all new work.
 
 After a LIFF page opens and obtains the LINE profile, the page/backend bridge must call:
 
@@ -141,7 +174,10 @@ Rich Menu and LIFF identity should stage or read context only. Promotion into tr
 | `member_packages` | Package purchase/renewal state | `member_email`, `memberstack_id`, `package_code`, `status`, `start_date`, `end_date`, `payment_ref`, `source` | Payment/verification flow only; Rich Menu can send `source=line` as attribution. |
 | `Sessions / Jobs` | Real service/job evidence and dashboard unlock source | `session_id`, `job_id`, `memberstack_id`, `line_user_id`, `package_code`, `membership_action`, `payment_ref`, `status` | Dashboard unlock source only after real confirmed session/job exists. |
 
-## Response Contract
+## Superseded LIFF Response Contract (Historical)
+
+> The response below describes the retired `identify` contract. It is not a
+> current API contract and must not be used for new frontend wiring.
 
 `POST /member/api/liff/identify` returns customer-safe status fields:
 
@@ -153,7 +189,7 @@ Rich Menu and LIFF identity should stage or read context only. Promotion into tr
   "rich_menu_target": "private_member",
   "next_route": "/member/profile?status=active",
   "safe_next": {
-    "renewal": "/sigil/pay/renewal",
+    "renewal": "/sigil/member/membership?source=line&intent=renew",
     "booking": "/sigil/booking",
     "dashboard": null
   }
@@ -176,7 +212,11 @@ Routing:
 - `no_paid_package`: next route `/member/membership`; no new pricing invented here.
 - `unknown` or `review_required`: next route `/member/profile?status=review_required`; never active.
 
-## Repo-Owned Confirmation
+## Superseded Repo-Owned Confirmation (Historical)
+
+> The route ownership statements below predate the current source-confirmed
+> `member-pages-worker -> MEMBER_STATUS_RESOLVER -> mmd-auth-worker` flow.
+> They are historical only and do not authorize restoring `mmd-redirect-worker`.
 
 - `mmd-redirect-worker` routes `POST /member/api/liff/identify` to `member-pages-worker`.
 - `mmd-redirect-worker` routes `/sigil/pay/renewal` to `member-pages-worker` before generic `/sigil/*` pass-through.
@@ -186,7 +226,11 @@ Routing:
 - `member-pages-worker` renders a minimal safe `/sigil/pay/renewal` page where renewal proof remains evidence only.
 - Focused tests cover the LIFF identify route and the pre-dashboard holding behavior.
 
-## Blockers Before Publishing In LINE OA Manager
+## Historical Blockers Before Publishing In LINE OA Manager
+
+> This checklist is retained for historical context. In particular, any
+> reference to `/member/api/liff/identify` is superseded by the current
+> `/member/api/liff/start` flow above.
 
 - Confirm the LIFF frontend wrapper actually calls `POST /member/api/liff/identify` after opening the mapped route.
 - Confirm the `MMD - LIFF Renewal Sessions` table/field names if that staging table is not already created.

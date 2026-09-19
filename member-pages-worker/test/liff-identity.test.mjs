@@ -1,342 +1,102 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 
 import worker from "../src/index.js";
 
-function memberStatusResolver(data) {
+const realFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+class MemoryKv {
+  constructor() { this.map = new Map(); }
+  async get(key, type) {
+    const value = this.map.get(key);
+    if (value == null) return null;
+    return type === "json" ? JSON.parse(value) : value;
+  }
+  async put(key, value) { this.map.set(key, String(value)); }
+  async delete(key) { this.map.delete(key); }
+}
+
+class MemoryGatewayStore {
+  constructor() { this.records = []; }
+  async upsertSession(session, recordId = "") {
+    const id = recordId || `rec_${this.records.length + 1}`;
+    const index = this.records.findIndex((record) => record.record_id === id);
+    const record = { ...session, record_id: id };
+    if (index >= 0) this.records[index] = record;
+    else this.records.push(record);
+    return { record_id: id };
+  }
+  async recordDecision() {}
+  async loadScreen() { return null; }
+  async resolvePackage() { return null; }
+  async hasHallAudienceInventory() { return false; }
+}
+
+function resolver(memberExists = false) {
   return {
-    fetch: async () => new Response(JSON.stringify({ ok: true, data }), {
-      status: 200,
+    fetch: async () => new Response(JSON.stringify({ ok: true, data: { member_exists: memberExists } }), {
       headers: { "content-type": "application/json" },
     }),
   };
 }
 
-async function identify(payload, url = "https://mmdbkk.com/member/api/liff/identify?t=query-token&code=query-code&promo=query-promo", env = {}) {
-  const response = await worker.fetch(new Request(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-  }), env);
-  const body = await response.json();
-  return { response, body };
+function env() {
+  return {
+    LINE_LOGIN_CHANNEL_ID: "2000000000",
+    LIFF_SESSION_SECRET: "test-only-session-secret-not-production",
+    MEMBER_STATUS_RESOLVER_SECRET: "test-only-member-status-resolver-secret-1234567890",
+    LIFF_IDENTITY_KV: new MemoryKv(),
+    MEMBER_STATUS_RESOLVER: resolver(),
+    LIFF_GATEWAY_STORE: new MemoryGatewayStore(),
+  };
 }
 
-function assertNoAutoRenewalRoute(data, expectedSigilPayment = "/sigil/pay/membership?t=tok") {
-  assert.doesNotMatch(JSON.stringify(data), /\/sigil\/pay\/renewal/);
-  assert.equal(data.safe_next.renewal, null);
-  assert.equal(data.safe_next.sigil_payment, expectedSigilPayment);
-  assert.equal(data.auto_renewal_route_disabled, true);
+function mockLineVerify() {
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    sub: "Userver-verified-only",
+    aud: "2000000000",
+    exp: Math.floor(Date.now() / 1000) + 600,
+  }), { headers: { "content-type": "application/json" } });
 }
 
-describe("LIFF identity bridge", () => {
-  it("routes public membership LIFF flow to the canonical SIGIL member membership gate", async () => {
-    const { response, body } = await identify({
-      line_user_id: "Uabc123",
-      line_display_name: "Jay Public",
-      line_picture_url: "https://profile.example/pic.jpg",
-      entry_route: "public_membership",
-      t: "abc",
-      code: "KJ-PRV-123456",
-      promo: "public-rate",
-    });
-
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("x-mmd-worker"), "member-pages-worker");
-    assert.equal(response.headers.get("x-mmd-page"), "liff-identity-bridge");
-    assert.equal(body.ok, true);
-    assert.equal(body.data.intent, "public_membership");
-    assert.equal(body.data.membership_state, "unknown");
-    assert.equal(body.data.package_state, "unknown");
-    assert.equal(body.data.rich_menu_target, "public_member");
-    assert.equal(body.data.identity_status, "possible_match");
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=abc&code=KJ-PRV-123456&promo=public-rate");
-    assert.equal(body.data.customer_safe_summary.entry_route, "public_membership");
-  });
-
-  it("keeps SIGIL LIFF flow private and review-based", async () => {
-    const { body } = await identify({
-      line_user_id: "Uabc123",
-      entry_route: "sigil_membership",
-      t: "sigil-token",
-      code: "private-code",
-      promo: "renewal",
-    });
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.identity_status, "review_required");
-    assert.equal(body.data.review_required, true);
-    assert.equal(body.data.next_route, "/sigil/membership?t=sigil-token&code=private-code&promo=renewal");
-    assert.equal(body.data.safe_next.sigil_membership, "/sigil/membership?t=sigil-token&code=private-code&promo=renewal");
-    assert.equal(body.data.customer_safe_summary.entry_route, "sigil_membership");
-  });
-
-  it("does not materialize membership, payments, points, or entitlements from LIFF identity alone", async () => {
-    const { body } = await identify({
-      line_user_id: "Uabc123",
-      entry_route: "public_membership",
-      active_points: 9999,
-      proposed_points: 9999,
-      legacy_points: 9999,
-      membership_status: "active",
-      payment_status: "paid",
-      entitlement_level: "blackcard",
-      svip: true,
-      ban_note: "hidden",
-      risk_note: "hidden",
-      internal_note: "hidden",
-    });
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.materialization.membership_active, false);
-    assert.equal(body.data.materialization.points_awarded, false);
-    assert.equal(body.data.materialization.payments_verified, false);
-    assert.equal(body.data.materialization.entitlements_materialized, false);
-    assert.equal(body.data.materialization.reason, "liff_identity_linking_only");
-
-    const rendered = JSON.stringify(body);
-    assert.doesNotMatch(rendered, /9999/);
-    assert.doesNotMatch(rendered, /blackcard/i);
-    assert.doesNotMatch(rendered, /svip/i);
-    assert.doesNotMatch(rendered, /ban_note|risk_note|internal_note|hidden/i);
-  });
-
-  it("preserves only t, code, and promo in safe next routes", async () => {
-    const { body } = await identify({
-      line_user_id: "Uabc123",
-      entry_route: "dashboard",
-      t: "tok",
-      code: "code-1",
-      promo: "promo-1",
-      payment_ref: "should-not-pass",
-      session_id: "should-not-pass",
-      admin: "should-not-pass",
-    });
-
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok&code=code-1&promo=promo-1");
-    assert.equal(body.data.dashboard_unlock.unlocked, false);
-    assert.equal(body.data.dashboard_unlock.holding_route, "/sigil/member/membership?t=tok&code=code-1&promo=promo-1");
-    assert.equal(body.data.dashboard_unlock.reason, "waiting_for_first_real_job_or_session");
-    assert.equal(body.data.safe_next.dashboard, null);
-    assert.equal(body.data.safe_next.payment, "/pay/membership?t=tok&code=code-1&promo=promo-1");
-    assert.doesNotMatch(JSON.stringify(body.data.safe_next), /payment_ref|session_id|admin|should-not-pass/);
-  });
-
-  it("does not route dashboard entry to /member/dashboard from LIFF identity alone", async () => {
-    const { body } = await identify(
-      {
-        line_user_id: "Uabc123",
-        entry_route: "dashboard",
-        t: "tok",
-        membership_status: "active",
-        payment_status: "paid",
-        entitlement_level: "premium",
-      },
-      "https://mmdbkk.com/member/api/liff/identify",
-    );
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(body.data.dashboard_unlock.unlocked, false);
-    assert.equal(body.data.dashboard_unlock.holding_route, "/sigil/member/membership?t=tok");
-    assert.equal(body.data.safe_next.dashboard, null);
-    assert.doesNotMatch(JSON.stringify(body.data), /\/member\/dashboard/);
-  });
-
-  it("does not trust public body fields to unlock /member/dashboard", async () => {
-    const { body } = await identify(
-      {
-        line_user_id: "Uabc123",
-        entry_route: "dashboard",
-        t: "tok",
-        session_id: "sess_real_123",
-        first_real_session_exists: true,
-        session_status: "confirmed",
-      },
-      "https://mmdbkk.com/member/api/liff/identify",
-    );
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(body.data.dashboard_unlock.unlocked, false);
-    assert.equal(body.data.safe_next.dashboard, null);
-  });
-
-  it("unlocks /member/dashboard only after trusted first real job or session evidence exists", async () => {
-    const { body } = await identify(
-      {
-        line_user_id: "Uabc123",
-        entry_route: "dashboard",
-        t: "tok",
-      },
-      "https://mmdbkk.com/member/api/liff/identify",
-      {
-        MEMBER_STATUS_RESOLVER: memberStatusResolver({
-          membership_state: "active",
-          package_state: "current",
-          has_first_job: true,
-          first_session_status: "confirmed",
-        }),
-      },
-    );
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.next_route, "/member/dashboard?t=tok");
-    assert.equal(body.data.dashboard_unlock.unlocked, true);
-    assert.equal(body.data.dashboard_unlock.holding_route, null);
-    assert.equal(body.data.dashboard_unlock.reason, "first_real_job_or_session_exists");
-    assert.equal(body.data.safe_next.dashboard, "/member/dashboard?t=tok");
-  });
-
-  it("member_status active/current returns private rich menu target without dashboard before first job", async () => {
-    const { body } = await identify(
-      {
-        line_user_id: "Uabc123",
-        entry_route: "member_status",
-        t: "tok",
-      },
-      "https://mmdbkk.com/member/api/liff/identify",
-      {
-        MEMBER_STATUS_RESOLVER: memberStatusResolver({
-          membership_state: "active",
-          package_state: "current",
-          has_first_job: false,
-        }),
-      },
-    );
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.intent, "member_status");
-    assert.equal(body.data.membership_state, "active");
-    assert.equal(body.data.package_state, "current");
-    assert.equal(body.data.rich_menu_target, "private_member");
-    assert.equal(body.data.next_route, "/member/profile?t=tok&status=active");
-    assert.equal(body.data.safe_next.booking, "/sigil/booking?t=tok");
-    assert.equal(body.data.safe_next.dashboard, null);
-    assertNoAutoRenewalRoute(body.data);
-  });
-
-  it("member_status expired and renewal route to membership review without auto-renewal", async () => {
-    const env = {
-      MEMBER_STATUS_RESOLVER: memberStatusResolver({
-        membership_state: "expired",
-        package_state: "expired",
-      }),
-    };
-
-    const statusResult = await identify({ line_user_id: "Uabc123", entry_route: "member_status", t: "tok" }, "https://mmdbkk.com/member/api/liff/identify", env);
-    const renewalResult = await identify({ line_user_id: "Uabc123", entry_route: "renewal", t: "tok" }, "https://mmdbkk.com/member/api/liff/identify", env);
-
-    assert.equal(statusResult.body.data.membership_state, "expired");
-    assert.equal(statusResult.body.data.rich_menu_target, "public_member");
-    assert.equal(statusResult.body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(statusResult.body.data.safe_next.booking, null);
-    assertNoAutoRenewalRoute(statusResult.body.data);
-    assert.equal(renewalResult.body.data.intent, "membership_review");
-    assert.equal(renewalResult.body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(renewalResult.body.data.safe_next.dashboard, null);
-    assertNoAutoRenewalRoute(renewalResult.body.data);
-  });
-
-  it("renew entry route normalizes to membership review without auto-renewal", async () => {
-    const { body } = await identify(
-      { line_user_id: "Uabc123", entry_route: "renew", t: "tok" },
-      "https://mmdbkk.com/member/api/liff/identify",
-    );
-
-    assert.equal(body.ok, true);
-    assert.equal(body.data.intent, "membership_review");
-    assert.equal(body.data.next_route, "/sigil/member/membership?t=tok");
-    assertNoAutoRenewalRoute(body.data);
-  });
-
-  it("booking_request active/current routes to /sigil/booking and expired routes to membership", async () => {
-    const active = await identify(
-      { line_user_id: "Uabc123", entry_route: "booking_request", t: "tok" },
-      "https://mmdbkk.com/member/api/liff/identify",
-      {
-        MEMBER_STATUS_RESOLVER: memberStatusResolver({
-          membership_state: "active",
-          package_state: "current",
-        }),
-      },
-    );
-    const expired = await identify(
-      { line_user_id: "Uabc123", entry_route: "booking_request", t: "tok" },
-      "https://mmdbkk.com/member/api/liff/identify",
-      {
-        MEMBER_STATUS_RESOLVER: memberStatusResolver({
-          membership_state: "expired",
-          package_state: "expired",
-        }),
-      },
-    );
-
-    assert.equal(active.body.data.intent, "booking_request");
-    assert.equal(active.body.data.next_route, "/sigil/booking?t=tok");
-    assert.equal(active.body.data.rich_menu_target, "private_member");
-    assert.equal(active.body.data.safe_next.dashboard, null);
-    assert.equal(expired.body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(expired.body.data.rich_menu_target, "public_member");
-    assert.equal(expired.body.data.safe_next.booking, null);
-    assertNoAutoRenewalRoute(expired.body.data);
-  });
-
-  it("payment entry routes go to membership payment without auto-renewal", async () => {
-    for (const entry_route of ["pay_membership", "payment"]) {
-      const { body } = await identify(
-        { line_user_id: "Uabc123", entry_route, t: "tok" },
-        "https://mmdbkk.com/member/api/liff/identify",
-      );
-
-      assert.equal(body.ok, true);
-      assert.equal(body.data.intent, "pay_membership");
-      assert.equal(body.data.next_route, "/pay/membership?t=tok");
-      assert.equal(body.data.safe_next.payment, "/pay/membership?t=tok");
-      assertNoAutoRenewalRoute(body.data);
-    }
-  });
-
-  it("no paid package keeps public member path and unknown never pretends active", async () => {
-    const noPaid = await identify(
-      { line_user_id: "Uabc123", entry_route: "booking_request", t: "tok" },
-      "https://mmdbkk.com/member/api/liff/identify",
-      {
-        MEMBER_STATUS_RESOLVER: memberStatusResolver({
-          membership_state: "no_paid_package",
-          package_state: "none",
-        }),
-      },
-    );
-    const unknown = await identify(
-      { line_user_id: "Uabc123", entry_route: "member_status", t: "tok" },
-      "https://mmdbkk.com/member/api/liff/identify",
-    );
-
-    assert.equal(noPaid.body.data.membership_state, "no_paid_package");
-    assert.equal(noPaid.body.data.package_state, "none");
-    assert.equal(noPaid.body.data.rich_menu_target, "public_member");
-    assert.equal(noPaid.body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(noPaid.body.data.safe_next.booking, null);
-    assertNoAutoRenewalRoute(noPaid.body.data);
-    assert.equal(unknown.body.data.membership_state, "unknown");
-    assert.equal(unknown.body.data.package_state, "unknown");
-    assert.equal(unknown.body.data.rich_menu_target, "public_member");
-    assert.equal(unknown.body.data.next_route, "/sigil/member/membership?t=tok");
-    assert.equal(unknown.body.data.safe_next.dashboard, null);
-    assertNoAutoRenewalRoute(unknown.body.data);
-  });
-
-  it("requires line_user_id", async () => {
+describe("LIFF identity API production entrypoint", () => {
+  it("disables the browser-supplied identity bridge at the actual Worker entrypoint", async () => {
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/identify", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ entry_route: "public_membership" }),
-    }));
+      headers: { origin: "https://mmdbkk.com", "content-type": "application/json" },
+      body: JSON.stringify({ line_user_id: "Uspoof", member_id: "MMD-1" }),
+    }), env());
     const body = await response.json();
 
-    assert.equal(response.status, 400);
-    assert.equal(body.ok, false);
-    assert.equal(body.error.code, "LINE_USER_ID_REQUIRED");
+    assert.equal(response.status, 410);
+    assert.equal(body.error.code, "LEGACY_LIFF_IDENTITY_DISABLED");
+    assert.doesNotMatch(JSON.stringify(body), /Uspoof|MMD-1/);
+  });
+
+  it("routes a verified start through the real entrypoint and stores no raw LINE subject", async () => {
+    const runtime = env();
+    mockLineVerify();
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/start?t=opaque-entry", {
+      method: "POST",
+      headers: { origin: "https://mmdbkk.com", "content-type": "application/json" },
+      body: JSON.stringify({ id_token: "opaque-id-token", liff_intent: "signup" }),
+    }), runtime);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.data.next_screen_key, "audience_select");
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
+    assert.doesNotMatch(JSON.stringify(runtime.LIFF_GATEWAY_STORE.records[0]), /Userver-verified-only|opaque-id-token|opaque-entry/i);
+    assert.deepEqual(body.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+  });
+
+  it("continues to delegate existing member pages to the legacy renderer", async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/member/membership", { method: "GET" }), {});
+    assert.equal(response.status, 301);
+    assert.equal(new URL(response.headers.get("location")).pathname, "/sigil/member/membership");
   });
 });

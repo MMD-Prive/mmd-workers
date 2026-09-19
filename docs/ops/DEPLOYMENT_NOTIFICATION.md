@@ -1,52 +1,79 @@
 # MMD Production Deployment Notifications
 
-All supported MMD Workers must be deployed through the repository-level wrapper. It runs the registered tests and lint command, deploys with the Worker's existing Wrangler configuration, captures the Cloudflare Version ID, runs a read-only HTTP smoke test, and sends a consistent Telegram success or failure notification.
+All supported Worker deployments use one guarded entry point:
 
-The wrapper does not add, remove, or modify Cloudflare routes. The route list in a success notification describes the Worker's configured coverage.
+```bash
+scripts/deploy-worker.sh <worker-name>
+```
+
+The wrapper runs the configured tests and lint command, deploys with Wrangler, captures the Cloudflare Version ID, runs the configured smoke test, sends a Telegram success or failure notification, and exits with the failing command's status. It does not change routes or secrets.
 
 ## Required environment
 
-Export these values in the operator shell or CI secret store. Never put their values in source control or a Wrangler configuration.
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_DEPLOY_CHAT_ID`
 
-```sh
-export TELEGRAM_BOT_TOKEN="..."
-export TELEGRAM_DEPLOY_CHAT_ID="..."
-```
+Set these in the deploy runner or CI secret store. Never add their values to Wrangler config or the repository.
 
-The wrapper validates both variables before tests or deployment. `DEPLOY_USER`, `DEPLOY_ENVIRONMENT`, and `DEPLOY_SMOKE_URL` are optional overrides. GitHub Actions may provide `GITHUB_ACTOR`, `GITHUB_SHA`, and `GITHUB_REF_NAME` instead.
+Optional metadata:
 
-## Deploy a Worker
+- `DEPLOY_ENVIRONMENT` (defaults to `Production`)
+- `DEPLOY_USER` (falls back to `GITHUB_ACTOR`, then the local user)
+- `ROLLBACK_VERSION_ID` (included when the deploy runner knows the previous version)
+- `DEPLOY_CHANGED_ROUTES` (newline-separated routes changed by the release; defaults to none)
+- `DEPLOY_SMOKE_COMMAND` (release-specific smoke command; overrides the registry command)
 
-From the repository root:
+## Supported Workers
 
-```sh
+```bash
 scripts/deploy-worker.sh mmd-redirect-worker
+scripts/deploy-worker.sh payments-worker
+scripts/deploy-worker.sh member-pages-worker
+scripts/deploy-worker.sh member-api-worker
+scripts/deploy-worker.sh sigil-worker
+scripts/deploy-worker.sh telegram-worker
+scripts/deploy-worker.sh chat-worker
+scripts/deploy-worker.sh admin-worker
 ```
 
-The supported registry entries are `mmd-redirect-worker`, `payments-worker`, `member-pages-worker`, `member-api-worker`, `sigil-worker`, `telegram-worker`, `chat-worker`, and `admin-worker`.
+`member-api-worker` is registered but fails closed until its Worker directory and Wrangler config exist in this repository. The registry also covers the existing root deployment scripts for events, SIGIL booking, board, and booking proxy Workers.
 
-`member-api-worker` is reserved but fails closed because no Worker directory or Wrangler configuration with that name exists on the current default branch. Enable it by replacing that one registry entry with its authoritative config, tests, lint, smoke URL, expected statuses, and routes. Future Workers likewise require one entry in `WORKERS` in `shared/deploy-notify.js`, plus an optional package-script alias.
+Where a Worker has no stable smoke command in the repository, the notification reports `SKIP (not configured)`. Production release automation should set `DEPLOY_SMOKE_COMMAND` to its authenticated route-specific smoke check; a bare HTTP status is not treated as business-flow proof.
 
-## Notification behavior
+To add a future Worker, add one entry to `WORKERS` in `shared/deploy-notify.js` with its Wrangler config and optional `test`, `lint`, and `smoke` commands. No notification formatting changes are needed.
 
-- Test, lint, deploy, Version-ID capture, or smoke failure sends a failure message and preserves the failing exit code.
-- The failure message contains the failed command, exit code, Git SHA, and only the final 12 non-empty log lines.
-- A successful deploy sends its Worker, environment, Git/Cloudflare versions, UTC timestamp, deploy user, branch, route coverage, smoke result, and the previous version when Wrangler made it available.
-- Missing Telegram configuration fails before any deployment begins.
-- If Telegram delivery fails after a successful Cloudflare deployment, the wrapper exits non-zero so the missing operational notification cannot be mistaken for a fully successful workflow.
+## npm deployment commands
+
+The repository package scripts call the same wrapper. For example:
+
+```bash
+npm run deploy:mmd-redirect
+npm run deploy:payments
+npm run deploy:member-pages
+npm run deploy:member-api
+npm run deploy:sigil
+npm run deploy:telegram
+npm run deploy:chat
+npm run deploy:admin
+```
 
 ## Rollback notification
 
-Perform rollback operations using the separately approved Cloudflare procedure. After Cloudflare confirms the active version, send the notification without placing secrets in arguments:
+After an operator activates a rollback version through the approved rollback procedure, send the notification with a JSON payload:
 
-```sh
-node shared/deploy-notify.js rollback mmd-redirect-worker \
-  --previous-version "<previous-version-id>" \
-  --new-active-version "<new-active-version-id>" \
-  --reason "<reason>"
+```bash
+node shared/deploy-notify.js rollback /path/to/rollback.json
 ```
 
-This command only sends the notification; it does not execute a rollback, deploy, route change, or other Cloudflare mutation.
+The payload must contain `worker`, `previousVersion`, `newActiveVersion`, and `reason`. The notifier reports the rollback; it does not perform one.
+
+## Safe notification preview
+
+Formatting can be checked without Telegram network access:
+
+```bash
+DEPLOY_NOTIFY_DRY_RUN=1 node shared/deploy-notify.js success /path/to/success.json
+```
 
 ## Message examples
 
@@ -65,57 +92,56 @@ Commit:
 Version:
 e0e9f103-6678-4269-a1cd-7e95314484c0
 
-Deploy timestamp:
-2026-08-03T04:15:00.000Z
+Deploy Timestamp:
+2026-08-05T08:00:00.000Z
 
-Deploy user:
-MMD Ops
+Deploy User:
+per
 
 Branch:
 rescue/pay-renewal-root-20260407
 
-Routes:
-✓ mmdbkk.com/*
-✓ www.mmdbkk.com/*
+Changed Routes:
+✓ mmdbkk.com/blackcard*
+✓ mmdbkk.com/mmd-blackcard*
 
 Smoke Test:
-PASS (HTTP 200: https://mmdbkk.com/)
+PASS
 
-Rollback version:
-50dd9e03-3184-4df4-bb52-a3eafc991040
+Rollback Version:
+Not available
 ```
 
 ```text
 ❌ MMD Deployment Failure
 
 Worker:
-payments-worker
+admin-worker
 
 Command:
-npx wrangler deploy --config payments-worker/wrangler.merged.toml
+npx wrangler deploy --config admin-worker/wrangler.toml
 
-Exit code:
+Exit Code:
 1
 
 Git SHA:
 68fb0a118407c9b794275d06df75ed96d54b5721
 
-Last log lines:
-Authentication error
-Deployment failed
+Last Log Lines:
+<last 12 command log lines>
 ```
 
 ```text
 ↩️ MMD Deployment Rollback
 
 Worker:
-admin-worker
+sigil-worker
 
 Previous Version:
 e0e9f103-6678-4269-a1cd-7e95314484c0
 
 New Active Version:
-50dd9e03-3184-4df4-bb52-a3eafc991040
+92f79d9d-5235-49d8-98f9-adf5c13b2827
 
 Reason:
 Smoke test regression

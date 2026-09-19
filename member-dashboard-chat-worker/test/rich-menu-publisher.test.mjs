@@ -82,15 +82,15 @@ test("service-bound private-member draft returns canonical mapping", async () =>
   assert.equal(payload.rich_menu_type, "private_member");
   assert.equal(payload.rich_menu.name, "MMD Private Member");
   assert.equal(payload.rich_menu.areas.length, 6);
-  assert.equal(payload.rich_menu.areas[0].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=member_status");
-  assert.equal(payload.rich_menu.areas[1].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=points");
-  assert.equal(payload.rich_menu.areas[2].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=renewal");
+  assert.equal(payload.rich_menu.areas[0].action.uri, "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile");
+  assert.equal(payload.rich_menu.areas[1].action.uri, "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=points");
+  assert.equal(payload.rich_menu.areas[2].action.uri, "https://liff.line.me/2010862595-yT4DCEMc?intent=renew&view=profile");
   assert.deepEqual(payload.rich_menu.areas[3].action, {
     type: "postback",
     data: "mmd_action=private_support&source=private_rich_menu",
     displayText: "Private Support",
   });
-  assert.equal(payload.rich_menu.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
+  assert.equal(payload.rich_menu.areas[4].action.uri, "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status");
   assert.deepEqual(payload.rich_menu.areas[5].action, { type: "message", text: "Hi MMD" });
 });
 
@@ -158,7 +158,7 @@ test("draft endpoint returns Public World with Message action Hi Per and safe ro
   assert.equal(payload.draft.areas[0].action.text, "Hi Per");
   assert.equal(payload.rich_menu.areas.length, 6);
   assert.equal(payload.draft.areas[3].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
-  assert.equal(payload.draft.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
+  assert.equal(payload.draft.areas[4].action.uri, "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status");
   assert.deepEqual(payload.draft.areas[5].action, { type: "message", text: "Hi MMD" });
   assert.doesNotMatch(rendered, /\/member\/dashboard/);
   assert.doesNotMatch(rendered, /\/internal|\/admin/);

@@ -1,5 +1,8 @@
 # MMD Dirty Patch Quarantine - 2026-07-02
 
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
 ## Context
 
 PR #128 merged the route governance connector lock into `main`.
@@ -10,40 +13,49 @@ PR #128 merged the route governance connector lock into `main`.
 
 This report documents the old dirty patch quarantine after the route governance lock. The patch was reviewed read-only and was not applied.
 
+> Current override — 2026-09-13: route-role statements below are historical. `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md` is authoritative for membership-payment aliases and signed payment handoff. The quarantine decision itself remains valid.
+
 Dirty patch file:
 
 `/Users/Hiright_1/.mmd-secrets/codexmin-backups/mmd-workers-dirty-before-clean-worktree-route-lock.patch`
 
-## Route Lock
+## Current Route Lock
 
-- `/sigil/pay/membership` is a permanent membership payment route.
-- `/pay/membership` is a membership payment route.
-- `/sigil/pay/renewal` is manual legacy renewal evidence only.
-- `/pay/renewal` is manual legacy renewal evidence only.
-- Membership routes must never redirect to `/sigil/pay/renewal`.
+- `/pay/membership` is the canonical Public Membership selection entry for MMD Member / Elite / Red Card; it is selection UI only and never payment authority.
+- `/sigil/member/membership` is the canonical Private Membership selection / signup / renewal / upgrade entry for Standard / Premium and private access.
+- signed `/sigil/pay?t=...` is the canonical exact payment + proof surface after a backend-owned payment intent exists.
+- `/member/payments` is payment history/status/navigation only.
+- `/pay/membership` is the canonical Public Membership selection UI and is never payment authority.
+- `/sigil/pay/membership` is a Private legacy compatibility bridge only and is never payment authority.
+- `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes: signed `t` -> `/sigil/pay?t=...`; unsigned -> `/sigil/member/membership?intent=renew`; no fallback UI.
+- `/sigil/pay/renew` is a compatibility alias: signed `t` -> `/sigil/pay?t=<same token>`; unsigned -> `/sigil/member/membership?intent=renew`.
+- `/sigil/pay/payment` is a retired generic payment alias.
+- Membership aliases must never be treated as renewal evidence or redirected into `/sigil/pay/renewal` by generic route logic.
 - Unknown routes must never redirect to `/default`, `/autodirect`, or `/sigil/pay/renewal`.
-- `member-dashboard-chat-worker` must never own `/sigil/pay/membership`.
+- `payments-worker` remains the sole owner of payment amount, destination, PromptPay QR, canonical payment reference and verification.
+- `mmd-redirect-worker` is currently hard-disabled and must remain transparent pass-through unless a new explicit owner directive changes that lock.
 
 ## Files Reviewed
 
 | File | General purpose of dirty change | Route keywords | Route ownership impact | Conflict risk | Recommendation |
 | --- | --- | --- | --- | --- | --- |
 | `events-worker/src/index.js` | Removes two leftover conflict-marker lines near `airtableSumPaidForStage`; unrelated to route ownership. | None of `/sigil/pay/membership`, `/sigil/pay/renewal`, `/pay/membership`, `/pay/renewal`, `/default`, `/autodirect`. | No route ownership impact. | No route-lock conflict found. | Safe to rebuild later from current `origin/main` in a separate events-worker branch if still needed. |
-| `mmd-redirect-worker/src/index.js` | Edits redirect worker route guard area involving membership and renewal paths. | Mentions `/sigil/pay/membership`, `/sigil/pay/renewal`, `/pay/membership`, `/pay/renewal`; does not mention `/default` or `/autodirect`. | Yes, this file owns front-door redirect behavior. | Yes. It predates the final PR #128 governance lock and could restore stale membership-to-renewal behavior if reapplied blindly. | Unsafe to reapply as-is. Rebuild any needed redirect change manually from current `origin/main` only. |
-| `mmd-redirect-worker/test/redirect.test.mjs` | Adds redirect tests around SIGIL membership and renewal behavior. | Mentions `/sigil/pay/membership`, `/sigil/pay/renewal`, `/pay/membership`, `/pay/renewal`; does not mention `/default` or `/autodirect`. | Indirectly, by test expectations for route behavior. | Yes. The stale tests could weaken or conflict with the PR #128 governance connector expectations. | Unsafe to reapply as-is. Rebuild any needed tests manually from current `origin/main` only. |
+| `mmd-redirect-worker/src/index.js` | Edits redirect worker route guard area involving membership and renewal paths. | Mentions `/sigil/pay/membership`, `/sigil/pay/renewal`, `/pay/membership`, `/pay/renewal`; does not mention `/default` or `/autodirect`. | Yes. It attempted to restore front-door redirect behavior. | Critical. The current redirect worker is hard-disabled and the dirty patch predates both that lock and the 2026-09-13 payment bridge canon. | Do not reapply. Any future edge alias retirement must use an explicitly approved live route owner and dedicated tests. |
+| `mmd-redirect-worker/test/redirect.test.mjs` | Adds redirect tests around SIGIL membership and renewal behavior. | Mentions `/sigil/pay/membership`, `/sigil/pay/renewal`, `/pay/membership`, `/pay/renewal`; does not mention `/default` or `/autodirect`. | Indirectly, by test expectations for route behavior. | Critical if they imply the disabled redirect worker should route payment aliases. | Do not reapply. Current tests must assert pass-through for the disabled worker and payment bridge behavior in the bridge-specific tests. |
 
 ## Route-Lock Conflict Summary
 
 The `events-worker` portion appears unrelated to route governance.
 
-The `mmd-redirect-worker` source and test portions are quarantined. They mention both membership payment routes and renewal routes, and they were created before the final governance connector lock. They must not be applied directly to current `main`.
+The `mmd-redirect-worker` source and test portions are permanently quarantined in their old form. They mention both membership payment aliases and renewal routes and were created before the current hard-disable directive and payment bridge canon. They must not be applied directly to current `main`.
 
 Required safeguards:
 
 - Do not reapply the `mmd-redirect-worker` source/test dirty patch as-is.
-- Rebuild any needed `mmd-redirect-worker` changes manually from current `origin/main` only.
-- Run `node tools/mmd-route-governance-connector.mjs` before and after any future `mmd-redirect-worker` change.
-- Keep `/sigil/pay/membership` and `/pay/membership` out of renewal logic.
+- Do not restore routing logic inside `mmd-redirect-worker` while `REDIRECT_WORKER_DISABLED` remains true.
+- Run `node tools/mmd-route-governance-connector.mjs` before and after any future route-owner change.
+- Keep `/sigil/pay/membership` and `/pay/membership` out of renewal authority logic.
+- Never accept browser amount/account/package parameters as payment authority while handling compatibility aliases.
 - Do not create fallback/default/autodirect behavior that sends unknown routes to renewal.
 
 ## Events-Worker Safe Rebuild Plan

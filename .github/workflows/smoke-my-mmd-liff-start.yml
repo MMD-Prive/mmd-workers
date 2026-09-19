@@ -1,0 +1,66 @@
+name: Smoke My MMD LIFF start
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy member-pages-worker"
+    types:
+      - completed
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production LIFF start reaches LINE token verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          for host in mmdbkk.com www.mmdbkk.com; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            status="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" \
+              -X POST "https://${host}/member/api/liff/start" \
+              -H 'accept: application/json' \
+              -H 'content-type: application/json' \
+              -H "origin: https://${host}" \
+              --data '{"id_token":"mmd-production-config-smoke-invalid-token","intent":"status","liff_intent":"status"}' || true)"
+
+            echo "${host} /member/api/liff/start invalid-token smoke -> HTTP ${status}"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
+            grep -qi '^x-mmd-upstream-service: member-pages-worker' "$headers"
+
+            node - "$body" "$status" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const status = Number(process.argv[3]);
+          const code = String(payload?.error?.code || "");
+          const forbidden = new Set([
+            "LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED",
+            "LIFF_GATEWAY_STORAGE_NOT_CONFIGURED",
+            "LINE_CHANNEL_NOT_CONFIGURED",
+            "MEMBER_RESOLUTION_FAILED",
+          ]);
+          if (status === 503 || forbidden.has(code)) {
+            throw new Error(`LIFF start stopped before LINE token verification: HTTP_${status} ${code || "unknown"}`);
+          }
+          if (payload?.ok === true) {
+            throw new Error("Synthetic invalid token unexpectedly created a verified LIFF session");
+          }
+          if (!code) throw new Error("LIFF start did not return a bounded JSON error code");
+          console.log(`LIFF start config gate passed; controlled downstream rejection=${code}`);
+          NODE
+          done
+
+      - name: Record LIFF start production smoke receipt
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ MY MMD LIFF START CONFIG GATE LIVE VERIFIED\n\n- member-pages deploy run: \`${{ github.event.workflow_run.id }}\`\n- checked_at: \`$(date -u +%Y-%m-%dT%H:%M:%SZ)\`\n- apex + www route ownership verified\n- synthetic invalid token reached controlled LINE token verification rejection\n- no customer identity, membership, entitlement, payment, points, or history data used or mutated"
