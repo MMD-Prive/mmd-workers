@@ -391,7 +391,7 @@
   }
 
   function goDashboardSoon() {
-    if (!location || typeof location.assign !== 'function') return;
+    if (typeof location === 'undefined' || typeof location.assign !== 'function' || typeof setTimeout !== 'function') return;
     setTimeout(() => location.assign(DASHBOARD), 1200);
   }
 
