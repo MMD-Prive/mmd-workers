@@ -92,6 +92,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ORIGIN="${ORIGIN:-https://mmdbkk.com}"
+          echo "ORIGIN=$ORIGIN" >> "$GITHUB_ENV"
           test -n "${ADMIN_LOGIN_CREDENTIAL:-}"
           echo "::add-mask::$ADMIN_LOGIN_CREDENTIAL"
 
