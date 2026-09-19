@@ -237,8 +237,9 @@ export function projectRecoveryRecord(record = {}) {
   const payload = parseObject(fields[F.PAYLOAD]);
   const recovery = parseObject(payload.recovery_case);
   const tracking = parseObject(payload.handoff_tracking);
-  const caseRef = normalizeCaseRef(recovery.case_ref || tracking.id || fields[F.PENDING_REF]);
+  const caseRef = normalizeCaseRef(recovery.case_ref);
   if (!caseRef) return null;
+  if (normalizeCaseRef(tracking.id || fields[F.PENDING_REF]) !== caseRef) return null;
 
   const domain = normalizeRecoveryDomain(recovery.domain);
   const state = token(tracking.state || recovery.state) || "prepared";
