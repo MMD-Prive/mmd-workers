@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleRequest, normalizeCalEvent, persistCalBookingLink } from './src/index.js';
+import { ensureInternalHoldDirect, handleInternalHoldRequest, internalHoldHealth } from './src/internal-hold-writer.js';
 
 async function sign(body, secret) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -89,4 +90,137 @@ test('rejects an invalid Cal webhook signature', async () => {
 test('fails closed when webhook secret is missing', async () => {
   const response=await handleRequest(new Request('https://example.test/webhooks/cal',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}),{});
   assert.equal(response.status,503);
+});
+
+
+test('internal hold writer creates one real Cal projection from confirmed unpaid Session', async () => {
+  const calls = [];
+  const fetchImpl = async (input, init = {}) => {
+    const url = String(input);
+    const method = String(init.method || 'GET').toUpperCase();
+    calls.push({ url, method, init });
+    if (url.includes('tbl6saWYEQrEdnMIK') && method === 'GET') return Response.json({ records: [] });
+    if (url.includes('tblC98mKWbzmPuNzX') && method === 'GET') {
+      return Response.json({ records: [{ id:'recSession', fields:{
+        fldLTq2kZbyRv22IA:'SES-LIVE-1',
+        fldHw5HdDDdkHXMhG:'JOB-LIVE-1',
+        flddVz6eoWRHrzIQr:'Model Live',
+        fldBeG0FkWwa8kgnp:'2026-10-02T12:00:00.000Z',
+        fldiDSz0wW9Ct9I3P:'2026-10-02T13:30:00.000Z',
+        fldP7Xx99uf5BvJpF:1.5,
+        fld57fhdWqIcOy4Jp:'model_confirmed',
+        fldojgjSQLaO0uQLX:'PAY-LIVE-1',
+      }}] });
+    }
+    if (url.includes('tblWGGJJOx5eBvBZJ') && method === 'GET') {
+      return Response.json({ records: [{ id:'recPayment', fields:{
+        fld2wdhBvc8xrV6y5:'SES-LIVE-1',
+        fldOO6SY49iDw8VBZ:'PAY-LIVE-1',
+        fldrr9g8ZZjqAbdKQ:'deposit',
+        fldJ7a0Ube9F0bmRy:'pending_review',
+        fldEJ1hmm7KwWuI6q:'pending',
+      }}] });
+    }
+    if (url === 'https://api.cal.com/v2/bookings' && method === 'POST') {
+      const body = JSON.parse(init.body);
+      assert.equal(init.headers['cal-api-version'],'2026-02-25');
+      assert.equal(body.eventTypeId,7057823);
+      assert.equal(body.start,'2026-10-02T12:00:00.000Z');
+      assert.equal(body.lengthInMinutes,90);
+      assert.equal(body.attendee.email,'malemodel.bkk@gmail.com');
+      assert.equal(body.metadata.session_id,'SES-LIVE-1');
+      assert.equal(body.metadata.job_id,'JOB-LIVE-1');
+      assert.equal(body.metadata.hold_kind,'internal_hold');
+      assert.equal(body.allowConflicts,true);
+      assert.equal(body.allowBookingOutOfBounds,true);
+      return Response.json({ status:'success', data:{
+        id:991,
+        uid:'cal-live-uid-1',
+        start:'2026-10-02T12:00:00.000Z',
+        end:'2026-10-02T13:30:00.000Z',
+      } }, { status:201 });
+    }
+    if (url.includes('tbl6saWYEQrEdnMIK') && method === 'POST') {
+      const body = JSON.parse(init.body);
+      assert.equal(body.fields['Cal Booking UID'],'cal-live-uid-1');
+      assert.equal(body.fields['Session ID'],'SES-LIVE-1');
+      assert.equal(body.fields.Source,'cal_sync_writer');
+      return Response.json({ id:'recCalLive1' });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+
+  const result = await ensureInternalHoldDirect({
+    AIRTABLE_API_KEY:'airtable-test',
+    CAL_API_KEY:'cal-test',
+    AIRTABLE_BASE_ID:'appsV1ILPRfIjkaYg',
+    CAL_INTERNAL_HOLD_EVENT_TYPE_ID:'7057823',
+    CAL_INTERNAL_ATTENDEE_EMAIL:'malemodel.bkk@gmail.com',
+    MMD_TIMEZONE:'Asia/Bangkok',
+  }, 'SES-LIVE-1', { fetchImpl, now:Date.parse('2026-09-20T00:00:00Z') });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.state,'created');
+  assert.equal(result.booking_uid,'cal-live-uid-1');
+  assert.equal(calls.filter(x=>x.url==='https://api.cal.com/v2/bookings').length,1);
+});
+
+test('internal hold writer uses Payments truth and skips verified deposit', async () => {
+  let calCalls = 0;
+  const fetchImpl = async (input, init = {}) => {
+    const url = String(input), method=String(init.method||'GET').toUpperCase();
+    if (url.includes('tbl6saWYEQrEdnMIK') && method === 'GET') return Response.json({ records: [] });
+    if (url.includes('tblC98mKWbzmPuNzX') && method === 'GET') {
+      return Response.json({ records: [{ id:'recSession', fields:{
+        fldLTq2kZbyRv22IA:'SES-PAID-1',
+        fldHw5HdDDdkHXMhG:'JOB-PAID-1',
+        fldBeG0FkWwa8kgnp:'2026-10-02T12:00:00.000Z',
+        fldiDSz0wW9Ct9I3P:'2026-10-02T13:30:00.000Z',
+        fld57fhdWqIcOy4Jp:'confirmed',
+        fldojgjSQLaO0uQLX:'PAY-PAID-1',
+      }}] });
+    }
+    if (url.includes('tblWGGJJOx5eBvBZJ') && method === 'GET') {
+      return Response.json({ records: [{ id:'recPayment', fields:{
+        fld2wdhBvc8xrV6y5:'SES-PAID-1',
+        fldOO6SY49iDw8VBZ:'PAY-PAID-1',
+        fldrr9g8ZZjqAbdKQ:'deposit',
+        fldJ7a0Ube9F0bmRy:'official_verified',
+        fldEJ1hmm7KwWuI6q:'paid',
+      }}] });
+    }
+    if (url.startsWith('https://api.cal.com/')) calCalls += 1;
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  const result=await ensureInternalHoldDirect({AIRTABLE_API_KEY:'test',CAL_API_KEY:'test'},'SES-PAID-1',{
+    fetchImpl,now:Date.parse('2026-09-20T00:00:00Z'),
+  });
+  assert.deepEqual(result,{ok:true,state:'skipped',reason:'deposit_already_verified'});
+  assert.equal(calCalls,0);
+});
+
+test('internal hold mutation route is private service-binding only', async () => {
+  const publicResponse = await handleInternalHoldRequest(new Request('https://cal-sync-worker.malemodel-bkk.workers.dev/internal/holds/ensure',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session_id:'SES-1'}),
+  }),{CAL_INTERNAL_HOLD_WRITE_ENABLED:'true'});
+  assert.equal(publicResponse,null);
+
+  const disabled = await handleInternalHoldRequest(new Request('https://cal-sync.internal/internal/holds/ensure',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({session_id:'SES-1'}),
+  }),{CAL_INTERNAL_HOLD_WRITE_ENABLED:'false'});
+  assert.equal(disabled.status,503);
+  assert.equal((await disabled.json()).error,'internal_hold_write_disabled');
+});
+
+test('internal hold health keeps webhook bridge shadow while exposing narrow writer readiness', () => {
+  const namespace={idFromName(){return 'id'}};
+  const health=internalHoldHealth({
+    CAL_INTERNAL_HOLD_WRITE_ENABLED:'true',
+    CAL_HOLD_COORDINATOR:namespace,
+    CAL_INTERNAL_HOLD_EVENT_TYPE_ID:'7057823',
+  });
+  assert.equal(health.write_enabled,true);
+  assert.equal(health.coordinator_configured,true);
+  assert.equal(health.event_type_id,7057823);
+  assert.equal(health.writer,'cal-sync-worker');
 });
