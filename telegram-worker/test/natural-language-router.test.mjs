@@ -194,10 +194,10 @@ test("ambiguous natural-language question asks for clarification without reading
   }
 });
 
-test("natural-language points and coupons remain canonical routes, not inline wallet truth", { concurrency: false }, async () => {
+test("natural-language Points and Coupon questions read bounded wallet truth in private chat", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const sends = [];
-  let operationsCalled = false;
+  const calls = [];
 
   globalThis.fetch = async (_url, init = {}) => {
     const payload = JSON.parse(String(init.body || "{}"));
@@ -206,24 +206,73 @@ test("natural-language points and coupons remain canonical routes, not inline wa
   };
 
   try {
-    for (const text of ["แต้มผมมีเท่าไหร่", "คูปองใช้ได้ไหม"]) {
+    for (const [text, scope] of [["แต้มผมมีเท่าไหร่", "points"], ["คูปองใช้ได้ไหม", "coupons"]]) {
       const response = await worker.fetch(request(text), env({
+        HYPE_OPERATIONS: {
+          async fetch(req) {
+            const payload = JSON.parse(await req.clone().text());
+            calls.push({ path: new URL(req.url).pathname, payload });
+            return Response.json(scope === "points" ? {
+              ok: true,
+              state: "ready",
+              display_name: "ลูกค้า A",
+              scope,
+              points: { status: "verified", active_points: 500, rate_thb_per_point: 100 },
+              coupon: { status: "not_requested", code: null, approved_discount_percent: null, expires_at: null, single_use: true },
+            } : {
+              ok: true,
+              state: "ready",
+              display_name: "ลูกค้า A",
+              scope,
+              points: { status: "not_requested", active_points: null, rate_thb_per_point: 100 },
+              coupon: { status: "ready", code: "ABC234", approved_discount_percent: 5, expires_at: "2026-11-19T16:59:59.999Z", single_use: true },
+            });
+          },
+        },
+      }));
+      const body = await response.json();
+      assert.equal(body.flow, `hype_operating_${scope}_inline`);
+      assert.equal(body.ok, true);
+    }
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls.every((item) => item.path === "/__internal/hype/member-wallet"), true);
+    assert.deepEqual(calls.map((item) => item.payload.scope), ["points", "coupons"]);
+    assert.match(sends[0].text, /Active Points:<\/b> 500 Points/);
+    assert.match(sends[0].text, /100 THB = 1 Point/);
+    assert.match(sends[1].text, /ABC234/);
+    assert.match(sends[1].text, /Approved discount:<\/b> 5%/);
+    assert.doesNotMatch(sends.map((x) => x.text).join("\n"), /canonical_client_id|line_user_id|member_id|claim_record_id/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("natural-language Points and Coupon questions stay route-only in group chat", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let operationsCalled = false;
+  const sends = [];
+
+  globalThis.fetch = async (_url, init = {}) => {
+    sends.push(JSON.parse(String(init.body || "{}")));
+    return Response.json({ ok: true, result: { message_id: 1010 + sends.length } });
+  };
+
+  try {
+    for (const text of ["แต้มผมมีเท่าไหร่", "คูปองใช้ได้ไหม"]) {
+      const response = await worker.fetch(request(text, { id: -1002073919780, type: "supergroup" }), env({
         HYPE_OPERATIONS: {
           async fetch() {
             operationsCalled = true;
-            throw new Error("route-only intents must not read status projection");
+            throw new Error("group wallet command must not read private truth");
           },
         },
       }));
       const body = await response.json();
       assert.match(body.flow, /hype_operating_(points|coupons)_route/);
     }
-
     assert.equal(operationsCalled, false);
-    assert.equal(sends.length, 2);
-    assert.match(sends[0].text, /MY MMD/);
-    assert.match(sends[1].text, /Coupon Wallet|คูปอง/i);
-    assert.doesNotMatch(sends.map((x) => x.text).join("\n"), /points balance|coupon code|เหลือ 500/i);
+    assert.doesNotMatch(sends.map((item) => item.text).join("\n"), /500|ABC234|Active Points|Code:/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
