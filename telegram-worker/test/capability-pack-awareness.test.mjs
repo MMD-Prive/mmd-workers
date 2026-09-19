@@ -98,6 +98,38 @@ test("HYPE Shop Orders reads bounded member-owned Order Payment Fulfillment trut
   }
 });
 
+test("HYPE never reads private Shop Orders in a group", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let sent = null;
+  let operationsCalled = false;
+  globalThis.fetch = async (_url, init = {}) => {
+    sent = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 30015 } });
+  };
+
+  try {
+    const response = await worker.fetch(req("/orders", {
+      chatId: -1002073919780,
+      chatType: "supergroup",
+    }), env({
+      HYPE_OPERATIONS: {
+        async fetch() {
+          operationsCalled = true;
+          throw new Error("group must not resolve private shop orders");
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_operating_private_required");
+    assert.equal(operationsCalled, false);
+    assert.match(sent.text, /เฉพาะใน private chat/);
+    assert.doesNotMatch(sent.text, /MMD-ORDER|Payment:<\/b>|Tracking:<\/b>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE Hall awareness is group-safe and never resolves private Client context", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   let sent = null;
@@ -399,6 +431,15 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
             handoff_id: "HYPE-PER-20260919120000-deadbeef",
             target: "per",
             updated_at: "2026-09-19T12:01:00.000Z",
+            recovery_correlation: {
+              domain: "mmd_shop",
+              state: "correlated",
+              correlated: true,
+              case_ref: "HYPE-PER-20260919120000-deadbeef",
+              order_id: "MMD-ORDER-001",
+              payment_status: "paid",
+              fulfillment_state: "shipped",
+            },
           });
         },
       },
@@ -411,6 +452,8 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
     assert.equal(statusRead.telegram_user_id, "111111");
     assert.match(sent.text, /ทีมกำลังตรวจสอบ/);
     assert.match(sent.text, /HYPE-PER-20260919120000-deadbeef/);
+    assert.match(sent.text, /MMD-ORDER-001/);
+    assert.match(sent.text, /payment paid · fulfillment shipped/);
     assert.doesNotMatch(sent.text, /แจ้งลูกค้าแล้ว|แก้ไขแล้วและยืนยัน/i);
   } finally {
     globalThis.fetch = originalFetch;
