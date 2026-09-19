@@ -124,7 +124,7 @@ function calendarLoginRedirect(request) {
   login.searchParams.set("next", CALENDAR_PAGE_PATH);
   return Response.redirect(login.toString(), 302);
 }
-async function calendarReconcileResponse(env, url, method) {
+async function calendarReconcileResponse(request, env, url, method) {
   const binding = env?.CAL_SYNC_WORKER;
   if (!binding || typeof binding.fetch !== "function") {
     return calendarJsonResponse({ ok: false, error: "cal_sync_service_binding_missing" }, 503);
@@ -132,16 +132,27 @@ async function calendarReconcileResponse(env, url, method) {
   if (!["GET", "POST"].includes(method)) {
     return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
   }
-  const target = new URL("https://cal-sync.internal/internal/holds/reconcile");
-  for (const name of ["horizon_days", "limit"]) {
-    const value = clean(url.searchParams.get(name), 20);
-    if (value) target.searchParams.set(name, value);
+  let targetedSessionId = "";
+  if (method === "POST") {
+    const body = await request.clone().json().catch(() => null);
+    targetedSessionId = clean(body?.session_id, 180);
+  }
+  const target = new URL(targetedSessionId
+    ? "https://cal-sync.internal/internal/holds/ensure"
+    : "https://cal-sync.internal/internal/holds/reconcile");
+  if (!targetedSessionId) {
+    for (const name of ["horizon_days", "limit"]) {
+      const value = clean(url.searchParams.get(name), 20);
+      if (value) target.searchParams.set(name, value);
+    }
   }
   try {
-    const response = await binding.fetch(new Request(target.toString(), {
-      method,
-      headers: { accept: "application/json" },
-    }));
+    const init = { method, headers: { accept: "application/json" } };
+    if (targetedSessionId) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify({ session_id: targetedSessionId });
+    }
+    const response = await binding.fetch(new Request(target.toString(), init));
     const body = await response.text();
     const headers = new Headers({
       "content-type": "application/json; charset=utf-8",
@@ -162,7 +173,7 @@ async function handleCalendar(request, env, ctx, url, method) {
     return calendarJsonResponse({ ok: false, error: "owner_admin_session_required" }, 401);
   }
   if (url.pathname === CALENDAR_RECONCILE_API_PATH) {
-    return calendarReconcileResponse(env, url, method);
+    return calendarReconcileResponse(request, env, url, method);
   }
   const date = url.searchParams.get("date");
   if (date !== null && !calendarDate(date)) return calendarJsonResponse({ ok: false, error: "invalid_calendar_date" }, 400);
