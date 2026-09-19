@@ -7,7 +7,13 @@ const STATES = new Set([
   "preparing",
   "ready",
   "shipped",
+  "delivered",
+  "delivery_failed",
   "completed",
+  "return_requested",
+  "return_received",
+  "refund_pending",
+  "refunded",
   "cancelled",
 ]);
 
@@ -64,13 +70,23 @@ export function createMmdShopFulfillment(input = {}) {
     shipping_notification_status: "",
     shipping_notification_key: "",
     shipping_notified_at: "",
+    refund_reference: "",
+    refund_method: "",
+    refund_amount_thb: null,
+    return_note: "",
     created_at: now,
     updated_at: now,
     confirmed_at: "",
     preparing_at: "",
     ready_at: "",
     shipped_at: "",
+    delivered_at: "",
+    delivery_failed_at: "",
     completed_at: "",
+    return_requested_at: "",
+    return_received_at: "",
+    refund_pending_at: "",
+    refunded_at: "",
     cancelled_at: "",
   });
 }
@@ -124,7 +140,13 @@ export function transitionMmdShopFulfillment(current, patch = {}) {
   if (state === "preparing" && !next.preparing_at) next.preparing_at = now;
   if (state === "ready" && !next.ready_at) next.ready_at = now;
   if (state === "shipped" && !next.shipped_at) next.shipped_at = now;
+  if (state === "delivered" && !next.delivered_at) next.delivered_at = now;
+  if (state === "delivery_failed" && !next.delivery_failed_at) next.delivery_failed_at = now;
   if (state === "completed" && !next.completed_at) next.completed_at = now;
+  if (state === "return_requested" && !next.return_requested_at) next.return_requested_at = now;
+  if (state === "return_received" && !next.return_received_at) next.return_received_at = now;
+  if (state === "refund_pending" && !next.refund_pending_at) next.refund_pending_at = now;
+  if (state === "refunded" && !next.refunded_at) next.refunded_at = now;
   if (state === "cancelled" && !next.cancelled_at) next.cancelled_at = now;
 
   return next;
@@ -156,12 +178,20 @@ export function publicMmdShopFulfillment(value, options = {}) {
     fulfillment_note: item.fulfillment_note || null,
     shipping_notification_status: item.shipping_notification_status || null,
     shipping_notified_at: item.shipping_notified_at || null,
+    refund_method: item.refund_method || null,
+    refund_amount_thb: Number.isFinite(item.refund_amount_thb) ? item.refund_amount_thb : null,
     updated_at: item.updated_at || null,
     confirmed_at: item.confirmed_at || null,
     preparing_at: item.preparing_at || null,
     ready_at: item.ready_at || null,
     shipped_at: item.shipped_at || null,
+    delivered_at: item.delivered_at || null,
+    delivery_failed_at: item.delivery_failed_at || null,
     completed_at: item.completed_at || null,
+    return_requested_at: item.return_requested_at || null,
+    return_received_at: item.return_received_at || null,
+    refund_pending_at: item.refund_pending_at || null,
+    refunded_at: item.refunded_at || null,
     cancelled_at: item.cancelled_at || null,
   };
 }
@@ -170,9 +200,12 @@ export function fulfillmentStateFromOrder(orderStatus, paymentStatus, currentSta
   const order = code(orderStatus);
   const payment = code(paymentStatus);
   const current = code(currentState);
+  const aftercare = new Set(["return_requested", "return_received", "refund_pending", "refunded"]);
+  if (current && aftercare.has(current)) return current;
   if (order === "fulfilled") return "completed";
   if (order === "cancelled") return "cancelled";
   if (current && STATES.has(current) && current !== "awaiting_payment") return current;
+  if (payment === "refunded") return "refunded";
   if (payment === "paid" && order === "confirmed") return "confirmed";
   return "awaiting_payment";
 }
@@ -196,6 +229,10 @@ function pickFulfillmentPatch(patch) {
     "shipping_notification_status",
     "shipping_notification_key",
     "shipping_notified_at",
+    "refund_reference",
+    "refund_method",
+    "refund_amount_thb",
+    "return_note",
   ]) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) out[key] = patch[key];
   }
@@ -224,13 +261,23 @@ function sanitizeFulfillment(value) {
     shipping_notification_status: clean(value?.shipping_notification_status, 80),
     shipping_notification_key: clean(value?.shipping_notification_key, 500),
     shipping_notified_at: clean(value?.shipping_notified_at, 80),
+    refund_reference: clean(value?.refund_reference, 220),
+    refund_method: clean(value?.refund_method, 120),
+    refund_amount_thb: moneyOrNull(value?.refund_amount_thb),
+    return_note: clean(value?.return_note, 1200),
     created_at: clean(value?.created_at, 80),
     updated_at: clean(value?.updated_at, 80),
     confirmed_at: clean(value?.confirmed_at, 80),
     preparing_at: clean(value?.preparing_at, 80),
     ready_at: clean(value?.ready_at, 80),
     shipped_at: clean(value?.shipped_at, 80),
+    delivered_at: clean(value?.delivered_at, 80),
+    delivery_failed_at: clean(value?.delivery_failed_at, 80),
     completed_at: clean(value?.completed_at, 80),
+    return_requested_at: clean(value?.return_requested_at, 80),
+    return_received_at: clean(value?.return_received_at, 80),
+    refund_pending_at: clean(value?.refund_pending_at, 80),
+    refunded_at: clean(value?.refunded_at, 80),
     cancelled_at: clean(value?.cancelled_at, 80),
   };
 }
@@ -247,6 +294,12 @@ function normalizePhone(value) {
     .replace(/^\+66/, "0")
     .replace(/\+/g, "")
     .slice(0, 20);
+}
+
+function moneyOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? Math.round((n + Number.EPSILON) * 100) / 100 : null;
 }
 
 function code(value) {
