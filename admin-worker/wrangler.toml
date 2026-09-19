@@ -407,6 +407,40 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/internal/admin/kenji-knowledge*"
 zone_name = "mmdbkk.com"
 
+# Owner-only MY MMD Recovery Diagnostic. Runtime pathname matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/my-mmd/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
+zone_name = "mmdbkk.com"
+
 # Kenji Admin canonical control centre.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji"
