@@ -348,6 +348,376 @@ test("HYPE Shop recovery correlates canonical Order Payment Fulfillment and reus
   }
 });
 
+
+test("ambiguous Shop recovery offers safe options and customer selection binds one owned Order to the same Case", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let matrixRecord = null;
+  const matrixWrites = [];
+  let shopReads = 0;
+
+  const clients = [
+    {
+      id: "recClientA1",
+      fields: {
+        telegram_user_id: "111111",
+        telegram_verification_status: "verified",
+        line_user_id: "U0123456789abcdef0123456789abcdef",
+        "Client Name": "Client A",
+      },
+    },
+    {
+      id: "recClientB2",
+      fields: {
+        telegram_user_id: "222222",
+        telegram_verification_status: "verified",
+        line_user_id: "Uffffffffffffffffffffffffffffffff",
+        "Client Name": "Client B",
+      },
+    },
+  ];
+
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const method = String(init.method || "GET").toUpperCase();
+    if (parsed.pathname.endsWith("/tblClients/recClientA1")) return Response.json(clients[0]);
+    if (parsed.pathname.endsWith("/tblClients/recClientB2")) return Response.json(clients[1]);
+    if (parsed.pathname.endsWith("/tblClients")) return Response.json({ records: clients });
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") {
+      return Response.json({ records: matrixRecord ? [matrixRecord] : [] });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && (method === "POST" || method === "PATCH")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      matrixWrites.push(payload);
+      const row = payload.records[0];
+      matrixRecord = {
+        id: row.id || "recMatrixPicker1",
+        fields: { ...(matrixRecord?.fields || {}), ...(row.fields || {}) },
+      };
+      return Response.json({ records: [matrixRecord] });
+    }
+    if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
+    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+  };
+
+  const shopBinding = {
+    async fetch(request) {
+      shopReads += 1;
+      const body = JSON.parse(await request.clone().text());
+      assert.equal(body.line_user_id, "U0123456789abcdef0123456789abcdef");
+      if (body.order_id === "MMD-ORDER-B") {
+        return Response.json({
+          ok: true,
+          authority: "mmd.hype_shop_orders_projection.v1",
+          orders: [{
+            order_id: "MMD-ORDER-B",
+            order_date: "2026-09-17T10:00:00.000Z",
+            order_status: "confirmed",
+            payment_status: "paid",
+            total_thb: 4500,
+            items: [{ item_name: "GG Water 50ml", quantity: 1, line_total_thb: 4500, status: "confirmed" }],
+            fulfillment: { state: "shipped", courier: "Example", tracking_number: "TRACK-B" },
+          }],
+          correlation: {
+            requested_order_id: "MMD-ORDER-B",
+            exact_owned_match: true,
+            auto_correlation_allowed: true,
+            candidate_count: 1,
+            candidate_order_id: "MMD-ORDER-B",
+            candidate_order_ids: ["MMD-ORDER-B"],
+            method: "explicit_owned_order_id",
+          },
+        });
+      }
+      return Response.json({
+        ok: true,
+        authority: "mmd.hype_shop_orders_projection.v1",
+        orders: [
+          {
+            order_id: "MMD-ORDER-A",
+            order_date: "2026-09-18T10:00:00.000Z",
+            order_status: "confirmed",
+            payment_status: "paid",
+            total_thb: 2500,
+            items: [{ item_name: "GG Water 25ml", quantity: 1, line_total_thb: 2500, status: "confirmed" }],
+            fulfillment: { state: "confirmed" },
+          },
+          {
+            order_id: "MMD-ORDER-B",
+            order_date: "2026-09-17T10:00:00.000Z",
+            order_status: "confirmed",
+            payment_status: "paid",
+            total_thb: 4500,
+            items: [{ item_name: "GG Water 50ml", quantity: 1, line_total_thb: 4500, status: "confirmed" }],
+            fulfillment: { state: "shipped" },
+          },
+        ],
+        correlation: {
+          requested_order_id: null,
+          exact_owned_match: false,
+          auto_correlation_allowed: false,
+          candidate_count: 2,
+          candidate_order_id: null,
+          candidate_order_ids: ["MMD-ORDER-A", "MMD-ORDER-B"],
+          method: "ambiguous_recent_owned_orders",
+        },
+      });
+    },
+  };
+
+  try {
+    const runtimeEnv = { ...ENV, MEMBER_PAGES_SHOP_ORDERS: shopBinding };
+    const opened = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
+      telegram_user_id: "111111",
+      target: "per",
+      command: "recovery",
+      customer_message: "GG Water ยังไม่ถึง ช่วยตาม Order ให้หน่อย",
+    }), runtimeEnv);
+    const openedBody = await opened.json();
+
+    assert.equal(opened.status, 200);
+    assert.equal(openedBody.recovery_correlation.state, "ambiguous");
+    assert.equal(openedBody.recovery_correlation.correlated, false);
+    assert.equal(openedBody.recovery_correlation.options.length, 2);
+    assert.deepEqual(
+      openedBody.recovery_correlation.options.map((item) => item.order_id),
+      ["MMD-ORDER-A", "MMD-ORDER-B"],
+    );
+    assert.equal(openedBody.recovery_case.domain, "mmd_shop");
+    assert.equal(openedBody.recovery_case.outcome_code, "intake_received");
+    assert.equal(openedBody.recovery_case.case_ref, openedBody.handoff_id);
+
+    const serializedOpen = JSON.stringify(openedBody.recovery_correlation.options);
+    assert.doesNotMatch(serializedOpen, /address|phone|tracking_number|internal_record|note/i);
+
+    const storedBefore = JSON.parse(matrixRecord.fields.payload_json);
+    storedBefore.handoff_tracking = {
+      ...storedBefore.handoff_tracking,
+      state: "reviewing",
+      updated_at: "2026-09-19T12:30:00.000Z",
+      actor_role: "owner",
+    };
+    storedBefore.recovery_case = {
+      ...storedBefore.recovery_case,
+      state: "reviewing",
+      actor_role: "owner",
+      updated_at: "2026-09-19T12:30:00.000Z",
+    };
+    matrixRecord.fields.payload_json = JSON.stringify(storedBefore);
+    matrixRecord.fields.conversation_stage = "handoff_reviewing";
+
+    const selected = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "select_recovery_order",
+      telegram_user_id: "111111",
+      handoff_id: openedBody.handoff_id,
+      selection_index: 1,
+    }), runtimeEnv);
+    const selectedBody = await selected.json();
+
+    assert.equal(selected.status, 200);
+    assert.equal(selectedBody.ok, true);
+    assert.equal(selectedBody.handoff_id, openedBody.handoff_id);
+    assert.equal(selectedBody.recovery_correlation.order_id, "MMD-ORDER-B");
+    assert.equal(selectedBody.recovery_correlation.method, "customer_selected_owned_order");
+    assert.equal(selectedBody.recovery_correlation.selected_by, "customer");
+    assert.equal(selectedBody.recovery_correlation.selection_locked, true);
+
+    const storedAfter = JSON.parse(matrixRecord.fields.payload_json);
+    assert.equal(storedAfter.handoff_tracking.state, "reviewing");
+    assert.equal(storedAfter.handoff_tracking.actor_role, "owner");
+    assert.equal(storedAfter.recovery_case.case_ref, openedBody.handoff_id);
+    assert.equal(storedAfter.recovery_case.domain, "mmd_shop");
+    assert.equal(storedAfter.recovery_correlation.order_id, "MMD-ORDER-B");
+    assert.equal(storedAfter.business_truth_mutated, false);
+    assert.match(matrixRecord.fields.do_not_ask_again_json, /shop_order_reference/);
+
+    const replay = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "select_recovery_order",
+      telegram_user_id: "111111",
+      handoff_id: openedBody.handoff_id,
+      selection_index: 1,
+    }), runtimeEnv);
+    const replayBody = await replay.json();
+    assert.equal(replay.status, 200);
+    assert.equal(replayBody.replayed, true);
+    assert.equal(replayBody.handoff_id, openedBody.handoff_id);
+
+    const foreign = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "select_recovery_order",
+      telegram_user_id: "222222",
+      handoff_id: openedBody.handoff_id,
+      selection_index: 0,
+    }), runtimeEnv);
+    const foreignBody = await foreign.json();
+    assert.equal(foreign.status, 404);
+    assert.equal(foreignBody.error, "handoff_not_found");
+
+    assert.equal(shopReads, 3);
+    assert.ok(matrixWrites.length >= 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Booking and MMS recovery share the canonical Case lifecycle and domain taxonomy", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const cases = [
+    ["งาน booking พรุ่งนี้มีปัญหา น้องมาสาย", "booking"],
+    ["MMS Therapist มาสายครับ อยากให้ช่วยตาม", "mms"],
+  ];
+
+  try {
+    for (const [message, expectedDomain] of cases) {
+      let matrixRecord = null;
+      const clientRecord = {
+        id: "recClientA1",
+        fields: {
+          telegram_user_id: "111111",
+          telegram_verification_status: "verified",
+          line_user_id: "U0123456789abcdef0123456789abcdef",
+          "Client Name": "Client A",
+        },
+      };
+
+      globalThis.fetch = async (url, init = {}) => {
+        const parsed = new URL(String(url));
+        const method = String(init.method || "GET").toUpperCase();
+        if (parsed.pathname.endsWith("/tblClients/recClientA1")) return Response.json(clientRecord);
+        if (parsed.pathname.endsWith("/tblClients")) return Response.json({ records: [clientRecord] });
+        if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") {
+          return Response.json({ records: matrixRecord ? [matrixRecord] : [] });
+        }
+        if (parsed.pathname.endsWith("/tblMatrix") && (method === "POST" || method === "PATCH")) {
+          const payload = JSON.parse(String(init.body || "{}"));
+          const row = payload.records[0];
+          matrixRecord = {
+            id: row.id || "recMatrixRecovery",
+            fields: { ...(matrixRecord?.fields || {}), ...(row.fields || {}) },
+          };
+          return Response.json({ records: [matrixRecord] });
+        }
+        if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
+        throw new Error(\`unexpected fetch \${parsed.pathname}\`);
+      };
+
+      const opened = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
+        telegram_user_id: "111111",
+        target: "per",
+        command: "recovery",
+        customer_message: message,
+      }), ENV);
+      const openedBody = await opened.json();
+
+      assert.equal(opened.status, 200);
+      assert.equal(openedBody.recovery_case.domain, expectedDomain);
+      assert.equal(openedBody.recovery_case.state, "prepared");
+      assert.equal(openedBody.recovery_case.outcome_code, "intake_received");
+      assert.equal(openedBody.recovery_case.taxonomy_version, "mmd-recovery-outcome-taxonomy-v1-20260919");
+      assert.equal(openedBody.recovery_case.business_truth_mutated, false);
+
+      const stored = JSON.parse(matrixRecord.fields.payload_json);
+      assert.equal(stored.recovery_case.domain, expectedDomain);
+      assert.equal(stored.recovery_case.case_ref, openedBody.handoff_id);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Recovery case cannot resolve without a terminal domain outcome and rejects cross-domain outcomes", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let matrixRecord = {
+    id: "recMatrixOutcome1",
+    fields: {
+      Client: ["recClientA1"],
+      pending_reference: "HYPE-PER-20260919120000-deadbeef",
+      version: 3,
+      payload_json: JSON.stringify({
+        handoff_id: "HYPE-PER-20260919120000-deadbeef",
+        handoff_target: "per",
+        handoff_tracking: {
+          id: "HYPE-PER-20260919120000-deadbeef",
+          target: "per",
+          state: "reviewing",
+          updated_at: "2026-09-19T12:30:00.000Z",
+          actor_role: "owner",
+        },
+        recovery_case: {
+          schema: "mmd.recovery_case.v1",
+          taxonomy_version: "mmd-recovery-outcome-taxonomy-v1-20260919",
+          case_ref: "HYPE-PER-20260919120000-deadbeef",
+          domain: "mmd_shop",
+          state: "reviewing",
+          outcome_code: "intake_received",
+          actor_role: "owner",
+        },
+      }),
+    },
+  };
+
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const method = String(init.method || "GET").toUpperCase();
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") {
+      return Response.json({ records: [matrixRecord] });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "PATCH") {
+      const payload = JSON.parse(String(init.body || "{}"));
+      matrixRecord = {
+        ...matrixRecord,
+        fields: { ...matrixRecord.fields, ...payload.records[0].fields },
+      };
+      return Response.json({ records: [matrixRecord] });
+    }
+    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+  };
+
+  try {
+    const missing = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "transition",
+      handoff_id: "HYPE-PER-20260919120000-deadbeef",
+      state: "resolved",
+      actor_role: "owner",
+    }), ENV);
+    const missingBody = await missing.json();
+    assert.equal(missing.status, 409);
+    assert.equal(missingBody.error, "recovery_terminal_outcome_required");
+    assert.ok(missingBody.allowed_outcomes.includes("reshipment_arranged"));
+
+    const wrongDomain = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "transition",
+      handoff_id: "HYPE-PER-20260919120000-deadbeef",
+      state: "resolved",
+      actor_role: "owner",
+      recovery_outcome_code: "therapist_replacement_arranged",
+    }), ENV);
+    const wrongDomainBody = await wrongDomain.json();
+    assert.equal(wrongDomain.status, 409);
+    assert.equal(wrongDomainBody.error, "recovery_outcome_invalid_for_state");
+
+    const resolved = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "transition",
+      handoff_id: "HYPE-PER-20260919120000-deadbeef",
+      state: "resolved",
+      actor_role: "owner",
+      recovery_outcome_code: "reshipment_arranged",
+    }), ENV);
+    const resolvedBody = await resolved.json();
+
+    assert.equal(resolved.status, 200);
+    assert.equal(resolvedBody.state, "resolved");
+    assert.equal(resolvedBody.recovery_case.domain, "mmd_shop");
+    assert.equal(resolvedBody.recovery_case.outcome_code, "reshipment_arranged");
+    assert.equal(resolvedBody.recovery_case.outcome_terminal, true);
+    assert.equal(resolvedBody.recovery_case.business_truth_mutated, false);
+
+    const stored = JSON.parse(matrixRecord.fields.payload_json);
+    assert.equal(stored.handoff_tracking.state, "resolved");
+    assert.equal(stored.recovery_case.outcome_code, "reshipment_arranged");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE handoff status reads only the explicitly recorded operator state", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
