@@ -197,6 +197,8 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
         duration_source: clean(normalizedIntent.duration_source, 80) || "mmd_standard_minimum_90m_default",
         location: clean(normalizedIntent.location, 160),
         amount_thb: positiveNumber(normalizedIntent.amount_thb) || undefined,
+        original_amount_thb: positiveNumber(normalizedIntent.original_amount_thb) || undefined,
+        pricing_adjustment: token(normalizedIntent.pricing_adjustment),
         deposit_amount_thb_wording: positiveNumber(normalizedIntent.deposit_amount_thb) || undefined,
         raw: clean(intent.raw, 1000),
         source_message_id: clean(intent.source_message_id, 120),
@@ -239,6 +241,8 @@ function normalizeBookingIntent(input = {}) {
       : clean(input.duration_source, 80),
     location: clean(input.location, 160),
     amount_thb: positiveNumber(input.amount_thb) || undefined,
+    original_amount_thb: positiveNumber(input.original_amount_thb) || undefined,
+    pricing_adjustment: token(input.pricing_adjustment),
     deposit_amount_thb: positiveNumber(input.deposit_amount_thb || input.deposit_amount_thb_wording) || undefined,
     raw: clean(input.raw, 1000),
     source_message_id: clean(input.source_message_id, 120),
@@ -309,7 +313,7 @@ export function buildKenjiCanonicalJobPayload({ context = {}, modelAccess = {}, 
     private_access: { selected_private_folder: clean(metadata.folder, 80) },
     notes: {
       handling: `Kenji LINE OFC deposit-triggered Create Job. Booking ref ${clean(refs.booking_ref, 80)}.`,
-      internal: `Action ${clean(actionId, 180)}. Customer wording: ${clean(normalizedIntent.customer_name, 120) || "not supplied"}. Deposit wording: ${positiveNumber(normalizedIntent.deposit_amount_thb) || "not supplied"}. Payment not verified.`,
+      internal: `Action ${clean(actionId, 180)}. Customer wording: ${clean(normalizedIntent.customer_name, 120) || "not supplied"}. Duration: ${positiveNumber(normalizedIntent.duration_hours) || STANDARD_BOOKING_MIN_DURATION_HOURS}h (${clean(normalizedIntent.duration_source, 80) || "mmd_standard_minimum_90m"}). Pricing: ${positiveNumber(normalizedIntent.original_amount_thb) || positiveNumber(normalizedIntent.amount_thb) || "not supplied"} -> ${positiveNumber(normalizedIntent.amount_thb) || "not supplied"} (${token(normalizedIntent.pricing_adjustment) || "none"}). Deposit wording: ${positiveNumber(normalizedIntent.deposit_amount_thb) || "not supplied"}. Payment not verified.`,
     },
   };
 }
