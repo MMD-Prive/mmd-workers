@@ -382,6 +382,9 @@ async function handleTelegramWebhook(update, env) {
   if (callback && /^hrop\|/i.test(clean(callback.data))) {
     return handleHypeRecoveryOrderCallback(callback, env);
   }
+  if (callback && /^(?:hrbp|hrmp)\|/i.test(clean(callback.data))) {
+    return handleHypeRecoveryCandidateCallback(callback, env);
+  }
 
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
@@ -512,6 +515,170 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handleHypeRecoveryCandidateCallback(callback, env) {
+  const data = clean(callback?.data);
+  const match = /^(hrbp|hrmp)\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const callbackId = clean(callback?.id);
+  const chatId = clean(callback?.message?.chat?.id);
+  const chatType = clean(callback?.message?.chat?.type).toLowerCase();
+  const telegramUserId = clean(callback?.from?.id);
+
+  if (!match || !callbackId || !chatId || chatType !== "private" || !/^\d{5,20}$/.test(telegramUserId)) {
+    if (callbackId) {
+      await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "เปิดตัวเลือกนี้ใน private chat ของ HYPE ครับ",
+        show_alert: true,
+      }, env).catch(() => null);
+    }
+    return { handled: true, flow: "hype_recovery_candidate_picker", ok: false, code_status: "picker_context_invalid" };
+  }
+
+  const domain = match[1].toLowerCase() === "hrbp" ? "booking" : "mms";
+  const handoffId = match[2];
+  const selectionIndex = Number(match[3]);
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: "ระบบเลือก Recovery candidate ยังไม่พร้อมครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return { handled: true, flow: "hype_recovery_candidate_picker", ok: false, code_status: "context_writer_unavailable" };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: domain === "booking" ? "select_recovery_booking" : "select_recovery_mms",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        selection_index: selectionIndex,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const error = clean(result?.error);
+    const text = error === "recovery_candidate_already_bound"
+      ? "Case นี้ผูกรายการไปแล้วครับ"
+      : error === "recovery_candidate_option_stale"
+        || error === "selected_booking_not_owned_or_stale"
+        || error === "selected_mms_prebooking_not_owned_or_stale"
+        ? "ตัวเลือกนี้ไม่ใช่รายการปัจจุบันแล้วครับ พิมพ์ /case เพื่อตรวจใหม่"
+        : "ยังผูกรายการไม่สำเร็จครับ ระบบคง Case เดิมไว้";
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text,
+      show_alert: true,
+    }, env).catch(() => null);
+    return {
+      handled: true,
+      flow: domain === "booking" ? "hype_recovery_booking_picker" : "hype_recovery_mms_picker",
+      ok: false,
+      code_status: error || "recovery_candidate_selection_failed",
+    };
+  }
+
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    text: domain === "booking"
+      ? "ผูก Booking กับ Case เดิมแล้วครับ"
+      : "ผูก MMS Pre-booking กับ Case เดิมแล้วครับ",
+    show_alert: false,
+  }, env).catch(() => null);
+
+  const messageId = Number(callback?.message?.message_id);
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    }, env).catch(() => null);
+  }
+
+  const correlation = result.recovery_correlation || {};
+  const customerLines = domain === "booking"
+    ? [
+        "<b>HYPE · BOOKING LINKED</b>",
+        "<b>Reference:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+        "<b>Booking Ref:</b> <code>" + escapeHtml(clean(correlation.booking_ref) || "-") + "</code>",
+        ...(clean(correlation.session_id) ? ["<b>Session:</b> <code>" + escapeHtml(clean(correlation.session_id)) + "</code>"] : []),
+        ...(clean(correlation.job_id) ? ["<b>Job:</b> <code>" + escapeHtml(clean(correlation.job_id)) + "</code>"] : []),
+        "<b>State:</b> " + escapeHtml(clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown"),
+        "",
+        "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า Booking / Job context ซ้ำ",
+        "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้ confirm Job, Model, Payment หรือ Calendar",
+      ]
+    : [
+        "<b>HYPE · MMS PRE-BOOKING LINKED</b>",
+        "<b>Reference:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+        "<b>Pre-booking:</b> <code>" + escapeHtml(clean(correlation.prebooking_id) || "-") + "</code>",
+        "<b>MMS state:</b> " + escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+        ...(clean(correlation.service_date) ? ["<b>Schedule:</b> " + escapeHtml(clean(correlation.service_date)) + (clean(correlation.service_time) ? " · " + escapeHtml(clean(correlation.service_time)) : "")] : []),
+        ...(clean(correlation.zone) ? ["<b>Zone:</b> " + escapeHtml(clean(correlation.zone))] : []),
+        "",
+        "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า MMS context ซ้ำ",
+        "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้ confirm Therapist, Booking หรือ Payment",
+      ];
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: customerLines.join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  try {
+    const opsLines = domain === "booking"
+      ? [
+          "🔗 <b>HYPE · BOOKING RECOVERY CORRELATION UPDATED</b>",
+          "<b>Case:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+          "<b>Booking Ref:</b> <code>" + escapeHtml(clean(correlation.booking_ref) || "-") + "</code>",
+          "<b>Job:</b> <code>" + escapeHtml(clean(correlation.job_id) || "pending") + "</code>",
+          "Customer selected this owned Booking Request; handoff lifecycle state was preserved.",
+        ]
+      : [
+          "🔗 <b>HYPE · MMS RECOVERY CORRELATION UPDATED</b>",
+          "<b>Case:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+          "<b>Pre-booking:</b> <code>" + escapeHtml(clean(correlation.prebooking_id) || "-") + "</code>",
+          "<b>MMS state:</b> " + escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+          "Customer selected this owned MMS Pre-booking; handoff lifecycle state was preserved.",
+        ];
+    await telegramNotify({
+      flow: "human_handoff",
+      text: opsLines.join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+  } catch {
+    // Case binding remains canonical in Conversation Matrix even if the follow-up alert fails.
+  }
+
+  return {
+    handled: true,
+    flow: domain === "booking" ? "hype_recovery_booking_picker" : "hype_recovery_mms_picker",
+    ok: telegram?.ok === true,
+    code_status: result.replayed === true
+      ? "recovery_candidate_selection_replayed"
+      : domain === "booking" ? "booking_linked_to_existing_case" : "mms_linked_to_existing_case",
+    handoff_id: clean(result.handoff_id || handoffId),
+    canonical_ref: domain === "booking" ? clean(correlation.booking_ref) : clean(correlation.prebooking_id),
+    telegram,
+  };
 }
 
 async function handleHypeRecoveryOrderCallback(callback, env) {
@@ -1783,18 +1950,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
         ? "HYPE Ops แจ้ง Per พร้อม context ล่าสุดแล้วครับ ถ้าต้องส่งข้อความเพิ่ม ใช้ LINE Official ได้โดยไม่ต้องเริ่มอธิบายสถานะระบบใหม่ครับ"
         : "Context ถูกเตรียมไว้แล้ว แต่ HYPE ยังยืนยันการส่ง Alert ถึง Per ไม่ได้ กรุณาเปิด LINE Official เพื่อให้ทีมรับช่วงต่อครับ",
     "",
-    ...(result.recovery_correlation?.correlated === true
-      ? [
-          `Order: ${clean(result.recovery_correlation.order_id)}`,
-          `Payment: ${clean(result.recovery_correlation.payment_status) || "unknown"} · Fulfillment: ${clean(result.recovery_correlation.fulfillment_state) || "unknown"}`,
-          "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
-        ]
-      : result.recovery_correlation?.state === "ambiguous"
-        ? [
-            "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
-            "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
-          ]
-        : []),
+    ...recoveryHandoffCustomerPlainLines(result.recovery_correlation),
     `Reference: ${clean(result.handoff_id)}`,
   ];
 
@@ -1818,6 +1974,68 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
     operator_notified: alert?.ok === true,
     telegram,
   };
+}
+
+function recoveryHandoffCustomerPlainLines(correlation = {}) {
+  if (!correlation || typeof correlation !== "object") return [];
+  const domain = clean(correlation.domain).toLowerCase();
+
+  if (domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return [
+        "Order: " + clean(correlation.order_id),
+        "Payment: " + (clean(correlation.payment_status) || "unknown") + " · Fulfillment: " + (clean(correlation.fulfillment_state) || "unknown"),
+        "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
+        "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  if (domain === "booking") {
+    if (correlation.correlated === true) {
+      return [
+        "Booking Ref: " + (clean(correlation.booking_ref) || "-"),
+        ...((clean(correlation.session_id) || clean(correlation.job_id))
+          ? ["Session: " + (clean(correlation.session_id) || "pending") + " · Job: " + (clean(correlation.job_id) || "pending")]
+          : []),
+        "Booking state: " + (clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown"),
+        "Booking / Job context ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบ Booking Request ที่เป็นของคุณ " + Number(correlation.candidate_count || 0) + " รายการครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Booking / Job ไหน",
+        "เลือก Booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  if (domain === "mms") {
+    if (correlation.correlated === true) {
+      return [
+        "MMS Pre-booking: " + (clean(correlation.prebooking_id) || "-"),
+        "MMS state: " + (clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+        ...((clean(correlation.service_date) || clean(correlation.service_time))
+          ? ["Schedule: " + (clean(correlation.service_date) || "-") + (clean(correlation.service_time) ? " · " + clean(correlation.service_time) : "")]
+          : []),
+        ...(clean(correlation.zone) ? ["Zone: " + clean(correlation.zone)] : []),
+        "MMS context ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบ MMS Pre-booking ที่เป็นของคุณ " + Number(correlation.candidate_count || 0) + " รายการครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็นรายการไหน",
+        "เลือก Pre-booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  return [];
 }
 
 async function recordHypeContinuity({ binding, telegramUserId, command, customerMessage, projection }) {
@@ -1919,6 +2137,14 @@ function renderRecoveryCorrelationOpsLines(correlation = {}, handoffId = "") {
     ];
   }
 
+  if (domain === "booking" && correlation.state === "ambiguous") {
+    return [
+      "",
+      `<b>Booking recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(correlation.candidate_count || 0)} Booking Request ที่เป็นของลูกค้า`,
+      "HYPE ไม่เลือก Booking/Job แทนลูกค้า และ server จะ re-check canonical ownership ก่อน bind",
+    ];
+  }
+
   if (domain === "mms" && correlation.correlated === true) {
     return [
       "",
@@ -1928,6 +2154,14 @@ function renderRecoveryCorrelationOpsLines(correlation = {}, handoffId = "") {
       ...(clean(correlation.service_date) ? [`Schedule: ${escapeHtml(clean(correlation.service_date))}${clean(correlation.service_time) ? ` · ${escapeHtml(clean(correlation.service_time))}` : ""}`] : []),
       ...(clean(correlation.zone) ? [`Zone: ${escapeHtml(clean(correlation.zone))}`] : []),
       `Case: <code>${escapeHtml(caseRef)}</code>`,
+    ];
+  }
+
+  if (domain === "mms" && correlation.state === "ambiguous") {
+    return [
+      "",
+      `<b>MMS recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(correlation.candidate_count || 0)} Pre-booking ที่เป็นของลูกค้า`,
+      "HYPE ไม่เลือก MMS Pre-booking แทนลูกค้า และ server จะ re-check canonical ownership ก่อน bind",
     ];
   }
 
@@ -1970,6 +2204,13 @@ function renderRecoveryCorrelationCustomerLines(correlation = {}) {
     return lines;
   }
 
+  if (domain === "booking" && correlation.state === "ambiguous") {
+    return [
+      `<b>Booking:</b> ยังไม่ได้เลือก · มี ${Number(correlation.candidate_count || 0)} รายการที่เป็นไปได้`,
+      "เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ว่า Booking Request ยังเป็นของคุณก่อนผูกเข้ากับ Case เดิม",
+    ];
+  }
+
   if (domain === "mms" && correlation.correlated === true) {
     const lines = [
       `<b>MMS Pre-booking:</b> <code>${escapeHtml(clean(correlation.prebooking_id) || "-")}</code>`,
@@ -1983,6 +2224,13 @@ function renderRecoveryCorrelationCustomerLines(correlation = {}) {
       lines.push("<b>MMS state:</b> refresh จาก canonical MMS authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
     }
     return lines;
+  }
+
+  if (domain === "mms" && correlation.state === "ambiguous") {
+    return [
+      `<b>MMS Pre-booking:</b> ยังไม่ได้เลือก · มี ${Number(correlation.candidate_count || 0)} รายการที่เป็นไปได้`,
+      "เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ว่า Pre-booking ยังเป็นของคุณก่อนผูกเข้ากับ Case เดิม",
+    ];
   }
 
   return [];
@@ -2044,26 +2292,55 @@ async function markHypeHandoffSent(binding, handoffId) {
 function hypeHandoffButtons(env, target, result = {}) {
   const rows = [];
   const correlation = result?.recovery_correlation || {};
+  const domain = clean(correlation.domain).toLowerCase();
   const caseRef = clean(result?.handoff_id || correlation.case_ref);
-  if (
-    correlation.state === "ambiguous"
+  const pickerReady = correlation.state === "ambiguous"
     && Array.isArray(correlation.options)
-    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)
-  ) {
+    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef);
+
+  if (pickerReady && domain === "mmd_shop") {
     for (const [index, option] of correlation.options.slice(0, 5).entries()) {
       const summary = clean(option.item_summary || "MMD Shop Order").slice(0, 26);
       const rawAmount = option.total_thb;
       const amount = rawAmount === null || rawAmount === undefined || rawAmount === ""
         ? null
         : Number(rawAmount);
-      const amountText = Number.isFinite(amount) ? ` · ฿${amount.toLocaleString("en-US")}` : "";
-      const dateText = clean(option.order_date) ? `${formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("")} · ` : "";
+      const amountText = Number.isFinite(amount) ? " · ฿" + amount.toLocaleString("en-US") : "";
+      const dateText = clean(option.order_date)
+        ? formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("") + " · "
+        : "";
       rows.push([{
-        text: `${index + 1}. ${dateText}${summary}${amountText}`.slice(0, 64),
-        callback_data: `hrop|${caseRef}|${index}`,
+        text: (index + 1 + ". " + dateText + summary + amountText).slice(0, 64),
+        callback_data: "hrop|" + caseRef + "|" + index,
       }]);
     }
   }
+
+  if (pickerReady && domain === "booking") {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const when = [clean(option.preferred_date), clean(option.preferred_time)].filter(Boolean).join(" ");
+      const summary = clean(option.summary || option.selected_model_name || "Booking Request").slice(0, 30);
+      const state = clean(option.request_status);
+      rows.push([{
+        text: (index + 1 + ". " + (when ? when + " · " : "") + summary + (state ? " · " + state : "")).slice(0, 64),
+        callback_data: "hrbp|" + caseRef + "|" + index,
+      }]);
+    }
+  }
+
+  if (pickerReady && domain === "mms") {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const when = [clean(option.service_date), clean(option.service_time)].filter(Boolean).join(" ");
+      const zone = clean(option.zone);
+      const skills = Array.isArray(option.skills) ? option.skills.map((item) => clean(item)).filter(Boolean).slice(0, 2).join(", ") : "";
+      const summary = [zone, skills].filter(Boolean).join(" · ") || "MMS Pre-booking";
+      rows.push([{
+        text: (index + 1 + ". " + (when ? when + " · " : "") + summary).slice(0, 64),
+        callback_data: "hrmp|" + caseRef + "|" + index,
+      }]);
+    }
+  }
+
   rows.push([{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };

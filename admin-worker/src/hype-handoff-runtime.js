@@ -280,7 +280,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!body) return json({ ok: false, error: "invalid_json" }, 400);
 
   const operation = token(body.operation || "read");
-  if (!["read", "transition", "select_recovery_order"].includes(operation)) {
+  if (!["read", "transition", "select_recovery_order", "select_recovery_booking", "select_recovery_mms"].includes(operation)) {
     return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
   }
 
@@ -360,6 +360,21 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       telegramUserId,
       handoffId,
       selectionIndex,
+    });
+  }
+
+  if (operation === "select_recovery_booking" || operation === "select_recovery_mms") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+    const selectionIndex = Number(body.selection_index);
+    if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
+      return json({ ok: false, error: "recovery_candidate_selection_invalid" }, 400);
+    }
+    return selectRecoveryCandidateForCase(env, {
+      telegramUserId,
+      handoffId,
+      selectionIndex,
+      domain: operation === "select_recovery_booking" ? "booking" : "mms",
     });
   }
 
@@ -2061,6 +2076,9 @@ function safeRecoveryCorrelation(value = {}) {
   };
 
   if (domain === "booking") {
+    const options = Array.isArray(value.options)
+      ? value.options.map(safeRecoveryBookingOption).filter(Boolean).slice(0, 5)
+      : [];
     return {
       ...common,
       booking_ref: clean(value.booking_ref, 180) || null,
@@ -2071,10 +2089,18 @@ function safeRecoveryCorrelation(value = {}) {
       exact_correlation: value.exact_correlation === true,
       final_confirmation_observed: value.final_confirmation_observed === true,
       correlation_scope: token(value.correlation_scope) || "booking_ref_exact",
+      candidate_count: boundedCandidateCount(value.candidate_count),
+      options,
+      selection_locked: value.selection_locked === true,
+      selected_by: token(value.selected_by) || null,
+      selected_at: clean(value.selected_at, 80) || null,
     };
   }
 
   if (domain === "mms") {
+    const options = Array.isArray(value.options)
+      ? value.options.map(safeRecoveryMmsOption).filter(Boolean).slice(0, 5)
+      : [];
     return {
       ...common,
       prebooking_id: clean(value.prebooking_id, 180) || null,
@@ -2087,6 +2113,11 @@ function safeRecoveryCorrelation(value = {}) {
         : [],
       exact_correlation: value.exact_correlation === true,
       correlation_scope: token(value.correlation_scope) || "member_ref_to_prebooking_exact",
+      candidate_count: boundedCandidateCount(value.candidate_count),
+      options,
+      selection_locked: value.selection_locked === true,
+      selected_by: token(value.selected_by) || null,
+      selected_at: clean(value.selected_at, 80) || null,
     };
   }
 
@@ -2103,7 +2134,7 @@ function safeRecoveryCorrelation(value = {}) {
     courier: clean(value.courier, 180) || null,
     tracking_number: clean(value.tracking_number, 220) || null,
     total_thb: nullableNonNegative(value.total_thb),
-    candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
+    candidate_count: boundedCandidateCount(value.candidate_count),
     options,
     selection_locked: value.selection_locked === true,
     selected_by: token(value.selected_by) || null,
@@ -2147,8 +2178,14 @@ function recoveryContinuityLine(correlation = null) {
   if (correlation.domain === "booking" && correlation.correlated === true) {
     return `Booking recovery linked to owned Booking Ref ${clean(correlation.booking_ref, 180)}; session=${clean(correlation.session_id, 180) || "pending"}; job=${clean(correlation.job_id, 180) || "pending"}; job_state=${clean(correlation.job_state, 80) || "unknown"}.`;
   }
+  if (correlation.domain === "booking" && correlation.state === "ambiguous") {
+    return `Booking recovery has ${Number(correlation.candidate_count) || 0} owned candidates; customer selection required and Booking/Job must not be guessed.`;
+  }
   if (correlation.domain === "mms" && correlation.correlated === true) {
     return `MMS recovery linked to owned Pre-booking ${clean(correlation.prebooking_id, 180)}; status=${clean(correlation.prebooking_status, 80) || "unknown"}; service=${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""}.`;
+  }
+  if (correlation.domain === "mms" && correlation.state === "ambiguous") {
+    return `MMS recovery has ${Number(correlation.candidate_count) || 0} owned Pre-booking candidates; customer selection required and MMS reference must not be guessed.`;
   }
   return "";
 }
@@ -2166,10 +2203,53 @@ function recoveryOperatorLine(correlation = null, handoffId = "") {
   if (correlation.domain === "booking" && correlation.correlated === true) {
     return `Booking Recovery: ${clean(correlation.booking_ref, 180)} · Session ${clean(correlation.session_id, 180) || "pending"} · Job ${clean(correlation.job_id, 180) || "pending"} · State ${clean(correlation.job_state, 80) || clean(correlation.state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
   }
+  if (correlation.domain === "booking" && correlation.state === "ambiguous") {
+    return `Booking Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Booking Request`;
+  }
   if (correlation.domain === "mms" && correlation.correlated === true) {
     return `MMS Recovery: ${clean(correlation.prebooking_id, 180)} · Status ${clean(correlation.prebooking_status, 80) || "unknown"} · ${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
   }
+  if (correlation.domain === "mms" && correlation.state === "ambiguous") {
+    return `MMS Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Pre-booking`;
+  }
   return "";
+}
+
+function boundedCandidateCount(value) {
+  const n = Number(value);
+  return Number.isInteger(n) ? Math.max(0, Math.min(50, n)) : 0;
+}
+
+function safeRecoveryBookingOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const bookingRef = clean(value.booking_ref, 180);
+  if (!bookingRef) return null;
+  return {
+    booking_ref: bookingRef,
+    request_status: token(value.request_status) || "unknown",
+    preferred_date: clean(value.preferred_date, 20) || null,
+    preferred_time: clean(value.preferred_time, 8) || null,
+    selected_model_name: clean(value.selected_model_name, 120) || null,
+    summary: clean(value.summary, 180) || "Booking Request",
+    created_at: clean(value.created_at, 80) || null,
+  };
+}
+
+function safeRecoveryMmsOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const prebookingId = clean(value.prebooking_id || value.request_id, 180).toLowerCase();
+  if (!/^mmspre_[a-f0-9]{24}$/.test(prebookingId)) return null;
+  return {
+    prebooking_id: prebookingId,
+    prebooking_status: token(value.prebooking_status || value.status) || "unknown",
+    service_date: clean(value.service_date, 20) || null,
+    service_time: clean(value.service_time, 8) || null,
+    zone: clean(value.zone, 100) || null,
+    skills: Array.isArray(value.skills)
+      ? value.skills.map((item) => clean(item, 80)).filter(Boolean).slice(0, 4)
+      : [],
+    created_at: clean(value.created_at, 80) || null,
+  };
 }
 
 function safeRecoveryOrderOption(value = {}) {
@@ -2267,6 +2347,168 @@ function evolveRecoveryCase(prior, { caseRef, domain, state, outcomeCode, actorR
     state,
     actor_role: actorRole,
     updated_at: stamp,
+  });
+}
+
+async function selectRecoveryCandidateForCase(env, { telegramUserId, handoffId, selectionIndex, domain }) {
+  const normalizedDomain = normalizeRecoveryDomain(domain);
+  if (!["booking", "mms"].includes(normalizedDomain)) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_candidate_domain_invalid" }, 400);
+  }
+
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+  if (identity?.status !== "resolved" || !canonicalClientId) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const fields = matrix.record.fields || {};
+  const linkedClients = Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT].map((id) => clean(id, 80)) : [];
+  if (!linkedClients.includes(canonicalClientId)) {
+    return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+  }
+
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  if (["resolved", "customer_notified"].includes(token(tracking.state))) {
+    return json({ ok: false, state: "selection_locked", error: "recovery_case_terminal" }, 409);
+  }
+
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (!priorCorrelation || priorCorrelation.domain !== normalizedDomain) {
+    return json({
+      ok: false,
+      state: "selection_unavailable",
+      error: normalizedDomain === "booking" ? "booking_recovery_not_active" : "mms_recovery_not_active",
+    }, 409);
+  }
+
+  const option = priorCorrelation.options?.[selectionIndex] || null;
+  const optionRef = normalizedDomain === "booking"
+    ? clean(option?.booking_ref, 180)
+    : clean(option?.prebooking_id, 180).toLowerCase();
+  if (!optionRef) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_candidate_option_stale" }, 409);
+  }
+
+  const currentRef = normalizedDomain === "booking"
+    ? clean(priorCorrelation.booking_ref, 180)
+    : clean(priorCorrelation.prebooking_id, 180).toLowerCase();
+  if (priorCorrelation.correlated === true) {
+    if (currentRef === optionRef) {
+      return json({
+        ok: true,
+        state: "correlated",
+        replayed: true,
+        handoff_id: handoffId,
+        recovery_correlation: priorCorrelation,
+        recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+        guardrails: handoffStatusGuardrails(),
+      });
+    }
+    return json({ ok: false, state: "selection_locked", error: "recovery_candidate_already_bound" }, 409);
+  }
+
+  const exact = normalizedDomain === "booking"
+    ? await correlateOwnedBookingRecoveryRef(env, canonicalClientId, optionRef, "customer_selected_owned_booking")
+    : await correlateOwnedMmsRecoveryRef(env, canonicalClientId, optionRef, "customer_selected_owned_mms_prebooking");
+  const exactRef = normalizedDomain === "booking"
+    ? clean(exact?.booking_ref, 180)
+    : clean(exact?.prebooking_id, 180).toLowerCase();
+  if (exact?.correlated !== true || exactRef !== optionRef) {
+    return json({
+      ok: false,
+      state: "selection_unavailable",
+      error: normalizedDomain === "booking"
+        ? "selected_booking_not_owned_or_stale"
+        : "selected_mms_prebooking_not_owned_or_stale",
+    }, 409);
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = safeRecoveryCorrelation({
+    ...priorCorrelation,
+    ...exact,
+    case_ref: handoffId,
+    candidate_count: Math.max(1, priorCorrelation.candidate_count || 1),
+    options: priorCorrelation.options,
+    method: normalizedDomain === "booking"
+      ? "customer_selected_owned_booking"
+      : "customer_selected_owned_mms_prebooking",
+    selection_locked: true,
+    selected_by: "customer",
+    selected_at: stamp,
+    live_refresh_status: "fresh",
+    refreshed_at: stamp,
+  });
+
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, tracking);
+  const recoveryCase = evolveRecoveryCase(
+    priorRecoveryCase || safeRecoveryCase({
+      case_ref: handoffId,
+      domain: normalizedDomain,
+      outcome_code: "intake_received",
+    }, tracking),
+    {
+      caseRef: handoffId,
+      domain: normalizedDomain,
+      state: token(tracking.state) || "prepared",
+      outcomeCode: priorRecoveryCase?.outcome_code || "intake_received",
+      actorRole: "customer",
+      stamp,
+    },
+  );
+
+  const version = Math.max(0, Number(fields[F.VERSION]) || 0) + 1;
+  const memoryKey = normalizedDomain === "booking" ? "booking_request_reference" : "mms_prebooking_reference";
+  const loops = unique([
+    ...parseList(fields[F.OPEN_LOOPS]),
+    "service_recovery",
+    normalizedDomain + "_recovery",
+    "human_handoff",
+  ]);
+  const patch = {
+    [F.LAST_CUSTOMER_ACTION]: normalizedDomain === "booking"
+      ? "selected_booking_request:" + optionRef
+      : "selected_mms_prebooking:" + optionRef,
+    [F.LAST_KENJI_ACTION]: normalizedDomain === "booking"
+      ? "recovery_booking_correlated"
+      : "recovery_mms_correlated",
+    [F.LAST_OUTCOME]: normalizedDomain + " candidate selected by customer and bound to existing Case Ref " + handoffId + "; handoff state unchanged",
+    [F.DONT_ASK]: JSON.stringify(unique([...parseList(fields[F.DONT_ASK]), memoryKey])),
+    [F.OPEN_LOOPS]: JSON.stringify(loops),
+    [F.LAST_EVENT]: "hype_recovery_" + normalizedDomain + "_selected:" + handoffId,
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      recovery_correlation: updatedCorrelation,
+      recovery_case: recoveryCase,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{ id: matrix.record.id, fields: patch }],
+    typecast: true,
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: "correlated",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: updatedCorrelation,
+    recovery_case: recoveryCase,
+    guardrails: handoffStatusGuardrails(),
   });
 }
 
@@ -2487,22 +2729,115 @@ async function buildBookingRecoveryCorrelation(env, input = {}) {
   const explicitRef = extractBookingRecoveryRef(input.customerMessage);
   const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "booking");
   const ref = explicitRef || storedRef;
-  if (!ref) {
-    return {
+  if (ref) {
+    return correlateOwnedBookingRecoveryRef(
+      env,
+      input.canonicalClientId,
+      ref,
+      explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
+    );
+  }
+
+  const candidates = await listOwnedBookingRecoveryCandidates(env, input.canonicalClientId);
+  if (!candidates.ok) {
+    return safeRecoveryCorrelation({
       domain: "booking",
-      state: "reference_required",
+      state: "authority_unavailable",
       correlated: false,
-      method: "exact_reference_required",
+      candidate_count: 0,
+      method: "owned_booking_candidates_unavailable",
       source_authority: "sigil-booking-worker",
       live_refresh_status: "unavailable",
-    };
+    });
   }
-  return correlateOwnedBookingRecoveryRef(
-    env,
-    input.canonicalClientId,
-    ref,
-    explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
-  );
+  if (candidates.count === 0) {
+    return safeRecoveryCorrelation({
+      domain: "booking",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: 0,
+      method: "no_owned_booking_candidates",
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "fresh",
+    });
+  }
+  if (candidates.count === 1 && candidates.options[0]?.booking_ref) {
+    const exact = await correlateOwnedBookingRecoveryRef(
+      env,
+      input.canonicalClientId,
+      candidates.options[0].booking_ref,
+      "single_owned_booking_candidate",
+    );
+    return safeRecoveryCorrelation({
+      ...exact,
+      candidate_count: 1,
+      options: candidates.options,
+    });
+  }
+  return safeRecoveryCorrelation({
+    domain: "booking",
+    state: "ambiguous",
+    correlated: false,
+    candidate_count: candidates.count,
+    options: candidates.options,
+    method: "customer_select_owned_booking",
+    source_authority: "sigil-booking-worker",
+    live_refresh_status: "fresh",
+  });
+}
+
+async function listOwnedBookingRecoveryCandidates(env, canonicalClientId) {
+  const owner = recordId(canonicalClientId);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 120);
+  const tokenValue = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
+  const bookingTable = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID, 120) || "tblQa2OK4U69eOCRF";
+  if (!owner || !baseId || !tokenValue) return { ok: false, count: 0, options: [] };
+
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(bookingTable)}`);
+  url.searchParams.set("maxRecords", "20");
+  url.searchParams.set("pageSize", "20");
+  url.searchParams.set("filterByFormula", `FIND(${formulaText(owner)},{resolver_payload_json})`);
+  url.searchParams.set("sort[0][field]", "Created At");
+  url.searchParams.set("sort[0][direction]", "desc");
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${tokenValue}`, accept: "application/json" },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, count: 0, options: [] };
+
+    const owned = (Array.isArray(data.records) ? data.records : [])
+      .filter((record) => recordId(parseObject(record?.fields?.resolver_payload_json).canonical_client_id) === owner)
+      .map((record) => recoveryBookingOptionFromRecord(record))
+      .filter(Boolean);
+    return {
+      ok: true,
+      count: owned.length,
+      options: owned.slice(0, 5),
+    };
+  } catch {
+    return { ok: false, count: 0, options: [] };
+  }
+}
+
+function recoveryBookingOptionFromRecord(record = {}) {
+  const fields = record?.fields || {};
+  const bookingRef = clean(fields.booking_ref || fields["Request ID"], 180);
+  if (!bookingRef) return null;
+  const selectedModelName = clean(fields["Selected Model Name"], 120);
+  const lane = token(fields.lane);
+  return safeRecoveryBookingOption({
+    booking_ref: bookingRef,
+    request_status: token(fields["Request Status"] || fields.request_status) || "unknown",
+    preferred_date: clean(fields["Preferred Date"] || fields.preferred_date, 20),
+    preferred_time: clean(fields["Preferred Time"] || fields.preferred_time, 8),
+    selected_model_name: selectedModelName,
+    summary: selectedModelName
+      ? `${selectedModelName}${lane ? ` · ${lane}` : ""}`
+      : lane ? `Booking · ${lane}` : "Booking Request",
+    created_at: clean(fields["Created At"] || fields.created_at, 80),
+  });
 }
 
 async function correlateOwnedBookingRecoveryRef(env, canonicalClientId, bookingRef, method = "owned_booking_ref") {
@@ -2573,22 +2908,85 @@ async function buildMmsRecoveryCorrelation(env, input = {}) {
   const explicitRef = extractMmsRecoveryRef(input.customerMessage);
   const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "mms");
   const ref = explicitRef || storedRef;
-  if (!ref) {
-    return {
-      domain: "mms",
-      state: "reference_required",
-      correlated: false,
-      method: "exact_reference_required",
-      source_authority: "mms-worker",
-      live_refresh_status: "unavailable",
-    };
+  if (ref) {
+    return correlateOwnedMmsRecoveryRef(
+      env,
+      input.canonicalClientId,
+      ref,
+      explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
+    );
   }
-  return correlateOwnedMmsRecoveryRef(
-    env,
-    input.canonicalClientId,
-    ref,
-    explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
-  );
+
+  const candidates = await listOwnedMmsRecoveryCandidates(env, input.canonicalClientId);
+  if (!candidates.ok) {
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      candidate_count: 0,
+      method: "owned_mms_candidates_unavailable",
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "unavailable",
+    });
+  }
+  if (candidates.count === 0) {
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: 0,
+      method: "no_owned_mms_candidates",
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "fresh",
+    });
+  }
+  if (candidates.count === 1 && candidates.options[0]?.prebooking_id) {
+    const exact = await correlateOwnedMmsRecoveryRef(
+      env,
+      input.canonicalClientId,
+      candidates.options[0].prebooking_id,
+      "single_owned_mms_candidate",
+    );
+    return safeRecoveryCorrelation({
+      ...exact,
+      candidate_count: 1,
+      options: candidates.options,
+    });
+  }
+  return safeRecoveryCorrelation({
+    domain: "mms",
+    state: "ambiguous",
+    correlated: false,
+    candidate_count: candidates.count,
+    options: candidates.options,
+    method: "customer_select_owned_mms_prebooking",
+    source_authority: "mms-worker/member-prebookings",
+    live_refresh_status: "fresh",
+  });
+}
+
+async function listOwnedMmsRecoveryCandidates(env, canonicalClientId) {
+  const owner = recordId(canonicalClientId);
+  if (!owner || !env.MMS_WORKER?.fetch) return { ok: false, count: 0, options: [] };
+  try {
+    const url = new URL("https://mms.internal/internal/mms/member/prebookings");
+    url.searchParams.set("member_ref", owner);
+    const response = await env.MMS_WORKER.fetch(new Request(url.toString(), { method: "GET" }));
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok !== true || !Array.isArray(data?.data?.requests)) {
+      return { ok: false, count: 0, options: [] };
+    }
+    const options = data.data.requests
+      .map((item) => safeRecoveryMmsOption(item))
+      .filter(Boolean);
+    return {
+      ok: true,
+      count: options.length,
+      options: options.slice(0, 5),
+    };
+  } catch {
+    return { ok: false, count: 0, options: [] };
+  }
 }
 
 async function correlateOwnedMmsRecoveryRef(env, canonicalClientId, prebookingId, method = "owned_mms_prebooking") {
