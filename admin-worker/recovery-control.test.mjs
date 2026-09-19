@@ -259,6 +259,9 @@ test("Recovery Control page is noindex and rejects non-credential actors", async
   const html = await page.text();
   assert.match(html, /Recovery Control/);
   assert.match(html, /MMD Shop, Booking และ MMS/);
+  assert.match(html, /ทุก Assignment/);
+  assert.match(html, /Claim Case/);
+  assert.match(html, /mmd-recovery-assignment-v1-20260919/);
 });
 
 test("Recovery Control API list and exact read are bounded", { concurrency: false }, async () => {
@@ -430,6 +433,19 @@ test("Recovery assignment conflicts fail closed and Owner may takeover/release w
     );
     assert.equal(forbiddenRelease.status, 403);
     assert.equal((await forbiddenRelease.json()).error, "recovery_assignment_release_forbidden");
+    assert.equal(patchCount, 0);
+
+    const forbiddenTakeover = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "takeover" }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(forbiddenTakeover.status, 403);
+    assert.equal((await forbiddenTakeover.json()).error, "recovery_assignment_takeover_owner_required");
     assert.equal(patchCount, 0);
 
     const takeover = await handleRecoveryControl(
