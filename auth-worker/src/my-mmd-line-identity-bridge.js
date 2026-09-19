@@ -1,11 +1,16 @@
 import currentWorker from "./my-mmd-runtime-index.js";
+import {
+  fastTrustHasCanonicalClient,
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
 
 const STATUS_PATH = "/__internal/member-status/resolve";
 const PROFILE_PATH = "/__internal/member-profile/read";
 const MEMBER_TABLE = "Members";
 const CLIENT_TABLE = "Clients";
 const LEGACY_STAGING_TABLE = "LINE OFC Client Import Staging";
-const FAST_TRUST_STAGING_TABLE = "MMD — LINE OFC Client Import Staging";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
 const COMMITTED_LINE_DECISION = "link_existing_client";
@@ -101,18 +106,21 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
   if (!lineId) return { tier: null, reason: "invalid_line_identity" };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { tier: null, reason: "airtable_unavailable" };
 
-  const stagingTable = String(env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE || FAST_TRUST_STAGING_TABLE).trim();
+  const source = resolveFastTrustAirtableSource(env);
+  const filterByFormula = fastTrustLineFormula(lineId, source);
+  if (!source.table || !filterByFormula) return { tier: null, reason: "fast_trust_source_invalid", lookupUnavailable: true };
   try {
-    const records = await airtableList(env, stagingTable, {
-      filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+    const records = await airtableList(env, source.table, {
+      filterByFormula,
       maxRecords: 20,
     });
+    const knownCanonicalClient = records.some((record) => fastTrustHasCanonicalClient(record, source));
     const candidates = records.flatMap((record) => {
-      const renamedName = String(record?.fields?.line_renamed_name || "").trim();
+      const renamedName = fastTrustRenamedName(record, source);
       const tier = trustedTierFromRenamedName(renamedName);
       return tier ? [{ tier, renamedName }] : [];
     });
-    if (!candidates.length) return { tier: null, reason: "fast_trust_marker_missing" };
+    if (!candidates.length) return { tier: null, reason: "fast_trust_marker_missing", knownCanonicalClient };
 
     // Rename history can contain more than one MMD-authored recognition marker.
     // Per policy, do not downgrade a trusted holder while history is backfilled;
@@ -128,10 +136,11 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
       membershipStart: todayDate(),
       membershipExpiresAt: addYearsDate(todayDate(), FAST_TRUST_DURATION_YEARS),
       reason: "trusted_line_oa_renamed_name",
+      knownCanonicalClient,
     };
   } catch (error) {
     console.warn({ event: "my_mmd_fast_trust_lookup_failed", failure_class: safeFailure(error) });
-    return { tier: null, reason: "fast_trust_lookup_unavailable" };
+    return { tier: null, reason: "fast_trust_lookup_unavailable", lookupUnavailable: true };
   }
 }
 
