@@ -6,6 +6,7 @@ import { executeKenjiLv5SupervisedAction } from "./kenji-lv5-supervised-action.j
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
+export const HYPE_HANDOFF_STATUS_PATH = "/__internal/hype/handoff-status";
 export const HYPE_TRANSACTION_INTAKE_PATH = "/__internal/hype/transaction-intake";
 export const HYPE_SUPERVISED_EXECUTION_PATH = "/__internal/hype/transaction-execute";
 
@@ -192,6 +193,147 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   });
 }
 
+
+
+export async function handleHypeHandoffStatusRpc(request, env = {}) {
+  const gate = validateRequest(request, HYPE_HANDOFF_STATUS_PATH);
+  if (gate) return gate;
+
+  const body = await readBody(request);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const operation = token(body.operation || "read");
+  if (!["read", "transition"].includes(operation)) {
+    return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
+  }
+
+  if (operation === "read") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+
+    const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+    if (identity?.status !== "resolved" || !recordId(identity?.client?.canonical_client_id)) {
+      return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+    }
+    const lineUserId = lineId(identity.client.line_user_id);
+    if (!lineUserId) {
+      return json({ ok: true, state: "none", tracking: false, reason: "line_identity_not_linked" });
+    }
+
+    const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+    const matrix = await findMatrix(env, hash);
+    if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+    if (!matrix.record) return json({ ok: true, state: "none", tracking: false });
+
+    const tracking = handoffTrackingFromRecord(matrix.record);
+    if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
+
+    return json({
+      ok: true,
+      state: tracking.state || "prepared",
+      tracking: true,
+      handoff_id: tracking.id,
+      target: tracking.target || null,
+      updated_at: tracking.updated_at || null,
+      actor_role: tracking.actor_role || null,
+      terminal: ["resolved", "customer_notified"].includes(tracking.state),
+      guardrails: handoffStatusGuardrails(),
+    });
+  }
+
+  const handoffId = clean(body.handoff_id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
+    return json({ ok: false, error: "handoff_id_invalid" }, 400);
+  }
+  const nextState = token(body.state);
+  if (!["sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
+    return json({ ok: false, error: "handoff_state_invalid" }, 400);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const current = handoffTrackingFromRecord(matrix.record);
+  const currentState = current.state || "prepared";
+  if (!handoffTransitionAllowed(currentState, nextState)) {
+    return json({
+      ok: false,
+      state: "transition_rejected",
+      error: "handoff_transition_invalid",
+      current_state: currentState,
+      requested_state: nextState,
+    }, 409);
+  }
+
+  if (currentState === nextState) {
+    return json({
+      ok: true,
+      state: nextState,
+      replayed: true,
+      handoff_id: handoffId,
+      target: current.target || normalizeTargetFromHandoffId(handoffId),
+      updated_at: current.updated_at || null,
+      guardrails: handoffStatusGuardrails(),
+    });
+  }
+
+  const prior = matrix.record.fields || {};
+  const priorPayload = parseObject(prior[F.PAYLOAD]);
+  const stamp = new Date().toISOString();
+  const actorRole = token(body.actor_role || "operator");
+  const target = current.target || normalizeTargetFromHandoffId(handoffId);
+  const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
+  const tracking = {
+    id: handoffId,
+    target,
+    state: nextState,
+    updated_at: stamp,
+    actor_role: actorRole || "operator",
+  };
+
+  const fields = {
+    [F.LAST_KENJI_ACTION]: `handoff_${nextState}`,
+    [F.LAST_OUTCOME]: handoffOutcome(nextState),
+    [F.STAGE]: `handoff_${nextState}`,
+    [F.AWAITING]: nextState === "resolved"
+      ? "customer_notification"
+      : nextState === "customer_notified"
+        ? "none"
+        : "mmd_review",
+    [F.HANDOFF_REQUIRED]: !["resolved", "customer_notified"].includes(nextState),
+    [F.LAST_EVENT]: `hype_handoff_${nextState}:${handoffId}`,
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.STATUS]: nextState === "customer_notified" ? "closed" : "active",
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      handoff_id: handoffId,
+      handoff_target: target,
+      handoff_tracking: tracking,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{ id: matrix.record.id, fields }],
+    typecast: true,
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: nextState,
+    replayed: false,
+    handoff_id: handoffId,
+    target,
+    updated_at: stamp,
+    guardrails: handoffStatusGuardrails(),
+  });
+}
 
 export async function handleHypeTransactionIntakeRpc(request, env = {}) {
   const gate = validateRequest(request, HYPE_TRANSACTION_INTAKE_PATH);
@@ -1296,8 +1438,13 @@ async function upsertContinuityMatrix(env, input = {}) {
   if (!existing.ok) return { ok: false, error: existing.error || "matrix_read_failed" };
 
   const prior = existing.record?.fields || {};
+  const priorPayload = parseObject(prior[F.PAYLOAD]);
+  const priorTracking = parseObject(priorPayload.handoff_tracking);
   const stamp = new Date().toISOString();
   const handoff = input.handoff;
+  const tracking = handoff
+    ? { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
+    : priorTracking;
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const existingLoops = parseList(prior[F.OPEN_LOOPS]);
   const existingDontAsk = parseList(prior[F.DONT_ASK]);
@@ -1357,11 +1504,13 @@ async function upsertContinuityMatrix(env, input = {}) {
     [F.STATUS]: "active",
     [F.VERSION]: version,
     [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
       runtime_schema: "mmd.hype_cross_channel_continuity.v1",
       source: "telegram_hype",
       command: clean(input.command, 80),
-      handoff_id: handoff?.id || null,
-      handoff_target: handoff?.target || null,
+      handoff_id: handoff?.id || clean(priorPayload.handoff_id, 180) || null,
+      handoff_target: handoff?.target || clean(priorPayload.handoff_target, 40) || null,
+      handoff_tracking: Object.keys(tracking).length ? tracking : null,
       display_name: clean(input.displayName, 120),
       projection: input.projection,
       live_truth_refresh_required: true,
@@ -1527,6 +1676,75 @@ async function findMatrix(env, hash) {
   } catch {
     return { ok: false, error: "airtable_read_failed" };
   }
+}
+
+
+async function findMatrixByPendingRef(env, handoffId) {
+  const config = airtableConfig(env);
+  if (!config.ok) return config;
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(config.baseId)}/${encodeURIComponent(config.table)}`);
+  url.searchParams.set("pageSize", "1");
+  url.searchParams.set("maxRecords", "1");
+  url.searchParams.set("filterByFormula", `{${F.PENDING_REF}}="${escapeFormula(handoffId)}"`);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${config.token}`, accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: `airtable_read_${response.status}` };
+    return { ok: true, record: Array.isArray(payload.records) ? payload.records[0] || null : null };
+  } catch {
+    return { ok: false, error: "airtable_read_failed" };
+  }
+}
+
+function handoffTrackingFromRecord(record = {}) {
+  const fields = record.fields || {};
+  const payload = parseObject(fields[F.PAYLOAD]);
+  const tracking = parseObject(payload.handoff_tracking);
+  const pendingRef = clean(fields[F.PENDING_REF], 180);
+  const id = clean(tracking.id || payload.handoff_id || pendingRef, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(id)) return {};
+  return {
+    id,
+    target: normalizeTarget(tracking.target || payload.handoff_target) || normalizeTargetFromHandoffId(id),
+    state: token(tracking.state) || (clean(fields[F.LAST_OUTCOME]).includes("handoff_pending") ? "prepared" : ""),
+    updated_at: clean(tracking.updated_at || fields[F.UPDATED_AT], 80),
+    actor_role: token(tracking.actor_role),
+  };
+}
+
+function normalizeTargetFromHandoffId(value) {
+  const match = /^HYPE-(PER|KENJI)-/i.exec(clean(value, 180));
+  return match ? match[1].toLowerCase() : "";
+}
+
+function handoffTransitionAllowed(current, next) {
+  const order = ["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"];
+  const from = order.indexOf(token(current));
+  const to = order.indexOf(token(next));
+  if (from < 0 || to < 0) return false;
+  return to >= from;
+}
+
+function handoffOutcome(state) {
+  if (state === "sent") return "handoff sent to owning operations lane";
+  if (state === "acknowledged") return "handoff acknowledged by owning operator";
+  if (state === "reviewing") return "handoff under operator review";
+  if (state === "resolved") return "handoff marked resolved by owning operator; customer notification not yet confirmed";
+  if (state === "customer_notified") return "handoff resolved and customer notification confirmed";
+  return "handoff pending";
+}
+
+function handoffStatusGuardrails() {
+  return {
+    conversation_state_only: true,
+    protected_business_truth_mutated: false,
+    payment_mutated: false,
+    job_mutated: false,
+    entitlement_mutated: false,
+    state_requires_explicit_operator_write: true,
+  };
 }
 
 async function airtableWrite(env, method, body) {
