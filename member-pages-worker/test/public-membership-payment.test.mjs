@@ -52,7 +52,7 @@ async function envWithSession(options = {}) {
       },
     },
   };
-  return { env, token, calls };
+  return { env, token, calls, kv, key };
 }
 
 test("public membership routes are explicit", () => {
@@ -118,6 +118,14 @@ test("purchase derives amount server-side and accepts only signed public checkou
   assert.equal(fx.calls[0].amount, 4990);
   assert.equal(fx.calls[0].package_code, "elite");
   assert.equal(fx.calls[0].payment_stage, "membership");
+
+  const stored = JSON.parse(fx.kv.map.get(fx.key));
+  assert.equal(stored.payment_ref, "pay_public_1");
+  assert.equal(stored.payment_binding_status, "canonical_pending");
+  assert.equal(stored.payment_package_code, "elite");
+  assert.equal(stored.payment_amount_thb, 4990);
+  assert.equal(stored.customer_payment_url, "https://mmdbkk.com/pay/checkout?t=signed_public");
+  assert.equal(stored.route_after_liff, "/member/payments");
 });
 
 test("SIGIL payment URL fails closed for public membership purchase", async () => {
