@@ -821,33 +821,37 @@
       "canonical_route": "/member/payments",
       "aliases": [],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "RESOLVED_TARGET",
+      "status_display": "TARGET LOCKED / BFF ACCEPTANCE PENDING",
       "surface_type": "page",
-      "page_owner": "TBD page owner; APIs server-side",
-      "api_owner": "payments-worker and admin-worker review",
-      "current_owner": "admin-worker currently",
-      "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "admin/member payment surface",
-      "backend_owner": "payments-worker and admin-worker review",
-      "candidate_owner": "TBD page owner; APIs server-side",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
-      "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "exposing admin context to member route",
-      "evidence": "not verified",
+      "page_owner": "Webflow static page /member/payments",
+      "api_owner": "member-pages-worker member-safe payment-status BFF target; payments-worker money truth",
+      "current_owner": "Webflow page source is canonical presentation; legacy front-gate/admin delegation may remain during migration",
+      "current_front_gate": "migration compatibility only; must not define payment truth",
+      "ui_location": "Webflow page 69dfd6c51dd636056fdb35ea root #mmd-payments-maxx",
+      "backend_owner": "member-pages-worker BFF target; payments-worker sole money truth",
+      "candidate_owner": "Webflow presentation + member-pages-worker BFF + payments-worker",
+      "owner_decision": "RESOLVED_TARGET",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "retain legacy bridge only until member-safe BFF acceptance",
+      "production_verified": "presentation_source_verified_bff_ingress_pending",
+      "production_verification": "Webflow presentation verified; /v1/member/payments BFF production ingress must pass acceptance",
+      "risk": "legacy admin delegation must not expose admin context or become member payment authority",
+      "evidence": "Webflow /member/payments page id 69dfd6c51dd636056fdb35ea; docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md",
       "conflicts": [
-        "member page vs admin owner ambiguity"
+        "legacy admin facade remains migration dependency until BFF acceptance"
       ],
       "migration_phase": "Phase 3A/5",
       "acceptance_requirements": [
-        "Separate member payment status UI from admin review APIs."
+        "Serve authenticated customer-safe /v1/member/payments from member-pages-worker or approved member-safe BFF.",
+        "Keep payments-worker as sole money truth.",
+        "Verify Webflow page can read customer-safe records without admin controls or internal fields.",
+        "Verify signed payment URLs are backend-issued and never minted or converted by the page.",
+        "Retire legacy admin delegation only after production smoke."
       ],
       "notes": {
-        "blocker_reason": "exposing admin context to member route",
-        "remove_later_decision": null
+        "blocker_reason": "member-safe BFF production ingress acceptance pending",
+        "remove_later_decision": "legacy admin/front-gate delegation after acceptance"
       }
     },
     {
