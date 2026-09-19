@@ -2009,7 +2009,7 @@ function recoveryHandoffCustomerPlainLines(correlation = {}) {
     }
     if (correlation.state === "ambiguous") {
       return [
-        "พบมากกว่า 1 Booking Request ที่เป็นของคุณครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Booking / Job ไหน",
+        "พบ Booking Request ที่เป็นของคุณ " + Number(correlation.candidate_count || 0) + " รายการครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Booking / Job ไหน",
         "เลือก Booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
       ];
     }
@@ -2029,7 +2029,7 @@ function recoveryHandoffCustomerPlainLines(correlation = {}) {
     }
     if (correlation.state === "ambiguous") {
       return [
-        "พบมากกว่า 1 MMS Pre-booking ที่เป็นของคุณครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็นรายการไหน",
+        "พบ MMS Pre-booking ที่เป็นของคุณ " + Number(correlation.candidate_count || 0) + " รายการครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็นรายการไหน",
         "เลือก Pre-booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
       ];
     }
