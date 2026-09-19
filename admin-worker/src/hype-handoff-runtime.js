@@ -1657,6 +1657,12 @@ async function upsertContinuityMatrix(env, input = {}) {
         }
       : { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
     : priorTracking;
+  const recoveryCase = mergeRecoveryCase(
+    safeRecoveryCase(priorPayload.recovery_case, tracking),
+    input.recoveryCase,
+    tracking,
+    stamp,
+  );
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const existingLoops = parseList(prior[F.OPEN_LOOPS]);
   const existingDontAsk = parseList(prior[F.DONT_ASK]);
@@ -1738,6 +1744,7 @@ async function upsertContinuityMatrix(env, input = {}) {
       display_name: clean(input.displayName, 120),
       projection: input.projection,
       recovery_correlation: input.recoveryCorrelation || priorPayload.recovery_correlation || null,
+      recovery_case: recoveryCase,
       live_truth_refresh_required: true,
       business_truth_mutated: false,
     }),
@@ -1748,7 +1755,12 @@ async function upsertContinuityMatrix(env, input = {}) {
     : await airtableWrite(env, "POST", { records: [{ fields }], typecast: true });
   if (!write.ok) return { ok: false, error: write.error || "matrix_write_failed" };
   const row = Array.isArray(write.payload?.records) ? write.payload.records[0] : null;
-  return { ok: true, record_id: clean(row?.id || existing.record?.id, 120), version };
+  return {
+    ok: true,
+    record_id: clean(row?.id || existing.record?.id, 120),
+    version,
+    recovery_case: recoveryCase,
+  };
 }
 
 function normalizeProjection(value) {
