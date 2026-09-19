@@ -27,7 +27,7 @@ function translate(){
       ['Model search ไม่สำเร็จ:','ค้นหานายแบบไม่สำเร็จ:'],
       ['Client lookup ไม่สำเร็จ:','ค้นหาลูกค้าไม่สำเร็จ:'],
       ['กำลังสร้าง Job…','กำลังสร้างงาน…'],
-      ['สร้าง Job แล้ว — Copy Model confirmation ไปส่งให้โมเดล','สร้างงานแล้ว · คัดลอกลิงก์ยืนยันนายแบบเพื่อส่งต่อ'],
+      ['สร้าง Job แล้ว — Copy Model confirmation ไปส่งให้โมเดล','สร้างงานแล้ว · ส่ง Customer Payment Link ก่อน · Member + Model URLs จะออกหลัง Official Verify ทาง Telegram'],
       ['สร้าง Job ไม่สำเร็จ:','สร้างงานไม่สำเร็จ:']
     ];
     map.forEach(([a,b])=>{t=t.split(a).join(b)});
