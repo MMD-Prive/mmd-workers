@@ -2281,7 +2281,7 @@ function hypeHandoffButtons(env, target, result = {}) {
     for (const [index, option] of correlation.options.slice(0, 5).entries()) {
       const when = [clean(option.service_date), clean(option.service_time)].filter(Boolean).join(" ");
       const zone = clean(option.zone);
-      const skills = Array.isArray(option.skills) ? option.skills.map(clean).filter(Boolean).slice(0, 2).join(", ") : "";
+      const skills = Array.isArray(option.skills) ? option.skills.map((item) => clean(item)).filter(Boolean).slice(0, 2).join(", ") : "";
       const summary = [zone, skills].filter(Boolean).join(" · ") || "MMS Pre-booking";
       rows.push([{
         text: (index + 1 + ". " + (when ? when + " · " : "") + summary).slice(0, 64),
