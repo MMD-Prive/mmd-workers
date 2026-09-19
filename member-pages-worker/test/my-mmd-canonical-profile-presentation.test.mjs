@@ -6,6 +6,7 @@ import {
   projectProtectedEntitlement,
   protectedConnectNowActiveThrough,
   readOrCreateProtectedActiveThroughAnchor,
+  projectHistoryRecoveryState,
   readLineOfcNoteScan,
 } from "../src/my-mmd-canonical-entitlement-bridge.js";
 
@@ -269,4 +270,49 @@ test("protected active-through anchor is durable and does not slide on later req
   assert.equal(stored.contains_raw_line_id, false);
   assert.equal(stored.policy, "protected_connect_now_plus_2y_v1");
   assert.doesNotMatch(JSON.stringify(stored), new RegExp(lineId));
+});
+
+
+test("history recovery projection only treats checking/in_progress as loading", () => {
+  assert.deepEqual(projectHistoryRecoveryState({ state: "checking" }), {
+    historyRecoveryState: "recovery_pending",
+    historyRecoveryStatus: "checking",
+    historyReviewRequired: false,
+  });
+  assert.deepEqual(projectHistoryRecoveryState({ state: "in_progress" }), {
+    historyRecoveryState: "recovery_pending",
+    historyRecoveryStatus: "in_progress",
+    historyReviewRequired: false,
+  });
+});
+
+test("reconciled recovery is terminal even when legacy metadata still says pending", () => {
+  assert.deepEqual(
+    projectHistoryRecoveryState(
+      { state: "reconciled" },
+      { history_recovery_state: "pending" },
+      { history_recovery_state: "pending" },
+    ),
+    {
+      historyRecoveryState: null,
+      historyRecoveryStatus: "reconciled",
+      historyReviewRequired: false,
+    },
+  );
+});
+
+test("review_required is terminal reconstruction with bounded review, not loading", () => {
+  assert.deepEqual(projectHistoryRecoveryState({ state: "review_required", pending_review_count: 2 }), {
+    historyRecoveryState: null,
+    historyRecoveryStatus: "review_required",
+    historyReviewRequired: true,
+  });
+});
+
+test("missing membership dates alone never create recovery_pending without a recovery signal", () => {
+  assert.deepEqual(projectHistoryRecoveryState(null, {}, {}), {
+    historyRecoveryState: null,
+    historyRecoveryStatus: null,
+    historyReviewRequired: false,
+  });
 });
