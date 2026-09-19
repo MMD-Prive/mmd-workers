@@ -9,6 +9,7 @@ on:
       - "member-dashboard-chat-worker/**"
       - "shared/verified-member-concierge.mjs"
       - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
+      - "shared/payment-intelligence.mjs"
 
 concurrency:
   group: deploy-member-dashboard-chat-worker-production
