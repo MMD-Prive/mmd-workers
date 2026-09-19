@@ -522,10 +522,29 @@ Privacy:
 - Standard/Premium/Preview/group surfaces remain route-only and must never read or display Points balances or Coupon codes;
 - HENNA remains route-only for MMD Points/Coupon and must bridge to HYPE/MY MMD.
 
+## MMD Shop bounded Order status + Service Recovery correlation
+
+HYPE private chat may now read a bounded MMD Shop projection through:
+
+`verified Telegram → Canonical Client → canonical LINE identity → admin-worker → member-pages-worker`
+
+The customer-safe projection is limited to owned Order ID/date/status, Payment status, item summary, total, and safe Fulfillment state/courier/tracking. Raw Shop notes, address, phone, internal record ids, and admin-only data are not exposed.
+
+Recovery correlation rules:
+
+1. explicit Order ID → correlate only when that exact Order is owned by the resolved customer;
+2. no Order ID → auto-correlate only when there is exactly one eligible owned recent Order;
+3. multiple candidates → mark correlation ambiguous and never guess;
+4. correlated Order / Payment / Fulfillment context shares the existing closed-loop HYPE Case Reference;
+5. an existing open Case Reference for the same Order is reused;
+6. HYPE may read and preserve bounded context only; it cannot mark paid, shipped, delivered, refunded, or change Fulfillment.
+
+Group/Preview/member-group surfaces remain private-data-safe and do not invoke the Shop projection.
+
 ## Next implementation lanes
 
-1. operator acknowledgement state for failed or review-required executions;
-2. optional bounded MMD Shop order-status projection after the same identity/privacy pattern.
+1. bounded customer selection flow when Shop recovery has multiple owned Order candidates;
+2. canonical Service Recovery outcome taxonomy shared across Shop / Job / MMS without widening HYPE mutation authority.
 
 All future lanes must preserve the same authority and privacy locks.
 
