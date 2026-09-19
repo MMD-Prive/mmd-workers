@@ -23,7 +23,7 @@
 
   if (path === "/sigil/pay/renew") {
     target = "/sigil/pay/renewal" + (location.search || "") + (location.hash || "");
-  } else if (path === "/sigil/pay/membership" || path === "/pay/membership") {
+  } else if (path === "/sigil/pay/membership") {
     target = token ? signedPay(token) : membershipEntry();
   } else if (path === "/sigil/pay/payment") {
     target = token ? signedPay(token) : "/member/payments";
