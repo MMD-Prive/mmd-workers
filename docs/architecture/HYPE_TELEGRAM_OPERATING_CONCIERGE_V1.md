@@ -128,6 +128,38 @@ When private-data commands are used in Standard or Premium groups, HYPE must not
 
 The group command guide must never expose customer names, model names from a customer's active job, payment amounts, Points balances, coupon codes, entitlement details, or other account-specific data.
 
+## Customer gender routing context
+
+HYPE must know the customer's explicitly recorded gender when it is needed for routing, but must not infer it.
+
+Canonical read order:
+
+- explicit canonical Client fields such as Customer Gender / Client Gender / Gender / Sex / เพศ
+- an explicitly labelled canonical note such as `เพศ: หญิง` or `Gender: female`
+- otherwise `unknown`
+
+Rules:
+
+- never infer gender from customer name, photo, Telegram profile, model choices, booking history, room membership, or writing style;
+- gender context is private routing context and must never be exposed in Standard, Premium, Preview, or MMD Chat;
+- customer-facing public/group messages remain gender-neutral;
+- downstream recommendation/catalog selection must filter by verified gender + intent before expanding results; HYPE must not pull every lane merely because a gender-aware route exists;
+- if gender is unknown, use neutral routes or ask in private only when the answer materially changes the service/result;
+- HYPE receives only the normalized routing value and provenance needed for routing, not an unrestricted profile dump.
+
+Current normalized values: `male`, `female`, `nonbinary`, `other`, `prefer_not_to_say`, `unknown`.
+
+## Preview presence and welcome
+
+Preview is a HYPE-managed public-safe Telegram surface.
+
+- canonical Preview group: `TELEGRAM_PREVIEW_GROUP_ID=-1002393788585`
+- `/commands` and `/help` show a Preview-labelled command guide
+- when a human joins Preview, HYPE deletes the Telegram join service message and posts a short welcome instead
+- bot joins are cleaned up without a welcome
+- Preview welcome text never resolves Client 360, entitlement, gender, job, payment, Points balance, or coupon code
+- account-specific commands remain private-chat only
+
 ## Existing HYPE operational capabilities retained
 
 - Telegram internal notification routing by canonical topic
