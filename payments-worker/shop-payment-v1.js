@@ -160,6 +160,13 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
 
     const total = positive(order.fields?.[ORDER_FIELDS.total]);
     const orderItems = await findOrderItems(env, order.id);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    const reservationExpired = Boolean(
+      reservation && (
+        ["expired", "released"].includes(reservation.state)
+        || (reservation.state === "reserved" && Number.isFinite(Date.parse(reservation.expires_at || "")) && Date.parse(reservation.expires_at || "") <= Date.now())
+      )
+    );
     const paymentFields = payment.fields || {};
     const paymentStatus = code(paymentFields[PAYMENT_FIELDS.status]);
     const verificationStatus = code(paymentFields[PAYMENT_FIELDS.verification]);
@@ -175,7 +182,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
       session_id: claims.session_id,
       payment_ref: claims.payment_ref,
       payment_type: SHOP_STAGE,
-      session_status: text(order.fields?.[ORDER_FIELDS.orderStatus], 80) || "draft",
+      session_status: reservationExpired ? "cancelled" : (text(order.fields?.[ORDER_FIELDS.orderStatus], 80) || "draft"),
       payment_status: text(order.fields?.[ORDER_FIELDS.paymentStatus], 80) || "pending",
       client_name: "MMD Shop Customer",
       model_name: "MMD Shop",
@@ -204,11 +211,12 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
         schema: "customer_payment_display_v1",
         stage: SHOP_STAGE,
         method: normalizeMethod(paymentFields[PAYMENT_FIELDS.method]),
-        amount_due_thb: verified ? 0 : total,
+        amount_due_thb: verified || reservationExpired ? 0 : total,
         qr_url: null,
         proof_status_available: true,
         proof_received: proofReceived,
         verified,
+        accepting_payment: !verified && !reservationExpired,
       },
       shop_order: {
         schema: "mmd_shop_order_payment_context_v1",
@@ -220,8 +228,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
           return value ? publicMmdShopFulfillment(value) : null;
         })(),
         reservation: (() => {
-          const value = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
-          return value ? publicMmdShopReservation(value) : null;
+          return reservation ? publicMmdShopReservation(reservation) : null;
         })(),
       },
     }, 200, request, env);
