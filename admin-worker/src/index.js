@@ -5371,6 +5371,11 @@ async function createAdminJob(env, body) {
   // customer deposit is always calculated from service money only.
   const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
   const service_amount_thb = numReq(body.service_amount_thb || payment.service_amount_thb || amount_thb, "service_amount_thb");
+  const originalAmountRaw = body.original_amount_thb ?? payment.original_amount_thb;
+  const original_amount_thb = originalAmountRaw == null || originalAmountRaw === ""
+    ? undefined
+    : numReq(originalAmountRaw, "original_amount_thb");
+  const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "");
   const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
   const deposit_amount_thb = computeCustomerDepositAmount(service_amount_thb);
   const balance_amount_thb = Math.max(0, service_amount_thb - deposit_amount_thb);
@@ -5391,6 +5396,8 @@ async function createAdminJob(env, body) {
     amount_thb,
     pay_model_thb: body.pay_model_thb,
     service_amount_thb,
+    original_amount_thb,
+    pricing_adjustment,
     deposit_percent,
     deposit_amount_thb,
     balance_amount_thb,
