@@ -71,12 +71,13 @@ jobs:
           set -euo pipefail
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
+          node --check src/payment-approved-job-link-dispatch.js
           node --check src/admin-login-hero-worker.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
           node --check src/model-media-e2e-smoke.js
           node --check src/model-owner-review-queue.js
-          node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs
+          node --test payment-issuer-diagnostic.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs
           node --test model-session-runtime-v1a.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
