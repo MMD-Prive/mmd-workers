@@ -216,6 +216,9 @@ function safeCorrelation(value = {}) {
     auto_correlation_allowed: value.auto_correlation_allowed === true,
     candidate_count: boundedInt(value.candidate_count, 0, 50),
     candidate_order_id: clean(value.candidate_order_id, 180) || null,
+    candidate_order_ids: Array.isArray(value.candidate_order_ids)
+      ? value.candidate_order_ids.map((item) => clean(item, 180)).filter(Boolean).slice(0, 5)
+      : [],
     method: token(value.method) || "none",
   };
 }
