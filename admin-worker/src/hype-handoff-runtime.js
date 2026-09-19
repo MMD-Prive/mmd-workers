@@ -5,6 +5,7 @@ import {
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
+export const HYPE_TRANSACTION_INTAKE_PATH = "/__internal/hype/transaction-intake";
 
 const MATRIX_TABLE_FALLBACK = "tblS6iRgPjYLBqZJh";
 const MATRIX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -187,6 +188,455 @@ export async function handleHypeHandoffRpc(request, env = {}) {
       handoff_context_only: true,
     },
   });
+}
+
+
+export async function handleHypeTransactionIntakeRpc(request, env = {}) {
+  const gate = validateRequest(request, HYPE_TRANSACTION_INTAKE_PATH);
+  if (gate) return gate;
+
+  const body = await readBody(request);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const telegramUserId = telegramId(body.telegram_user_id);
+  if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+
+  const mode = normalizeTransactionMode(body.mode || body.intent);
+  if (!mode) return json({ ok: false, error: "transaction_mode_invalid" }, 400);
+
+  const customerMessage = clean(body.customer_message, 1000);
+  const incoming = normalizeTransactionFields(mode, body.fields || {});
+  const context = await resolveKenjiLv5LiveContext(env, {
+    telegram_user_id: telegramUserId,
+    intent: {
+      type: transactionIntentType(mode),
+      trigger: "telegram_hype_transaction_intake",
+      raw: customerMessage,
+    },
+  }).catch(() => null);
+
+  const canonicalClientId = recordId(context?.client_360?.canonical_client_id);
+  if (!canonicalClientId) {
+    return json({
+      ok: false,
+      state: "connect_required",
+      error: "canonical_client_unresolved",
+      customer_message: "กรุณาเชื่อม Telegram กับ MY MMD ก่อน ผมจึงจะเก็บ Transaction Draft ต่อเนื่องให้ได้ครับ",
+    }, 404);
+  }
+
+  const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
+  const lineUserId = lineId(identity?.client?.line_user_id);
+  const route = canonicalTransactionRoute(mode, context);
+  const preview = mergeTransactionDraft(mode, {}, incoming);
+  let draft = {
+    ok: false,
+    persisted: false,
+    draft_id: await buildTransactionDraftId(canonicalClientId, mode),
+    mode,
+    fields: preview.fields,
+    missing_fields: preview.missing_fields,
+    complete: preview.complete,
+    error: lineUserId ? "storage_unavailable" : "line_identity_not_linked",
+  };
+
+  if (lineUserId) {
+    draft = await upsertTransactionDraftMatrix(env, {
+      clientRecordId: canonicalClientId,
+      lineUserId,
+      displayName: clean(context?.client_360?.display_name, 120),
+      mode,
+      customerMessage,
+      incoming,
+      routeKind: route.kind,
+    });
+    if (!draft.ok) {
+      return json({
+        ok: false,
+        state: "storage_unavailable",
+        error: draft.error || "transaction_draft_storage_failed",
+        guardrails: transactionGuardrails(),
+      }, 503);
+    }
+  }
+
+  const state = transactionState(mode, draft, context, route);
+  return json({
+    ok: true,
+    state,
+    mode,
+    draft_id: draft.draft_id,
+    persisted: draft.persisted === true,
+    line_continuity_ready: Boolean(lineUserId && draft.persisted),
+    display_name: clean(context?.client_360?.display_name, 120),
+    fields: draft.fields,
+    missing_fields: draft.missing_fields,
+    complete: draft.complete,
+    canonical_submit: {
+      ready: canonicalSubmitReady(mode, draft, context, route),
+      href: route.href,
+      route_kind: route.kind,
+      requires_customer_action: true,
+      submitted_by_hype: false,
+    },
+    current_truth: {
+      membership_level: token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level),
+      membership_lifecycle: token(context?.entitlement?.lifecycle || context?.entitlement?.status),
+      payment_status: token(context?.payment?.status),
+      payment_paid: context?.payment?.paid === true,
+      payment_review_required: context?.payment?.review_required === true,
+      outstanding_amount_thb: nonNegative(context?.payment?.outstanding_amount_thb),
+    },
+    guardrails: transactionGuardrails(),
+  });
+}
+
+async function upsertTransactionDraftMatrix(env, input = {}) {
+  const hash = await sha256Hex(`line_ofc:${input.lineUserId}`);
+  const existing = await findMatrix(env, hash);
+  if (!existing.ok) return { ok: false, error: existing.error || "matrix_read_failed" };
+
+  const prior = existing.record?.fields || {};
+  const priorPayload = parseObject(prior[F.PAYLOAD]);
+  const priorDraft = priorPayload.transaction_intake?.mode === input.mode
+    ? priorPayload.transaction_intake
+    : {};
+  const merged = mergeTransactionDraft(input.mode, priorDraft.fields || {}, input.incoming || {});
+  const draftId = clean(priorDraft.draft_id, 160) || await buildTransactionDraftId(input.clientRecordId, input.mode);
+  const stamp = new Date().toISOString();
+  const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
+  const loops = unique([
+    ...parseList(prior[F.OPEN_LOOPS]),
+    `transaction_intake:${input.mode}`,
+    ...merged.missing_fields.map((field) => `missing:${field}`),
+  ]);
+  const dontAsk = unique([
+    ...parseList(prior[F.DONT_ASK]),
+    "telegram_identity",
+    ...Object.keys(merged.fields).map((field) => `transaction:${input.mode}:${field}`),
+  ]);
+
+  const transactionPayload = {
+    schema: "mmd.hype_transaction_intake.v1",
+    draft_id: draftId,
+    mode: input.mode,
+    fields: merged.fields,
+    missing_fields: merged.missing_fields,
+    complete: merged.complete,
+    route_kind: clean(input.routeKind, 80),
+    source: "telegram_hype",
+    updated_at: stamp,
+    submitted: false,
+    business_truth_mutated: false,
+  };
+
+  const fields = {
+    [F.MATRIX_ID]: clean(prior[F.MATRIX_ID], 160) || `kcm1_line_${hash.slice(0, 20)}`,
+    [F.CLIENT]: [input.clientRecordId],
+    [F.SCHEMA]: clean(prior[F.SCHEMA], 80) || "mmd.kenji_conversation_matrix.v1",
+    [F.HASH]: hash,
+    [F.CHANNEL]: "telegram_hype",
+    [F.SCOPE]: clean(prior[F.SCOPE], 160) || `cross_channel:${hash.slice(0, 20)}`,
+    [F.TOPIC]: transactionTopic(input.mode),
+    [F.SUBTOPIC]: `transaction_intake:${input.mode}`,
+    [F.RELATIONSHIP]: clean(prior[F.RELATIONSHIP], 120) || "known_customer",
+    [F.LAST_INTENT]: `transaction_intake:${input.mode}`,
+    [F.LAST_REQUEST]: input.customerMessage || `HYPE transaction intake: ${input.mode}`,
+    [F.LAST_CUSTOMER_ACTION]: `provided_transaction_details:${input.mode}`,
+    [F.LAST_KENJI_ACTION]: merged.complete ? "transaction_draft_ready_for_customer_submit" : "transaction_draft_collecting",
+    [F.LAST_OUTCOME]: "Draft prepared only; canonical submit still requires customer action and backend authority.",
+    [F.STAGE]: "transaction_intake",
+    [F.AWAITING]: merged.complete ? "customer_submit" : "customer",
+    [F.PENDING_ACTION]: merged.complete
+      ? "open canonical submit surface"
+      : `collect missing fields: ${merged.missing_fields.join(", ")}`,
+    [F.PENDING_REF]: draftId,
+    [F.CONTINUITY]: buildTransactionContinuitySummary(input.mode, merged),
+    [F.DONT_ASK]: JSON.stringify(dontAsk),
+    [F.OPEN_LOOPS]: JSON.stringify(loops),
+    [F.TRUTH_REQUIRED]: true,
+    [F.TRUTH_DOMAINS]: transactionTruthDomains(input.mode),
+    [F.LAST_EVENT]: clean(prior[F.LAST_EVENT], 160),
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.STATUS]: "active",
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      runtime_schema: clean(priorPayload.runtime_schema, 120) || "mmd.hype_cross_channel_continuity.v1",
+      source: "telegram_hype",
+      display_name: clean(input.displayName, 120),
+      transaction_intake: transactionPayload,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = existing.record
+    ? await airtableWrite(env, "PATCH", { records: [{ id: existing.record.id, fields }], typecast: true })
+    : await airtableWrite(env, "POST", { records: [{ fields }], typecast: true });
+  if (!write.ok) return { ok: false, error: write.error || "matrix_write_failed" };
+  const row = Array.isArray(write.payload?.records) ? write.payload.records[0] : null;
+  return {
+    ok: true,
+    persisted: true,
+    record_id: clean(row?.id || existing.record?.id, 120),
+    version,
+    draft_id: draftId,
+    mode: input.mode,
+    fields: merged.fields,
+    missing_fields: merged.missing_fields,
+    complete: merged.complete,
+  };
+}
+
+function normalizeTransactionMode(value) {
+  const mode = token(value);
+  return ["booking", "payment_proof", "renewal", "mms"].includes(mode) ? mode : "";
+}
+
+function normalizeTransactionFields(mode, value = {}) {
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  if (mode === "booking") {
+    return compactFields({
+      service_intent: token(input.service_intent),
+      preferred_date: isoDateLoose(input.preferred_date || input.date),
+      preferred_time: hhmmLoose(input.preferred_time || input.time),
+      area: clean(input.area || input.location, 180),
+      duration: clean(input.duration, 80),
+      model_preference: clean(input.model_preference || input.model_name, 120),
+      request_note: clean(input.request_note || input.note, 800),
+    });
+  }
+  if (mode === "payment_proof") {
+    return compactFields({
+      evidence_present: input.evidence_present === true,
+      evidence_type: token(input.evidence_type),
+      customer_note: clean(input.customer_note || input.note, 500),
+    });
+  }
+  if (mode === "renewal") {
+    return compactFields({
+      intent: "renew",
+      customer_note: clean(input.customer_note || input.note, 500),
+    });
+  }
+  if (mode === "mms") {
+    return compactFields({
+      recipient_gender: normalizeRecipientGender(input.recipient_gender),
+      zone: token(input.zone),
+      service_date: isoDateLoose(input.service_date || input.date),
+      service_time: hhmmLoose(input.service_time || input.time),
+      duration_minutes: boundedDuration(input.duration_minutes),
+      skills: normalizeSkills(input.skills),
+      therapist_preference: clean(input.therapist_preference || input.therapist_name, 120),
+      note: clean(input.note, 800),
+    });
+  }
+  return {};
+}
+
+function mergeTransactionDraft(mode, previous = {}, incoming = {}) {
+  const fields = normalizeTransactionFields(mode, { ...previous, ...incoming });
+  const missing = transactionMissingFields(mode, fields);
+  return { fields, missing_fields: missing, complete: missing.length === 0 };
+}
+
+function transactionMissingFields(mode, fields = {}) {
+  if (mode === "booking") {
+    const missing = [];
+    if (!fields.service_intent) missing.push("service_intent");
+    if (!fields.preferred_date) missing.push("preferred_date");
+    if (!fields.preferred_time) missing.push("preferred_time");
+    if (!fields.area) missing.push("area");
+    return missing;
+  }
+  if (mode === "payment_proof") {
+    return fields.evidence_present === true ? [] : ["payment_evidence"];
+  }
+  if (mode === "renewal") return [];
+  if (mode === "mms") {
+    const missing = [];
+    if (!fields.recipient_gender) missing.push("recipient_gender");
+    if (!fields.zone) missing.push("zone");
+    if (!fields.service_date) missing.push("service_date");
+    if (!fields.service_time) missing.push("service_time");
+    if (!Array.isArray(fields.skills) || !fields.skills.length) missing.push("skills");
+    return missing;
+  }
+  return ["transaction_mode"];
+}
+
+function canonicalTransactionRoute(mode, context = {}) {
+  if (mode === "booking") return { href: "/booking", kind: "booking_entry" };
+  if (mode === "renewal") {
+    const level = token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level);
+    if (["private_standard", "private_premium", "standard", "premium", "vip", "svip", "black_card", "blackcard"].includes(level)) {
+      return { href: "/sigil/member/membership?intent=renew", kind: "private_renewal_entry" };
+    }
+    if (["public_member", "member", "elite", "red_card"].includes(level)) {
+      return { href: "/pay/membership", kind: "public_membership_entry" };
+    }
+    return { href: "/my-mmd/", kind: "membership_resolution_required" };
+  }
+  if (mode === "mms") return { href: "/male-massage/member/mms-booking", kind: "mms_prebooking_entry" };
+  if (mode === "payment_proof") {
+    const signed = signedPaymentHref(context?.next_actions);
+    if (signed) return { href: signed, kind: "signed_payment_proof" };
+    return { href: "/member/payments", kind: "payment_status_resume" };
+  }
+  return { href: "/my-mmd/", kind: "my_mmd" };
+}
+
+function signedPaymentHref(actions) {
+  for (const action of Array.isArray(actions) ? actions : []) {
+    const raw = clean(action?.href, 1200);
+    if (!raw) continue;
+    let path = raw;
+    try {
+      const u = new URL(raw, "https://mmdbkk.com");
+      if (!["mmdbkk.com", "www.mmdbkk.com"].includes(u.hostname)) continue;
+      path = `${u.pathname}${u.search}`;
+    } catch {}
+    if (/^\/sigil\/pay\?[^#]*\bt=[A-Za-z0-9._~-]+/.test(path)) return path;
+    if (/^\/pay\/checkout\?[^#]*\bt=[A-Za-z0-9._~-]+/.test(path)) return path;
+  }
+  return "";
+}
+
+function canonicalSubmitReady(mode, draft, context, route) {
+  if (mode === "payment_proof") {
+    if (context?.payment?.paid === true || context?.payment?.review_required === true) return false;
+    return draft.complete === true && route.kind === "signed_payment_proof";
+  }
+  if (mode === "renewal") {
+    const lifecycle = token(context?.entitlement?.lifecycle || context?.entitlement?.status);
+    if (["blocked", "suspended", "revoked"].includes(lifecycle)) return false;
+    return route.kind === "private_renewal_entry" || route.kind === "public_membership_entry";
+  }
+  return draft.complete === true;
+}
+
+function transactionState(mode, draft, context, route) {
+  if (mode === "payment_proof" && context?.payment?.paid === true) return "already_paid";
+  if (mode === "payment_proof" && context?.payment?.review_required === true) return "payment_review_pending";
+  if (!draft.complete) return "collecting";
+  if (mode === "payment_proof" && route.kind !== "signed_payment_proof") return "payment_intent_required";
+  if (!canonicalSubmitReady(mode, draft, context, route)) return "canonical_review_required";
+  return "ready_for_customer_submit";
+}
+
+function transactionIntentType(mode) {
+  return ({
+    booking: "booking",
+    payment_proof: "payment_status",
+    renewal: "membership_renewal",
+    mms: "mms_booking",
+  })[mode] || "general";
+}
+
+function transactionTopic(mode) {
+  return ({
+    booking: "booking",
+    payment_proof: "payment",
+    renewal: "membership",
+    mms: "mms",
+  })[mode] || "account_status";
+}
+
+function transactionTruthDomains(mode) {
+  return ({
+    booking: ["identity", "membership", "job", "calendar"],
+    payment_proof: ["identity", "payment", "job"],
+    renewal: ["identity", "membership", "payment"],
+    mms: ["identity", "membership", "mms"],
+  })[mode] || ["identity"];
+}
+
+function buildTransactionContinuitySummary(mode, merged) {
+  const labels = {
+    booking: "Booking intake",
+    payment_proof: "Payment proof intake",
+    renewal: "Membership renewal intake",
+    mms: "MMS pre-booking intake",
+  };
+  const parts = [
+    `${labels[mode] || "Transaction intake"} draft is ${merged.complete ? "complete" : "collecting"}.`,
+    merged.missing_fields.length ? `Missing: ${merged.missing_fields.join(", ")}.` : "Required intake fields captured.",
+    "Draft only; customer must complete the canonical submit step and backend authority remains unchanged.",
+  ];
+  return parts.join(" ").slice(0, 1200);
+}
+
+function transactionGuardrails() {
+  return {
+    draft_only: true,
+    business_truth_mutated: false,
+    payment_mutated: false,
+    payment_verified: false,
+    job_confirmed: false,
+    model_assigned: false,
+    membership_renewed: false,
+    membership_granted: false,
+    mms_booking_confirmed: false,
+    customer_submit_required: true,
+    canonical_backend_authority_required: true,
+    raw_payment_media_persisted: false,
+  };
+}
+
+async function buildTransactionDraftId(clientId, mode) {
+  const digest = await sha256Hex(`${clientId}|${mode}|hype-transaction-draft-v1`);
+  return `HYPE-DRAFT-${mode.toUpperCase()}-${digest.slice(0, 12)}`;
+}
+
+function compactFields(value = {}) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => {
+    if (item === "" || item === null || item === undefined) return false;
+    if (Array.isArray(item) && item.length === 0) return false;
+    return true;
+  }));
+}
+
+function isoDateLoose(value) {
+  const raw = clean(value, 20);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+function hhmmLoose(value) {
+  const raw = clean(value, 8);
+  if (!/^\d{2}:\d{2}$/.test(raw)) return "";
+  const [h, m] = raw.split(":").map(Number);
+  return h >= 0 && h <= 23 && m >= 0 && m <= 59 ? raw : "";
+}
+
+function boundedDuration(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 60 && n <= 300 ? Math.round(n) : undefined;
+}
+
+function normalizeRecipientGender(value) {
+  const v = token(value);
+  if (["male", "female", "other", "prefer_not_to_say"].includes(v)) return v;
+  return "";
+}
+
+function normalizeSkills(value) {
+  const rows = Array.isArray(value) ? value : value ? [value] : [];
+  return unique(rows.map((item) => token(item)).filter(Boolean)).slice(0, 6);
+}
+
+function parseObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const raw = clean(value, 12000);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 async function upsertContinuityMatrix(env, input = {}) {
