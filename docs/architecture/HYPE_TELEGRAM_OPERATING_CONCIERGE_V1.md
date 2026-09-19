@@ -290,9 +290,35 @@ Handoff rules:
 
 Canonical LINE entry for the MMD handoff remains `https://lin.ee/xRqsALs`.
 
+## Natural-language Intent Router · Priority 4
+
+HYPE accepts ordinary customer language in addition to explicit slash commands.
+
+Examples:
+
+- `งานวันศุกร์โอเคยัง` -> Booking
+- `สมาชิกหมดเมื่อไหร่` -> Membership
+- `สลิปถึงยัง` / `เหลือจ่ายเท่าไหร่` -> Payment
+- `แต้มผมมีเท่าไหร่` -> Points canonical route
+- `คูปองใช้ได้ไหม` -> Coupon Wallet canonical route
+- `CARE BACK ใช้ยังไง` -> CARE BACK
+- `ต้องทำอะไรต่อจากนี้` -> Next Action
+
+Routing rules:
+
+- explicit slash commands and explicit handoff/owner commands take precedence;
+- natural-language routing is deterministic and domain-scoped; it does not use model-generated business truth;
+- a private domain such as Membership, Booking or Payment remains private-chat only even when detected from natural language;
+- Points/Coupons remain route-only until a bounded canonical wallet projection is explicitly approved;
+- if two protected domains are both strongly signalled and nearly tied, HYPE asks the customer to clarify instead of selecting an authority;
+- generic conversation without a strong domain signal is left unclassified rather than guessed;
+- the router chooses which canonical authority to read; it never decides the business result itself.
+
+Membership natural-language questions use the existing customer-safe entitlement projection and may show level, lifecycle and active-through. HYPE must not grant, renew or upgrade membership.
+
 ## Next implementation lanes
 
-1. natural-language intent routing over the existing canonical domains
+1. safe transaction assistant for bounded intake/preparation flows
 2. owner/operator acknowledgement and close-loop state for completed handoffs
 3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
