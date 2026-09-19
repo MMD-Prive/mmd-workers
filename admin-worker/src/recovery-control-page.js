@@ -1,7 +1,7 @@
 export function renderRecoveryControlPage(input = {}) {
   const initialCaseRef = escapeHtml(input.case_ref || "");
   const taxonomy = escapeHtml(input.taxonomy_version || "");
-  return \`<!doctype html>
+  return `<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
@@ -21,10 +21,10 @@ button,input,select{font:inherit}main{max-width:1120px;margin:auto;padding:24px 
 <main>
 <header class="top">
 <div><div class="eyebrow">MMD PRIVÉ · OWNER / OPERATOR</div><h1>Recovery Control</h1><p>Case เดียวกันสำหรับ MMD Shop, Booking และ MMS — ควบคุม workflow state/outcome โดยไม่เขียนทับ business truth ของระบบต้นทาง</p></div>
-<div class="pill">Taxonomy \${taxonomy}</div>
+<div class="pill">Taxonomy ${taxonomy}</div>
 </header>
 <form class="search" data-search>
-<input name="case_ref" value="\${initialCaseRef}" placeholder="HYPE-PER-YYYYMMDDHHMMSS-xxxxxxxx" autocomplete="off" spellcheck="false">
+<input name="case_ref" value="${initialCaseRef}" placeholder="HYPE-PER-YYYYMMDDHHMMSS-xxxxxxxx" autocomplete="off" spellcheck="false">
 <button class="btn primary" type="submit">เปิด Case</button>
 </form>
 <div class="grid">
@@ -58,11 +58,11 @@ async function refreshList(){try{var b=await getJson(API+"?limit=12");if(b)rende
 async function openCase(ref){if(!ref)return;try{var b=await getJson(API+"?case_ref="+encodeURIComponent(ref));if(!b)return;renderCase(b.case);history.replaceState(null,"","?case_ref="+encodeURIComponent(ref));refreshList()}catch(e){detail.className="empty";detail.textContent="เปิด Case ไม่สำเร็จ: "+(e.error||"not_found")}}
 async function act(action){var flash=detail.querySelector("[data-flash]"),outcome="";if(action==="set_outcome")outcome=(detail.querySelector("[data-nonterminal]").value||"");if(action==="resolve")outcome=(detail.querySelector("[data-terminal]").value||"");if((action==="set_outcome"||action==="resolve")&&!outcome){flash.className="flash bad";flash.textContent="กรุณาเลือก outcome ก่อน";return}flash.className="flash";flash.textContent="กำลังบันทึก…";try{var body={case_ref:selected,action:action};if(outcome)body.outcome_code=outcome;var b=await getJson(API,{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify(body)});if(!b)return;renderCase(b.case);refreshList()}catch(e){flash.className="flash bad";flash.textContent="ไม่สำเร็จ: "+(e.error||"transition_rejected")}}
 form.addEventListener("submit",function(e){e.preventDefault();var ref=(new FormData(form).get("case_ref")||"").trim();if(ref)openCase(ref)});
-refreshList();var initial="\${initialCaseRef}";if(initial)openCase(initial);
+refreshList();var initial="${initialCaseRef}";if(initial)openCase(initial);
 })();
 </script>
 </body>
-</html>\`;
+</html>`;
 }
 
 export function renderRecoveryControlForbidden() {
