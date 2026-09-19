@@ -90,4 +90,10 @@ test("purchase requires same-origin browser request", async () => {
 });
 
 
-test("TMIB payment URL validator accepts public checkout and rejects SIGIL surface", () => {\n  assert.equal(\n    TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/pay/checkout?t=signed"),\n    "https://mmdbkk.com/pay/checkout?t=signed",\n  );\n  assert.equal(TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/sigil/pay?t=signed"), "");\n});\n
+test("TMIB payment URL validator accepts public checkout and rejects SIGIL surface", () => {
+  assert.equal(
+    TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/pay/checkout?t=signed"),
+    "https://mmdbkk.com/pay/checkout?t=signed",
+  );
+  assert.equal(TMIB_STORY_INTERNALS.canonicalPayUrl("https://mmdbkk.com/sigil/pay?t=signed"), "");
+});
