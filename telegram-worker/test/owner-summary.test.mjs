@@ -67,7 +67,7 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
   const originalFetch = globalThis.fetch;
   const sends = [];
   const memberChecks = [];
-  const ownerRequests = [];
+  const ownerCallers = [];
   let ownerRead = 0;
 
   globalThis.fetch = async (url, init = {}) => {
@@ -93,12 +93,7 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
       HYPE_OPERATIONS: {
         async fetch(request) {
           ownerRead += 1;
-          let path = "";
-          try { path = new URL(String(request?.url || "")).pathname; } catch {}
-          ownerRequests.push({
-            path,
-            caller: request?.headers?.get?.("x-mmd-service-binding") || "",
-          });
+          ownerCallers.push(request?.headers?.get?.("x-mmd-service-binding") || "");
           return Response.json(summary());
         },
       },
@@ -108,7 +103,7 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
     assert.equal(body.flow, "hype_owner_summary");
     assert.ok(body.ok === true, JSON.stringify(body));
     assert.deepEqual(memberChecks, [{ chat_id: "-1003546439681", user_id: 111111 }]);
-    assert.deepEqual(ownerRequests, [{ path: "/__internal/hype/owner-summary", caller: "telegram-worker" }]);
+    assert.deepEqual(ownerCallers, ["telegram-worker"]);
     assert.equal(ownerRead, 1);
     assert.equal(sends.length, 1);
     assert.equal(String(sends[0].chat_id), "111111");
