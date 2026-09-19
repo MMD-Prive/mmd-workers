@@ -13,6 +13,7 @@ import {
   commitViaMmdShopCoordinator,
   expireViaMmdShopCoordinator,
   releaseViaMmdShopCoordinator,
+  stockHealthViaMmdShopCoordinator,
   MmdShopStockCoordinator,
 } from "./mmd-shop-stock-coordinator.js";
 import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
@@ -89,6 +90,19 @@ export default {
       expireViaMmdShopCoordinator(env)
         .then((result) => console.log(JSON.stringify({ event: "mmd_shop_reservation_expiry_sweep", ...result })))
         .catch((error) => console.error("MMD Shop reservation expiry sweep failed:", error))
+    );
+    ctx.waitUntil(
+      stockHealthViaMmdShopCoordinator(env)
+        .then((result) => console.log(JSON.stringify({
+          event: "mmd_shop_stock_health_sweep",
+          ok: result?.ok === true,
+          low_stock_batches: Number(result?.report?.metrics?.low_stock_batches || 0),
+          reconciliation_mismatches: Number(result?.report?.metrics?.reconciliation_mismatches || 0),
+          fingerprint_changed: result?.fingerprint_changed === true,
+          alert_ok: result?.alert?.ok === true,
+          alert_skipped: result?.alert?.skipped === true,
+        })))
+        .catch((error) => console.error("MMD Shop stock health sweep failed:", error))
     );
   },
 };
