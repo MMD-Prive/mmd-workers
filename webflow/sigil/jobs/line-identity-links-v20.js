@@ -1,7 +1,7 @@
 /* Source mirror for Webflow registered script SigilJobsLineClaimV20.
- * If an older held Session has no claim URLs in the create response, request
- * fresh short-lived LINE claim URLs through the existing admin-owned create
- * route. The owner never types Airtable record IDs.
+ * Canonical 2026-09-19 dispatch:
+ * Create Job exposes only the signed customer payment URL.
+ * Member + Model confirmation URLs remain withheld until official payment approval.
  */
 (() => {
   if (location.pathname !== "/sigil/jobs" || window.__mmdClaim20) return;
@@ -37,52 +37,18 @@
     const root = document.getElementById("mmd-sigil-job-v9");
     const actions = root?.querySelector(".sj10__success-actions");
     if (!actions) return;
-    actions.querySelectorAll("[data-copy-customer],[data-copy-model],[data-url-output],[data-reconcile-wrap],[data-line-claim-v19]").forEach((element) => element.remove());
-    let wrap = actions.querySelector("[data-line-claim-v20]");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.dataset.lineClaimV20 = "1";
-      wrap.style.cssText = "display:flex;flex:1 1 100%;gap:10px;flex-wrap:wrap";
-      actions.prepend(wrap);
-    }
-    wrap.innerHTML = "";
-    const customerFinal = data?.customer_confirmation_url || "";
-    const modelFinal = data?.model_confirmation_url || "";
-    const customerClaim = data?.customer_identity_url || "";
-    const modelClaim = data?.model_identity_url || "";
-    wrap.append(
-      box(customerFinal ? "Customer Confirmation URL" : "Customer · ยืนยัน LINE", customerFinal || customerClaim, customerClaim ? "ส่งลิงก์นี้ให้ลูกค้ากดใน LINE" : "กำลังออกลิงก์…"),
-      box(modelFinal ? "Model Confirmation URL" : "Model · ยืนยัน LINE", modelFinal || modelClaim, modelClaim ? "ส่งลิงก์นี้ให้นายแบบกดใน LINE" : "กำลังออกลิงก์…"),
-    );
-  }
+    actions.querySelectorAll("[data-copy-customer],[data-copy-model],[data-url-output],[data-reconcile-wrap],[data-line-claim-v19],[data-line-claim-v20]").forEach((element) => element.remove());
+    const wrap = document.createElement("div");
+    wrap.dataset.lineClaimV20 = "1";
+    wrap.style.cssText = "display:flex;flex:1 1 100%;gap:10px;flex-wrap:wrap";
+    actions.prepend(wrap);
 
-  async function refreshIdentityLinks(data) {
-    const sessionId = data?.session_id || data?.raw?.session_id;
-    if (!sessionId || data?.customer_identity_url || data?.model_identity_url || data?.customer_confirmation_url) return data;
-    try {
-      const response = await originalFetch("/v1/admin/job/create", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          operational_create_mode: "issue_identity_links",
-          session_id: sessionId,
-          source: "sigil_jobs_v20",
-          page: "/sigil/jobs",
-        }),
-      });
-      const raw = await response.text();
-      let payload;
-      try {
-        payload = JSON.parse(raw);
-      } catch {
-        throw new Error("ออกลิงก์ยืนยัน LINE ไม่สำเร็จ");
-      }
-      if (!response.ok || payload?.ok === false) throw new Error(payload?.error || "ออกลิงก์ยืนยัน LINE ไม่สำเร็จ");
-      return { ...data, ...payload };
-    } catch (error) {
-      return { ...data, identity_claim_error: error?.message || "ออกลิงก์ยืนยัน LINE ไม่สำเร็จ" };
-    }
+    const paymentUrl = data?.customer_payment_url || "";
+    wrap.append(
+      box("Customer Payment URL", paymentUrl, "กำลังสร้าง Payment Intent…"),
+      box("Member URL", "", "รอ MMD Approve Payment แล้วระบบจะส่งผ่าน Telegram"),
+      box("Model URL", "", "รอ MMD Approve Payment แล้วระบบจะส่งผ่าน Telegram"),
+    );
   }
 
   window.fetch = async function (...args) {
@@ -92,8 +58,8 @@
       const url = typeof input === "string" ? input : input?.url || "";
       const method = (args[1]?.method || input?.method || "GET").toUpperCase();
       if (method === "POST" && url.includes("/v1/admin/job/create")) {
-        response.clone().json().then(async (data) => {
-          last = await refreshIdentityLinks(data);
+        response.clone().json().then((data) => {
+          last = data;
           render(last);
         });
       }
