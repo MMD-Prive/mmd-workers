@@ -151,3 +151,24 @@ Decision override:
 - API live smoke remains pending and does not determine whether the visible gate exists;
 - do not reclassify the current access gate as an intake form unless product scope explicitly changes.
 
+## 2026-09-19 Member Payments BFF Source Implementation
+
+The previously locked target architecture for `/member/payments` now has explicit source implementation.
+
+- visible page: Webflow `69dfd6c51dd636056fdb35ea`, root `#mmd-payments-maxx`
+- browser endpoint: `GET /v1/member/payments`
+- front gate: `member-dashboard-chat-worker` exact apex/www route
+- transport: `MEMBER_PAGES_WORKER` service binding
+- BFF: `member-pages-worker/src/member-payments-bff.js`
+- BFF schema: `mmd_member_payments_v1`
+- identity: signed LIFF/member session only
+- current intent: server-created payment snapshot from the short-lived session only
+- verified history: customer-safe member profile / Customer 360 projection
+- money authority: `payments-worker` remains unchanged
+- signed resume URLs: exact backend-issued `/pay/checkout?t=...` or `/sigil/pay?t=...` only
+
+Decision:
+- source state becomes **PARTIAL INTEGRATION / LOCKED_SOURCE**;
+- production ingress and authenticated acceptance remain pending until deploy/smoke;
+- legacy admin delegation must remain until those acceptance checks pass;
+- no browser-selected identity, amount, payment_ref, payment lane, verification or entitlement is accepted.
