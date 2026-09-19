@@ -1,4 +1,6 @@
 import {
+  abortMmdShopPaymentClaim,
+  claimMmdShopReservationForPayment,
   commitMmdShopReservation,
   expireMmdShopReservations,
   releaseMmdShopReservation,
@@ -28,6 +30,14 @@ export class MmdShopStockCoordinator {
       }
       if (url.pathname === "/release") {
         const result = await releaseMmdShopReservation(this.env, body.reservation, body.reason || "released");
+        return { ok: true, ...result };
+      }
+      if (url.pathname === "/claim-payment") {
+        const result = await claimMmdShopReservationForPayment(this.env, body.reservation, body.review_key || "");
+        return { ok: true, ...result };
+      }
+      if (url.pathname === "/abort-payment-claim") {
+        const result = await abortMmdShopPaymentClaim(this.env, body.reservation, body.review_key || "", body.reason || "payment_review_failed");
         return { ok: true, ...result };
       }
       if (url.pathname === "/commit") {
@@ -116,6 +126,16 @@ export async function reserveViaMmdShopCoordinator(env, input) {
 
 export async function releaseViaMmdShopCoordinator(env, reservation, reason) {
   const result = await requestCoordinator(env, "/release", { reservation, reason });
+  return result;
+}
+
+export async function claimPaymentViaMmdShopCoordinator(env, reservation, reviewKey) {
+  const result = await requestCoordinator(env, "/claim-payment", { reservation, review_key: reviewKey });
+  return result;
+}
+
+export async function abortPaymentClaimViaMmdShopCoordinator(env, reservation, reviewKey, reason) {
+  const result = await requestCoordinator(env, "/abort-payment-claim", { reservation, review_key: reviewKey, reason });
   return result;
 }
 
