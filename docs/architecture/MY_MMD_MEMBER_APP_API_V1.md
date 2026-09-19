@@ -119,6 +119,9 @@ CARE BACK backend reads/writes remain under the existing LIFF/member backend con
 - Membership Level, lifecycle status and Actual Access are separate concepts.
 - Browser code must never infer access from tier or status.
 - Missing or unverified backend state must render `checking` / recovery, not guessed values.
+- A verified LINE identity with canonical Client evidence must never be rendered as `Guest/new` solely because Member/entitlement reconstruction is incomplete.
+- A Fast Trust source/schema failure must never become a `signup` decision; unresolved identity remains `checking` until authoritative recovery succeeds.
+- Only a successful canonical identity lookup with no canonical Client evidence and no protected entitlement marker may be treated as a genuine new Guest.
 - Internal Airtable IDs, notes, payment refs, proof IDs, allowlists, model grants and secrets must not be exposed.
 - Presentation failures do not authorize fallback demo/member data.
 
@@ -184,3 +187,23 @@ prove the published Lovable build changed. Production acceptance still requires
 a real verified LINE session and comparing the displayed balance, signed ledger,
 status and tier with the authenticated BFF replies. No member records or Points
 entries are rewritten by this repair.
+
+
+## Known-customer resolution invariant — 2026-09-19
+
+My MMD has a strict separation between **identity known** and **membership fully reconstructed**.
+
+```text
+verified LINE
+-> canonical LINE evidence lookup
+-> canonical Client known?
+   -> yes + membership unresolved: checking/recovery, never Guest/signup
+   -> no: continue protected Fast Trust lookup
+-> Fast Trust source available?
+   -> no: checking/recovery, never Guest/signup
+-> trusted VIP/SVIP/Black Card marker?
+   -> yes: verified protected tier now; history enrichment later
+   -> no + no canonical Client: genuine Guest/new flow may continue
+```
+
+A storage/table/field regression is an infrastructure failure, not evidence that a customer is new.
