@@ -103,18 +103,45 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
 export function collapseDescendantsOfUniqueExactModelMatch(query, candidates = []) {
   const rows = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
   const exact = rows.filter((item) => modelNameScore(query, item?.folder_name) === 1);
-  if (exact.length !== 1) return rows;
 
-  const root = exact[0];
+  let root = null;
+  if (exact.length === 1) {
+    root = exact[0];
+  } else if (exact.length === 0) {
+    // Drive folder display names may include the Model nickname while customer/admin
+    // search uses only the Model code (for example query "EMs16", root "EMs16 Gohan").
+    // In that case prefer a single strong, non-operational ancestor candidate, but
+    // preserve fail-closed ambiguity when multiple genuine roots remain.
+    const rootLike = rows.filter((item) => (
+      modelNameScore(query, item?.folder_name) >= 0.74
+      && !isOperationalModelChildFolderName(item?.folder_name)
+    ));
+    const topLevelRootLike = rootLike.filter((item) => (
+      !rootLike.some((other) => other !== item && isDrivePathDescendant(item?.folder_path, other?.folder_path))
+    ));
+    if (topLevelRootLike.length === 1) root = topLevelRootLike[0];
+  }
+
+  if (!root) return rows;
   const rootPath = clean(root?.folder_path, 1400);
   if (!rootPath) return rows;
-  const prefix = `${rootPath} / `;
 
   return rows.filter((item) => {
     if (item === root || item?.drive_folder_id === root?.drive_folder_id) return true;
-    const path = clean(item?.folder_path, 1400);
-    return !path.startsWith(prefix);
+    return !isDrivePathDescendant(item?.folder_path, rootPath);
   });
+}
+
+function isDrivePathDescendant(candidatePath, ancestorPath) {
+  const candidate = clean(candidatePath, 1400);
+  const ancestor = clean(ancestorPath, 1400);
+  return Boolean(candidate && ancestor && candidate.startsWith(`${ancestor} / `));
+}
+
+function isOperationalModelChildFolderName(value) {
+  const name = normalizeModelName(value);
+  if (!name) return false;
+  return /^(?:review|media|archive|reference|approval|approved|pending|draft|asset|assets|private pic|private picture|private clip|private video)\b/.test(name);
 }
 
 export async function resolveApprovedModelFolder(accessToken, folderId, env = {}, seed = null) {
