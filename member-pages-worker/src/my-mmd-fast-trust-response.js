@@ -198,6 +198,7 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
       : patchMemberAppPayload(path, payload, fastTrust);
   if (!patched) return response;
 
+  const acceptance = await recordMyMmdAcceptanceEvidence(env, session.lineUserId, fastTrust, path);
   const headers = new Headers(response.headers);
   headers.delete("content-length");
   headers.set("content-type", "application/json; charset=utf-8");
@@ -206,11 +207,55 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   headers.set("x-mmd-fast-trust-lookup", evidence.state);
   headers.set("x-mmd-tier-source", FAST_TRUST_SOURCE);
   headers.set("x-mmd-fast-trust-tier", fastTrust.tier);
+  if (acceptance?.evidenceId) headers.set("x-mmd-acceptance-evidence", acceptance.evidenceId);
   return new Response(JSON.stringify(patched), {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+export async function recordMyMmdAcceptanceEvidence(env = {}, lineUserId = "", fastTrust = {}, path = "") {
+  const store = env.LIFF_IDENTITY_KV;
+  const secret = String(env.LIFF_SESSION_SECRET || "");
+  const lineId = canonicalLineId(lineUserId);
+  if (!store?.put || secret.length < 32 || !lineId) return { ok: false, reason: "evidence_store_unavailable" };
+  if (!DASHBOARD_PATHS.has(path) && path !== `${APP_PREFIX}dashboard`) return { ok: false, reason: "not_acceptance_surface" };
+
+  try {
+    const fingerprint = (await hmacHex(secret, `my-mmd-acceptance:${lineId}`)).slice(0, 24);
+    const tier = asString(fastTrust.tier, 40) || "protected";
+    const evidenceId = `mmdacc_${fingerprint}`;
+    const record = {
+      version: 1,
+      evidence_id: evidenceId,
+      identity_fingerprint: fingerprint,
+      result: "protected_member_resolved",
+      tier,
+      tier_source: FAST_TRUST_SOURCE,
+      route: asString(path, 160),
+      history_state: asString(fastTrust.historyState, 80) || "recovery_pending",
+      recorded_at: new Date().toISOString(),
+      contains_raw_line_id: false,
+      contains_session_token: false,
+    };
+    await store.put(`ops:my-mmd:acceptance:${fingerprint}`, JSON.stringify(record), { expirationTtl: 60 * 60 * 24 * 30 });
+    console.info({
+      event: "my_mmd_acceptance_evidence_recorded",
+      component: "member-pages-worker",
+      evidence_id: evidenceId,
+      tier,
+      route: record.route,
+    });
+    return { ok: true, evidenceId };
+  } catch (error) {
+    console.warn({
+      event: "my_mmd_acceptance_evidence_write_failed",
+      component: "member-pages-worker",
+      failure_class: String(error?.name || "write_failed").toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 80),
+    });
+    return { ok: false, reason: "evidence_write_failed" };
+  }
 }
 
 function isUnprovenMemberPayload(path, payload) {
