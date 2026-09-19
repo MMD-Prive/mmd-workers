@@ -70,6 +70,11 @@ export function buildHypeCustomerStatusProjection(context = {}) {
     state: context.live_truth_complete === true ? "ready" : "partial",
     readiness: clean(context.readiness, 80) || "unknown",
     display_name: clean(identity.display_name, 120),
+    routing_context: {
+      customer_gender: normalizeRoutingGender(identity.customer_gender),
+      gender_source: clean(identity.customer_gender_source, 80) || "not_recorded",
+      gender_explicit: ["canonical_field", "explicit_labeled_note"].includes(clean(identity.customer_gender_source, 80)),
+    },
     membership: {
       status: token(entitlement.status),
       lifecycle: token(entitlement.lifecycle),
@@ -100,6 +105,8 @@ export function buildHypeCustomerStatusProjection(context = {}) {
       source_of_truth: false,
       protected_actions_require_canonical_backend: true,
       customer_safe_projection_only: true,
+      data_minimized: true,
+      no_gender_inference: true,
     },
   };
 }
@@ -124,6 +131,13 @@ function safeCustomerHref(value) {
   if (!href) return "";
   if (/^\/(?:my-mmd|member|promotion|booking|sigil\/member)(?:\/|\?|$)/.test(href)) return href;
   return "";
+}
+
+function normalizeRoutingGender(value) {
+  const gender = clean(value, 40).toLowerCase();
+  return ["male", "female", "nonbinary", "other", "prefer_not_to_say"].includes(gender)
+    ? gender
+    : "unknown";
 }
 
 function nonNegative(value) {

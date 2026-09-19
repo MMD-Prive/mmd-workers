@@ -15,6 +15,8 @@ test("HYPE projects only customer-safe live status for a verified Telegram clien
     client_360: {
       canonical_client_id: "recSECRET123456789",
       display_name: "คุณเอ็ม",
+      customer_gender: "female",
+      customer_gender_source: "canonical_field",
     },
     entitlement: {
       status: "active",
@@ -52,6 +54,11 @@ test("HYPE projects only customer-safe live status for a verified Telegram clien
   assert.equal(projection.ok, true);
   assert.equal(projection.state, "ready");
   assert.equal(projection.display_name, "คุณเอ็ม");
+  assert.equal(projection.routing_context.customer_gender, "female");
+  assert.equal(projection.routing_context.gender_source, "canonical_field");
+  assert.equal(projection.routing_context.gender_explicit, true);
+  assert.equal(projection.guardrails.data_minimized, true);
+  assert.equal(projection.guardrails.no_gender_inference, true);
   assert.equal(projection.membership.level, "private_premium");
   assert.equal(projection.job.active_count, 1);
   assert.equal(projection.job.next.model_name, "Book EI");
@@ -93,6 +100,7 @@ test("live context resolves exactly one verified canonical Client from stable Te
           line_user_id: "U0123456789abcdef0123456789abcdef",
           telegram_user_id: "111111",
           telegram_verification_status: "verified",
+          "เพศ": "หญิง",
         },
       }],
     });
@@ -111,9 +119,36 @@ test("live context resolves exactly one verified canonical Client from stable Te
     assert.equal(resolved.client.canonical_client_id, "recClientTelegram123");
     assert.equal(resolved.client.display_name, "คุณเอ็ม");
     assert.equal(resolved.client.telegram_user_id, "111111");
+    assert.equal(resolved.client.customer_gender, "female");
+    assert.equal(resolved.client.customer_gender_source, "canonical_field");
     assert.match(decodeURIComponent(requestedUrl), /telegram_user_id/);
     assert.match(decodeURIComponent(requestedUrl), /telegram_verification_status/);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("HYPE never infers customer gender from display name when canonical gender is missing", () => {
+  const projection = buildHypeCustomerStatusProjection({
+    live_truth_complete: true,
+    readiness: "ready",
+    fan_in: {
+      identity_resolution: "canonical",
+      telegram_identity_present: true,
+    },
+    client_360: {
+      display_name: "คุณผู้หญิงใจดี",
+      customer_gender: "unknown",
+      customer_gender_source: "not_recorded",
+    },
+    entitlement: { status: "active", lifecycle: "active", membership_level: "public_member" },
+    job: { active_jobs: [] },
+    payment: { status: "unknown" },
+    next_actions: [],
+  });
+
+  assert.equal(projection.routing_context.customer_gender, "unknown");
+  assert.equal(projection.routing_context.gender_explicit, false);
+  assert.equal(projection.guardrails.no_gender_inference, true);
 });

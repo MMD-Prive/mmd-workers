@@ -901,6 +901,7 @@ for (const [command, expectedPath, expectedText] of [
 for (const [groupName, chatId] of [
   ["standard", "-1002073919780"],
   ["premium", "-1001668261779"],
+  ["preview", "-1002393788585"],
 ]) {
   test(`HYPE /commands publishes a group-safe command guide in ${groupName} group`, { concurrency: false }, async () => {
     const originalFetch = globalThis.fetch;
@@ -931,6 +932,7 @@ for (const [groupName, chatId] of [
       }), env({
         TELEGRAM_STANDARD_GROUP_ID: "-1002073919780",
         TELEGRAM_PREMIUM_GROUP_ID: "-1001668261779",
+        TELEGRAM_PREVIEW_GROUP_ID: "-1002393788585",
         HYPE_OPERATIONS: {
           async fetch() {
             operationsCalled = true;
