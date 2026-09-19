@@ -362,7 +362,7 @@ test("ambiguous Shop recovery renders customer-safe inline Order picker on the s
       sends.push(payload);
       return Response.json({ ok: true, result: { message_id: 3250 + sends.length } });
     }
-    throw new Error(\`unexpected fetch \${target}\`);
+    throw new Error("unexpected fetch " + target);
   };
 
   try {
@@ -529,7 +529,7 @@ test("Owner can resolve a recovery Case only with an explicit taxonomy outcome",
       sends.push(payload);
       return Response.json({ ok: true, result: { message_id: 3271 } });
     }
-    throw new Error(\`unexpected fetch \${target}\`);
+    throw new Error("unexpected fetch " + target);
   };
 
   try {
