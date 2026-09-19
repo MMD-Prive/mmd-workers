@@ -183,13 +183,26 @@ test("member payments BFF rejects browser-selected payment context and remains r
 });
 
 test("HEAD returns the same safe authority headers without a body", async () => {
+  const upstream = delegate({
+    display_name: "คุณเปอร์",
+    tier: "Premium",
+    membership_status: "active",
+    payment_status: "verified",
+    payment_history: [],
+  });
   const response = await handleMemberPaymentsBff(
-    new Request("https://mmdbkk.com/v1/member/payments", { method: "HEAD" }),
+    new Request("https://mmdbkk.com/v1/member/payments", {
+      method: "HEAD",
+      headers: { cookie: "__Host-mmd_liff_session=current" },
+    }),
     {},
-    delegate(),
-    async () => session({ memberExists: false }),
+    upstream,
+    async () => session({ memberExists: true }),
   );
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-payment-authority"), "payments-worker");
+  assert.equal(upstream.calls.length, 1);
+  assert.equal(upstream.calls[0].method, "GET");
+  assert.equal(upstream.calls[0].url, "https://mmdbkk.com/member/api/liff/profile");
   assert.equal(await response.text(), "");
 });
