@@ -77,7 +77,11 @@ export async function inspectCalendarConnection(env = {}, fetcher = fetch) {
       http_status:bridge?.status || 0, error_name:bridge?.error_name || null,
       webhook_secret_configured:bridgeReady && bridge.data?.webhook_secret_configured === true,
       api_key_configured:bridgeReady && bridge.data?.api_key_configured === true,
-      mapping_ledger_configured:bridgeReady && bridge.data?.mapping_ledger_configured === true },
+      mapping_ledger_configured:bridgeReady && bridge.data?.mapping_ledger_configured === true,
+      internal_hold_write_enabled:bridgeReady && bridge.data?.internal_hold?.write_enabled === true,
+      internal_hold_coordinator_configured:bridgeReady && bridge.data?.internal_hold?.coordinator_configured === true,
+      internal_hold_event_type_id:bridgeReady ? Number(bridge.data?.internal_hold?.event_type_id || 0) || null : null,
+      internal_hold_writer:bridgeReady ? clean(bridge.data?.internal_hold?.writer, 80) || null : null },
     mutations_attempted:false,
   };
 }

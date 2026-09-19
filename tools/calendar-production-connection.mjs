@@ -93,7 +93,13 @@ for(const origin of origins){
   const publicPage=await get(origin+'/internal/admin/calendar');assert.ok([302,303].includes(publicPage.status),'page gate missing');await publicPage.body?.cancel();
   results.push({origin,surface:'admin-worker-webflow-v2',days,connection:view.connection});
 }
-const ready=results.every(x=>x.connection.outbound.api_verified&&x.connection.inbound.webhook_secret_configured&&x.connection.inbound.mapping_ledger_configured);
-const receipt={checked_at:new Date().toISOString(),status:ready?'calendar_live_cal_read_connection_verified':'calendar_live_cal_configuration_incomplete',provisioning,results,booking_created:false,financial_mutations:false};
+const ready=results.every(x=>x.connection.outbound.api_verified
+  &&x.connection.inbound.webhook_secret_configured
+  &&x.connection.inbound.mapping_ledger_configured
+  &&x.connection.inbound.internal_hold_write_enabled
+  &&x.connection.inbound.internal_hold_coordinator_configured
+  &&x.connection.inbound.internal_hold_event_type_id===7057823
+  &&x.connection.inbound.internal_hold_writer==='cal-sync-worker');
+const receipt={checked_at:new Date().toISOString(),status:ready?'calendar_internal_hold_live_write_ready':'calendar_live_write_configuration_incomplete',provisioning,results,booking_created:false,financial_mutations:false,write_scope:'internal_hold_only',inbound_lifecycle_mode:'shadow'};
 console.log(JSON.stringify(receipt));
 writeFileSync(process.env.RUNNER_TEMP+'/calendar-connection-receipt.json',JSON.stringify(receipt,null,2));
