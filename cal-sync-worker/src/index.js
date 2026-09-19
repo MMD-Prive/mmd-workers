@@ -1,3 +1,5 @@
+import { handleInternalHoldRequest, internalHoldHealth, reconcileInternalHolds } from './internal-hold-writer.js';
+export { CalInternalHoldCoordinator } from './internal-hold-writer.js';
 const encoder = new TextEncoder();
 const AIRTABLE_API = 'https://api.airtable.com/v0';
 const DEFAULT_BASE_ID = 'appsV1ILPRfIjkaYg';
@@ -131,10 +133,12 @@ export async function persistCalBookingLink(event, env = {}) {
 }
 
 export async function handleRequest(request, env = {}) {
+  const internalHoldResponse = await handleInternalHoldRequest(request, env);
+  if (internalHoldResponse instanceof Response) return internalHoldResponse;
   const url = new URL(request.url);
   if (request.method === 'GET' && url.pathname === '/health') {
     const cfg = airtableConfig(env);
-    return json({ ok:true, service:'cal-sync-worker', mode:clean(env.CAL_SHADOW_MODE).toLowerCase()==='false'?'active':'shadow', webhook_secret_configured:Boolean(clean(env.CAL_WEBHOOK_SECRET)), api_key_configured:Boolean(clean(env.CAL_API_KEY)), mapping_ledger_configured:Boolean(cfg.token), mapping_table:cfg.table, timezone:clean(env.MMD_TIMEZONE)||'Asia/Bangkok' });
+    return json({ ok:true, service:'cal-sync-worker', mode:clean(env.CAL_SHADOW_MODE).toLowerCase()==='false'?'active':'shadow', webhook_secret_configured:Boolean(clean(env.CAL_WEBHOOK_SECRET)), api_key_configured:Boolean(clean(env.CAL_API_KEY)), mapping_ledger_configured:Boolean(cfg.token), mapping_table:cfg.table, timezone:clean(env.MMD_TIMEZONE)||'Asia/Bangkok', internal_hold:internalHoldHealth(env) });
   }
   if (request.method === 'POST' && url.pathname === '/webhooks/cal') {
     const secret = clean(env.CAL_WEBHOOK_SECRET); if (!secret) return json({ok:false,error:'webhook_secret_not_configured'},503);
@@ -154,4 +158,14 @@ export async function handleRequest(request, env = {}) {
   }
   return json({ok:false,error:'not_found'},404);
 }
-export default { fetch(request,env){ return handleRequest(request,env); } };
+export default {
+  fetch(request,env){ return handleRequest(request,env); },
+  scheduled(_event,env,ctx){
+    const health=internalHoldHealth(env);
+    if(!health.write_enabled||!health.coordinator_configured)return;
+    const task=reconcileInternalHolds(env,{limit:25,horizonDays:60})
+      .then(result=>console.log(JSON.stringify({type:'cal_internal_hold_reconcile',...result.summary,candidates:result.candidates})))
+      .catch(error=>console.warn('[cal-internal-hold] scheduled reconcile failed',{error:clean(error?.message,120)||'unknown'}));
+    if(ctx?.waitUntil)ctx.waitUntil(task);
+  },
+};
