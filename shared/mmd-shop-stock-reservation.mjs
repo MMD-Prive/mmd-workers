@@ -62,6 +62,9 @@ export function createReservationMetadata(orderId, allocations, ttlMinutes = 45)
     committed_at: "",
     released_at: "",
     release_reason: "",
+    order_record_id: "",
+    payment_review_started_at: "",
+    payment_review_key: "",
     allocations,
   });
 }
@@ -182,13 +185,15 @@ export async function reserveMmdShopStock(env, input) {
     }
   }
 
-  const reservation = createReservationMetadata(
-    orderId,
-    allocations,
-    Number(env.MMD_SHOP_RESERVATION_TTL_MINUTES || 45),
-  );
-
   const orderRecordId = validRecordId(input?.order_record_id);
+  const reservation = sanitizeReservation({
+    ...createReservationMetadata(
+      orderId,
+      allocations,
+      Number(env.MMD_SHOP_RESERVATION_TTL_MINUTES || 45),
+    ),
+    order_record_id: orderRecordId,
+  });
   if (orderRecordId) {
     try {
       const baseNotes = clean(input?.order_notes, 14000);
@@ -204,10 +209,64 @@ export async function reserveMmdShopStock(env, input) {
   return reservation;
 }
 
+export async function claimMmdShopReservationForPayment(env, reservation, reviewKey = "") {
+  const current = sanitizeReservation(reservation || {});
+  const key = clean(reviewKey, 500) || current.order_id;
+  if (current.state === "committed") return { reservation: current, idempotent: true };
+  if (["released", "expired"].includes(current.state)) throw reservationError(409, `reservation_not_claimable:${current.state}`);
+
+  if (current.state === "payment_review") {
+    if (current.payment_review_key && current.payment_review_key !== key) {
+      throw reservationError(409, "reservation_payment_review_in_progress");
+    }
+    return { reservation: current, idempotent: true };
+  }
+
+  if (current.state !== "reserved") throw reservationError(409, `reservation_not_claimable:${current.state}`);
+  const expires = Date.parse(current.expires_at || "");
+  if (Number.isFinite(expires) && expires <= Date.now()) throw reservationError(409, "reservation_expired");
+
+  const next = sanitizeReservation({
+    ...current,
+    state: "payment_review",
+    payment_review_started_at: new Date().toISOString(),
+    payment_review_key: key,
+  });
+  await persistReservationMetadata(env, next);
+  return { reservation: next, idempotent: false };
+}
+
+export async function abortMmdShopPaymentClaim(env, reservation, reviewKey = "", reason = "payment_review_failed") {
+  const current = sanitizeReservation(reservation || {});
+  const key = clean(reviewKey, 500) || current.order_id;
+  if (current.state !== "payment_review") return { reservation: current, idempotent: true };
+  if (current.payment_review_key && current.payment_review_key !== key) {
+    throw reservationError(409, "reservation_payment_review_key_mismatch");
+  }
+
+  const expires = Date.parse(current.expires_at || "");
+  if (Number.isFinite(expires) && expires <= Date.now()) {
+    const releasable = sanitizeReservation({ ...current, state: "reserved" });
+    const released = await releaseMmdShopReservation(env, releasable, "expired");
+    await persistReservationMetadata(env, released.reservation);
+    return released;
+  }
+
+  const next = sanitizeReservation({
+    ...current,
+    state: "reserved",
+    payment_review_started_at: "",
+    payment_review_key: "",
+    release_reason: clean(reason, 180),
+  });
+  await persistReservationMetadata(env, next);
+  return { reservation: next, idempotent: false };
+}
+
 export async function commitMmdShopReservation(env, reservation) {
   const current = sanitizeReservation(reservation || {});
   if (current.state === "committed") return { reservation: current, idempotent: true };
-  if (current.state !== "reserved") throw reservationError(409, `reservation_not_committable:${current.state}`);
+  if (!["reserved", "payment_review"].includes(current.state)) throw reservationError(409, `reservation_not_committable:${current.state}`);
 
   for (const allocation of current.allocations) {
     const ref = reservationRef(current.order_id, "out", allocation.batch_id, allocation.product_id);
@@ -230,6 +289,7 @@ export async function commitMmdShopReservation(env, reservation) {
     state: "committed",
     committed_at: new Date().toISOString(),
   });
+  await persistReservationMetadata(env, next);
   return { reservation: next, idempotent: false };
 }
 
@@ -328,6 +388,26 @@ export async function expireMmdShopReservations(env) {
   };
 }
 
+async function persistReservationMetadata(env, reservation) {
+  const value = sanitizeReservation(reservation || {});
+  let orderRecordId = validRecordId(value.order_record_id);
+
+  if (!orderRecordId && value.order_id) {
+    const orders = await listRecords(env, table(env, "orders"), Object.values(ORDER_FIELDS));
+    const found = orders.find((record) => clean(record.fields?.[ORDER_FIELDS.orderId], 180) === value.order_id);
+    orderRecordId = found?.id || "";
+  }
+  if (!orderRecordId) throw reservationError(404, "reservation_order_not_found");
+
+  const order = await getRecord(env, table(env, "orders"), orderRecordId, Object.values(ORDER_FIELDS));
+  if (!order?.id) throw reservationError(404, "reservation_order_not_found");
+
+  await patchRecord(env, table(env, "orders"), orderRecordId, {
+    [ORDER_FIELDS.notes]: writeMmdShopReservation(order.fields?.[ORDER_FIELDS.notes], value),
+  });
+  return value;
+}
+
 async function bestEffortReleaseAllocations(env, orderId, allocations, reason) {
   const reservation = createReservationMetadata(orderId, allocations, 5);
   try {
@@ -369,7 +449,7 @@ function reservationRef(orderId, action, batchId, productId) {
 }
 
 function sanitizeReservation(value) {
-  const state = ["reserved", "committed", "released", "expired"].includes(code(value?.state))
+  const state = ["reserved", "payment_review", "committed", "released", "expired"].includes(code(value?.state))
     ? code(value.state)
     : "reserved";
   return {
@@ -381,6 +461,9 @@ function sanitizeReservation(value) {
     committed_at: clean(value?.committed_at, 80),
     released_at: clean(value?.released_at, 80),
     release_reason: clean(value?.release_reason, 180),
+    order_record_id: validRecordId(value?.order_record_id),
+    payment_review_started_at: clean(value?.payment_review_started_at, 80),
+    payment_review_key: clean(value?.payment_review_key, 500),
     allocations: Array.isArray(value?.allocations)
       ? value.allocations.map((item) => ({
           product_id: validRecordId(item?.product_id),
