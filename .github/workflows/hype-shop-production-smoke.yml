@@ -166,6 +166,12 @@ jobs:
           test "$telegram_code" = "200"
           node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(p?.ok!==true) throw new Error("telegram health is not ok"); if(p?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HYPE capability pack"); if(p?.recovery_outcome_taxonomy!=="mmd-recovery-outcome-taxonomy-v1-20260919") throw new Error("unexpected Recovery outcome taxonomy");' "$telegram_body"
 
+          mms_body="$(mktemp)"
+          mms_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$mms_body" -w "%{http_code}" "https://mms-worker.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health")"
+          cat "$mms_body"
+          test "$mms_code" = "200"
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const line=p?.bindings?.line||{}; if(p?.ok!==true) throw new Error("mms health is not ok"); if(line?.persona!=="HENNA") throw new Error("unexpected MMS LINE persona"); if(line?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HENNA capability pack"); if(line?.recovery_outcome_taxonomy!=="mmd-recovery-outcome-taxonomy-v1-20260919") throw new Error("unexpected HENNA recovery taxonomy"); if(line?.auto_reply_enabled!==false) throw new Error("HENNA auto reply must remain disabled");' "$mms_body"
+
       - name: Record acceptance summary
         if: success()
         shell: bash
@@ -181,6 +187,8 @@ jobs:
             echo "- public internal endpoints blocked: PASS"
             echo "- telegram HYPE capability pack health: PASS"
             echo "- recovery outcome taxonomy health: PASS"
+            echo "- HENNA MMS LINE taxonomy health: PASS"
+            echo "- HENNA auto reply remains disabled: PASS"
             echo "- customer data used: NONE"
             echo "- business truth mutation: NONE"
           } >> "$GITHUB_STEP_SUMMARY"
