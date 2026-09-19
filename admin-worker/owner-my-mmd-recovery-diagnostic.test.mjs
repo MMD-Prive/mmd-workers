@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import coreWorker from "./src/admin-login-hero-worker-core.js";
 import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-session.js";
@@ -182,4 +183,23 @@ test("active admin core dispatches owner diagnostic behind credential-bound sess
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("wrangler owns only the exact/query-safe owner diagnostic routes", async () => {
+  const wrangler = await readFile(new URL("./wrangler.toml", import.meta.url), "utf8");
+  const routes = [
+    "mmdbkk.com/internal/admin/my-mmd/recovery",
+    "www.mmdbkk.com/internal/admin/my-mmd/recovery",
+    "mmdbkk.com/internal/admin/my-mmd/recovery*",
+    "www.mmdbkk.com/internal/admin/my-mmd/recovery*",
+    "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic",
+    "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic",
+    "mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*",
+    "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*",
+  ];
+  for (const route of routes) {
+    assert.ok(wrangler.includes('pattern = "' + route + '"'), "missing route " + route);
+  }
+  assert.equal(wrangler.includes('pattern = "mmdbkk.com/internal/admin/*"'), false);
 });
