@@ -692,6 +692,89 @@ test("Shop stale picker refreshes owned Orders and preserves lifecycle/SLA metad
   }
 });
 
+
+test("picker delivery acknowledgment is customer-owned, idempotent, and never resets lifecycle metadata", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const caseRef = "HYPE-PER-20260920104500-acde1007";
+  const refA = "kenji_aaaaaaaaaaaaaaaaaaaaaaaa";
+  let matrix = recoveryMatrix({
+    caseRef,
+    domain: "booking",
+    state: "reviewing",
+    options: [bookingOption(refA, "2026-10-02", "Model A")],
+  });
+  const payload = JSON.parse(matrix.fields.payload_json);
+  payload.recovery_correlation.picker_revision = 2;
+  payload.recovery_correlation.picker_status = "reissued";
+  payload.recovery_correlation.picker_reissue_count = 1;
+  payload.recovery_correlation.picker_delivery_status = "pending_customer_delivery";
+  payload.recovery_correlation.picker_delivery_revision = 2;
+  payload.recovery_correlation.picker_reissued_at = "2026-09-19T12:55:00.000Z";
+  matrix.fields.payload_json = JSON.stringify(payload);
+
+  const before = JSON.parse(matrix.fields.payload_json);
+  const originalAssignment = structuredClone(before.recovery_assignment);
+  let patchCount = 0;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const method = String(init.method || "GET").toUpperCase();
+    if (parsed.pathname.endsWith("/tblClients")) return Response.json({ records: [clientRecord()] });
+    if (parsed.pathname.endsWith("/tblClients/" + CLIENT_ID)) return Response.json(clientRecord());
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") return Response.json({ records: [matrix] });
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "PATCH") {
+      patchCount += 1;
+      const body = JSON.parse(String(init.body || "{}"));
+      matrix = { id: matrix.id, fields: { ...matrix.fields, ...body.records[0].fields } };
+      return Response.json({ records: [matrix] });
+    }
+    throw new Error("unexpected fetch " + parsed.pathname + " " + method);
+  };
+
+  try {
+    const ack = await handleHypeHandoffStatusRpc(internalRequest({
+      operation: "ack_recovery_picker_delivery",
+      telegram_user_id: TELEGRAM_ID,
+      handoff_id: caseRef,
+      picker_revision: 2,
+    }), BASE_ENV);
+    const ackBody = await ack.json();
+
+    assert.equal(ack.status, 200);
+    assert.equal(ackBody.state, "picker_delivered");
+    assert.equal(ackBody.replayed, false);
+    assert.equal(ackBody.picker_revision, 2);
+    assert.equal(ackBody.recovery_correlation.picker_delivery_status, "delivered");
+    assert.equal(ackBody.recovery_correlation.picker_delivery_revision, 2);
+    assert.ok(ackBody.recovery_correlation.picker_delivered_at);
+    assert.equal(patchCount, 1);
+
+    const stored = JSON.parse(matrix.fields.payload_json);
+    assert.equal(stored.handoff_tracking.state, "reviewing");
+    assert.equal(stored.handoff_tracking.updated_at, LIFE_UPDATED);
+    assert.equal(stored.recovery_case.updated_at, LIFE_UPDATED);
+    assert.equal(stored.recovery_case.outcome_code, "intake_received");
+    assert.deepEqual(stored.recovery_assignment, originalAssignment);
+    assert.equal(matrix.fields.state_updated_at, LIFE_UPDATED);
+    assert.equal(stored.business_truth_mutated, false);
+
+    const replay = await handleHypeHandoffStatusRpc(internalRequest({
+      operation: "ack_recovery_picker_delivery",
+      telegram_user_id: TELEGRAM_ID,
+      handoff_id: caseRef,
+      picker_revision: 2,
+    }), BASE_ENV);
+    const replayBody = await replay.json();
+
+    assert.equal(replay.status, 200);
+    assert.equal(replayBody.state, "picker_delivered");
+    assert.equal(replayBody.replayed, true);
+    assert.equal(patchCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("authority unavailable and foreign or terminal picker callbacks fail safely without guessing", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const caseRef = "HYPE-PER-20260920105000-acde1006";
