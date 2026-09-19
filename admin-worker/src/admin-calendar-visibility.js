@@ -100,7 +100,7 @@ function calendarPresentationHeaders(request) {
 function injectCalendarConnectionState(html, connection) {
   const state = `<script type="application/json" id="calendar-connection-state">${JSON.stringify(connection).replace(/</g,'\\u003c')}</script>`;
   if (html.includes('id="calendar-connection-state"')) {
-    return html.replace(/<script type="application\/json" id="calendar-connection-state">[\\s\\S]*?<\\/script>/, state);
+    return html.replace(/<script type="application\/json" id="calendar-connection-state">[\s\S]*?<\/script>/, state);
   }
   if (html.includes('</body>')) return html.replace('</body>', state + '</body>');
   return html + state;
