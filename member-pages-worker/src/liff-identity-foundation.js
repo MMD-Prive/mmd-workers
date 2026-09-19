@@ -5,7 +5,7 @@ import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-jso
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
-import { readMmsCustomerHistory } from "./mms-customer-history.js";
+import { readMmsCustomerHistory } from "./mms-customer-history.js";\nimport { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -35,6 +35,7 @@ const SHOP_TABLES = Object.freeze({
 });
 const SHOP_CUSTOMER_FIELDS = Object.freeze({
   memberId: "fldCjBe9gqIq6y7rR",
+  lineUserId: "fldhL0PHPwrkT8X3p",
 });
 const SHOP_ORDER_FIELDS = Object.freeze({
   orderId: "flde515MCoEq08YzU",
@@ -43,6 +44,7 @@ const SHOP_ORDER_FIELDS = Object.freeze({
   orderStatus: "fldnCO3H5CpJoYmWD",
   paymentStatus: "fldUpDeLdO6D9OUcd",
   total: "fldYIwMzRJdKdznkY",
+  notes: "fldWG0u77XQ5W0wpT",
 });
 const SHOP_ITEM_FIELDS = Object.freeze({
   name: "fldLR9aIu2m6DTr2e",
@@ -240,6 +242,7 @@ export async function handleMmdShopMemberContext(request, env = {}) {
     authority: "member-pages-worker",
     schema: "mmd_shop_member_context_v1",
     member_id: String(auth.session.member_id).trim().slice(0, 180),
+    line_user_id: String(auth.session.line_user_id || "").trim().slice(0, 220) || null,
   }, 200);
 }
 
@@ -262,10 +265,16 @@ export async function handleMmdShopOrders(request, env = {}) {
 
   try {
     const memberId = String(auth.session.member_id).trim();
+    const lineUserId = String(auth.session.line_user_id || "").trim();
     const customers = await shopAirtableList(env, SHOP_TABLES.customers, Object.values(SHOP_CUSTOMER_FIELDS));
     const customerIds = new Set(
       customers
-        .filter((record) => String(record?.fields?.[SHOP_CUSTOMER_FIELDS.memberId] || "").trim() === memberId)
+        .filter((record) => {
+          const fields = record?.fields || {};
+          const byMember = String(fields[SHOP_CUSTOMER_FIELDS.memberId] || "").trim() === memberId;
+          const byLine = lineUserId && String(fields[SHOP_CUSTOMER_FIELDS.lineUserId] || "").trim() === lineUserId;
+          return byMember || byLine;
+        })
         .map((record) => record.id)
         .filter(Boolean),
     );
@@ -276,7 +285,7 @@ export async function handleMmdShopOrders(request, env = {}) {
         authority: "member-pages-worker",
         schema: "my_mmd_shop_orders_v1",
         orders: [],
-        ownership: "server_member_id",
+        ownership: "server_member_or_line_identity",
       }, 200);
     }
 
@@ -312,13 +321,20 @@ export async function handleMmdShopOrders(request, env = {}) {
       const orderId = String(fields[SHOP_ORDER_FIELDS.orderId] || "").trim().slice(0, 180);
       const total = shopNumberOrNull(fields[SHOP_ORDER_FIELDS.total]);
       const token = orderId && total > 0 ? await mintMemberShopToken(env, orderId, total) : "";
+      const orderStatus = shopCode(fields[SHOP_ORDER_FIELDS.orderStatus]) || "draft";
+      const paymentStatus = shopCode(fields[SHOP_ORDER_FIELDS.paymentStatus]) || "pending";
+      const fulfillment = readMmdShopFulfillment(fields[SHOP_ORDER_FIELDS.notes]);
+      const fulfillmentState = fulfillmentStateFromOrder(orderStatus, paymentStatus, fulfillment?.state);
       output.push({
         order_id: orderId,
         order_date: String(fields[SHOP_ORDER_FIELDS.orderDate] || "").trim().slice(0, 40) || null,
-        order_status: shopCode(fields[SHOP_ORDER_FIELDS.orderStatus]) || "draft",
-        payment_status: shopCode(fields[SHOP_ORDER_FIELDS.paymentStatus]) || "pending",
+        order_status: orderStatus,
+        payment_status: paymentStatus,
         total_thb: total,
         items: itemsByOrder.get(order.id) || [],
+        fulfillment: fulfillment
+          ? publicMmdShopFulfillment({ ...fulfillment, state: fulfillmentState })
+          : { schema: "mmd_shop_fulfillment_v1", state: fulfillmentState },
         status_url: token ? `/mmd-shop/order?t=${encodeURIComponent(token)}` : null,
         payment_url: token ? `/pay/checkout?t=${encodeURIComponent(token)}` : null,
       });
@@ -328,7 +344,7 @@ export async function handleMmdShopOrders(request, env = {}) {
       ok: true,
       authority: "member-pages-worker",
       schema: "my_mmd_shop_orders_v1",
-      ownership: "server_member_id",
+      ownership: "server_member_or_line_identity",
       orders: output,
     }, 200);
   } catch (error) {
