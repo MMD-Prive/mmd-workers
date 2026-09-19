@@ -323,6 +323,7 @@ export async function expireMmdShopReservations(env) {
     ok: results.every((item) => item.released !== false),
     checked: orders.length,
     expired: results.filter((item) => item.released).length,
+    expired_order_ids: results.filter((item) => item.released).map((item) => item.order_id).filter(Boolean),
     failures: results.filter((item) => item.released === false),
   };
 }
