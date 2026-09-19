@@ -179,6 +179,14 @@ test("P6 /progress reads execution receipt without creating a new execution", { 
               canonical_href: "/sigil/member/membership?intent=renew",
               replay_safe: true,
             },
+            authority_observation: {
+              source: "my_mmd_entitlement_resolver_v1",
+              membership_level: "private_premium",
+              lifecycle: "active",
+              active_through: "2027-09-30T16:59:59.000Z",
+              renewal_completion_inferred: false,
+              final_confirmation_observed: false,
+            },
           });
         },
       },
@@ -189,6 +197,9 @@ test("P6 /progress reads execution receipt without creating a new execution", { 
     assert.equal(rpcBody.operation, "status");
     assert.match(sent.text, /Status:<\/b> queued/);
     assert.match(sent.text, /HYPE-EXEC-RENEWAL/);
+    assert.match(sent.text, /Canonical observation/);
+    assert.match(sent.text, /private_premium/);
+    assert.match(sent.text, /Final confirmation: ยังไม่ถือว่ายืนยัน/);
   } finally {
     globalThis.fetch = originalFetch;
   }
