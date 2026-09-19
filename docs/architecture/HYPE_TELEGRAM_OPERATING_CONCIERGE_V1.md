@@ -389,10 +389,86 @@ Every P5 flow remains draft-only: no business-truth mutation, no payment verific
 
 Transaction Intake is private-chat only. A request started in Standard, Premium, Preview or another group must not read/write Client transaction context there; HYPE routes the user to private chat instead.
 
+## Supervised Execution Assistant · Priority 6
+
+P6 lets HYPE perform bounded low-risk execution only after the customer has explicitly completed a P5 draft and explicitly asks HYPE to continue.
+
+Customer commands:
+
+- `/submit` or equivalent explicit wording — execute the current draft through the supervised lane;
+- `/progress` — read the stored execution receipt without creating a new action.
+
+HYPE must never auto-execute merely because an intake draft becomes complete.
+
+### Idempotency
+
+Each P5 `draft_id` produces one stable P6 `execution_id`.
+
+- retries with the same draft/lane return the existing execution receipt;
+- Booking and MMS downstream calls also receive this stable idempotency key/reference;
+- duplicate Telegram commands must not create duplicate Booking Request or MMS Pre-booking records;
+- an execution receipt is stored in the existing Kenji Conversation Matrix, not a new execution database.
+
+### Booking execution
+
+When the Booking draft is complete and an explicit Model preference exists, HYPE may call the existing Kenji LV5 supervised action gate with `create_booking_request`.
+
+The existing gate must still verify Canonical Client + LINE identity, current entitlement, canonical Model/access visibility, current Calendar projection, and required booking fields.
+
+A successful P6 Booking action creates only the canonical Booking Request draft in the booking authority.
+
+It does not confirm the Job, assign the Model finally, create a protected calendar hold, confirm payment, or represent Model availability as guaranteed.
+
+If any safe gate fails, HYPE records `review_required` and keeps the P5 draft for MMD review.
+
+### Payment Proof execution
+
+Telegram media is still not canonical Payment Evidence.
+
+P6 may prepare an idempotent Payment Proof handoff receipt, route the customer to the exact signed current payment surface, and notify the internal Payments topic that a HYPE proof handoff is ready.
+
+P6 must not move Telegram `file_id` / raw media into the payment system, invent a payment reference, verify the proof, or mark paid.
+
+If no signed payment intent exists, execution remains `review_required` and routes to `/member/payments`.
+
+### Renewal execution
+
+P6 may queue an idempotent renewal intent for the current canonical membership lane and notify the Membership operations topic.
+
+This is a supervised handoff only. HYPE does not select a different tier, upgrade/downgrade, extend active-through, grant membership, or settle membership payment.
+
+Canonical renewal/payment pages and their owning backends remain final authority.
+
+### MMS execution
+
+A complete MMS draft may be materialized through the existing `MMS_WORKER` service binding as an idempotent canonical pre-booking.
+
+The MMS worker remains responsible for canonical zone/skill validation, Therapist inventory/matching, coordinator idempotency, and durable pre-booking state.
+
+HYPE must not invent a duration when the customer did not provide one.
+
+If the customer supplied a Therapist preference by name but HYPE cannot resolve it to a canonical Therapist ID, P6 must stop at `review_required` rather than ignore or guess the preference.
+
+MMS pre-booking may report that options exist, but it is never equivalent to Therapist confirmation, final Booking confirmation or Payment confirmation.
+
+### Request-level mutation vs protected truth
+
+P6 is allowed to create low-risk request-level truth such as a Booking Request draft or an MMS Pre-booking record.
+
+Therefore P6 receipts distinguish `request_level_mutation=true` when a canonical request record was materialized, while `protected_business_truth_mutated=false` remains locked.
+
+Protected truth still includes Payment confirmation, final Job state, final Model/Therapist assignment, Calendar authority and Membership entitlement.
+
+### Ops alerts and privacy
+
+P6 may emit bounded internal Telegram alerts to the canonical Booking / Payment / Membership / Alerts topics.
+
+Customer transaction details remain private-chat only. Calling `/submit` or `/progress` in Standard, Premium, Preview or another group must not read or execute the customer's draft.
+
 ## Next implementation lanes
 
-1. owner/operator acknowledgement and close-loop state for completed handoffs
-2. supervised canonical booking-draft materialization only through existing safe action gates where identity/model/access data is complete
-3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
+1. authority-result close-loop observation for Booking/Payment/Renewal/MMS receipts without inferring completion;
+2. operator acknowledgement state for failed or review-required executions;
+3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection.
 
 All future lanes must preserve the same authority and privacy locks.
