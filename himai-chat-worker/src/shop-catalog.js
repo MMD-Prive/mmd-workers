@@ -75,11 +75,22 @@ async function getMmdProduct(env, slug) {
     return json({ ok: false, error: "product_not_found" }, 404);
   }
 
+  const variants = product.variant_group
+    ? products
+        .filter((item) =>
+          item
+          && item.variant_group === product.variant_group
+          && String(item.status || "").toLowerCase() === "active"
+        )
+        .sort(compareProductVariants)
+    : [product];
+
   return json({
     ok: true,
     schema: "mmd_shop_product_v1",
     shop: "mmd-shop",
-    product
+    product,
+    variants
   });
 }
 
@@ -145,6 +156,7 @@ async function loadProducts(env, shopKey) {
           )
         : false;
       const canonicalSlug = slugify(sku || productName || record.id);
+      const variant = mmdProductVariantMeta(sku, productName);
 
       return {
         id: record.id,
@@ -152,6 +164,9 @@ async function loadProducts(env, shopKey) {
         sku,
         canonical_slug: canonicalSlug,
         product_url: shopKey === "mmd-shop" ? `/mmd-shop/product/${encodeURIComponent(canonicalSlug)}` : null,
+        variant_group: shopKey === "mmd-shop" ? variant.group : null,
+        variant_type: shopKey === "mmd-shop" ? variant.type : null,
+        variant_value: shopKey === "mmd-shop" ? variant.value : null,
         category: selectName(recordFields["Category"]) || "Selected",
         status,
         curation_label: selectName(recordFields["Curation Label"]) || "",
@@ -265,7 +280,60 @@ function productImageUrl(sku) {
   if (code.startsWith("PPP25-")) {
     return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2de261bf62d20a6d4a9e_Pod%20Plus%20MMD.webp";
   }
+  if (code.startsWith("GLEN-POP")) {
+    return "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8a7881b18c863ef26b9b64_Shop%20Pop%20Plus.webp";
+  }
   return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c1e2f03656a00250f4531_MMD%20Shop%20Luxury%20Gift%20Box.webp";
+}
+
+function mmdProductVariantMeta(sku, productName) {
+  const code = String(sku || "").toUpperCase();
+  const name = String(productName || "").trim();
+
+  if (code.startsWith("WGG-")) {
+    const size = code.match(/^WGG-(10|25|50)$/)?.[1] || name.match(/\b(10|25|50)\s*ml\b/i)?.[1] || "";
+    return {
+      group: "WGG",
+      type: "size",
+      value: size ? `${size}ml` : code
+    };
+  }
+
+  if (code.startsWith("PPP25-")) {
+    const suffix = code.slice("PPP25-".length);
+    const flavourBySku = {
+      KYO: "KyoHo Grape",
+      MIX: "Mix-Fruit",
+      PNA: "PineApple",
+      COK: "Coke",
+      GRP: "Grape",
+      APL: "Apple",
+      MGO: "Mango",
+      WTM: "Water-Melon"
+    };
+    const nameValue = name
+      .replace(/^Pod Premium Plus(?:\s*2\.5mg)?\s*[—-]?\s*/i, "")
+      .trim();
+    return {
+      group: "PPP25",
+      type: "flavour",
+      value: flavourBySku[suffix] || nameValue || suffix
+    };
+  }
+
+  return { group: null, type: null, value: null };
+}
+
+function compareProductVariants(a, b) {
+  if (a?.variant_group === "WGG" && b?.variant_group === "WGG") {
+    const number = (item) => Number(String(item?.variant_value || "").replace(/[^0-9.]/g, "")) || 999;
+    return number(a) - number(b);
+  }
+  return String(a?.variant_value || a?.sku || "").localeCompare(
+    String(b?.variant_value || b?.sku || ""),
+    "en",
+    { sensitivity: "base" }
+  );
 }
 
 function isOnDemandProduct(note) {
