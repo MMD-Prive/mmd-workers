@@ -837,7 +837,7 @@
       "production_verified": "presentation_source_verified_bff_ingress_pending",
       "production_verification": "Webflow presentation verified; /v1/member/payments BFF production ingress must pass acceptance",
       "risk": "legacy admin delegation must not expose admin context or become member payment authority",
-      "evidence": "Webflow /member/payments page id 69dfd6c51dd636056fdb35ea; docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md",
+      "evidence": "Webflow /member/payments page id 69dfd6c51dd636056fdb35ea; MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md",
       "conflicts": [
         "legacy admin facade remains migration dependency until BFF acceptance"
       ],
