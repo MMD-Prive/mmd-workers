@@ -71,7 +71,7 @@ test("member payments BFF combines fresh verified history with current backend-i
       sessionId: "publicmem_elite_1",
       paymentStage: "membership",
       packageCode: "elite",
-      amountThb: 4990,
+      amountThb: 4999,
       bindingStatus: "canonical_pending",
       customerPaymentUrl: "https://mmdbkk.com/pay/checkout?t=signed_public",
       createdAt: "2026-09-19T09:00:00.000Z",
