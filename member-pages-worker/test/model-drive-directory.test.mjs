@@ -10,6 +10,7 @@ import {
   isModelDriveDirectoryRequest,
   modelNameScore,
   resolveApprovedModelFolder,
+  searchApprovedModelFolders,
 } from "../src/model-drive-directory.js";
 
 test("model Drive directory only recognizes internal model-directory paths", () => {
@@ -43,19 +44,19 @@ test("Drive discovery can suggest Book EI for Book El without auto-binding", () 
   assert.ok(modelNameScore("Book El", "Completely Different") < 0.28);
 });
 
-test("exact EMs16 model root suppresses its nested Review EMs16 Gohan folder", () => {
+test("EMs16 code search suppresses nested Review folder when the real root includes the nickname", () => {
   const rows = [
     {
       drive_folder_id: "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
-      folder_name: "EMs16",
-      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16",
+      folder_name: "EMs16 Gohan",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan",
       lane: "exclusive",
-      score: 1,
+      score: 0.88,
     },
     {
       drive_folder_id: "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
       folder_name: "Review EMs16 Gohan",
-      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan / Review EMs16 Gohan",
       lane: "exclusive",
       score: 0.88,
     },
@@ -65,7 +66,88 @@ test("exact EMs16 model root suppresses its nested Review EMs16 Gohan folder", (
   assert.deepEqual(collapsed.map((item) => item.drive_folder_id), ["1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t"]);
 });
 
-test("Drive ambiguity remains fail-closed when there is no unique exact model-root match", () => {
+test("Drive search end-to-end collapses live-shaped EMs16 Gohan root over Review child", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const rootId = "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t";
+  const reviewId = "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd";
+  const pnId = "1ExclusivePnFolder12345";
+  const files = new Map([
+    [rootId, {
+      id: rootId,
+      name: "EMs16 Gohan",
+      parents: [pnId],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+    [reviewId, {
+      id: reviewId,
+      name: "Review EMs16 Gohan",
+      parents: [rootId],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+    [pnId, {
+      id: pnId,
+      name: "Exclusive PN",
+      parents: [MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+    [MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID, {
+      id: MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID,
+      name: "MMD Exclusive Models",
+      parents: ["1CatalogParentPlaceholder"],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    }],
+  ]);
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/drive/v3/files") {
+      return Response.json({ files: [files.get(rootId), files.get(reviewId)] });
+    }
+    const id = decodeURIComponent(url.pathname.split("/").pop());
+    const folder = files.get(id);
+    return folder
+      ? Response.json(folder)
+      : Response.json({ error: "not_found" }, { status: 404 });
+  };
+
+  const items = await searchApprovedModelFolders("test-token", "EMs16", "all", {});
+  assert.deepEqual(items.map((item) => item.drive_folder_id), [rootId]);
+  assert.equal(items[0].folder_name, "EMs16 Gohan");
+  assert.equal(items[0].folder_path, "MMD Exclusive Models / Exclusive PN / EMs16 Gohan");
+  assert.equal(items[0].folder_scope_key, `exclusive:drive:${rootId}`);
+});
+
+test("exact model root still suppresses nested operational children", () => {
+  const rows = [
+    { drive_folder_id: "root-folder-12345", folder_name: "EMs16", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16", score: 1 },
+    { drive_folder_id: "child-folder-12345", folder_name: "Review EMs16 Gohan", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan", score: 0.88 },
+  ];
+  assert.deepEqual(
+    collapseDescendantsOfUniqueExactModelMatch("EMs16", rows).map((item) => item.drive_folder_id),
+    ["root-folder-12345"],
+  );
+});
+
+test("operational child alone is never promoted to a model root", () => {
+  const rows = [{
+    drive_folder_id: "review-only-12345",
+    folder_name: "Review EMs16 Gohan",
+    folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan / Review EMs16 Gohan",
+    score: 0.88,
+  }];
+  assert.deepEqual(
+    collapseDescendantsOfUniqueExactModelMatch("EMs16", rows).map((item) => item.drive_folder_id),
+    ["review-only-12345"],
+  );
+});
+
+test("Drive ambiguity remains fail-closed when multiple genuine model roots match the code", () => {
   const rows = [
     { drive_folder_id: "folder-a-12345", folder_name: "EMs16 Alpha", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Alpha", score: 0.88 },
     { drive_folder_id: "folder-b-12345", folder_name: "EMs16 Beta", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Beta", score: 0.88 },
