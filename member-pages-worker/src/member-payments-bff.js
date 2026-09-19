@@ -58,6 +58,19 @@ function packageLabel(code) {
   return PACKAGE_LABELS[key] || (key ? "MMD Payment" : "MMD Payment");
 }
 
+function canonicalSignedPaymentUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const keys = [...url.searchParams.keys()];
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.hash) return "";
+    if (!["/pay/checkout", "/sigil/pay"].includes(url.pathname)) return "";
+    if (keys.length !== 1 || keys[0] !== "t" || !/^[A-Za-z0-9._~-]+$/.test(url.searchParams.get("t") || "")) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 function historicalRecord(item, index) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return null;
   const date = safeDate(item.date || item.occurred_at);
@@ -99,7 +112,7 @@ function currentRecord(snapshot, profilePaymentStatus = "") {
     official_status: reviewing ? "pending_review" : "awaiting_payment",
     customer_safe_reason: reviewing ? "MMD ได้รับข้อมูลการชำระแล้วและกำลังตรวจสอบ" : null,
   };
-  const url = clean(snapshot.customerPaymentUrl, 9000);
+  const url = canonicalSignedPaymentUrl(snapshot.customerPaymentUrl);
   if (!reviewing && url) record.customer_payment_url = url;
   return record;
 }
@@ -196,4 +209,5 @@ export const MEMBER_PAYMENTS_BFF_INTERNALS = Object.freeze({
   currentRecord,
   safeMember,
   packageLabel,
+  canonicalSignedPaymentUrl,
 });
