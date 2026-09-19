@@ -197,6 +197,35 @@ jobs:
             tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*line-miniapp-handoff-v1$'
             tr -d '\r' < "$anon_headers" | grep -F -i -q 'location: https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify'
 
+            primary_headers="$(mktemp)"
+            primary_body="$(mktemp)"
+            primary_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$primary_headers" -o "$primary_body" -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?liff.state=%3Fflow%3Dverify%26lang%3Dth&access_token=smoke-token")"
+            cat "$primary_headers"
+            test "$primary_code" = "200"
+            tr -d '\r' < "$primary_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$primary_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*liff-primary-preboot-v1$'
+            tr -d '\r' < "$primary_headers" | grep -i -q '^set-cookie:[[:space:]]*mmd_liff_boot=1;'
+            grep -q 'https://static.line-scdn.net/liff/edge/2/sdk.js' "$primary_body"
+            grep -q '2010864854-N34SgCqq' "$primary_body"
+            if grep -Eqi 'tanstack|react|liff\.login|redirectUri' "$primary_body"; then
+              echo "Primary LIFF preboot leaked SPA/login content for $origin" >&2
+              exit 1
+            fi
+
+            secondary_headers="$(mktemp)"
+            secondary_body="$(mktemp)"
+            secondary_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$secondary_headers" -o "$secondary_body" -w "%{http_code}" \
+              -H 'Cookie: mmd_liff_boot=1' \
+              "$origin/sigil/model/dashboard?lang=th&flow=verify&mmd_smoke=1")"
+            cat "$secondary_headers"
+            test "$secondary_code" = "200"
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$secondary_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*lovable-presentation-proxy$'
+            grep -q 'lovable-model-dashboard' "$secondary_body"
+
             headers="$(mktemp)"
             body="$(mktemp)"
             code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \

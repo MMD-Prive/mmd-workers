@@ -7,7 +7,14 @@ const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
-const MODEL_LIFF_ID = "2010864854-N34SgCqq";
+const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
+const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
+const MODEL_LIFF_IDS = Object.freeze({
+  developing: "2010864852-MuzunIKU",
+  review: "2010864853-7SqCQVxy",
+  published: "2010864854-N34SgCqq",
+});
+const MODEL_LIFF_ID = MODEL_LIFF_IDS.published;
 const MODEL_LIFF_URL = `https://miniapp.line.me/${MODEL_LIFF_ID}`;
 const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
@@ -126,6 +133,116 @@ export function hasLineRedirectContext(request) {
     || (p.has("code") && p.has("state"));
 }
 
+function nestedLiffStateParams(url) {
+  const raw = String(url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "");
+  if (!raw) return new URLSearchParams();
+  const query = raw.includes("?") ? raw.slice(raw.indexOf("?") + 1) : raw.replace(/^[?#]/, "");
+  return new URLSearchParams(query.split("#", 1)[0]);
+}
+
+function boundedParam(url, name) {
+  const direct = String(url.searchParams.get(name) || "");
+  if (direct) return direct;
+  return String(nestedLiffStateParams(url).get(name) || "");
+}
+
+export function resolveLiffEnvironmentFromRequest(request) {
+  const url = new URL(request.url);
+  const value = boundedParam(url, "liff_env");
+  return value === "developing" || value === "review" ? value : "published";
+}
+
+export function hasLiffPrimaryBootstrapCookie(request) {
+  return hasCookie(request, LIFF_PRIMARY_BOOTSTRAP_COOKIE);
+}
+
+export function shouldServeLiffPrimaryBootstrap(request) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) return false;
+  const url = new URL(request.url);
+  if (!isPresentationUiPath(url.pathname)) return false;
+  if (!hasLineRedirectContext(request)) return false;
+  if (hasLiffPrimaryBootstrapCookie(request)) return false;
+  return true;
+}
+
+function safeMiniAppUrlForBootstrap(request) {
+  const source = new URL(request.url);
+  const environment = resolveLiffEnvironmentFromRequest(request);
+  const target = new URL(`https://miniapp.line.me/${MODEL_LIFF_IDS[environment]}`);
+  if (environment !== "published") target.searchParams.set("liff_env", environment);
+
+  const lang = boundedParam(source, "lang");
+  if (lang === "th" || lang === "en" || lang === "zh") target.searchParams.set("lang", lang);
+  if (boundedParam(source, "flow") === "verify") target.searchParams.set("flow", "verify");
+  if (boundedParam(source, "handoff") === "job-confirmed") target.searchParams.set("handoff", "job-confirmed");
+  const activation = boundedParam(source, "activation");
+  if (activation && activation.length <= 4096) target.searchParams.set("activation", activation);
+  return target.toString();
+}
+
+export function liffPrimaryBootstrapHtml(request) {
+  const environment = resolveLiffEnvironmentFromRequest(request);
+  const liffId = MODEL_LIFF_IDS[environment];
+  const fallback = safeMiniAppUrlForBootstrap(request);
+  const safeId = JSON.stringify(liffId);
+  const safeFallback = JSON.stringify(fallback);
+  const safeSdk = JSON.stringify(LIFF_SDK_URL);
+  return `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>MMD MODEL · LINE</title>
+<style>
+html,body{margin:0;min-height:100%;background:#0e0d0c;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
+main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
+section{max-width:420px;text-align:center}b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}
+a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:block;margin-top:12px;opacity:.5;word-break:break-word}
+</style>
+<script src=${safeSdk}></script>
+</head>
+<body>
+<main><section><b>กำลังยืนยัน LINE สำหรับ MMD MODEL</b><p id="status">กำลังเปิดเซสชันที่ปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิด MMD MODEL ผ่าน LINE</a><small id="detail"></small></section></main>
+<script>
+(async function(){
+  var status=document.getElementById("status");
+  var fallback=document.getElementById("fallback");
+  var detail=document.getElementById("detail");
+  var before=location.href;
+  try{
+    if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
+    await window.liff.init({liffId:${safeId}});
+    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิด MMD MODEL…";
+    if(location.href===before) location.reload();
+  }catch(error){
+    status.textContent="ยังเปิด MMD MODEL ผ่าน LINE ไม่สำเร็จ";
+    fallback.style.display="inline-block";
+    detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
+function liffPrimaryBootstrapResponse(request) {
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    "set-cookie": `${LIFF_PRIMARY_BOOTSTRAP_COOKIE}=1; Path=/; Max-Age=120; Secure; SameSite=Lax`,
+    "x-mmd-worker": WORKER_NAME,
+    "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "liff-primary-preboot-v1",
+    "x-robots-tag": "noindex, nofollow",
+  });
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : liffPrimaryBootstrapHtml(request), {
+    status: 200,
+    headers,
+  });
+}
+
 export function modelMiniAppHandoffUrl(request) {
   const source = new URL(request.url);
   const target = new URL(MODEL_LIFF_URL);
@@ -152,6 +269,7 @@ export function shouldHandoffToMiniApp(request) {
   if (!new Set(["GET", "HEAD"]).has(method)) return false;
   if (!isPresentationUiPath(new URL(request.url).pathname)) return false;
   if (hasModelSessionCookie(request)) return false;
+  if (hasLiffPrimaryBootstrapCookie(request)) return false;
   if (hasLineRedirectContext(request)) return false;
   return true;
 }
@@ -392,6 +510,7 @@ export default {
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
+      if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
       return proxyPage(request);
     }

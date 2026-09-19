@@ -13,6 +13,10 @@ import {
   hasLineRedirectContext,
   modelMiniAppHandoffUrl,
   shouldHandoffToMiniApp,
+  resolveLiffEnvironmentFromRequest,
+  hasLiffPrimaryBootstrapCookie,
+  shouldServeLiffPrimaryBootstrap,
+  liffPrimaryBootstrapHtml,
 } from "./src/index.js";
 
 test("matches only Model Dashboard presentation namespace plus explicit runtime aliases", () => {
@@ -50,6 +54,76 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
     "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
+});
+
+test("LINE primary redirect is consumed before the SPA renders", async () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify%26lang%3Dth&access_token=opaque",
+  );
+  assert.equal(hasLineRedirectContext(request), true);
+  assert.equal(hasLiffPrimaryBootstrapCookie(request), false);
+  assert.equal(resolveLiffEnvironmentFromRequest(request), "published");
+  assert.equal(shouldServeLiffPrimaryBootstrap(request), true);
+
+  const html = liffPrimaryBootstrapHtml(request);
+  assert.match(html, /https:\/\/static\.line-scdn\.net\/liff\/edge\/2\/sdk\.js/);
+  assert.match(html, /2010864854-N34SgCqq/);
+  assert.doesNotMatch(html, /liff\.login/);
+  assert.doesNotMatch(html, /redirectUri/);
+  assert.doesNotMatch(html, /tanstack|react/i);
+
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(request);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-entry"), "liff-primary-preboot-v1");
+  assert.match(response.headers.get("set-cookie") || "", /mmd_liff_boot=1/);
+  assert.match(response.headers.get("content-type") || "", /text\/html/);
+});
+
+test("primary bootstrap honors safe review/developing liff_env including nested liff.state", () => {
+  const review = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fliff_env%3Dreview%26lang%3Den",
+  );
+  assert.equal(resolveLiffEnvironmentFromRequest(review), "review");
+  assert.match(liffPrimaryBootstrapHtml(review), /2010864853-7SqCQVxy/);
+
+  const developing = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liff_env=developing&access_token=opaque",
+  );
+  assert.equal(resolveLiffEnvironmentFromRequest(developing), "developing");
+  assert.match(liffPrimaryBootstrapHtml(developing), /2010864852-MuzunIKU/);
+});
+
+test("primary bootstrap is bypassed after the short-lived bootstrap cookie", () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify&access_token=opaque",
+    { headers: { cookie: "mmd_liff_boot=1" } },
+  );
+  assert.equal(hasLiffPrimaryBootstrapCookie(request), true);
+  assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
+});
+
+test("post-primary bootstrap cookie prevents a Mini App redirect loop", () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?lang=th",
+    { headers: { cookie: "mmd_liff_boot=1" } },
+  );
+  assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
+  assert.equal(shouldHandoffToMiniApp(request), false);
+});
+
+test("primary bootstrap never intercepts assets, APIs, or non-navigation methods", () => {
+  const asset = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard-assets/_build/app.js?access_token=opaque",
+  );
+  const api = new Request("https://mmdbkk.com/v1/model/profile?access_token=opaque");
+  const post = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?access_token=opaque",
+    { method: "POST" },
+  );
+  assert.equal(shouldServeLiffPrimaryBootstrap(asset), false);
+  assert.equal(shouldServeLiffPrimaryBootstrap(api), false);
+  assert.equal(shouldServeLiffPrimaryBootstrap(post), false);
 });
 
 test("dashboard stays on presentation when a Model session or real LINE redirect context is present", () => {
