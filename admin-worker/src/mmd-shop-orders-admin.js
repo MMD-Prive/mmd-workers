@@ -391,6 +391,7 @@ async function loadAdminOrders(env) {
       const customerIds = Array.isArray(fields[ORDER_FIELDS.customer]) ? fields[ORDER_FIELDS.customer] : [];
       const customer = customerById.get(customerIds[0])?.fields || {};
       const fulfillment = normalizedFulfillment(fields);
+      const reservation = readMmdShopReservation(fields[ORDER_FIELDS.notes]);
       const paymentStatus = code(fields[ORDER_FIELDS.paymentStatus]) || "pending";
       const orderStatus = code(fields[ORDER_FIELDS.orderStatus]) || "draft";
       const resolvedState = fulfillmentStateFromOrder(orderStatus, paymentStatus, fulfillment.state);
@@ -413,6 +414,7 @@ async function loadAdminOrders(env) {
         items: itemsByOrder.get(record.id) || [],
         fulfillment: adminFulfillment(withResolvedState),
         fulfillment_state: resolvedState,
+        reservation: reservation ? publicMmdShopReservation(reservation) : null,
         can_advance_fulfillment: paymentStatus === "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
         can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
         can_fulfill: paymentStatus === "paid" && orderStatus === "confirmed",
