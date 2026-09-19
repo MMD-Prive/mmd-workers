@@ -8,7 +8,7 @@ const MEMBERSHIP_AMOUNTS = Object.freeze({
   1999: { package_code: "premium", intent: "renewal", price_rule: "private_premium_spend_20000" },
   2500: { package_code: "premium", intent: "renewal", price_rule: "private_premium_renewal" },
   2999: { package_code: "premium", intent: "signup", price_rule: "private_premium_signup" },
-  4990: { package_code: "elite", intent: "membership", price_rule: "public_elite" },
+  4999: { package_code: "elite", intent: "membership", price_rule: "public_elite" },
   11499: { package_code: "red_card", intent: "membership", price_rule: "public_red_card" },
 });
 
@@ -25,7 +25,7 @@ export const PUBLIC_MEMBERSHIP_CATALOG = Object.freeze({
   elite: Object.freeze({
     package_code: "elite",
     label: "Elite",
-    amount_thb: 4990,
+    amount_thb: 4999,
     duration_days: 730,
     entitlement_level: "elite",
   }),
