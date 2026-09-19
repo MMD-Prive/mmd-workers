@@ -15,6 +15,7 @@ import {
 } from "./kenji-lv5-line-operational.mjs";
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+const STANDARD_BOOKING_MIN_DURATION_HOURS = 1.5;
 const BOOKING_SIGNAL_RE = /(จอง|book|booking|reserve|นัด|คิว|ว่าง|available|availability|เช็กคิว|เช็คคิว|รับงาน)/i;
 const DEPOSIT_RE = /(?:มัดจำ|deposit)/i;
 const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที่|ที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
@@ -173,15 +174,12 @@ function materialFields(fragment = {}) {
   return fields;
 }
 
-export function requiredKenjiBookingFields(draft = {}) {
-  const required = ["model_name", "date", "time", "location", "amount_thb"];
-  if (token(draft.trigger) === "deposit") required.push("duration_or_end_time");
-  return required;
+export function requiredKenjiBookingFields(_draft = {}) {
+  return ["model_name", "date", "time", "location", "amount_thb"];
 }
 
 export function missingKenjiBookingFields(draft = {}) {
   return requiredKenjiBookingFields(draft).filter((field) => {
-    if (field === "duration_or_end_time") return !text(draft.end_time, 5) && !positiveNumber(draft.duration_hours);
     if (field === "amount_thb") return !positiveNumber(draft.amount_thb);
     return !text(draft[field], 160);
   });
@@ -246,6 +244,16 @@ export function mergeKenjiBookingDraftV1({
   const changed = !Object.keys(base).length || meaningfulChange(base, fields);
   if (changed) merged.revision += 1;
 
+  if (text(merged.time, 5) && !text(merged.end_time, 5)) {
+    const suppliedDuration = positiveNumber(merged.duration_hours);
+    if (!suppliedDuration || suppliedDuration < STANDARD_BOOKING_MIN_DURATION_HOURS) {
+      merged.duration_hours = STANDARD_BOOKING_MIN_DURATION_HOURS;
+      merged.duration_source = suppliedDuration
+        ? "mmd_standard_minimum_90m_floor"
+        : "mmd_standard_minimum_90m_default";
+    }
+  }
+
   const missing = missingKenjiBookingFields(merged);
   merged.missing_fields = missing;
   merged.ready = missing.length === 0;
@@ -268,7 +276,8 @@ function mergedIntent(draft = {}, raw = "") {
     date: text(draft.date, 10),
     time: text(draft.time, 5),
     end_time: text(draft.end_time, 5),
-    duration_hours: positiveNumber(draft.duration_hours),
+    duration_hours: positiveNumber(draft.duration_hours) || STANDARD_BOOKING_MIN_DURATION_HOURS,
+    duration_source: text(draft.duration_source, 80) || "mmd_standard_minimum_90m_default",
     location: text(draft.location, 160),
     amount_thb: positiveNumber(draft.amount_thb),
     deposit_amount_thb: positiveNumber(draft.deposit_amount_thb),
