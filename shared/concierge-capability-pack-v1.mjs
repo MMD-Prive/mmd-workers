@@ -113,7 +113,10 @@ export function detectSharedConciergeCapability(value = "") {
   const text = normalize(value);
   if (!text) return "";
 
-  if (/(?:mmd\s*shop|shop order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ|ของที่สั่ง|gg\s*water)/i.test(text)) return "shop_orders";
+  const shopSignal = /(?:mmd\s*shop|shop order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ|ของที่สั่ง|gg\s*water|พัสดุ|tracking|จัดส่ง|ส่งของ)/i.test(text);
+  const shopProblem = /(?:มีปัญหา|ยังไม่ถึง|ไม่ได้รับ|หาย|ผิด|ช้า|เสียหาย|refund|คืนเงิน|complaint|ร้องเรียน)/i.test(text);
+  if (shopSignal && shopProblem) return "service_recovery";
+  if (shopSignal) return "shop_orders";
   if (/(?:care\s*back|careback|แคร์\s*แบ็ก|birthday\s*wish|คำอวยพร|คูปอง.*(?:care|วันเกิด)|coupon.*(?:care|birthday))/i.test(text)) return "care_back_coupon";
   if (/(?:หา|แนะนำ|เลือก|ตัวเลือก).*(?:therapist|เทอราปิส|นักบำบัด|หมอนวด)|(?:therapist|เทอราปิส).*(?:ตัวเลือก|แนะนำ|คนไหนดี)/i.test(text)) return "mms_therapist_options";
   if (/(?:มีปัญหา|ร้องเรียน|complaint|ไม่มา|ยังไม่มา|มาสาย|ยอดไม่ตรง|บริการมีปัญหา|ขอคืนเงิน|refund|ไม่โอเคกับงาน)/i.test(text)) return "service_recovery";
