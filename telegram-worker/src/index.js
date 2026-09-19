@@ -165,10 +165,11 @@ async function smokeTelegramTopics(body, env) {
 
 async function introduceHypePreview(env) {
   const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  const chatId = clean(env.TELEGRAM_PREVIEW_CHANNEL_ID || env.TELEGRAM_PREVIEW_GROUP_ID);
+  const configuredChatId = clean(env.TELEGRAM_PREVIEW_CHANNEL_ID || env.TELEGRAM_PREVIEW_GROUP_ID);
+  const publicHandle = previewChannelHandle(env);
   const expectedUsername = botUsername(env).replace(/^@/, "").toLowerCase();
   if (!botToken) return { ok: false, error: "missing_telegram_bot_token" };
-  if (!chatId) return { ok: false, error: "missing_telegram_preview_chat_id" };
+  if (!configuredChatId && !publicHandle) return { ok: false, error: "missing_telegram_preview_chat_id" };
 
   const me = await callTelegramApiForPreviewIntro("getMe", null, env);
   const actualUsername = clean(me?.result?.username).replace(/^@/, "").toLowerCase();
@@ -182,19 +183,43 @@ async function introduceHypePreview(env) {
     };
   }
 
-  const chat = await callTelegramApiForPreviewIntro("getChat", { chat_id: chatId }, env);
+  const candidates = [...new Set([configuredChatId, publicHandle].filter(Boolean))];
+  let chat = null;
+  let resolvedBy = "";
+  const attempts = [];
+
+  for (const candidate of candidates) {
+    const result = await callTelegramApiForPreviewIntro("getChat", { chat_id: candidate }, env);
+    const resultType = clean(result?.result?.type).toLowerCase();
+    const resultId = clean(result?.result?.id);
+    attempts.push({
+      candidate,
+      ok: result?.ok === true,
+      chat_id: resultId || null,
+      chat_type: resultType || null,
+      description: sanitizePreviewIntroFailure(result).description,
+    });
+    if (result?.ok === true && resultId && ["group", "supergroup", "channel"].includes(resultType)) {
+      chat = result;
+      resolvedBy = candidate === publicHandle ? "public_handle" : "configured_id";
+      break;
+    }
+  }
+
+  const actualChatId = clean(chat?.result?.id);
   const chatType = clean(chat?.result?.type).toLowerCase();
-  if (chat?.ok !== true || clean(chat?.result?.id) !== chatId || !["group", "supergroup", "channel"].includes(chatType)) {
+  if (chat?.ok !== true || !actualChatId || !["group", "supergroup", "channel"].includes(chatType)) {
     return {
       ok: false,
       error: "hype_preview_intro_preflight_failed",
       stage: "getChat",
-      chat_type: chatType || null,
-      telegram: sanitizePreviewIntroFailure(chat),
+      configured_chat_id: configuredChatId || null,
+      public_handle: publicHandle || null,
+      attempts,
     };
   }
 
-  const member = await callTelegramApiForPreviewIntro("getChatMember", { chat_id: chatId, user_id: botId }, env);
+  const member = await callTelegramApiForPreviewIntro("getChatMember", { chat_id: actualChatId, user_id: botId }, env);
   const membership = clean(member?.result?.status).toLowerCase();
   const allowedMembership = chatType === "channel"
     ? ["creator", "administrator"]
@@ -204,6 +229,7 @@ async function introduceHypePreview(env) {
       ok: false,
       error: "hype_preview_intro_preflight_failed",
       stage: "getChatMember",
+      chat_id: actualChatId,
       chat_type: chatType,
       membership: membership || null,
       telegram: sanitizePreviewIntroFailure(member),
@@ -232,7 +258,7 @@ async function introduceHypePreview(env) {
   }
 
   const telegram = await sendTelegramMessage({
-    chat_id: chatId,
+    chat_id: actualChatId,
     text: hypePreviewIntroText(),
     parse_mode: "HTML",
     disable_web_page_preview: true,
@@ -243,7 +269,9 @@ async function introduceHypePreview(env) {
     return {
       ok: false,
       error: "hype_preview_intro_send_failed",
+      chat_id: actualChatId,
       chat_type: chatType,
+      resolved_by: resolvedBy,
       linked_group: linkedGroup,
       telegram: sanitizePreviewIntroFailure(telegram),
     };
@@ -253,7 +281,10 @@ async function introduceHypePreview(env) {
     ok: true,
     mode: "hype_preview_intro_v1",
     bot_username: actualUsername,
-    chat_id: chatId,
+    configured_chat_id: configuredChatId || null,
+    public_handle: publicHandle || null,
+    resolved_by: resolvedBy,
+    chat_id: actualChatId,
     chat_type: chatType,
     linked_group_id: linkedGroup.id,
     linked_group_ready: linkedGroup.ready,
@@ -261,6 +292,18 @@ async function introduceHypePreview(env) {
     linked_group_membership: linkedGroup.membership,
     message_id: Number(telegram.result.message_id),
   };
+}
+
+function previewChannelHandle(env) {
+  const raw = clean(env.TELEGRAM_PREVIEW_CHANNEL_USERNAME);
+  if (raw) return raw.startsWith("@") ? raw : `@${raw}`;
+  try {
+    const url = new URL(previewChannelUrl(env));
+    const segment = clean(url.pathname).replace(/^\/+|\/+$/g, "");
+    return segment ? `@${segment}` : "@MMDPriveTH";
+  } catch {
+    return "@MMDPriveTH";
+  }
 }
 
 function hypePreviewIntroText() {

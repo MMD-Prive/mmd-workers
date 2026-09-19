@@ -10,6 +10,7 @@ function env(overrides = {}) {
     TELEGRAM_BOT_TOKEN: "hype-bot-token",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-1002393788585",
+    TELEGRAM_PREVIEW_CHANNEL_URL: "https://t.me/MMDPriveTH",
     HYPE_PREVIEW_INTRO_TOKEN: "preview-intro-secret",
     ...overrides,
   };
@@ -33,7 +34,7 @@ test("Preview intro endpoint requires ephemeral token", async () => {
   assert.deepEqual(body, { ok: false, error: "unauthorized" });
 });
 
-test("Preview intro supports the Preview channel and discovers its linked discussion group", { concurrency: false }, async () => {
+test("Preview intro falls back from stale numeric ID to public handle and discovers linked discussion group", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
 
@@ -47,12 +48,16 @@ test("Preview intro supports the Preview channel and discovers its linked discus
     }
     if (method === "getChat") {
       if (String(payload.chat_id) === "-1002393788585") {
+        return Response.json({ ok: false, error_code: 400, description: "Bad Request: chat not found" }, { status: 400 });
+      }
+      if (String(payload.chat_id) === "@MMDPriveTH") {
         return Response.json({
           ok: true,
           result: {
-            id: -1002393788585,
+            id: -1005554443332,
             type: "channel",
             title: "MMD Preview",
+            username: "MMDPriveTH",
             linked_chat_id: -1009988776655,
           },
         });
@@ -68,7 +73,8 @@ test("Preview intro supports the Preview channel and discovers its linked discus
       return Response.json({ ok: true, result: { status: "administrator", user: { id: 777001, is_bot: true } } });
     }
     if (method === "sendMessage") {
-      return Response.json({ ok: true, result: { message_id: 4100, chat: { id: -1002393788585 }, text: payload.text } });
+      assert.equal(String(payload.chat_id), "-1005554443332");
+      return Response.json({ ok: true, result: { message_id: 4100, chat: { id: -1005554443332 }, text: payload.text } });
     }
     throw new Error(`unexpected method ${method}`);
   };
@@ -80,14 +86,20 @@ test("Preview intro supports the Preview channel and discovers its linked discus
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.bot_username, "mmdprivebot");
-    assert.equal(body.message_id, 4100);
+    assert.equal(body.configured_chat_id, "-1002393788585");
+    assert.equal(body.public_handle, "@MMDPriveTH");
+    assert.equal(body.resolved_by, "public_handle");
+    assert.equal(body.chat_id, "-1005554443332");
     assert.equal(body.chat_type, "channel");
     assert.equal(body.linked_group_id, "-1009988776655");
     assert.equal(body.linked_group_ready, true);
     assert.equal(body.linked_group_type, "supergroup");
     assert.equal(body.linked_group_membership, "administrator");
+    assert.equal(body.message_id, 4100);
+
     assert.deepEqual(calls.map((call) => call.method), [
       "getMe",
+      "getChat",
       "getChat",
       "getChatMember",
       "getChat",
