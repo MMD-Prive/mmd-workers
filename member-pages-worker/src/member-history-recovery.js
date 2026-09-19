@@ -109,9 +109,7 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   if (!session || !safeLineUserId(session.line_user_id)) return false;
   const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
-  if (trigger !== "manual_refresh" && ["reconciled", "review_required"].includes(existing.state)) {
-    return true;
-  }
+  if (!shouldAutoRunHistoryRecovery(existing, trigger)) return true;
   await markQueued(env, session.line_user_id, trigger);
   schedule(ctx, runMemberHistoryRecovery({
     env,
@@ -120,6 +118,12 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
     trigger,
   }));
   return true;
+}
+
+export function shouldAutoRunHistoryRecovery(status = {}, trigger = "login") {
+  if (String(trigger || "").trim().toLowerCase() === "manual_refresh") return true;
+  const state = String(status?.state || "").trim().toLowerCase();
+  return !["reconciled", "review_required"].includes(state);
 }
 
 export async function runMemberHistoryRecovery({
