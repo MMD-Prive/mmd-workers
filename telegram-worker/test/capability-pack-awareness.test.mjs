@@ -436,8 +436,8 @@ test("ambiguous Shop recovery renders customer-safe inline Order picker on the s
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrop|HYPE-PER-20260919124500-feedface|0",
-      "hrop|HYPE-PER-20260919124500-feedface|1",
+      "hrop|HYPE-PER-20260919124500-feedface|1|0",
+      "hrop|HYPE-PER-20260919124500-feedface|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /MMD-ORDER-A|MMD-ORDER-B/);
     assert.match(ops.text, /Recovery domain:<\/b> mmd_shop/);
@@ -599,8 +599,8 @@ test("ambiguous Booking recovery renders customer-safe picker and callback conta
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrbp|" + caseRef + "|0",
-      "hrbp|" + caseRef + "|1",
+      "hrbp|" + caseRef + "|1|0",
+      "hrbp|" + caseRef + "|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /kenji_|Model A|Model B/);
     assert.match(customer.reply_markup.inline_keyboard[0][0].text, /2026-10-02/);
@@ -765,8 +765,8 @@ test("ambiguous MMS recovery renders customer-safe picker and callback contains 
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrmp|" + caseRef + "|0",
-      "hrmp|" + caseRef + "|1",
+      "hrmp|" + caseRef + "|1|0",
+      "hrmp|" + caseRef + "|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /mmspre_|Sukhumvit|Silom/);
     assert.match(customer.reply_markup.inline_keyboard[1][0].text, /Silom/);
