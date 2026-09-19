@@ -413,9 +413,11 @@ export function renderKenjiLv5LineReply(context = {}, parsedIntent = {}) {
   return "";
 }
 
-export async function resolveKenjiLv5LineOperationalDecision({ env = {}, event = {}, currentIntent = "", continuity = {}, now = new Date() } = {}) {
-  if (!isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
-  const parsedIntent = parseKenjiLv5LineIntent(event, currentIntent, now);
+export async function resolveKenjiLv5LineOperationalDecision({ env = {}, event = {}, currentIntent = "", continuity = {}, parsedIntent: suppliedParsedIntent = null, now = new Date() } = {}) {
+  if (!suppliedParsedIntent && !isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
+  const parsedIntent = suppliedParsedIntent && typeof suppliedParsedIntent === "object"
+    ? suppliedParsedIntent
+    : parseKenjiLv5LineIntent(event, currentIntent, now);
   if (!parsedIntent) return null;
 
   const canonical = await resolveCanonicalKenjiLineClient({ env, event }).catch(() => ({ resolved: false, status: "unavailable" }));
