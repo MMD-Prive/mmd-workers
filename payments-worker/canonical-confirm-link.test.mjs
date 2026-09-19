@@ -173,6 +173,57 @@ test("deposit confirmation stores full session amount but only rounded 30 percen
   assert.equal(paymentPost.body.records[0].fields.fldrr9g8ZZjqAbdKQ, "deposit");
 });
 
+test("deposit confirmation preserves trusted original price discount without changing deposit basis", async () => {
+  const { env, calls } = envWithAirtableRecorder();
+  const result = await handleCanonicalConfirmLink(post({
+    session_id: "sess_discount_metadata",
+    payment_ref: "pay_discount_metadata",
+    client_name: "Shane",
+    model_name: "EMs16",
+    job_type: "pn",
+    job_date: "2026-10-02",
+    start_time: "19:00",
+    end_time: "20:30",
+    location_name: "Ever Green",
+    amount_thb: 25000,
+    service_amount_thb: 25000,
+    original_amount_thb: 30000,
+    pricing_adjustment: "discount",
+    deposit_percent: 30,
+    deposit_amount_thb: 7500,
+    payment_type: "deposit",
+  }), env);
+
+  assert.equal(result.status, 200);
+  const payload = await result.json();
+  assert.equal(payload.pricing_breakdown.full_price_thb, 30000);
+  assert.equal(payload.pricing_breakdown.net_price_thb, 25000);
+  assert.equal(payload.pricing_breakdown.discount_mode, "fixed");
+  assert.equal(payload.pricing_breakdown.discount_thb, 5000);
+  assert.equal(payload.pricing_breakdown.deposit_basis_thb, 25000);
+  assert.equal(payload.pricing_breakdown.deposit_due_thb, 7500);
+  assert.equal(payload.pricing_breakdown.balance_thb, 17500);
+
+  const sessionPost = calls.find((call) => call.method === "POST" && call.url.pathname.endsWith("/tblC98mKWbzmPuNzX"));
+  const note = sessionPost.body.records[0].fields.fldEcDkF7CH9VixWM;
+  assert.match(note, /"full_price_thb":30000/);
+  assert.match(note, /"discount_thb":5000/);
+  assert.match(note, /"net_price_thb":25000/);
+  assert.match(note, /"deposit_due_thb":7500/);
+});
+
+test("pricing metadata fails closed when original amount is below net amount", async () => {
+  const { env } = envWithAirtableRecorder();
+  const result = await handleCanonicalConfirmLink(post({
+    client_name: "Client", model_name: "Model", job_type: "pn", job_date: "2026-10-02",
+    start_time: "19:00", end_time: "20:30", location_name: "Bangkok",
+    amount_thb: 25000, service_amount_thb: 25000, original_amount_thb: 20000,
+    payment_type: "deposit",
+  }), env);
+  assert.equal(result.status, 400);
+  assert.equal((await result.json()).error, "original_amount_below_service_amount");
+});
+
 test("deposit confirmation rejects caller attempts to change the fixed 30 percent policy", async () => {
   const { env } = envWithAirtableRecorder();
   const badPercent = await handleCanonicalConfirmLink(post({

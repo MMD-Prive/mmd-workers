@@ -105,6 +105,27 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.match(s.fld0mFma9J9yfEaKb, /\/confirm\/job-model\?t=/);
 });
 
+test('Create Job forwards original price and discount metadata to the payment issuer', async () => {
+  const body = form();
+  body.payment.amount_thb = 25000;
+  body.payment.original_amount_thb = 30000;
+  body.payment.pricing_adjustment = 'discount';
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 1);
+  assert.equal(h.issuances[0].amount_thb, 25000);
+  assert.equal(h.issuances[0].service_amount_thb, 25000);
+  assert.equal(h.issuances[0].original_amount_thb, 30000);
+  assert.equal(h.issuances[0].pricing_adjustment, 'discount');
+  assert.equal(h.issuances[0].deposit_amount_thb, 7500);
+
+  const s = h.records.get(SESSIONS)[0].fields;
+  assert.match(s.fldEcDkF7CH9VixWM, /"full_price_thb":30000/);
+  assert.match(s.fldEcDkF7CH9VixWM, /"discount_thb":5000/);
+  assert.match(s.fldEcDkF7CH9VixWM, /"net_price_thb":25000/);
+  assert.match(s.fldEcDkF7CH9VixWM, /"deposit_due_thb":7500/);
+});
+
 for (const visibility of ['private', 'public']) test(`pending ${visibility} creates an operational Job without Payment, tokens, notification or reconfirm`, async () => {
   const body = form();
   delete body.client.client_id; delete body.canonical_only; delete body.create_context;

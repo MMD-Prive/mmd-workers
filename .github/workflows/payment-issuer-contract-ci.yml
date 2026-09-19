@@ -18,6 +18,7 @@ on:
       - "admin-worker/payment-issuer-diagnostic.test.mjs"
       - "admin-worker/service-auth-contract.test.mjs"
       - "payments-worker/**"
+      - "webflow/sigil/pay/v19/**"
       - ".github/workflows/payment-issuer-contract-ci.yml"
   workflow_dispatch:
 
@@ -39,3 +40,4 @@ jobs:
           node --check admin-worker/src/payment-issuer-diagnostic.js
           node --test admin-worker/payment-issuer-diagnostic.test.mjs admin-worker/service-auth-contract.test.mjs payments-worker/canonical-confirm-link.test.mjs payments-worker/session-finance-write.test.mjs
           node --test admin-worker/job-create-flow.test.mjs admin-worker/sigil-jobs-pending-client-link.test.mjs admin-worker/create-session-canonical-link.test.mjs admin-worker/model-reconfirm-runtime.test.mjs immigrate-worker/test/create-job-canonical-client.test.mjs
+          node --test webflow/sigil/pay/v19/sigil-pay-v19.test.mjs
