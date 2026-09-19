@@ -1,0 +1,36 @@
+name: MY MMD history on-access CI
+
+on:
+  pull_request:
+    paths:
+      - "member-pages-worker/src/member-history-on-access.js"
+      - "member-pages-worker/src/index.js"
+      - "member-pages-worker/member-history-on-access.test.mjs"
+      - ".github/workflows/my-mmd-history-on-access-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "member-pages-worker/src/member-history-on-access.js"
+      - "member-pages-worker/src/index.js"
+      - "member-pages-worker/member-history-on-access.test.mjs"
+      - ".github/workflows/my-mmd-history-on-access-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate modules
+        run: |
+          node --check member-pages-worker/src/member-history-on-access.js
+          node --check member-pages-worker/src/index.js
+      - name: Test automatic history recovery trigger
+        run: node --test member-pages-worker/member-history-on-access.test.mjs

@@ -1,0 +1,105 @@
+name: Ops Kong Existing Session Confirmation URL 20260916
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ops-kong-existing-session-confirm-url-20260916.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile-existing-session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+    steps:
+      - name: Release customer confirmation URL from existing held Session only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          origin="https://mmdbkk.com"
+          cookie="$(mktemp)"
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          payload="$(mktemp)"
+
+          login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $origin" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+            --data-urlencode "next=/internal/admin/jobs/create-job" \
+            "$origin/internal/admin/login/session")"
+          test "$login_code" = "303"
+
+          node - "$payload" <<'NODE'
+          const fs = require('node:fs');
+          fs.writeFileSync(process.argv[2], JSON.stringify({
+            session_id: 'sess_mu2hpin5_82725a70191248b2',
+            operational_create_mode: 'reconcile_held',
+            reconcile_held: true,
+            client_record_id: 'recAcTMLy1teHWMp1',
+            model_record_id: 'rec25Xt7QODd763vI',
+            client_name: 'ก้อง - SVIP -',
+            service_amount_thb: 35000,
+            amount_thb: 35000,
+            net_amount_thb: 35000,
+            payment_original_amount_thb: 35000,
+            payment_type: 'deposit',
+            payment_stage: 'deposit',
+            payment_method: 'bank_transfer',
+            deposit_percent: 30,
+            deposit_amount_thb: 11000,
+            balance_amount_thb: 24000,
+            job_type: 'pn',
+            private_work: 'pn',
+            work: {
+              job_visibility: 'private',
+              model_folder: 'exclusive'
+            },
+            private_access: {
+              selected_private_folder: 'exclusive',
+              selected_orientation: 'straight'
+            },
+            selected_orientation: 'straight',
+            source: 'ops_existing_session_confirmation_only_20260916'
+          }));
+          NODE
+
+          code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+            -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+            -X POST \
+            -H "Origin: $origin" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$payload" \
+            "$origin/v1/admin/job/create")"
+
+          echo "reconcile HTTP $code"
+          node - "$body" "$code" <<'NODE'
+          const fs = require('node:fs');
+          const text = fs.readFileSync(process.argv[2], 'utf8');
+          const code = Number(process.argv[3]);
+          let p;
+          try { p = JSON.parse(text); } catch { throw new Error(`non_json_response:${text.slice(0,300)}`); }
+          if (code !== 200 || p?.ok !== true) {
+            console.log(JSON.stringify(p));
+            throw new Error(`reconcile_failed_http_${code}`);
+          }
+          if (p.session_id !== 'sess_mu2hpin5_82725a70191248b2') throw new Error('unexpected_session_id');
+          const url = String(p.customer_confirmation_url || '');
+          if (!/^https:\/\//.test(url)) throw new Error('customer_confirmation_url_missing');
+          console.log(`SESSION_ID=${p.session_id}`);
+          console.log(`OPERATIONAL_STATUS=${p.operational_status || 'linked'}`);
+          console.log(`CUSTOMER_CONFIRMATION_URL=${url}`);
+          NODE
+
+          rm -f "$cookie" "$headers" "$body" "$payload"
