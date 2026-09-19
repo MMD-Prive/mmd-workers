@@ -2076,6 +2076,9 @@ function safeRecoveryCorrelation(value = {}) {
   };
 
   if (domain === "booking") {
+    const options = Array.isArray(value.options)
+      ? value.options.map(safeRecoveryBookingOption).filter(Boolean).slice(0, 5)
+      : [];
     return {
       ...common,
       booking_ref: clean(value.booking_ref, 180) || null,
@@ -2086,10 +2089,18 @@ function safeRecoveryCorrelation(value = {}) {
       exact_correlation: value.exact_correlation === true,
       final_confirmation_observed: value.final_confirmation_observed === true,
       correlation_scope: token(value.correlation_scope) || "booking_ref_exact",
+      candidate_count: boundedCandidateCount(value.candidate_count),
+      options,
+      selection_locked: value.selection_locked === true,
+      selected_by: token(value.selected_by) || null,
+      selected_at: clean(value.selected_at, 80) || null,
     };
   }
 
   if (domain === "mms") {
+    const options = Array.isArray(value.options)
+      ? value.options.map(safeRecoveryMmsOption).filter(Boolean).slice(0, 5)
+      : [];
     return {
       ...common,
       prebooking_id: clean(value.prebooking_id, 180) || null,
@@ -2102,6 +2113,11 @@ function safeRecoveryCorrelation(value = {}) {
         : [],
       exact_correlation: value.exact_correlation === true,
       correlation_scope: token(value.correlation_scope) || "member_ref_to_prebooking_exact",
+      candidate_count: boundedCandidateCount(value.candidate_count),
+      options,
+      selection_locked: value.selection_locked === true,
+      selected_by: token(value.selected_by) || null,
+      selected_at: clean(value.selected_at, 80) || null,
     };
   }
 
@@ -2118,7 +2134,7 @@ function safeRecoveryCorrelation(value = {}) {
     courier: clean(value.courier, 180) || null,
     tracking_number: clean(value.tracking_number, 220) || null,
     total_thb: nullableNonNegative(value.total_thb),
-    candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
+    candidate_count: boundedCandidateCount(value.candidate_count),
     options,
     selection_locked: value.selection_locked === true,
     selected_by: token(value.selected_by) || null,
@@ -2185,6 +2201,43 @@ function recoveryOperatorLine(correlation = null, handoffId = "") {
     return `MMS Recovery: ${clean(correlation.prebooking_id, 180)} · Status ${clean(correlation.prebooking_status, 80) || "unknown"} · ${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
   }
   return "";
+}
+
+function boundedCandidateCount(value) {
+  const n = Number(value);
+  return Number.isInteger(n) ? Math.max(0, Math.min(50, n)) : 0;
+}
+
+function safeRecoveryBookingOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const bookingRef = clean(value.booking_ref, 180);
+  if (!bookingRef) return null;
+  return {
+    booking_ref: bookingRef,
+    request_status: token(value.request_status) || "unknown",
+    preferred_date: clean(value.preferred_date, 20) || null,
+    preferred_time: clean(value.preferred_time, 8) || null,
+    selected_model_name: clean(value.selected_model_name, 120) || null,
+    summary: clean(value.summary, 180) || "Booking Request",
+    created_at: clean(value.created_at, 80) || null,
+  };
+}
+
+function safeRecoveryMmsOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const prebookingId = clean(value.prebooking_id || value.request_id, 180).toLowerCase();
+  if (!/^mmspre_[a-f0-9]{24}$/.test(prebookingId)) return null;
+  return {
+    prebooking_id: prebookingId,
+    prebooking_status: token(value.prebooking_status || value.status) || "unknown",
+    service_date: clean(value.service_date, 20) || null,
+    service_time: clean(value.service_time, 8) || null,
+    zone: clean(value.zone, 100) || null,
+    skills: Array.isArray(value.skills)
+      ? value.skills.map((item) => clean(item, 80)).filter(Boolean).slice(0, 4)
+      : [],
+    created_at: clean(value.created_at, 80) || null,
+  };
 }
 
 function safeRecoveryOrderOption(value = {}) {
