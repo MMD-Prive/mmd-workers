@@ -436,7 +436,9 @@ export async function handleHypeSupervisedExecutionRpc(request, env = {}) {
     canonical_href: clean(result.canonical_href || route.href, 1000),
     replay_safe: true,
     created_at: new Date().toISOString(),
-    business_truth_mutated: false,
+    business_truth_mutated: result.status === "materialized",
+    request_level_mutation: result.status === "materialized",
+    protected_business_truth_mutated: false,
     protected_confirmation_performed: false,
     details: result.details || {},
   };
@@ -699,7 +701,8 @@ async function writeExecutionReceipt(env, draft, receipt) {
     ...priorPayload,
     supervised_execution: receipt,
     live_truth_refresh_required: true,
-    business_truth_mutated: false,
+    business_truth_mutated: receipt.business_truth_mutated === true,
+    protected_business_truth_mutated: false,
   };
   const write = await airtableWrite(env, "PATCH", {
     records: [{
@@ -738,6 +741,9 @@ export function safeExecutionReceipt(value = {}) {
     canonical_href: safeCustomerHref(receipt.canonical_href),
     replay_safe: receipt.replay_safe === true,
     created_at: clean(receipt.created_at, 80),
+    business_truth_mutated: receipt.business_truth_mutated === true,
+    request_level_mutation: receipt.request_level_mutation === true,
+    protected_business_truth_mutated: false,
     details: safeExecutionDetails(receipt.details),
   };
 }
@@ -811,7 +817,8 @@ export function p6ExecutionGuardrails() {
   return {
     supervised_execution: true,
     idempotent: true,
-    business_truth_mutated: false,
+    request_level_mutation_allowed: true,
+    protected_business_truth_mutated: false,
     payment_marked_paid: false,
     payment_verified: false,
     job_confirmed: false,
