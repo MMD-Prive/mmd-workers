@@ -84,9 +84,10 @@ jobs:
           node --check src/hype-shop-orders.js
           node --check src/recovery-control.js
           node --check src/recovery-control-page.js
+          node --check src/hype-owner-summary.js
           node --check src/model-media-e2e-smoke.js
           node --check src/model-owner-review-queue.js
-          node --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs recovery-control.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs telegram-identity-bind-authority.test.mjs
+          node --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs hype-owner-summary.test.mjs recovery-control.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs telegram-identity-bind-authority.test.mjs
           node --test model-session-runtime-v1a.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
