@@ -16,6 +16,7 @@ function envFor(records) {
     AIRTABLE_HTTP: {
       async fetch(request) {
         const url = new URL(request.url);
+        assert.equal(decodeURIComponent(url.pathname.split("/").pop()), "MMD — LINE OFC Client Import Staging");
         assert.match(url.searchParams.get("filterByFormula") || "", /line_user_id/);
         return Response.json({ records });
       },
@@ -40,13 +41,13 @@ test("display name strips only the trusted terminal marker", () => {
   assert.equal(displayNameFromRenamedName("คิว - SVIP -"), "คิว");
 });
 
-test("exact LINE staging lookup resolves a trusted SVIP marker", async () => {
+test("exact canonical LINE staging lookup resolves a trusted SVIP marker with trailing separators", async () => {
   const result = await resolveLineOaFastTrust(envFor([
-    { id: "recFastTrust01", fields: { line_user_id: LINE_ID, line_renamed_name: "โจ SVIP" } },
+    { id: "recFastTrust01", fields: { line_user_id: LINE_ID, line_renamed_name: "สมาชิกทดสอบ - SVIP -" } },
   ]), LINE_ID);
   assert.equal(result.tier, "svip");
   assert.equal(result.label, "SVIP");
-  assert.equal(result.displayName, "โจ");
+  assert.equal(result.displayName, "สมาชิกทดสอบ");
   assert.equal(result.source, "line_oa_renamed_name_fast_trust");
   assert.match(result.membershipExpiresAt, /^\d{4}-\d{2}-\d{2}$/);
 });
