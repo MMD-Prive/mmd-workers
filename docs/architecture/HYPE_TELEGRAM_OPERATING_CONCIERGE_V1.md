@@ -625,10 +625,58 @@ A Case may only become `resolved` from `reviewing`, with an explicit terminal ou
 
 Recovery Control never mutates Payment, Order/Fulfillment, Job/Calendar, Therapist assignment, MMS booking or entitlement truth. Operators must refresh the corresponding canonical authority before any protected business action.
 
+## Recovery Queue Intelligence
+
+Recovery Control now adds bounded operational queue intelligence without creating or inferring canonical business truth.
+
+Policy version:
+
+`mmd-recovery-queue-sla-v1-20260919`
+
+Queue filters:
+
+- `domain`: `all / mmd_shop / booking / mms / unclassified`;
+- `state`: `open / all / prepared / sent / acknowledged / reviewing / resolved / customer_notified`;
+- filters operate only over canonical Recovery Case records and never search business authorities directly.
+
+Age metadata:
+
+- Case age is derived only from the timestamp encoded in the existing Case Ref;
+- age buckets are `under_1h / 1_4h / 4_12h / 12_24h / 24h_plus`;
+- case age does not imply service failure, payment failure, job lateness or customer impact.
+
+Operational attention windows are measured only from the last Recovery workflow `updated_at`:
+
+- `prepared / sent`: 60 minutes to acknowledgement attention;
+- `acknowledged`: 120 minutes to review attention;
+- `reviewing`: 360 minutes to review/update attention;
+- `resolved`: 120 minutes to customer-notification attention;
+- `customer_notified`: closed, no active attention window.
+
+Indicator semantics:
+
+- `fresh`: below 75% of the current workflow attention window;
+- `watch`: at least 75% but below the attention target;
+- `overdue`: at or beyond the attention target;
+- `unknown`: workflow timestamp is unavailable;
+- `closed`: customer notification has been recorded.
+
+These indicators are internal operational metadata only. They do not mutate or infer Payment, Order/Fulfillment, Job/Calendar, Therapist assignment, MMS booking, entitlement, refund, delivery or service-completion truth.
+
+Owner Summary consumes the same server-side queue projection and exposes:
+
+- open / attention / overdue / watch counts;
+- bounded domain/state counts;
+- up to five `what_to_watch_now` items;
+- the workflow-only next attention such as acknowledge, start review, review/update outcome, or notify customer;
+- a direct link back to `/internal/admin/recovery`.
+
+HYPE only presents this information to verified Owner Mode. It does not auto-transition a case, auto-resolve an outcome or execute protected business actions from an SLA indicator.
+
 ## Next implementation lanes
 
 1. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates;
-2. optional Recovery queue filters/SLA indicators that remain workflow metadata and do not infer business truth.
+2. optional queue assignment / operator ownership metadata if needed, without granting new business authority.
 
 All future lanes must preserve the same authority and privacy locks.
 
