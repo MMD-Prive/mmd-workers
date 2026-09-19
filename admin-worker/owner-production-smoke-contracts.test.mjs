@@ -15,7 +15,11 @@ test("CEO model supply smoke follows the current v3 Webflow contract", async () 
   assert.match(workflow, /SUPPLY INTELLIGENCE/);
   assert.match(workflow, /\/v1\/admin\/models\/list\?limit=100/);
   assert.match(workflow, /\/v1\/admin\/models\/resolve-source\?q=/);
-  assert.match(workflow, /location: \/internal\/ceo\/models/);
+  assert.match(workflow, /x-mmd-admin-post-login/);
+  assert.match(workflow, /dashboard-first/);
+  assert.match(workflow, /x-mmd-admin-next/);
+  assert.match(workflow, /\/internal\/admin\/dashboard/);
+  assert.doesNotMatch(workflow, /location: \/internal\/ceo\/models/);
   assert.match(workflow, /p\.authority !== 'backend'/);
   assert.match(workflow, /p\.published !== false \|\| p\.can_publish !== false/);
 });
