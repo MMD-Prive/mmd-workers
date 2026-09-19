@@ -1,10 +1,10 @@
-import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../shared/payment-intelligence.mjs";
+import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
 const SLIP_EVIDENCE_PATH = "/v1/pay/slip/evidence";
 const CONFIRM_VERIFY_PATH = "/v1/confirm/verify";
-const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "job_confirmation", "pay_membership", "member_payments"]);
+const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "public_pay", "job_confirmation", "pay_membership", "member_payments"]);
 const PAID_STATES = new Set(["paid", "verified", "success", "completed"]);
 const PROOF_STATES = new Set(["submitted", "pending", "pending_review", "review", "review_required", "needs_review", "under_review", "matched", "verified", "approved"]);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -145,8 +145,10 @@ async function mintCustomerToken(env, { session_id, payment_ref, payment_type })
   return token;
 }
 
-function paymentPageUrl(token) {
-  return `https://mmdbkk.com/sigil/pay?t=${encodeURIComponent(token)}`;
+export function paymentPageUrl(token, context = {}) {
+  const lane = paymentPresentationLane(context);
+  const pathname = lane === "public" ? "/pay/checkout" : "/sigil/pay";
+  return `https://mmdbkk.com${pathname}?t=${encodeURIComponent(token)}`;
 }
 
 export async function handleUnifiedPaymentIntent(request, env, downstream) {
@@ -168,6 +170,11 @@ export async function handleUnifiedPaymentIntent(request, env, downstream) {
     const canonicalRef = clean(data.payment_ref || paymentRef, 220);
     const canonicalSession = clean(data.session_id || sessionId, 220);
     const canonicalStage = code(data.payment_stage || stage) || stage;
+    const canonicalPackage = code(data.package_code || nextBody.package_code);
+    const paymentSurface = paymentPresentationLane({
+      package_code: canonicalPackage,
+      payment_stage: canonicalStage,
+    });
     const customerToken = await mintCustomerToken(env, {
       session_id: canonicalSession,
       payment_ref: canonicalRef,
@@ -178,7 +185,11 @@ export async function handleUnifiedPaymentIntent(request, env, downstream) {
       payment_ref: canonicalRef,
       session_id: canonicalSession,
       customer_t: customerToken,
-      customer_payment_url: paymentPageUrl(customerToken),
+      customer_payment_url: paymentPageUrl(customerToken, {
+        package_code: canonicalPackage,
+        payment_stage: canonicalStage,
+      }),
+      payment_surface: paymentSurface,
       unified_payment_flow: "v1",
     });
   } catch (error) {
