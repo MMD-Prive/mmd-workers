@@ -1066,6 +1066,8 @@ test("ambiguous Booking recovery offers safe owned options and selected Booking 
     assert.equal(openedBody.recovery_correlation.state, "ambiguous");
     assert.equal(openedBody.recovery_correlation.correlated, false);
     assert.equal(openedBody.recovery_correlation.candidate_count, 2);
+    assert.equal(openedBody.recovery_correlation.picker_revision, 1);
+    assert.equal(openedBody.recovery_correlation.picker_status, "active");
     assert.deepEqual(
       openedBody.recovery_correlation.options.map((item) => item.booking_ref),
       ["kenji_aaaaaaaaaaaaaaaaaaaaaaaa", "kenji_bbbbbbbbbbbbbbbbbbbbbbbb"],
@@ -1219,6 +1221,8 @@ test("ambiguous MMS recovery offers safe owned options and selected Pre-booking 
     assert.equal(openedBody.recovery_correlation.state, "ambiguous");
     assert.equal(openedBody.recovery_correlation.correlated, false);
     assert.equal(openedBody.recovery_correlation.candidate_count, 2);
+    assert.equal(openedBody.recovery_correlation.picker_revision, 1);
+    assert.equal(openedBody.recovery_correlation.picker_status, "active");
     assert.deepEqual(
       openedBody.recovery_correlation.options.map((item) => item.prebooking_id),
       ["mmspre_111111111111111111111111", "mmspre_222222222222222222222222"],
@@ -1279,8 +1283,9 @@ test("ambiguous MMS recovery offers safe owned options and selected Pre-booking 
       selection_index: 0,
     }), runtimeEnv);
     const staleOtherBody = await staleOther.json();
-    assert.equal(staleOther.status, 409);
-    assert.equal(staleOtherBody.error, "recovery_candidate_already_bound");
+    assert.equal(staleOther.status, 200);
+    assert.equal(staleOtherBody.replayed, true);
+    assert.equal(staleOtherBody.recovery_correlation.prebooking_id, "mmspre_222222222222222222222222");
 
     assert.equal(mmsReads, 2);
   } finally {
