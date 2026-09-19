@@ -235,6 +235,9 @@ function validateAndPriceCart(cart, products, stock) {
     const brands = selectList(fields[PRODUCT_FIELDS.brandAvailability]).map((value) => value.toLowerCase());
     const isMmd = brands.some((value) => value.includes("mmd") || value.includes("both"));
     const price = positiveNumber(fields[PRODUCT_FIELDS.mmdPrice]);
+    const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
+    const productName = clean(fields[PRODUCT_FIELDS.name], 220);
+    if (isRestrictedCheckoutProduct(sku, productName)) throw httpError(403, "product_not_eligible_for_online_checkout");
     if (status !== "active") throw httpError(409, "product_not_active");
     if (!isMmd) throw httpError(409, "product_not_available_in_mmd_shop");
     if (price === null) throw httpError(409, "product_price_unavailable");
@@ -243,8 +246,8 @@ function validateAndPriceCart(cart, products, stock) {
     if (inventory && line.quantity > inventory.available) throw httpError(409, "insufficient_stock");
     return {
       product_id: record.id,
-      product_name: clean(fields[PRODUCT_FIELDS.name], 220) || "MMD Shop Item",
-      sku: clean(fields[PRODUCT_FIELDS.sku], 120),
+      product_name: productName || "MMD Shop Item",
+      sku,
       supplier_ids: linkedIds(fields[PRODUCT_FIELDS.supplier]),
       quantity: line.quantity,
       unit_price_thb: price,
@@ -438,6 +441,12 @@ function bangkokDate() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
+}
+
+function isRestrictedCheckoutProduct(sku, name) {
+  const code = String(sku || "").toUpperCase();
+  const label = String(name || "").toLowerCase();
+  return /^PPP25-/.test(code) || /\bpod\b/.test(label);
 }
 
 function selectName(value) {
