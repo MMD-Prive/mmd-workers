@@ -529,6 +529,8 @@ async function handleHypeRecoveryPickerRefreshResult({
   const state = clean(result?.state).toLowerCase();
   const replayed = result?.replayed === true;
   const correlation = result?.recovery_correlation || {};
+  const deliveryRequired = result?.picker_delivery_required === true
+    || clean(correlation.picker_delivery_status).toLowerCase() === "pending_customer_delivery";
   const caseRef = clean(result?.handoff_id || handoffId);
   const messageId = Number(callback?.message?.message_id);
   const domainLabel = domain === "mmd_shop" ? "Order" : domain === "booking" ? "Booking" : "MMS Pre-booking";
@@ -554,7 +556,7 @@ async function handleHypeRecoveryPickerRefreshResult({
     }, env).catch(() => null);
   }
 
-  if (replayed) {
+  if (replayed && !deliveryRequired) {
     return {
       handled: true,
       flow: recoveryPickerFlow(domain),
@@ -614,6 +616,21 @@ async function handleHypeRecoveryPickerRefreshResult({
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   }, env);
 
+  let deliveryAck = null;
+  if (
+    telegram?.ok === true
+    && state === "picker_reissued"
+    && clean(correlation.picker_delivery_status).toLowerCase() === "pending_customer_delivery"
+    && Number.isInteger(Number(correlation.picker_revision))
+  ) {
+    deliveryAck = await acknowledgeHypeRecoveryPickerDelivery({
+      env,
+      telegramUserId: clean(callback?.from?.id),
+      handoffId: caseRef,
+      pickerRevision: Number(correlation.picker_revision),
+    });
+  }
+
   return {
     handled: true,
     flow: recoveryPickerFlow(domain),
@@ -621,9 +638,37 @@ async function handleHypeRecoveryPickerRefreshResult({
     code_status: state || "picker_refresh_recorded",
     handoff_id: caseRef,
     picker_revision: Number(correlation.picker_revision) || null,
-    replayed: false,
+    replayed,
+    delivery_acknowledged: deliveryAck?.ok === true,
     telegram,
   };
+}
+
+async function acknowledgeHypeRecoveryPickerDelivery({ env, telegramUserId, handoffId, pickerRevision }) {
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch || !/^\d{5,20}$/.test(clean(telegramUserId))) return { ok: false, state: "binding_unavailable" };
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "ack_recovery_picker_delivery",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        picker_revision: pickerRevision,
+      }),
+    }));
+    const body = await response.json().catch(() => null);
+    return {
+      ok: response.ok && body?.ok === true,
+      state: clean(body?.state || (response.ok ? "ok" : "failed")),
+    };
+  } catch {
+    return { ok: false, state: "ack_unavailable" };
+  }
 }
 
 function recoveryPickerFlow(domain) {
