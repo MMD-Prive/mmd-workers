@@ -12,7 +12,6 @@ import {
   writeMmdShopFulfillment,
 } from "../shared/mmd-shop-fulfillment.mjs";
 import {
-  commitMmdShopReservation,
   publicMmdShopReservation,
   readMmdShopReservation,
   writeMmdShopReservation,
@@ -348,7 +347,7 @@ export async function reconcileReviewedShopPayment(request, response, env) {
     const existingReservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
     let committedReservation = existingReservation;
     if (existingReservation?.state === "reserved") {
-      const committed = await commitMmdShopReservation(env, existingReservation);
+      const committed = await commitReservationThroughShopWorker(env, existingReservation);
       committedReservation = committed.reservation;
     } else if (existingReservation && existingReservation.state !== "committed") {
       throw httpError(409, `shop_reservation_not_committable:${existingReservation.state}`);
@@ -409,6 +408,26 @@ export async function reconcileReviewedShopPayment(request, response, env) {
       shop_order_reconcile_required: true,
     }, Number(error?.status || 502), request, env);
   }
+}
+
+async function commitReservationThroughShopWorker(env, reservation) {
+  if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
+  const token = text(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+
+  const response = await env.MMD_SHOP_WORKER.fetch("https://himai-chat-worker.internal/mmd-shop/internal/reservation/commit", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-token": token,
+    },
+    body: JSON.stringify({ reservation }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || !data.reservation) {
+    throw httpError(response.status || 502, data.error || "reservation_commit_failed");
+  }
+  return data;
 }
 
 async function createPaymentRecord(env, input) {
