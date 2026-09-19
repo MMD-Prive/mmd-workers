@@ -99,11 +99,6 @@ export async function handleMmdShopCheckout(request, env) {
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "untracked");
 
-    reservation = await reserveViaMmdShopCoordinator(env, {
-      order_id: orderId,
-      items: pricedCart,
-    });
-
     order = await createOrder(env, {
       orderId,
       customerRecordId: customer.id,
@@ -111,8 +106,17 @@ export async function handleMmdShopCheckout(request, env) {
       stockConfirmationRequired,
       sourcePath: clean(body.source_path, 300) || "/mmd-shop",
       shipping,
-      reservation,
+      reservation: null,
     });
+
+    reservation = await reserveViaMmdShopCoordinator(env, {
+      order_id: orderId,
+      order_record_id: order.id,
+      order_notes: order.fields?.[ORDER_FIELDS.notes] || "",
+      items: pricedCart,
+    });
+    order.fields = order.fields || {};
+    order.fields[ORDER_FIELDS.notes] = writeMmdShopReservation(order.fields[ORDER_FIELDS.notes] || "", reservation);
 
     const orderItems = await createOrderItems(env, order.id, pricedCart);
 
@@ -430,7 +434,9 @@ async function createOrder(env, input) {
   ];
   const fulfillment = createMmdShopFulfillment({ shipping: input.shipping });
   const fulfillmentNotes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);
-  const notes = writeMmdShopReservation(fulfillmentNotes, input.reservation);
+  const notes = input.reservation
+    ? writeMmdShopReservation(fulfillmentNotes, input.reservation)
+    : fulfillmentNotes;
 
   return createRecord(env, table(env, "orders"), {
     [ORDER_FIELDS.orderId]: input.orderId,
