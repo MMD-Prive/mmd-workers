@@ -1,4 +1,5 @@
 import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import { RECOVERY_OUTCOME_TAXONOMY_VERSION } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const MAX_WEBHOOK_BYTES = 64 * 1024;
@@ -24,6 +25,7 @@ export function lineBotStatus(env) {
     auto_reply_enabled: enabled(env.LINE_AUTO_REPLY_ENABLED),
     persona: "HENNA",
     capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+    recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
   };
 }
 
@@ -140,7 +142,9 @@ async function notifyManualHandoff(env, event, intent) {
         `เหตุผล: ${intent}`,
         `Source: ${sourceType}`,
         `Message ref: ${messageId}`,
-        "เปิด LINE Official Account Manager เพื่อตอบลูกค้าครับ",
+        intent === "manual_recovery"
+          ? "Recovery นี้ให้คง context เดิมและใช้ HYPE/MMD Case lifecycle + canonical outcome taxonomy; ห้ามสรุป resolved/refund/rebooking จากข้อความอย่างเดียว"
+          : "เปิด LINE Official Account Manager เพื่อตอบลูกค้าครับ",
       ].join("\n"),
       disable_web_page_preview: true,
     }),
