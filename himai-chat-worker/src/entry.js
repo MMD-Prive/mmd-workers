@@ -6,10 +6,12 @@ import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
+import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
 
