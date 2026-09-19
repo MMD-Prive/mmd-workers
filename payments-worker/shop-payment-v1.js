@@ -20,6 +20,7 @@ import {
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
+export const SHOP_EXPIRE_INTENT_PATH = "/v1/internal/shop/expire-intent";
 const SHOP_STAGE = "shop";
 
 const TABLES = Object.freeze({
@@ -61,6 +62,58 @@ const PAYMENT_FIELDS = Object.freeze({
 
 export function isShopIntentRequest(path, method) {
   return normalizePath(path) === SHOP_INTENT_PATH && ["POST", "OPTIONS"].includes(String(method || "POST").toUpperCase());
+}
+
+export async function handleShopIntentExpiry(request, env) {
+  if (normalizePath(new URL(request.url).pathname) !== SHOP_EXPIRE_INTENT_PATH) return null;
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+
+  const expected = text(env.INTERNAL_TOKEN, 5000);
+  const supplied = text(
+    request.headers.get("x-internal-token")
+    || request.headers.get("authorization")
+    || "",
+    5000,
+  ).replace(/^Bearer\s+/i, "");
+  if (!expected || supplied !== expected) return json({ ok: false, error: "internal_auth_required" }, 401, request, env);
+
+  const body = await request.json().catch(() => null);
+  const orderId = text(body?.order_id || body?.session_id, 180);
+  if (!orderId) return json({ ok: false, error: "order_id_required" }, 400, request, env);
+
+  try {
+    const payment = await findPaymentByOrderId(env, orderId);
+    if (!payment?.id) return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "payment_not_found" }, 200, request, env);
+
+    const fields = payment.fields || {};
+    const paymentStatus = code(fields[PAYMENT_FIELDS.status]);
+    const intentStatus = code(fields[PAYMENT_FIELDS.intentStatus]);
+    if (paymentStatus === "paid" || intentStatus === "confirmed") {
+      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "already_paid" }, 200, request, env);
+    }
+    if (intentStatus === "cancelled") {
+      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: true, idempotent: true }, 200, request, env);
+    }
+
+    const notes = appendNote(
+      fields[PAYMENT_FIELDS.notes],
+      `shop_reservation_expired_at=${new Date().toISOString()}; order_id=${orderId}; expired_by=payments-worker`,
+    );
+    await patchRecord(env, table(env, "payments"), payment.id, {
+      [PAYMENT_FIELDS.intentStatus]: "Cancelled",
+      [PAYMENT_FIELDS.notes]: notes,
+    });
+
+    return json({
+      ok: true,
+      authority: "payments-worker",
+      order_id: orderId,
+      expired: true,
+      intent_status: "cancelled",
+    }, 200, request, env);
+  } catch (error) {
+    return json({ ok: false, authority: "payments-worker", error: text(error?.message || error, 300) }, Number(error?.status || 500), request, env);
+  }
 }
 
 export async function handleShopIntent(request, env) {
@@ -376,6 +429,42 @@ async function createPaymentRecord(env, input) {
 
 async function findOrderByOrderId(env, orderId) {
   return findFirst(env, table(env, "orders"), `{Order ID}='${formulaValue(orderId)}'`);
+}
+
+async function findPaymentByOrderId(env, orderId) {
+  const baseId = text(env.AIRTABLE_BASE_ID, 100);
+  const apiKey = airtableToken(env);
+  const tableId = table(env, "payments");
+  let offset = "";
+  let pages = 0;
+
+  do {
+    const url = new URL(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    for (const fieldId of [
+      PAYMENT_FIELDS.sessionId,
+      PAYMENT_FIELDS.status,
+      PAYMENT_FIELDS.intentStatus,
+      PAYMENT_FIELDS.notes,
+      PAYMENT_FIELDS.paymentRef,
+    ]) url.searchParams.append("fields[]", fieldId);
+    if (offset) url.searchParams.set("offset", offset);
+
+    const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw httpError(502, "shop_payment_lookup_failed");
+
+    const found = (Array.isArray(data.records) ? data.records : []).find((record) =>
+      text(record.fields?.[PAYMENT_FIELDS.sessionId], 180) === orderId
+    );
+    if (found) return found;
+
+    offset = text(data.offset, 300);
+    pages += 1;
+  } while (offset && pages < 20);
+
+  return null;
 }
 
 async function findPaymentByRef(env, paymentRef) {
