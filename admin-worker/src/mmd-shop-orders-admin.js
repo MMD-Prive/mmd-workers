@@ -208,6 +208,9 @@ async function updateFulfillment(env, actor, body) {
         ? "confirmed"
         : orderStatus || "draft";
 
+  if (state === "cancelled" && currentReservation?.state === "payment_review") {
+    throw httpError(409, "payment_review_in_progress");
+  }
   if (state === "cancelled" && currentReservation?.state === "reserved") {
     const released = await releaseReservationThroughShopWorker(env, currentReservation, "admin_cancelled");
     nextReservation = released.reservation;
@@ -416,7 +419,7 @@ async function loadAdminOrders(env) {
         fulfillment_state: resolvedState,
         reservation: reservation ? publicMmdShopReservation(reservation) : null,
         can_advance_fulfillment: paymentStatus === "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
-        can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
+        can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled" && reservation?.state !== "payment_review",
         can_fulfill: paymentStatus === "paid" && orderStatus === "confirmed",
       };
     })
