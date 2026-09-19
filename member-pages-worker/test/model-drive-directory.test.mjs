@@ -43,19 +43,19 @@ test("Drive discovery can suggest Book EI for Book El without auto-binding", () 
   assert.ok(modelNameScore("Book El", "Completely Different") < 0.28);
 });
 
-test("exact EMs16 model root suppresses its nested Review EMs16 Gohan folder", () => {
+test("EMs16 code search suppresses nested Review folder when the real root includes the nickname", () => {
   const rows = [
     {
       drive_folder_id: "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
-      folder_name: "EMs16",
-      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16",
+      folder_name: "EMs16 Gohan",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan",
       lane: "exclusive",
-      score: 1,
+      score: 0.88,
     },
     {
       drive_folder_id: "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
       folder_name: "Review EMs16 Gohan",
-      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan / Review EMs16 Gohan",
       lane: "exclusive",
       score: 0.88,
     },
@@ -65,7 +65,31 @@ test("exact EMs16 model root suppresses its nested Review EMs16 Gohan folder", (
   assert.deepEqual(collapsed.map((item) => item.drive_folder_id), ["1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t"]);
 });
 
-test("Drive ambiguity remains fail-closed when there is no unique exact model-root match", () => {
+test("exact model root still suppresses nested operational children", () => {
+  const rows = [
+    { drive_folder_id: "root-folder-12345", folder_name: "EMs16", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16", score: 1 },
+    { drive_folder_id: "child-folder-12345", folder_name: "Review EMs16 Gohan", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan", score: 0.88 },
+  ];
+  assert.deepEqual(
+    collapseDescendantsOfUniqueExactModelMatch("EMs16", rows).map((item) => item.drive_folder_id),
+    ["root-folder-12345"],
+  );
+});
+
+test("operational child alone is never promoted to a model root", () => {
+  const rows = [{
+    drive_folder_id: "review-only-12345",
+    folder_name: "Review EMs16 Gohan",
+    folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Gohan / Review EMs16 Gohan",
+    score: 0.88,
+  }];
+  assert.deepEqual(
+    collapseDescendantsOfUniqueExactModelMatch("EMs16", rows).map((item) => item.drive_folder_id),
+    ["review-only-12345"],
+  );
+});
+
+test("Drive ambiguity remains fail-closed when multiple genuine model roots match the code", () => {
   const rows = [
     { drive_folder_id: "folder-a-12345", folder_name: "EMs16 Alpha", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Alpha", score: 0.88 },
     { drive_folder_id: "folder-b-12345", folder_name: "EMs16 Beta", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Beta", score: 0.88 },
