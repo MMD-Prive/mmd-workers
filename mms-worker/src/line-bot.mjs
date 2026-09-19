@@ -1,4 +1,5 @@
 import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import { RECOVERY_OUTCOME_TAXONOMY_VERSION } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const MAX_WEBHOOK_BYTES = 64 * 1024;
@@ -24,6 +25,7 @@ export function lineBotStatus(env) {
     auto_reply_enabled: enabled(env.LINE_AUTO_REPLY_ENABLED),
     persona: "HENNA",
     capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+    recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
   };
 }
 
