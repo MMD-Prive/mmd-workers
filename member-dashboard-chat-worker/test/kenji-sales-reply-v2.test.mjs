@@ -65,6 +65,12 @@ for (const [message, prior, expected] of [
   ["DOUBLE MOMENT จ่าย 20000 ได้อะไร", "payment_slip", "double_moment"],
   ["DOUBLE MOMENT ส่งสลิปแล้ว", "payment_slip", "care_back_payment_points"],
   ["เดือนนี้มีโปรโมชั่นอะไร", "pricing_review", "promotion_overview"],
+  ["สมัครสมาชิก", "note_only", "membership_signup"],
+  ["สมัคร Public Membership", "note_only", "membership_signup"],
+  ["สมัคร Elite", "note_only", "membership_signup"],
+  ["สมัคร Private Membership", "note_only", "private_membership_signup"],
+  ["สมัคร Standard", "note_only", "private_membership_signup"],
+  ["สมัคร Premium", "note_only", "private_membership_signup"],
   ["CARE BACK ข้อมูลลูกค้าคนอื่น", "privacy_request", "privacy_request"],
   ["CARE BACK คุยกับคน", "human_handoff", "human_handoff"],
   ["CARE BACK มีปัญหาโอนเงิน", "payment_dispute", "payment_dispute"],
@@ -87,6 +93,20 @@ test("current member is not pitched a new signup or unsolicited renewal", async 
   assert.match(result.text, /ทดสอบ/);
   assert.equal(result.live_truth_used, true);
   oneSafeCta(result);
+});
+
+test("generic signup uses Public Membership while explicit Private signup stays in SIGIL", async () => {
+  const generic = await resolveKenjiSalesReply(event("สมัครสมาชิก"), ENV, options("membership_signup"));
+  assert.equal(generic.cta_route, SALES_ROUTES.signup);
+  assert.match(generic.text, /Public Membership/);
+  assert.doesNotMatch(generic.text, /sigil\/member\/membership/);
+  oneSafeCta(generic);
+
+  const privateSignup = await resolveKenjiSalesReply(event("สมัคร Premium"), ENV, options("private_membership_signup"));
+  assert.equal(privateSignup.cta_route, SALES_ROUTES.privateSignup);
+  assert.match(privateSignup.text, /Private Membership/);
+  assert.doesNotMatch(privateSignup.text, /pay\/membership\?source=line/);
+  oneSafeCta(privateSignup);
 });
 for (const state of ["expiring_soon", "expired", "grace"]) {
   test(`${state} directs to account renewal options, never unsigned checkout`, async () => {
