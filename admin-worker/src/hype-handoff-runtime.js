@@ -479,7 +479,7 @@ async function executeP6Lane(env, input = {}) {
   };
 }
 
-async function executeP6Booking(env, input = {}) {
+export async export function executeP6Booking(env, input = {}) {
   const f = input.draft.fields || {};
   if (!clean(f.model_preference, 120)) {
     return {
@@ -553,7 +553,7 @@ async function executeP6Booking(env, input = {}) {
   };
 }
 
-async function executeP6Mms(env, input = {}) {
+export async export function executeP6Mms(env, input = {}) {
   if (!env.MMS_WORKER?.fetch) {
     return {
       status: "review_required",
@@ -640,7 +640,7 @@ async function executeP6Mms(env, input = {}) {
   }
 }
 
-function executeP6PaymentProof(input = {}) {
+export function executeP6PaymentProof(input = {}) {
   const route = input.route || {};
   const ready = route.kind === "signed_payment_proof";
   return {
@@ -663,7 +663,7 @@ function executeP6PaymentProof(input = {}) {
   };
 }
 
-function executeP6Renewal(input = {}) {
+export function executeP6Renewal(input = {}) {
   const route = input.route || {};
   const ready = ["private_renewal_entry", "public_membership_entry"].includes(route.kind);
   return {
@@ -725,7 +725,7 @@ async function writeExecutionReceipt(env, draft, receipt) {
   return write.ok ? { ok: true } : { ok: false, error: write.error || "execution_receipt_write_failed" };
 }
 
-function safeExecutionReceipt(value = {}) {
+export function safeExecutionReceipt(value = {}) {
   const receipt = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return {
     schema: clean(receipt.schema, 80),
@@ -807,7 +807,7 @@ function executionContinuity(receipt = {}) {
   ].join(" ").slice(0, 1200);
 }
 
-function p6ExecutionGuardrails() {
+export function p6ExecutionGuardrails() {
   return {
     supervised_execution: true,
     idempotent: true,
