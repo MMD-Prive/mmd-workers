@@ -21,6 +21,7 @@ import {
   safeExecutionReceipt,
   p6ExecutionGuardrails,
   buildExecutionId,
+  observeP6Authority,
 } from "./src/hype-handoff-runtime.js";
 
 const ENV = {
@@ -413,4 +414,55 @@ test("P6 receipts expose only bounded customer-safe execution fields", () => {
   assert.equal(guardrails.job_confirmed, false);
   assert.equal(guardrails.membership_renewed, false);
   assert.equal(guardrails.mms_booking_confirmed, false);
+});
+
+
+test("P6 authority observation reads Payment truth without inferring it from the execution receipt", async () => {
+  const observation = await observeP6Authority({}, {
+    mode: "payment_proof",
+    status: "customer_action_required",
+  }, {
+    payment_live: {
+      status: "pending_review",
+      paid: false,
+      review_required: true,
+      outstanding_amount_thb: 5000,
+    },
+  });
+
+  assert.equal(observation.source, "payments-worker");
+  assert.equal(observation.state, "review_required");
+  assert.equal(observation.paid, false);
+  assert.equal(observation.review_required, true);
+  assert.equal(observation.final_confirmation_observed, false);
+  assert.equal(observation.inference_used, false);
+});
+
+test("P6 authority observation reads MMS prebooking state by canonical ref without exposing Therapist IDs", async () => {
+  let path = "";
+  const observation = await observeP6Authority({
+    MMS_WORKER: {
+      async fetch(request) {
+        path = new URL(request.url).pathname;
+        return Response.json({
+          ok: true,
+          prebooking: {
+            prebooking_id: "mmspre_1234567890abcdef12345678",
+            status: "Options Ready",
+            sync_status: "synced",
+          },
+        });
+      },
+    },
+  }, {
+    mode: "mms",
+    status: "materialized",
+    canonical_ref: "mmspre_1234567890abcdef12345678",
+  }, {});
+
+  assert.equal(path, "/internal/mms/prebookings/mmspre_1234567890abcdef12345678");
+  assert.equal(observation.source, "mms-worker");
+  assert.equal(observation.state, "Options Ready");
+  assert.equal(observation.final_confirmation_observed, false);
+  assert.equal(Object.hasOwn(observation, "matched_therapist_ids"), false);
 });
