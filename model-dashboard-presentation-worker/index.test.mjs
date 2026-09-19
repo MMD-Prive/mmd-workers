@@ -76,7 +76,7 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   const response = await worker.fetch(request);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-mmd-model-entry"), "liff-primary-preboot-v1");
-  assert.match(response.headers.get("set-cookie") || "", /mmd_model_liff_primary_v1=1/);
+  assert.match(response.headers.get("set-cookie") || "", /mmd_liff_boot=1/);
   assert.match(response.headers.get("content-type") || "", /text\/html/);
 });
 
@@ -97,7 +97,7 @@ test("primary bootstrap honors safe review/developing liff_env including nested 
 test("primary bootstrap is bypassed after the short-lived bootstrap cookie", () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify&access_token=opaque",
-    { headers: { cookie: "mmd_model_liff_primary_v1=1" } },
+    { headers: { cookie: "mmd_liff_boot=1" } },
   );
   assert.equal(hasLiffPrimaryBootstrapCookie(request), true);
   assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
@@ -106,7 +106,7 @@ test("primary bootstrap is bypassed after the short-lived bootstrap cookie", () 
 test("post-primary bootstrap cookie prevents a Mini App redirect loop", () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?lang=th",
-    { headers: { cookie: "mmd_model_liff_primary_v1=1" } },
+    { headers: { cookie: "mmd_liff_boot=1" } },
   );
   assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
   assert.equal(shouldHandoffToMiniApp(request), false);
