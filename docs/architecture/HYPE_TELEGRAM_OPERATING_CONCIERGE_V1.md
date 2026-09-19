@@ -535,16 +535,54 @@ Recovery correlation rules:
 1. explicit Order ID → correlate only when that exact Order is owned by the resolved customer;
 2. no Order ID → auto-correlate only when there is exactly one eligible owned recent Order;
 3. multiple candidates → mark correlation ambiguous and never guess;
-4. correlated Order / Payment / Fulfillment context shares the existing closed-loop HYPE Case Reference;
-5. an existing open Case Reference for the same Order is reused;
-6. HYPE may read and preserve bounded context only; it cannot mark paid, shipped, delivered, refunded, or change Fulfillment.
+4. ambiguous candidates are projected as at most five customer-safe owned Order options;
+5. Telegram picker callback data contains only `Case Ref + option index`, never Order ID or private Order data;
+6. on selection, admin-worker resolves the stored option, re-checks exact canonical ownership, and binds the Order to the existing Case Reference;
+7. customer selection must preserve the current handoff lifecycle state; it cannot reset `sent / acknowledged / reviewing` to `prepared`;
+8. correlated Order / Payment / Fulfillment context shares the same closed-loop HYPE Case Reference;
+9. HYPE may read and preserve bounded context only; it cannot mark paid, shipped, delivered, refunded, or change Fulfillment.
 
 Group/Preview/member-group surfaces remain private-data-safe and do not invoke the Shop projection.
 
+## Canonical Recovery Outcome taxonomy
+
+Recovery cases across MMD Shop, Booking/Job and MMS use:
+
+`mmd-recovery-outcome-taxonomy-v1-20260919`
+
+The lifecycle remains:
+
+`prepared → sent → acknowledged → reviewing → resolved → customer_notified`
+
+Outcome is a separate bounded field. It describes the recovery workflow result, not underlying business truth.
+
+Domains:
+
+- `mmd_shop`
+- `booking`
+- `mms`
+- `unclassified` while the recovery lane cannot yet be grounded
+
+Examples of terminal outcomes:
+
+- Shop: `replacement_arranged`, `reshipment_arranged`, `refund_route_opened`
+- Booking: `rebooking_arranged`, `schedule_adjustment_arranged`, `service_credit_route_opened`
+- MMS: `therapist_replacement_arranged`, `rebooking_arranged`, `service_adjustment_arranged`, `service_credit_route_opened`
+- shared: `information_confirmed`, `no_adjustment_required`, `closed_duplicate`, `closed_withdrawn`
+
+Rules:
+
+- Recovery may not become `resolved` or `customer_notified` without an explicit terminal outcome valid for that domain.
+- Only an allowed operator/owner write may set the outcome.
+- HYPE/HENNA may display the written outcome, but may not infer one from customer chat.
+- `refund_route_opened` means the refund process was routed/opened; it never means refund completed.
+- The taxonomy intentionally contains no `refund_completed`, `payment_confirmed`, or `delivered` outcome.
+- Outcome writes do not mutate Order, Payment, Fulfillment, Job, Calendar, Therapist assignment, MMS booking, or entitlement truth.
+
 ## Next implementation lanes
 
-1. bounded customer selection flow when Shop recovery has multiple owned Order candidates;
-2. canonical Service Recovery outcome taxonomy shared across Shop / Job / MMS without widening HYPE mutation authority.
+1. bounded owner/operator UI controls for recovery outcomes beyond Telegram commands;
+2. optional canonical correlation adapters for exact Booking Request / MMS Pre-booking references while preserving the same Case Reference and lifecycle.
 
 All future lanes must preserve the same authority and privacy locks.
 
