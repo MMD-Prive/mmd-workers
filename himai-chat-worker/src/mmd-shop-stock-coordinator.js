@@ -31,7 +31,11 @@ export class MmdShopStockCoordinator {
       }
       if (url.pathname === "/expire") {
         const result = await expireMmdShopReservations(this.env);
-        return { ok: true, ...result };
+        const payment_expiry = [];
+        for (const orderId of result.expired_order_ids || []) {
+          payment_expiry.push(await expirePaymentIntent(this.env, orderId));
+        }
+        return { ok: true, ...result, payment_expiry };
       }
       return { ok: false, error: "not_found", status: 404 };
     };
@@ -49,6 +53,28 @@ export class MmdShopStockCoordinator {
       }, { status: Number(error?.status || 500) });
     }
   }
+}
+
+async function expirePaymentIntent(env, orderId) {
+  if (!env.PAYMENTS_WORKER?.fetch) return { order_id: orderId, ok: false, skipped: true, reason: "payments_worker_binding_missing" };
+  const token = String(env.INTERNAL_TOKEN || "").trim();
+  if (!token) return { order_id: orderId, ok: false, skipped: true, reason: "internal_token_missing" };
+
+  const response = await env.PAYMENTS_WORKER.fetch("https://payments-worker.internal/v1/internal/shop/expire-intent", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-token": token,
+    },
+    body: JSON.stringify({ order_id: orderId }),
+  });
+  const data = await response.json().catch(() => ({}));
+  return {
+    order_id: orderId,
+    ok: response.ok && data.ok === true,
+    status: response.status,
+    error: data.error || null,
+  };
 }
 
 function namespace(env) {
