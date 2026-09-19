@@ -9,6 +9,7 @@ on:
       - "himai-chat-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
+      - "shared/mmd-shop-stock-reconciliation.mjs"
       - ".github/workflows/deploy-himai-chat-worker.yml"
 
 concurrency:
