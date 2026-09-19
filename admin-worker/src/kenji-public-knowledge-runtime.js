@@ -66,7 +66,7 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "medium",
     source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: Public Membership /pay/membership สำหรับ MMD Member, Elite และ Red Card, Private Membership /sigil/member/membership สำหรับ Standard / Premium และ private access, Payment status /member/payments สำหรับดูรายการเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบสร้าง signed payment link ให้ ใช้ลิงก์นั้นโดยตรง: Public/TMIB จะไป /pay/checkout?t=... ส่วน Private/Service จะไป /sigil/pay?t=... การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระหรือเปิดสิทธิ์ และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
+      "ถ้าถามเรื่อง Membership ผมแยกทางให้ตามประเภทได้เลยครับ: Public Membership — MMD Member / Elite / Red Card เริ่มที่ https://mmdbkk.com/pay/membership ส่วน Private Membership — Standard / Premium / private access ใช้ https://mmdbkk.com/sigil/member/membership ถ้าต่ออายุ Private ใช้ https://mmdbkk.com/sigil/member/membership?source=line&intent=renew และถ้าต้องการดูรายการชำระหรือสถานะเดิม ใช้ https://mmdbkk.com/member/payments ครับ ถ้า MMD สร้างลิงก์ชำระเฉพาะรายการให้แล้ว ให้ใช้ลิงก์นั้นตรง ๆ: Public/TMIB ใช้ /pay/checkout?t=... และ Private/Service ใช้ /sigil/pay?t=... หลักฐานเป็น evidence จนกว่า MMD Official Verify และรายการเดิมไม่ต้องส่งหลักฐานซ้ำครับ",
   },
   {
     id: "kenji_20_007_drop_690_guard",
@@ -90,7 +90,7 @@ const STATIC_PUBLIC_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "/member/payments",
     customer_answer:
-      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
+      "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการเดิมที่ https://mmdbkk.com/member/payments ได้เลยครับ ถ้า MMD มีลิงก์ชำระเฉพาะรายการให้แล้ว ใช้ลิงก์นั้นตรง ๆ: Public Membership / TMIB ใช้ /pay/checkout?t=... ส่วน Private Membership / Service ใช้ /sigil/pay?t=... ครับ ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ใช้รายการเดิมต่อได้เลยและไม่ต้องส่งหลักฐานซ้ำ หลักฐานยังเป็น evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",

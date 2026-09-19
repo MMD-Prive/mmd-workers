@@ -1429,7 +1429,7 @@ export function createPublicWorldRichMenuDraft() {
       { bounds: richMenuBounds(834, 0, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("public_membership") } },
       { bounds: richMenuBounds(1667, 0, 833, 843), action: { type: "uri", uri: memberLiffUrl("status", "profile") } },
       { bounds: richMenuBounds(0, 843, 833, 843), action: { type: "uri", uri: mmdbkkMembershipUrl("booking_request", "&service=dinner_travel") } },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };
@@ -1455,7 +1455,7 @@ export function createPrivateMemberRichMenuDraft() {
           displayText: "Private Support",
         },
       },
-      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof" } },
+      { bounds: richMenuBounds(834, 843, 833, 843), action: { type: "uri", uri: "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status" } },
       { bounds: richMenuBounds(1667, 843, 833, 843), action: { type: "message", text: "Hi MMD" } },
     ],
   };

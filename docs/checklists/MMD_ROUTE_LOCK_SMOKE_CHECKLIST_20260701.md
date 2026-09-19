@@ -1,5 +1,8 @@
 # MMD Route Lock Smoke Checklist - 2026-07-01
 
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
 > Updated 2026-09-13. The July incident checklist is retained for traceability, but membership-payment route expectations are superseded by `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md`.
 
 Use these checks without secrets. Run with redirects disabled first.
@@ -22,13 +25,14 @@ curl -I -sS https://mmdbkk.com/unknown-test-route-mmd
 
 Expected:
 
-- `/sigil/member/membership` is the canonical membership selection / signup / renewal / upgrade entry.
+- `/pay/membership` is the canonical Public Membership selection entry for MMD Member / Elite / Red Card; it is selection UI only and never payment authority.
+- `/sigil/member/membership` is the canonical Private Membership selection / signup / renewal / upgrade entry for Standard / Premium and private access.
 - `/sigil/pay/membership` and `/pay/membership` are compatibility aliases only and never payment authorities.
 - An unsigned membership alias may remain a `200` compatibility bridge or redirect only to `/sigil/member/membership`.
 - A signed membership alias may remain a `200` compatibility bridge or redirect only to `/sigil/pay?t=...`; if redirected, the payment URL must carry only the signed `t` authority token.
 - Membership aliases must never redirect to `/sigil/pay/renewal` and must never preserve browser-provided amount, account, PromptPay, or package values as payment authority.
-- `/sigil/pay/renewal` and `/pay/renewal` remain manual legacy renewal evidence routes and should be served by the explicit renewal renderer.
-- `/sigil/pay/renew` may bridge to `/sigil/pay/renewal`.
+- `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes. They must not render Renewal Payment Review, bank/QR, proof upload, or other fallback UI.
+- `/sigil/pay/renew` should bridge signed `t` to `/sigil/pay?t=<same token>` and unsigned traffic to `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment` is retired as a standalone payment UI; unsigned traffic may bridge to `/member/payments`, while a valid signed `t` may bridge to `/sigil/pay?t=...`.
 - Unknown routes do not redirect to `/default`, `/autodirect`, or `/sigil/pay/renewal`.
 

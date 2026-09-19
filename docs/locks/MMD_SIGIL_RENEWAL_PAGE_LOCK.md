@@ -35,7 +35,7 @@ Signed:
 Unsigned:
 ```text
 /sigil/pay/renewal
-→ https://mmdbkk.com/sigil/member/membership?intent=renewal
+→ https://mmdbkk.com/sigil/member/membership?intent=renew
 ```
 
 The Worker may preserve only safe renewal-entry context on the unsigned path.
@@ -56,7 +56,7 @@ Webflow is non-runtime for this route family.
 
 ## Authority
 
-- `/sigil/member/membership?intent=renewal` owns renewal entry.
+- `/sigil/member/membership?intent=renew` owns renewal entry.
 - signed `/sigil/pay?t=...` owns canonical Private payment presentation.
 - `payments-worker` owns amount, payment destination, QR, payment reference and verification.
 - the renewal compatibility route owns redirects only.
@@ -77,7 +77,7 @@ cache-control: no-store
 
 Unsigned route must land on:
 ```text
-/sigil/member/membership?intent=renewal
+/sigil/member/membership?intent=renew
 ```
 
 Signed route must land on:

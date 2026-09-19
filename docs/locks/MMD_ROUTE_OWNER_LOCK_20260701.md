@@ -1,5 +1,8 @@
 # MMD Route Owner Lock - 2026-07-01
 
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
 Status: historical incident lock. **Membership-payment ownership statements in this file are superseded by `MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md`.**
 
 ## Incident Summary
@@ -24,12 +27,14 @@ Do not recreate these bindings merely to restore an old payment page. Any new ed
 
 ## Current Canonical Ownership Override — 2026-09-13
 
-- Membership selection, signup, renewal and upgrade entry: `/sigil/member/membership`.
+- Public Membership selection (Member / Elite / Red Card): `/pay/membership`.
+- Private Membership selection / signup / renewal / upgrade (Standard / Premium / private access): `/sigil/member/membership`.
 - Exact payment + proof: signed `/sigil/pay?t=...` only after a backend-owned payment intent exists.
 - Payment history/status/navigation: `/member/payments`.
-- `/sigil/pay/membership` and `/pay/membership`: compatibility bridges only; they are not payment authorities.
-- `/sigil/pay/renewal` and `/pay/renewal`: manual legacy renewal evidence routes owned by the renewal renderer where explicitly routed.
-- `/sigil/pay/renew`: compatibility bridge into `/sigil/pay/renewal`.
+- `/pay/membership`: canonical Public Membership selection UI only; never payment authority.
+- `/sigil/pay/membership`: Private legacy compatibility bridge only; unsigned traffic may hand off to `/sigil/member/membership`, signed `t` may hand off only to `/sigil/pay?t=...`.
+- `/sigil/pay/renewal` and `/pay/renewal`: redirect-only compatibility routes. Signed `t` -> `/sigil/pay?t=...`; unsigned -> `/sigil/member/membership?intent=renew`. They render no fallback UI.
+- `/sigil/pay/renew`: compatibility alias; signed `t` must hand off to `/sigil/pay?t=<same token>`, unsigned to `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment`: retired generic payment alias; signed `t` may hand off to `/sigil/pay?t=...`, otherwise use `/member/payments`.
 - `payments-worker` remains the sole authority for amount due, payment destination, PromptPay QR, canonical payment reference and payment verification.
 

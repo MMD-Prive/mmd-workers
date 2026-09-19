@@ -37,7 +37,7 @@ test("signed renewal links redirect to canonical signed SIGIL Pay only", () => {
 test("unsigned renewal links redirect to canonical renewal entry and preserve safe context only", () => {
   assert.equal(
     resolveRenewalRedirect("https://mmdbkk.com/sigil/pay/renewal?package=premium&promo=CARE&amount=5000&payment_ref=BAD"),
-    "https://mmdbkk.com/sigil/member/membership?intent=renewal&package=premium&promo=CARE",
+    "https://mmdbkk.com/sigil/member/membership?intent=renew&package=premium&promo=CARE",
   );
 });
 
@@ -49,7 +49,7 @@ test("all renewal hosts return redirect-only responses with canonical owner head
     assert.equal(response.headers.get("x-mmd-page"), "sigil-pay-renewal");
     assert.equal(response.headers.get("x-mmd-route-source"), "member-dashboard-chat-worker:renewal-redirect-bridge");
     assert.equal(response.headers.get("x-mmd-upstream-source"), "redirect-bridge");
-    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?intent=renewal");
+    assert.equal(response.headers.get("location"), "https://mmdbkk.com/sigil/member/membership?intent=renew");
     assert.equal(await response.text(), "");
   }
 });

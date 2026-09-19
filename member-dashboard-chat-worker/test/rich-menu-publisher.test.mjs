@@ -90,7 +90,7 @@ test("service-bound private-member draft returns canonical mapping", async () =>
     data: "mmd_action=private_support&source=private_rich_menu",
     displayText: "Private Support",
   });
-  assert.equal(payload.rich_menu.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
+  assert.equal(payload.rich_menu.areas[4].action.uri, "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status");
   assert.deepEqual(payload.rich_menu.areas[5].action, { type: "message", text: "Hi MMD" });
 });
 
@@ -158,7 +158,7 @@ test("draft endpoint returns Public World with Message action Hi Per and safe ro
   assert.equal(payload.draft.areas[0].action.text, "Hi Per");
   assert.equal(payload.rich_menu.areas.length, 6);
   assert.equal(payload.draft.areas[3].action.uri, "https://mmdbkk.com/sigil/member/membership?source=line&entry_route=booking_request&service=dinner_travel");
-  assert.equal(payload.draft.areas[4].action.uri, "https://mmdbkk.com/pay/membership?source=line&entry_route=payment_proof");
+  assert.equal(payload.draft.areas[4].action.uri, "https://mmdbkk.com/member/payments?source=line&entry_route=payment_status");
   assert.deepEqual(payload.draft.areas[5].action, { type: "message", text: "Hi MMD" });
   assert.doesNotMatch(rendered, /\/member\/dashboard/);
   assert.doesNotMatch(rendered, /\/internal|\/admin/);
