@@ -18,6 +18,7 @@ import { handleMmsMemberPrebookingRead, isMmsMemberPrebookingReadPath } from "./
 import { handleMmsServiceZoneCatalog, isMmsServiceZoneCatalogPath } from "./mms-service-zone-catalog.js";
 import { handleMemberAppApi, isMemberAppApiPath } from "./member-app-api.js";
 import { handleTmibStoryAccess, isTmibStoryAccessPath } from "./tmib-story-access.js";
+import { handlePublicMembershipPayment, isPublicMembershipPaymentPath } from "./public-membership-payment.js";
 import { handleTmibAct001Content, isTmibAct001ContentPath } from "./tmib-act001-content.js";
 import { handleTmibAct001Media, isTmibAct001MediaPath } from "./tmib-media-lazy-seed.js";
 import {
@@ -60,6 +61,7 @@ export default {
     if (isTmibAct001ContentPath(url)) return handleTmibAct001Content(request, env);
     if (isTmibAct001MediaPath(url)) return handleTmibAct001Media(request, env);
     if (isTmibStoryAccessPath(url)) return handleTmibStoryAccess(request, env);
+    if (isPublicMembershipPaymentPath(url)) return handlePublicMembershipPayment(request, env);
     if (isMemberTelegramBindPath(url)) return handleMemberTelegramBind(request, env);
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and

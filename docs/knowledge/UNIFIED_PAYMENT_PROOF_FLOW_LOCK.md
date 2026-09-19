@@ -1,5 +1,7 @@
 # Unified Payment + Proof Flow Lock
 
+> Canonical route override — 2026-09-19: Public Membership and TMIB purchases use signed `/pay/checkout?t=...`; Private Membership / Black Card / service payments use signed `/sigil/pay?t=...`. `/pay/membership` is now the canonical Public Membership entry, not a compatibility bridge. `/sigil/pay/membership` remains a private compatibility bridge. `payments-worker` remains the single money authority. See `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md` and `docs/architecture/MMD_PUBLIC_PAYMENT_SURFACE_V1.md`.
+
 > Canonical route override — 2026-09-13: this document is governed by `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md` for membership-payment route aliases. `/pay/membership` and `/sigil/pay/membership` are compatibility bridges only and are not payment authorities.
 
 ## Canonical customer flow

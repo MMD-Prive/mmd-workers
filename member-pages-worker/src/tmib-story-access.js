@@ -192,7 +192,7 @@ function sameOrigin(request) {
 function canonicalPayUrl(value) {
   try {
     const url = new URL(String(value || ""));
-    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.pathname !== "/sigil/pay" || url.hash) return "";
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.pathname !== "/pay/checkout" || url.hash) return "";
     const keys = [...url.searchParams.keys()];
     if (keys.some((key) => key !== "t") || !clean(url.searchParams.get("t"), 8192)) return "";
     return url.toString();
@@ -411,4 +411,5 @@ export const TMIB_STORY_INTERNALS = Object.freeze({
   CATALOG: TMIB_EPISODE_CATALOG,
   paymentGrantsTmib,
   membershipGrantsTmib,
+  canonicalPayUrl,
 });

@@ -157,29 +157,16 @@ Preview is a HYPE-managed public-safe Telegram surface.
 - `/commands` and `/help` show a Preview-labelled command guide
 - when a human joins Preview, HYPE deletes the Telegram join service message and posts a short welcome instead
 - bot joins are cleaned up without a welcome
-- Preview welcome text never resolves Client 360, entitlement, gender, job, payment, Points balance, or coupon code
+- Preview welcome text never resolves Client 360, entitlement, job, payment, Points balance, or coupon code
 - account-specific commands remain private-chat only
-
-## Preview audience gate
-
-HYPE must not infer customer gender or viewing preference from name, photo, LINE display name, Telegram username, or other indirect signals.
-
-For Model discovery in Telegram Preview, HYPE follows the existing LIFF Hall audience decision only:
-
+- Model discovery must never fall back to all profiles
+- HYPE may use verified private gender routing context internally, but Model visibility still follows the customer's self-selected Hall audience
 - `female_view -> show_female_profiles`
 - `lgbt_view -> show_lgbt_profiles`
 - `unknown -> hold_until_selected`
 - `manual_review -> manual_review_only`
-
-If no self-selected audience exists, HYPE must not fall back to all profiles. It routes the customer to `/hall` to choose first.
-
-For new human joins in Telegram Preview:
-
-- delete the Telegram join service message;
-- post a group-safe HYPE welcome;
-- explain that Model discovery is audience-gated;
-- offer Hall selection and private HYPE chat;
-- do not expose or infer account-specific gender/audience in the group.
+- if no Hall audience is selected, HYPE routes to `/hall` first and does not recommend Models
+- Preview group copy must not disclose the customer's recorded gender/audience value
 
 ## Existing HYPE operational capabilities retained
 
@@ -217,11 +204,67 @@ After V1 production verification, HYPE adds:
 
 This keeps HYPE useful without creating a second Points or Coupon authority.
 
+## Payment status explanation
+
+HYPE may answer payment-status questions in private Telegram chat from the bounded canonical payment projection.
+
+Supported examples include:
+
+- `/payment`
+- `จ่ายแล้วไหม`
+- `ชำระแล้วไหม`
+- `สลิปถึงยัง`
+- `ยอดคงเหลือ`
+- `เหลือจ่ายเท่าไหร่`
+
+Rules:
+
+- `pending_review` means evidence is awaiting review; it must never be described as paid;
+- `paid=true` is the only customer-safe paid confirmation exposed by this projection;
+- outstanding amount and verified credit may be shown only from canonical numeric fields;
+- HYPE must never infer a payment from Job status, a Telegram message, a slip image, or customer wording;
+- HYPE must never mark paid, accept/reject a slip, or modify payment truth;
+- payment status is private-chat only and must not resolve Client 360 from a Telegram group.
+
+## Owner HYPE Summary
+
+Priority 2 is Owner Mode for Per.
+
+Supported owner prompts include:
+
+- `/owner`
+- `/today`
+- `/per`
+- `วันนี้มีอะไรต้องดูบ้าง`
+- `สรุปงานวันนี้`
+
+Owner authorization is Telegram-native and fail-closed:
+
+- the requester must be the `creator` of the canonical HYPE Ops chat (`TELEGRAM_CHAT_ID`);
+- `administrator`, `member`, unknown or Telegram API failure is not enough;
+- owner truth is not read until creator verification succeeds.
+
+Privacy:
+
+- detailed Owner Summary is delivered only to the verified owner's private Telegram chat;
+- if invoked from the HYPE Ops group, the group receives only a safe acknowledgement;
+- customer names, Model names, payment amounts, review queues and Client context must never be posted back into the group.
+
+Canonical source:
+
+- Owner Summary is derived from `admin-worker buildAdminDashboard()`;
+- Payment Review remains owned by Payment Review / payments authority;
+- Historical Recovery remains owned by the historical recovery runtime;
+- Job and reconfirm data remain canonical Session/reconfirm truth;
+- Membership review remains canonical Member/entitlement truth;
+- Client detail is opened on demand through canonical Client 360 rather than copied into HYPE as a new database.
+
+Owner Summary is read-only. HYPE may prioritize and link to actions but must not approve payments, change Job state, grant membership, or perform any protected mutation.
+
 ## Next implementation lanes
 
-1. customer-safe payment proof status explanation
-2. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
-3. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
-4. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
+1. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+2. natural-language intent routing over the existing canonical domains
+3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.
