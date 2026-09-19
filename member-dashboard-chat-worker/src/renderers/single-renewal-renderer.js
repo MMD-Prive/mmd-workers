@@ -61,7 +61,7 @@ export function resolveRenewalRedirect(requestUrl) {
   }
 
   const target = new URL(RENEWAL_ENTRY_PATH, CANONICAL_ORIGIN);
-  target.searchParams.set("intent", "renewal");
+  target.searchParams.set("intent", "renew");
 
   for (const [key, value] of source.searchParams.entries()) {
     if (SAFE_ENTRY_PARAMS.has(key) && value) target.searchParams.set(key, value);
