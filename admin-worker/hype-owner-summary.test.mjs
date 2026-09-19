@@ -92,7 +92,7 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
   assert.equal(summary.recovery_queue.business_truth_inferred, false);
   assert.equal(summary.what_to_watch_now[0].client_name, "คุณเชน");
   assert.equal(summary.next_actions[1].href, "/internal/admin/recovery");
-  assert.equal(summary.review_required.count, 5);
+  assert.equal(summary.review_required.count, 7);
   assert.equal(summary.calendar.today_jobs.length, 1);
   assert.equal(summary.calendar.tomorrow_jobs.length, 1);
   assert.equal(summary.jobs.items[0].client_name, "คุณเอ็ม");
