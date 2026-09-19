@@ -631,7 +631,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
         : hypeStatusButtons(env, result),
   }, env);
 
-  await recordHypeContinuity({
+  const continuity = await recordHypeContinuity({
     binding,
     telegramUserId,
     command,
@@ -650,7 +650,8 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
           : "hype_operating_status",
     ok: true,
     readiness: clean(result.readiness || result.state),
-    continuity_recorded: true,
+    continuity_recorded: continuity.ok === true,
+    continuity_state: continuity.state,
     telegram,
   };
 }
