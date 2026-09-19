@@ -43,4 +43,7 @@ assert.match(footer, /new AbortController\(\)/);
 assert.match(footer, /\.webflow\.io\$/);
 assert.doesNotMatch(footer, /Account Number|PromptPay Ref|paypal\.com\/ncp\/payment/i);
 
+const runtime = footer.replace(/^\s*<script[^>]*>/i, "").replace(/<\/script>\s*$/i, "");
+assert.doesNotThrow(() => new Function(runtime), "v20 footer runtime must compile");
+
 console.log("SIGIL Pay v20 contract OK");
