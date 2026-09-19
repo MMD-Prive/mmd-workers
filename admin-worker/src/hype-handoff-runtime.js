@@ -256,7 +256,10 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
 
     const tracking = handoffTrackingFromRecord(matrix.record);
     if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
-    const recoveryCorrelation = safeRecoveryCorrelation(parseObject(parseObject(matrix.record.fields?.[F.PAYLOAD]).recovery_correlation));
+    let recoveryCorrelation = safeRecoveryCorrelation(parseObject(parseObject(matrix.record.fields?.[F.PAYLOAD]).recovery_correlation));
+    if (recoveryCorrelation?.correlated === true && recoveryCorrelation.order_id) {
+      recoveryCorrelation = await refreshShopRecoveryCorrelation(env, telegramUserId, recoveryCorrelation);
+    }
 
     return json({
       ok: true,
@@ -1885,6 +1888,45 @@ function safeRecoveryCorrelation(value = {}) {
     total_thb: nullableNonNegative(value.total_thb),
     candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
     method: token(value.method) || "none",
+    live_refresh_status: token(value.live_refresh_status) || null,
+    refreshed_at: clean(value.refreshed_at, 80) || null,
+  };
+}
+
+async function refreshShopRecoveryCorrelation(env, telegramUserId, prior = {}) {
+  const orderId = clean(prior.order_id, 180);
+  if (!orderId) return { ...prior, live_refresh_status: "unavailable", refreshed_at: null };
+
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, orderId);
+  const correlation = read.body?.correlation || {};
+  const order = read.status === 200 && read.body?.ok === true && correlation.exact_owned_match === true
+    ? (Array.isArray(read.body.orders) ? read.body.orders : [])
+        .find((item) => clean(item?.order_id, 180) === orderId)
+    : null;
+
+  if (!order) {
+    return {
+      ...prior,
+      live_refresh_status: "unavailable",
+      refreshed_at: null,
+    };
+  }
+
+  return {
+    ...prior,
+    state: "correlated",
+    correlated: true,
+    order_id: orderId,
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    source_authority: clean(read.body.authority, 160) || clean(prior.source_authority, 160) || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: new Date().toISOString(),
   };
 }
 
@@ -1943,6 +1985,8 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
     total_thb: nullableNonNegative(order.total_thb),
     candidate_count: Number(correlation.candidate_count) || 1,
     source_authority: clean(read.body.authority, 160) || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: new Date().toISOString(),
     live_truth_refresh_required: true,
   };
 }
