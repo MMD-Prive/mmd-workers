@@ -1,0 +1,72 @@
+#mmdshop-rules-v1,
+#mmdshop-rules-v1 *{box-sizing:border-box}
+#mmdshop-rules-v1{
+  --ink:#17130f;
+  --muted:#72685e;
+  --paper:#f4efe7;
+  --line:rgba(45,34,24,.14);
+  --rose:#a65766;
+  width:100%;
+  min-height:100vh;
+  padding:18px 16px 48px;
+  color:var(--ink);
+  background:
+    radial-gradient(circle at 86% 0%,rgba(166,87,102,.12),transparent 28rem),
+    linear-gradient(180deg,#f6f0e7 0%,#eee6db 100%);
+  font-family:"LINE Seed Sans TH","Line Seed Sans TH","Noto Sans Thai","Outfit",system-ui,-apple-system,BlinkMacSystemFont,sans-serif
+}
+#mmdshop-rules-v1 a{color:inherit;text-decoration:none}
+#mmdshop-rules-v1 .mmdr__topbar,
+#mmdshop-rules-v1 .mmdr__hero,
+#mmdshop-rules-v1 .mmdr__grid,
+#mmdshop-rules-v1 .mmdr__footer-card{width:min(900px,100%);margin-left:auto;margin-right:auto}
+#mmdshop-rules-v1 .mmdr__topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:32px}
+#mmdshop-rules-v1 .mmdr__brand{display:flex;align-items:baseline;gap:7px;font-weight:950}
+#mmdshop-rules-v1 .mmdr__brand span{font-size:20px}
+#mmdshop-rules-v1 .mmdr__brand small{font-size:10px;letter-spacing:.22em;color:var(--rose)}
+#mmdshop-rules-v1 .mmdr__back{font-size:11px;font-weight:850;padding:9px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.58)}
+#mmdshop-rules-v1 .mmdr__hero{padding:20px 2px 30px}
+#mmdshop-rules-v1 .mmdr__eyebrow{font-size:9px;font-weight:950;letter-spacing:.16em;color:var(--rose)}
+#mmdshop-rules-v1 .mmdr__hero h1{margin:10px 0 14px;font-size:clamp(38px,11vw,72px);line-height:.94;letter-spacing:-.045em}
+#mmdshop-rules-v1 .mmdr__hero p{max-width:680px;margin:0;color:#5e564d;line-height:1.75;font-size:14px}
+#mmdshop-rules-v1 .mmdr__grid{display:grid;gap:10px}
+#mmdshop-rules-v1 .mmdr__rule{
+  border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.68);overflow:hidden
+}
+#mmdshop-rules-v1 .mmdr__rule summary{
+  list-style:none;cursor:pointer;min-height:64px;padding:14px 16px;display:flex;align-items:center;gap:12px;font-weight:900
+}
+#mmdshop-rules-v1 .mmdr__rule summary::-webkit-details-marker{display:none}
+#mmdshop-rules-v1 .mmdr__rule summary span{
+  width:34px;height:34px;display:grid;place-items:center;border-radius:50%;background:#17130f;color:#fff;font-size:10px;letter-spacing:.05em;flex:0 0 auto
+}
+#mmdshop-rules-v1 .mmdr__rule summary strong{font-size:14px}
+#mmdshop-rules-v1 .mmdr__rule[open] summary{border-bottom:1px solid var(--line)}
+#mmdshop-rules-v1 .mmdr__rule-body{padding:16px 16px 18px 62px}
+#mmdshop-rules-v1 .mmdr__rule-body p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.75}
+#mmdshop-rules-v1 .mmdr__rule-body p:last-child{margin-bottom:0}
+#mmdshop-rules-v1 .mmdr__status-list{display:grid;gap:9px}
+#mmdshop-rules-v1 .mmdr__status-list div{display:grid;gap:2px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#fff}
+#mmdshop-rules-v1 .mmdr__status-list b{font-size:12px}
+#mmdshop-rules-v1 .mmdr__status-list span{font-size:10px;color:var(--muted);line-height:1.5}
+#mmdshop-rules-v1 .mmdr__button{
+  min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:#fff;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:900
+}
+#mmdshop-rules-v1 .mmdr__button--dark{background:#17130f;color:#fff;border-color:#17130f}
+#mmdshop-rules-v1 .mmdr__footer-card{
+  margin-top:18px;padding:24px;border-radius:22px;background:#17130f;color:#fff;display:grid;gap:10px
+}
+#mmdshop-rules-v1 .mmdr__footer-card h2{margin:0;font-size:24px;line-height:1.1}
+#mmdshop-rules-v1 .mmdr__footer-card .mmdr__button{justify-self:start;margin-top:4px}
+#mmdshop-rules-v1 :focus-visible{outline:3px solid rgba(166,87,102,.35);outline-offset:3px}
+@media (min-width:720px){
+  #mmdshop-rules-v1{padding:30px 24px 70px}
+  #mmdshop-rules-v1 .mmdr__hero{padding:42px 2px 40px}
+  #mmdshop-rules-v1 .mmdr__rule summary{padding:17px 20px}
+  #mmdshop-rules-v1 .mmdr__rule-body{padding:20px 24px 22px 70px}
+  #mmdshop-rules-v1 .mmdr__rule summary strong{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){
+  #mmdshop-rules-v1 *,#mmdshop-rules-v1 *::before,#mmdshop-rules-v1 *::after{scroll-behavior:auto!important;animation-duration:.001ms!important;transition-duration:.001ms!important}
+}
