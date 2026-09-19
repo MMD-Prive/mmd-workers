@@ -2,6 +2,7 @@
   data-profile-endpoint="/v1/model/profile"
   data-submit-endpoint="/v1/model/session/current?mode=year6_direct_wish"
   data-media-upload-endpoint="/v1/model/media/upload"
+  data-dashboard-url="/sigil/model/dashboard?notice=wish_pending_review"
   data-liff-id="2010864854-N34SgCqq" lang="th">
   <div class="mmw-shell">
     <header class="mmw-topbar">
@@ -9,7 +10,7 @@
         <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp" width="48" height="48" alt="MMD Privé">
         <span>MMD PRIVÉ<small>THE MODEL CIRCLE</small></span>
       </a>
-      <span class="mmw-session" data-session-chip role="status">กำลังเช็ก LINE</span>
+      <span class="mmw-session is-checking" data-session-chip role="status">กำลังยืนยันตัวตน</span>
     </header>
 
     <section class="mmw-hero" aria-labelledby="mmw-title">
@@ -21,7 +22,7 @@
         <p class="mmw-hero-note">หกปีที่มีคุณเป็นส่วนหนึ่ง<br>ขอบคุณที่เติบโตไปด้วยกัน</p>
       </div>
       <figure class="mmw-portrait">
-        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aacf3d5af4b67d29457bae2_Boss%20Wish.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1600" height="900" fetchpriority="high">
+        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aad71a234afd75920bbdcc5_Boss%20Thanks.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1916" height="821" fetchpriority="high">
         <figcaption><span>SAME PEOPLE. BRIGHTER TOMORROWS.</span><a href="#mmw-letter">เขียนข้อความถึงเรา <span aria-hidden="true">↓</span></a></figcaption>
       </figure>
     </section>
@@ -113,21 +114,26 @@
         </fieldset>
 
         <div class="mmw-submit-area">
-          <div class="mmw-auth-note" data-auth-note><span aria-hidden="true"></span><p>ยืนยัน LINE ตอนส่ง เพื่อให้ข้อความผูกกับบัญชี MMD MODEL ของคุณ</p></div>
+          <div class="mmw-auth-note is-checking" data-auth-note>
+            <span aria-hidden="true"></span>
+            <p>กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ</p>
+            <button class="mmw-auth-retry" type="button" data-auth-retry hidden>ยืนยัน LINE</button>
+          </div>
           <p class="mmw-error" data-error role="status" aria-live="polite" tabindex="-1"></p>
-          <button class="mmw-submit" type="submit" data-submit><span data-submit-label>ส่งให้เปอร์</span><span aria-hidden="true">↗</span></button>
+          <button class="mmw-submit" type="submit" data-submit><span data-submit-label>ส่งคำอวยพร</span><span aria-hidden="true">↗</span></button>
           <p class="mmw-submit-note">ด้วยความขอบคุณ จาก MMD Privé</p>
         </div>
       </form>
     </section>
 
-    <section class="mmw-success" data-success hidden aria-labelledby="mmw-success-title" tabindex="-1">
-      <span class="mmw-success-seal" aria-hidden="true">✓</span>
-      <p class="mmw-eyebrow">RECEIVED WITH GRATITUDE</p>
-      <h2 id="mmw-success-title">ขอบคุณที่เป็นส่วนหนึ่ง<br>ของเรื่องราวนี้</h2>
-      <p>ส่งข้อความถึงพี่เปอร์เรียบร้อยแล้วครับ<br>คำอวยพรจะได้รับการตรวจอนุมัติก่อนเผยแพร่</p>
+    <section class="mmw-success mmw-success-pending" data-success hidden aria-labelledby="mmw-success-title" tabindex="-1">
+      <div class="mmw-pending-pill" role="status"><span aria-hidden="true"></span>รอยืนยัน</div>
+      <p class="mmw-eyebrow">MODEL DASHBOARD STATUS</p>
+      <h2 id="mmw-success-title">ได้รับคำอวยพรแล้วครับ</h2>
+      <p>MMD รับข้อความเรียบร้อยแล้ว · ตอนนี้อยู่ระหว่างพี่เปอร์ตรวจอนุมัติ</p>
       <p class="mmw-success-scope" data-success-scope></p>
-      <a class="mmw-back" href="/sigil/model/dashboard">กลับ MMD MODEL <span aria-hidden="true">↗</span></a>
+      <p class="mmw-success-note">สถานะ “รอยืนยัน” เป็นขั้นตอนปกติ ไม่ได้หมายถึงบัญชีหรือ Model Dashboard มีปัญหา</p>
+      <a class="mmw-back" href="/sigil/model/dashboard?notice=wish_pending_review">ไปที่ Model Dashboard <span aria-hidden="true">↗</span></a>
     </section>
 
     <figure class="mmw-closing">
