@@ -152,7 +152,10 @@ export async function handleHypeHandoffRpc(request, env = {}) {
       const priorRecovery = parseObject(priorPayload.recovery_correlation);
       const tracking = handoffTrackingFromRecord(existing.record);
       if (
-        clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation.order_id, 180)
+        (
+          clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation.order_id, 180)
+          || (priorRecovery.domain === "mmd_shop" && priorRecovery.correlated !== true)
+        )
         && tracking.id
         && !["resolved", "customer_notified"].includes(token(tracking.state))
       ) {
@@ -253,6 +256,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
 
     const tracking = handoffTrackingFromRecord(matrix.record);
     if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
+    const recoveryCorrelation = safeRecoveryCorrelation(parseObject(parseObject(matrix.record.fields?.[F.PAYLOAD]).recovery_correlation));
 
     return json({
       ok: true,
@@ -263,6 +267,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       updated_at: tracking.updated_at || null,
       actor_role: tracking.actor_role || null,
       terminal: ["resolved", "customer_notified"].includes(tracking.state),
+      recovery_correlation: recoveryCorrelation,
       guardrails: handoffStatusGuardrails(),
     });
   }
@@ -1631,6 +1636,7 @@ async function upsertContinuityMatrix(env, input = {}) {
     command: input.command,
     projection: input.projection,
     handoff,
+    recoveryCorrelation: input.recoveryCorrelation,
   });
 
   const fields = {
@@ -1837,6 +1843,26 @@ function buildOperatorSummary({ target, displayName, customerMessage, projection
     "Context is continuity-only. Refresh canonical truth before any protected action.",
   ].filter(Boolean);
   return lines.join("\n").slice(0, 1800);
+}
+
+function safeRecoveryCorrelation(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.domain !== "mmd_shop") return null;
+  return {
+    domain: "mmd_shop",
+    state: token(value.state) || "unknown",
+    correlated: value.correlated === true,
+    case_ref: clean(value.case_ref, 180) || null,
+    order_id: clean(value.order_id, 180) || null,
+    order_status: token(value.order_status) || null,
+    payment_status: token(value.payment_status) || null,
+    fulfillment_state: token(value.fulfillment_state) || null,
+    delivery_method: token(value.delivery_method) || null,
+    courier: clean(value.courier, 180) || null,
+    tracking_number: clean(value.tracking_number, 220) || null,
+    total_thb: nonNegative(value.total_thb),
+    candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
+    method: token(value.method) || "none",
+  };
 }
 
 async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage) {
