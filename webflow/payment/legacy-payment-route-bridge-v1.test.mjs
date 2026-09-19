@@ -29,12 +29,19 @@ test("signed membership aliases go only to canonical signed payment route", () =
   for (const path of ["/sigil/pay/membership", "/pay/membership"]) {
     const out = resolve(`https://mmdbkk.com${path}?t=signed&amount=999999&account=bad`);
     assert.equal(out.replaced, "/sigil/pay?t=signed");
+    assert.equal(out.bridge?.canonical, true);
+    assert.equal(out.bridge?.updated, "2026-09-19");
   }
 });
 
 test("unsigned membership aliases return to canonical membership entry and strip money authority params", () => {
-  const out = resolve("https://mmdbkk.com/pay/membership?plan=premium&code=ABC&amount=2999&payment_ref=fake");
-  assert.equal(out.replaced, "/sigil/member/membership?plan=premium&code=ABC");
+  const out = resolve("https://mmdbkk.com/pay/membership?plan=premium&code=ABC&amount=2999&payment_ref=fake&session_id=fake#join");
+  assert.equal(out.replaced, "/sigil/member/membership?plan=premium&code=ABC#join");
+});
+
+test("unsigned membership alias forwards only approved entry context", () => {
+  const out = resolve("https://mmdbkk.com/sigil/pay/membership?plan=elite&package=care&tier=private&code=C1&promo=P1&src=line&campaign=care-back&from=my-mmd&amount=999999&bank=bad");
+  assert.equal(out.replaced, "/sigil/member/membership?plan=elite&package=care&tier=private&code=C1&promo=P1&src=line&campaign=care-back&from=my-mmd");
 });
 
 test("retired generic payment route requires signed token or falls back to member payment hub", () => {
