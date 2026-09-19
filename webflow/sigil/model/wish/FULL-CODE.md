@@ -1,12 +1,16 @@
-# /sigil/model/wish — Full code redesign
+# /sigil/model/wish — Full code
 
-HTML — Webflow Embed
+Updated: 2026-09-19  
+Flow: auto-auth on entry → Wish → manual review → yellow pending Model Dashboard status.
+
+## HTML — Webflow Embed
 
 ```html
 <main id="mmd-model-wish-v1" data-model-wish
   data-profile-endpoint="/v1/model/profile"
   data-submit-endpoint="/v1/model/session/current?mode=year6_direct_wish"
   data-media-upload-endpoint="/v1/model/media/upload"
+  data-dashboard-url="/sigil/model/dashboard?notice=wish_pending_review"
   data-liff-id="2010864854-N34SgCqq" lang="th">
   <div class="mmw-shell">
     <header class="mmw-topbar">
@@ -14,7 +18,7 @@ HTML — Webflow Embed
         <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp" width="48" height="48" alt="MMD Privé">
         <span>MMD PRIVÉ<small>THE MODEL CIRCLE</small></span>
       </a>
-      <span class="mmw-session" data-session-chip role="status">กำลังเช็ก LINE</span>
+      <span class="mmw-session is-checking" data-session-chip role="status">กำลังยืนยันตัวตน</span>
     </header>
 
     <section class="mmw-hero" aria-labelledby="mmw-title">
@@ -26,7 +30,7 @@ HTML — Webflow Embed
         <p class="mmw-hero-note">หกปีที่มีคุณเป็นส่วนหนึ่ง<br>ขอบคุณที่เติบโตไปด้วยกัน</p>
       </div>
       <figure class="mmw-portrait">
-        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aacf3d5af4b67d29457bae2_Boss%20Wish.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1600" height="900" fetchpriority="high">
+        <img class="mmw-hero-img" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aad71a234afd75920bbdcc5_Boss%20Thanks.webp" alt="พี่เปอร์ — ขอบคุณที่เป็นพลังงานที่ดีของ MMD เสมอมา" width="1916" height="821" fetchpriority="high">
         <figcaption><span>SAME PEOPLE. BRIGHTER TOMORROWS.</span><a href="#mmw-letter">เขียนข้อความถึงเรา <span aria-hidden="true">↓</span></a></figcaption>
       </figure>
     </section>
@@ -118,21 +122,26 @@ HTML — Webflow Embed
         </fieldset>
 
         <div class="mmw-submit-area">
-          <div class="mmw-auth-note" data-auth-note><span aria-hidden="true"></span><p>ยืนยัน LINE ตอนส่ง เพื่อให้ข้อความผูกกับบัญชี MMD MODEL ของคุณ</p></div>
+          <div class="mmw-auth-note is-checking" data-auth-note>
+            <span aria-hidden="true"></span>
+            <p>กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ</p>
+            <button class="mmw-auth-retry" type="button" data-auth-retry hidden>ยืนยัน LINE</button>
+          </div>
           <p class="mmw-error" data-error role="status" aria-live="polite" tabindex="-1"></p>
-          <button class="mmw-submit" type="submit" data-submit><span data-submit-label>ส่งให้เปอร์</span><span aria-hidden="true">↗</span></button>
+          <button class="mmw-submit" type="submit" data-submit><span data-submit-label>ส่งคำอวยพร</span><span aria-hidden="true">↗</span></button>
           <p class="mmw-submit-note">ด้วยความขอบคุณ จาก MMD Privé</p>
         </div>
       </form>
     </section>
 
-    <section class="mmw-success" data-success hidden aria-labelledby="mmw-success-title" tabindex="-1">
-      <span class="mmw-success-seal" aria-hidden="true">✓</span>
-      <p class="mmw-eyebrow">RECEIVED WITH GRATITUDE</p>
-      <h2 id="mmw-success-title">ขอบคุณที่เป็นส่วนหนึ่ง<br>ของเรื่องราวนี้</h2>
-      <p>ส่งข้อความถึงพี่เปอร์เรียบร้อยแล้วครับ<br>คำอวยพรจะได้รับการตรวจอนุมัติก่อนเผยแพร่</p>
+    <section class="mmw-success mmw-success-pending" data-success hidden aria-labelledby="mmw-success-title" tabindex="-1">
+      <div class="mmw-pending-pill" role="status"><span aria-hidden="true"></span>รอยืนยัน</div>
+      <p class="mmw-eyebrow">MODEL DASHBOARD STATUS</p>
+      <h2 id="mmw-success-title">ได้รับคำอวยพรแล้วครับ</h2>
+      <p>MMD รับข้อความเรียบร้อยแล้ว · ตอนนี้อยู่ระหว่างพี่เปอร์ตรวจอนุมัติ</p>
       <p class="mmw-success-scope" data-success-scope></p>
-      <a class="mmw-back" href="/sigil/model/dashboard">กลับ MMD MODEL <span aria-hidden="true">↗</span></a>
+      <p class="mmw-success-note">สถานะ “รอยืนยัน” เป็นขั้นตอนปกติ ไม่ได้หมายถึงบัญชีหรือ Model Dashboard มีปัญหา</p>
+      <a class="mmw-back" href="/sigil/model/dashboard?notice=wish_pending_review">ไปที่ Model Dashboard <span aria-hidden="true">↗</span></a>
     </section>
 
     <figure class="mmw-closing">
@@ -147,13 +156,14 @@ HTML — Webflow Embed
     <footer class="mmw-footer"><span>MMD PRIVÉ</span><span>SIX YEARS. AND STILL, TOGETHER.</span><a href="/sigil/model/dashboard">MMD MODEL <span aria-hidden="true">↗</span></a></footer>
   </div>
 </main>
+
 ```
 
-CSS — Page Settings → Inside <head>
+## CSS — Page Head
 
 ```html
 <meta name="robots" content="noindex,nofollow">
-<style id="mmd-model-wish-atelier-v8">
+<style id="mmd-model-wish-atelier-v9">
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;1,400&family=Noto+Sans+Thai:wght@400;500;600&display=swap');
 /* MMD MODEL · Sixth Year — page-scoped, mobile-first. */
 #mmd-model-wish-v1 {
@@ -193,8 +203,9 @@ CSS — Page Settings → Inside <head>
 #mmd-model-wish-v1 .mmw-brand small { display: block; margin-top: 4px; color: var(--mmw-muted); font-size: 8px; letter-spacing: .12em; }
 #mmd-model-wish-v1 .mmw-session { max-width: 46%; color: var(--mmw-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #mmd-model-wish-v1 .mmw-session::before { content: ""; display: inline-block; width: 5px; height: 5px; margin: 0 7px 2px 0; border-radius: 50%; background: currentColor; }
+#mmd-model-wish-v1 .mmw-session.is-checking { color: #e0c978; }
 #mmd-model-wish-v1 .mmw-session.is-ready { color: #adbea1; }
-#mmd-model-wish-v1 .mmw-session.is-needed { color: var(--mmw-gold); }
+#mmd-model-wish-v1 .mmw-session.is-needed { color: #e0c978; }
 #mmd-model-wish-v1 .mmw-hero { padding-top: 36px; }
 #mmd-model-wish-v1 .mmw-eyebrow { color: var(--mmw-gold); font-size: 10px; line-height: 1.6; font-weight: 500; letter-spacing: .16em; }
 #mmd-model-wish-v1 .mmw-hero h1 { margin-top: 17px; color: var(--mmw-cream); font-family: var(--mmw-serif); font-size: clamp(43px, 11vw, 74px); font-weight: 400; line-height: .99; letter-spacing: -.035em; }
@@ -279,20 +290,35 @@ CSS — Page Settings → Inside <head>
 #mmd-model-wish-v1 .mmw-option-arrow { color: var(--mmw-gold); font-size: 18px; }
 #mmd-model-wish-v1 .mmw-privacy-note { margin-top: 14px; color: var(--mmw-muted); font-size: 11px; line-height: 1.8; }
 #mmd-model-wish-v1 .mmw-submit-area { margin-top: 28px; }
-#mmd-model-wish-v1 .mmw-auth-note { display: flex; align-items: flex-start; gap: 9px; padding: 15px 0; border-top: 1px solid var(--mmw-line); color: var(--mmw-muted); font-size: 11px; line-height: 1.8; }
-#mmd-model-wish-v1 .mmw-auth-note > span { width: 5px; height: 5px; flex: 0 0 5px; margin-top: 7px; border-radius: 50%; background: var(--mmw-gold); }
-#mmd-model-wish-v1 .mmw-auth-note.is-ready > span { background: #b7c4a5; }
+#mmd-model-wish-v1 .mmw-auth-note { display: grid; grid-template-columns: auto minmax(0,1fr); align-items: center; gap: 9px 10px; padding: 14px 0; border-top: 1px solid var(--mmw-line); color: var(--mmw-muted); font-size: 11px; line-height: 1.7; }
+#mmd-model-wish-v1 .mmw-auth-note > span { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #e0c978; box-shadow: 0 0 0 5px #e0c97812; }
+#mmd-model-wish-v1 .mmw-auth-note p { margin: 0; }
+#mmd-model-wish-v1 .mmw-auth-note.is-checking > span { animation: mmw-auth-pulse 1.2s ease-in-out infinite; }
+#mmd-model-wish-v1 .mmw-auth-note.is-ready { color: #bdc9b4; }
+#mmd-model-wish-v1 .mmw-auth-note.is-ready > span { background: #a9c49a; box-shadow: 0 0 0 5px #a9c49a12; }
+#mmd-model-wish-v1 .mmw-auth-note.is-needed { color: #dacb9a; }
+#mmd-model-wish-v1 .mmw-auth-retry { grid-column: 2; justify-self: start; min-height: 38px; margin-top: 2px; padding: 7px 13px; border: 1px solid #d7bd6c66; border-radius: 999px; background: #d7bd6c12; color: #ead58e; font-size: 11px; font-weight: 600; }
+@keyframes mmw-auth-pulse { 50% { opacity: .38; transform: scale(.82); } }
 #mmd-model-wish-v1 .mmw-error { color: #efc0a4; font-size: 13px; line-height: 1.8; }
 #mmd-model-wish-v1 .mmw-error:not(:empty) { padding: 13px 15px; margin-bottom: 16px; border: 1px solid #efc0a444; border-radius: 3px; background: #efc0a408; }
 #mmd-model-wish-v1 .mmw-submit { display: flex; align-items: center; justify-content: space-between; gap: 15px; width: 100%; min-height: 58px; padding: 15px 22px; border: 1px solid var(--mmw-gold); border-radius: 3px; background: var(--mmw-gold); color: #201e17; font-size: 16px; font-weight: 500; transition: background .2s, transform .2s; }
 #mmd-model-wish-v1 .mmw-submit > span:last-child { font-size: 24px; font-weight: 400; }
 #mmd-model-wish-v1 .mmw-submit-note { margin-top: 13px; color: var(--mmw-muted); text-align: center; font-size: 11px; }
-#mmd-model-wish-v1 .mmw-success { max-width: 650px; margin: 55px auto 75px; padding: 36px 20px; border: 1px solid var(--mmw-line); background: var(--mmw-panel); text-align: center; scroll-margin-top: 25px; }
-#mmd-model-wish-v1 .mmw-success-seal { display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 25px; border: 1px solid var(--mmw-gold); border-radius: 50%; color: var(--mmw-gold); font-size: 20px; }
-#mmd-model-wish-v1 .mmw-success h2 { margin: 18px 0; color: var(--mmw-cream); font-size: clamp(27px,5vw,37px); line-height: 1.6; font-weight: 400; }
-#mmd-model-wish-v1 .mmw-success > p:not(.mmw-eyebrow) { color: var(--mmw-muted); font-size: 13px; line-height: 1.9; }
-#mmd-model-wish-v1 .mmw-success .mmw-success-scope { margin: 20px 0 28px; font-size: 11px; }
-#mmd-model-wish-v1 .mmw-back { display: inline-flex; align-items: center; justify-content: space-between; gap: 30px; min-height: 48px; padding: 12px 22px; border: 1px solid var(--mmw-gold); color: var(--mmw-gold); font-size: 12px; }
+#mmd-model-wish-v1 .mmw-success { max-width: 680px; margin: 34px auto 70px; padding: 24px 20px; border: 1px solid #e0c97866; border-radius: 18px; background: radial-gradient(circle at 10% 0%, #e0c97816, transparent 38%), linear-gradient(180deg,#211d10,#151612); text-align: left; scroll-margin-top: 18px; box-shadow: 0 22px 65px #0007; }
+#mmd-model-wish-v1 .mmw-success .mmw-eyebrow { margin-top: 20px; color: #e0c978; }
+#mmd-model-wish-v1 .mmw-pending-pill { width: fit-content; display: inline-flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 12px; border: 1px solid #e0c97866; border-radius: 999px; background: #e0c97812; color: #f0d77c; font-size: 12px; font-weight: 600; }
+#mmd-model-wish-v1 .mmw-pending-pill > span { width: 8px; height: 8px; border-radius: 50%; background: #f1c75b; box-shadow: 0 0 0 5px #f1c75b14; }
+#mmd-model-wish-v1 .mmw-success h2 { margin: 9px 0 10px; color: var(--mmw-cream); font-size: clamp(27px,7vw,38px); line-height: 1.35; font-weight: 500; }
+#mmd-model-wish-v1 .mmw-success > p:not(.mmw-eyebrow) { color: #c9c2b3; font-size: 13px; line-height: 1.75; }
+#mmd-model-wish-v1 .mmw-success .mmw-success-scope { margin: 16px 0 0; padding-top: 14px; border-top: 1px solid #e0c9782c; color: #d9c884; font-size: 11px; }
+#mmd-model-wish-v1 .mmw-success .mmw-success-note { margin: 9px 0 20px; color: #aaa596; font-size: 11px; }
+#mmd-model-wish-v1 .mmw-success.is-approved { border-color: #9fc28a55; background: radial-gradient(circle at 10% 0%, #9fc28a14, transparent 38%), linear-gradient(180deg,#162015,#151612); }
+#mmd-model-wish-v1 .mmw-success.is-approved .mmw-pending-pill { border-color: #9fc28a66; background: #9fc28a12; color: #bad7aa; }
+#mmd-model-wish-v1 .mmw-success.is-approved .mmw-pending-pill > span { background: #9fc28a; box-shadow: 0 0 0 5px #9fc28a14; }
+#mmd-model-wish-v1 .mmw-success.is-not-approved { border-color: var(--mmw-line); background: var(--mmw-panel); }
+#mmd-model-wish-v1 .mmw-success.is-not-approved .mmw-pending-pill { border-color: var(--mmw-line); background: #ffffff08; color: var(--mmw-muted); }
+#mmd-model-wish-v1 .mmw-success.is-not-approved .mmw-pending-pill > span { background: #8f8b80; box-shadow: none; }
+#mmd-model-wish-v1 .mmw-back { display: flex; align-items: center; justify-content: space-between; gap: 22px; width: 100%; min-height: 52px; margin-top: 20px; padding: 12px 17px; border: 1px solid #e0c97877; border-radius: 999px; background: #e0c97810; color: #ead58e; font-size: 12px; font-weight: 600; }
 #mmd-model-wish-v1 .mmw-closing { position: relative; margin: 0 0 40px; overflow: hidden; border: 1px solid var(--mmw-line); border-radius: 4px; background: var(--mmw-panel); }
 #mmd-model-wish-v1 .mmw-closing > img { display: block; width: 100%; height: auto; aspect-ratio: 1672 / 941; object-fit: contain; }
 #mmd-model-wish-v1 .mmw-closing figcaption { padding: 22px; }
@@ -309,6 +335,7 @@ CSS — Page Settings → Inside <head>
   #mmd-model-wish-v1 .mmw-option:hover { border-color: #8d7a57; }
   #mmd-model-wish-v1 .mmw-question > summary:hover .mmw-question-title > span:last-child { color: var(--mmw-gold); }
   #mmd-model-wish-v1 .mmw-next:hover, #mmd-model-wish-v1 .mmw-footer a:hover { color: var(--mmw-cream); }
+  #mmd-model-wish-v1 .mmw-auth-retry:hover, #mmd-model-wish-v1 .mmw-back:hover { background: #e0c9781e; color: #f4df9b; }
 }
 @media (min-width: 600px) {
   #mmd-model-wish-v1 .mmw-shell { width: min(1120px, calc(100% - 80px)); }
@@ -360,14 +387,16 @@ CSS — Page Settings → Inside <head>
 </style>
 ```
 
-JavaScript — Page Settings → Before </body>
+## JavaScript — Before closing body / Page Footer
 
 ```html
-<script id="mmd-model-wish-v8-runtime">
+<script id="mmd-model-wish-v9-runtime">
 (() => {
   'use strict';
+
   const R = document.querySelector('#mmd-model-wish-v1[data-model-wish]');
   if (!R || R.dataset.ready === '1') return;
+
   const $ = selector => R.querySelector(selector);
   const form = $('[data-wish-form]');
   const birthday = $('[data-birthday-wish]');
@@ -384,52 +413,95 @@ JavaScript — Page Settings → Before </body>
   const submitLabel = $('[data-submit-label]');
   const chip = $('[data-session-chip]');
   const authNote = $('[data-auth-note]');
+  const authRetry = $('[data-auth-retry]');
   const success = $('[data-success]');
   const scope = $('[data-success-scope]');
   const questions = [...R.querySelectorAll('[data-question]')];
+
   if (![form, birthday, mmd, privatePer, telegram, past, mediaInput, mediaGrid,
-    mediaCount, mediaNote, error, submit, submitLabel, chip, authNote, success, scope].every(Boolean)) return;
+    mediaCount, mediaNote, error, submit, submitLabel, chip, authNote, authRetry, success, scope].every(Boolean)) return;
+
   R.dataset.ready = '1';
 
   const PROFILE = R.dataset.profileEndpoint || '/v1/model/profile';
   const SUBMIT = R.dataset.submitEndpoint || '/v1/model/session/current?mode=year6_direct_wish';
   const MEDIA_UPLOAD = R.dataset.mediaUploadEndpoint || '/v1/model/media/upload';
+  const DASHBOARD = R.dataset.dashboardUrl || '/sigil/model/dashboard?notice=wish_pending_review';
   const LIFF_ID = R.dataset.liffId || '2010864854-N34SgCqq';
-  const DRAFT = 'mmd_model_wish_draft_v4';
-  const MAX_FILES = 5, IMAGE_MAX = 10 * 1024 * 1024, VIDEO_MAX = 50 * 1024 * 1024;
+  const DRAFT = 'mmd_model_wish_draft_v5';
+  const MAX_FILES = 5;
+  const IMAGE_MAX = 10 * 1024 * 1024;
+  const VIDEO_MAX = 50 * 1024 * 1024;
   const IMAGES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
   const VIDEOS = new Set(['video/mp4', 'video/quicktime', 'video/webm']);
-  let authed = false, busy = false, liffLoading = null;
-  let selectedFiles = [], uploadedMediaIds = [], previewUrls = [];
 
-  function setError(text) { error.textContent = text || ''; }
-  function setChip(mode, text) { chip.className = 'mmw-session' + (mode ? ' ' + mode : ''); chip.textContent = text; }
+  let authed = false;
+  let busy = false;
+  let authBusy = false;
+  let liffLoading = null;
+  let selectedFiles = [];
+  let uploadedMediaIds = [];
+  let previewUrls = [];
+
+  function setError(text) {
+    error.textContent = text || '';
+  }
+
+  function setChip(mode, text) {
+    chip.className = 'mmw-session' + (mode ? ' ' + mode : '');
+    chip.textContent = text;
+  }
+
+  function setAuthState(mode, text, retry = false) {
+    authNote.classList.remove('is-checking', 'is-ready', 'is-needed');
+    if (mode) authNote.classList.add(mode);
+    const copy = authNote.querySelector('p');
+    if (copy) copy.textContent = text || '';
+    authRetry.hidden = !retry;
+  }
+
   function lock(value, label) {
     busy = !!value;
     form.setAttribute('aria-busy', String(busy));
-    [submit, birthday, mmd, privatePer, telegram, past, mediaInput].forEach(el => { el.disabled = busy; });
-    submitLabel.textContent = label || (busy ? 'กำลังส่งให้เปอร์…' : 'ส่งให้เปอร์');
+    [submit, birthday, mmd, privatePer, telegram, past, mediaInput].forEach(el => {
+      el.disabled = busy;
+    });
+    submitLabel.textContent = label || (busy ? 'กำลังส่ง…' : 'ส่งคำอวยพร');
   }
+
   function updateCounts() {
     let written = 0;
     [['birthday', birthday, 700], ['mmd', mmd, 1000], ['private', privatePer, 1000]].forEach(([key, el, max]) => {
       const counter = $('[data-count="' + key + '"]');
       if (counter) counter.textContent = el.value.length + ' / ' + max;
-      const filled = !!el.value.trim(), section = el.closest('[data-question]');
+      const filled = !!el.value.trim();
+      const section = el.closest('[data-question]');
       if (filled) written++;
       if (section) {
         section.classList.toggle('is-filled', filled);
         const state = section.querySelector('[data-question-state]');
-        if (state) { state.textContent = filled ? '✓' : ''; state.setAttribute('aria-label', filled ? 'เขียนแล้ว' : 'ยังไม่ได้เขียน'); }
+        if (state) {
+          state.textContent = filled ? '✓' : '';
+          state.setAttribute('aria-label', filled ? 'เขียนแล้ว' : 'ยังไม่ได้เขียน');
+        }
       }
     });
     const total = $('[data-written-count]');
     if (total) total.textContent = written + ' / 3 ข้อความ';
   }
+
   function saveDraft() {
-    try { sessionStorage.setItem(DRAFT, JSON.stringify({ birthday: birthday.value, mmd: mmd.value,
-      private_note: privatePer.value, telegram: telegram.checked, past: past.checked })); } catch {}
+    try {
+      sessionStorage.setItem(DRAFT, JSON.stringify({
+        birthday: birthday.value,
+        mmd: mmd.value,
+        private_note: privatePer.value,
+        telegram: telegram.checked,
+        past: past.checked,
+      }));
+    } catch {}
   }
+
   function restoreDraft() {
     try {
       const draft = JSON.parse(sessionStorage.getItem(DRAFT) || 'null');
@@ -437,32 +509,43 @@ JavaScript — Page Settings → Before </body>
       birthday.value = String(draft.birthday || '').slice(0, 700);
       mmd.value = String(draft.mmd || '').slice(0, 1000);
       privatePer.value = String(draft.private_note || '').slice(0, 1000);
-      telegram.checked = !!draft.telegram; past.checked = !!draft.past;
+      telegram.checked = !!draft.telegram;
+      past.checked = !!draft.past;
     } catch {}
   }
-  function clearDraft() { try { sessionStorage.removeItem(DRAFT); } catch {} }
-  function profileName(p) {
-    return p?.model?.per_name || p?.model?.display_name || p?.profile?.per_name || p?.profile?.display_name || p?.per_name || p?.display_name || '';
+
+  function clearDraft() {
+    try { sessionStorage.removeItem(DRAFT); } catch {}
   }
+
+  function profileName(payload) {
+    return payload?.model?.per_name || payload?.model?.display_name ||
+      payload?.profile?.per_name || payload?.profile?.display_name ||
+      payload?.per_name || payload?.display_name || '';
+  }
+
   async function checkProfile() {
-    setChip('', 'กำลังเช็ก LINE');
+    setChip('is-checking', 'กำลังยืนยันตัวตน');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
     try {
-      const response = await fetch(PROFILE, { credentials: 'include', headers: { accept: 'application/json' }, cache: 'no-store' });
-      if (response.ok) {
-        const profile = await response.json();
-        if (!profile || typeof profile !== 'object') throw new Error('invalid_profile');
-        const name = profileName(profile);
-        authed = true; setChip('is-ready', name ? 'LINE พร้อม · ' + name : 'LINE พร้อม');
-        authNote.classList.add('is-ready');
-        authNote.querySelector('p').textContent = 'ยืนยัน LINE แล้ว · พร้อมส่งจากบัญชี MMD MODEL ของคุณ';
-        return true;
-      }
-    } catch {}
-    authed = false; setChip('is-needed', 'ยืนยัน LINE ตอนส่ง');
-    authNote.classList.remove('is-ready');
-    authNote.querySelector('p').textContent = 'ยืนยัน LINE ตอนส่ง เพื่อให้ข้อความผูกกับบัญชี MMD MODEL ของคุณ';
-    return false;
+      const response = await fetch(PROFILE, {
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!response.ok) return false;
+      const profile = await response.json();
+      if (!profile || typeof profile !== 'object') return false;
+      const name = profileName(profile);
+      authed = true;
+      setChip('is-ready', name ? 'ยืนยันแล้ว · ' + name : 'ยืนยันแล้ว');
+      setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD MODEL ของคุณ');
+      return true;
+    } catch {
+      return false;
+    }
   }
+
   function loadLiff() {
     if (window.liff) return Promise.resolve(window.liff);
     if (liffLoading) return liffLoading;
@@ -470,88 +553,185 @@ JavaScript — Page Settings → Before </body>
       const script = document.createElement('script');
       script.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
       script.onload = () => window.liff ? resolve(window.liff) : reject(new Error('liff_unavailable'));
-      script.onerror = () => { script.remove(); reject(new Error('liff_load_failed')); };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error('liff_load_failed'));
+      };
       document.head.appendChild(script);
-    }).catch(err => { liffLoading = null; throw err; });
+    }).catch(err => {
+      liffLoading = null;
+      throw err;
+    });
     return liffLoading;
   }
-  async function verifyLine() {
-    saveDraft(); setError('กำลังยืนยัน LINE ครับ ข้อความที่เขียนไว้ยังอยู่');
+
+  async function verifyLine({ automatic = false } = {}) {
+    if (authBusy) return false;
+    authBusy = true;
+    saveDraft();
+    setChip('is-checking', 'กำลังยืนยันตัวตน');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
+    if (!automatic) setError('');
     try {
       const liff = await loadLiff();
       await liff.init({ liffId: LIFF_ID });
-      if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return false; }
-      const response = await fetch('/v1/model/liff/exchange', { method: 'POST', credentials: 'include',
+
+      if (!liff.isLoggedIn()) {
+        liff.login({ redirectUri: location.href });
+        return false;
+      }
+
+      const idToken = typeof liff.getIDToken === 'function' ? liff.getIDToken() : '';
+      if (!idToken) throw new Error('id_token_missing');
+
+      const response = await fetch('/v1/model/liff/exchange', {
+        method: 'POST',
+        credentials: 'include',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ id_token: liff.getIDToken(), environment: 'published' }) });
-      if (!response.ok) throw new Error('exchange');
+        body: JSON.stringify({ id_token: idToken, environment: 'published' }),
+      });
+      if (!response.ok) throw new Error('exchange_failed');
+
       const ok = await checkProfile();
-      setError(ok ? '' : 'ยังยืนยันบัญชี MMD MODEL ไม่สำเร็จครับ ข้อความที่เขียนไว้ยังอยู่');
-      return ok;
+      if (!ok) throw new Error('profile_unavailable');
+      setError('');
+      return true;
     } catch {
-      setError('ยืนยัน LINE ไม่สำเร็จครับ ลองเปิดหน้านี้จาก MMD MODEL อีกครั้ง ข้อความที่เขียนไว้ยังอยู่');
+      authed = false;
+      setChip('is-needed', 'ยืนยัน LINE');
+      setAuthState('is-needed', 'ยังยืนยันตัวตนไม่สำเร็จครับ กด “ยืนยัน LINE” แล้วกลับมาเขียนต่อได้เลย', true);
       return false;
+    } finally {
+      authBusy = false;
     }
   }
-  function clearPreviews() { previewUrls.forEach(url => URL.revokeObjectURL(url)); previewUrls = []; }
-  function fileKind(file) { const type = String(file?.type || '').toLowerCase(); return VIDEOS.has(type) ? 'video' : IMAGES.has(type) ? 'image' : ''; }
+
+  async function readWishStatus() {
+    if (!authed) return null;
+    try {
+      const response = await fetch(SUBMIT, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) return null;
+      const result = await response.json().catch(() => null);
+      return result && result.ok === true ? result : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function clearPreviews() {
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    previewUrls = [];
+  }
+
+  function fileKind(file) {
+    const type = String(file?.type || '').toLowerCase();
+    return VIDEOS.has(type) ? 'video' : IMAGES.has(type) ? 'image' : '';
+  }
+
   function renderMedia() {
     clearPreviews();
     mediaCount.textContent = selectedFiles.length + ' / 5';
-    [...mediaGrid.querySelectorAll('[data-media-slot]')].forEach((slot, i) => {
-      slot.classList.toggle('is-uploaded', uploadedMediaIds.length === selectedFiles.length && uploadedMediaIds.length > i);
-      slot.innerHTML = '<span>0' + (i + 1) + '</span><em>MEDIA</em>';
-      const file = selectedFiles[i];
+    [...mediaGrid.querySelectorAll('[data-media-slot]')].forEach((slot, index) => {
+      slot.classList.toggle('is-uploaded', uploadedMediaIds.length === selectedFiles.length && uploadedMediaIds.length > index);
+      slot.innerHTML = '<span>0' + (index + 1) + '</span><em>MEDIA</em>';
+      const file = selectedFiles[index];
       if (!file) return;
-      const kind = fileKind(file), url = URL.createObjectURL(file);
+      const kind = fileKind(file);
+      const url = URL.createObjectURL(file);
       previewUrls.push(url);
       const media = document.createElement(kind === 'video' ? 'video' : 'img');
       media.src = url;
-      if (kind === 'video') { media.muted = true; media.playsInline = true; media.preload = 'metadata'; }
-      else media.alt = 'รูปอัปเดตโปรไฟล์ ' + (i + 1);
+      if (kind === 'video') {
+        media.muted = true;
+        media.playsInline = true;
+        media.preload = 'metadata';
+      } else {
+        media.alt = 'รูปอัปเดตโปรไฟล์ ' + (index + 1);
+      }
       slot.appendChild(media);
       const badge = document.createElement('span');
-      badge.className = 'mmw-media-badge'; badge.textContent = kind === 'video' ? 'CLIP' : 'PHOTO'; slot.appendChild(badge);
+      badge.className = 'mmw-media-badge';
+      badge.textContent = kind === 'video' ? 'CLIP' : 'PHOTO';
+      slot.appendChild(badge);
     });
-    if (!selectedFiles.length) mediaNote.textContent = 'ไฟล์จะเข้า Gallery / Intro Video ของคุณ และไม่ถูกแนบไปกับ Telegram หรือข้อความถึงลูกค้าโดยอัตโนมัติ';
-    else if (uploadedMediaIds.length === selectedFiles.length) mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD MODEL เรียบร้อยแล้ว';
-    else mediaNote.textContent = 'เลือกแล้ว ' + selectedFiles.length + ' ไฟล์ · จะอัปโหลดเมื่อกด “ส่งให้เปอร์”';
+
+    if (!selectedFiles.length) {
+      mediaNote.textContent = 'ไฟล์จะเข้า Gallery / Intro Video ของคุณ และไม่ถูกแนบไปกับ Telegram หรือข้อความถึงลูกค้าโดยอัตโนมัติ';
+    } else if (uploadedMediaIds.length === selectedFiles.length) {
+      mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD MODEL เรียบร้อยแล้ว';
+    } else {
+      mediaNote.textContent = 'เลือกแล้ว ' + selectedFiles.length + ' ไฟล์ · จะอัปโหลดเมื่อกด “ส่งคำอวยพร”';
+    }
   }
+
   function validateFiles(files) {
     if (files.length > MAX_FILES) return 'เลือกได้สูงสุด 5 ไฟล์รวมกันครับ';
     for (const file of files) {
       const kind = fileKind(file);
       if (!kind) return 'รองรับ JPG, PNG, WEBP, HEIC, HEIF, MP4, MOV และ WEBM ครับ';
-      if (kind === 'image' && file.size > IMAGE_MAX) return 'รูปแต่ละไฟล์รองรับสูงสุด 15 MB ครับ';
+      if (kind === 'image' && file.size > IMAGE_MAX) return 'รูปแต่ละไฟล์รองรับสูงสุด 10 MB ครับ';
       if (kind === 'video' && file.size > VIDEO_MAX) return 'คลิปแต่ละไฟล์รองรับสูงสุด 50 MB ครับ';
-      if (!Number.isFinite(Number(file.size)) || Number(file.size) <= 0) return 'มีไฟล์ที่อ่านขนาดไม่ได้ครับ ลองเลือกใหม่อีกครั้ง';
+      if (!Number.isFinite(Number(file.size)) || Number(file.size) <= 0) {
+        return 'มีไฟล์ที่อ่านขนาดไม่ได้ครับ ลองเลือกใหม่อีกครั้ง';
+      }
     }
     return '';
   }
+
   async function cleanup(ids) {
     await Promise.allSettled(ids.map(id => fetch('/v1/model/media/' + encodeURIComponent(id), {
-      method: 'DELETE', credentials: 'include', headers: { accept: 'application/json' }
+      method: 'DELETE',
+      credentials: 'include',
+      headers: { accept: 'application/json' },
     })));
   }
+
   async function uploadMedia() {
     if (!selectedFiles.length) return [];
     if (uploadedMediaIds.length === selectedFiles.length) return uploadedMediaIds;
+
     const ids = [];
     try {
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i], kind = fileKind(file), data = new FormData();
-        lock(true, 'กำลังอัปโหลด ' + (i + 1) + '/' + selectedFiles.length + '…');
-        data.append('file', file, file.name); data.append('media_type', kind === 'video' ? 'intro_video' : 'public_gallery');
-        const response = await fetch(MEDIA_UPLOAD, { method: 'POST', credentials: 'include', body: data, headers: { accept: 'application/json' } });
+      for (let index = 0; index < selectedFiles.length; index++) {
+        const file = selectedFiles[index];
+        const kind = fileKind(file);
+        const data = new FormData();
+        lock(true, 'กำลังอัปโหลด ' + (index + 1) + '/' + selectedFiles.length + '…');
+        data.append('file', file, file.name);
+        data.append('media_type', kind === 'video' ? 'intro_video' : 'public_gallery');
+
+        const response = await fetch(MEDIA_UPLOAD, {
+          method: 'POST',
+          credentials: 'include',
+          body: data,
+          headers: { accept: 'application/json' },
+        });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) { const err = new Error(result?.error || 'media_upload_failed'); err.status = response.status; err.code = result?.error || ''; throw err; }
+        if (!response.ok) {
+          const err = new Error(result?.error || 'media_upload_failed');
+          err.status = response.status;
+          throw err;
+        }
         const id = result?.media?.media_id || result?.media_id || '';
         if (!id) throw new Error('media_id_missing');
         ids.push(id);
       }
-      uploadedMediaIds = ids; renderMedia(); return ids;
-    } catch (err) { if (ids.length) await cleanup(ids); uploadedMediaIds = []; renderMedia(); throw err; }
+      uploadedMediaIds = ids;
+      renderMedia();
+      return ids;
+    } catch (err) {
+      if (ids.length) await cleanup(ids);
+      uploadedMediaIds = [];
+      renderMedia();
+      throw err;
+    }
   }
+
   function selectedScope() {
     const selected = [];
     if (telegram.checked) selected.push('Telegram MMD');
@@ -561,86 +741,235 @@ JavaScript — Page Settings → Before </body>
     if (uploadedMediaIds.length) selected.push('อัปเดตโปรไฟล์ ' + uploadedMediaIds.length + ' ไฟล์');
     return selected;
   }
-  function showSuccess() {
-    form.closest('.mmw-form-wrap').hidden = true;
-    scope.textContent = 'ที่คุณเลือก: ' + selectedScope().join(' · ');
-    success.hidden = false; success.focus({ preventScroll: true });
-    success.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+
+  function setSuccessState(state) {
+    const pill = success.querySelector('.mmw-pending-pill');
+    const title = success.querySelector('h2');
+    const body = success.querySelector('h2 + p');
+
+    success.classList.remove('is-approved', 'is-not-approved');
+    if (state === 'completed') {
+      success.classList.add('is-approved');
+      if (pill) pill.innerHTML = '<span aria-hidden="true"></span>ยืนยันแล้ว';
+      if (title) title.textContent = 'คำอวยพรได้รับการยืนยันแล้ว';
+      if (body) body.textContent = 'MMD ตรวจคำอวยพรเรียบร้อยแล้วครับ';
+      return;
+    }
+    if (state === 'revoked') {
+      success.classList.add('is-not-approved');
+      if (pill) pill.innerHTML = '<span aria-hidden="true"></span>ยังไม่เผยแพร่';
+      if (title) title.textContent = 'MMD รับข้อความไว้แล้วครับ';
+      if (body) body.textContent = 'คำอวยพรนี้ยังไม่ได้ถูกเผยแพร่ หากต้องการสอบถามสามารถติดต่อ MMD ได้ครับ';
+      return;
+    }
+
+    if (pill) pill.innerHTML = '<span aria-hidden="true"></span>รอยืนยัน';
+    if (title) title.textContent = 'ได้รับคำอวยพรแล้วครับ';
+    if (body) body.textContent = 'MMD รับข้อความเรียบร้อยแล้ว · ตอนนี้อยู่ระหว่างพี่เปอร์ตรวจอนุมัติ';
   }
+
+  function showSuccess(state = 'manual_review', { existing = false } = {}) {
+    const wrap = form.closest('.mmw-form-wrap');
+    if (wrap) wrap.hidden = true;
+    setSuccessState(state);
+    scope.textContent = existing
+      ? 'สถานะคำอวยพรของคุณอยู่ในระบบ MMD แล้ว'
+      : 'ที่คุณเลือก: ' + selectedScope().join(' · ');
+    success.hidden = false;
+    success.focus({ preventScroll: true });
+    success.scrollIntoView({
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  }
+
+  function goDashboardSoon() {
+    if (typeof location === 'undefined' || typeof location.assign !== 'function' || typeof setTimeout !== 'function') return;
+    setTimeout(() => location.assign(DASHBOARD), 1200);
+  }
+
   async function send() {
     if (busy) return;
-    const wish = birthday.value.trim(), mmdText = mmd.value.trim(), privateText = privatePer.value.trim();
+
+    const wish = birthday.value.trim();
+    const mmdText = mmd.value.trim();
+    const privateText = privatePer.value.trim();
     setError('');
+
     if (!(wish || mmdText || privateText)) {
       setError('เลือกเขียนอย่างน้อย 1 ข้อความก่อนส่งครับ');
       const first = birthday.closest('[data-question]');
       if (first) first.open = true;
-      birthday.focus(); return;
+      birthday.focus();
+      return;
     }
-    saveDraft(); lock(true, 'กำลังเตรียมส่ง…');
+
+    saveDraft();
+    lock(true, 'กำลังเตรียมส่ง…');
     let phase = 'auth';
+
     try {
       if (!authed && !(await verifyLine())) return;
+
       phase = 'upload';
       if (selectedFiles.length) await uploadMedia();
-      phase = 'submit'; lock(true, 'กำลังส่งให้เปอร์…');
-      const shareable = [wish ? 'อวยพร 6 ปี MMD: ' + wish : '', mmdText ? 'ข้อความถึง MMD: ' + mmdText : ''].filter(Boolean).join('\n\n');
-      const response = await fetch(SUBMIT, { method: 'POST', credentials: 'include',
+
+      phase = 'submit';
+      lock(true, 'กำลังส่งคำอวยพร…');
+      const shareable = [
+        wish ? 'อวยพร 6 ปี MMD: ' + wish : '',
+        mmdText ? 'ข้อความถึง MMD: ' + mmdText : '',
+      ].filter(Boolean).join('\n\n');
+
+      const response = await fetch(SUBMIT, {
+        method: 'POST',
+        credentials: 'include',
         headers: { 'content-type': 'application/json', accept: 'application/json' },
-        body: JSON.stringify({ message: shareable, birthday_wish: wish, mmd_message: mmdText,
-          private_note_per: privateText, private_note_scope: 'per_only', telegram_consent: !!telegram.checked,
-          past_clients_consent: !!past.checked, consent_version: 'model_wish_v5', source: '/sigil/model/wish' }) });
+        body: JSON.stringify({
+          message: shareable,
+          birthday_wish: wish,
+          mmd_message: mmdText,
+          private_note_per: privateText,
+          private_note_scope: 'per_only',
+          telegram_consent: !!telegram.checked,
+          past_clients_consent: !!past.checked,
+          consent_version: 'model_wish_v6',
+          source: '/sigil/model/wish',
+        }),
+      });
       const result = await response.json().catch(() => null);
+
       if (response.status === 401 || response.status === 403) {
-        authed = false; setChip('is-needed', 'ยืนยัน LINE ตอนส่ง');
-        if (await verifyLine()) setError('ยืนยัน LINE แล้วครับ กดส่งอีกครั้งได้เลย');
+        authed = false;
+        setChip('is-needed', 'ยืนยัน LINE');
+        setAuthState('is-needed', 'Session หมดอายุครับ ยืนยัน LINE อีกครั้งแล้วระบบจะกลับมาที่ข้อความเดิม', true);
+        await verifyLine();
         return;
       }
-      if (!response.ok || !result || typeof result !== 'object') {
+
+      if (!response.ok || !result || typeof result !== 'object' || result.ok !== true) {
         setError(result?.error === 'model_wish_storage_not_configured'
           ? 'ระบบรับคำอวยพรกำลังเปิดใช้งานครับ ลองส่งอีกครั้งในภายหลัง'
           : 'ยังยืนยันการรับข้อความไม่ได้ครับ ข้อความของคุณยังอยู่ ลองส่งอีกครั้งได้เลย');
         return;
       }
-      clearDraft(); showSuccess();
+
+      clearDraft();
+      const state = String(result.state || 'manual_review');
+      showSuccess(state);
+      if (state === 'manual_review') goDashboardSoon();
     } catch (err) {
-      if (err.status === 401 || err.status === 403) {
-        authed = false; setChip('is-needed', 'ยืนยัน LINE ตอนส่ง');
-        if (await verifyLine()) setError('ยืนยัน LINE แล้วครับ กดส่งอีกครั้งได้เลย');
-      } else if (err.status === 413) setError('ไฟล์ใหญ่เกินขนาดที่รองรับครับ · รูป 10 MB / คลิป 50 MB');
-      else if (err.status === 415) setError('รองรับ JPG, PNG, WEBP, HEIC, HEIF, MP4, MOV และ WEBM ครับ');
-      else setError(phase === 'upload' ? 'อัปโหลดไฟล์ไม่สำเร็จครับ ไฟล์ที่เลือกไว้ยังอยู่ ลองส่งอีกครั้งได้เลย' : 'ส่งข้อความไม่สำเร็จครับ ข้อความที่เขียนไว้ยังอยู่ ลองส่งอีกครั้งได้เลย');
-    } finally { lock(false); }
+      if (err.status === 413) {
+        setError('ไฟล์ใหญ่เกินขนาดที่รองรับครับ · รูป 10 MB / คลิป 50 MB');
+      } else if (err.status === 415) {
+        setError('รองรับ JPG, PNG, WEBP, HEIC, HEIF, MP4, MOV และ WEBM ครับ');
+      } else {
+        setError(phase === 'upload'
+          ? 'อัปโหลดไฟล์ไม่สำเร็จครับ ไฟล์ที่เลือกไว้ยังอยู่ ลองส่งอีกครั้งได้เลย'
+          : 'ส่งข้อความไม่สำเร็จครับ ข้อความที่เขียนไว้ยังอยู่ ลองส่งอีกครั้งได้เลย');
+      }
+    } finally {
+      lock(false);
+    }
   }
 
-  R.querySelectorAll('[data-next-question]').forEach(button => button.addEventListener('click', () => {
-    const target = questions[Number(button.dataset.nextQuestion)];
-    if (!target) return;
-    questions.forEach(section => { section.open = section === target; });
-    target.querySelector('textarea')?.focus();
-  }));
+  async function bootstrapAuth() {
+    lock(true, 'กำลังยืนยันตัวตน…');
+    try {
+      let ok = await checkProfile();
+      if (!ok) ok = await verifyLine({ automatic: true });
+      if (!ok) return;
+
+      const status = await readWishStatus();
+      if (status?.submitted === true && ['manual_review', 'completed', 'revoked'].includes(String(status.state || ''))) {
+        clearDraft();
+        showSuccess(String(status.state), { existing: true });
+      }
+    } finally {
+      lock(false);
+    }
+  }
+
+  R.querySelectorAll('[data-next-question]').forEach(button => {
+    button.addEventListener('click', () => {
+      const target = questions[Number(button.dataset.nextQuestion)];
+      if (!target) return;
+      questions.forEach(section => { section.open = section === target; });
+      target.querySelector('textarea')?.focus();
+    });
+  });
+
+  authRetry.addEventListener('click', async () => {
+    if (busy || authBusy) return;
+    lock(true, 'กำลังยืนยันตัวตน…');
+    try {
+      const ok = await verifyLine();
+      if (ok) {
+        const status = await readWishStatus();
+        if (status?.submitted === true && ['manual_review', 'completed', 'revoked'].includes(String(status.state || ''))) {
+          clearDraft();
+          showSuccess(String(status.state), { existing: true });
+        }
+      }
+    } finally {
+      lock(false);
+    }
+  });
+
   mediaInput.addEventListener('click', async event => {
     if (authed) return;
     event.preventDefault();
-    if (busy) return;
-    lock(true, 'กำลังยืนยัน LINE…');
-    try { if (await verifyLine()) setError('ยืนยัน LINE แล้วครับ กด “เลือกรูปหรือคลิป” อีกครั้งได้เลย'); }
-    finally { lock(false); }
+    if (busy || authBusy) return;
+    lock(true, 'กำลังยืนยันตัวตน…');
+    try {
+      if (await verifyLine()) setError('');
+    } finally {
+      lock(false);
+    }
   });
+
   mediaInput.addEventListener('change', () => {
     setError('');
-    const files = [...(mediaInput.files || [])], message = validateFiles(files);
-    if (message) { selectedFiles = []; uploadedMediaIds = []; mediaInput.value = ''; setError(message); }
-    else { selectedFiles = files; uploadedMediaIds = []; }
+    const files = [...(mediaInput.files || [])];
+    const message = validateFiles(files);
+    if (message) {
+      selectedFiles = [];
+      uploadedMediaIds = [];
+      mediaInput.value = '';
+      setError(message);
+    } else {
+      selectedFiles = files;
+      uploadedMediaIds = [];
+    }
     renderMedia();
   });
-  [birthday, mmd, privatePer].forEach(el => el.addEventListener('input', () => { updateCounts(); saveDraft(); }));
-  telegram.addEventListener('change', saveDraft); past.addEventListener('change', saveDraft);
-  form.addEventListener('submit', event => { event.preventDefault(); if (!busy) send(); });
-  restoreDraft(); updateCounts(); renderMedia(); checkProfile();
+
+  [birthday, mmd, privatePer].forEach(el => {
+    el.addEventListener('input', () => {
+      updateCounts();
+      saveDraft();
+    });
+  });
+  telegram.addEventListener('change', saveDraft);
+  past.addEventListener('change', saveDraft);
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    if (!busy) send();
+  });
+
+  restoreDraft();
+  updateCounts();
+  renderMedia();
+  bootstrapAuth();
 })();
 
 </script>
 ```
 
-Replace the existing page Embed, head and footer blocks; do not append this runtime to the old one. Backend endpoints, LINE LIFF ID and full return URL are preserved. Draft only; visual browser review and a real authenticated LINE submission remain unverified.
+## Authority notes
+
+- LINE / signed `mmd_model_session_v1` remains identity authority.
+- `GET /v1/model/session/current?mode=year6_direct_wish` is read-only status.
+- `POST /v1/model/session/current?mode=year6_direct_wish` creates/returns the direct Wish.
+- New Wish remains `manual_review` until Per/Admin action.
+- Dashboard yellow `รอยืนยัน` is presentation only and never blocks Dashboard, jobs, or payout.
