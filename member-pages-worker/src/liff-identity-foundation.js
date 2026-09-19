@@ -5,7 +5,8 @@ import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-jso
 import { createOrLoadBirthdayWishThroughCoordinator, getBirthdayWishCoordinatorState } from "./care-back-birthday-wish-coordinator.js";
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import legacyWorker from "./legacy-member-pages.js";
-import { readMmsCustomerHistory } from "./mms-customer-history.js";\nimport { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
+import { readMmsCustomerHistory } from "./mms-customer-history.js";
+import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
