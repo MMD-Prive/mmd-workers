@@ -15,6 +15,7 @@ on:
       - "knowledge/kenji/**"
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/model-media-real-e2e-production-smoke.yml"
+      - "shared/payment-intelligence.mjs"
 
 concurrency:
   group: deploy-admin-worker-production
