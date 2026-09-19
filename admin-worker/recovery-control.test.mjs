@@ -655,6 +655,8 @@ test("Owner manual picker refresh reissues canonical choices without resetting l
     assert.equal(body.case.picker.revision, 3);
     assert.equal(body.case.picker.queue_state, "waiting_reselection");
     assert.equal(body.case.picker.candidate_count, 1);
+    assert.equal(body.case.picker.delivery_status, "pending_customer_delivery");
+    assert.equal(body.case.picker.delivery_revision, 3);
     assert.equal(body.case.controls.can_refresh_picker, true);
     assert.equal(body.guardrails.picker_manual_refresh_grants_authority, false);
     assert.equal(patchCount, 1);
@@ -670,6 +672,8 @@ test("Owner manual picker refresh reissues canonical choices without resetting l
     assert.equal(after.recovery_correlation.correlated, false);
     assert.equal(after.recovery_correlation.picker_revision, 3);
     assert.equal(after.recovery_correlation.candidate_count, 1);
+    assert.equal(after.recovery_correlation.picker_delivery_status, "pending_customer_delivery");
+    assert.equal(after.recovery_correlation.picker_delivery_revision, 3);
 
     const duplicate = await handleRecoveryControl(
       request(RECOVERY_CONTROL_API_PATH, {
