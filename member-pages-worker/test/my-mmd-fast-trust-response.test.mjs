@@ -239,3 +239,52 @@ test("Fast Trust cannot override fresh canonical grace or a blocked member", asy
     assert.deepEqual(await patched.json(), original);
   }
 });
+
+
+test("canary matrix preserves resolved Standard and Premium members", async () => {
+  for (const level of ["standard", "premium"]) {
+    const env = await makeEnv("ลูกค้า " + level, { canonicalClient: true });
+    const original = {
+      state: "resolved",
+      membership: {
+        level,
+        levelVerified: true,
+        status: "active",
+        access: "granted",
+        lifecycle: "active",
+        nextAction: { kind: "none", label: null, url: null },
+      },
+      lifecycle: "active",
+      nextAction: { kind: "none", label: null, url: null },
+    };
+    const response = Response.json(original, {
+      headers: { "x-mmd-member-display-authority": "my_mmd_entitlement_resolver_v1" },
+    });
+    const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
+    assert.deepEqual(await patched.json(), original);
+  }
+});
+
+test("canary matrix preserves resolved Public Member, Elite and Red Card", async () => {
+  for (const level of ["member", "elite", "red_card"]) {
+    const env = await makeEnv("ลูกค้า " + level, { canonicalClient: true });
+    const original = {
+      state: "resolved",
+      membership: {
+        level,
+        levelVerified: true,
+        status: "active",
+        access: "granted",
+        lifecycle: "active",
+        nextAction: { kind: "none", label: null, url: null },
+      },
+      lifecycle: "active",
+      nextAction: { kind: "none", label: null, url: null },
+    };
+    const response = Response.json(original, {
+      headers: { "x-mmd-member-display-authority": "my_mmd_entitlement_resolver_v1" },
+    });
+    const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
+    assert.deepEqual(await patched.json(), original);
+  }
+});
