@@ -63,3 +63,10 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 # binding = "PREVIEW_PROMO_CODES_KV"
 # id = "<production_kv_namespace_id>"
 # preview_id = "<preview_kv_namespace_id>"
+
+
+# Stable Telegram identity binding authority. Bot consumes only opaque one-time
+# tokens; canonical Client/Model writes remain owned by admin-worker.
+[[services]]
+binding = "TELEGRAM_BIND_AUTHORITY"
+service = "admin-worker"
