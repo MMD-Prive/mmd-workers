@@ -71,6 +71,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       domain: normalizeQueueDomainFilter(url.searchParams.get("domain")).value,
       state: normalizeQueueStateFilter(url.searchParams.get("state")).value,
       assignment: normalizeQueueAssignmentFilter(url.searchParams.get("assignment")).value,
+      owner_mode: recoveryAssignmentActor(actor).owner === true,
     }), 200);
   }
 
