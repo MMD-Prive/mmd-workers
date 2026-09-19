@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import runtimeWorker from "../src/runtime-index.js";
 import {
   OWNER_MY_MMD_RECOVERY_RPC_PATH,
   handleOwnerMyMmdRecoveryDiagnosticRpc,
@@ -156,4 +157,14 @@ test("pending recovery never reports canonical-profile zero as final points", as
   const body = await response.json();
   assert.equal(body.points.status, "pending");
   assert.equal(body.points.value, null);
+});
+
+
+test("active member-pages runtime dispatches the service-only diagnostic before customer session flow", async () => {
+  const response = await runtimeWorker.fetch(internalRequest(), env(), {});
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.recovery.state, "reconciled");
+  assert.equal(body.membership.label, "SVIP");
+  assert.equal(body.points.value, 1250);
 });
