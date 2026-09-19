@@ -76,7 +76,7 @@ test("/kenji creates supervised handoff, notifies Ops, and tells customer they d
 
   try {
     const response = await worker.fetch(request("/kenji"), baseEnv({
-      HYPE_OPERATIONS: {
+      HYPE_CONTEXT_WRITER: {
         async fetch(req) {
           serviceCalls.push({
             caller: req?.headers?.get?.("x-mmd-service-binding") || "",
@@ -126,7 +126,7 @@ test("/human targets Per and requires confirmed Ops notification for success", {
 
   try {
     const response = await worker.fetch(request("ขอคุยกับเปอร์"), baseEnv({
-      HYPE_OPERATIONS: {
+      HYPE_CONTEXT_WRITER: {
         async fetch() {
           return Response.json(handoffResult("per"));
         },
@@ -164,12 +164,7 @@ test("successful HYPE payment read records continuity best-effort without changi
       HYPE_OPERATIONS: {
         async fetch(req) {
           const payload = JSON.parse(await req.clone().text());
-          serviceBodies.push(payload);
-
-          if (payload.projection) {
-            return Response.json({ ok: true, state: "recorded", persisted: true });
-          }
-
+          serviceBodies.push({ kind: "read", payload });
           return Response.json({
             ok: true,
             state: "ready",
@@ -182,6 +177,13 @@ test("successful HYPE payment read records continuity best-effort without changi
           });
         },
       },
+      HYPE_CONTEXT_WRITER: {
+        async fetch(req) {
+          const payload = JSON.parse(await req.clone().text());
+          serviceBodies.push({ kind: "write", payload });
+          return Response.json({ ok: true, state: "recorded", persisted: true });
+        },
+      },
     }));
 
     const body = await response.json();
@@ -190,9 +192,11 @@ test("successful HYPE payment read records continuity best-effort without changi
     assert.equal(body.continuity_recorded, true);
     assert.equal(body.continuity_state, "recorded");
     assert.equal(serviceBodies.length, 2);
-    assert.equal(serviceBodies[1].command, "payment");
-    assert.equal(serviceBodies[1].customer_message, "/payment");
-    assert.equal(serviceBodies[1].projection.payment.review_required, true);
+    assert.equal(serviceBodies[0].kind, "read");
+    assert.equal(serviceBodies[1].kind, "write");
+    assert.equal(serviceBodies[1].payload.command, "payment");
+    assert.equal(serviceBodies[1].payload.customer_message, "/payment");
+    assert.equal(serviceBodies[1].payload.projection.payment.review_required, true);
 
     const customer = sends.find((x) => String(x.chat_id) === "111111");
     assert.match(customer.text, /รอตรวจสอบหลักฐาน/);
