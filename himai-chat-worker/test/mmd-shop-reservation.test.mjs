@@ -146,3 +146,48 @@ test("payment review claim can abort back to reserved without releasing stock be
     assert.equal(readMmdShopReservation(mock.orders[0].fields[F.orderNotes]).state,"reserved");
   }finally{mock.restore()}
 });
+
+
+test("payment review claim blocks expiry release and commits inventory out once", async () => {
+  const mock=mockAirtable();
+  try{
+    const env=makeEnv();
+    const reservation=await reserveMmdShopStock(env,{
+      order_id:"MMD-ORDER-CLAIM",
+      items:[{product_id:mock.productId,quantity:2,stock_status:"tracked"}],
+    });
+    assert.equal(mock.batch.fields[F.remaining],3);
+
+    const claimed=await claimMmdShopReservationForPayment(env,reservation,"proof-claim-1");
+    assert.equal(claimed.reservation.state,"payment_review");
+    await assert.rejects(
+      () => releaseMmdShopReservation(env,claimed.reservation,"expired"),
+      /reservation_not_releasable:payment_review/,
+    );
+
+    const committed=await commitMmdShopReservation(env,claimed.reservation);
+    assert.equal(committed.reservation.state,"committed");
+    assert.equal(mock.batch.fields[F.remaining],3);
+    assert.equal(mock.movements.filter(x=>x.fields[F.moveType]==="out").length,1);
+
+    const committedAgain=await commitMmdShopReservation(env,committed.reservation);
+    assert.equal(committedAgain.idempotent,true);
+    assert.equal(mock.movements.filter(x=>x.fields[F.moveType]==="out").length,1);
+  }finally{mock.restore()}
+});
+
+test("failed payment review returns claim to reserved before expiry", async () => {
+  const mock=mockAirtable();
+  try{
+    const env=makeEnv();
+    const reservation=await reserveMmdShopStock(env,{
+      order_id:"MMD-ORDER-ABORT",
+      items:[{product_id:mock.productId,quantity:1,stock_status:"tracked"}],
+    });
+    const claimed=await claimMmdShopReservationForPayment(env,reservation,"proof-abort-1");
+    const aborted=await abortMmdShopPaymentClaim(env,claimed.reservation,"proof-abort-1","review_failed");
+    assert.equal(aborted.reservation.state,"reserved");
+    assert.equal(mock.batch.fields[F.remaining],4);
+    assert.equal(mock.movements.filter(x=>x.fields[F.moveType]==="release").length,0);
+  }finally{mock.restore()}
+});
