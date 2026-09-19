@@ -1322,7 +1322,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
 
 function parseHypeOwnerHandoffTransition(value) {
   const text = clean(value);
-  const match = /^\/(case-ack|case-review|case-resolve|case-notified)(?:@\w+)?\s+(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})$/i.exec(text);
+  const match = /^\/(case-ack|case-review|case-resolve|case-notified)(?:@\w+)?\s+(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})(?:\s+([a-z0-9_]{3,80}))?$/i.exec(text);
   if (!match) return null;
   const stateByCommand = {
     "case-ack": "acknowledged",
@@ -1334,10 +1334,11 @@ function parseHypeOwnerHandoffTransition(value) {
     command: match[1].toLowerCase(),
     state: stateByCommand[match[1].toLowerCase()],
     handoffId: match[2],
+    outcomeCode: clean(match[3]).toLowerCase(),
   };
 }
 
-async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state, handoffId }, env) {
+async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state, handoffId, outcomeCode = "" }, env) {
   const owner = await verifyHypeOwnerTelegram(telegramUserId, env);
   if (!owner.ok) {
     const telegram = await sendTelegramMessage({
@@ -1380,6 +1381,7 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
         handoff_id: handoffId,
         state,
         actor_role: "owner",
+        ...(outcomeCode ? { recovery_outcome_code: outcomeCode } : {}),
       }),
     }));
     status = response.status;
@@ -1392,7 +1394,14 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
       text: status === 409
-        ? `เปลี่ยนสถานะเคสไม่ได้ครับ · current: ${clean(result?.current_state) || "unknown"} → requested: ${clean(result?.requested_state) || state}`
+        ? result?.error === "recovery_terminal_outcome_required"
+          ? [
+              "เคส Recovery ต้องระบุ outcome ก่อนปิดครับ",
+              Array.isArray(result?.allowed_outcomes) && result.allowed_outcomes.length
+                ? `ใช้ /case-resolve ${handoffId} <outcome> · ตัวเลือก: ${result.allowed_outcomes.join(", ")}`
+                : "กรุณาเลือก outcome ที่ตรงกับผลตรวจจริง",
+            ].join("\n")
+          : `เปลี่ยนสถานะเคสไม่ได้ครับ · current: ${clean(result?.current_state) || "unknown"} → requested: ${clean(result?.requested_state) || state}`
         : "เขียนสถานะเคสไม่สำเร็จครับ ระบบจะคง state เดิมไว้",
       disable_web_page_preview: true,
     }, env);
@@ -1417,8 +1426,14 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
       "<b>HYPE · CASE UPDATED</b>",
       `<b>Reference:</b> <code>${escapeHtml(handoffId)}</code>`,
       `<b>Status:</b> ${escapeHtml(labels[state] || state)}`,
+      ...(result.recovery_case
+        ? [
+            `<b>Recovery:</b> ${escapeHtml(clean(result.recovery_case.domain) || "unclassified")}`,
+            `<b>Outcome:</b> ${escapeHtml(clean(result.recovery_case.outcome_label) || clean(result.recovery_case.outcome_code) || "-")}`,
+          ]
+        : []),
       "",
-      "อัปเดตเฉพาะ handoff conversation state · ไม่เปลี่ยน Payment / Job / Membership truth",
+      "อัปเดตเฉพาะ handoff/recovery case state · ไม่เปลี่ยน Payment / Job / Membership / Order truth",
     ].join("\n"),
     parse_mode: "HTML",
     disable_web_page_preview: true,
