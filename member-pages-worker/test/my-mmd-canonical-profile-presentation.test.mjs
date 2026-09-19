@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   applyMyMmdCanonicalEntitlementResponse,
   projectProtectedEntitlement,
+  protectedConnectNowActiveThrough,
   readLineOfcNoteScan,
 } from "../src/my-mmd-canonical-entitlement-bridge.js";
 
@@ -195,4 +196,26 @@ test("missing historical fields stay missing and are marked recovery pending rat
   assert.equal(payload.expiresAt, null);
   assert.equal(payload.packageLabel, null);
   assert.equal(payload.historyRecoveryState, "recovery_pending");
+});
+
+
+test("protected active member without canonical expiry gets connect-now +2y active-through", () => {
+  const projection = {
+    capability: "svip",
+    label: "SVIP",
+    lifecycle: "active",
+    publicServiceAccess: true,
+    startAt: null,
+    expiresAt: null,
+    packageLabel: "SVIP Membership",
+  };
+  assert.equal(
+    protectedConnectNowActiveThrough(projection, new Date("2026-09-19T00:00:00.000Z")),
+    "2028-09-19",
+  );
+});
+
+test("connect-now active-through policy never applies to grace or non-protected capability", () => {
+  assert.equal(protectedConnectNowActiveThrough({ capability: "svip", lifecycle: "grace" }, new Date("2026-09-19T00:00:00Z")), null);
+  assert.equal(protectedConnectNowActiveThrough({ capability: "premium", lifecycle: "active" }, new Date("2026-09-19T00:00:00Z")), null);
 });
