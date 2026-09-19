@@ -403,6 +403,16 @@ async function handleTelegramWebhook(update, env) {
     return handleTelegramIdentityBindStart({ message, chatId, startArg }, env);
   }
 
+  const handoffTransition = parseHypeOwnerHandoffTransition(text);
+  if (handoffTransition) {
+    return handleHypeOwnerHandoffTransition({
+      message,
+      chatId,
+      telegramUserId: clean(message.from?.id),
+      ...handoffTransition,
+    }, env);
+  }
+
   const hypeCommand = parseHypeOperatingCommand(text);
   if (hypeCommand) {
     return handleHypeOperatingCommand({
@@ -1161,6 +1171,120 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
   };
 }
 
+function parseHypeOwnerHandoffTransition(value) {
+  const text = clean(value);
+  const match = /^\/(case-ack|case-review|case-resolve|case-notified)(?:@\w+)?\s+(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})$/i.exec(text);
+  if (!match) return null;
+  const stateByCommand = {
+    "case-ack": "acknowledged",
+    "case-review": "reviewing",
+    "case-resolve": "resolved",
+    "case-notified": "customer_notified",
+  };
+  return {
+    command: match[1].toLowerCase(),
+    state: stateByCommand[match[1].toLowerCase()],
+    handoffId: match[2].toUpperCase(),
+  };
+}
+
+async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state, handoffId }, env) {
+  const owner = await verifyHypeOwnerTelegram(telegramUserId, env);
+  if (!owner.ok) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: owner.reason === "owner_verification_unavailable"
+        ? "ยังตรวจสิทธิ์ Owner ไม่ได้ครับ จึงไม่เปลี่ยนสถานะเคส"
+        : "คำสั่งเปลี่ยนสถานะเคสใช้ได้เฉพาะ Per · Owner Mode ครับ",
+      disable_web_page_preview: true,
+    }, env);
+    return {
+      handled: true,
+      flow: "hype_owner_handoff_transition",
+      ok: false,
+      code_status: owner.reason || "owner_required",
+      telegram,
+    };
+  }
+
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ระบบ handoff state ยังไม่พร้อมครับ จึงยังไม่เขียนสถานะแทน",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "hype_owner_handoff_transition", ok: false, code_status: "handoff_status_unavailable", telegram };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "transition",
+        handoff_id: handoffId,
+        state,
+        actor_role: "owner",
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: status === 409
+        ? `เปลี่ยนสถานะเคสไม่ได้ครับ · current: ${clean(result?.current_state) || "unknown"} → requested: ${clean(result?.requested_state) || state}`
+        : "เขียนสถานะเคสไม่สำเร็จครับ ระบบจะคง state เดิมไว้",
+      disable_web_page_preview: true,
+    }, env);
+    return {
+      handled: true,
+      flow: "hype_owner_handoff_transition",
+      ok: false,
+      code_status: clean(result?.error || "handoff_transition_failed"),
+      telegram,
+    };
+  }
+
+  const labels = {
+    acknowledged: "รับทราบเคสแล้ว",
+    reviewing: "กำลังตรวจสอบ",
+    resolved: "แก้ไขแล้ว · ยังไม่ถือว่าแจ้งลูกค้า",
+    customer_notified: "แก้ไขแล้วและแจ้งลูกค้าแล้ว",
+  };
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "<b>HYPE · CASE UPDATED</b>",
+      `<b>Reference:</b> <code>${escapeHtml(handoffId)}</code>`,
+      `<b>Status:</b> ${escapeHtml(labels[state] || state)}`,
+      "",
+      "อัปเดตเฉพาะ handoff conversation state · ไม่เปลี่ยน Payment / Job / Membership truth",
+    ].join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  return {
+    handled: true,
+    flow: "hype_owner_handoff_transition",
+    ok: true,
+    code_status: state,
+    handoff_id: handoffId,
+    telegram,
+  };
+}
+
 function parseHypeOperatingCommand(value) {
   const text = clean(value);
   const normalized = text.toLowerCase();
@@ -1543,6 +1667,12 @@ function renderHypeHandoffOperatorAlert(result = {}) {
     `<b>Cross-channel continuity:</b> ${result.line_continuity_ready === true ? "READY" : "LINE LINK MISSING"}`,
     "",
     escapeHtml(summary),
+    "",
+    "<b>Owner controls:</b>",
+    `<code>/case-ack ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+    `<code>/case-review ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+    `<code>/case-resolve ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+    `<code>/case-notified ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
     "",
     "<b>Rule:</b> refresh canonical truth before protected action · customer should not be asked to restart the story",
   ].join("\n").slice(0, 3900);
