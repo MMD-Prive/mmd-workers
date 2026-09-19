@@ -1,5 +1,5 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const STAGING_TABLE = "LINE OFC Client Import Staging";
+const FAST_TRUST_STAGING_TABLE = "MMD — LINE OFC Client Import Staging";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const FAST_TRUST_SOURCE = "line_oa_renamed_name_fast_trust";
 const FAST_TRUST_RANK = { vip: 1, svip: 2, black_card: 3 };
@@ -40,9 +40,8 @@ export async function resolveFastTrustForLine(env = {}, lineUserId = "") {
   const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
   const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
   const table = String(
-    env.AIRTABLE_TABLE_LINE_OFC_STAGING
-      || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID
-      || STAGING_TABLE,
+    env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE
+      || FAST_TRUST_STAGING_TABLE,
   ).trim();
   if (!apiKey || !baseId || !table) return null;
 
