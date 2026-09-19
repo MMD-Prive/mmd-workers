@@ -519,7 +519,7 @@ async function handleTelegramWebhook(update, env) {
 
 async function handleHypeRecoveryCandidateCallback(callback, env) {
   const data = clean(callback?.data);
-  const match = /^(hrbp|hrmp)\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const match = /^(hrbp|hrmp)\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|(?:(\d{1,6})\|)?([0-4])$/i.exec(data);
   const callbackId = clean(callback?.id);
   const chatId = clean(callback?.message?.chat?.id);
   const chatType = clean(callback?.message?.chat?.type).toLowerCase();
@@ -538,7 +538,8 @@ async function handleHypeRecoveryCandidateCallback(callback, env) {
 
   const domain = match[1].toLowerCase() === "hrbp" ? "booking" : "mms";
   const handoffId = match[2];
-  const selectionIndex = Number(match[3]);
+  const pickerRevision = match[3] ? Number(match[3]) : null;
+  const selectionIndex = Number(match[4]);
   const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
   if (!binding?.fetch) {
     await callTelegramApiForPreviewIntro("answerCallbackQuery", {
@@ -563,6 +564,7 @@ async function handleHypeRecoveryCandidateCallback(callback, env) {
         telegram_user_id: telegramUserId,
         handoff_id: handoffId,
         selection_index: selectionIndex,
+        ...(pickerRevision ? { picker_revision: pickerRevision } : {}),
       }),
     }));
     status = response.status;
@@ -683,7 +685,7 @@ async function handleHypeRecoveryCandidateCallback(callback, env) {
 
 async function handleHypeRecoveryOrderCallback(callback, env) {
   const data = clean(callback?.data);
-  const match = /^hrop\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const match = /^hrop\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|(?:(\d{1,6})\|)?([0-4])$/i.exec(data);
   const callbackId = clean(callback?.id);
   const chatId = clean(callback?.message?.chat?.id);
   const chatType = clean(callback?.message?.chat?.type).toLowerCase();
@@ -701,7 +703,8 @@ async function handleHypeRecoveryOrderCallback(callback, env) {
   }
 
   const handoffId = match[1];
-  const selectionIndex = Number(match[2]);
+  const pickerRevision = match[2] ? Number(match[2]) : null;
+  const selectionIndex = Number(match[3]);
   const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
   if (!binding?.fetch) {
     await callTelegramApiForPreviewIntro("answerCallbackQuery", {
@@ -726,6 +729,7 @@ async function handleHypeRecoveryOrderCallback(callback, env) {
         telegram_user_id: telegramUserId,
         handoff_id: handoffId,
         selection_index: selectionIndex,
+        ...(pickerRevision ? { picker_revision: pickerRevision } : {}),
       }),
     }));
     status = response.status;
