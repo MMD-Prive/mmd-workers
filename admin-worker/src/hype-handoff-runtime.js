@@ -184,6 +184,23 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   if (!recoveryCorrelation && priorRecoveryCase?.domain === recoveryDomainHint) {
     recoveryCorrelation = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
   }
+
+  const priorPickerCorrelation = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
+  if (
+    sourceCommand === "recovery"
+    && priorPickerCorrelation
+    && priorPickerCorrelation.correlated !== true
+    && recoveryPickerAlreadyReissued(priorPickerCorrelation)
+    && !["resolved", "customer_notified"].includes(token(priorRecoveryTracking.state))
+    && normalizeRecoveryDomain(priorPickerCorrelation.domain) === normalizeRecoveryDomain(recoveryDomainHint)
+    && recoveryCorrelation?.correlated !== true
+  ) {
+    // A repeated recovery message must not replace a revisioned picker snapshot
+    // with a fresh option array under the same revision. Only the stale-refresh
+    // path may advance the picker generation.
+    recoveryCorrelation = priorPickerCorrelation;
+  }
+
   const recoveryDomain = sourceCommand === "recovery"
     ? inferRecoveryDomain(customerMessage, recoveryCorrelation)
     : "unclassified";
