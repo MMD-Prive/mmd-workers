@@ -2,8 +2,11 @@ export function renderRecoveryControlPage(input = {}) {
   const initialCaseRef = escapeHtml(input.case_ref || "");
   const taxonomy = escapeHtml(input.taxonomy_version || "");
   const slaVersion = escapeHtml(input.sla_version || "");
+  const assignmentVersion = escapeHtml(input.assignment_version || "");
   const initialDomain = escapeHtml(input.domain || "all");
   const initialState = escapeHtml(input.state || "open");
+  const initialAssignment = escapeHtml(input.assignment || "all");
+  const ownerMode = input.owner_mode === true;
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -24,7 +27,7 @@ button,input,select{font:inherit}main{max-width:1120px;margin:auto;padding:24px 
 <main>
 <header class="top">
 <div><div class="eyebrow">MMD PRIVÉ · OWNER / OPERATOR</div><h1>Recovery Control</h1><p>Case เดียวกันสำหรับ MMD Shop, Booking และ MMS — ควบคุม workflow state/outcome โดยไม่เขียนทับ business truth ของระบบต้นทาง</p></div>
-<div class="pill">Taxonomy ${taxonomy}<br>SLA ${slaVersion}</div>
+<div class="pill">Taxonomy ${taxonomy}<br>SLA ${slaVersion}<br>Assignment ${assignmentVersion}</div>
 </header>
 <form class="search" data-search>
 <input name="case_ref" value="${initialCaseRef}" placeholder="HYPE-PER-YYYYMMDDHHMMSS-xxxxxxxx" autocomplete="off" spellcheck="false">
@@ -34,6 +37,7 @@ button,input,select{font:inherit}main{max-width:1120px;margin:auto;padding:24px 
 <div class="filters">
 <select class="select" data-domain><option value="all">ทุก Domain</option><option value="mmd_shop">MMD Shop</option><option value="booking">Booking</option><option value="mms">MMS</option><option value="unclassified">Unclassified</option></select>
 <select class="select" data-state><option value="open">Open ทั้งหมด</option><option value="prepared">Prepared</option><option value="sent">Sent</option><option value="acknowledged">Acknowledged</option><option value="reviewing">Reviewing</option><option value="resolved">Resolved / รอแจ้งลูกค้า</option><option value="customer_notified">Customer notified</option><option value="all">ทุก State</option></select>
+<select class="select" data-assignment><option value="all">ทุก Assignment</option><option value="unassigned">ยังไม่มีคนรับ</option><option value="assigned">มีคนรับแล้ว</option></select>
 </div>
 <div class="metrics" data-metrics></div>
 </section>
@@ -51,32 +55,36 @@ var detail=document.querySelector("[data-detail]");
 var form=document.querySelector("[data-search]");
 var domain=document.querySelector("[data-domain]");
 var state=document.querySelector("[data-state]");
+var assignment=document.querySelector("[data-assignment]");
 var metrics=document.querySelector("[data-metrics]");
 var selected="";
+var ownerMode=${ownerMode ? "true" : "false"};
 domain.value="${initialDomain}";
 state.value="${initialState}";
+assignment.value="${initialAssignment}";
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function fmt(v){if(!v)return "—";var d=new Date(v);return isNaN(d)?esc(v):new Intl.DateTimeFormat("th-TH",{year:"numeric",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(d)}
 function age(v){var n=Number(v);if(!Number.isFinite(n))return "—";if(n<60)return n+" นาที";if(n<1440)return Math.floor(n/60)+"ชม. "+(n%60)+"น.";return Math.floor(n/1440)+"วัน "+Math.floor((n%1440)/60)+"ชม."}
-function renderMetrics(q){q=q||{};metrics.innerHTML='<div class="metric"><span>Open</span><strong>'+esc(q.open_count||0)+'</strong></div><div class="metric"><span>Attention</span><strong>'+esc(q.attention_count||0)+'</strong></div><div class="metric"><span>Overdue</span><strong>'+esc(q.overdue_count||0)+'</strong></div>'}
+function renderMetrics(q){q=q||{};metrics.innerHTML='<div class="metric"><span>Open</span><strong>'+esc(q.open_count||0)+'</strong></div><div class="metric"><span>Attention</span><strong>'+esc(q.attention_count||0)+'</strong></div><div class="metric"><span>Unassigned</span><strong>'+esc(q.unassigned_count||0)+'</strong></div><div class="metric"><span>Overdue</span><strong>'+esc(q.overdue_count||0)+'</strong></div>'}
 function correlation(c,d){c=c||{};if(!c.correlated)return "ยังไม่ bind canonical reference";if(d==="mmd_shop")return "Order "+esc(c.order_id||"—")+" · payment "+esc(c.payment_status||"unknown")+" · fulfillment "+esc(c.fulfillment_state||"unknown");if(d==="booking")return "Booking "+esc(c.booking_ref||"—")+" · Session "+esc(c.session_id||"—")+" · Job "+esc(c.job_id||"—")+" · "+esc(c.job_state||c.session_state||"unknown");if(d==="mms")return "MMS "+esc(c.prebooking_id||"—")+" · "+esc(c.prebooking_status||"unknown")+" · "+esc(c.service_date||"—")+" "+esc(c.service_time||"");return "—"}
 function opts(rows,current){return (rows||[]).map(function(x){return '<option value="'+esc(x.code)+'"'+(x.code===current?' selected':'')+'>'+esc(x.label)+" · "+esc(x.code)+"</option>"}).join("")}
-function renderList(rows){if(!rows||!rows.length){list.className="empty";list.textContent="ไม่พบ Recovery Case ตาม filter นี้";return}list.className="list";list.innerHTML=rows.map(function(x){var s=x.sla||{},a=x.age||{};return '<button class="case-row '+(x.case_ref===selected?"active":"")+'" data-ref="'+esc(x.case_ref)+'"><strong>'+esc(x.customer&&x.customer.display_name||"Canonical Client")+"</strong><span>"+esc(x.domain)+" · "+esc(x.state)+" · "+esc(x.outcome_label||x.outcome_code)+'</span><span class="queue-meta"><span class="badge '+esc(s.status||"")+'">SLA '+esc(s.status||"unknown")+'</span><span class="badge">Age '+age(a.minutes)+'</span></span><span class="ref">'+esc(x.case_ref)+"</span></button>"}).join("");list.querySelectorAll("[data-ref]").forEach(function(b){b.onclick=function(){openCase(b.getAttribute("data-ref"))}})}
-function renderCase(x){selected=x.case_ref;var ctl=x.controls||{},non=ctl.nonterminal_outcomes||[],term=ctl.terminal_outcomes||[];detail.className="";detail.innerHTML=
+function renderList(rows){if(!rows||!rows.length){list.className="empty";list.textContent="ไม่พบ Recovery Case ตาม filter นี้";return}list.className="list";list.innerHTML=rows.map(function(x){var s=x.sla||{},a=x.age||{},m=x.assignment||{};var owner=m.status==="assigned"?(m.assignee_label||"Assigned"):"Unassigned";return '<button class="case-row '+(x.case_ref===selected?"active":"")+'" data-ref="'+esc(x.case_ref)+'"><strong>'+esc(x.customer&&x.customer.display_name||"Canonical Client")+"</strong><span>"+esc(x.domain)+" · "+esc(x.state)+" · "+esc(x.outcome_label||x.outcome_code)+'</span><span class="queue-meta"><span class="badge '+esc(s.status||"")+'">SLA '+esc(s.status||"unknown")+'</span><span class="badge">Age '+age(a.minutes)+'</span><span class="badge">'+esc(owner)+'</span></span><span class="ref">'+esc(x.case_ref)+"</span></button>"}).join("");list.querySelectorAll("[data-ref]").forEach(function(b){b.onclick=function(){openCase(b.getAttribute("data-ref"))}})}
+function renderCase(x){selected=x.case_ref;var ctl=x.controls||{},non=ctl.nonterminal_outcomes||[],term=ctl.terminal_outcomes||[],m=x.assignment||{};var assignee=m.status==="assigned"?(m.assignee_label||"Assigned"):"ยังไม่มีคนรับ";detail.className="";detail.innerHTML=
 '<div class="headline"><div><div class="eyebrow">'+esc(x.domain)+"</div><h2>"+esc(x.customer&&x.customer.display_name||"Canonical Client")+'</h2><div class="ref">'+esc(x.case_ref)+'</div></div><span class="status">'+esc(x.state)+"</span></div>"+
-'<div class="facts"><div class="fact"><span>Outcome</span><strong>'+esc(x.outcome_label||x.outcome_code||"—")+'</strong></div><div class="fact"><span>Updated</span><strong>'+fmt(x.updated_at)+'</strong></div><div class="fact"><span>Case age</span><strong>'+age(x.age&&x.age.minutes)+'</strong></div><div class="fact"><span>Operational SLA</span><strong>'+esc(x.sla&&x.sla.status||"unknown")+" · update "+age(x.sla&&x.sla.since_update_minutes)+'</strong></div><div class="fact"><span>Canonical correlation</span><strong>'+correlation(x.correlation,x.domain)+'</strong></div><div class="fact"><span>Next attention</span><strong>'+esc(x.next_attention||"inspect_case")+"</strong></div></div>"+
-'<div class="rule">Case state/outcome เป็น recovery workflow metadata เท่านั้น ก่อนทำ protected action ต้อง refresh Payment / Job / Fulfillment / MMS truth จาก authority ต้นทางเสมอ</div><div data-flash></div>'+
-'<div class="controls"><div class="actions"><button class="btn" data-action="acknowledge" '+(!ctl.can_acknowledge?"disabled":"")+'>Acknowledge</button><button class="btn warn" data-action="review" '+(!ctl.can_review?"disabled":"")+'>Start Review</button><button class="btn good" data-action="customer_notified" '+(!ctl.can_mark_customer_notified?"disabled":"")+'>Customer Notified</button></div>'+
+'<div class="facts"><div class="fact"><span>Outcome</span><strong>'+esc(x.outcome_label||x.outcome_code||"—")+'</strong></div><div class="fact"><span>Updated</span><strong>'+fmt(x.updated_at)+'</strong></div><div class="fact"><span>Case age</span><strong>'+age(x.age&&x.age.minutes)+'</strong></div><div class="fact"><span>Operational SLA</span><strong>'+esc(x.sla&&x.sla.status||"unknown")+" · update "+age(x.sla&&x.sla.since_update_minutes)+'</strong></div><div class="fact"><span>Assigned to</span><strong>'+esc(assignee)+(m.assignee_lane?" · "+esc(m.assignee_lane):"")+'</strong></div><div class="fact"><span>Claimed</span><strong>'+(m.claimed_at?fmt(m.claimed_at):"—")+'</strong></div><div class="fact"><span>Canonical correlation</span><strong>'+correlation(x.correlation,x.domain)+'</strong></div><div class="fact"><span>Next attention</span><strong>'+esc(x.next_attention||"inspect_case")+"</strong></div></div>"+
+'<div class="rule">Assignment เป็น coordination metadata เท่านั้น ไม่เพิ่มสิทธิ์อนุมัติ และไม่ reset SLA. ก่อนทำ protected action ต้อง refresh Payment / Job / Fulfillment / MMS truth จาก authority ต้นทางเสมอ</div><div data-flash></div>'+
+'<div class="controls"><div class="actions"><button class="btn primary" data-action="claim" '+(!ctl.can_claim?"disabled":"")+'>Claim Case</button><button class="btn" data-action="release" '+(!ctl.can_release?"disabled":"")+'>Release</button><button class="btn warn" data-action="takeover" '+((!ownerMode||!ctl.can_takeover)?"disabled":"")+'>Owner Takeover</button></div><div class="actions"><button class="btn" data-action="acknowledge" '+(!ctl.can_acknowledge?"disabled":"")+'>Acknowledge</button><button class="btn warn" data-action="review" '+(!ctl.can_review?"disabled":"")+'>Start Review</button><button class="btn good" data-action="customer_notified" '+(!ctl.can_mark_customer_notified?"disabled":"")+'>Customer Notified</button></div>'+
 '<div class="outcome"><select class="select" data-nonterminal><option value="">เลือกสถานะระหว่างดำเนินการ</option>'+opts(non,x.outcome_terminal?"":x.outcome_code)+'</select><button class="btn" data-action="set_outcome" '+(!ctl.can_set_outcome?"disabled":"")+'>บันทึก Outcome</button></div>'+
 '<div class="outcome"><select class="select" data-terminal><option value="">เลือกผลลัพธ์ก่อน Resolve</option>'+opts(term,x.outcome_terminal?x.outcome_code:"")+'</select><button class="btn bad" data-action="resolve" '+(!ctl.can_resolve?"disabled":"")+">Resolve Case</button></div></div>";
 detail.querySelectorAll("[data-action]").forEach(function(b){b.onclick=function(){act(b.getAttribute("data-action"))}})}
 async function getJson(u,opt){var r=await fetch(u,Object.assign({credentials:"include",headers:{accept:"application/json"},cache:"no-store"},opt||{}));if(r.status===401){location.href="/internal/admin/login?next="+encodeURIComponent(location.pathname+location.search);return null}var b=await r.json().catch(function(){return {ok:false,error:"invalid_response"}});if(!r.ok)throw b;return b}
-async function refreshList(){try{var u=new URL(API,location.origin);u.searchParams.set("limit","12");u.searchParams.set("domain",domain.value||"all");u.searchParams.set("state",state.value||"open");var b=await getJson(u.toString());if(b){renderMetrics(b.queue);renderList(b.cases||[])}}catch(e){list.className="empty";list.textContent="โหลดรายการไม่สำเร็จ: "+(e.error||"unavailable")}}
+async function refreshList(){try{var u=new URL(API,location.origin);u.searchParams.set("limit","12");u.searchParams.set("domain",domain.value||"all");u.searchParams.set("state",state.value||"open");u.searchParams.set("assignment",assignment.value||"all");var b=await getJson(u.toString());if(b){renderMetrics(b.queue);renderList(b.cases||[])}}catch(e){list.className="empty";list.textContent="โหลดรายการไม่สำเร็จ: "+(e.error||"unavailable")}}
 async function openCase(ref){if(!ref)return;try{var b=await getJson(API+"?case_ref="+encodeURIComponent(ref));if(!b)return;renderCase(b.case);history.replaceState(null,"","?case_ref="+encodeURIComponent(ref));refreshList()}catch(e){detail.className="empty";detail.textContent="เปิด Case ไม่สำเร็จ: "+(e.error||"not_found")}}
 async function act(action){var flash=detail.querySelector("[data-flash]"),outcome="";if(action==="set_outcome")outcome=(detail.querySelector("[data-nonterminal]").value||"");if(action==="resolve")outcome=(detail.querySelector("[data-terminal]").value||"");if((action==="set_outcome"||action==="resolve")&&!outcome){flash.className="flash bad";flash.textContent="กรุณาเลือก outcome ก่อน";return}flash.className="flash";flash.textContent="กำลังบันทึก…";try{var body={case_ref:selected,action:action};if(outcome)body.outcome_code=outcome;var b=await getJson(API,{method:"POST",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify(body)});if(!b)return;renderCase(b.case);refreshList()}catch(e){flash.className="flash bad";flash.textContent="ไม่สำเร็จ: "+(e.error||"transition_rejected")}}
 form.addEventListener("submit",function(e){e.preventDefault();var ref=(new FormData(form).get("case_ref")||"").trim();if(ref)openCase(ref)});
 domain.addEventListener("change",function(){refreshList()});
 state.addEventListener("change",function(){refreshList()});
+assignment.addEventListener("change",function(){refreshList()});
 refreshList();var initial="${initialCaseRef}";if(initial)openCase(initial);
 })();
 </script>

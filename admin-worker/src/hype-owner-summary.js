@@ -1,5 +1,5 @@
 import { buildAdminDashboard } from "./dashboard-worker.js";
-import { RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
+import { RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -56,6 +56,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
     reconfirm_overdue: nn(counts.reconfirm_overdue ?? reconfirm.overdue),
     recovery_attention: nn(recovery.attention_count),
     recovery_overdue: nn(recovery.overdue_count),
+    recovery_unassigned: nn(recovery.unassigned_count),
+    recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
   };
 
   const affectedClients = dedupe([
@@ -67,7 +69,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
 
   const nextActions = [];
   if (reviewCounts.payment_review > 0) nextActions.push(action(1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
-  if (reviewCounts.recovery_attention > 0) nextActions.push(action(2, "ดู Recovery ที่ต้องจัดการ", "/internal/admin/recovery", "recovery_queue_operational_metadata"));
+  if (reviewCounts.recovery_attention_unassigned > 0) nextActions.push(action(2, "รับ Recovery ที่ยังไม่มีคนดู", "/internal/admin/recovery?assignment=unassigned", "recovery_queue_assignment_metadata"));
+  else if (reviewCounts.recovery_attention > 0) nextActions.push(action(2, "ดู Recovery ที่ต้องจัดการ", "/internal/admin/recovery", "recovery_queue_operational_metadata"));
   if (reviewCounts.historical_recovery > 0) nextActions.push(action(3, "ตรวจ Historical Recovery", "/internal/admin/payments/historical-backfill", "historical-slip-backfill-runtime"));
   if (reviewCounts.jobs_need_confirm > 0 || reviewCounts.reconfirm_overdue > 0) nextActions.push(action(4, "เช็กงานและการคอนเฟิร์ม", "/internal/admin/jobs", "session-reconfirm-runtime"));
   if (reviewCounts.membership_review > 0) nextActions.push(action(5, "เช็ก Membership", "/internal/admin/member-intelligence", "canonical-members"));
@@ -90,6 +93,9 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_attention: nn(recovery.attention_count),
       recovery_overdue: nn(recovery.overdue_count),
       recovery_watch: nn(recovery.watch_count),
+      recovery_assigned: nn(recovery.assigned_count),
+      recovery_unassigned: nn(recovery.unassigned_count),
+      recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
     },
     review_required: {
       count: reviewCounts.payment_review
@@ -143,6 +149,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       client_detail: "canonical_client_360_on_demand",
       recovery_queue: "recovery_workflow_metadata_only",
       recovery_sla_policy: RECOVERY_QUEUE_SLA_VERSION,
+      recovery_assignment_policy: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      recovery_assignment_grants_authority: false,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
@@ -158,6 +166,9 @@ function projectRecoveryQueueSummary(result = null) {
       attention_count: 0,
       overdue_count: 0,
       watch_count: 0,
+      assigned_count: 0,
+      unassigned_count: 0,
+      attention_unassigned_count: 0,
       by_domain: {},
       by_state: {},
       attention: [],
@@ -173,6 +184,9 @@ function projectRecoveryQueueSummary(result = null) {
     attention_count: nn(queue.attention_count),
     overdue_count: nn(queue.overdue_count),
     watch_count: nn(queue.watch_count),
+    assigned_count: nn(queue.assigned_count),
+    unassigned_count: nn(queue.unassigned_count),
+    attention_unassigned_count: nn(queue.attention_unassigned_count),
     by_domain: safeCountMap(queue.by_domain),
     by_state: safeCountMap(queue.by_state),
     attention: (Array.isArray(queue.attention) ? queue.attention : []).slice(0, 5).map((item) => ({
@@ -184,6 +198,9 @@ function projectRecoveryQueueSummary(result = null) {
       since_update_minutes: nullableNonNegative(item.since_update_minutes),
       case_age_minutes: nullableNonNegative(item.case_age_minutes),
       next_attention: clean(item.next_attention, 80),
+      assignment_status: clean(item.assignment_status, 40) || "unassigned",
+      assigned_to: clean(item.assigned_to, 120) || null,
+      assigned_lane: clean(item.assigned_lane, 40) || null,
       href: safeInternalHref(item.href) || "/internal/admin/recovery",
     })),
     operational_only: true,

@@ -2222,7 +2222,7 @@ function renderHypeOwnerSummary(result = {}) {
   if (recovery.available === true) {
     lines.push("");
     lines.push("<b>RECOVERY QUEUE · ต้องดูอะไรตอนนี้</b>");
-    lines.push(`• Open: ${Number(recovery.open_count || 0)} · Attention: ${Number(recovery.attention_count || 0)} · Overdue: ${Number(recovery.overdue_count || 0)}`);
+    lines.push(`• Open: ${Number(recovery.open_count || 0)} · Attention: ${Number(recovery.attention_count || 0)} · Unassigned: ${Number(recovery.unassigned_count || 0)} · Overdue: ${Number(recovery.overdue_count || 0)}`);
     if (watchNow.length) {
       for (const item of watchNow.slice(0, 5)) {
         lines.push(`• ${escapeHtml(compactOwnerText([
@@ -2230,6 +2230,7 @@ function renderHypeOwnerSummary(result = {}) {
           item.domain,
           item.state,
           item.sla_status,
+          item.assignment_status === "assigned" ? ("รับโดย " + (item.assigned_to || "Operator")) : "ยังไม่มีคนรับ",
           ownerAgeText(item.since_update_minutes),
           ownerRecoveryAttentionLabel(item.next_attention),
         ]))}`);
@@ -2237,7 +2238,7 @@ function renderHypeOwnerSummary(result = {}) {
     } else {
       lines.push("• ยังไม่มี Recovery Case ที่เข้า attention window");
     }
-    lines.push("Operational SLA เท่านั้น · ไม่ใช่ Payment / Job / Fulfillment / MMS truth");
+    lines.push("Assignment/SLA เป็น coordination metadata เท่านั้น · ไม่เพิ่ม authority และไม่ใช่ Payment / Job / Fulfillment / MMS truth");
   }
 
   lines.push("");

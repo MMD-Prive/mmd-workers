@@ -48,6 +48,8 @@ function summary() {
       recovery_open: 2,
       recovery_attention: 1,
       recovery_overdue: 1,
+      recovery_unassigned: 1,
+      recovery_attention_unassigned: 1,
     },
     review_required: {
       payment: [{ client_name: "ลูกค้า A", amount_thb: 5000, text: "Deposit · พร้อมตรวจ" }],
@@ -59,6 +61,9 @@ function summary() {
       attention_count: 1,
       overdue_count: 1,
       watch_count: 0,
+      assigned_count: 1,
+      unassigned_count: 1,
+      attention_unassigned_count: 1,
       operational_only: true,
       business_truth_inferred: false,
     },
@@ -71,6 +76,9 @@ function summary() {
       since_update_minutes: 420,
       case_age_minutes: 510,
       next_attention: "review_and_update_outcome",
+      assignment_status: "unassigned",
+      assigned_to: null,
+      assigned_lane: null,
       href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919010000-acde1234",
     }],
     calendar: {
@@ -85,7 +93,7 @@ function summary() {
     alerts: [{ title: "Owner Review", text: "มีเคสพิเศษ 1 รายการ" }],
     next_actions: [
       { priority: 1, label: "ตรวจ Payments", href: "/internal/admin/payments" },
-      { priority: 2, label: "ดู Recovery ที่ต้องจัดการ", href: "/internal/admin/recovery" },
+      { priority: 2, label: "รับ Recovery ที่ยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned" },
     ],
   };
 }
@@ -141,7 +149,8 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
     assert.match(sends[0].text, /RECOVERY QUEUE · ต้องดูอะไรตอนนี้/);
     assert.match(sends[0].text, /ลูกค้า Recovery/);
     assert.match(sends[0].text, /overdue/);
-    assert.match(sends[0].text, /Operational SLA เท่านั้น/);
+    assert.match(sends[0].text, /ยังไม่มีคนรับ/);
+    assert.match(sends[0].text, /Assignment\/SLA เป็น coordination metadata เท่านั้น/);
     assert.match(sends[0].text, /Read-only summary/);
   } finally {
     globalThis.fetch = originalFetch;
