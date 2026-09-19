@@ -22,10 +22,10 @@ When an approved Model exists in the reviewed Google Drive catalogue but is miss
 
 A Model folder may contain child folders whose names repeat the Model code, for example:
 
-- `MMD Exclusive Models / Exclusive PN / EMs16`
+- `MMD Exclusive Models / Exclusive PN / EMs16 Gohan`
 - `MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan`
 
-If the search query has exactly one exact Model-root match, that exact root wins over descendant review/media/archive folders.
+If the search query has exactly one exact Model-root match, or one unique strong non-operational ancestor root (for example query `EMs16` matching folder `EMs16 Gohan`), that root wins over descendant review/media/archive folders.
 
 The descendant folder must not become a separate Model candidate.
 
@@ -92,7 +92,7 @@ EMs16 / Gohan exposed this failure mode on 2026-09-19.
 
 The approved folder existed under:
 
-`MMD Exclusive Models / Exclusive PN / EMs16`
+`MMD Exclusive Models / Exclusive PN / EMs16 Gohan`
 
 but Drive search also returned:
 
@@ -100,7 +100,7 @@ but Drive search also returned:
 
 The two results were treated as ambiguous, so lazy materialization did not occur and Create Job showed no Model.
 
-Canonical fix: prefer the unique exact Model root, exclude its nested review folder from Model candidates, materialize the canonical Model record, and retain fail-closed behavior for genuine ambiguity.
+Canonical fix: prefer the unique exact or unique strong ancestor Model root, exclude its nested operational folders from Model candidates, materialize the canonical Model record, and retain fail-closed behavior for genuine ambiguity.
 
 ## Operator expectation
 
