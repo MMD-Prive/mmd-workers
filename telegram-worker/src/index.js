@@ -275,6 +275,17 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
     return { handled: true, flow: "hype_operating_help", telegram };
   }
 
+  if (command === "points" || command === "coupons" || command === "careback") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: hypeCanonicalRouteText(command),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: hypeCanonicalRouteButtons(env, command),
+    }, env);
+    return { handled: true, flow: `hype_operating_${command}_route`, telegram };
+  }
+
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
@@ -323,7 +334,10 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       },
       body: JSON.stringify({
         telegram_user_id: telegramUserId,
-        intent: { type: "general", trigger: command === "next" ? "telegram_next" : "telegram_status" },
+        intent: {
+          type: command === "booking" ? "booking" : "general",
+          trigger: command === "next" ? "telegram_next" : command === "booking" ? "telegram_booking" : "telegram_status",
+        },
       }),
     }));
     status = response.status;
@@ -358,15 +372,17 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
 
   const telegram = await sendTelegramMessage({
     chat_id: chatId,
-    text: renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
+    text: command === "booking"
+      ? renderHypeBookingStatus(result)
+      : renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: hypeStatusButtons(env, result),
+    reply_markup: command === "booking" ? hypeBookingButtons(env, result) : hypeStatusButtons(env, result),
   }, env);
 
   return {
     handled: true,
-    flow: command === "next" ? "hype_operating_next" : "hype_operating_status",
+    flow: command === "next" ? "hype_operating_next" : command === "booking" ? "hype_operating_booking" : "hype_operating_status",
     ok: true,
     readiness: clean(result.readiness || result.state),
     telegram,
@@ -378,6 +394,10 @@ function parseHypeOperatingCommand(value) {
   const normalized = text.toLowerCase();
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
+  if (/^\/booking(?:@\w+)?$/i.test(text) || ["การจอง", "เช็กการจอง", "เช็กงาน", "งานของฉัน"].includes(normalized)) return "booking";
+  if (/^\/points?(?:@\w+)?$/i.test(text) || ["แต้ม", "คะแนน", "ดูคะแนน", "ดูแต้ม"].includes(normalized)) return "points";
+  if (/^\/coupons?(?:@\w+)?$/i.test(text) || ["คูปอง", "ดูคูปอง", "คูปองของฉัน"].includes(normalized)) return "coupons";
+  if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
   if (/^\/help(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง"].includes(normalized)) return "help";
   return "";
 }
@@ -424,12 +444,118 @@ function renderHypeOperatingStatus(result = {}, { nextOnly = false } = {}) {
   return lines.join("\n");
 }
 
+function renderHypeBookingStatus(result = {}) {
+  const job = result.job || {};
+  const payment = result.payment || {};
+  const next = result.next_action || null;
+  const lines = ["<b>HYPE · BOOKING STATUS</b>"];
+  if (clean(result.display_name)) lines.push(escapeHtml(result.display_name));
+  lines.push("");
+
+  if (Number(job.active_count || 0) > 0) {
+    lines.push(`<b>งานที่กำลังดำเนินการ:</b> ${Number(job.active_count)} งาน`);
+    if (job.next?.status) lines.push(`<b>สถานะงาน:</b> ${escapeHtml(bookingJobLabel(job.next.status))}`);
+    if (job.next?.model_name) lines.push(`<b>Model:</b> ${escapeHtml(job.next.model_name)}`);
+    if (job.next?.start_at) lines.push(`<b>วันเวลา:</b> ${escapeHtml(formatBangkokDateTime(job.next.start_at))}`);
+    if (job.next?.payment_state || payment.status) {
+      lines.push(`<b>การชำระ:</b> ${escapeHtml(paymentLabel({ ...payment, status: payment.status || job.next?.payment_state }))}`);
+    }
+  } else {
+    lines.push("ยังไม่มีงานที่กำลังดำเนินการใน snapshot ที่ HYPE ยืนยันได้ครับ");
+  }
+
+  lines.push("");
+  lines.push(`<b>ขั้นตอนต่อไป:</b> ${escapeHtml(clean(next?.label) || (Number(job.active_count || 0) > 0 ? "รอระบบอัปเดตขั้นตอนถัดไป" : "เริ่ม Booking ใหม่ได้จากปุ่มด้านล่าง"))}`);
+  lines.push("");
+  lines.push("HYPE แสดงเฉพาะสถานะที่ระบบยืนยันแล้ว และไม่ confirm คิวหรือ assign Model เองครับ");
+  return lines.join("\n");
+}
+
+function bookingJobLabel(value) {
+  const key = clean(value).toLowerCase();
+  return ({
+    draft: "Draft",
+    pending: "กำลังรอตรวจ",
+    awaiting_payment: "รอชำระเงิน",
+    awaiting_deposit: "รอมัดจำ",
+    pending_review: "รอตรวจสอบ",
+    confirmed: "ยืนยันแล้ว",
+    scheduled: "นัดหมายแล้ว",
+    in_progress: "กำลังดำเนินการ",
+    completed: "เสร็จสิ้น",
+    cancelled: "ยกเลิก",
+  })[key] || clean(value) || "กำลังตรวจสอบ";
+}
+
+function hypeCanonicalRouteText(command) {
+  if (command === "points") {
+    return [
+      "<b>HYPE · POINTS</b>",
+      "",
+      "ยอด Points ที่เป็นทางการอ่านจาก MMD — Points Ledger ผ่าน MY MMD ครับ",
+      "HYPE จะไม่ทำสำเนายอดใน Telegram เพื่อไม่ให้ยอดคลาดเคลื่อนจากระบบจริง",
+      "",
+      "กด <b>MY MMD · Points</b> ด้านล่างเพื่อดูยอดและประวัติที่ยืนยันแล้วได้เลยครับ",
+    ].join("\n");
+  }
+  if (command === "coupons") {
+    return [
+      "<b>HYPE · COUPONS</b>",
+      "",
+      "คูปองที่พร้อมใช้ / ใช้แล้ว / หมดอายุ ให้ยึด Coupon Wallet ใน MY MMD เป็นตัวจริงครับ",
+      "สำหรับ CARE BACK Phase 2 ต้องเชื่อมสิทธิ์และ Birthday Wish ตาม policy ก่อนคูปองจะพร้อมใช้",
+      "",
+      "กด <b>MY MMD · Coupons</b> เพื่อดูสถานะล่าสุดได้เลยครับ",
+    ].join("\n");
+  }
+  return [
+    "<b>6 YEARS CARE BACK · PHASE 2</b>",
+    "CARE BACK CONTINUES · 1–30 กันยายน 2026",
+    "",
+    "ใช้ policy เดียวกับ Phase 1 และไม่สร้าง claim / coupon / Points bonus ซ้ำครับ",
+    "ยืนยันผ่าน LINE/LIFF → MMD ตรวจสถานะและประวัติ → Birthday Wish saved → จึงเปิดคูปองส่วนตัว “ส่วนลดสูงสุด 10%” ตามสิทธิ์ที่ตรวจสอบได้",
+  ].join("\n");
+}
+
+function hypeCanonicalRouteButtons(env, command) {
+  if (command === "points") {
+    return { inline_keyboard: [[{ text: "MY MMD · Points", url: publicUrl(env, "/my-mmd/points") }]] };
+  }
+  if (command === "coupons") {
+    return {
+      inline_keyboard: [
+        [{ text: "MY MMD · Coupons", url: publicUrl(env, "/my-mmd/coupons") }],
+        [{ text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") }],
+      ],
+    };
+  }
+  return {
+    inline_keyboard: [
+      [{ text: "CARE BACK Phase 2 · เช็กสิทธิ์", url: publicUrl(env, "/promotion/6-years-care-back") }],
+      [{ text: "MY MMD · Coupons", url: publicUrl(env, "/my-mmd/coupons") }],
+    ],
+  };
+}
+
+function hypeBookingButtons(env, result = {}) {
+  const rows = [];
+  const next = result.next_action || {};
+  if (clean(next.href)) rows.push([{ text: clean(next.label) || "ดำเนินการต่อ", url: publicUrl(env, next.href) }]);
+  rows.push([{ text: "Booking", url: publicUrl(env, "/booking") }]);
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
+  return { inline_keyboard: rows };
+}
+
 function hypeHelpText() {
   return [
     "<b>HYPE · Telegram Operating Concierge</b>",
     "",
     "<b>/status</b> — ดูสถานะสมาชิก งาน และการชำระ",
     "<b>/next</b> — ดูว่าตอนนี้ต้องทำอะไรต่อ",
+    "<b>/booking</b> — ดู progress งาน/การจองที่ระบบยืนยันได้",
+    "<b>/points</b> — ไปยังยอด Points canonical ใน MY MMD",
+    "<b>/coupons</b> — ไปยัง Coupon Wallet canonical ใน MY MMD",
+    "<b>/careback</b> — ดู CARE BACK Phase 2",
     "<b>/help</b> — ดูเมนูนี้",
     "",
     "HYPE ช่วยเชื่อม Telegram Identity, ดูสถานะจากระบบ MMD, พาไป MY MMD / Promotion และจัด route ให้ถูกขั้นตอนได้ครับ",
@@ -441,6 +567,10 @@ function hypeHelpButtons(env) {
   return {
     inline_keyboard: [
       [{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }],
+      [
+        { text: "Points", url: publicUrl(env, "/my-mmd/points") },
+        { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
+      ],
       [{ text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") }],
       [{ text: "Booking", url: publicUrl(env, "/booking") }],
     ],

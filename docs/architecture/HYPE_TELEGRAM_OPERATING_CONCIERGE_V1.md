@@ -114,15 +114,37 @@ Identity verification alone does not open the coupon. A Birthday Wish must be sa
 - complaint/recovery notification routing
 - fail-closed Telegram send behavior
 
+## V2 customer commands
+
+After V1 production verification, HYPE adds:
+
+- `/booking`, `การจอง`, `เช็กการจอง`, `เช็กงาน`, `งานของฉัน`
+  - private-chat only for live customer status
+  - reads the existing safe Job/Payment projection
+  - shows verified job progress, model display name, scheduled time, payment state and next action
+  - never confirms availability, assigns a model, or changes job state
+
+- `/points`, `แต้ม`, `คะแนน`, `ดูคะแนน`, `ดูแต้ม`
+  - routes to `/my-mmd/points`
+  - does not duplicate a Points balance in Telegram
+  - canonical Points truth remains the member runtime / MMD — Points Ledger
+
+- `/coupons`, `/coupon`, `คูปอง`, `ดูคูปอง`, `คูปองของฉัน`
+  - routes to `/my-mmd/coupons`
+  - does not duplicate coupon wallet truth in Telegram
+  - wallet status, usage and expiry remain canonical in MY MMD
+
+- `/careback`
+  - explains the current CARE BACK Phase 2 flow
+  - routes to `/promotion/6-years-care-back` and the canonical MY MMD coupon wallet
+
+This keeps HYPE useful without creating a second Points or Coupon authority.
+
 ## Next implementation lanes
 
-After V1 production verification:
-
-1. Points read projection from canonical Points Ledger
-2. Coupon wallet/status read projection
-3. Booking status/deep-link projection
-4. customer-safe payment proof status explanation
-5. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
-6. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+1. customer-safe payment proof status explanation
+2. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
+3. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+4. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.
