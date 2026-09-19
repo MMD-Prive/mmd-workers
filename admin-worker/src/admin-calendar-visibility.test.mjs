@@ -118,6 +118,35 @@ test('signed owner can preview and run Cal reconcile only through private servic
   assert.deepEqual(calls.map(x=>x.method),['GET','POST']);
 });
 
+test('signed owner can target one Session for Cal hold ensure',async()=>{
+  const calls=[];
+  const bridge={
+    async fetch(request){
+      const body=await request.json();
+      calls.push({url:request.url,method:request.method,body});
+      const url=new URL(request.url);
+      assert.equal(url.hostname,'cal-sync.internal');
+      assert.equal(url.pathname,'/internal/holds/ensure');
+      assert.equal(body.session_id,'SES-TARGET-1');
+      return Response.json({ok:true,state:'created',booking_uid:'cal-target-1'});
+    },
+  };
+  const scoped={...env,CAL_SYNC_WORKER:bridge};
+  const req=await request('/v1/admin/calendar/reconcile','owner','POST');
+  const targeted=new Request(req.url,{
+    method:'POST',
+    headers:{...Object.fromEntries(req.headers.entries()),'content-type':'application/json'},
+    body:JSON.stringify({session_id:'SES-TARGET-1'}),
+  });
+  const response=await entry.fetch(targeted,scoped,{});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('x-mmd-calendar-write-authority'),'cal-sync-worker');
+  const body=await response.json();
+  assert.equal(body.state,'created');
+  assert.equal(body.booking_uid,'cal-target-1');
+  assert.equal(calls.length,1);
+});
+
 test('invalid date and unsupported writes do not reach data sources',async()=>{
   await withFetch(()=>{throw Error('must not fetch');},async()=>{
     assert.equal((await entry.fetch(await request('/v1/admin/calendar?date=2026-02-30'),env,{})).status,400);
