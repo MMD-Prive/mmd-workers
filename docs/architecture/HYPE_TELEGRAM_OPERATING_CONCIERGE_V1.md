@@ -536,7 +536,7 @@ Recovery correlation rules:
 2. no Order ID → auto-correlate only when there is exactly one eligible owned recent Order;
 3. multiple candidates → mark correlation ambiguous and never guess;
 4. ambiguous candidates are projected as at most five customer-safe owned Order options;
-5. Telegram picker callback data contains only `Case Ref + option index`, never Order ID or private Order data;
+5. Telegram picker callback data contains only `Case Ref + picker revision + option index`, never Order ID or private Order data; legacy `Case Ref + option index` callbacks remain parser-compatible but become stale-safe after any reissue;
 6. on selection, admin-worker resolves the stored option, re-checks exact canonical ownership, and binds the Order to the existing Case Reference;
 7. customer selection must preserve the current handoff lifecycle state; it cannot reset `sent / acknowledged / reviewing` to `prepared`;
 8. correlated Order / Payment / Fulfillment context shares the same closed-loop HYPE Case Reference;
@@ -750,10 +750,15 @@ MMS option projection may contain only:
 
 The option's canonical reference is retained server-side for selection but is never placed in Telegram callback data.
 
-Callback contracts:
+Callback contracts for newly issued pickers:
 
-- Booking: `hrbp|<Case Ref>|<option index>`;
-- MMS: `hrmp|<Case Ref>|<option index>`.
+- Shop: `hrop|<Case Ref>|<picker revision>|<option index>`;
+- Booking: `hrbp|<Case Ref>|<picker revision>|<option index>`;
+- MMS: `hrmp|<Case Ref>|<picker revision>|<option index>`.
+
+Legacy three-part callbacks remain accepted for production messages that were already issued before this contract. A legacy callback may resolve an option only while the Case has never been reissued. Once a Case has a newer picker revision, a legacy callback is stale and must never map its index onto the current option array.
+
+A picker revision identifies a customer-interaction snapshot only. It is operational metadata, not business truth and not a new Recovery Case.
 
 Before binding the selected option, admin-worker must:
 
@@ -769,12 +774,56 @@ Selection never creates a new Case and never moves the lifecycle backward. A Cas
 
 Booking selection does not confirm Job, Model, Calendar or Payment truth. MMS selection does not confirm Therapist, Booking or Payment truth.
 
-A stale option, changed ownership, foreign Telegram identity or terminal Case fails closed. HYPE clears the picker only after a successful server-side bind.
+A changed ownership, foreign Telegram identity or terminal Case still fails closed. A stale picker snapshot now follows the refresh/reissue contract below rather than ending the normal customer UX with an error.
+
+## Stale Picker Refresh / Reissue
+
+The candidate array is a snapshot. Canonical Shop, Booking or MMS authority may change between picker issue and customer tap.
+
+The critical correctness rule is:
+
+> An old option index must never be interpreted against a newer candidate array.
+
+Each picker therefore has a monotonically increasing `picker_revision`. New Telegram callbacks include that revision. Server-side selection compares the callback revision with the current Case snapshot before using the option index.
+
+If the callback revision is older than the current picker revision:
+
+- do not resolve its index against current options;
+- return/replay the already-current picker revision;
+- do not increment the revision again;
+- do not create another Case.
+
+For an option from the current picker revision, admin-worker re-reads the canonical authority and re-checks exact ownership. If that selected reference is no longer current/owned, the picker becomes stale and the authority is refreshed.
+
+Stale refresh results:
+
+- zero current candidates → `no_current_candidates`; keep the Case active and emit no empty picker;
+- one current candidate → issue a one-option next revision and require a fresh customer tap; never reinterpret the stale selection as consent for the remaining candidate;
+- two or more candidates → issue the next bounded customer-safe picker revision;
+- authority unavailable → keep the Case and mark the picker stale/unavailable; never treat cached options as current truth.
+
+Reissue is idempotent by stale source (`old revision + option index`). Replaying the same old callback returns the existing current revision and cannot generate revision N+2.
+
+Picker refresh/reissue and selection are correlation-interaction metadata only. They must not:
+
+- create a new Recovery Case;
+- move `sent / acknowledged / reviewing` backwards;
+- update Recovery lifecycle `state_updated_at`;
+- reset Recovery SLA age;
+- change assignment metadata;
+- change outcome metadata;
+- mutate Order, Payment, Fulfillment, Booking Request, Session, Job, Calendar, MMS assignment, Therapist, Membership, Points or Coupon truth.
+
+The Case Ref remains unchanged throughout:
+
+`stale picker → canonical refresh → safe new picker → SAME Case Ref`.
+
+HYPE clears stale Telegram buttons when a refresh result is handled. The customer is told that the original Case remains active and does not need to repeat context.
 
 ## Next implementation lanes
 
 1. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model;
-2. bounded picker refresh/reissue UX if a customer opens a stale Booking/MMS selection after the candidate set changes.
+2. optional bounded owner visibility for picker refresh history if operational debugging later requires it.
 
 All future lanes must preserve the same authority and privacy locks.
 
