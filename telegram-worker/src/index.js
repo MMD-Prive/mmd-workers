@@ -919,7 +919,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
         "<b>HYPE · MMS THERAPIST OPTIONS</b>",
         "",
         "เรื่อง Therapist Options ให้ HENNA / MMS เป็น specialist owner ครับ",
-        "HYPE ช่วยเชื่อม context ข้ามระบบได้ แต่ตัวเลือก/คิวจริงต้องมาจาก MMS Worker และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยัน",
+        "HYPE ช่วยเชื่อม context ข้ามระบบได้ แต่ตัวเลือก/คิวจริงต้องมาจาก MMS authority และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยัน",
       ].join("\n"),
       parse_mode: "HTML",
       disable_web_page_preview: true,
@@ -1365,7 +1365,11 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
         telegram_user_id: telegramUserId,
         target,
         command: target === "kenji" ? "kenji" : "human",
-        reason: target === "kenji" ? "customer_requested_kenji" : "customer_requested_per",
+        reason: command === "recovery"
+          ? "customer_service_recovery"
+          : target === "kenji"
+            ? "customer_requested_kenji"
+            : "customer_requested_per",
         customer_message: clean(message.text || "").slice(0, 500),
       }),
     }));
@@ -1901,6 +1905,16 @@ function bookingJobLabel(value) {
 }
 
 function hypeCanonicalRouteText(command) {
+  if (command === "hall") {
+    return [
+      "<b>HYPE · MODEL / HALL DISCOVERY</b>",
+      "",
+      "ก่อนดู Model ให้เลือกมุมมองใน Hall ด้วยตัวเองครับ",
+      "HYPE จะไม่เดาเพศ/ความสนใจจากชื่อ รูป LINE/Telegram หรือประวัติ และจะไม่ดึง Model ทั้งหมดมาให้",
+      "",
+      "Hall audience ที่คุณเลือกเองเป็นตัวกำหนดสิ่งที่ระบบอนุญาตให้เห็น",
+    ].join("\n");
+  }
   if (command === "points") {
     return [
       "<b>HYPE · POINTS</b>",
@@ -1931,6 +1945,9 @@ function hypeCanonicalRouteText(command) {
 }
 
 function hypeCanonicalRouteButtons(env, command) {
+  if (command === "hall") {
+    return { inline_keyboard: [[{ text: "เลือกมุมมองใน Hall", url: publicUrl(env, "/hall") }]] };
+  }
   if (command === "points") {
     return { inline_keyboard: [[{ text: "MY MMD · Points", url: publicUrl(env, "/my-mmd/points") }]] };
   }
