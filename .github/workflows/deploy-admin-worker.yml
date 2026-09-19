@@ -75,6 +75,7 @@ jobs:
           node --check src/telegram-identity-bind-authority.js
           node --check src/admin-login-hero-worker.js
           node --check src/mmd-shop-orders-admin.js
+          node --check src/mmd-shop-operations-admin.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
           node --check src/model-media-e2e-smoke.js
@@ -318,6 +319,12 @@ jobs:
             "/v1/model/media/review-request",
             "/v1/model/private-gallery/request",
             "/v1/model/private-flash/request",
+            "/internal/admin/shop/orders*",
+            "/internal/admin/shop/inventory*",
+            "/internal/admin/shop/products*",
+            "/v1/admin/shop/orders*",
+            "/v1/admin/shop/inventory*",
+            "/v1/admin/shop/products*",
             "/v1/model/private-flash/authorize",
           ];
           const desired = paths.flatMap((path) => [
@@ -385,6 +392,15 @@ jobs:
           cat "$body_file"
           test "$http_code" = "401"
           grep -q '"error":"unauthorized"' "$body_file"
+
+          # Verify MMD Shop admin APIs are routed to admin-worker and remain session-gated.
+          for path in /v1/admin/shop/orders /v1/admin/shop/inventory /v1/admin/shop/products; do
+            shop_body="$(mktemp)"
+            shop_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$shop_body" -w "%{http_code}" "https://mmdbkk.com${path}")"
+            cat "$shop_body"
+            test "$shop_code" = "401"
+            grep -Eq '"error":"admin_session_required"|"error":"unauthorized"' "$shop_body"
+          done
 
           # The direct workers.dev dashboard is intentionally host-blocked.
           body_file="$(mktemp)"
