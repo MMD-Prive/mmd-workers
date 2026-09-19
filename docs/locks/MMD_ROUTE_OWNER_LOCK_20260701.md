@@ -34,7 +34,7 @@ Do not recreate these bindings merely to restore an old payment page. Any new ed
 - `/pay/membership`: canonical Public Membership selection UI only; never payment authority.
 - `/sigil/pay/membership`: Private legacy compatibility bridge only; unsigned traffic may hand off to `/sigil/member/membership`, signed `t` may hand off only to `/sigil/pay?t=...`.
 - `/sigil/pay/renewal` and `/pay/renewal`: redirect-only compatibility routes. Signed `t` -> `/sigil/pay?t=...`; unsigned -> `/sigil/member/membership?intent=renew`. They render no fallback UI.
-- `/sigil/pay/renew`: compatibility alias that should hand off directly to `/sigil/member/membership?intent=renew`.
+- `/sigil/pay/renew`: compatibility alias; signed `t` must hand off to `/sigil/pay?t=<same token>`, unsigned to `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment`: retired generic payment alias; signed `t` may hand off to `/sigil/pay?t=...`, otherwise use `/member/payments`.
 - `payments-worker` remains the sole authority for amount due, payment destination, PromptPay QR, canonical payment reference and payment verification.
 
