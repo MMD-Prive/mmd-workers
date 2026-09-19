@@ -118,8 +118,11 @@ Required behavior:
 - hand off to the correct operations lane;
 - do not force the customer to explain known context again;
 - for MMD Shop recovery, correlate only exact-owned or single-unambiguous owned Order candidates;
-- carry the bounded Order / Payment / Fulfillment snapshot with the same Case Reference;
-- if Order selection is ambiguous, keep the recovery case but do not guess the Order;
+- when multiple owned recent Orders are eligible, keep the existing Case Reference and show only bounded customer-safe options;
+- Order picker callback data carries only Case Reference + option index; the selected Order is resolved server-side and ownership is re-checked before binding;
+- after selection, carry the bounded Order / Payment / Fulfillment snapshot under that same Case Reference without moving the handoff lifecycle backwards;
+- Shop, Booking and MMS recovery use the same Case lifecycle plus `mmd-recovery-outcome-taxonomy-v1-20260919`;
+- Recovery outcome is workflow metadata written by an allowed authority. It never substitutes for Payment / Order / Job / MMS business truth;
 - refresh canonical Shop truth before any protected follow-up.
 
 Not allowed:
@@ -149,7 +152,9 @@ Current firmware rule:
 - `sent` is written only after the Ops delivery attempt succeeds;
 - `acknowledged`, `reviewing`, `resolved`, and `customer_notified` require explicit owning-authority state writes;
 - HYPE/HENNA must never infer acknowledgement, resolution, or customer notification from chat text;
-- bounded recovery correlation may share the same Case Reference, but it never changes Payment, Order, Fulfillment, Job, or entitlement truth.
+- bounded recovery correlation and recovery outcome metadata share the same Case Reference, but never change Payment, Order, Fulfillment, Job, MMS booking, or entitlement truth;
+- a Recovery case cannot enter `resolved` / `customer_notified` without an explicit terminal outcome valid for its domain;
+- HENNA may preserve MMS recovery context and observe the written state/outcome, but it does not invent or write a final outcome from chat.
 
 ---
 
