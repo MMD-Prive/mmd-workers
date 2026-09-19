@@ -11,6 +11,10 @@ on:
       - "admin-worker/wrangler.toml"
       - "member-pages-worker/src/hype-shop-orders-projection.js"
       - "member-pages-worker/src/runtime-index.js"
+      - "member-dashboard-chat-worker/src/index.js"
+      - "himai-chat-worker/**"
+      - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/mmd-shop-fulfillment.mjs"
       - "telegram-worker/src/index.js"
       - "ops/hype-shop-production-smoke/**"
       - ".github/workflows/hype-shop-production-smoke.yml"
@@ -26,7 +30,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
@@ -56,8 +60,10 @@ jobs:
           printf '%s\n' "$changed"
 
           expected=()
-          if printf '%s\n' "$changed" | grep -Eq '^admin-worker/'; then expected+=("Deploy admin-worker"); fi
-          if printf '%s\n' "$changed" | grep -Eq '^member-pages-worker/'; then expected+=("Deploy member-pages-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^admin-worker/|^shared/mmd-shop-'; then expected+=("Deploy admin-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^member-pages-worker/|^shared/mmd-shop-'; then expected+=("Deploy member-pages-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^himai-chat-worker/|^shared/mmd-shop-'; then expected+=("Deploy himai-chat-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^member-dashboard-chat-worker/'; then expected+=("Deploy member-dashboard-chat-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^telegram-worker/'; then expected+=("Deploy telegram-worker"); fi
 
           if [ "${#expected[@]}" -eq 0 ]; then
@@ -102,6 +108,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check ops/hype-shop-production-smoke/src/index.js
+          node --check ops/hype-shop-production-smoke/src/mmd-shop-transaction-smoke.js
+          node --experimental-default-type=module --test ops/hype-shop-production-smoke/test/mmd-shop-transaction-smoke.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config ops/hype-shop-production-smoke/wrangler.toml --var "SMOKE_TOKEN:${SMOKE_TOKEN}" --var "SMOKE_LINE_ID:${SMOKE_LINE_ID}" --var "SMOKE_TELEGRAM_ID:${SMOKE_TELEGRAM_ID}" --var "SMOKE_EXPIRES_AT:${SMOKE_EXPIRES_AT}"
 
       - name: Deploy temporary smoke worker
@@ -125,7 +133,7 @@ jobs:
             code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w "%{http_code}" -X POST -H "Authorization: Bearer ${SMOKE_TOKEN}" "$url" || true)"
             if [ "$code" = "200" ]; then
               cp "$body" "$final_body"
-              if node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const c=p?.checks||{}; const req=["admin_to_member_pages_binding","synthetic_line_has_no_owned_orders","projection_is_read_only","ownership_filter_active","private_contact_fields_blocked","unresolved_telegram_fails_closed"]; if(p?.ok!==true||p?.state!=="pass"||!req.every((k)=>c[k]===true)||p?.guardrails?.customer_data_returned!==false||p?.guardrails?.business_truth_mutated!==false) process.exit(1);' "$final_body"; then
+              if node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const c=p?.checks||{}; const req=["admin_to_member_pages_binding","synthetic_line_has_no_owned_orders","projection_is_read_only","ownership_filter_active","private_contact_fields_blocked","unresolved_telegram_fails_closed","synthetic_reserve_expire","payment_review_blocks_expiry","inventory_out_once","fulfillment_delivery_lifecycle","line_shipping_dry_run","customer_projection_contract"]; if(p?.ok!==true||p?.state!=="pass"||!req.every((k)=>c[k]===true)||p?.guardrails?.customer_data_returned!==false||p?.guardrails?.business_truth_mutated!==false||p?.guardrails?.production_airtable_called!==false||p?.guardrails?.line_push_sent!==false) process.exit(1);' "$final_body"; then
                 passed=1
                 break
               fi
@@ -184,12 +192,20 @@ jobs:
             echo "- synthetic ownership empty: PASS"
             echo "- read-only/payment/fulfillment/refund guardrails: PASS"
             echo "- unresolved Telegram fail-closed: PASS"
+            echo "- isolated Reserve -> Expire: PASS"
+            echo "- payment_review blocks expiry race: PASS"
+            echo "- Inventory Out idempotency: PASS"
+            echo "- fulfillment delivery lifecycle: PASS"
+            echo "- LINE shipping dry-run: PASS"
+            echo "- customer-safe Order projection: PASS"
             echo "- public internal endpoints blocked: PASS"
             echo "- telegram HYPE capability pack health: PASS"
             echo "- recovery outcome taxonomy health: PASS"
             echo "- HENNA MMS LINE taxonomy health: PASS"
             echo "- HENNA auto reply remains disabled: PASS"
             echo "- customer data used: NONE"
+            echo "- production Airtable writes: NONE"
+            echo "- LINE pushes sent by transaction smoke: NONE"
             echo "- business truth mutation: NONE"
           } >> "$GITHUB_STEP_SUMMARY"
 
