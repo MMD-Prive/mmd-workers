@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyMyMmdFastTrustResponse } from "../src/my-mmd-fast-trust-response.js";
+import { applyMyMmdFastTrustResponse, recordMyMmdAcceptanceEvidence } from "../src/my-mmd-fast-trust-response.js";
 
 const SECRET = "s".repeat(64);
 const TOKEN = "fast-trust-session-token";
@@ -287,4 +287,31 @@ test("canary matrix preserves resolved Public Member, Elite and Red Card", async
     const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
     assert.deepEqual(await patched.json(), original);
   }
+});
+
+
+test("acceptance evidence is HMAC-pseudonymous and stores no LINE id or session token", async () => {
+  let stored = null;
+  const env = {
+    LIFF_SESSION_SECRET: SECRET,
+    LIFF_IDENTITY_KV: {
+      async put(key, value, options) {
+        stored = { key, value: JSON.parse(value), options };
+      },
+    },
+  };
+  const out = await recordMyMmdAcceptanceEvidence(env, LINE_ID, {
+    tier: "svip",
+    historyState: "recovery_pending",
+  }, "/api/member/app/dashboard");
+
+  assert.equal(out.ok, true);
+  assert.match(out.evidenceId, /^mmdacc_[a-f0-9]{24}$/);
+  assert.match(stored.key, /^ops:my-mmd:acceptance:[a-f0-9]{24}$/);
+  assert.equal(stored.value.tier, "svip");
+  assert.equal(stored.value.contains_raw_line_id, false);
+  assert.equal(stored.value.contains_session_token, false);
+  assert.doesNotMatch(JSON.stringify(stored), new RegExp(LINE_ID));
+  assert.doesNotMatch(JSON.stringify(stored), new RegExp(TOKEN));
+  assert.equal(stored.options.expirationTtl, 60 * 60 * 24 * 30);
 });
