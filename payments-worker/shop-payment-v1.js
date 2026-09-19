@@ -317,6 +317,11 @@ export async function preflightReviewedShopPayment(request, env) {
       }
     }
 
+    if (reservation && reservation.state !== "committed") {
+      const reviewKey = paymentReviewKey(body, orderId);
+      await mutateReservationThroughShopWorker(env, "claim-payment", reservation, reviewKey, "");
+    }
+
     return null;
   } catch (error) {
     return json({
@@ -329,16 +334,27 @@ export async function preflightReviewedShopPayment(request, env) {
 }
 
 export async function reconcileReviewedShopPayment(request, response, env) {
-  if (!response?.ok) return response;
   const body = await request.clone().json().catch(() => null);
   const stage = code(body?.payment_stage || body?.stage || body?.payment_type);
   if (stage !== SHOP_STAGE) return response;
 
-  const payload = await response.clone().json().catch(() => null);
-  if (!payload?.ok) return response;
-
   const orderId = text(body?.session_id || body?.order_id, 180);
   if (!orderId) return response;
+  const reviewKey = paymentReviewKey(body, orderId);
+
+  const payload = response ? await response.clone().json().catch(() => null) : null;
+  if (!response?.ok || !payload?.ok) {
+    try {
+      const order = await findOrderByOrderId(env, orderId);
+      const reservation = readMmdShopReservation(order?.fields?.[ORDER_FIELDS.notes]);
+      if (reservation?.state === "payment_review") {
+        await mutateReservationThroughShopWorker(env, "abort-payment-claim", reservation, reviewKey, "review_not_committed");
+      }
+    } catch (error) {
+      console.error("MMD Shop payment claim abort failed:", error);
+    }
+    return response;
+  }
 
   try {
     const order = await findOrderByOrderId(env, orderId);
@@ -346,7 +362,7 @@ export async function reconcileReviewedShopPayment(request, response, env) {
 
     const existingReservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
     let committedReservation = existingReservation;
-    if (existingReservation?.state === "reserved") {
+    if (existingReservation && ["reserved", "payment_review"].includes(existingReservation.state)) {
       const committed = await commitReservationThroughShopWorker(env, existingReservation);
       committedReservation = committed.reservation;
     } else if (existingReservation && existingReservation.state !== "committed") {
@@ -410,24 +426,43 @@ export async function reconcileReviewedShopPayment(request, response, env) {
   }
 }
 
-async function commitReservationThroughShopWorker(env, reservation) {
+
+function paymentReviewKey(body, orderId) {
+  return text(body?.payment_ref || body?.transaction_ref || orderId, 500) || orderId;
+}
+
+async function mutateReservationThroughShopWorker(env, action, reservation, reviewKey = "", reason = "") {
   if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
   const token = text(env.INTERNAL_TOKEN, 5000);
   if (!token) throw httpError(503, "internal_token_not_configured");
 
-  const response = await env.MMD_SHOP_WORKER.fetch("https://himai-chat-worker.internal/mmd-shop/internal/reservation/commit", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-internal-token": token,
-    },
-    body: JSON.stringify({ reservation }),
-  });
+  const allowed = new Set(["claim-payment", "abort-payment-claim", "commit"]);
+  if (!allowed.has(action)) throw httpError(500, "invalid_reservation_mutation_action");
+
+  const response = await env.MMD_SHOP_WORKER.fetch(
+    `https://himai-chat-worker.internal/mmd-shop/internal/reservation/${action}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-token": token,
+      },
+      body: JSON.stringify({
+        reservation,
+        review_key: reviewKey || undefined,
+        reason: reason || undefined,
+      }),
+    }
+  );
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok !== true || !data.reservation) {
-    throw httpError(response.status || 502, data.error || "reservation_commit_failed");
+    throw httpError(response.status || 502, data.error || `reservation_${action}_failed`);
   }
   return data;
+}
+
+async function commitReservationThroughShopWorker(env, reservation) {
+  return mutateReservationThroughShopWorker(env, "commit", reservation);
 }
 
 async function createPaymentRecord(env, input) {
