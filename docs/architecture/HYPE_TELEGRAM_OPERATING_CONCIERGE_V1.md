@@ -820,6 +820,94 @@ The Case Ref remains unchanged throughout:
 
 HYPE clears stale Telegram buttons when a refresh result is handled. The customer is told that the original Case remains active and does not need to repeat context.
 
+## Recovery Picker Intelligence / Owner Refresh
+
+Policy version:
+
+`mmd-recovery-picker-intelligence-v1-20260920`
+
+Recovery Control projects picker interaction metadata independently from lifecycle/SLA/business truth.
+
+Bounded picker queue states:
+
+- `waiting_reselection` — a revisioned picker exists and the customer still needs to choose;
+- `authority_unavailable` — canonical authority could not be refreshed safely;
+- `no_candidates` — canonical refresh returned zero currently selectable owned candidates;
+- `selected` — the customer has selected a canonical candidate and correlation is locked;
+- `other` — no actionable picker-intelligence state.
+
+Recovery Control exposes:
+
+- picker revision;
+- bounded candidate count;
+- reissue count;
+- last bounded stale reason;
+- customer-delivery state;
+- filters for waiting reselection / authority unavailable / no candidates / selected.
+
+Picker watch state is separate from Recovery SLA attention. A customer waiting to reselect does not by itself mean the service, Payment, Job, Fulfillment or MMS truth is late or failed.
+
+Owner Summary may surface picker watch items before ordinary SLA watch items so the Owner can see interaction blockers such as:
+
+- `Picker rN · รอลูกค้าเลือกใหม่`;
+- `Picker rN · refresh authority ไม่ได้`;
+- `Picker rN · ไม่มี Candidate ปัจจุบัน`.
+
+### Owner manual refresh
+
+Only credential-bound Owner mode may request `Refresh Current Choices`.
+
+The browser sends only:
+
+- existing Case Ref;
+- expected current picker revision;
+- the refresh action.
+
+The browser receives no Telegram/admin service binding and cannot choose a candidate.
+
+The server:
+
+1. reloads the Case;
+2. verifies it is non-terminal and still has a selectable picker;
+3. compares `expected_picker_revision` with the current revision;
+4. resolves the Canonical Client from the Case link;
+5. rereads the canonical Shop / Booking / MMS authority;
+6. creates the next picker revision with current bounded safe candidates;
+7. preserves the same Case Ref.
+
+If the expected revision is already stale because another refresh won the race, the current revision is replayed instead of creating another generation.
+
+Owner refresh never auto-binds a candidate, including when only one candidate remains.
+
+Owner refresh must not change:
+
+- Recovery lifecycle state;
+- `state_updated_at` or SLA age;
+- Recovery outcome;
+- Recovery assignment;
+- canonical Order / Payment / Fulfillment;
+- Booking Request / Session / Job / Calendar;
+- MMS Booking / Therapist assignment;
+- Membership / Points / Coupon truth.
+
+### Customer delivery acknowledgment
+
+A picker revision generated outside the customer's Telegram callback is marked `pending_customer_delivery`.
+
+On the customer's next stale-picker interaction, HYPE sends the current picker revision instead of silently treating the callback as an already-delivered replay.
+
+After Telegram successfully sends the picker, telegram-worker acknowledges that exact revision back to admin-worker. The Case then records only bounded delivery metadata:
+
+- `picker_delivery_status=delivered`;
+- `picker_delivery_revision`;
+- delivery timestamp.
+
+Delivery acknowledgment is customer-owned, revision-bound and idempotent. It does not change lifecycle/SLA/assignment/outcome/business truth.
+
+If Telegram delivery fails, the revision remains pending so a later interaction can retry. Once delivery is acknowledged, repeated old callbacks do not send duplicate picker messages.
+
+This delivery acknowledgment uses the existing trusted `telegram-worker → admin-worker` service-binding path. Recovery Control does not receive Telegram send authority.
+
 ## Next implementation lanes
 
 1. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model;
