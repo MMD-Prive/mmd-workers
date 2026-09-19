@@ -51,6 +51,7 @@ import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-me
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
 import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
 import { HYPE_OWNER_SUMMARY_PATH, handleHypeOwnerSummaryRpc } from "./hype-owner-summary.js";
+import { HYPE_CONTINUITY_PATH, HYPE_HANDOFF_PATH, handleHypeContinuityRpc, handleHypeHandoffRpc } from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -130,6 +131,15 @@ export default {
     // the same canonical admin dashboard data used by Back Office.
     if (path === HYPE_OWNER_SUMMARY_PATH) {
       return handleHypeOwnerSummaryRpc(request, env);
+    }
+
+    // Service-binding-only cross-channel continuity and supervised HYPE handoff.
+    // These mutate conversation context only; canonical business truth remains untouched.
+    if (path === HYPE_CONTINUITY_PATH) {
+      return handleHypeContinuityRpc(request, env);
+    }
+    if (path === HYPE_HANDOFF_PATH) {
+      return handleHypeHandoffRpc(request, env);
     }
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,
