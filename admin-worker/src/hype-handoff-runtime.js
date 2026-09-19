@@ -679,14 +679,7 @@ export async function observeP6Authority(env, receipt = {}, context = {}) {
   }
 
   if (mode === "booking") {
-    return {
-      source: "sigil-booking-worker",
-      state: token(receipt.status) || "unknown",
-      canonical_ref: clean(receipt.canonical_ref, 180),
-      final_confirmation_observed: false,
-      correlation_scope: "request_receipt_only",
-      inference_used: false,
-    };
+    return observeExactBookingCorrelation(env, receipt);
   }
 
   return {
@@ -695,6 +688,151 @@ export async function observeP6Authority(env, receipt = {}, context = {}) {
     final_confirmation_observed: false,
     inference_used: false,
   };
+}
+
+
+export async function observeExactBookingCorrelation(env = {}, receipt = {}) {
+  const bookingRef = clean(receipt.canonical_ref, 180);
+  const fallback = {
+    source: "sigil-booking-worker",
+    state: token(receipt.status) || "unknown",
+    canonical_ref: bookingRef,
+    booking_ref: bookingRef || null,
+    exact_correlation: false,
+    final_confirmation_observed: false,
+    correlation_scope: "request_receipt_only",
+    inference_used: false,
+  };
+  if (!bookingRef) return { ...fallback, state: "booking_ref_missing" };
+  if (!clean(env.AIRTABLE_BASE_ID, 120) || !clean(env.AIRTABLE_API_KEY, 5000)) {
+    return { ...fallback, state: "authority_unavailable" };
+  }
+
+  const bookingTable = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID, 120) || "tblQa2OK4U69eOCRF";
+  const sessionTable = clean(env.AIRTABLE_TABLE_SESSIONS, 120) || "tblC98mKWbzmPuNzX";
+  const jobsTable = clean(env.AIRTABLE_TABLE_JOBS, 120) || "tbl0jxIjN8QYwGABX";
+
+  const booking = await findExactAirtableRecord(env, bookingTable, "booking_ref", bookingRef);
+  if (!booking.ok) {
+    return {
+      ...fallback,
+      state: booking.conflict ? "booking_ref_conflict" : booking.error || "booking_request_unavailable",
+      correlation_scope: booking.conflict ? "booking_ref_conflict" : "request_receipt_only",
+      conflict: booking.conflict === true,
+    };
+  }
+  if (!booking.record) return { ...fallback, state: "booking_request_not_found" };
+
+  const resolver = parseObject(booking.record.fields?.resolver_payload_json);
+  const creationState = token(resolver.job_creation_state);
+  const jobReceipt = parseObject(resolver.job_receipt);
+  const sessionId = clean(jobReceipt.session_id, 220);
+
+  if (!sessionId) {
+    return {
+      ...fallback,
+      state: creationState || "booking_request_recorded",
+      booking_record_id: recordId(booking.record.id) || null,
+      correlation_scope: "booking_ref_exact_no_job_receipt",
+    };
+  }
+
+  const [session, job] = await Promise.all([
+    findExactAirtableRecord(env, sessionTable, "session_id", sessionId),
+    findExactAirtableRecord(env, jobsTable, "session_id", sessionId),
+  ]);
+
+  if (!session.ok || !job.ok) {
+    const conflict = session.conflict === true || job.conflict === true;
+    return {
+      ...fallback,
+      state: conflict ? "job_correlation_conflict" : "job_correlation_unavailable",
+      booking_record_id: recordId(booking.record.id) || null,
+      session_id: sessionId,
+      correlation_scope: conflict ? "booking_ref_session_conflict" : "booking_ref_exact_job_read_unavailable",
+      conflict,
+    };
+  }
+  if (!session.record || !job.record) {
+    return {
+      ...fallback,
+      state: !session.record ? "canonical_session_not_found" : "canonical_job_not_found",
+      booking_record_id: recordId(booking.record.id) || null,
+      session_id: sessionId,
+      session_record_id: recordId(session.record?.id) || null,
+      correlation_scope: "booking_ref_exact_job_missing",
+    };
+  }
+
+  const sessionFields = session.record.fields || {};
+  const jobFields = job.record.fields || {};
+  const sessionJobId = clean(sessionFields.job_id, 160);
+  const jobId = clean(jobFields.job_id, 160);
+  if (sessionJobId && jobId && sessionJobId !== jobId) {
+    return {
+      ...fallback,
+      state: "job_id_mismatch",
+      booking_record_id: recordId(booking.record.id) || null,
+      session_id: sessionId,
+      session_record_id: recordId(session.record.id) || null,
+      job_record_id: recordId(job.record.id) || null,
+      correlation_scope: "booking_ref_exact_job_id_conflict",
+      conflict: true,
+    };
+  }
+
+  const canonicalJobId = jobId || sessionJobId || null;
+  const jobState = token(jobFields.status || jobFields.job_status || jobFields.state);
+  const sessionState = token(sessionFields.session_state || sessionFields.status || sessionFields.state);
+  return {
+    source: "sigil-booking-worker",
+    state: jobState || sessionState || creationState || "correlated",
+    canonical_ref: bookingRef,
+    booking_ref: bookingRef,
+    booking_record_id: recordId(booking.record.id) || null,
+    session_id: sessionId,
+    session_record_id: recordId(session.record.id) || null,
+    job_id: canonicalJobId,
+    job_record_id: recordId(job.record.id) || null,
+    session_state: sessionState || null,
+    job_state: jobState || null,
+    exact_correlation: true,
+    final_confirmation_observed: explicitFinalJobState(jobState),
+    correlation_scope: "booking_ref_to_job_exact",
+    inference_used: false,
+  };
+}
+
+async function findExactAirtableRecord(env, table, field, value) {
+  const baseId = clean(env.AIRTABLE_BASE_ID, 120);
+  const tokenValue = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
+  if (!baseId || !tokenValue || !table || !field || !clean(value, 500)) {
+    return { ok: false, error: "airtable_config_missing", record: null, conflict: false };
+  }
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+  url.searchParams.set("maxRecords", "2");
+  url.searchParams.set("pageSize", "2");
+  url.searchParams.set("filterByFormula", `{${field}}=${formulaText(value)}`);
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${tokenValue}`, accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, error: `airtable_read_${response.status}`, record: null, conflict: false };
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    if (records.length > 1) return { ok: false, error: "exact_record_conflict", record: null, conflict: true };
+    return { ok: true, record: records[0] || null, conflict: false };
+  } catch {
+    return { ok: false, error: "airtable_read_failed", record: null, conflict: false };
+  }
+}
+
+function explicitFinalJobState(value) {
+  return ["confirmed", "final_payment_confirmed", "finished", "completed", "closed"].includes(token(value));
+}
+
+function formulaText(value) {
+  return `"${clean(value, 500).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 async function executeP6Lane(env, input = {}) {
