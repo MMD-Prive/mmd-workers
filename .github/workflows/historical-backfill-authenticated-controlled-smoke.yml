@@ -69,8 +69,12 @@ jobs:
             -F "context_text=GitHub authenticated controlled smoke; must remain pending" \
             "$ORIGIN/v1/admin/payments/historical-backfill/intake")"
           cat "$body"
-          test "$intake_code" = "201"
-          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.state!=="pending"||!p.proof_id||p.guardrails?.may_mark_paid!==false) process.exit(1); process.stdout.write(p.proof_id)' "$body")"
+          echo "Historical intake transport HTTP: $intake_code"
+          case "$intake_code" in
+            200|201) ;;
+            *) echo "Unexpected historical intake HTTP status: $intake_code" >&2; exit 1 ;;
+          esac
+          proof_id="$(node -e 'const p=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(!p.ok||p.duplicate!==false||p.state!=="pending"||!p.proof_id||p.guardrails?.may_mark_paid!==false) process.exit(1); process.stdout.write(p.proof_id)' "$body")"
 
           queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
