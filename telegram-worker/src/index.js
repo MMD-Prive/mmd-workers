@@ -4,6 +4,11 @@ import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/tele
 import { escapeHtml } from "../lib/util.js";
 import { routeHypeNaturalLanguage } from "./hype-natural-language-router.js";
 import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import {
+  RECOVERY_OUTCOME_TAXONOMY_VERSION,
+  recoveryOutcomeCodesForDomain,
+  recoveryOutcomeLabel,
+} from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 import { detectHypeTransactionStart, extractHypeTransactionFields, transactionMissingQuestion, transactionModeLabel } from "./hype-transaction-assistant.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
@@ -28,6 +33,7 @@ export default {
           preview_channel_configured: Boolean(clean(env.TELEGRAM_PREVIEW_CHANNEL_ID)),
           preview_bot_username: botUsername(env),
           capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+          recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
