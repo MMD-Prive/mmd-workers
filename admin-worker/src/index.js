@@ -5425,12 +5425,17 @@ async function createAdminJob(env, body) {
     (minted.model_t ? `${model_confirm_page}?t=${encodeURIComponent(minted.model_t)}` : "") ||
     (minted.t ? `${model_confirm_page}?t=${encodeURIComponent(minted.t)}` : "");
 
+  const customer_payment_url =
+    minted.customer_payment_url ||
+    (minted.customer_t ? `${webBase}/sigil/pay?t=${encodeURIComponent(minted.customer_t)}` : "") ||
+    (minted.t ? `${webBase}/sigil/pay?t=${encodeURIComponent(minted.t)}` : "");
+
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
+  if (!customer_payment_url) throw new Error("missing_customer_payment_url");
 
-  // Defense in depth: the issuer may only continue when each canonical route
-  // carries the token role it is meant to serve. This is a routing/dispatch
-  // contract check; backend signature verification remains authoritative.
+  // Confirmation URLs are minted and stored server-side, but are withheld from
+  // the Create Job browser response until official payment approval.
   assertConfirmationUrlPair(customer_confirmation_url, model_confirmation_url);
 
   let ownerJobGrantStatus = privateGate?.ownerJobGrant ? "reserved" : "not_used";
@@ -5442,20 +5447,19 @@ async function createAdminJob(env, body) {
   let notificationStatus = "not_configured";
   try {
     const notification = await notifyJobCreated(env, {
-    session_id,
-    payment_ref,
-    client_name,
-    model_name,
-    job_type,
-    job_date,
-    start_time,
-    end_time,
-    location_name,
-    amount_thb,
-    deposit_amount_thb,
-    balance_amount_thb,
-    customer_confirmation_url,
-    model_confirmation_url,
+      session_id,
+      payment_ref,
+      client_name,
+      model_name,
+      job_type,
+      job_date,
+      start_time,
+      end_time,
+      location_name,
+      amount_thb,
+      deposit_amount_thb,
+      balance_amount_thb,
+      customer_payment_url,
     });
     if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
   } catch (_) {
@@ -5466,9 +5470,9 @@ async function createAdminJob(env, body) {
   return {
     session_id,
     payment_ref,
-    customer_confirmation_url,
-    model_confirmation_url,
-    raw: minted,
+    customer_payment_url,
+    payment_dispatch_state: "awaiting_payment_approval",
+    confirmation_release_state: "held_until_payment_approved",
     notification_status: notificationStatus,
     owner_job_grant_status: ownerJobGrantStatus,
     deposit_percent,
@@ -5503,7 +5507,7 @@ async function notifyJobCreated(env, data) {
   if (!env.TELEGRAM_INTERNAL_SEND_URL || !env.INTERNAL_TOKEN) return;
 
   const lines = [
-    "🔗 <b>JOB LINKS CREATED</b>",
+    "💳 <b>JOB CREATED · PAYMENT REQUIRED</b>",
     `Client: <b>${escHtml(data.client_name)}</b>`,
     `Model: <b>${escHtml(data.model_name)}</b>`,
     `Type: <b>${escHtml(data.job_type)}</b>`,
@@ -5516,8 +5520,8 @@ async function notifyJobCreated(env, data) {
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,
     "",
-    `Customer URL: ${escHtml(data.customer_confirmation_url)}`,
-    `Model URL: ${escHtml(data.model_confirmation_url)}`,
+    `Customer Payment URL: ${escHtml(data.customer_payment_url)}`,
+    "Member + Model URLs: held until official payment approval",
   ];
 
   return await telegramInternalSend(env, {
