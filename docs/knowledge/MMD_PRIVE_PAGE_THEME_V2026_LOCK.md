@@ -240,25 +240,26 @@ The page may use the `HEro Sport.webp` asset for the hero when the older hero cr
 
 Canonical public Hall page: `/hall` in Webflow.
 
-Current full-code root:
+Current visible root:
 
 ```text
-#mmd-hall-v5
+#mmd-hall-v6
 ```
 
-Hall follows the public white-world theme, not SIGIL. The page must keep:
+Legacy `#mmd-hall-v5` is hidden fallback/source history only.
 
-- primary UI font: `LINE Seed Sans TH`, then `Noto Sans Thai`
-- light cards: ink headings `#18171b`, body copy around `#514943`
-- light-card micro labels: restrained bronze `#8c6330`
-- dark/model/photo cards: headings and action text in warm ivory `#fffdfa`
-- dark-card body copy no weaker than approximately 90% warm ivory
-- wine panels: body copy no weaker than approximately 90% warm ivory
-- gold/bronze is an accent only; never use low-contrast gold for body copy
-- a final scoped contrast-safety layer after the page CSS
-- mobile horizontal cards remain readable without relying on inherited Webflow text colors
+Hall follows the public white-world theme and routes:
+- Find -> `/find?source=hall`
+- Browse Public Profiles -> `/profiles?source=hall`
+- Male Massage -> `/male-massage/home?source=hall`
+- Public Membership -> `/pay/membership?source=hall`
+- My MMD -> `/my-mmd/?source=hall`
 
-Runtime note: Hall query-carry JS must target the live root `mmd-hall-v5` so campaign/token parameters are preserved across Hall links. Hall remains presentation/navigation only and is not membership, payment, booking, or entitlement authority.
+Public Membership is Member / Elite / Red Card. Standard / Premium stays in the explicit Private lane.
+
+Hall query-carry runtime targets `mmd-hall-v6` and carries only safe public campaign context (`code`, `promo`, `campaign`). Do not propagate signed payment/session authority such as `t` or `session_id` into unrelated Hall navigation.
+
+Hall remains presentation/navigation only and is not membership, payment, booking, entitlement or availability authority.
 
 ## 11. Final rule
 

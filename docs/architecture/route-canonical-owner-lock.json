@@ -821,33 +821,37 @@
       "canonical_route": "/member/payments",
       "aliases": [],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "RESOLVED_TARGET",
+      "status_display": "TARGET LOCKED / BFF ACCEPTANCE PENDING",
       "surface_type": "page",
-      "page_owner": "TBD page owner; APIs server-side",
-      "api_owner": "payments-worker and admin-worker review",
-      "current_owner": "admin-worker currently",
-      "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "admin/member payment surface",
-      "backend_owner": "payments-worker and admin-worker review",
-      "candidate_owner": "TBD page owner; APIs server-side",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
-      "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "exposing admin context to member route",
-      "evidence": "not verified",
+      "page_owner": "Webflow static page /member/payments",
+      "api_owner": "member-pages-worker member-safe payment-status BFF target; payments-worker money truth",
+      "current_owner": "Webflow page source is canonical presentation; legacy front-gate/admin delegation may remain during migration",
+      "current_front_gate": "migration compatibility only; must not define payment truth",
+      "ui_location": "Webflow page 69dfd6c51dd636056fdb35ea root #mmd-payments-maxx",
+      "backend_owner": "member-pages-worker BFF target; payments-worker sole money truth",
+      "candidate_owner": "Webflow presentation + member-pages-worker BFF + payments-worker",
+      "owner_decision": "RESOLVED_TARGET",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "retain legacy bridge only until member-safe BFF acceptance",
+      "production_verified": "presentation_source_verified_bff_ingress_pending",
+      "production_verification": "Webflow presentation verified; /v1/member/payments BFF production ingress must pass acceptance",
+      "risk": "legacy admin delegation must not expose admin context or become member payment authority",
+      "evidence": "Webflow /member/payments page id 69dfd6c51dd636056fdb35ea; docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md",
       "conflicts": [
-        "member page vs admin owner ambiguity"
+        "legacy admin facade remains migration dependency until BFF acceptance"
       ],
       "migration_phase": "Phase 3A/5",
       "acceptance_requirements": [
-        "Separate member payment status UI from admin review APIs."
+        "Serve authenticated customer-safe /v1/member/payments from member-pages-worker or approved member-safe BFF.",
+        "Keep payments-worker as sole money truth.",
+        "Verify Webflow page can read customer-safe records without admin controls or internal fields.",
+        "Verify signed payment URLs are backend-issued and never minted or converted by the page.",
+        "Retire legacy admin delegation only after production smoke."
       ],
       "notes": {
-        "blocker_reason": "exposing admin context to member route",
-        "remove_later_decision": null
+        "blocker_reason": "member-safe BFF production ingress acceptance pending",
+        "remove_later_decision": "legacy admin/front-gate delegation after acceptance"
       }
     },
     {
@@ -1123,7 +1127,7 @@
     {
       "route_id": "24_payment_membership_page",
       "route": "/pay/membership",
-      "route_family": "Payment membership page",
+      "route_family": "Public Membership page",
       "hosts": [
         "mmdbkk.com",
         "www.mmdbkk.com"
@@ -1138,28 +1142,28 @@
       "alias_notes": null,
       "status": "LIVE_CONNECTED",
       "status_display": "LIVE CONNECTED",
-      "surface_type": "page_or_api",
-      "page_owner": "member-pages-worker page, payments-worker APIs",
-      "api_owner": "payments-worker APIs expected",
-      "current_owner": "member-pages-worker",
-      "current_front_gate": "mmd-redirect-worker",
-      "ui_location": "Worker-rendered payment evidence page",
-      "backend_owner": "payments-worker APIs expected",
-      "candidate_owner": "member-pages-worker page, payments-worker APIs",
+      "surface_type": "page",
+      "page_owner": "Webflow Public Membership presentation",
+      "api_owner": "backend package/payment intent APIs; payments-worker money truth",
+      "current_owner": "Webflow presentation",
+      "current_front_gate": "pass-through / current production routing",
+      "ui_location": "Public Member / Elite / Red Card selection",
+      "backend_owner": "payments-worker money truth",
+      "candidate_owner": "Webflow presentation + backend intent APIs",
       "owner_decision": "LOCKED",
       "owner_confidence": "HIGH",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "proof cannot activate membership",
-      "evidence": "not verified",
-      "conflicts": [
-        "payment API ownership not fully mapped"
-      ],
+      "production_verified": "presentation_source_verified",
+      "production_verification": "Webflow Public Membership source verified; signed checkout handoff remains backend-owned",
+      "risk": "selection UI must not become payment status/proof authority",
+      "evidence": "Public/Private membership lane lock and Webflow /pay/membership page",
+      "conflicts": [],
       "migration_phase": "Phase 2/7",
       "acceptance_requirements": [
-        "Verify evidence submission owner",
-        "pending state."
+        "Verify server package catalog.",
+        "Verify LINE/member session before payment intent.",
+        "Verify backend-issued signed /pay/checkout?t=... handoff.",
+        "Keep payments-worker as money truth."
       ],
       "notes": {
         "blocker_reason": null,
@@ -1213,7 +1217,7 @@
     {
       "route_id": "26_renewal_canonical",
       "route": "/sigil/pay/renewal",
-      "route_family": "Renewal canonical",
+      "route_family": "Renewal compatibility redirect",
       "hosts": [
         "mmdbkk.com",
         "www.mmdbkk.com",
@@ -1228,42 +1232,39 @@
         "/pay/renewal"
       ],
       "alias_notes": null,
-      "status": "PARTIAL_INTEGRATION",
-      "status_display": "PARTIAL INTEGRATION",
-      "surface_type": "page",
-      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
-      "api_owner": "payment/review APIs separate",
-      "current_owner": "member-pages-worker manual legacy safety via front gate; member-dashboard-chat-worker renderer candidate",
-      "current_front_gate": "mmd-redirect-worker on current repo evidence",
-      "ui_location": "manual legacy safety page; renderer candidate unverified",
-      "backend_owner": "payment/review APIs separate",
-      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
-      "owner_decision": "TEMPORARY",
-      "owner_confidence": "MEDIUM",
-      "compatibility_decision": "keep /pay/renewal compatibility until audit",
-      "production_verified": "unverified",
-      "production_verification": "not verified; exact production route owner unresolved",
-      "risk": "route precedence and production attachment not proven; renewal UI must not verify payment",
-      "evidence": "not verified; exact production route owner unresolved",
-      "conflicts": [
-        "member-dashboard-chat-worker/wrangler.toml"
-      ],
-      "migration_phase": "Phase 3/7",
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "redirect",
+      "page_owner": "member-dashboard-chat-worker redirect-only bridge",
+      "api_owner": "payments-worker after signed handoff",
+      "current_owner": "member-dashboard-chat-worker redirect bridge",
+      "current_front_gate": "production Worker route",
+      "ui_location": "none; no rendered customer page",
+      "backend_owner": "member-dashboard-chat-worker redirect bridge; payments-worker money truth",
+      "candidate_owner": "member-dashboard-chat-worker redirect bridge",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep /pay/renewal as redirect-only alias",
+      "production_verified": "worker_patch_deploy_verified",
+      "production_verification": "redirect-only Worker patch deployed 2026-09-19; repeat external HTTP smoke when auditing ingress",
+      "risk": "stale Webflow/member-pages fallback must never regain precedence",
+      "evidence": "docs/locks/MMD_SIGIL_RENEWAL_PAGE_LOCK.md; production renewal redirect patch",
+      "conflicts": [],
+      "migration_phase": "Phase 7",
       "acceptance_requirements": [
-        "Audit exact route config",
-        "production winner",
-        "GET/HEAD/slash/query behavior",
-        "Webflow bridge before locking owner."
+        "Signed t redirects to /sigil/pay?t=<same token>.",
+        "Unsigned redirects to /sigil/member/membership?intent=renew.",
+        "GET/HEAD response contains no renewal payment UI."
       ],
       "notes": {
-        "blocker_reason": "route precedence and production attachment not proven; renewal UI must not verify payment",
-        "remove_later_decision": null
+        "blocker_reason": null,
+        "remove_later_decision": "keep compatibility route redirect-only"
       }
     },
     {
       "route_id": "27_renewal_alias",
       "route": "/pay/renewal",
-      "route_family": "Renewal alias",
+      "route_family": "Renewal redirect alias",
       "hosts": [
         "mmdbkk.com",
         "www.mmdbkk.com",
@@ -1273,42 +1274,38 @@
         "GET",
         "HEAD"
       ],
-      "canonical_route": "/pay/renewal",
+      "canonical_route": "/sigil/pay/renewal",
       "aliases": [
         "/sigil/pay/renewal"
       ],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
-      "surface_type": "page",
-      "page_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
-      "api_owner": "payment/review APIs separate",
-      "current_owner": "none proven in current route config; historical chat-worker renderer evidence only",
-      "current_front_gate": "unknown or route precedence outside current front-gate proof",
-      "ui_location": "renderer candidate unverified",
-      "backend_owner": "payment/review APIs separate",
-      "candidate_owner": "member-dashboard-chat-worker candidate renderer pending route proof",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
-      "compatibility_decision": "keep compatibility until Phase 6 after route proof",
-      "production_verified": "unverified",
-      "production_verification": "not verified; exact production route owner unresolved",
-      "risk": "alias removal or ownership would be unsafe before route audit",
-      "evidence": "not verified; exact production route owner unresolved",
-      "conflicts": [
-        "member-dashboard-chat-worker/wrangler.toml"
-      ],
-      "migration_phase": "Phase 6A",
+      "status": "ROUTE_ONLY_REDIRECT",
+      "status_display": "ROUTE ONLY / REDIRECT",
+      "surface_type": "redirect",
+      "page_owner": "member-dashboard-chat-worker redirect-only bridge",
+      "api_owner": "payments-worker after signed handoff",
+      "current_owner": "member-dashboard-chat-worker redirect bridge",
+      "current_front_gate": "production Worker route",
+      "ui_location": "none; no rendered customer page",
+      "backend_owner": "member-dashboard-chat-worker redirect bridge; payments-worker money truth",
+      "candidate_owner": "member-dashboard-chat-worker redirect bridge",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
+      "compatibility_decision": "keep redirect-only compatibility",
+      "production_verified": "worker_patch_deploy_verified",
+      "production_verification": "same redirect contract as /sigil/pay/renewal",
+      "risk": "stale alias must not render fallback UI",
+      "evidence": "docs/locks/MMD_SIGIL_RENEWAL_PAGE_LOCK.md",
+      "conflicts": [],
+      "migration_phase": "Phase 7",
       "acceptance_requirements": [
-        "Verify exact route attachment",
-        "production winner",
-        "query preservation",
-        "GET/HEAD/slash behavior",
-        "then decide alias owner."
+        "Signed t redirects to /sigil/pay?t=<same token>.",
+        "Unsigned redirects to /sigil/member/membership?intent=renew.",
+        "No customer-visible fallback body."
       ],
       "notes": {
-        "blocker_reason": "alias removal or ownership would be unsafe before route audit",
-        "remove_later_decision": null
+        "blocker_reason": null,
+        "remove_later_decision": "keep redirect-only alias"
       }
     },
     {
@@ -2856,12 +2853,12 @@
       "decision": "Owns exact admin login/session and Kenji Knowledge routes where configured, and implements many admin/model handlers. Direct production ingress remains endpoint-specific unless exact route/service-binding proof exists; missing bridge backend operations remain UNRESOLVED."
     },
     "member-dashboard-chat-worker": {
-      "classification": "active LINE webhook owner, rich-menu implementation owner, and renewal renderer candidate",
-      "decision": "/webhooks/line is production-proven in current route config. /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs are implemented but production route/service-binding ownership remains UNRESOLVED. Renewal route ownership is TEMPORARY or UNRESOLVED until exact route attachment and production winner are proven."
+      "classification": "active LINE webhook owner, rich-menu implementation owner, and renewal redirect-only compatibility owner",
+      "decision": "/webhooks/line is production-proven. Renewal compatibility routes are redirect-only and must never render fallback payment UI. Rich-menu/internal production attachment remains endpoint-specific."
     },
     "member-pages-worker": {
-      "classification": "canonical active for member membership/payment evidence pages",
-      "decision": "Does not own payment truth or dashboard truth."
+      "classification": "canonical member identity/LIFF owner and target member-safe payment-status BFF",
+      "decision": "Does not own money truth. Target BFF for customer-safe /member/payments status records; payments-worker remains final payment authority."
     },
     "payments-worker": {
       "classification": "canonical active payment API target",

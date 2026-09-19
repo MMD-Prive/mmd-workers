@@ -107,10 +107,10 @@ export async function resolveKenjiSalesReply(event = {}, env = {}, options = {})
     return answerDecision(message, intent, { reason: "current_published_card_required" });
   }
   // A memory cue can avoid a duplicate payment prompt, never confirm receipt/payment.
-  if (pendingProofCue(continuity) && ["membership", "membership_signup", "membership_renewal", "care_back_expired_member", "care_back_payment_points"].includes(intent)) {
+  if (pendingProofCue(continuity) && ["membership", "membership_signup", "private_membership_signup", "membership_renewal", "care_back_expired_member", "care_back_payment_points"].includes(intent)) {
     return answerDecision("ถ้าพี่ส่งหลักฐานไว้แล้ว ให้ตรวจรายการเดิมก่อนนะครับ ยังไม่ต้องโอนหรือส่งสลิปซ้ำ อายุสมาชิกหรือสิทธิ์จะอัปเดตหลังตรวจยอดและจับคู่รายการเรียบร้อยครับ", intent, { card, key, route: SALES_ROUTES.payment, label: "ตรวจรายการชำระเดิม", reason: "avoid_duplicate_payment_without_claiming_payment_truth" });
   }
-  if (intent === "care_back_personal_status" || ["membership", "membership_signup", "membership_renewal", "care_back_current_member", "care_back_expired_member"].includes(intent)) {
+  if (intent === "care_back_personal_status" || ["membership", "membership_signup", "private_membership_signup", "membership_renewal", "care_back_current_member", "care_back_expired_member"].includes(intent)) {
     const truth = await (options.readTruth || resolveKenjiLineLiveTruth)({ env, event, intent: "membership_status" }).catch(() => null);
     if (truth?.ok === true && truth.identity_status === "resolved" && truth.authority === AUTHORITY) {
       const membership = truth.membership || {};
@@ -141,6 +141,20 @@ export async function resolveKenjiSalesReply(event = {}, env = {}, options = {})
   if (intent === "care_back_membership_price") return answerDecision("ค่าสมัครและค่าต่ออายุต้องดูประเภทสมาชิกและสิทธิ์ของบัญชีก่อนครับ หน้าสมาชิกมีตัวเลือกและยอดให้ตรวจก่อนชำระ โดยไม่ใช้ราคาหรือรายการเก่ามาสรุปยอดให้พี่", intent, { card, key, route: SALES_ROUTES.membership, label: "ตรวจตัวเลือกและยอดล่าสุด" });
   if (intent === "care_back_black_card") return answerDecision("CARE BACK หรือแต้มพิเศษไม่ทำให้ได้รับ Black Card, VIP หรือ SVIP อัตโนมัติครับ สิทธิ์กลุ่มนี้ต้องผ่านการพิจารณาที่เกี่ยวข้อง ส่วนสิทธิ์ CARE BACK ของบัญชีให้ตรวจใน MY MMD ก่อน", intent, { card, key });
   if (intent === "care_back_historical_points") return answerDecision("สิทธิ์เพิ่มอายุสมาชิกกับ Points เป็นคนละส่วนกันครับ แต้มต้อนรับหรือแต้มย้อนหลังต้องดูเงื่อนไขและรายการที่ยืนยันแล้วของบัญชี ไม่รวมตัวเลขจากโปรโมชั่นเก่าหรือเพิ่มแต้มที่เคยบันทึกไว้ซ้ำครับ", intent, { card, key });
+  if (intent === "membership_signup") {
+    return answerDecision(
+      "เริ่มจาก Public Membership — MMD Member / Elite / Red Card ได้เลยครับ เลือกประเภทที่เหมาะแล้วระบบจะพาไปขั้นตอนชำระที่ถูกต้องต่อ",
+      intent,
+      { card, key, route: SALES_ROUTES.signup, label: "ดู Public Membership", reason: "generic_signup_public_lane" },
+    );
+  }
+  if (intent === "private_membership_signup") {
+    return answerDecision(
+      "ถ้าต้องการ Standard / Premium หรือ Private Membership เปิดจาก Private Membership Intake ได้เลยครับ",
+      intent,
+      { card, key, route: SALES_ROUTES.privateSignup, label: "ดู Private Membership", reason: "explicit_private_signup_private_lane" },
+    );
+  }
   return answerDecision(card.customer_answer, intent, { card, key, route: cardRoute(card) });
 }
 

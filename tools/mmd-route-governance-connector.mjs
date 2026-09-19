@@ -20,15 +20,17 @@ const testFiles = [
 ];
 
 const routeChecks = [
-  { name: "membership selection", url: "https://mmdbkk.com/sigil/member/membership", kind: "membership-selection" },
+  { name: "private membership selection", url: "https://mmdbkk.com/sigil/member/membership", kind: "private-membership-selection" },
+  { name: "public membership selection", url: "https://mmdbkk.com/pay/membership", kind: "public-membership-selection" },
   { name: "legacy sigil membership alias", url: "https://mmdbkk.com/sigil/pay/membership", kind: "membership-alias" },
   { name: "legacy sigil membership signed alias", url: "https://mmdbkk.com/sigil/pay/membership?t=route-lock-placeholder", kind: "membership-alias-signed" },
-  { name: "legacy pay membership alias", url: "https://mmdbkk.com/pay/membership", kind: "membership-alias" },
-  { name: "legacy pay membership signed alias", url: "https://mmdbkk.com/pay/membership?t=route-lock-placeholder", kind: "membership-alias-signed" },
-  { name: "sigil renewal", url: "https://mmdbkk.com/sigil/pay/renewal", kind: "manual-renewal" },
-  { name: "pay renewal", url: "https://mmdbkk.com/pay/renewal", kind: "manual-renewal" },
-  { name: "legacy renew alias", url: "https://mmdbkk.com/sigil/pay/renew", kind: "renew-alias" },
+  { name: "sigil renewal unsigned", url: "https://mmdbkk.com/sigil/pay/renewal", kind: "renewal-redirect" },
+  { name: "sigil renewal signed", url: "https://mmdbkk.com/sigil/pay/renewal?t=route-lock-placeholder", kind: "renewal-redirect-signed" },
+  { name: "pay renewal unsigned", url: "https://mmdbkk.com/pay/renewal", kind: "renewal-redirect" },
+  { name: "legacy renew alias unsigned", url: "https://mmdbkk.com/sigil/pay/renew", kind: "renew-alias" },
+  { name: "legacy renew alias signed", url: "https://mmdbkk.com/sigil/pay/renew?t=route-lock-placeholder", kind: "renew-alias-signed" },
   { name: "legacy generic payment alias", url: "https://mmdbkk.com/sigil/pay/payment", kind: "payment-alias" },
+  { name: "member payment status", url: "https://mmdbkk.com/member/payments", kind: "member-payments" },
   { name: "unknown route", url: "https://mmdbkk.com/unknown-test-route-mmd", kind: "unknown" },
 ];
 
@@ -87,48 +89,70 @@ async function checkRoute(check) {
 
   let ok = !containsGloballyForbiddenRoute(location);
 
-  if (check.kind === "membership-selection") {
+  if (check.kind === "private-membership-selection") {
     ok = ok && status === 200 && locationPath !== "/pay/membership" && locationPath !== "/sigil/pay/membership";
   }
 
+  if (check.kind === "public-membership-selection") {
+    ok = ok && status === 200 && locationPath !== "/sigil/member/membership" && locationPath !== "/sigil/pay";
+  }
+
   if (check.kind === "membership-alias") {
-    ok = ok
-      && (status === 200 || [301, 302, 307, 308].includes(status))
-      && locationPath !== "/sigil/pay/renewal";
-    if ([301, 302, 307, 308].includes(status)) {
-      ok = ok && locationPath === "/sigil/member/membership";
-    }
+    ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
+    if ([301, 302, 307, 308].includes(status)) ok = ok && locationPath === "/sigil/member/membership";
   }
 
   if (check.kind === "membership-alias-signed") {
-    ok = ok
-      && (status === 200 || [301, 302, 307, 308].includes(status))
-      && locationPath !== "/sigil/pay/renewal";
+    ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
     if ([301, 302, 307, 308].includes(status)) {
       ok = ok
         && locationPath === "/sigil/pay"
-        && Boolean(locationUrl?.searchParams.get("t"))
+        && locationUrl?.searchParams.get("t") === "route-lock-placeholder"
         && [...locationUrl.searchParams.keys()].every((key) => key === "t");
     }
   }
 
-  if (check.kind === "manual-renewal") {
-    ok = ok && status === 200
-      && (source.includes("single-renewal-renderer") || page.includes("renewal"));
+  if (check.kind === "renewal-redirect") {
+    ok = ok && [301, 302, 307, 308].includes(status)
+      && locationPath === "/sigil/member/membership"
+      && locationUrl?.searchParams.get("intent") === "renew";
+  }
+
+  if (check.kind === "renewal-redirect-signed") {
+    ok = ok && [301, 302, 307, 308].includes(status)
+      && locationPath === "/sigil/pay"
+      && locationUrl?.searchParams.get("t") === "route-lock-placeholder"
+      && [...locationUrl.searchParams.keys()].every((key) => key === "t");
   }
 
   if (check.kind === "renew-alias") {
     ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
     if ([301, 302, 307, 308].includes(status)) {
-      ok = ok && locationPath === "/sigil/pay/renewal";
+      ok = ok && locationPath === "/sigil/member/membership" && locationUrl?.searchParams.get("intent") === "renew";
+    }
+  }
+
+  if (check.kind === "renew-alias-signed") {
+    ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
+    if ([301, 302, 307, 308].includes(status)) {
+      ok = ok
+        && locationPath === "/sigil/pay"
+        && locationUrl?.searchParams.get("t") === "route-lock-placeholder"
+        && [...locationUrl.searchParams.keys()].every((key) => key === "t");
     }
   }
 
   if (check.kind === "payment-alias") {
     ok = ok && (status === 200 || [301, 302, 307, 308].includes(status));
-    if ([301, 302, 307, 308].includes(status)) {
-      ok = ok && locationPath === "/member/payments";
-    }
+    if ([301, 302, 307, 308].includes(status)) ok = ok && locationPath === "/member/payments";
+  }
+
+  if (check.kind === "member-payments") {
+    ok = ok
+      && status === 200
+      && ![301, 302, 307, 308].includes(status)
+      && !location.includes("/pay/membership")
+      && !location.includes("/sigil/pay/renewal");
   }
 
   if (check.kind === "unknown") {

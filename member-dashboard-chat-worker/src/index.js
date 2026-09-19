@@ -29,7 +29,8 @@ const MEMBER_SHOP_API_PREFIX = "/member/api/shop/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
-const MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
+const MEMBER_SIGNUP_URL = "https://mmdbkk.com/pay/membership?source=line";
+const PRIVATE_MEMBER_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
 const MEMBER_RENEWAL_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
 const LINE_RICH_MENU_SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/v1/internal/line/rich-menu/public-world";
@@ -340,7 +341,9 @@ export function inferLineIntent(text = "", event = {}) {
   if (isPerContinuityRequest(text) && /(สลิป|โอน|จ่าย|ชำระ|payment|paid|slip)/i.test(normalized)) return "payment_slip";
   if (isPerContinuityRequest(text) && /(แต้ม|คะแนน|point|points)/i.test(normalized)) return "points";
   if (isPerContinuityRequest(text)) return "per_continuity";
-  if (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_signup";
+  var membershipAcquisitionHasBenefitQuestion = /(?:แต้ม|คะแนน|points?|care\s*back|แคร์|คูปอง|coupon|wish|อวยพร|สิทธิ์)/i.test(normalized);
+  if (!membershipAcquisitionHasBenefitQuestion && /(?:สมัคร|join).{0,16}(?:private\s*membership|private|standard|premium|สแตนดาร์ด|พรีเมียม)/i.test(normalized)) return "private_membership_signup";
+  if (!membershipAcquisitionHasBenefitQuestion && (/^(?:อยาก|ขอ)?\s*สมัครสมาชิก(?:ครับ|ค่ะ|นะ)?$/i.test(normalized) || /(?:สมัคร|join).{0,16}(?:public\s*membership|public|mmd\s*member|elite|red\s*card|เรด\s*การ์ด)/i.test(normalized))) return "membership_signup";
   if (/^(?:ขอ)?\s*ต่ออายุ(?:สมาชิก)?(?:ครับ|ค่ะ|นะ)?$/i.test(normalized)) return "membership_renewal";
   if (isKenjiLineCandidate(text)) return "talk_to_per_ai";
   const isCareBack = /(care\s*back|แคร์\s*แบ็ก|แคร์แบ็ก|6\s*years?|6th\s*anniversary|โปร(?:โมชัน|โมชั่น)?\s*6\s*ปี|phase\s*[12])/i.test(normalized);
@@ -815,7 +818,11 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "membership_signup") {
-    return `สมัครสมาชิกได้ที่นี่ครับ → ${MEMBER_SIGNUP_URL}`;
+    return `เริ่มจาก Public Membership — Member / Elite / Red Card ได้ที่นี่ครับ → ${MEMBER_SIGNUP_URL}`;
+  }
+
+  if (intent === "private_membership_signup") {
+    return `ถ้าต้องการ Standard / Premium หรือ Private Membership เริ่มได้ที่นี่ครับ → ${PRIVATE_MEMBER_SIGNUP_URL}`;
   }
 
   if (intent === "membership_renewal") {
