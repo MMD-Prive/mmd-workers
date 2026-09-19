@@ -394,7 +394,6 @@ function sanitizeReservation(value) {
 }
 
 function lowFlag(qty) {
-  if (qty <= 0) return "Out";
   if (qty <= 5) return "Low";
   return "OK";
 }
