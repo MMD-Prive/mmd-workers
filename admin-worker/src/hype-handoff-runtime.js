@@ -1998,6 +1998,9 @@ function buildOperatorSummary({ target, displayName, customerMessage, projection
 
 function safeRecoveryCorrelation(value = {}) {
   if (!value || typeof value !== "object" || Array.isArray(value) || value.domain !== "mmd_shop") return null;
+  const options = Array.isArray(value.options)
+    ? value.options.map(safeRecoveryOrderOption).filter(Boolean).slice(0, 5)
+    : [];
   return {
     domain: "mmd_shop",
     state: token(value.state) || "unknown",
@@ -2013,6 +2016,11 @@ function safeRecoveryCorrelation(value = {}) {
     total_thb: nullableNonNegative(value.total_thb),
     candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
     method: token(value.method) || "none",
+    options,
+    selection_locked: value.selection_locked === true,
+    selected_by: token(value.selected_by) || null,
+    selected_at: clean(value.selected_at, 80) || null,
+    source_authority: clean(value.source_authority, 160) || null,
     live_refresh_status: token(value.live_refresh_status) || null,
     refreshed_at: clean(value.refreshed_at, 80) || null,
   };
