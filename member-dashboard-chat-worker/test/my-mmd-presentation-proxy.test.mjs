@@ -120,9 +120,12 @@ test("status LIFF shell returns to canonical My MMD only after the same-site pro
   const html = await response.text();
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), "my-mmd-status-v1");
+  assert.equal(response.headers.get("x-mmd-liff-return-bridge"), "my-mmd-status-telegram-v2");
   assert.match(html, /<script nonce="abc123">[\s\S]*\/member\/api\/liff\/profile/);
   assert.match(html, /payload && payload\.ok === true/);
+  assert.match(html, /\/member\/api\/liff\/telegram-bind/);
+  assert.match(html, /Connect Telegram/);
+  assert.match(html, /เข้า MY MMD/);
   assert.match(html, /window\.location\.replace\(target\)/);
   assert.match(html, /const target = "\/member\/my-mmd"/);
 });
