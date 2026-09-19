@@ -42,7 +42,7 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
   assert.equal(hasLineRedirectContext(request), false);
   assert.equal(
     modelMiniAppHandoffUrl(request),
-    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+    "https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(shouldHandoffToMiniApp(request), true);
 
@@ -51,7 +51,7 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
   assert.equal(response.status, 302);
   assert.equal(
     response.headers.get("location"),
-    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+    "https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
 });
@@ -70,6 +70,7 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
+  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
   assert.doesNotMatch(html, /tanstack|react/i);
 
   const worker = (await import("./src/index.js")).default;
