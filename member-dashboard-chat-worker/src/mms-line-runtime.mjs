@@ -1,4 +1,5 @@
 import { CONCIERGE_CAPABILITY_PACK_VERSION, conciergeCapabilityPrompt, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import { RECOVERY_OUTCOME_TAXONOMY_VERSION } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 const MMS_WEBHOOK_PATHS = new Set(["/webhooks/line/mms", "/webhooks/line/mms/"]);
 const MMS_RICH_MENU_PUBLISH_PATH = "/v1/internal/line/mms/rich-menu/publish";
@@ -424,6 +425,7 @@ async function handleWebhook(request, env, ctx) {
       rich_menu_mode: "24/7",
       rich_menu_publisher: MMS_RICH_MENU_PUBLISHER_VERSION,
       capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+      recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
     });
   }
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
@@ -469,4 +471,5 @@ export const MMS_LINE_RUNTIME_INTERNALS = Object.freeze({
   sharedCapabilityReply,
   verifyLineSignature,
   capabilityPackVersion: CONCIERGE_CAPABILITY_PACK_VERSION,
+  recoveryOutcomeTaxonomyVersion: RECOVERY_OUTCOME_TAXONOMY_VERSION,
 });
