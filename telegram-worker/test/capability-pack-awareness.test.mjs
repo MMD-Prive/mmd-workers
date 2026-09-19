@@ -439,6 +439,8 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
               order_id: "MMD-ORDER-001",
               payment_status: "paid",
               fulfillment_state: "shipped",
+              live_refresh_status: "fresh",
+              refreshed_at: "2026-09-19T12:01:00.000Z",
             },
           });
         },

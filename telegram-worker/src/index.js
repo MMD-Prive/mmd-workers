@@ -1730,7 +1730,14 @@ function renderHypeHandoffStatus(result = {}) {
   lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || state || "unknown")}`);
   if (result.recovery_correlation?.correlated === true) {
     lines.push(`<b>Order:</b> <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`);
-    lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
+    if (clean(result.recovery_correlation.live_refresh_status) === "fresh") {
+      lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
+      if (clean(result.recovery_correlation.refreshed_at)) {
+        lines.push(`<b>Shop refreshed:</b> ${escapeHtml(formatBangkokDateTime(result.recovery_correlation.refreshed_at))}`);
+      }
+    } else {
+      lines.push("<b>Shop state:</b> ตอนนี้ refresh จาก canonical Shop authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
+    }
   }
   if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
   lines.push("");
@@ -2097,6 +2104,7 @@ function renderHypeShopOrdersInline(result = {}) {
 function extractHypeShopOrderId(value) {
   const text = clean(value, 500);
   const patterns = [
+    /^\/(?:orders?|support|recovery)(?:@\w+)?\s+([A-Za-z0-9][A-Za-z0-9_-]{3,79})\b/i,
     /(?:order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ)\s*(?:id|ref|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,79})/i,
     /\b(MMD[-_][A-Za-z0-9_-]{3,76})\b/i,
   ];
@@ -2597,11 +2605,11 @@ function hypeHelpText() {
     "<b>/points</b> — ดูยอด Points ที่ canonical source ยืนยันแล้ว",
     "<b>/coupons</b> — ดูสถานะ Coupon Wallet แบบ bounded read",
     "<b>/careback</b> — ดู CARE BACK Phase 2",
-    "<b>/orders</b> — เปิด MMD Shop Orders",
+    "<b>/orders</b> — ดู Order / Payment / Fulfillment ที่ยืนยันได้จาก MMD Shop",
     "<b>/hall</b> — เลือกมุมมอง Model discovery โดยไม่เดาเพศ/ความสนใจ",
     "<b>/mms-options</b> — ส่งต่อ Therapist discovery ให้ HENNA / MMS",
-    "<b>/support</b> — เปิด Service Recovery พร้อม context",
-    "<b>/case</b> — ดูกติกา Closed-loop handoff / ติดตามเคส",
+    "<b>/support</b> — เปิด Service Recovery พร้อม context และ auto-link Shop Order เมื่อ match ได้แบบปลอดภัย",
+    "<b>/case</b> — ติดตาม closed-loop case และ refresh Shop truth เมื่อมี Order ที่ผูกไว้",
     "<b>/kenji</b> — ส่งต่อให้ Kenji พร้อม context เดิม",
     "<b>/human</b> — ส่งต่อให้ Per / ทีม พร้อม context เดิม",
     "<b>/help</b> — ดูเมนูนี้",

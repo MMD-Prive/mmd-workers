@@ -1,0 +1,9 @@
+name = "hype-shop-production-smoke"
+main = "src/index.js"
+compatibility_date = "2026-09-19"
+workers_dev = true
+preview_urls = false
+
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"

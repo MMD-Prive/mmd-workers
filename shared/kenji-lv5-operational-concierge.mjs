@@ -178,18 +178,31 @@ function normalizeHype(input = {}) {
 }
 
 function normalizeIntent(input = {}) {
+  const type = token(input.type || input.intent || "general");
+  const trigger = token(input.trigger);
+  const time = text(input.time || input.time_label, 80);
+  const startAt = text(input.start_at, 80);
+  const endAt = text(input.end_at || input.end_time, 80);
+  const suppliedDuration = number(input.duration_hours, 0);
+  const bookingLike = ["booking", "model_availability", "availability", "create_session", "book", "reserve"].includes(type) || trigger === "deposit";
+  const durationHours = bookingLike && (time || startAt) && !endAt
+    ? Math.max(1.5, suppliedDuration || 0)
+    : suppliedDuration;
   return {
-    type: token(input.type || input.intent || "general"),
-    trigger: token(input.trigger),
+    type,
+    trigger,
     model_id: text(input.model_id, 160),
     model_name: text(input.model_name, 120),
     customer_name: text(input.customer_name, 120),
     service: text(input.service || input.service_lane, 120),
     date: text(input.date || input.date_label, 80),
-    time: text(input.time || input.time_label, 80),
-    start_at: text(input.start_at, 80),
-    end_at: text(input.end_at || input.end_time, 80),
-    duration_hours: number(input.duration_hours, 0),
+    time,
+    start_at: startAt,
+    end_at: endAt,
+    duration_hours: durationHours,
+    duration_source: bookingLike && (time || startAt) && !endAt && (!suppliedDuration || suppliedDuration < 1.5)
+      ? (suppliedDuration ? "mmd_standard_minimum_90m_floor" : "mmd_standard_minimum_90m_default")
+      : text(input.duration_source, 80),
     location: text(input.location || input.location_area || input.zone, 160),
     amount_thb: number(input.amount_thb, 0),
     deposit_amount_thb: number(input.deposit_amount_thb, 0),
@@ -203,7 +216,6 @@ function missingBookingInputs(intent) {
   if (!intent.start_at && !intent.date) missing.push("date");
   if (!intent.start_at && !intent.time) missing.push("time");
   if (!intent.location) missing.push("location");
-  if (intent.trigger === "deposit" && !intent.end_at && !intent.duration_hours) missing.push("duration_or_end_time");
   if (intent.trigger === "deposit" && !intent.amount_thb) missing.push("rate");
   return missing;
 }

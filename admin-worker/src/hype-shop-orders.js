@@ -1,8 +1,10 @@
 import { resolveLiveCanonicalClient } from "./kenji-lv5-live-context.js";
 
 export const HYPE_SHOP_ORDERS_PATH = "/__internal/hype/shop-orders";
+export const HYPE_SHOP_ORDERS_SMOKE_PATH = "/__internal/hype/shop-orders/smoke";
 const SERVICE_HOST = "admin-worker.internal";
 const MEMBER_PAGES_PATH = "/__internal/hype/shop-orders";
+const SMOKE_CALLER = "hype-shop-production-smoke";
 
 export async function handleHypeShopOrdersRpc(request, env = {}) {
   const gate = validateRequest(request);
@@ -18,6 +20,89 @@ export async function handleHypeShopOrdersRpc(request, env = {}) {
 
   const result = await readBoundedShopOrdersForTelegram(env, telegramUserId, clean(body.order_id, 180));
   return json(result.body, result.status);
+}
+
+
+export async function handleHypeShopOrdersSmokeRpc(request, env = {}) {
+  const gate = validateSmokeRequest(request);
+  if (gate) return gate;
+
+  const body = await request.json().catch(() => null);
+  if (!plain(body) || Object.keys(body).some((key) => key !== "line_user_id")) {
+    return json({ ok: false, error: "invalid_request" }, 400);
+  }
+
+  const syntheticLineUserId = lineId(body.line_user_id);
+  if (!syntheticLineUserId) return json({ ok: false, error: "invalid_request" }, 400);
+
+  const binding = env.MEMBER_PAGES_SHOP_ORDERS;
+  if (!binding?.fetch) {
+    return json({
+      ok: false,
+      state: "unavailable",
+      error: "shop_orders_binding_missing",
+    }, 503);
+  }
+
+  let response;
+  let payload;
+  try {
+    response = await binding.fetch(new Request(`https://member-pages-worker.internal${MEMBER_PAGES_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "admin-worker",
+      },
+      body: JSON.stringify({ line_user_id: syntheticLineUserId }),
+    }));
+    payload = await response.json().catch(() => null);
+  } catch {
+    return json({
+      ok: false,
+      state: "unavailable",
+      error: "member_pages_smoke_unavailable",
+    }, 503);
+  }
+
+  if (!response?.ok || payload?.ok !== true) {
+    return json({
+      ok: false,
+      state: "upstream_failed",
+      upstream_status: Number(response?.status || 0),
+      upstream_state: token(payload?.state) || null,
+      upstream_error: token(payload?.error) || null,
+    }, 503);
+  }
+
+  const orders = Array.isArray(payload.orders) ? payload.orders : [];
+  const correlation = safeCorrelation(payload.correlation);
+  const sourceGuardrails = plain(payload.guardrails) ? payload.guardrails : {};
+  const checks = {
+    authority_contract: clean(payload.authority, 160) === "mmd.hype_shop_orders_projection.v1",
+    zero_owned_orders: orders.length === 0,
+    zero_candidates: correlation.candidate_count === 0 && !correlation.candidate_order_id,
+    read_only: sourceGuardrails.read_only === true,
+    ownership_filtered_server_side: sourceGuardrails.ownership_filtered_server_side === true,
+    payment_mutation_blocked: sourceGuardrails.payment_mutation_allowed === false,
+    fulfillment_mutation_blocked: sourceGuardrails.fulfillment_mutation_allowed === false,
+    refund_mutation_blocked: sourceGuardrails.refund_mutation_allowed === false,
+    address_not_exposed: sourceGuardrails.address_exposed === false,
+    phone_not_exposed: sourceGuardrails.phone_exposed === false,
+  };
+  const ok = Object.values(checks).every(Boolean);
+
+  return json({
+    ok,
+    state: ok ? "pass" : "synthetic_collision_or_projection_violation",
+    authority: clean(payload.authority, 160) || null,
+    checks,
+    guardrails: {
+      synthetic_read_only: true,
+      customer_data_returned: false,
+      business_truth_mutated: false,
+    },
+  }, ok ? 200 : 409);
 }
 
 export async function readBoundedShopOrdersForTelegram(env = {}, telegramUserId, orderId = "") {
@@ -142,6 +227,22 @@ function validateRequest(request) {
   if (url.hostname !== SERVICE_HOST) return json({ ok: false, error: "internal_only" }, 403);
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   if (clean(request.headers.get("x-mmd-service-binding"), 80) !== "telegram-worker") {
+    return json({ ok: false, error: "internal_caller_invalid" }, 403);
+  }
+  return null;
+}
+
+
+function validateSmokeRequest(request) {
+  let url;
+  try { url = new URL(request.url); } catch { return json({ ok: false, error: "invalid_request" }, 400); }
+  if (url.pathname !== HYPE_SHOP_ORDERS_SMOKE_PATH) return json({ ok: false, error: "not_found" }, 404);
+  if (url.hostname !== SERVICE_HOST) return json({ ok: false, error: "internal_only" }, 403);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  if (clean(request.headers.get("x-mmd-internal-call"), 20) !== "true") {
+    return json({ ok: false, error: "internal_call_required" }, 403);
+  }
+  if (clean(request.headers.get("x-mmd-service-binding"), 80) !== SMOKE_CALLER) {
     return json({ ok: false, error: "internal_caller_invalid" }, 403);
   }
   return null;

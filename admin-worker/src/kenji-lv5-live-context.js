@@ -15,6 +15,7 @@ const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const DEFAULT_ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const DEFAULT_CREDITS_TABLE = "tblKvhl2zZm9yYBmT";
 const BANGKOK_TZ = "Asia/Bangkok";
+const STANDARD_BOOKING_MIN_DURATION_HOURS = 1.5;
 
 const CREDIT = Object.freeze({
   originalAmount: "fldTEoh5lolc9xn9y",
@@ -351,20 +352,47 @@ function bangkokDate(input = {}) {
 }
 
 function endAtFromIntent(input = {}) {
-  const direct = clean(input.end_at, 80);
-  if (direct) return direct;
   const date = clean(input.date || input.date_label, 10);
   const start = clean(input.time || input.time_label, 5);
+  const startAt = clean(input.start_at, 80);
+  const startMs = Number.isFinite(Date.parse(startAt))
+    ? Date.parse(startAt)
+    : (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(start)
+      ? Date.parse(`${date}T${start}:00+07:00`)
+      : NaN);
+  const suppliedDuration = number(input.duration_hours, 0);
+  const minimumDurationHours = Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, suppliedDuration || 0);
+  const minimumEndMs = Number.isFinite(startMs)
+    ? startMs + Math.round(minimumDurationHours * 60 * 60 * 1000)
+    : NaN;
+
+  const direct = clean(input.end_at, 80);
+  if (direct) {
+    const directMs = Date.parse(direct);
+    if (Number.isFinite(startMs) && Number.isFinite(directMs) && directMs - startMs < STANDARD_BOOKING_MIN_DURATION_HOURS * 60 * 60 * 1000) {
+      return new Date(minimumEndMs).toISOString();
+    }
+    return direct;
+  }
+
   const end = clean(input.end_time, 5);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(end)) return "";
-  const startMinutes = /^\d{2}:\d{2}$/.test(start) ? Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) : -1;
-  const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
-  const base = new Date(`${date}T12:00:00+07:00`);
-  if (startMinutes >= 0 && endMinutes <= startMinutes) base.setUTCDate(base.getUTCDate() + 1);
-  const endDate = new Intl.DateTimeFormat("en-CA", {
-    timeZone: BANGKOK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(base);
-  return `${endDate}T${end}:00+07:00`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && /^\d{2}:\d{2}$/.test(end)) {
+    const startMinutes = /^\d{2}:\d{2}$/.test(start) ? Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5)) : -1;
+    const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
+    let spanMinutes = startMinutes >= 0 ? endMinutes - startMinutes : 0;
+    if (startMinutes >= 0 && spanMinutes <= 0) spanMinutes += 24 * 60;
+    if (startMinutes >= 0 && spanMinutes < STANDARD_BOOKING_MIN_DURATION_HOURS * 60 && Number.isFinite(minimumEndMs)) {
+      return new Date(minimumEndMs).toISOString();
+    }
+    const base = new Date(`${date}T12:00:00+07:00`);
+    if (startMinutes >= 0 && endMinutes <= startMinutes) base.setUTCDate(base.getUTCDate() + 1);
+    const endDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: BANGKOK_TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(base);
+    return `${endDate}T${end}:00+07:00`;
+  }
+
+  return Number.isFinite(minimumEndMs) ? new Date(minimumEndMs).toISOString() : "";
 }
 
 function normalizeIntent(input = {}) {
@@ -380,7 +408,14 @@ function normalizeIntent(input = {}) {
     start_at: clean(input.start_at, 80),
     end_at: endAtFromIntent(input),
     end_time: clean(input.end_time, 40),
-    duration_hours: number(input.duration_hours, 0),
+    duration_hours: (clean(input.time || input.time_label, 40) || clean(input.start_at, 80))
+      ? Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, number(input.duration_hours, 0) || 0)
+      : number(input.duration_hours, 0),
+    duration_source: (clean(input.time || input.time_label, 40) || clean(input.start_at, 80))
+      && !clean(input.end_time || input.end_at, 80)
+      && number(input.duration_hours, 0) < STANDARD_BOOKING_MIN_DURATION_HOURS
+      ? (number(input.duration_hours, 0) > 0 ? "mmd_standard_minimum_90m_floor" : "mmd_standard_minimum_90m_default")
+      : clean(input.duration_source, 80),
     location: clean(input.location || input.location_area || input.zone, 160),
     amount_thb: number(input.amount_thb, 0),
     deposit_amount_thb: number(input.deposit_amount_thb, 0),

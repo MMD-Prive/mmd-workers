@@ -103,9 +103,17 @@ export async function handleHypeShopOrders(request, env = {}) {
       }, 409);
     }
 
+    const baseProjection = ownedOrders.map((record) => projectOrder(record, []));
+    const correlation = correlationSummary(baseProjection, requestedOrderId);
+    const candidateId = clean(correlation.candidate_order_id, 180);
+    const candidateRecord = candidateId
+      ? ownedOrders.find((record) => clean(record?.fields?.[ORDER_FIELDS.orderId], 180) === candidateId)
+      : null;
     const selected = requestedOrderId
       ? exactMatches
-      : ownedOrders.slice(0, 5);
+      : candidateRecord
+        ? [candidateRecord, ...ownedOrders.filter((record) => record !== candidateRecord).slice(0, 4)]
+        : ownedOrders.slice(0, 5);
 
     const selectedIds = new Set(selected.map((record) => clean(record?.id, 80)).filter(Boolean));
     const items = selectedIds.size
@@ -129,14 +137,13 @@ export async function handleHypeShopOrders(request, env = {}) {
     }
 
     const projected = selected.map((record) => projectOrder(record, itemsByOrder.get(clean(record?.id, 80)) || []));
-    const allOwnedProjected = ownedOrders.map((record) => projectOrder(record, []));
 
     return json({
       ok: true,
       authority: SCHEMA,
       state: "ready",
       orders: projected,
-      correlation: correlationSummary(allOwnedProjected, requestedOrderId),
+      correlation,
       guardrails: guardrails(),
     });
   } catch (error) {

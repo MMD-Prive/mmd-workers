@@ -116,7 +116,62 @@ test("HYPE shop orders returns only owned bounded Order Payment Fulfillment data
     assert.equal(body.guardrails.refund_mutation_allowed, false);
 
     const serialized = JSON.stringify(body);
-    assert.doesNotMatch(serialized, /MMD-ORDER-OTHER|member-own|line_user_id|PRIVATE ADMIN NOTE|address|phone/i);
+    assert.doesNotMatch(serialized, /MMD-ORDER-OTHER|member-own|line_user_id|PRIVATE ADMIN NOTE|address_line1|address_line2|recipient_name|delivery_note|fulfillment_note/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE Shop recovery stays ambiguous when multiple recent owned Orders exist", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (url) => {
+    const path = new URL(String(url)).pathname;
+    if (path.endsWith("/tbllkfCySeL9fSfZw")) {
+      return Response.json({
+        records: [{ id: "recCustomerOwn", fields: { fldhL0PHPwrkT8X3p: LINE_ID } }],
+      });
+    }
+    if (path.endsWith("/tblr8lbi2wMuRM1N4")) {
+      return Response.json({
+        records: [
+          {
+            id: "recOrderA",
+            fields: {
+              flde515MCoEq08YzU: "MMD-ORDER-A",
+              fldAY7M0IjvQiWdhH: ["recCustomerOwn"],
+              fld7NNIA2kYNQNekl: "2026-09-18T10:00:00.000Z",
+              fldnCO3H5CpJoYmWD: "confirmed",
+              fldUpDeLdO6D9OUcd: "paid",
+            },
+          },
+          {
+            id: "recOrderB",
+            fields: {
+              flde515MCoEq08YzU: "MMD-ORDER-B",
+              fldAY7M0IjvQiWdhH: ["recCustomerOwn"],
+              fld7NNIA2kYNQNekl: "2026-09-17T10:00:00.000Z",
+              fldnCO3H5CpJoYmWD: "confirmed",
+              fldUpDeLdO6D9OUcd: "paid",
+            },
+          },
+        ],
+      });
+    }
+    if (path.endsWith("/tbl37Iprxz4OLL65P")) return Response.json({ records: [] });
+    throw new Error(`unexpected airtable path ${path}`);
+  };
+
+  try {
+    const response = await handleHypeShopOrders(request({ line_user_id: LINE_ID }), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.correlation.auto_correlation_allowed, false);
+    assert.equal(body.correlation.candidate_count, 2);
+    assert.equal(body.correlation.candidate_order_id, null);
+    assert.equal(body.correlation.method, "ambiguous_recent_owned_orders");
+    assert.deepEqual(body.orders.map((order) => order.order_id), ["MMD-ORDER-A", "MMD-ORDER-B"]);
   } finally {
     globalThis.fetch = originalFetch;
   }

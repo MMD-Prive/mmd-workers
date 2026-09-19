@@ -150,9 +150,6 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   const isLiffProfile = LIFF_PROFILE_PATHS.has(path);
   if (!isDashboard && !isMemberApp && !isLiffProfile) return response;
 
-  // Fresh canonical entitlement decisions always outrank recovery evidence.
-  if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") return response;
-
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("application/json")) return response;
   const payload = await response.clone().json().catch(() => null);
@@ -160,6 +157,26 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
 
   const session = await readSessionFromRequestOrResponse(request, response, env);
   if (!session?.lineUserId) return response;
+
+  // Fresh canonical entitlement decisions always outrank recovery evidence, but
+  // successful dashboard resolution is still production-acceptance evidence.
+  if (response.headers.get("x-mmd-member-display-authority") === "my_mmd_entitlement_resolver_v1") {
+    const tier = canonicalAcceptedTier(path, payload);
+    if (!tier) return response;
+    const acceptance = await recordMyMmdAcceptanceEvidence(env, session.lineUserId, {
+      tier,
+      source: "my_mmd_entitlement_resolver_v1",
+      historyState: "canonical_resolved",
+    }, path);
+    if (!acceptance?.evidenceId) return response;
+    const headers = new Headers(response.headers);
+    headers.set("x-mmd-acceptance-evidence", acceptance.evidenceId);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
 
   const evidence = await resolveFastTrustEvidenceForLine(env, session.lineUserId);
   const unproven = isUnprovenMemberPayload(path, payload);
@@ -232,7 +249,7 @@ export async function recordMyMmdAcceptanceEvidence(env = {}, lineUserId = "", f
       identity_fingerprint: fingerprint,
       result: "protected_member_resolved",
       tier,
-      tier_source: FAST_TRUST_SOURCE,
+      tier_source: asString(fastTrust.source || fastTrust.tierSource, 80) || FAST_TRUST_SOURCE,
       route: asString(path, 160),
       history_state: asString(fastTrust.historyState, 80) || "recovery_pending",
       recorded_at: new Date().toISOString(),
@@ -256,6 +273,27 @@ export async function recordMyMmdAcceptanceEvidence(env = {}, lineUserId = "", f
     });
     return { ok: false, reason: "evidence_write_failed" };
   }
+}
+
+function canonicalAcceptedTier(path, payload) {
+  if (DASHBOARD_PATHS.has(path)) {
+    const member = asObject(asObject(payload.data).member);
+    const tier = asObject(member.tier);
+    const status = asObject(member.membership_status);
+    const tierValue = asString(tier.value, 64);
+    const membershipStatus = asString(status.value, 64).toLowerCase();
+    if (tier.status === "verified" && status.status === "verified" && tierValue && membershipStatus === "active") return tierValue;
+    return "";
+  }
+  if (path === `${APP_PREFIX}dashboard`) {
+    const membership = asObject(payload.membership);
+    const tierValue = asString(membership.level, 64);
+    const status = asString(membership.status, 64).toLowerCase();
+    const access = asString(membership.access, 64).toLowerCase();
+    if (membership.levelVerified === true && tierValue && status === "active" && access === "granted") return tierValue;
+    return "";
+  }
+  return "";
 }
 
 function isUnprovenMemberPayload(path, payload) {

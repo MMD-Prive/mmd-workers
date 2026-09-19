@@ -40,8 +40,10 @@ async function callModelAccess(env = {}, userId = "", query = "") {
   }
 }
 
-export async function resolveKenjiLv5LineModelGate({ env = {}, event = {}, currentIntent = "", now = new Date() } = {}) {
-  const parsed = parseKenjiLv5LineIntent(event, currentIntent, now);
+export async function resolveKenjiLv5LineModelGate({ env = {}, event = {}, currentIntent = "", parsedIntent = null, now = new Date() } = {}) {
+  const parsed = parsedIntent && typeof parsedIntent === "object"
+    ? parsedIntent
+    : parseKenjiLv5LineIntent(event, currentIntent, now);
   if (!parsed || parsed.type !== "booking" || !text(parsed.model_name, 120)) {
     return { required: false, status: "not_required", parsed };
   }
