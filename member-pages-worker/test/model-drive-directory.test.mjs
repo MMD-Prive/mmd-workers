@@ -5,6 +5,7 @@ import {
   MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID,
   MODEL_DRIVE_RESOLVE_PATH,
   MODEL_DRIVE_SEARCH_PATH,
+  collapseDescendantsOfUniqueExactModelMatch,
   driveSearchToken,
   isModelDriveDirectoryRequest,
   modelNameScore,
@@ -40,6 +41,36 @@ test("Drive discovery can suggest Book EI for Book El without auto-binding", () 
   assert.ok(modelNameScore("Book El", "Book EI") > 0.7);
   // Weak unrelated similarity must remain below the production suggestion cutoff (0.28).
   assert.ok(modelNameScore("Book El", "Completely Different") < 0.28);
+});
+
+test("exact EMs16 model root suppresses its nested Review EMs16 Gohan folder", () => {
+  const rows = [
+    {
+      drive_folder_id: "1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t",
+      folder_name: "EMs16",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16",
+      lane: "exclusive",
+      score: 1,
+    },
+    {
+      drive_folder_id: "1JNv8OWPmQValSlUf5VirOtQ_nRaWq4Vd",
+      folder_name: "Review EMs16 Gohan",
+      folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 / Review EMs16 Gohan",
+      lane: "exclusive",
+      score: 0.88,
+    },
+  ];
+
+  const collapsed = collapseDescendantsOfUniqueExactModelMatch("EMs16", rows);
+  assert.deepEqual(collapsed.map((item) => item.drive_folder_id), ["1aJGfs0fBI-bH1mwra3SG1uXz71JWtM3t"]);
+});
+
+test("Drive ambiguity remains fail-closed when there is no unique exact model-root match", () => {
+  const rows = [
+    { drive_folder_id: "folder-a-12345", folder_name: "EMs16 Alpha", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Alpha", score: 0.88 },
+    { drive_folder_id: "folder-b-12345", folder_name: "EMs16 Beta", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16 Beta", score: 0.88 },
+  ];
+  assert.equal(collapseDescendantsOfUniqueExactModelMatch("EMs16", rows).length, 2);
 });
 
 test("Exclusive inventory root is pinned to the reviewed MMD Exclusive Models folder", () => {
