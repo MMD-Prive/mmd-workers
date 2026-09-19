@@ -187,15 +187,222 @@ jobs:
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            anon_headers="$(mktemp)"
+            anon_body="$(mktemp)"
+            anon_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$anon_headers" -o "$anon_body" -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?lang=th&flow=verify&mmd_smoke=1")"
+            cat "$anon_headers"
+            test "$anon_code" = "302"
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
+            fi
+
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$api_body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$api_body"
+            test "$api_code" = "401"
+            grep -q '"error":"model_session_required"' "$api_body"
+          done
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "Model Dashboard presentation source: Lovable"
+          echo "Worker: model-dashboard-presentation-worker"
+          echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
+
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*line-miniapp-handoff-v1
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
+            fi
+
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$api_body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$api_body"
+            test "$api_code" = "401"
+            grep -q '"error":"model_session_required"' "$api_body"
+          done
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "Model Dashboard presentation source: Lovable"
+          echo "Worker: model-dashboard-presentation-worker"
+          echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
+
+            tr -d '\r' < "$anon_headers" | grep -i -q '^location:[[:space:]]*https://miniapp\.line\.me/2010864854-N34SgCqq?lang=th&flow=verify
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
+            fi
+
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$api_body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$api_body"
+            test "$api_code" = "401"
+            grep -q '"error":"model_session_required"' "$api_body"
+          done
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "Model Dashboard presentation source: Lovable"
+          echo "Worker: model-dashboard-presentation-worker"
+          echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
+
+
             headers="$(mktemp)"
             body="$(mktemp)"
             code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
               -D "$headers" -o "$body" -w "%{http_code}" \
+              -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
               "$origin/sigil/model/dashboard?liff_env=published&mmd_smoke=1")"
             cat "$headers"
             test "$code" = "200"
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*lovable-presentation-proxy$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
+            fi
+
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$api_body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$api_body"
+            test "$api_code" = "401"
+            grep -q '"error":"model_session_required"' "$api_body"
+          done
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "Model Dashboard presentation source: Lovable"
+          echo "Worker: model-dashboard-presentation-worker"
+          echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
+
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*lovable-presentation-proxy
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            if [ -n "$asset" ]; then
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              test "$asset_code" = "200"
+
+              root_asset="/${asset#/sigil/model/dashboard-assets/}"
+              root_headers="$(mktemp)"
+              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
+              cat "$root_headers"
+              test "$root_asset_code" = "200"
+              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
+                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
+                exit 1
+              fi
+            fi
+
+            api_body="$(mktemp)"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$api_body" -w "%{http_code}" \
+              "$origin/v1/model/profile")"
+            cat "$api_body"
+            test "$api_code" = "401"
+            grep -q '"error":"model_session_required"' "$api_body"
+          done
+
+      - name: Deployment receipt
+        shell: bash
+        run: |
+          echo "Model Dashboard presentation source: Lovable"
+          echo "Worker: model-dashboard-presentation-worker"
+          echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
+          echo "Commit: ${GITHUB_SHA}"
+
+      - name: Clean temporary config
+        if: always()
+        shell: bash
+        run: rm -f .wrangler-no-routes.toml
+
             grep -q 'lovable-model-dashboard' "$body"
             if grep -q 'mmd-model-home-v3' "$body"; then
               echo "Webflow fallback still owns ${origin}/sigil/model/dashboard" >&2
