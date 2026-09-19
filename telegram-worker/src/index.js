@@ -502,7 +502,7 @@ function hypeCanonicalRouteText(command) {
     return [
       "<b>HYPE · COUPONS</b>",
       "",
-      "คูปองที่พร้อมใช้ / ใช้แล้ว / หมดอายุ ให้ยึด Wallet ใน MY MMD เป็นตัวจริงครับ",
+      "คูปองที่พร้อมใช้ / ใช้แล้ว / หมดอายุ ให้ยึด Coupon Wallet ใน MY MMD เป็นตัวจริงครับ",
       "สำหรับ CARE BACK Phase 2 ต้องเชื่อมสิทธิ์และ Birthday Wish ตาม policy ก่อนคูปองจะพร้อมใช้",
       "",
       "กด <b>MY MMD · Coupons</b> เพื่อดูสถานะล่าสุดได้เลยครับ",
