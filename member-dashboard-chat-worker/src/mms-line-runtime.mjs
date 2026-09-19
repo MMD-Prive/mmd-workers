@@ -1,3 +1,5 @@
+import { CONCIERGE_CAPABILITY_PACK_VERSION, conciergeCapabilityPrompt, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+
 const MMS_WEBHOOK_PATHS = new Set(["/webhooks/line/mms", "/webhooks/line/mms/"]);
 const MMS_RICH_MENU_PUBLISH_PATH = "/v1/internal/line/mms/rich-menu/publish";
 const MMS_RICH_MENU_PUBLISHER_VERSION = "raw-or-url-v2";
@@ -13,6 +15,12 @@ const ROUTES = Object.freeze({
   booking: "https://mmdbkk.com/male-massage/member/mms-booking",
   therapists: "https://mmdbkk.com/male-massage/therapists/mms",
   howTo: "https://mmdbkk.com/male-massage/how-to-use",
+  shopOrders: "https://mmdbkk.com/my-mmd/orders",
+  careBack: "https://mmdbkk.com/promotion/6-years-care-back",
+  coupons: "https://mmdbkk.com/my-mmd/coupons",
+  points: "https://mmdbkk.com/my-mmd/points",
+  hall: "https://mmdbkk.com/hall",
+  hype: "https://t.me/mmdprivebot",
 });
 
 const SERVICES = Object.freeze([
@@ -51,6 +59,21 @@ Customer-safe routes:
 - Send pre-booking request: ${ROUTES.booking}
 - Customer MMS Therapist/service page: ${ROUTES.therapists}
 - How to use: ${ROUTES.howTo}
+- MMD Shop orders: ${ROUTES.shopOrders}
+- CARE BACK: ${ROUTES.careBack}
+- Coupon Wallet: ${ROUTES.coupons}
+- Points: ${ROUTES.points}
+- MMD Hall: ${ROUTES.hall}
+- HYPE cross-system concierge: ${ROUTES.hype}
+
+Cross-system capability awareness:
+${conciergeCapabilityPrompt("henna")}
+
+HENNA/MMS rules:
+- MMS Therapist options belong to HENNA/MMS and must be grounded in current MMS truth.
+- MMD Shop, CARE BACK, Points/Coupon, Hall/Model discovery and non-MMS account work bridge to HYPE or the exact MY MMD surface.
+- Service recovery can be received here for MMS, but do not claim a case is acknowledged/resolved unless canonical/human acknowledgement is supplied.
+- Closed-loop handoff awareness does not create acknowledgement state by itself.
 
 Return plain reply text only. No markdown tables and no JSON.`;
 
@@ -165,6 +188,11 @@ function postbackReply(data) {
 function deterministicReply(text) {
   const value = clean(text, 1200);
   if (!value) return "";
+
+  const sharedCapability = detectSharedConciergeCapability(value);
+  const sharedReply = sharedCapabilityReply(sharedCapability);
+  if (sharedReply) return sharedReply;
+
   const protectedReply = protectedTruthReply(value);
   if (protectedReply) return protectedReply;
   const lower = value.toLowerCase();
@@ -194,6 +222,31 @@ function deterministicReply(text) {
     if (lang === "zh") return "您好。今天想预约按摩、看 Therapist，还是先让我帮您选服务？";
     if (lang === "en") return "Hello. Would you like to book a massage, view Therapists, or choose a service first?";
     return "สวัสดีครับ วันนี้อยากจองนวด ดู Therapist หรืออยากให้ช่วยเลือกบริการให้ก่อนครับ";
+  }
+  return "";
+}
+
+function sharedCapabilityReply(capability) {
+  if (capability === "shop_orders") {
+    return `เรื่อง MMD Shop ให้เช็กจาก MY MMD ครับ เพราะ Order/Payment เป็นข้อมูลสมาชิก: ${ROUTES.shopOrders}\nถ้าต้องการคุยข้ามระบบต่อ ใช้ HYPE: ${ROUTES.hype}`;
+  }
+  if (capability === "care_back_coupon") {
+    return `CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ ผมจะไม่เปิดหรือสร้างสิทธิ์จากฝั่ง MMS\nCARE BACK: ${ROUTES.careBack}\nCoupon Wallet: ${ROUTES.coupons}\nเรื่องข้ามระบบใช้ HYPE: ${ROUTES.hype}`;
+  }
+  if (capability === "mms_therapist_options") {
+    return `เรื่องตัวเลือก Therapist ฝั่ง MMS ช่วยต่อได้ครับ ส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้\nตัวเลือกจริงต้องยึดข้อมูล MMS ปัจจุบัน และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว\nPre-booking: ${ROUTES.booking}`;
+  }
+  if (capability === "service_recovery") {
+    return "รับเรื่องปัญหาฝั่ง MMS ได้ครับ บอกเหตุการณ์ที่เกิดขึ้นกับ booking/pre-booking reference ถ้ามี ผมจะช่วยแยกเรื่องให้ แต่จะยังไม่สรุปว่าใครผิด คืนเงิน หรือเคสจบ จนกว่าจะมีการตรวจจริง";
+  }
+  if (capability === "closed_loop_handoff") {
+    return `ผมรับรู้เรื่องสถานะการส่งต่อครับ แต่จะไม่บอกว่าเจ้าหน้าที่รับเรื่องหรือเคสจบแล้วจากแชตอย่างเดียว ถ้าต้องการติดตามข้ามระบบ ใช้ HYPE ได้ที่ ${ROUTES.hype}`;
+  }
+  if (capability === "hall_model_discovery") {
+    return `ถ้าหมายถึง Model ฝั่ง MMD Privé ให้เลือกมุมมองผ่าน Hall ก่อนครับ ผมจะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้: ${ROUTES.hall}\nเรื่องข้ามระบบใช้ HYPE: ${ROUTES.hype}`;
+  }
+  if (capability === "points_coupon_balance") {
+    return `Points / Coupon เป็นข้อมูลสมาชิก MMD ครับ ผมจะไม่เดายอดจากแชต\nPoints: ${ROUTES.points}\nCoupons: ${ROUTES.coupons}\nถ้าต้องการคุยต่อข้ามระบบ ใช้ HYPE: ${ROUTES.hype}`;
   }
   return "";
 }
@@ -369,6 +422,7 @@ async function handleWebhook(request, env, ctx) {
       ai_enabled: enabled(env.MMS_LINE_AI_ENABLED),
       rich_menu_mode: "24/7",
       rich_menu_publisher: MMS_RICH_MENU_PUBLISHER_VERSION,
+      capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
     });
   }
   if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
@@ -411,5 +465,7 @@ export const MMS_LINE_RUNTIME_INTERNALS = Object.freeze({
   deterministicReply,
   postbackReply,
   protectedTruthReply,
+  sharedCapabilityReply,
   verifyLineSignature,
+  capabilityPackVersion: CONCIERGE_CAPABILITY_PACK_VERSION,
 });
