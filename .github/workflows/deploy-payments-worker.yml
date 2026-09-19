@@ -40,6 +40,7 @@ jobs:
           set -euo pipefail
           node --check payments-worker/canonical-confirm-link.js
           node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/shop-payment-v1.js
           node --check payments-worker/index.phase1.js
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js

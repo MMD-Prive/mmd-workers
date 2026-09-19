@@ -34,6 +34,7 @@
     full: 'จ่ายเต็ม',
     tips: 'Tip / ทิป',
     membership: 'ค่าสมาชิก / ต่ออายุสมาชิก',
+    shop: 'MMD Shop / ค่าสินค้า',
   };
   let items = [];
   let filter = 'all';
