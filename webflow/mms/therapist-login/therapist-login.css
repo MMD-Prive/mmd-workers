@@ -1,0 +1,197 @@
+#mms-therapist-login,
+#mms-therapist-login * {
+  box-sizing: border-box;
+  font-family: "LINE Seed Sans TH", "Line Seed Sans TH", "Noto Sans Thai", "Noto Sans", "Outfit", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.mta-login-page {
+  min-height: 100vh;
+  padding: 20px;
+  background: linear-gradient(145deg, #061108 0%, #0b2110 48%, #07140a 100%);
+  color: #fffdf8;
+}
+
+.mta-hero {
+  min-height: calc(100vh - 40px);
+  position: relative;
+  overflow: hidden;
+  border-radius: 30px;
+  background-image:
+    linear-gradient(90deg, rgba(3, 12, 6, .76) 0%, rgba(3, 12, 6, .56) 34%, rgba(3, 12, 6, .08) 62%, rgba(3, 12, 6, .02) 100%),
+    url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9a47224e8a2b5b9bfeabfd_MMS%20Login.webp");
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, .34);
+}
+
+.mta-nav {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 26px 30px;
+}
+
+.mta-home,
+.mta-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: rgba(255, 253, 248, .86);
+  text-decoration: none;
+}
+
+.mta-logo {
+  display: block;
+  width: 164px;
+  height: auto;
+}
+
+.mta-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 253, 248, .22);
+  border-radius: 999px;
+  background: rgba(4, 20, 9, .48);
+  backdrop-filter: blur(14px);
+  color: rgba(255, 253, 248, .84);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.mta-stage {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: calc(100vh - 40px);
+  padding: 104px 6vw 84px;
+}
+
+.mta-panel {
+  width: min(470px, 42vw);
+  transform: translateY(8px);
+}
+
+.mta-art-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.mta-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 24px;
+  filter: drop-shadow(0 28px 54px rgba(0, 0, 0, .34));
+}
+
+.mta-line-hit {
+  position: absolute;
+  z-index: 4;
+  left: 10.5%;
+  right: 10.5%;
+  top: 47.1%;
+  height: 9.2%;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.mta-line-hit[data-ready="true"] {
+  cursor: pointer;
+}
+
+.mta-line-hit:focus-visible {
+  outline: 3px solid #fffdf8;
+  outline-offset: 4px;
+}
+
+.mta-state {
+  margin: 14px 16px 0;
+  color: rgba(255, 253, 248, .70);
+  font-size: 12px;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.mta-foot {
+  position: absolute;
+  z-index: 3;
+  left: 30px;
+  right: 30px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255, 253, 248, .58);
+  font-size: 11px;
+  letter-spacing: .02em;
+}
+
+.mta-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media screen and (max-width: 991px) {
+  .mta-login-page { padding: 16px; }
+  .mta-hero { min-height: calc(100svh - 32px); border-radius: 26px; background-position: 65% center; }
+  .mta-nav { padding: 22px 24px; }
+  .mta-stage { min-height: calc(100svh - 32px); padding: 102px 5vw 80px; }
+  .mta-panel { width: min(460px, 55vw); }
+  .mta-foot { left: 24px; right: 24px; bottom: 20px; }
+}
+
+@media screen and (max-width: 767px) {
+  .mta-hero {
+    background-image:
+      linear-gradient(180deg, rgba(3, 12, 6, .12) 0%, rgba(3, 12, 6, .36) 32%, rgba(3, 12, 6, .88) 72%, rgba(3, 12, 6, .96) 100%),
+      url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9a47224e8a2b5b9bfeabfd_MMS%20Login.webp");
+    background-position: 66% top;
+  }
+  .mta-chip { display: none; }
+  .mta-logo { width: 148px; }
+  .mta-stage { align-items: flex-end; justify-content: center; padding: 108px 18px 76px; }
+  .mta-panel { width: min(500px, 94vw); }
+  .mta-art { border-radius: 20px; }
+  .mta-state { margin-top: 10px; font-size: 11px; }
+  .mta-foot { left: 20px; right: 20px; bottom: 14px; font-size: 10px; }
+}
+
+@media screen and (max-width: 479px) {
+  .mta-login-page { padding: 14px; }
+  .mta-hero { border-radius: 22px; background-position: 68% top; }
+  .mta-nav { padding: 18px; }
+  .mta-logo { width: 136px; }
+  .mta-stage { padding: 92px 10px 68px; }
+  .mta-panel { width: min(430px, 96vw); }
+  .mta-art { border-radius: 18px; }
+  .mta-state { margin-right: 10px; margin-left: 10px; }
+  .mta-foot { left: 16px; right: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mta-line-hit,
+  .mta-home,
+  .mta-back { transition: none !important; }
+}

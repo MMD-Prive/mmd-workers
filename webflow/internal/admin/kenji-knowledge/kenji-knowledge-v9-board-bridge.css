@@ -15,3 +15,365 @@
 @media(max-width:980px){.kk4__form-grid{grid-template-columns:1fr}}
 @media(max-width:980px){.kk4__status-strip,.kk4__quick-start{grid-template-columns:1fr 1fr}}
 @media(max-width:560px){.kk4__status-strip,.kk4__quick-start{grid-template-columns:1fr}}
+
+/* Kenji Board image brightness trial, scoped to board196 assets only. */
+#mmdKenjiKnowledgeV9 img[src*="Kenji%20Board"] {
+  filter: brightness(1.16) contrast(1.04) saturate(1.08);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-image img[src*="Kenji%20Board"] {
+  filter: brightness(1.22) contrast(1.03) saturate(1.08);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__image-panel img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__runtime-hero img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__side-image[src*="Kenji%20Board"] {
+  filter: brightness(1.14) contrast(1.04) saturate(1.06);
+}
+
+/* Kenji Board normal-light pass: reduce dark overlay and keep all board images naturally visible. */
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.74), rgba(0,0,0,.42) 44%, rgba(0,0,0,.08) 78%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.34)) !important;
+}
+
+#mmdKenjiKnowledgeV9 img[src*="Kenji%20Board"] {
+  filter: brightness(1.08) contrast(1.02) saturate(1.04) !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-image img[src*="Kenji%20Board"] {
+  filter: brightness(1.12) contrast(1.01) saturate(1.04) !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__image-panel img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__runtime-hero img[src*="Kenji%20Board"],
+#mmdKenjiKnowledgeV9 .kk4__side-image[src*="Kenji%20Board"] {
+  filter: brightness(1.10) contrast(1.02) saturate(1.04) !important;
+}
+
+/* Kenji Board operator cards polish: reduce backend/default feel. */
+#mmdKenjiKnowledgeV9 .kk4__stat-card,
+#mmdKenjiKnowledgeV9 .kk4__source-card {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(236, 194, 112, .10), transparent 38%),
+    linear-gradient(145deg, rgba(20, 14, 8, .88), rgba(7, 5, 4, .94)) !important;
+  border-color: rgba(236, 194, 112, .28) !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card h3,
+#mmdKenjiKnowledgeV9 .kk4__source-card h3 {
+  color: #edc674 !important;
+  letter-spacing: .16em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card strong,
+#mmdKenjiKnowledgeV9 .kk4__source-card strong {
+  color: #fff1dd !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__stat-card p,
+#mmdKenjiKnowledgeV9 .kk4__source-card p {
+  color: rgba(255, 239, 215, .74) !important;
+}
+
+/* Kenji Knowledge shell polish: remove default white edge and strengthen MMD shell identity. */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #080604 !important;
+  overflow-x: hidden !important;
+}
+
+#mmdKenjiKnowledgeV9 {
+  min-height: 100svh;
+  background: #080604;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 54px;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.40) 42%, rgba(0,0,0,.10) 72%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)) !important;
+}
+
+/* Kenji Knowledge shell polish: remove default white edge and strengthen MMD shell identity. */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #080604 !important;
+  overflow-x: hidden !important;
+}
+
+#mmdKenjiKnowledgeV9 {
+  min-height: 100svh;
+  background: #080604;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 54px;
+  font-size: 12px;
+  letter-spacing: .08em;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__hero-overlay {
+  background:
+    linear-gradient(90deg, rgba(0,0,0,.72), rgba(0,0,0,.40) 42%, rgba(0,0,0,.10) 72%, rgba(0,0,0,.02)),
+    linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.28)) !important;
+}
+
+/* Kenji Knowledge MMD mark: override loader fallback K mark without touching logic. */
+#mmdKenjiKnowledgeV9 .kk4__brand-mark {
+  width: 60px !important;
+  min-width: 60px !important;
+  font-size: 0 !important;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__brand-mark::after {
+  content: "MMD";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .08em;
+  color: #0b0703;
+}
+/* Final polish: make Quick Start cards feel like real action buttons. */
+#mmdKenjiKnowledgeV9 .kk4__quick-start {
+  align-items: stretch;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button {
+  position: relative;
+  min-height: 128px;
+  padding: 24px 24px 22px !important;
+  border-radius: 22px !important;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(237, 198, 116, .18), transparent 34%),
+    linear-gradient(145deg, rgba(28, 20, 10, .94), rgba(8, 6, 4, .98)) !important;
+  border: 1px solid rgba(237, 198, 116, .34) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, .32),
+    inset 0 1px 0 rgba(255, 245, 220, .06);
+  transform: translateY(0);
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background .18s ease;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(255, 229, 170, .16), transparent 32%),
+    linear-gradient(90deg, transparent, rgba(237, 198, 116, .10), transparent);
+  opacity: .55;
+  pointer-events: none;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button::after {
+  content: "→";
+  position: absolute;
+  right: 22px;
+  bottom: 20px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0b0703;
+  background: linear-gradient(135deg, #f4d58b, #c9963d);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .28);
+  font-size: 18px;
+  font-weight: 900;
+  transform: translateX(0);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button b {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding-right: 42px;
+  color: #fff3df !important;
+  font-size: clamp(18px, 1.35vw, 22px);
+  line-height: 1.2;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button span {
+  position: relative;
+  z-index: 1;
+  display: block;
+  max-width: 92%;
+  margin-top: 14px;
+  padding-right: 36px;
+  color: rgba(255, 239, 215, .72) !important;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button:hover {
+  transform: translateY(-4px);
+  border-color: rgba(245, 210, 132, .68) !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(237, 198, 116, .26), transparent 36%),
+    linear-gradient(145deg, rgba(42, 29, 12, .96), rgba(10, 7, 4, .98)) !important;
+  box-shadow:
+    0 24px 54px rgba(0, 0, 0, .42),
+    0 0 0 1px rgba(237, 198, 116, .14),
+    inset 0 1px 0 rgba(255, 245, 220, .10);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button:hover::after {
+  transform: translateX(4px);
+  box-shadow: 0 14px 28px rgba(0, 0, 0, .34);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button:active {
+  transform: translateY(-1px) scale(.99);
+}
+
+#mmdKenjiKnowledgeV9 .kk4__quick-start > button:focus-visible {
+  outline: 2px solid rgba(245, 210, 132, .88);
+  outline-offset: 4px;
+}
+
+@media (max-width: 720px) {
+  #mmdKenjiKnowledgeV9 .kk4__quick-start > button {
+    min-height: 116px;
+    padding: 22px 22px 20px !important;
+  }
+
+  #mmdKenjiKnowledgeV9 .kk4__quick-start > button::after {
+    right: 18px;
+    bottom: 18px;
+  }
+}
+
+/* Permanent override: force Quick Start native buttons into premium action cards. */
+#mmdKenjiKnowledgeV9 section.kk4__quick-start,
+#mmdKenjiKnowledgeV9 .kk4__view[data-panel="knowledge"] .kk4__quick-start {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(180px, 1fr)) !important;
+  gap: 14px !important;
+  align-items: stretch !important;
+  margin: 22px 0 26px !important;
+}
+
+#mmdKenjiKnowledgeV9 section.kk4__quick-start button,
+#mmdKenjiKnowledgeV9 .kk4__view[data-panel="knowledge"] .kk4__quick-start button,
+#mmdKenjiKnowledgeV9 button[data-quick-start] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  position: relative !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  min-height: 126px !important;
+  width: 100% !important;
+  padding: 24px 58px 22px 24px !important;
+  border-radius: 22px !important;
+  cursor: pointer !important;
+  text-align: left !important;
+  overflow: hidden !important;
+  color: #fff3df !important;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(237, 198, 116, .20), transparent 34%),
+    linear-gradient(145deg, rgba(28, 20, 10, .96), rgba(8, 6, 4, .99)) !important;
+  border: 1px solid rgba(237, 198, 116, .38) !important;
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, .34),
+    inset 0 1px 0 rgba(255, 245, 220, .08) !important;
+  transform: translateY(0) !important;
+  transition:
+    transform .18s ease,
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background .18s ease !important;
+}
+
+#mmdKenjiKnowledgeV9 button[data-quick-start]::after {
+  content: "→" !important;
+  position: absolute !important;
+  right: 20px !important;
+  bottom: 20px !important;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #0b0703 !important;
+  background: linear-gradient(135deg, #f4d58b, #c9963d) !important;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .30) !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+}
+
+#mmdKenjiKnowledgeV9 button[data-quick-start] b {
+  display: block !important;
+  padding-right: 12px !important;
+  color: #fff3df !important;
+  font-size: clamp(18px, 1.35vw, 22px) !important;
+  line-height: 1.2 !important;
+  font-weight: 900 !important;
+}
+
+#mmdKenjiKnowledgeV9 button[data-quick-start] span {
+  display: block !important;
+  margin-top: 14px !important;
+  color: rgba(255, 239, 215, .72) !important;
+  font-size: 15px !important;
+  line-height: 1.45 !important;
+  font-weight: 500 !important;
+}
+
+#mmdKenjiKnowledgeV9 button[data-quick-start]:hover {
+  transform: translateY(-4px) !important;
+  border-color: rgba(245, 210, 132, .72) !important;
+  box-shadow:
+    0 24px 54px rgba(0, 0, 0, .44),
+    0 0 0 1px rgba(237, 198, 116, .16),
+    inset 0 1px 0 rgba(255, 245, 220, .12) !important;
+}
+
+#mmdKenjiKnowledgeV9 button[data-quick-start]:focus-visible {
+  outline: 2px solid rgba(245, 210, 132, .88) !important;
+  outline-offset: 4px !important;
+}
+
+@media (max-width: 1100px) {
+  #mmdKenjiKnowledgeV9 section.kk4__quick-start,
+  #mmdKenjiKnowledgeV9 .kk4__view[data-panel="knowledge"] .kk4__quick-start {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 720px) {
+  #mmdKenjiKnowledgeV9 section.kk4__quick-start,
+  #mmdKenjiKnowledgeV9 .kk4__view[data-panel="knowledge"] .kk4__quick-start {
+    grid-template-columns: 1fr !important;
+  }
+
+  #mmdKenjiKnowledgeV9 button[data-quick-start] {
+    min-height: 112px !important;
+    padding: 22px 56px 20px 22px !important;
+  }
+}

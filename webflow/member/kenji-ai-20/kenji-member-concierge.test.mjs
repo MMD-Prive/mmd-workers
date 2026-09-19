@@ -22,23 +22,41 @@ function loadConcierge(overrides = {}) {
 
 const concierge = loadConcierge();
 
-test("empty input asks what the member wants help with", () => {
+test("empty input introduces the reviewed routing map", () => {
   assert.equal(concierge.classifyIntent("  ").intent, "empty");
-  assert.match(concierge.buildKenjiReply(""), /Tell me what you want help with today/);
+  assert.match(concierge.buildKenjiReply(""), /MMD Companion/);
+  assert.match(concierge.buildKenjiReply(""), /MMS Wellness/);
 });
 
-test("booking intent wins over points fallback", () => {
-  const result = concierge.classifyIntent("จอง session มี 5000 points", { points_balance: 5000 });
-  assert.equal(result.intent, "booking");
-  assert.match(concierge.buildKenjiReply("จอง", { membership_status: "active" }), /guide the booking flow/);
-  assert.match(concierge.buildKenjiReply("จอง", { membership_status: "active" }), /membership and status should be checked first/);
+test("Kenji 2.0 separates MMD, MMS, partner venue, and private talent", () => {
+  const cases = [
+    ["ไป dinner", "mmd_companion", /MMD Companion/],
+    ["อยากนวด recovery", "mms_wellness", /MMS Wellness/],
+    ["ไม่มีสถานที่ ใช้ Relax Spa", "partner_venue", /Relax Spa by 9/],
+    ["หา private talent ด้านภาษา", "private_talent", /Private Talent/],
+  ];
+  for (const [text, intent, replyPattern] of cases) {
+    assert.equal(concierge.classifyIntent(text).intent, intent);
+    assert.match(concierge.buildKenjiReply(text), replyPattern);
+  }
 });
 
-test("payment and slip intent includes official verification safety copy", () => {
+test("payment and slip intent continues the canonical payment item without duplicate proof", () => {
   const reply = concierge.buildKenjiReply("ส่งสลิปแล้ว");
   assert.equal(concierge.classifyIntent("ส่งสลิปแล้ว").intent, "payment_slip");
-  assert.match(reply, /Payment slips are supporting evidence only/);
-  assert.match(reply, /official verification and fund matching/);
+  assert.match(reply, /\/member\/payments/);
+  assert.match(reply, /ไม่ต้องสร้างรายการหรือส่งซ้ำ/);
+  assert.match(reply, /ยังไม่ถือว่ายืนยันยอด/);
+  assert.doesNotMatch(reply, /\/confirm\/payment-proof/);
+});
+
+test("CARE BACK intent wins over payment terms and keeps the Wish gate", () => {
+  const reply = concierge.buildKenjiReply("CARE BACK ส่งสลิปแล้ว");
+  assert.equal(concierge.classifyIntent("CARE BACK ส่งสลิปแล้ว").intent, "care_back");
+  assert.match(reply, /Birthday Wish/);
+  assert.match(reply, /10%/);
+  assert.match(reply, /30 วัน/);
+  assert.doesNotMatch(reply, /คูปองอัตโนมัติ|Points อัตโนมัติ/);
 });
 
 test("points intent shows points summary", () => {
@@ -63,7 +81,7 @@ test("SVIP intent is Boss Per manual-only and never points-based", () => {
 
 test("Black Card intent is private review and not automatic approval", () => {
   const reply = concierge.buildKenjiReply("Black Card", { points_balance: 9999 });
-  assert.equal(concierge.classifyIntent("Black Card", { points_balance: 9999 }).intent, "black_card");
+  assert.equal(concierge.classifyIntent("Black Card").intent, "black_card");
   assert.match(reply, /Black Card is private review/);
   assert.match(reply, /not automatic approval/);
 });
@@ -71,7 +89,7 @@ test("Black Card intent is private review and not automatic approval", () => {
 test("membership renewal intent wins over high points fallback", () => {
   const result = concierge.classifyIntent("ต่ออายุสมาชิก มีแต้มเยอะ", { points_balance: 5000 });
   assert.equal(result.intent, "membership_renewal");
-  assert.match(concierge.buildKenjiReply("renewal", { membership_status: "active" }), /membership status or renewal/);
+  assert.match(concierge.buildKenjiReply("renewal", { membership_status: "active" }), /สถานะสมาชิกหรือการต่ออายุ/);
 });
 
 test("high points fallback applies only when there is no stronger intent", () => {
