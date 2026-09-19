@@ -1,76 +1,115 @@
-# MMD Payment Route Bridge Lock — 2026-09-13
+# MMD Payment Route + Surface Lock — 2026-09-19
 
 ## Decision
 
-Customer payment truth is owned by `payments-worker`. Legacy Webflow payment pages are compatibility bridges only and must not contain production payment authority.
+MMD uses **one payment authority with two customer presentation surfaces**.
 
-Membership selection, signup, renewal and upgrade entry is `/sigil/member/membership`. Exact payment + proof starts only after a backend-owned intent has produced a signed `/sigil/pay?t=...` URL. Generic payment history/status/navigation remains `/member/payments`.
+`payments-worker` is the sole owner of money truth: amount due, payment reference, PromptPay / bank / PayPal-card instructions, signed payment token, proof review state and Official Verify. Browser pages never become payment authority.
 
-## Route behavior
+The signed customer surface is selected by **server-owned payment context**, never by browser amount or query parameters:
 
-| Legacy route | Canonical behavior |
-| --- | --- |
-| `/sigil/pay/renew` | Bridge to `/sigil/pay/renewal`, preserving query/hash so the canonical renewal renderer can validate or ignore context server-side. |
-| `/sigil/pay/membership` | With signed `t`: `/sigil/pay?t=...`. Without signed `t`: `/sigil/member/membership` with safe membership-entry context only. |
-| `/pay/membership` | Same bridge behavior as `/sigil/pay/membership`. |
-| `/sigil/pay/payment` | With signed `t`: `/sigil/pay?t=...`. Without signed `t`: `/member/payments`. The old generic payment UI is retired. |
+- Public Membership and TMIB purchases -> signed `/pay/checkout?t=<token>`
+- Private Membership, Black Card and service/job payments -> signed `/sigil/pay?t=<token>`
 
-## Authority lock
+Both surfaces use the same Payment Instructions and proof pipeline.
 
-The bridge must never:
+## Customer routes
 
-- forward browser `amount` as payment truth;
-- hard-code PromptPay IDs, bank accounts, card destinations, or QR URLs;
-- call legacy browser verification endpoints;
-- generate a payment reference/session in browser code;
-- mark money, membership, entitlement, or Points state.
+| Route | Purpose | Authority |
+| --- | --- | --- |
+| `/pay/membership` | Public Membership selection: MMD Member / Elite / Red Card | Selection UI only; server re-resolves package + amount |
+| `/pay/tmib?episode=...` | TMIB episode purchase entry | Episode catalog + access gate owned by member-pages Worker |
+| `/pay/checkout?t=...` | Signed public payment + proof surface | `payments-worker` |
+| `/sigil/member/membership` | Private Membership selection / renewal / upgrade | Membership UI; backend owns payment intent |
+| `/sigil/pay?t=...` | Signed private/service payment + proof surface | `payments-worker` |
+| `/member/payments` | Payment history / status / continuation | Read/status navigation |
+| `/sigil/pay/membership` | Private legacy compatibility bridge only | No payment authority |
 
-The canonical signed customer payment route is `/sigil/pay?t=<signed token>`. Payment Instructions v1 remains owned by `payments-worker`.
+## Public package lock
+
+Server-owned catalog:
+
+| Package code | Display | Amount | Base term |
+| --- | --- | ---: | --- |
+| `mmd_member` | MMD Member | 690 THB | 365 days / 1 year |
+| `elite` | Elite | 4,990 THB | 730 days / 2 years |
+| `red_card` | Red Card | 11,499 THB | 365 days / 1 year |
+| `tmib_act_001` | TMIB ACT 001 Single Episode | 299 THB | episode access after verification |
+
+Public Membership prices are mirrored in `shared/payment-intelligence.mjs`. TMIB price/package/stage is owned by `member-pages-worker/src/tmib-episode-catalog.js`.
+
+## Public Membership purchase contract
+
+Entry:
+- `GET /member/api/liff/public-membership/catalog`
+- `POST /member/api/liff/public-membership/purchase`
+
+The browser may submit only `package_code`. Browser-supplied amount, payment reference, bank/PromptPay destination, PayPal URL, entitlement or verification state must be rejected or ignored.
+
+A verified LINE/MY MMD session is required before a payment intent is created. The member-pages Worker derives amount server-side, calls `payments-worker`, and accepts only a signed `https://mmdbkk.com/pay/checkout?t=...` handoff.
+
+Creating an intent never grants membership.
+
+## TMIB purchase contract
+
+`POST /member/api/liff/tmib/episodes/<episode>/purchase`
+
+The server-owned catalog supplies `package_code`, `payment_stage=tmib_story` and amount. ACT 001 remains 299 THB.
+
+The backend-issued signed handoff is `/pay/checkout?t=...`. Active eligible verified members continue to receive story access without purchasing the single episode.
+
+Payment proof alone never grants story access; Paid + Verified/Approved canonical state is required.
+
+## Private / SIGIL contract
+
+Private membership and private/service payment flows keep `/sigil/pay?t=...`.
+
+`/sigil/pay/membership` remains a compatibility bridge:
+- signed `t` -> `/sigil/pay?t=...`
+- no `t` -> `/sigil/member/membership`
+- safe non-money membership-entry context only
+
+`/pay/membership` is **not** a legacy bridge after this lock. It is the canonical Public Membership entry page.
+
+## Proof + verification
+
+Both public and SIGIL surfaces:
+1. read server-verified Payment Instructions;
+2. show only server-returned amount and destination;
+3. accept proof as evidence;
+4. create/attach one canonical proof to one canonical `payment_ref`;
+5. notify the existing operational payment flow;
+6. remain pending until Official Verify;
+7. materialize membership / entitlement / story access only after canonical verification.
+
+## Fail-closed rules
+
+Never:
+- trust browser `amount`, `package_code` as final truth, payment destination or QR;
+- mint payment references in Webflow/browser code;
+- convert a public signed payment URL to SIGIL or vice versa in browser code;
+- grant entitlement from proof upload alone;
+- recreate a payment intent because the customer revisits the page;
+- ask for duplicate proof when one is already pending.
 
 ## Current executable ownership
 
-- `payments-worker`: payment amount, destination, PromptPay QR, canonical payment reference, signed payment handoff and verification authority.
-- `member-pages-worker/src/liff-payment-binding.js`: verified LIFF session binding; validates package/amount server-side and accepts only a canonical customer URL shaped as `https://mmdbkk.com/sigil/pay?t=...` with no additional payment-authority query keys.
-- `member-dashboard-chat-worker/src/renderers/single-renewal-renderer.js`: explicit `/sigil/pay/renewal*` and `/pay/renewal*` legacy renewal renderer only.
-- `mmd-redirect-worker`: hard-disabled transparent pass-through. It is not a payment-route owner and must not be reactivated implicitly by an architecture document or old test.
-- `immigrate-worker`: current Wrangler ownership is internal/admin only. Its live workers.dev ingress explicitly hands GET/HEAD requests for legacy member/payment aliases back to `https://mmdbkk.com`, strips non-`t` payment authority from signed membership/generic-payment handoffs, and prevents historical fallback renderers from becoming a parallel customer payment surface.
-- Webflow legacy aliases: compatibility bridge presentation only until an explicit safe edge owner is approved.
+- `payments-worker/unified-payment-proof.js` — selects public vs SIGIL signed payment presentation and owns payment/proof contract.
+- `shared/payment-intelligence.mjs` — canonical Public Membership catalog + presentation-lane classifier.
+- `member-pages-worker/src/public-membership-payment.js` — verified LINE public membership intent API.
+- `member-pages-worker/src/tmib-story-access.js` — TMIB access/purchase and signed public handoff validation.
+- Webflow `/pay/membership` — Public Membership UI.
+- Webflow `/pay/checkout` — public signed payment presentation.
+- Webflow `/sigil/pay` — SIGIL signed payment presentation.
+- Webflow `/sigil/pay/membership` — private compatibility bridge only.
 
-## Webflow implementation
+## Supersession
 
-The active bridge source is:
-
-```text
-webflow/payment/legacy-payment-route-bridge-v1.js
-```
-
-Webflow page-level head code mirrors this source. Legacy page-level footer payment scripts and legacy payment HtmlEmbeds are removed from the four routes above.
-
-## Regression ownership
-
-Canonical regression coverage is split by owner:
-
-- `webflow/payment/legacy-payment-route-bridge-v1.test.mjs` — alias behavior and no browser payment authority.
-- `member-dashboard-chat-worker/test/renewal-route.test.mjs` — canonical legacy renewal renderer.
-- `member-pages-worker/test/liff-identity.test.mjs` — legacy browser-supplied LIFF identity stays disabled.
-- `member-pages-worker/test/payment-route-boundary.test.mjs` — member-pages stays service-only and verified LIFF payment setup hands off only to signed `/sigil/pay?t=...`.
-- `immigrate-worker/test/payment-route-boundary.test.mjs` — immigrate-worker cannot acquire public payment/member route ownership and its workers.dev ingress hands legacy paths back to canonical public routes.
-- `mmd-redirect-worker/test/hard-disabled.test.mjs` — transparent pass-through only.
-- `telegram-worker/test/webhook-secret-token.test.mjs` — customer CTA points to `/sigil/member/membership`, never `/pay/membership`.
-- `tools/mmd-route-governance-connector.mjs` — read-only production smoke and current route assertions.
-
-The old `mmd-redirect-worker/test/redirect.test.mjs` suite is superseded and must not be restored while the redirect worker remains hard-disabled.
-
-## Historical lock supersession
-
-Older route-lock and architecture documents that describe `/sigil/pay/membership` or `/pay/membership` as permanent browser-rendered payment pages describe the pre-2026-09-13 architecture. They must not be used to restore browser-owned payment logic.
-
-This lock specifically supersedes payment-route conclusions in:
-
+This 2026-09-19 lock supersedes the payment-route portions of:
+- `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md` before this rewrite;
 - `docs/locks/MMD_ROUTE_OWNER_LOCK_20260701.md`;
-- `docs/locks/MMD_DIRTY_PATCH_QUARANTINE_20260702.md` while preserving its quarantine decision;
-- `docs/checklists/MMD_ROUTE_LOCK_SMOKE_CHECKLIST_20260701.md` where old LIFF/payment expectations appeared;
-- `docs/sigil-start-route-migration-audit.md` for membership-payment route ownership;
-- `docs/architecture/ROUTE_INVENTORY_NORMALIZED.md`, `docs/architecture/ROUTE_OWNER_DECISION_LOG.md`, `docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md`, `docs/architecture/route-canonical-owner-lock.json`, and `docs/architecture/mmd-redirect-worker-route-inventory-20260720.json` wherever those snapshots conflict with current executable ownership.
+- `docs/locks/MMD_DIRTY_PATCH_QUARANTINE_20260702.md`;
+- `docs/knowledge/UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` where it says `/pay/membership` is a compatibility bridge or that every signed customer payment must use `/sigil/pay`;
+- historical route inventory snapshots.
 
-Those architecture files remain useful as dated migration evidence, not as permission to recreate retired browser payment authority or reactivate `mmd-redirect-worker`.
+Those files remain useful for dated migration evidence where not contradicted by this lock.

@@ -26,8 +26,10 @@ The exact Webflow page head/footer snapshot is stored beside this README.
 
 ## Canonical owners
 
-- Membership selection / signup / renewal / upgrade entry: `/sigil/member/membership`
-- Signed payment surface: `/sigil/pay?t=<token>`
+- Private Membership selection / signup / renewal / upgrade entry: `/sigil/member/membership`
+- Private signed payment surface: `/sigil/pay?t=<token>`
+- Public Membership entry is separate: `/pay/membership`
+- Public signed payment surface is separate: `/pay/checkout?t=<token>`
 - Payment authority: `payments-worker`
 - Payment Instructions: `POST /v1/confirm/payment-instructions`
 
@@ -43,7 +45,8 @@ The exact Webflow page head/footer snapshot is stored beside this README.
 - No legacy payment HtmlEmbed or footer payment runtime.
 - Keep excluded from sitemap.
 - Keep `noindex,nofollow`.
-- Keep the route live only as a compatibility bridge.
+- Keep the route live only as a **private** compatibility bridge.
+- Never intercept or redirect the real Public Membership page `/pay/membership`.
 
 `payment-instructions-v1.js` in this directory is migration history/reference only and is not active runtime.
 

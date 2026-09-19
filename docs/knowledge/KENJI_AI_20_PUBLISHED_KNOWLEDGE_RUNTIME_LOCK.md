@@ -25,8 +25,8 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 3. `kenji_20_003_mms` — MMS Wellness route.
 4. `kenji_20_004_partner_venue` — Partner Venue / Relax Spa by 9 route.
 5. `kenji_20_005_private_talent` — Private Talent route.
-6. `kenji_20_006_payment_proof` — canonical payment handoff: current signed `/sigil/pay?t=...` when available, otherwise `/member/payments`; proof remains evidence only.
-7. `kenji_20_007_retired_routes` — Drop 690 main route guard.
+6. `kenji_20_006_payment_proof` — canonical payment handoff: backend-issued signed `/pay/checkout?t=...` for Public/TMIB or `/sigil/pay?t=...` for Private/Service; otherwise `/member/payments`; proof remains evidence only.
+7. `kenji_20_007_drop_690_guard` — Public Membership 690 safety guard: valid membership product, never pay-to-view or instant unlock.
 8. `kenji_20_008_membership_intake_catalog` — Membership Intake service catalog.
 9. `kenji_20_009_web_forbidden_terms` — Web forbidden terms guard.
 10. `kenji_20_010_cloudflare_deploy_gate` — Cloudflare deploy gate.
@@ -39,7 +39,9 @@ The following cards are treated as the current active card set for Kenji AI 2.0:
 - `/internal/admin/kenji?view=ai20` — canonical owner preview inside Kenji Admin.
 - `/internal/admin/kenji?view=knowledge` — canonical owner Knowledge view.
 - `/internal/admin/kenji?view=board` — canonical owner sanitized SIGIL Board view.
-- signed `/sigil/pay?t=...` — canonical combined payment + proof surface only when the current backend payment intent supplies the signed URL.
+- signed `/pay/checkout?t=...` — canonical Public Membership / TMIB payment + proof surface when the backend intent selects public presentation.
+- signed `/sigil/pay?t=...` — canonical Private Membership / Black Card / service payment + proof surface when the backend intent selects SIGIL presentation.
+- `/pay/membership` — Public Membership entry for MMD Member / Elite / Red Card.
 - `/member/payments` — generic payment list/status/navigation handoff when no signed canonical pay URL is available.
 - `/confirm/payment-proof` — legacy/manual no-ref evidence compatibility only; not the default new-payment CTA and must not create a replacement `payment_ref`.
 - `/sigil/member/membership` — canonical Membership Intake / Reviewed Access entry for package selection/start/renew/upgrade.
@@ -75,15 +77,17 @@ Customer-facing copy must not use:
 Additional hard rules:
 
 1. Reuse the canonical payment item/reference; never mint a replacement because a customer revisits the flow.
-2. If a current signed `/sigil/pay?t=...` URL exists, use that exact URL.
+2. If the backend supplies a current signed payment URL, use it exactly: `/pay/checkout?t=...` for Public/TMIB or `/sigil/pay?t=...` for Private/Service.
 3. Otherwise route payment continuation/status to `/member/payments`.
 4. `/confirm/payment-proof` is legacy/manual no-ref compatibility only.
 5. If proof is already pending verification, do not ask the customer to submit it again.
 6. Only Official Verify/backend money truth can turn evidence into a paid/materialized state.
 
-## Drop 690 main route
+## Public Membership 690 safety guard
 
-Public Access 690 is retired from the main path. New requests should route to Reviewed Access / Membership Intake. If payment continuation is needed, use the current signed `/sigil/pay` handoff when supplied by the backend or `/member/payments` otherwise. Do not present 690 as the main access product, instant unlock, or pay-to-view gateway.
+MMD Member 690 is an active Public Membership product. It is not pay-to-view and never creates instant access from browser payment or proof upload.
+
+New Public Membership requests start at `/pay/membership`. The backend creates the exact signed `/pay/checkout?t=...` handoff. Membership activates only after Official Verify. Private Membership and service payments continue to use backend-issued signed `/sigil/pay?t=...`.
 
 ## Role lock
 

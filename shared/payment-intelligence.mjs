@@ -13,6 +13,30 @@ const MEMBERSHIP_AMOUNTS = Object.freeze({
 });
 
 const TERM_DAYS = Object.freeze({ standard: 365, premium: 730, mmd_member: 365, elite: 730, red_card: 365 });
+
+export const PUBLIC_MEMBERSHIP_CATALOG = Object.freeze({
+  mmd_member: Object.freeze({
+    package_code: "mmd_member",
+    label: "MMD Member",
+    amount_thb: 690,
+    duration_days: 365,
+    entitlement_level: "public_member",
+  }),
+  elite: Object.freeze({
+    package_code: "elite",
+    label: "Elite",
+    amount_thb: 4990,
+    duration_days: 730,
+    entitlement_level: "elite",
+  }),
+  red_card: Object.freeze({
+    package_code: "red_card",
+    label: "Red Card",
+    amount_thb: 11499,
+    duration_days: 365,
+    entitlement_level: "red_card",
+  }),
+});
 const MEMBERSHIP_STAGES = new Set(["membership", "member", "renewal", "member_renewal", "membership_fee", "signup"]);
 const SERVICE_STAGES = new Set(["deposit", "final", "balance", "tips", "tip", "full", "service", "booking"]);
 const MEMBERSHIP_PACKAGES = new Set(["standard", "premium", "mmd_member", "elite", "red_card"]);
@@ -35,6 +59,20 @@ function canonicalMembershipPackage(value) {
   if (raw.includes("premium")) return "premium";
   if (raw.includes("standard") || raw.includes("lite")) return "standard";
   return "";
+}
+
+export function getPublicMembershipPackage(value) {
+  const packageCode = canonicalMembershipPackage(value);
+  const item = PUBLIC_MEMBERSHIP_CATALOG[packageCode];
+  return item ? { ...item } : null;
+}
+
+export function paymentPresentationLane({ package_code = "", payment_stage = "" } = {}) {
+  const packageCode = token(package_code);
+  const stage = token(payment_stage);
+  if (packageCode === "tmib_act_001" || stage === "tmib_story") return "public";
+  if (PUBLIC_MEMBERSHIP_CATALOG[canonicalMembershipPackage(packageCode)] && MEMBERSHIP_STAGES.has(stage || "membership")) return "public";
+  return "sigil";
 }
 
 export function inferMembershipPayment({ amount_thb, linked_member = false, linked_renewal = false, package_code = "", source_context = "" } = {}) {
