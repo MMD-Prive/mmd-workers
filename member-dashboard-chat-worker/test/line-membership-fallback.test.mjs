@@ -22,7 +22,7 @@ test("membership signup and renewal use separate deterministic actions", () => {
       requested_domain: "none",
       requires_truth: false,
     });
-    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/);
+    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/);
   }
   for (const text of ["ต่ออายุ", "ต่ออายุสมาชิก", "ขอต่ออายุสมาชิก"]) {
     const event = lineTextEvent(text);
@@ -65,9 +65,7 @@ test("explicit Private membership signup is separated from generic Public signup
       capability: "deterministic_truth",
       requested_domain: "none",
       requires_truth: false,
-      allow_direct_answer: true,
-      allow_model: true,
-      handoff_required: false,
     });
+    assert.match(buildKenjiLineReply(event), /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/);
   }
 });
