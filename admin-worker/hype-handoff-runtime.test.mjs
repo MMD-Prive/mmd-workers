@@ -194,6 +194,144 @@ test("HYPE continuity stays canonical-only when LINE identity is not linked", { 
 
 
 
+
+test("HYPE Shop recovery correlates canonical Order Payment Fulfillment and reuses one open Case reference", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let matrixRecord = null;
+  const matrixWrites = [];
+  let shopReads = 0;
+
+  const clientRecord = {
+    id: "recClientA1",
+    fields: {
+      telegram_user_id: "111111",
+      telegram_verification_status: "verified",
+      line_user_id: "U0123456789abcdef0123456789abcdef",
+      "Client Name": "Client A",
+    },
+  };
+
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    const method = String(init.method || "GET").toUpperCase();
+
+    if (parsed.pathname.endsWith("/tblClients/recClientA1")) {
+      return Response.json(clientRecord);
+    }
+    if (parsed.pathname.endsWith("/tblClients")) {
+      return Response.json({ records: [clientRecord] });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") {
+      return Response.json({ records: matrixRecord ? [matrixRecord] : [] });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && (method === "POST" || method === "PATCH")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      matrixWrites.push(payload);
+      const row = payload.records[0];
+      matrixRecord = {
+        id: row.id || "recMatrixShop1",
+        fields: {
+          ...(matrixRecord?.fields || {}),
+          ...(row.fields || {}),
+        },
+      };
+      return Response.json({ records: [matrixRecord] });
+    }
+
+    // Other live fan-in reads are allowed to resolve empty. Recovery correlation
+    // is independently grounded by the bounded Shop authority below.
+    if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
+    throw new Error(`unexpected fetch ${parsed.pathname} ${method}`);
+  };
+
+  const shopBinding = {
+    async fetch(request) {
+      shopReads += 1;
+      const body = JSON.parse(await request.clone().text());
+      assert.equal(body.line_user_id, "U0123456789abcdef0123456789abcdef");
+      return Response.json({
+        ok: true,
+        authority: "mmd.hype_shop_orders_projection.v1",
+        orders: [{
+          order_id: "MMD-ORDER-001",
+          order_date: "2026-09-18T10:00:00.000Z",
+          order_status: "confirmed",
+          payment_status: "paid",
+          total_thb: 2500,
+          items: [],
+          fulfillment: {
+            state: "shipped",
+            delivery_method: "delivery",
+            courier: "Example Express",
+            tracking_number: "TRACK123",
+          },
+        }],
+        correlation: {
+          requested_order_id: null,
+          exact_owned_match: false,
+          auto_correlation_allowed: true,
+          candidate_count: 1,
+          candidate_order_id: "MMD-ORDER-001",
+          method: "single_recent_owned_order",
+        },
+      });
+    },
+  };
+
+  try {
+    const runtimeEnv = {
+      ...ENV,
+      MEMBER_PAGES_SHOP_ORDERS: shopBinding,
+    };
+
+    const first = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
+      telegram_user_id: "111111",
+      target: "per",
+      command: "recovery",
+      reason: "customer_service_recovery",
+      customer_message: "GG Water ยังไม่ถึงเลย",
+    }), runtimeEnv);
+    const firstBody = await first.json();
+
+    assert.equal(first.status, 200);
+    assert.equal(firstBody.ok, true);
+    assert.equal(firstBody.recovery_correlation.correlated, true);
+    assert.equal(firstBody.recovery_correlation.order_id, "MMD-ORDER-001");
+    assert.equal(firstBody.recovery_correlation.payment_status, "paid");
+    assert.equal(firstBody.recovery_correlation.fulfillment_state, "shipped");
+    assert.equal(firstBody.recovery_correlation.case_ref, firstBody.handoff_id);
+    assert.match(firstBody.operator_summary, /MMD-ORDER-001/);
+    assert.match(firstBody.operator_summary, /Payment paid/);
+    assert.match(firstBody.operator_summary, /Fulfillment shipped/);
+
+    const stored = JSON.parse(matrixRecord.fields.payload_json);
+    assert.equal(stored.recovery_correlation.order_id, "MMD-ORDER-001");
+    assert.equal(stored.recovery_correlation.case_ref, firstBody.handoff_id);
+    assert.match(matrixRecord.fields.important_open_loops_json, /shop_recovery/);
+    assert.match(matrixRecord.fields.do_not_ask_again_json, /shop_order_reference/);
+
+    const second = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
+      telegram_user_id: "111111",
+      target: "per",
+      command: "recovery",
+      reason: "customer_service_recovery",
+      customer_message: "GG Water ยังไม่ถึงครับ ช่วยตามต่อ",
+    }), runtimeEnv);
+    const secondBody = await second.json();
+
+    assert.equal(second.status, 200);
+    assert.equal(secondBody.handoff_id, firstBody.handoff_id);
+    assert.equal(secondBody.recovery_correlation.case_ref, firstBody.handoff_id);
+    assert.equal(shopReads, 2);
+    assert.equal(matrixWrites.length, 2);
+
+    const serialized = JSON.stringify(matrixRecord.fields);
+    assert.doesNotMatch(serialized, /address_line|phone|PRIVATE ADMIN NOTE|payment_mutated":true|refund/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE handoff status reads only the explicitly recorded operator state", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init = {}) => {
