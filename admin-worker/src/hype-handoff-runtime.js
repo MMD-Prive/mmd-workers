@@ -297,7 +297,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!body) return json({ ok: false, error: "invalid_json" }, 400);
 
   const operation = token(body.operation || "read");
-  if (!["read", "transition", "select_recovery_order", "select_recovery_booking", "select_recovery_mms"].includes(operation)) {
+  if (!["read", "transition", "select_recovery_order", "select_recovery_booking", "select_recovery_mms", "ack_recovery_picker_delivery"].includes(operation)) {
     return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
   }
 
@@ -364,6 +364,18 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   const handoffId = clean(body.handoff_id, 180);
   if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
     return json({ ok: false, error: "handoff_id_invalid" }, 400);
+  }
+
+  if (operation === "ack_recovery_picker_delivery") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+    const pickerRevision = normalizePickerRevision(body.picker_revision);
+    if (!pickerRevision) return json({ ok: false, error: "recovery_picker_revision_invalid" }, 400);
+    return acknowledgeRecoveryPickerDelivery(env, {
+      telegramUserId,
+      handoffId,
+      pickerRevision,
+    });
   }
 
   if (operation === "select_recovery_order") {
@@ -2107,6 +2119,11 @@ function safeRecoveryCorrelation(value = {}) {
     picker_reissue_count: boundedPickerReissueCount(value.picker_reissue_count),
     last_stale_reason: token(value.last_stale_reason) || null,
     last_reissue_source: clean(value.last_reissue_source, 40) || null,
+    picker_delivery_status: ["pending_customer_delivery", "delivered"].includes(token(value.picker_delivery_status))
+      ? token(value.picker_delivery_status)
+      : null,
+    picker_delivery_revision: normalizePickerRevision(value.picker_delivery_revision),
+    picker_delivered_at: clean(value.picker_delivered_at, 80) || null,
   };
 
   if (domain === "booking") {
@@ -2618,6 +2635,8 @@ function recoveryPickerReplayResponse({ correlation, priorPayload, tracking, han
     target: tracking.target || normalizeTargetFromHandoffId(handoffId),
     recovery_correlation: correlation,
     recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+    picker_delivery_required: token(correlation?.picker_delivery_status) === "pending_customer_delivery"
+      && normalizePickerRevision(correlation?.picker_delivery_revision) === effectivePickerRevision(correlation),
     guardrails: handoffStatusGuardrails(),
   });
 }
@@ -2634,6 +2653,101 @@ function recoveryCorrelationCanonicalRef(domain, correlation = {}) {
   if (domain === "booking") return clean(correlation?.booking_ref, 180);
   if (domain === "mms") return clean(correlation?.prebooking_id, 180).toLowerCase();
   return "";
+}
+
+async function acknowledgeRecoveryPickerDelivery(env, {
+  telegramUserId,
+  handoffId,
+  pickerRevision,
+}) {
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+  if (identity?.status !== "resolved" || !canonicalClientId) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const fields = matrix.record.fields || {};
+  const linkedClients = Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT].map((id) => recordId(id)).filter(Boolean) : [];
+  if (!linkedClients.includes(canonicalClientId)) {
+    return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+  }
+
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (!priorCorrelation) return json({ ok: false, error: "recovery_picker_not_available" }, 409);
+
+  const currentRevision = effectivePickerRevision(priorCorrelation);
+  if (pickerRevision !== currentRevision) {
+    return json({
+      ok: true,
+      state: "picker_delivery_ignored",
+      replayed: true,
+      handoff_id: handoffId,
+      picker_revision: currentRevision,
+      guardrails: handoffStatusGuardrails(),
+    });
+  }
+
+  if (
+    token(priorCorrelation.picker_delivery_status) === "delivered"
+    && normalizePickerRevision(priorCorrelation.picker_delivery_revision) === currentRevision
+  ) {
+    return json({
+      ok: true,
+      state: "picker_delivered",
+      replayed: true,
+      handoff_id: handoffId,
+      picker_revision: currentRevision,
+      guardrails: handoffStatusGuardrails(),
+    });
+  }
+
+  if (token(priorCorrelation.picker_delivery_status) !== "pending_customer_delivery") {
+    return json({
+      ok: true,
+      state: "picker_delivery_not_required",
+      replayed: true,
+      handoff_id: handoffId,
+      picker_revision: currentRevision,
+      guardrails: handoffStatusGuardrails(),
+    });
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = safeRecoveryCorrelation({
+    ...priorCorrelation,
+    picker_delivery_status: "delivered",
+    picker_delivery_revision: currentRevision,
+    picker_delivered_at: stamp,
+  });
+
+  const write = await persistRecoveryPickerCorrelation(env, {
+    matrixRecord: matrix.record,
+    priorPayload,
+    correlation: updatedCorrelation,
+    handoffId,
+    event: "recovery_picker_delivered",
+    customerAction: clean(fields[F.LAST_CUSTOMER_ACTION], 180) || "recovery_case_active",
+    kenjiAction: "recovery_picker_delivered_customer",
+    outcome: "Recovery picker revision delivered to customer; Case lifecycle unchanged",
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: "picker_delivered",
+    replayed: false,
+    handoff_id: handoffId,
+    picker_revision: currentRevision,
+    recovery_correlation: updatedCorrelation,
+    recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+    guardrails: handoffStatusGuardrails(),
+  });
 }
 
 async function readExactRecoveryPickerSelection(env, {
@@ -2842,6 +2956,9 @@ export async function refreshRecoveryPickerForOwner(env, {
     picker_reissue_count: boundedPickerReissueCount(priorCorrelation.picker_reissue_count) + 1,
     last_stale_reason: "owner_manual_refresh",
     last_reissue_source: source,
+    picker_delivery_status: candidateCount > 0 ? "pending_customer_delivery" : null,
+    picker_delivery_revision: candidateCount > 0 ? nextRevision : null,
+    picker_delivered_at: null,
   });
 
   const write = await persistRecoveryPickerCorrelation(env, {
@@ -3091,6 +3208,9 @@ async function refreshStaleRecoveryPicker(env, {
     picker_reissue_count: boundedPickerReissueCount(priorCorrelation.picker_reissue_count) + 1,
     last_stale_reason: staleReason || "selected_candidate_stale",
     last_reissue_source: source,
+    picker_delivery_status: candidateCount > 0 ? "pending_customer_delivery" : null,
+    picker_delivery_revision: candidateCount > 0 ? nextRevision : null,
+    picker_delivered_at: null,
   });
 
   const write = await persistRecoveryPickerCorrelation(env, {
@@ -3236,6 +3356,9 @@ async function bindSelectedRecoveryPicker(env, {
         : "customer_selected_owned_mms_prebooking",
     picker_revision: effectivePickerRevision(priorCorrelation),
     picker_status: "selected",
+    picker_delivery_status: "delivered",
+    picker_delivery_revision: effectivePickerRevision(priorCorrelation),
+    picker_delivered_at: priorCorrelation.picker_delivered_at || stamp,
     selection_locked: true,
     selected_by: "customer",
     selected_at: stamp,
