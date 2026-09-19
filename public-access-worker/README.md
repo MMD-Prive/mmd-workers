@@ -1,6 +1,6 @@
 # Public Access Worker V1
 
-Public intake boundary for `/public/access`.
+Public access-intake API boundary. The current visible `/public/access` page is a separate Webflow LINE identity/access gate and does not submit this API by default.
 
 It accepts one request containing:
 - client name and chosen contact channel

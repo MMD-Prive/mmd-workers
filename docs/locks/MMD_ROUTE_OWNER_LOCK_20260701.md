@@ -29,7 +29,7 @@ Do not recreate these bindings merely to restore an old payment page. Any new ed
 
 - Public Membership selection (Member / Elite / Red Card): `/pay/membership`.
 - Private Membership selection / signup / renewal / upgrade (Standard / Premium / private access): `/sigil/member/membership`.
-- Exact payment + proof: signed `/sigil/pay?t=...` only after a backend-owned payment intent exists.
+- Exact payment + proof after a backend-owned intent: Public Membership / TMIB use signed `/pay/checkout?t=...`; Private Membership / Black Card / Service use signed `/sigil/pay?t=...`.
 - Payment history/status/navigation: `/member/payments`.
 - `/pay/membership`: canonical Public Membership selection UI only; never payment authority.
 - `/sigil/pay/membership`: Private legacy compatibility bridge only; unsigned traffic may hand off to `/sigil/member/membership`, signed `t` may hand off only to `/sigil/pay?t=...`.
@@ -64,13 +64,13 @@ The current `mmd-redirect-worker` is hard-disabled and transparent pass-through 
 - `/sigil/member/membership`: canonical membership selection route.
 - `/sigil/pay/membership`: safe compatibility alias; never renewal authority.
 - `/sigil/pay/membership?t=...`: may bridge only to signed `/sigil/pay?t=...`; browser amount/account/package query values are not authority.
-- `/pay/membership`: same compatibility behavior as `/sigil/pay/membership`.
-- `/sigil/pay/renewal`: manual renewal evidence route; Worker renderer may own this explicit route.
-- `/pay/renewal`: manual renewal evidence route.
+- `/pay/membership`: canonical Public Membership selection UI for Member / Elite / Red Card; never a compatibility bridge and never payment authority.
+- `/sigil/pay/renewal`: redirect-only compatibility; signed `t` -> `/sigil/pay?t=...`, unsigned -> `/sigil/member/membership?intent=renew`.
+- `/pay/renewal`: redirect-only compatibility with the same Private renewal handoff.
 - `/sigil/pay/renew`: compatibility alias to `/sigil/pay/renewal`.
 - `/sigil/pay/payment`: retired generic alias; no standalone browser payment authority.
 - `/member/api/liff/identify`: legacy browser-supplied identity bridge remains disabled (`410 LEGACY_LIFF_IDENTITY_DISABLED`).
-- `/member/api/liff/payment-intent`: verified LIFF session may obtain a backend-minted signed `/sigil/pay?t=...` handoff; browser-provided amount is not authoritative.
+- `/member/api/liff/payment-intent`: verified LIFF session may obtain the backend-minted signed presentation URL selected by canonical server context — `/pay/checkout?t=...` for Public Membership/TMIB or `/sigil/pay?t=...` for Private/Service; browser-provided amount or lane is not authoritative.
 - `/unknown-test-route-mmd`: safe 404/recovery behavior, no default/autodirect redirect.
 
 ## Historical Evidence
