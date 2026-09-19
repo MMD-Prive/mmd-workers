@@ -676,6 +676,12 @@ service = "member-pages-worker"
 binding = "MEMBER_PAGES_MEMBER_WALLET"
 service = "member-pages-worker"
 
+# Bounded customer-safe MMD Shop order projection for HYPE.
+# member-pages-worker owns order/customer ownership filtering and fulfillment truth.
+[[services]]
+binding = "MEMBER_PAGES_SHOP_ORDERS"
+service = "member-pages-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 # Private scheduling bridge for Admin Calendar diagnostics.
 # No public credential is exposed; the downstream Worker remains independently deployable.
