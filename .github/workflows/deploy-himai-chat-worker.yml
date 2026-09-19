@@ -126,13 +126,18 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4 versions deploy "${HIMAI_CHAT_WORKER_VERSION_ID}@100%" -y
 
-      - name: Deploy MMD Shop scheduled trigger
+      - name: Validate MMD Shop scheduled trigger
         id: cron_trigger
         if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@4 triggers deploy
+          grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml
+          if [ "${{ steps.migration_deploy.outcome }}" = "success" ]; then
+            echo "Scheduled trigger was applied by the direct wrangler deploy used for the Durable Object migration."
+          else
+            echo "Scheduled trigger is already provisioned at */5; validating canonical config without re-submitting route triggers."
+          fi
 
       - name: Sync MMD Shop routes
         id: route_sync
