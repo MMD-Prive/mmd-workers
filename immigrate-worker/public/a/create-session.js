@@ -727,25 +727,21 @@
   }
 
   function deriveGate() {
-    if (state.workType !== "private") {
-      return {
-        ok: Boolean(state.selectedClient && state.modelFolder && state.selectedModel),
-        label: state.selectedModel ? "Public ready" : "Public pending",
-        copy: "Public work skips the private Telegram gate. Backend create still validates the payload."
-      };
-    }
-    const clientTelegram = val(el.customerTelegram).trim();
-    const modelTelegram = val(el.modelTelegram).trim();
     const clientStatus = val(el.customerTelegramStatus);
     const modelStatus = val(el.modelTelegramStatus);
-    const clientOk = Boolean(clientTelegram) && ["linked", "verified"].includes(clientStatus);
-    const modelOk = Boolean(modelTelegram) && ["linked", "verified"].includes(modelStatus);
+    const clientOk = ["linked", "verified"].includes(clientStatus);
+    const modelOk = ["linked", "verified"].includes(modelStatus);
     return {
-      ok: clientOk && modelOk,
-      label: clientOk && modelOk ? "Private Telegram gate ready" : "Private Telegram gate pending",
-      copy: clientOk && modelOk
-        ? "Customer and model Telegram status are linked/verified. Backend remains authoritative."
-        : "Private create stays blocked until both customer and model Telegram statuses are linked/verified."
+      ok: Boolean(state.selectedClient && state.modelFolder && state.selectedModel),
+      label: modelOk ? "Model Telegram connected" : "Model Telegram pending",
+      copy: [
+        clientOk
+          ? "Member Telegram connected · optional secondary channel."
+          : "Member Telegram not connected · optional and does not block Create Job.",
+        modelOk
+          ? "Model Telegram connected."
+          : "Model Telegram is not verified yet · Create Job may continue, but Model must connect Telegram before Ready to Work."
+      ].join(" ")
     };
   }
 
@@ -896,9 +892,6 @@
     } else if (state.modelFolder && !state.selectedModel) {
       next = "Select model";
       copy = "Choose one model from the entitlement-aware pool.";
-    } else if (state.selectedModel && state.workType === "private" && !gate.ok) {
-      next = "Complete Telegram gate";
-      copy = "Private create remains blocked until customer + model Telegram are linked/verified.";
     } else if (!requiredReady()) {
       next = "Complete job details";
       copy = "Add schedule, location and amount before create.";
@@ -922,7 +915,7 @@
     text(el.readyLabel, ready ? "Ready to create" : "Not ready yet");
     text(el.readyCopy, ready
       ? "Frontend requirements are complete. Backend remains authoritative on create."
-      : "Complete the next action shown above. Private work also requires the Telegram gate.");
+      : "Complete the next action shown above. Telegram binding is tracked separately and does not block Create Job.");
     if (el.create) el.create.disabled = !ready || state.creating || Boolean(state.created) || state.creationUncertain;
   }
 
@@ -1020,10 +1013,11 @@
         payment_ref: `MMD-${now.slice(-6)}`,
         line_notification: "ready",
         telegram_dm: state.workType === "private" ? "ready" : "skipped",
-        customer_confirmation_url: `/confirm/mmd-confirmation?session=SES-${now}`,
-        model_confirmation_url: `/sigil/confirm/job-model?session=SES-${now}`,
-        customer_message: `MMD session SES-${now} is ready for confirmation.`,
-        model_message: `New MMD session SES-${now} is ready for model confirmation.`
+        customer_payment_url: `/sigil/pay?t=mock-SES-${now}`,
+        payment_dispatch_state: "awaiting_payment_approval",
+        confirmation_release_state: "held_until_payment_approved",
+        customer_message: `MMD session SES-${now} is ready for deposit payment.`,
+        model_message: ""
       });
       setStatus("Mock session created.", "ok");
       setHook("create", "ok");
@@ -1047,7 +1041,7 @@
       renderCreated(data);
       const review = data.linkage?.status === "review_required" || data.notification_status === "failed";
       const held = data.operational_status === "pending_client_link";
-      setStatus(held ? "บันทึกงานแล้ว · รอ Link Client ก่อนออกลิงก์ยืนยันและชำระเงิน" : review ? "บันทึกแล้ว · ต้องตรวจการผูกข้อมูลหรือการแจ้งเตือน กรุณาอย่าสร้างซ้ำ" : "Session created.", held || review ? "warn" : "ok");
+      setStatus(held ? "บันทึกงานแล้ว · รอ Link Client ก่อนออก Payment Link" : review ? "สร้างงานแล้ว · Payment Link พร้อม แต่มีจุดที่ต้องตรวจเพิ่ม กรุณาอย่าสร้างซ้ำ" : "สร้างงานแล้ว · ส่ง Customer Payment Link ได้เลย", held || review ? "warn" : "ok");
       setHook("create", "ok");
     } catch (error) {
       state.creationUncertain = !error.safeToRetry;
@@ -1067,12 +1061,12 @@
     text(el.outPaymentRef, data.payment_ref || data.payment_reference || "-");
     text(el.outLineStatus, data.line_notification || data.line_status || "not sent");
     text(el.outTelegramStatus, data.telegram_dm || data.telegram_status || "not sent");
-    setVal(el.outCustomerUrl, data.customer_confirmation_url || data.customer_url || "");
-    setVal(el.outModelUrl, data.model_confirmation_url || data.model_url || "");
-    setVal(el.outMemberUrl, data.member_return_url || "/member/dashboard");
-    setVal(el.outModelReturnUrl, data.model_return_url || "/model/dashboard");
-    setVal(el.outCustomerMessage, data.customer_message || "");
-    setVal(el.outModelMessage, data.model_message || "");
+    setVal(el.outCustomerUrl, data.customer_payment_url || "");
+    setVal(el.outModelUrl, "");
+    setVal(el.outMemberUrl, "");
+    setVal(el.outModelReturnUrl, "");
+    setVal(el.outCustomerMessage, data.customer_message || (data.customer_payment_url ? `ชำระมัดจำและส่งสลิปที่ลิงก์นี้ครับ\n${data.customer_payment_url}` : ""));
+    setVal(el.outModelMessage, "Member / Model URLs จะออกหลัง MMD อนุมัติ Payment แล้วทาง Telegram");
     scrollToNode(el.output);
   }
 
