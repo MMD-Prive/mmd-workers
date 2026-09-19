@@ -7,7 +7,8 @@ import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
-import { expireMmdShopReservations } from "../../shared/mmd-shop-stock-reservation.mjs";
+import { expireViaMmdShopCoordinator, releaseViaMmdShopCoordinator, MmdShopStockCoordinator } from "./mmd-shop-stock-coordinator.js";
+import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 
 export default {
   async fetch(request, env, ctx) {
