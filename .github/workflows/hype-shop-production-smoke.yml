@@ -62,7 +62,8 @@ jobs:
 
           expected=()
           if printf '%s\n' "$changed" | grep -Eq '^admin-worker/|^shared/mmd-shop-'; then expected+=("Deploy admin-worker"); fi
-          if printf '%s\n' "$changed" | grep -Eq '^member-pages-worker/|^shared/mmd-shop-(stock-reservation|fulfillment)\.mjs
+          if printf '%s\n' "$changed" | grep -Eq '^member-pages-worker/|^shared/mmd-shop-stock-reservation\.mjs$|^shared/mmd-shop-fulfillment\.mjs
+          if printf '%s\n' "$changed" | grep -Eq '^himai-chat-worker/|^shared/mmd-shop-'; then expected+=("Deploy himai-chat-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^member-dashboard-chat-worker/'; then expected+=("Deploy member-dashboard-chat-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^telegram-worker/'; then expected+=("Deploy telegram-worker"); fi
 
