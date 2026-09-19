@@ -26,7 +26,7 @@
   const set = (text) => { card.textContent = text; };
 
   const miniAppTarget = () => {
-    const target = new URL(MODEL_LIFF_URL);
+    const target = new URL(`${MODEL_LIFF_URL}/`);
     target.searchParams.set("job_claim", claim);
     const lang = url.searchParams.get("lang");
     if (lang) target.searchParams.set("lang", lang);

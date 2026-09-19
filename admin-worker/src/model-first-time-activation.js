@@ -64,7 +64,7 @@ export function activationLiffUrl(token, environment = "published", env = {}) {
         : env.MODEL_LIFF_PUBLISHED_ID,
     120,
   ) || LIFF_IDS[normalized];
-  const url = new URL(`https://miniapp.line.me/${id}`);
+  const url = new URL(`https://miniapp.line.me/${id}/`);
   url.searchParams.set("activation", token);
   return url.toString();
 }

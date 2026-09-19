@@ -34,6 +34,14 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
 });
 
+test("bare MMD MODEL entry keeps the exact published Mini App base URL", () => {
+  const request = new Request("https://mmdbkk.com/sigil/model/dashboard");
+  assert.equal(
+    modelMiniAppHandoffUrl(request),
+    "https://miniapp.line.me/2010864854-N34SgCqq",
+  );
+});
+
 test("anonymous dashboard entry hands off to the canonical LINE Mini App before LIFF init", async () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?lang=th&flow=verify&activation=signed.token&unknown=drop-me",
@@ -42,7 +50,7 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
   assert.equal(hasLineRedirectContext(request), false);
   assert.equal(
     modelMiniAppHandoffUrl(request),
-    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+    "https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(shouldHandoffToMiniApp(request), true);
 
@@ -51,7 +59,7 @@ test("anonymous dashboard entry hands off to the canonical LINE Mini App before 
   assert.equal(response.status, 302);
   assert.equal(
     response.headers.get("location"),
-    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+    "https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify&activation=signed.token",
   );
   assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
 });
@@ -70,6 +78,7 @@ test("LINE primary redirect is consumed before the SPA renders", async () => {
   assert.match(html, /2010864854-N34SgCqq/);
   assert.doesNotMatch(html, /liff\.login/);
   assert.doesNotMatch(html, /redirectUri/);
+  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
   assert.doesNotMatch(html, /tanstack|react/i);
 
   const worker = (await import("./src/index.js")).default;

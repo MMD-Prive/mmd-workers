@@ -27,7 +27,7 @@ jobs:
           import { deterministicPrivateModelKey } from './admin-worker/src/private-model-application-handoff.js';
           const url = new URL(activationLiffUrl('smoke-token', 'published', {}));
           if (url.hostname !== 'miniapp.line.me') throw new Error(`unexpected LIFF host: ${url.hostname}`);
-          if (url.pathname !== '/2010864854-N34SgCqq') throw new Error(`unexpected published LIFF id/path: ${url.pathname}`);
+          if (url.pathname !== '/2010864854-N34SgCqq/') throw new Error(`unexpected published LIFF additional-info path: ${url.pathname}`);
           if (url.searchParams.get('activation') !== 'smoke-token') throw new Error('activation deep-link token missing');
           if (deterministicPrivateModelKey('pma_20260913_smoke123') !== 'mdl_pri_app_20260913_smoke123') {
             throw new Error('deterministic Private Model canonical key contract changed');

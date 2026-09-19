@@ -195,7 +195,7 @@ jobs:
             test "$anon_code" = "302"
             tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
             tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*line-miniapp-handoff-v1$'
-            tr -d '\r' < "$anon_headers" | grep -F -i -q 'location: https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify'
+            tr -d '\r' < "$anon_headers" | grep -F -i -q 'location: https://miniapp.line.me/2010864854-N34SgCqq/?lang=th&flow=verify'
 
             primary_headers="$(mktemp)"
             primary_body="$(mktemp)"
@@ -209,7 +209,7 @@ jobs:
             tr -d '\r' < "$primary_headers" | grep -i -q '^set-cookie:[[:space:]]*mmd_liff_boot=1;'
             grep -q 'https://static.line-scdn.net/liff/edge/2/sdk.js' "$primary_body"
             grep -q '2010864854-N34SgCqq' "$primary_body"
-            if grep -Eqi 'tanstack|react|liff\.login|redirectUri' "$primary_body"; then
+            if grep -Eqi 'tanstack|react|liff\.login|redirectUri|location\.reload|location\.replace' "$primary_body"; then
               echo "Primary LIFF preboot leaked SPA/login content for $origin" >&2
               exit 1
             fi
