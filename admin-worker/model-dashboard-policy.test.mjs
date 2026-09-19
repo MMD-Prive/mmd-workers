@@ -158,7 +158,7 @@ test("activation LIFF URL targets the canonical published Model Mini App", () =>
   assert.equal(normalizeActivationEnvironment("production"), "published");
   const url = new URL(activationLiffUrl("signed.token", "published"));
   assert.equal(url.origin, "https://miniapp.line.me");
-  assert.equal(url.pathname, "/2010864854-N34SgCqq");
+  assert.equal(url.pathname, "/2010864854-N34SgCqq/");
   assert.equal(url.searchParams.get("activation"), "signed.token");
 });
 
