@@ -44,6 +44,7 @@ jobs:
           node --check src/entry.js
           node --check src/index.js
           node --check src/shop-catalog.js
+          node --check src/mmd-shop-checkout.js
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
 
