@@ -42,8 +42,8 @@ new_sqlite_classes = ["PointsPhase1Coordinator"]
 [vars]
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
 
-WEB_BASE_URL = "https://mmdprive.webflow.io"
-CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
+WEB_BASE_URL = "https://mmdbkk.com"
+CONFIRM_BASE_URL = "https://mmdbkk.com"
 
 PAY_SESSIONS_TTL_DAYS = "30"
 PAY_TOKEN_TTL_SECONDS = "2592000"
