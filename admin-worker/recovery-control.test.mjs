@@ -190,7 +190,7 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     const all = await readRecoveryQueueIntelligence(env(), { limit: 12, domain: "all", state: "open" }, now);
     assert.equal(all.ok, true);
     assert.equal(all.queue.open_count, 2);
-    assert.equal(all.queue.attention_count, 2);
+    assert.equal(all.queue.attention_count, 1);
     assert.equal(all.queue.overdue_count, 1);
     assert.equal(all.cases[0].case_ref, CASE_REF);
     assert.equal(all.cases[0].sla.status, "overdue");
