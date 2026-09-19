@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildHypeCustomerStatusProjection } from "./src/hype-operating-concierge.js";\nimport { resolveLiveCanonicalClient } from "./src/kenji-lv5-live-context.js";
+import { buildHypeCustomerStatusProjection } from "./src/hype-operating-concierge.js";
+import { resolveLiveCanonicalClient } from "./src/kenji-lv5-live-context.js";
 
 test("HYPE projects only customer-safe live status for a verified Telegram client", () => {
   const projection = buildHypeCustomerStatusProjection({
