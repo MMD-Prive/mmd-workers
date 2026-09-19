@@ -179,6 +179,10 @@ async function updateFulfillment(env, actor, body) {
 
   const current = normalizedFulfillment(fields);
   const currentState = fulfillmentStateFromOrder(orderStatus, paymentStatus, current.state);
+  if (state !== currentState && !isAllowedFulfillmentTransition(currentState, state, current.delivery_method, paymentStatus)) {
+    throw httpError(409, `invalid_fulfillment_transition:${currentState}->${state}`);
+  }
+
   const requested = transitionMmdShopFulfillment({
     ...current,
     state: currentState,
@@ -233,6 +237,24 @@ async function updateFulfillment(env, actor, body) {
     items_updated: itemStatus ? items.length : 0,
     fulfillment: adminFulfillment(requested),
   };
+}
+
+function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
+  if (current === next) return true;
+  if (next === "cancelled") return paymentStatus !== "paid" && current !== "completed";
+  if (paymentStatus !== "paid") return false;
+
+  if (current === "awaiting_payment") return next === "confirmed";
+  if (current === "confirmed") return next === "preparing";
+  if (current === "preparing") return next === "ready";
+  if (current === "ready") {
+    const method = code(deliveryMethod);
+    if (method === "pickup") return next === "completed";
+    if (method === "delivery") return next === "shipped";
+    return next === "shipped" || next === "completed";
+  }
+  if (current === "shipped") return next === "completed";
+  return false;
 }
 
 async function loadAdminOrders(env) {
