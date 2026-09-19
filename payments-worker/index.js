@@ -135,7 +135,7 @@ function makePaymentRef(prefix = "pay") {
 
 function normalizeStage(value) {
   const s = toStr(value).toLowerCase();
-  const allowed = ["deposit", "final", "tips", "full", "membership"];
+  const allowed = ["deposit", "final", "tips", "full", "membership", "shop"];
   if (!allowed.includes(s)) throw new Error("invalid_payment_stage");
   return s;
 }
@@ -538,8 +538,8 @@ async function createOrUpdatePaymentIntent(env, payload) {
   const fields = compact({
     payment_ref: payload.payment_ref,
     session_id: payload.session_id,
-    payment_stage: payload.payment_stage,
-    payment_type: payload.payment_stage,
+    payment_stage: payload.payment_stage === "shop" ? undefined : payload.payment_stage,
+    payment_type: payload.payment_stage === "shop" ? undefined : payload.payment_stage,
     amount_thb: payload.amount,
     amount: payload.amount,
     member_email: payload.member_email || "",
@@ -806,7 +806,7 @@ async function handleNotify(req, env) {
       created_at: nowIso(),
     });
 
-    const session_updated = session_id
+    const session_updated = session_id && stage !== "shop"
       ? await updateSessionFromPayment(env, {
           payment_ref,
           stage,

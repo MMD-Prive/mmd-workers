@@ -132,3 +132,22 @@ No route mutation was performed.
 No deploy or Webflow publish was performed.
 
 | Member payments owner | RESOLVED_TARGET | `/member/payments` | Webflow presentation + `member-pages-worker` member-safe BFF target + `payments-worker` money truth | admin-worker member/admin mixed facade | Webflow page id `69dfd6c51dd636056fdb35ea`, `#mmd-payments-maxx`, route lock `MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md` | Status/history/navigation only; never admin review or independent proof authority. | legacy admin facade can leak authority boundaries | Phase 3A/5 | prove member-safe `/v1/member/payments` BFF and production route before retiring bridge | retain legacy bridge only until acceptance |
+
+## 2026-09-19 Public Access Visible Page Reconciliation
+
+Webflow now provides direct evidence for the visible `/public/access` presentation that was missing during the earlier Phase 1B.5B12 audit.
+
+- Webflow page: `6a58a1f259f7960f6edafce9`
+- published path: `/public/access`
+- active root: `#mmd-access-gate`
+- primary action: LINE LIFF status entry
+- secondary action: `/member/my-mmd`
+- current visible page contains no intake form and does not call `POST /public/api/access/intake`
+
+Decision override:
+- visible presentation source: **Webflow**;
+- normalized status: **PARTIAL INTEGRATION** until production GET/HEAD route smoke passes;
+- `public-access-worker` remains the separate implementation owner for `POST /public/api/access/intake`;
+- API live smoke remains pending and does not determine whether the visible gate exists;
+- do not reclassify the current access gate as an intake form unless product scope explicitly changes.
+

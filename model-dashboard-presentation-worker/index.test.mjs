@@ -4,6 +4,7 @@ import {
   isPresentationUiPath,
   isPresentationAssetPath,
   isPresentationRootRuntimePath,
+  isWishStatusAssetPath,
   presentationUrlForPage,
   presentationUrlForAsset,
   rewritePresentationHtml,
@@ -20,6 +21,9 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isPresentationRootRuntimePath("/assets/routes-123.js"), true);
   assert.equal(isPresentationRootRuntimePath("/v1/model/profile"), false);
   assert.equal(isPresentationRootRuntimePath("/favicon.ico"), false);
+  assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.js"), true);
+  assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.css"), true);
+  assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
 });
 
 test("maps canonical dashboard route to current Model Hub root and preserves LINE callback query", () => {
@@ -67,6 +71,9 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /href="\/sigil\/model\/dashboard\/profile"/);
   assert.match(out, /href="\/sigil\/model\/dashboard\/photos"/);
   assert.match(out, /fetch\('\/v1\/model\/profile'\)/);
+  assert.match(out, /wish-status-v1\.css/);
+  assert.match(out, /wish-status-v1\.js/);
+  assert.match(out, /data-mmd-wish-status-assets="v1"/);
   assert.doesNotMatch(out, /lovable-badge/);
   assert.doesNotMatch(out, /~flock\.js/);
 });
@@ -78,4 +85,21 @@ test("rewrites runtime paths without touching model API authority", () => {
   assert.match(out, /\/sigil\/model\/dashboard-assets\/_serverFn\/abc/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/assets\/x\.png/);
   assert.match(out, /fetch\('\/v1\/model\/media'\)/);
+});
+
+
+test("serves the Model Wish pending status add-on locally instead of proxying it to Lovable", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const js = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/wish-status-v1.js"));
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get("content-type"), /javascript/);
+  const source = await js.text();
+  assert.match(source, /year6_direct_wish/);
+  assert.match(source, /manual_review/);
+  assert.match(source, /รอยืนยัน/);
+
+  const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/wish-status-v1.css"));
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type"), /text\/css/);
+  assert.match(await css.text(), /#f1c75b/);
 });

@@ -30,6 +30,12 @@ import {
   handleModelPayoutAdjustments,
   isModelPayoutAdjustmentRequest,
 } from "./model-payout-adjustments.js";
+import {
+  handleAdminShopOrdersApi,
+  handleAdminShopOrdersPage,
+  isAdminShopOrdersApiRequest,
+  isAdminShopOrdersPageRequest,
+} from "./mmd-shop-orders-admin.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -170,6 +176,16 @@ export default {
     // own strict caller + internal bearer checks and never becomes domain truth.
     if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
       return handleKenjiLv5OperationalRpc(request, env);
+    }
+
+    if (isAdminShopOrdersPageRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, env);
+      return handleAdminShopOrdersPage(request, actor);
+    }
+
+    if (isAdminShopOrdersApiRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, env);
+      return handleAdminShopOrdersApi(request, env, actor);
     }
 
     if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {

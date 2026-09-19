@@ -50,6 +50,8 @@ import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from ".
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
 import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
+import { HYPE_OWNER_SUMMARY_PATH, handleHypeOwnerSummaryRpc } from "./hype-owner-summary.js";
+import { HYPE_CONTINUITY_PATH, HYPE_HANDOFF_PATH, HYPE_TRANSACTION_INTAKE_PATH, handleHypeContinuityRpc, handleHypeHandoffRpc, handleHypeTransactionIntakeRpc } from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -123,6 +125,24 @@ export default {
     // read-only projection from the same live fan-in used by Kenji LV5.
     if (path === HYPE_OPERATIONAL_STATUS_PATH) {
       return handleHypeOperationalStatusRpc(request, env);
+    }
+
+    // Service-binding-only owner summary for HYPE. Read-only and derived from
+    // the same canonical admin dashboard data used by Back Office.
+    if (path === HYPE_OWNER_SUMMARY_PATH) {
+      return handleHypeOwnerSummaryRpc(request, env);
+    }
+
+    // Service-binding-only cross-channel continuity and supervised HYPE handoff.
+    // These mutate conversation context only; canonical business truth remains untouched.
+    if (path === HYPE_CONTINUITY_PATH) {
+      return handleHypeContinuityRpc(request, env);
+    }
+    if (path === HYPE_HANDOFF_PATH) {
+      return handleHypeHandoffRpc(request, env);
+    }
+    if (path === HYPE_TRANSACTION_INTAKE_PATH) {
+      return handleHypeTransactionIntakeRpc(request, env);
     }
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,

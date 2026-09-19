@@ -74,6 +74,7 @@ jobs:
           node --check src/payment-approved-job-link-dispatch.js
           node --check src/telegram-identity-bind-authority.js
           node --check src/admin-login-hero-worker.js
+          node --check src/mmd-shop-orders-admin.js
           node --check src/payments-issuer-transport.js
           node --check src/payment-issuer-diagnostic.js
           node --check src/model-media-e2e-smoke.js

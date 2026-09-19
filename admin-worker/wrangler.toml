@@ -218,6 +218,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
+
+# MMD Shop owner workspace and authenticated API. Webflow is presentation only.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/shop/orders*"
+zone_name = "mmdbkk.com"
+
 # Public Model application review. The page, review API, decision endpoint and
 # private media proxy all stay behind the credential-bound admin gate.
 [[routes]]

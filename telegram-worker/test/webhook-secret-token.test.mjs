@@ -1002,3 +1002,133 @@ test("Premium group join service message cleanup is configured without exposing 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("HYPE payment language reads canonical payment projection and never upgrades pending review to paid", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramBody = null;
+  let operationsBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 801, chat: { id: 999 } } });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9400,
+        message: {
+          message_id: 170,
+          text: "สลิปถึงยัง",
+          chat: { id: 999, type: "private" },
+          from: { id: 111111, username: "member" },
+        },
+      }),
+    }), env({
+      HYPE_OPERATIONS: {
+        async fetch(request) {
+          operationsBody = await request.json();
+          return Response.json({
+            ok: true,
+            state: "ready",
+            readiness: "blocked",
+            display_name: "คุณเอ็ม",
+            membership: { status: "active", lifecycle: "active", level: "private_premium" },
+            job: {
+              active_count: 1,
+              next: {
+                status: "awaiting_payment",
+                model_name: "Book EI",
+                start_at: "2026-09-24T19:00:00+07:00",
+                payment_state: "pending_review",
+              },
+            },
+            payment: {
+              status: "pending_review",
+              paid: false,
+              review_required: true,
+              outstanding_amount_thb: 5000,
+              credit_balance_thb: 1500,
+            },
+            next_action: {
+              action: "review_payment",
+              label: "ตรวจหลักฐานการชำระเงิน",
+              href: "",
+            },
+          });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "hype_operating_payment");
+    assert.equal(body.ok, true);
+    assert.equal(operationsBody.intent.type, "payment_status");
+    assert.equal(operationsBody.intent.trigger, "telegram_payment");
+    assert.match(telegramBody.text, /HYPE · PAYMENT STATUS/);
+    assert.match(telegramBody.text, /รอตรวจสอบหลักฐาน/);
+    assert.match(telegramBody.text, /5,000 บาท/);
+    assert.match(telegramBody.text, /1,500 บาท/);
+    assert.match(telegramBody.text, /จะไม่ mark paid/);
+    assert.doesNotMatch(telegramBody.text, /ยืนยันการชำระแล้ว ✅/);
+    assert.doesNotMatch(telegramBody.text, /payment_ref|canonical_client_id|internal\/admin/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE payment status is private-only in member groups", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let operationsCalled = false;
+  let telegramBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 802, chat: { id: -1002073919780 } } });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9401,
+        message: {
+          message_id: 171,
+          text: "เหลือจ่ายเท่าไหร่",
+          chat: { id: -1002073919780, type: "supergroup" },
+          from: { id: 111111, username: "member" },
+        },
+      }),
+    }), env({
+      TELEGRAM_STANDARD_GROUP_ID: "-1002073919780",
+      HYPE_OPERATIONS: {
+        async fetch() {
+          operationsCalled = true;
+          throw new Error("payment status must not resolve Client 360 in a group");
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "hype_operating_private_required");
+    assert.equal(operationsCalled, false);
+    assert.match(telegramBody.text, /\/payment/);
+    assert.doesNotMatch(telegramBody.text, /5,000|paid|payment_ref/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

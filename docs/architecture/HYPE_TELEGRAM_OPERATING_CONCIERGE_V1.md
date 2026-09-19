@@ -204,11 +204,195 @@ After V1 production verification, HYPE adds:
 
 This keeps HYPE useful without creating a second Points or Coupon authority.
 
+## Payment status explanation
+
+HYPE may answer payment-status questions in private Telegram chat from the bounded canonical payment projection.
+
+Supported examples include:
+
+- `/payment`
+- `จ่ายแล้วไหม`
+- `ชำระแล้วไหม`
+- `สลิปถึงยัง`
+- `ยอดคงเหลือ`
+- `เหลือจ่ายเท่าไหร่`
+
+Rules:
+
+- `pending_review` means evidence is awaiting review; it must never be described as paid;
+- `paid=true` is the only customer-safe paid confirmation exposed by this projection;
+- outstanding amount and verified credit may be shown only from canonical numeric fields;
+- HYPE must never infer a payment from Job status, a Telegram message, a slip image, or customer wording;
+- HYPE must never mark paid, accept/reject a slip, or modify payment truth;
+- payment status is private-chat only and must not resolve Client 360 from a Telegram group.
+
+## Owner HYPE Summary
+
+Priority 2 is Owner Mode for Per.
+
+Supported owner prompts include:
+
+- `/owner`
+- `/today`
+- `/per`
+- `วันนี้มีอะไรต้องดูบ้าง`
+- `สรุปงานวันนี้`
+
+Owner authorization is Telegram-native and fail-closed:
+
+- the requester must be the `creator` of the canonical HYPE Ops chat (`TELEGRAM_CHAT_ID`);
+- `administrator`, `member`, unknown or Telegram API failure is not enough;
+- owner truth is not read until creator verification succeeds.
+
+Privacy:
+
+- detailed Owner Summary is delivered only to the verified owner's private Telegram chat;
+- if invoked from the HYPE Ops group, the group receives only a safe acknowledgement;
+- customer names, Model names, payment amounts, review queues and Client context must never be posted back into the group.
+
+Canonical source:
+
+- Owner Summary is derived from `admin-worker buildAdminDashboard()`;
+- Payment Review remains owned by Payment Review / payments authority;
+- Historical Recovery remains owned by the historical recovery runtime;
+- Job and reconfirm data remain canonical Session/reconfirm truth;
+- Membership review remains canonical Member/entitlement truth;
+- Client detail is opened on demand through canonical Client 360 rather than copied into HYPE as a new database.
+
+Owner Summary is read-only. HYPE may prioritize and link to actions but must not approve payments, change Job state, grant membership, or perform any protected mutation.
+
+## Supervised Handoff · Priority 3
+
+HYPE can hand a verified private-chat customer to Kenji or Per without forcing the customer to restart the story.
+
+Customer commands:
+
+- `/kenji` — prepare a cross-channel handoff to Kenji / LINE Official
+- `/human` or `/handoff` — prepare a supervised handoff to Per / MMD
+- Thai aliases such as `คุยกับเคนจิ`, `ขอคุยกับเปอร์`, `ส่งต่อให้ทีม`
+
+Continuity contract:
+
+- successful HYPE reads from `/status`, `/next`, `/booking`, and `/payment` write a bounded continuity snapshot to the existing Kenji Conversation Matrix;
+- the Matrix is keyed to the existing LINE conversation hash only after Telegram resolves to one Canonical Client and that Client already has a stable LINE identity;
+- if LINE identity is absent, HYPE reports `canonical_only` / `line_identity_not_linked` and does not create a synthetic LINE conversation;
+- the Matrix carries topic, last customer request, canonical snapshot summary, next action, open loops and handoff state;
+- HYPE does not copy raw private notes, payment references, service secrets, or unrestricted Client 360 data into the Matrix.
+
+Handoff rules:
+
+- every handoff refreshes the canonical HYPE/Kenji live fan-in before preparing the envelope;
+- `handoff_required=true` is conversation state only and does not approve payment, confirm a Job, grant membership, or mutate entitlement;
+- Kenji/Per must refresh canonical truth before any protected action;
+- HYPE Ops receives a bounded internal handoff summary through the existing `human_handoff` / Crew route;
+- customer-facing Telegram receives only the reference, destination and safe next step;
+- when cross-channel continuity is ready, LINE/Kenji resumes from the Matrix and should not ask the customer to repeat information already present there.
+
+Canonical LINE entry for the MMD handoff remains `https://lin.ee/xRqsALs`.
+
+## Natural-language Intent Router · Priority 4
+
+HYPE accepts ordinary customer language in addition to explicit slash commands.
+
+Examples:
+
+- `งานวันศุกร์โอเคยัง` -> Booking
+- `สมาชิกหมดเมื่อไหร่` -> Membership
+- `สลิปถึงยัง` / `เหลือจ่ายเท่าไหร่` -> Payment
+- `แต้มผมมีเท่าไหร่` -> Points canonical route
+- `คูปองใช้ได้ไหม` -> Coupon Wallet canonical route
+- `CARE BACK ใช้ยังไง` -> CARE BACK
+- `ต้องทำอะไรต่อจากนี้` -> Next Action
+
+Routing rules:
+
+- explicit slash commands and explicit handoff/owner commands take precedence;
+- natural-language routing is deterministic and domain-scoped; it does not use model-generated business truth;
+- a private domain such as Membership, Booking or Payment remains private-chat only even when detected from natural language;
+- Points/Coupons remain route-only until a bounded canonical wallet projection is explicitly approved;
+- if two protected domains are both strongly signalled and nearly tied, HYPE asks the customer to clarify instead of selecting an authority;
+- generic conversation without a strong domain signal is left unclassified rather than guessed;
+- the router chooses which canonical authority to read; it never decides the business result itself.
+
+Membership natural-language questions use the existing customer-safe entitlement projection and may show level, lifecycle and active-through. HYPE must not grant, renew or upgrade membership.
+
+## Safe Transaction Assistant · Priority 5
+
+HYPE may prepare transaction drafts in private Telegram chat, but it does not own the final submit or any resulting business truth.
+
+Supported intake starts:
+
+- `/book` or natural language such as `อยากจอง dinner พรุ่งนี้ 19:00 สาทร`
+- `/proof` / `/slip` or `ส่งสลิป`
+- `/renew` or `ขอต่ออายุสมาชิก`
+- `/mms` or `อยากจองนวด`
+
+P5 uses the existing Kenji Conversation Matrix for draft continuity. It must not create a second transaction database.
+
+General contract:
+
+1. detect the requested intake lane;
+2. collect only whitelisted customer-supplied fields;
+3. persist a bounded draft to cross-channel continuity when a canonical Client already has LINE identity;
+4. report missing fields and resume the same draft across later Telegram messages;
+5. when the draft is complete, route the customer to the canonical submit surface;
+6. the customer performs the canonical submit and the owning backend remains final authority.
+
+### Booking Intake
+
+HYPE may prepare service intent, preferred date/time, area/location, optional duration, optional Model preference and an optional request note.
+
+Required before the draft is complete: service intent, date, time and area.
+
+The default customer handoff is `/booking`. Existing supervised booking-draft capabilities may be reused only when canonical identity/model/access gates pass. HYPE must never convert the intake draft into a confirmed Job, assign a Model, create protected calendar state or infer availability.
+
+### Payment Proof Intake
+
+A Telegram photo/document is not canonical Payment Evidence.
+
+HYPE may store only that evidence is present, the evidence type and a bounded customer note.
+
+HYPE must never persist Telegram `file_id`, `file_unique_id`, raw media, OCR result, bank destination, or a newly invented payment reference in Conversation Matrix.
+
+A payment-proof handoff is ready only when current canonical payment context exposes an exact signed same-origin proof surface:
+
+- `/sigil/pay?t=...`, or
+- `/pay/checkout?t=...`.
+
+If no signed current payment intent exists, HYPE routes to `/member/payments` to resume canonical payment flow. It must not default to legacy `/confirm/payment-proof`, mint a replacement payment reference, ask for duplicate proof when canonical review is pending, or describe an unverified proof as paid.
+
+### Membership Renewal Intake
+
+Renewal is current-package-only.
+
+HYPE may capture intent to renew and route:
+
+- current Private membership -> `/sigil/member/membership?intent=renew`;
+- current Public Member / Elite / Red Card -> `/pay/membership`;
+- unresolved membership -> MY MMD for canonical resolution.
+
+HYPE does not ask the customer to re-select Standard/Premium when current package is already canonical. It must not upgrade, extend, activate, grant or settle membership itself. Blocked/suspended/revoked states remain fail-closed.
+
+### MMS Pre-booking Intake
+
+HYPE may prepare recipient gender, canonical MMS zone, service date/time, requested MMS skills, optional duration, optional Therapist preference and an optional note.
+
+Required before MMS draft is complete: recipient gender, zone, date, time and at least one skill.
+
+Recipient gender is request-specific and must be supplied explicitly for this booking. HYPE must not infer it from account-holder gender, Hall audience, profile, name, history or Telegram identity because the recipient may be another person.
+
+Canonical customer submit remains `/male-massage/member/mms-booking`. A pre-booking is a request, not confirmed Therapist availability, booking or payment.
+
+### P5 authority lock
+
+Every P5 flow remains draft-only: no business-truth mutation, no payment verification, no Job confirmation, no Model assignment, no membership grant/renewal, no MMS booking confirmation. Customer submit and canonical backend authority are required.
+
+Transaction Intake is private-chat only. A request started in Standard, Premium, Preview or another group must not read/write Client transaction context there; HYPE routes the user to private chat instead.
+
 ## Next implementation lanes
 
-1. customer-safe payment proof status explanation
-2. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
-3. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
-4. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
+1. owner/operator acknowledgement and close-loop state for completed handoffs
+2. supervised canonical booking-draft materialization only through existing safe action gates where identity/model/access data is complete
+3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.

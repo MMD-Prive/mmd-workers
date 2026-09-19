@@ -5,6 +5,7 @@ import {
   isModelDirectWishAdminReviewRequest,
   isModelDirectWishRequest,
   modelWishTelegramTargets,
+  modelDirectWishDisplayState,
   normalizeModelDirectWishInput,
   normalizeModelWishTier,
 } from "./src/model-direct-wish.js";
@@ -13,6 +14,13 @@ test("direct Model Wish mode uses existing query-safe current-session route", ()
   assert.equal(isModelDirectWishRequest(new Request("https://mmdbkk.com/v1/model/session/current?mode=year6_direct_wish")), true);
   assert.equal(isModelDirectWishRequest(new Request("https://mmdbkk.com/v1/model/session/current?mode=year6_wish")), false);
   assert.equal(isModelDirectWishRequest(new Request("https://mmdbkk.com/v1/model/wish")), false);
+});
+
+test("direct Wish review states map to calm dashboard labels", () => {
+  assert.deepEqual(modelDirectWishDisplayState("manual_review"), { key: "pending_review", label: "รอยืนยัน", tone: "yellow" });
+  assert.deepEqual(modelDirectWishDisplayState("completed"), { key: "approved", label: "ยืนยันแล้ว", tone: "green" });
+  assert.deepEqual(modelDirectWishDisplayState("revoked"), { key: "not_approved", label: "ยังไม่เผยแพร่", tone: "neutral" });
+  assert.deepEqual(modelDirectWishDisplayState(""), { key: "not_submitted", label: "ยังไม่ได้ส่ง", tone: "neutral" });
 });
 
 test("Model taxonomy is exactly Standard / Premium / Exclusive; VIP is not a Model tier", () => {

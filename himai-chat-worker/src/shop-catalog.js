@@ -51,7 +51,7 @@ async function listProducts(env, shopKey) {
 
   const [result, stockByProduct, supplierNames] = await Promise.all([
     airtableRequest(env, `${tableId}?${params.toString()}`),
-    shopKey === "shop" ? loadHimaiStockByProduct(env) : Promise.resolve(new Map()),
+    shopKey === "shop" ? loadHimaiStockByProduct(env) : loadMmdStockByProduct(env),
     loadSupplierNames(env)
   ]);
 
@@ -125,6 +125,36 @@ async function loadHimaiStockByProduct(env) {
       const current = stockByProduct.get(productId) || { available: 0, low: false };
       current.available += remaining || 0;
       current.low = current.low || lowFlag.includes("low") || lowFlag.includes("yes") || lowFlag.includes("true");
+      stockByProduct.set(productId, current);
+    }
+  }
+
+  return stockByProduct;
+}
+
+async function loadMmdStockByProduct(env) {
+  const tableId = env.MMD_SHOP_INVENTORY_BATCHES_TABLE_ID || "tblwFgl4et1TOgtNn";
+  const fields = ["Product", "Quantity Remaining", "Low Stock Flag", "Batch Status"];
+  const params = new URLSearchParams();
+  params.set("pageSize", "100");
+  for (const field of fields) params.append("fields[]", field);
+
+  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const stockByProduct = new Map();
+
+  for (const record of result.records || []) {
+    const fields = record.fields || {};
+    const productIds = Array.isArray(fields["Product"]) ? fields["Product"] : [];
+    const remaining = numberOrNull(fields["Quantity Remaining"]);
+    const batchStatus = (selectName(fields["Batch Status"]) || "").toLowerCase();
+    const lowFlag = (selectName(fields["Low Stock Flag"]) || "").toLowerCase();
+
+    if (batchStatus !== "active") continue;
+
+    for (const productId of productIds) {
+      const current = stockByProduct.get(productId) || { available: 0, low: false };
+      current.available += remaining || 0;
+      current.low = current.low || lowFlag.includes("low");
       stockByProduct.set(productId, current);
     }
   }

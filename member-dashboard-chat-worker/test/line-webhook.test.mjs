@@ -157,7 +157,7 @@ test("Himai supplier registration links a canonical Supplier record", async () =
 
 test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   const cases = [
-      ["สมัคร Premium", "private_membership_signup", "intent=signup"],
+      ["สมัคร Premium", "private_membership_signup", /intent=signup/],
     ["ไป dinner", "mmd_companion", /MMD Companion/],
     ["อยากนวด recovery", "mms_wellness", /MMS Wellness/],
     ["ไม่มีสถานที่ ใช้ Relax Spa", "partner_venue", /Relax Spa by 9/],
@@ -236,14 +236,15 @@ test("membership signup and renewal webhooks reply once without model use", asyn
   };
   try {
     const cases = [
-      ["สมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
-      ["อยากสมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
-      ["ขอสมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
-      ["ต่ออายุ", "membership_renewal", "intent=renew"],
-      ["ต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
-      ["ขอต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
+      ["สมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["อยากสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["ขอสมัครสมาชิก", "membership_signup", /https:\/\/mmdbkk\.com\/pay\/membership\?source=line/],
+      ["สมัคร Premium", "private_membership_signup", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=signup/],
+      ["ต่ออายุ", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
+      ["ต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
+      ["ขอต่ออายุสมาชิก", "membership_renewal", /https:\/\/mmdbkk\.com\/sigil\/member\/membership\?source=line&intent=renew/],
     ];
-    for (const [text, intent, query] of cases) {
+    for (const [text, intent, routePattern] of cases) {
       calls.length = 0;
       const event = lineTextEvent(text, { mode: "active", message: { id: `msg-${text}`, type: "text", text } });
       assert.equal(inferLineIntent(text, event), intent, text);
@@ -257,7 +258,7 @@ test("membership signup and renewal webhooks reply once without model use", asyn
       assert.equal(calls.filter((call) => call.url.includes("api.openai.com")).length, 0, text);
       const replyBody = JSON.parse(calls.find((call) => call.url.includes("/message/reply")).init.body);
       assert.equal(replyBody.messages.length, 1, text);
-      assert.match(replyBody.messages[0].text, new RegExp(`https://mmdbkk\\.com/sigil/member/membership\\?source=line&${query}`), text);
+      assert.match(replyBody.messages[0].text, routePattern, text);
     }
   } finally {
     globalThis.fetch = originalFetch;
