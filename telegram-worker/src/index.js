@@ -1864,22 +1864,7 @@ function renderHypeHandoffOperatorAlert(result = {}) {
       : []),
     "",
     escapeHtml(summary),
-    ...(result.recovery_correlation?.correlated === true
-      ? [
-          "",
-          "<b>Shop recovery correlation</b>",
-          `Order: <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`,
-          `Payment: ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")}`,
-          `Fulfillment: ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`,
-          `Case: <code>${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
-        ]
-      : result.recovery_correlation?.state === "ambiguous"
-        ? [
-            "",
-            `<b>Shop recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(result.recovery_correlation.candidate_count || 0)} Order ที่เป็นของลูกค้า`,
-            "HYPE ไม่เลือก Order แทนลูกค้า",
-          ]
-        : []),
+    ...renderRecoveryCorrelationOpsLines(result.recovery_correlation, result.handoff_id),
     "",
     "<b>Owner controls:</b>",
     `<code>/case-ack ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
@@ -1896,6 +1881,112 @@ function renderHypeHandoffOperatorAlert(result = {}) {
   ].join("\n").slice(0, 3900);
 }
 
+
+function renderRecoveryCorrelationOpsLines(correlation = {}, handoffId = "") {
+  if (!correlation || typeof correlation !== "object") return [];
+  const domain = clean(correlation.domain).toLowerCase();
+  const caseRef = clean(correlation.case_ref || handoffId) || "-";
+
+  if (domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return [
+        "",
+        "<b>Shop recovery correlation</b>",
+        `Order: <code>${escapeHtml(clean(correlation.order_id))}</code>`,
+        `Payment: ${escapeHtml(clean(correlation.payment_status) || "unknown")}`,
+        `Fulfillment: ${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}`,
+        `Case: <code>${escapeHtml(caseRef)}</code>`,
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "",
+        `<b>Shop recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(correlation.candidate_count || 0)} Order ที่เป็นของลูกค้า`,
+        "HYPE ไม่เลือก Order แทนลูกค้า",
+      ];
+    }
+  }
+
+  if (domain === "booking" && correlation.correlated === true) {
+    return [
+      "",
+      "<b>Booking recovery correlation</b>",
+      `Booking Ref: <code>${escapeHtml(clean(correlation.booking_ref) || "-")}</code>`,
+      `Session: <code>${escapeHtml(clean(correlation.session_id) || "pending")}</code>`,
+      `Job: <code>${escapeHtml(clean(correlation.job_id) || "pending")}</code>`,
+      `Job state: ${escapeHtml(clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown")}`,
+      `Case: <code>${escapeHtml(caseRef)}</code>`,
+    ];
+  }
+
+  if (domain === "mms" && correlation.correlated === true) {
+    return [
+      "",
+      "<b>MMS recovery correlation</b>",
+      `Pre-booking: <code>${escapeHtml(clean(correlation.prebooking_id) || "-")}</code>`,
+      `MMS state: ${escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown")}`,
+      ...(clean(correlation.service_date) ? [`Schedule: ${escapeHtml(clean(correlation.service_date))}${clean(correlation.service_time) ? ` · ${escapeHtml(clean(correlation.service_time))}` : ""}`] : []),
+      ...(clean(correlation.zone) ? [`Zone: ${escapeHtml(clean(correlation.zone))}`] : []),
+      `Case: <code>${escapeHtml(caseRef)}</code>`,
+    ];
+  }
+
+  return [];
+}
+
+function renderRecoveryCorrelationCustomerLines(correlation = {}) {
+  if (!correlation || typeof correlation !== "object") return [];
+  const domain = clean(correlation.domain).toLowerCase();
+
+  if (domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      const lines = [`<b>Order:</b> <code>${escapeHtml(clean(correlation.order_id))}</code>`];
+      if (clean(correlation.live_refresh_status) === "fresh") {
+        lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(correlation.fulfillment_state) || "unknown")}`);
+        if (clean(correlation.refreshed_at)) lines.push(`<b>Shop refreshed:</b> ${escapeHtml(formatBangkokDateTime(correlation.refreshed_at))}`);
+      } else {
+        lines.push("<b>Shop state:</b> ตอนนี้ refresh จาก canonical Shop authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
+      }
+      return lines;
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        `<b>Order:</b> ยังไม่ได้เลือก · มี ${Number(correlation.candidate_count || 0)} รายการที่เป็นไปได้`,
+        "เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  if (domain === "booking" && correlation.correlated === true) {
+    const lines = [
+      `<b>Booking Ref:</b> <code>${escapeHtml(clean(correlation.booking_ref) || "-")}</code>`,
+    ];
+    if (clean(correlation.session_id)) lines.push(`<b>Session:</b> <code>${escapeHtml(clean(correlation.session_id))}</code>`);
+    if (clean(correlation.job_id)) lines.push(`<b>Job:</b> <code>${escapeHtml(clean(correlation.job_id))}</code>`);
+    lines.push(`<b>Booking state:</b> ${escapeHtml(clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown")}`);
+    if (clean(correlation.live_refresh_status) !== "fresh") {
+      lines.push("<b>Booking state:</b> refresh จาก canonical Booking authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
+    }
+    return lines;
+  }
+
+  if (domain === "mms" && correlation.correlated === true) {
+    const lines = [
+      `<b>MMS Pre-booking:</b> <code>${escapeHtml(clean(correlation.prebooking_id) || "-")}</code>`,
+      `<b>MMS state:</b> ${escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown")}`,
+    ];
+    if (clean(correlation.service_date)) {
+      lines.push(`<b>Schedule:</b> ${escapeHtml(clean(correlation.service_date))}${clean(correlation.service_time) ? ` · ${escapeHtml(clean(correlation.service_time))}` : ""}`);
+    }
+    if (clean(correlation.zone)) lines.push(`<b>Zone:</b> ${escapeHtml(clean(correlation.zone))}`);
+    if (clean(correlation.live_refresh_status) !== "fresh") {
+      lines.push("<b>MMS state:</b> refresh จาก canonical MMS authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
+    }
+    return lines;
+  }
+
+  return [];
+}
 
 function renderHypeHandoffStatus(result = {}) {
   const state = clean(result.state || "none").toLowerCase();
@@ -1918,20 +2009,7 @@ function renderHypeHandoffStatus(result = {}) {
     lines.push(`<b>Outcome:</b> ${escapeHtml(clean(result.recovery_case.outcome_label) || clean(result.recovery_case.outcome_code) || "รับเคสแล้ว")}`);
   }
 
-  if (result.recovery_correlation?.correlated === true) {
-    lines.push(`<b>Order:</b> <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`);
-    if (clean(result.recovery_correlation.live_refresh_status) === "fresh") {
-      lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
-      if (clean(result.recovery_correlation.refreshed_at)) {
-        lines.push(`<b>Shop refreshed:</b> ${escapeHtml(formatBangkokDateTime(result.recovery_correlation.refreshed_at))}`);
-      }
-    } else {
-      lines.push("<b>Shop state:</b> ตอนนี้ refresh จาก canonical Shop authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
-    }
-  } else if (result.recovery_correlation?.state === "ambiguous") {
-    lines.push(`<b>Order:</b> ยังไม่ได้เลือก · มี ${Number(result.recovery_correlation.candidate_count || 0)} รายการที่เป็นไปได้`);
-    lines.push("เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ownership ก่อนผูกเข้ากับ Case เดิม");
-  }
+  lines.push(...renderRecoveryCorrelationCustomerLines(result.recovery_correlation));
 
   if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
   lines.push("");

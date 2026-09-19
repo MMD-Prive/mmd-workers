@@ -148,36 +148,59 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
   const lineUserId = lineId(identity?.client?.line_user_id);
   const projection = buildCanonicalHandoffProjection(context);
+
+  let existingRecoveryRecord = null;
+  let priorRecoveryPayload = {};
+  let priorRecoveryCase = null;
+  let priorRecoveryTracking = {};
+  if (lineUserId && sourceCommand === "recovery") {
+    const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+    const existing = await findMatrix(env, hash);
+    if (existing.ok && existing.record) {
+      existingRecoveryRecord = existing.record;
+      priorRecoveryPayload = parseObject(existing.record.fields?.[F.PAYLOAD]);
+      priorRecoveryTracking = handoffTrackingFromRecord(existing.record);
+      priorRecoveryCase = safeRecoveryCase(priorRecoveryPayload.recovery_case, priorRecoveryTracking);
+    }
+  }
+
+  const inferredRecoveryDomain = sourceCommand === "recovery"
+    ? inferRecoveryDomain(customerMessage, null)
+    : "unclassified";
+  const recoveryDomainHint = inferredRecoveryDomain === "unclassified"
+    && priorRecoveryCase
+    && !["resolved", "customer_notified"].includes(token(priorRecoveryTracking.state))
+      ? priorRecoveryCase.domain
+      : inferredRecoveryDomain;
   let recoveryCorrelation = sourceCommand === "recovery"
-    ? await buildShopRecoveryCorrelation(env, telegramUserId, customerMessage)
+    ? await buildRecoveryCorrelation(env, {
+        domain: recoveryDomainHint,
+        telegramUserId,
+        canonicalClientId,
+        customerMessage,
+        priorPayload: priorRecoveryPayload,
+      })
     : null;
+  if (!recoveryCorrelation && priorRecoveryCase?.domain === recoveryDomainHint) {
+    recoveryCorrelation = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
+  }
   const recoveryDomain = sourceCommand === "recovery"
     ? inferRecoveryDomain(customerMessage, recoveryCorrelation)
     : "unclassified";
 
   let handoffId = "";
-  if (lineUserId && sourceCommand === "recovery") {
-    const hash = await sha256Hex(`line_ofc:${lineUserId}`);
-    const existing = await findMatrix(env, hash);
-    if (existing.ok && existing.record) {
-      const priorPayload = parseObject(existing.record.fields?.[F.PAYLOAD]);
-      const priorRecovery = parseObject(priorPayload.recovery_correlation);
-      const priorCase = safeRecoveryCase(priorPayload.recovery_case, handoffTrackingFromRecord(existing.record));
-      const tracking = handoffTrackingFromRecord(existing.record);
-      const domainCompatible = priorCase
-        && !["resolved", "customer_notified"].includes(token(tracking.state))
-        && (
-          priorCase.domain === recoveryDomain
-          || priorCase.domain === "unclassified"
-          || recoveryDomain === "unclassified"
-        );
-      const shopCompatible = recoveryDomain !== "mmd_shop"
-        || !clean(priorRecovery.order_id, 180)
-        || !clean(recoveryCorrelation?.order_id, 180)
-        || clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation?.order_id, 180)
-        || priorRecovery.correlated !== true;
-      if (domainCompatible && shopCompatible && tracking.id) handoffId = tracking.id;
-    }
+  if (existingRecoveryRecord && sourceCommand === "recovery") {
+    const priorRecovery = safeRecoveryCorrelation(priorRecoveryPayload.recovery_correlation);
+    const tracking = priorRecoveryTracking;
+    const domainCompatible = priorRecoveryCase
+      && !["resolved", "customer_notified"].includes(token(tracking.state))
+      && (
+        priorRecoveryCase.domain === recoveryDomain
+        || priorRecoveryCase.domain === "unclassified"
+        || recoveryDomain === "unclassified"
+      );
+    const correlationCompatible = recoveryCorrelationCompatible(recoveryDomain, priorRecovery, recoveryCorrelation);
+    if (domainCompatible && correlationCompatible && tracking.id) handoffId = tracking.id;
   }
   if (!handoffId) handoffId = await buildHandoffId(canonicalClientId, target);
   if (recoveryCorrelation) recoveryCorrelation = { ...recoveryCorrelation, case_ref: handoffId };
@@ -266,7 +289,8 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
 
     const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
-    if (identity?.status !== "resolved" || !recordId(identity?.client?.canonical_client_id)) {
+    const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+    if (identity?.status !== "resolved" || !canonicalClientId) {
       return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
     }
     const lineUserId = lineId(identity.client.line_user_id);
@@ -284,8 +308,24 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
 
     const payload = parseObject(matrix.record.fields?.[F.PAYLOAD]);
     let recoveryCorrelation = safeRecoveryCorrelation(parseObject(payload.recovery_correlation));
-    if (recoveryCorrelation?.correlated === true && recoveryCorrelation.order_id) {
-      recoveryCorrelation = await refreshShopRecoveryCorrelation(env, telegramUserId, recoveryCorrelation);
+    if (recoveryCorrelation?.correlated === true) {
+      if (recoveryCorrelation.domain === "mmd_shop" && recoveryCorrelation.order_id) {
+        recoveryCorrelation = await refreshShopRecoveryCorrelation(env, telegramUserId, recoveryCorrelation);
+      } else if (recoveryCorrelation.domain === "booking" && recoveryCorrelation.booking_ref) {
+        recoveryCorrelation = await correlateOwnedBookingRecoveryRef(
+          env,
+          canonicalClientId,
+          recoveryCorrelation.booking_ref,
+          recoveryCorrelation.method || "case_refresh",
+        );
+      } else if (recoveryCorrelation.domain === "mms" && recoveryCorrelation.prebooking_id) {
+        recoveryCorrelation = await correlateOwnedMmsRecoveryRef(
+          env,
+          canonicalClientId,
+          recoveryCorrelation.prebooking_id,
+          recoveryCorrelation.method || "case_refresh",
+        );
+      }
     }
     const recoveryCase = safeRecoveryCase(payload.recovery_case, tracking);
 
@@ -1760,14 +1800,19 @@ async function upsertContinuityMatrix(env, input = {}) {
     ...existingLoops,
     ...openLoopsFromProjection(input.projection),
     ...(input.recoveryCorrelation ? ["service_recovery"] : []),
-    ...(input.recoveryCorrelation?.correlated === true ? ["shop_recovery"] : []),
+    ...(input.recoveryCorrelation?.correlated === true
+      ? [`${normalizeRecoveryDomain(input.recoveryCorrelation.domain)}_recovery`]
+      : []),
     ...(handoff ? ["human_handoff"] : []),
   ]);
+  const correlatedReferenceKey = input.recoveryCorrelation?.correlated === true
+    ? recoveryReferenceMemoryKey(input.recoveryCorrelation)
+    : "";
   const dontAsk = unique([
     ...existingDontAsk,
     "telegram_identity",
     ...(input.customerMessage ? ["latest_customer_request"] : []),
-    ...(input.recoveryCorrelation?.correlated === true ? ["shop_order_reference"] : []),
+    ...(correlatedReferenceKey ? [correlatedReferenceKey] : []),
   ]);
   const stage = handoff
     ? reusedHandoff && token(tracking.state) !== "prepared"
@@ -1968,11 +2013,7 @@ function buildContinuitySummary({ command, projection, handoff, recoveryCorrelat
           ? `Payment state ${projection.payment.status}.`
           : "",
     projection.next_action.label ? `Next action: ${projection.next_action.label}.` : "",
-    recoveryCorrelation?.correlated === true
-      ? `Shop recovery linked to Order ${clean(recoveryCorrelation.order_id, 180)}; payment=${clean(recoveryCorrelation.payment_status, 80) || "unknown"}; fulfillment=${clean(recoveryCorrelation.fulfillment_state, 80) || "unknown"}; Case Ref ${clean(recoveryCorrelation.case_ref, 180)}.`
-      : recoveryCorrelation?.state === "ambiguous"
-        ? "Shop recovery detected but multiple owned Order candidates exist; do not guess the Order reference."
-        : "",
+    recoveryContinuityLine(recoveryCorrelation),
     handoff ? `Customer requested supervised handoff to ${handoff.target}; do not ask them to restart the story. Refresh live truth before acting.` : "",
   ].filter(Boolean);
   return chunks.join(" ").slice(0, 1200);
@@ -1988,26 +2029,63 @@ function buildOperatorSummary({ target, displayName, customerMessage, projection
     projection.job.active_count ? `Job: ${projection.job.active_count} active/pending · ${projection.job.model_name || "-"} · ${projection.job.next_status || "unknown"}` : "Job: no active job in current snapshot",
     `Payment: ${projection.payment.paid ? "paid" : projection.payment.review_required ? "review_required" : projection.payment.status || "unknown"}`,
     projection.next_action.label ? `Next: ${projection.next_action.label}` : "",
-    recoveryCorrelation?.correlated === true
-      ? `Shop Recovery: Order ${clean(recoveryCorrelation.order_id, 180)} · Payment ${clean(recoveryCorrelation.payment_status, 80) || "unknown"} · Fulfillment ${clean(recoveryCorrelation.fulfillment_state, 80) || "unknown"} · Case ${clean(recoveryCorrelation.case_ref, 180) || handoffId}`
-      : recoveryCorrelation?.state === "ambiguous"
-        ? `Shop Recovery: ambiguous (${Number(recoveryCorrelation.candidate_count) || 0} owned candidates) · ask customer to choose Order ID`
-        : "",
+    recoveryOperatorLine(recoveryCorrelation, handoffId),
     "Context is continuity-only. Refresh canonical truth before any protected action.",
   ].filter(Boolean);
   return lines.join("\n").slice(0, 1800);
 }
 
 function safeRecoveryCorrelation(value = {}) {
-  if (!value || typeof value !== "object" || Array.isArray(value) || value.domain !== "mmd_shop") return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const domain = normalizeRecoveryDomain(value.domain);
+  if (!["mmd_shop", "booking", "mms"].includes(domain)) return null;
+
+  const common = {
+    domain,
+    state: token(value.state) || "unknown",
+    correlated: value.correlated === true,
+    case_ref: clean(value.case_ref, 180) || null,
+    method: token(value.method) || "none",
+    source_authority: clean(value.source_authority, 160) || null,
+    live_refresh_status: token(value.live_refresh_status) || null,
+    refreshed_at: clean(value.refreshed_at, 80) || null,
+  };
+
+  if (domain === "booking") {
+    return {
+      ...common,
+      booking_ref: clean(value.booking_ref, 180) || null,
+      session_id: clean(value.session_id, 220) || null,
+      job_id: clean(value.job_id, 180) || null,
+      session_state: token(value.session_state) || null,
+      job_state: token(value.job_state) || null,
+      exact_correlation: value.exact_correlation === true,
+      final_confirmation_observed: value.final_confirmation_observed === true,
+      correlation_scope: token(value.correlation_scope) || "booking_ref_exact",
+    };
+  }
+
+  if (domain === "mms") {
+    return {
+      ...common,
+      prebooking_id: clean(value.prebooking_id, 180) || null,
+      prebooking_status: token(value.prebooking_status || value.status) || "unknown",
+      service_date: clean(value.service_date, 20) || null,
+      service_time: clean(value.service_time, 8) || null,
+      zone: clean(value.zone, 100) || null,
+      skills: Array.isArray(value.skills)
+        ? value.skills.map((item) => clean(item, 80)).filter(Boolean).slice(0, 6)
+        : [],
+      exact_correlation: value.exact_correlation === true,
+      correlation_scope: token(value.correlation_scope) || "member_ref_to_prebooking_exact",
+    };
+  }
+
   const options = Array.isArray(value.options)
     ? value.options.map(safeRecoveryOrderOption).filter(Boolean).slice(0, 5)
     : [];
   return {
-    domain: "mmd_shop",
-    state: token(value.state) || "unknown",
-    correlated: value.correlated === true,
-    case_ref: clean(value.case_ref, 180) || null,
+    ...common,
     order_id: clean(value.order_id, 180) || null,
     order_status: token(value.order_status) || null,
     payment_status: token(value.payment_status) || null,
@@ -2017,15 +2095,72 @@ function safeRecoveryCorrelation(value = {}) {
     tracking_number: clean(value.tracking_number, 220) || null,
     total_thb: nullableNonNegative(value.total_thb),
     candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
-    method: token(value.method) || "none",
     options,
     selection_locked: value.selection_locked === true,
     selected_by: token(value.selected_by) || null,
     selected_at: clean(value.selected_at, 80) || null,
-    source_authority: clean(value.source_authority, 160) || null,
-    live_refresh_status: token(value.live_refresh_status) || null,
-    refreshed_at: clean(value.refreshed_at, 80) || null,
   };
+}
+
+function recoveryReferenceMemoryKey(correlation = {}) {
+  const domain = normalizeRecoveryDomain(correlation.domain);
+  if (domain === "mmd_shop" && clean(correlation.order_id, 180)) return "shop_order_reference";
+  if (domain === "booking" && clean(correlation.booking_ref, 180)) return "booking_request_reference";
+  if (domain === "mms" && clean(correlation.prebooking_id, 180)) return "mms_prebooking_reference";
+  return "";
+}
+
+function recoveryCorrelationCompatible(domain, prior, next) {
+  if (!prior || !next || prior.correlated !== true || next.correlated !== true) return true;
+  const normalized = normalizeRecoveryDomain(domain);
+  if (normalized === "mmd_shop") {
+    return !prior.order_id || !next.order_id || clean(prior.order_id, 180) === clean(next.order_id, 180);
+  }
+  if (normalized === "booking") {
+    return !prior.booking_ref || !next.booking_ref || clean(prior.booking_ref, 180) === clean(next.booking_ref, 180);
+  }
+  if (normalized === "mms") {
+    return !prior.prebooking_id || !next.prebooking_id || clean(prior.prebooking_id, 180) === clean(next.prebooking_id, 180);
+  }
+  return true;
+}
+
+function recoveryContinuityLine(correlation = null) {
+  if (!correlation) return "";
+  if (correlation.domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return `Shop recovery linked to Order ${clean(correlation.order_id, 180)}; payment=${clean(correlation.payment_status, 80) || "unknown"}; fulfillment=${clean(correlation.fulfillment_state, 80) || "unknown"}; Case Ref ${clean(correlation.case_ref, 180)}.`;
+    }
+    return correlation.state === "ambiguous"
+      ? "Shop recovery detected but multiple owned Order candidates exist; do not guess the Order reference."
+      : "";
+  }
+  if (correlation.domain === "booking" && correlation.correlated === true) {
+    return `Booking recovery linked to owned Booking Ref ${clean(correlation.booking_ref, 180)}; session=${clean(correlation.session_id, 180) || "pending"}; job=${clean(correlation.job_id, 180) || "pending"}; job_state=${clean(correlation.job_state, 80) || "unknown"}.`;
+  }
+  if (correlation.domain === "mms" && correlation.correlated === true) {
+    return `MMS recovery linked to owned Pre-booking ${clean(correlation.prebooking_id, 180)}; status=${clean(correlation.prebooking_status, 80) || "unknown"}; service=${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""}.`;
+  }
+  return "";
+}
+
+function recoveryOperatorLine(correlation = null, handoffId = "") {
+  if (!correlation) return "";
+  if (correlation.domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return `Shop Recovery: Order ${clean(correlation.order_id, 180)} · Payment ${clean(correlation.payment_status, 80) || "unknown"} · Fulfillment ${clean(correlation.fulfillment_state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+    }
+    return correlation.state === "ambiguous"
+      ? `Shop Recovery: ambiguous (${Number(correlation.candidate_count) || 0} owned candidates) · ask customer to choose Order ID`
+      : "";
+  }
+  if (correlation.domain === "booking" && correlation.correlated === true) {
+    return `Booking Recovery: ${clean(correlation.booking_ref, 180)} · Session ${clean(correlation.session_id, 180) || "pending"} · Job ${clean(correlation.job_id, 180) || "pending"} · State ${clean(correlation.job_state, 80) || clean(correlation.state, 80) || "unknown"} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+  }
+  if (correlation.domain === "mms" && correlation.correlated === true) {
+    return `MMS Recovery: ${clean(correlation.prebooking_id, 180)} · Status ${clean(correlation.prebooking_status, 80) || "unknown"} · ${clean(correlation.service_date, 20) || "-"} ${clean(correlation.service_time, 8) || ""} · Case ${clean(correlation.case_ref, 180) || handoffId}`;
+  }
+  return "";
 }
 
 function safeRecoveryOrderOption(value = {}) {
@@ -2300,6 +2435,213 @@ async function refreshShopRecoveryCorrelation(env, telegramUserId, prior = {}) {
     live_refresh_status: "fresh",
     refreshed_at: new Date().toISOString(),
   };
+}
+
+async function buildRecoveryCorrelation(env, input = {}) {
+  const domain = normalizeRecoveryDomain(input.domain);
+  if (domain === "mmd_shop") {
+    return buildShopRecoveryCorrelation(env, input.telegramUserId, input.customerMessage);
+  }
+  if (domain === "booking") {
+    return buildBookingRecoveryCorrelation(env, input);
+  }
+  if (domain === "mms") {
+    return buildMmsRecoveryCorrelation(env, input);
+  }
+  return null;
+}
+
+function exactRecoveryRefFromPayload(priorPayload = {}, domain = "") {
+  const prior = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (domain === "booking" && prior?.domain === "booking" && prior.booking_ref) return prior.booking_ref;
+  if (domain === "mms" && prior?.domain === "mms" && prior.prebooking_id) return prior.prebooking_id;
+
+  const execution = safeExecutionReceipt(parseObject(priorPayload.supervised_execution));
+  if (execution.mode !== domain || execution.status !== "materialized") return "";
+  return clean(execution.canonical_ref, 180);
+}
+
+function extractBookingRecoveryRef(value = "") {
+  const text = clean(value, 500);
+  const direct = /\b(kenji_[a-f0-9]{24})\b/i.exec(text);
+  if (direct?.[1]) return clean(direct[1], 180);
+  const labeled = /(?:booking|request|job)\s*(?:ref|reference|id|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{7,79})/i.exec(text);
+  return labeled?.[1] ? clean(labeled[1], 180) : "";
+}
+
+function extractMmsRecoveryRef(value = "") {
+  const match = /\b(mmspre_[a-f0-9]{24})\b/i.exec(clean(value, 500));
+  return match?.[1] ? clean(match[1].toLowerCase(), 180) : "";
+}
+
+async function buildBookingRecoveryCorrelation(env, input = {}) {
+  const explicitRef = extractBookingRecoveryRef(input.customerMessage);
+  const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "booking");
+  const ref = explicitRef || storedRef;
+  if (!ref) {
+    return {
+      domain: "booking",
+      state: "reference_required",
+      correlated: false,
+      method: "exact_reference_required",
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+  return correlateOwnedBookingRecoveryRef(
+    env,
+    input.canonicalClientId,
+    ref,
+    explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
+  );
+}
+
+async function correlateOwnedBookingRecoveryRef(env, canonicalClientId, bookingRef, method = "owned_booking_ref") {
+  const ref = clean(bookingRef, 180);
+  const owner = recordId(canonicalClientId);
+  const bookingTable = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID, 120) || "tblQa2OK4U69eOCRF";
+  if (!ref || !owner) {
+    return {
+      domain: "booking",
+      state: "reference_invalid",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const booking = await findExactAirtableRecord(env, bookingTable, "booking_ref", ref);
+  if (!booking.ok || !booking.record) {
+    return {
+      domain: "booking",
+      state: booking.conflict ? "booking_ref_conflict" : booking.error || "booking_request_not_found",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const resolver = parseObject(booking.record.fields?.resolver_payload_json);
+  if (recordId(resolver.canonical_client_id) !== owner) {
+    return {
+      domain: "booking",
+      state: "ownership_unverified",
+      correlated: false,
+      method,
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  const observed = await observeExactBookingCorrelation(env, {
+    mode: "booking",
+    status: "materialized",
+    canonical_ref: ref,
+  });
+  const stamp = new Date().toISOString();
+  return safeRecoveryCorrelation({
+    domain: "booking",
+    state: token(observed.state) || "booking_request_recorded",
+    correlated: true,
+    booking_ref: ref,
+    session_id: clean(observed.session_id, 220) || null,
+    job_id: clean(observed.job_id, 180) || null,
+    session_state: token(observed.session_state) || null,
+    job_state: token(observed.job_state) || null,
+    exact_correlation: observed.exact_correlation === true,
+    final_confirmation_observed: observed.final_confirmation_observed === true,
+    correlation_scope: clean(observed.correlation_scope, 160) || "booking_ref_exact",
+    method,
+    source_authority: "sigil-booking-worker",
+    live_refresh_status: observed.state === "authority_unavailable" ? "unavailable" : "fresh",
+    refreshed_at: stamp,
+  });
+}
+
+async function buildMmsRecoveryCorrelation(env, input = {}) {
+  const explicitRef = extractMmsRecoveryRef(input.customerMessage);
+  const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "mms");
+  const ref = explicitRef || storedRef;
+  if (!ref) {
+    return {
+      domain: "mms",
+      state: "reference_required",
+      correlated: false,
+      method: "exact_reference_required",
+      source_authority: "mms-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+  return correlateOwnedMmsRecoveryRef(
+    env,
+    input.canonicalClientId,
+    ref,
+    explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
+  );
+}
+
+async function correlateOwnedMmsRecoveryRef(env, canonicalClientId, prebookingId, method = "owned_mms_prebooking") {
+  const owner = recordId(canonicalClientId);
+  const ref = clean(prebookingId, 180).toLowerCase();
+  if (!owner || !/^mmspre_[a-f0-9]{24}$/.test(ref) || !env.MMS_WORKER?.fetch) {
+    return {
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      method,
+      source_authority: "mms-worker",
+      live_refresh_status: "unavailable",
+    };
+  }
+
+  try {
+    const url = new URL("https://mms.internal/internal/mms/member/prebookings");
+    url.searchParams.set("member_ref", owner);
+    const response = await env.MMS_WORKER.fetch(new Request(url.toString(), { method: "GET" }));
+    const data = await response.json().catch(() => null);
+    const requests = response.ok && data?.ok === true && Array.isArray(data?.data?.requests)
+      ? data.data.requests
+      : [];
+    const owned = requests.find((item) => clean(item?.prebooking_id, 180).toLowerCase() === ref);
+    if (!owned) {
+      return {
+        domain: "mms",
+        state: response.ok ? "ownership_unverified" : "authority_unavailable",
+        correlated: false,
+        method,
+        source_authority: "mms-worker/member-prebookings",
+        live_refresh_status: "unavailable",
+      };
+    }
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: token(owned.status) || "reviewing",
+      correlated: true,
+      prebooking_id: ref,
+      prebooking_status: token(owned.status) || "reviewing",
+      service_date: clean(owned.service_date, 20),
+      service_time: clean(owned.service_time, 8),
+      zone: clean(owned.zone, 100),
+      skills: Array.isArray(owned.skills) ? owned.skills : [],
+      exact_correlation: true,
+      correlation_scope: "member_ref_to_prebooking_exact",
+      method,
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "fresh",
+      refreshed_at: new Date().toISOString(),
+    });
+  } catch {
+    return {
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      method,
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "unavailable",
+    };
+  }
 }
 
 async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage) {

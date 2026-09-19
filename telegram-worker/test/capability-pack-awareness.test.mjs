@@ -718,3 +718,115 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
     globalThis.fetch = originalFetch;
   }
 });
+
+test("HYPE /case renders canonical Booking recovery correlation without treating it as Shop truth", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let sent = null;
+  globalThis.fetch = async (_url, init = {}) => {
+    sent = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 3006 } });
+  };
+
+  try {
+    const response = await worker.fetch(req("/case"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            state: "reviewing",
+            tracking: true,
+            handoff_id: "HYPE-PER-20260919131000-acde1234",
+            target: "per",
+            recovery_case: {
+              case_ref: "HYPE-PER-20260919131000-acde1234",
+              domain: "booking",
+              state: "reviewing",
+              outcome_code: "awaiting_operations",
+              outcome_label: "รอทีมดำเนินการ",
+            },
+            recovery_correlation: {
+              domain: "booking",
+              state: "confirmed",
+              correlated: true,
+              case_ref: "HYPE-PER-20260919131000-acde1234",
+              booking_ref: "kenji_0123456789abcdef01234567",
+              session_id: "sess_exact_001",
+              job_id: "JOB-EXACT-001",
+              session_state: "confirmed",
+              job_state: "confirmed",
+              live_refresh_status: "fresh",
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_operating_handoff_status");
+    assert.match(sent.text, /Recovery:<\/b> booking/);
+    assert.match(sent.text, /Booking Ref:<\/b> <code>kenji_0123456789abcdef01234567/);
+    assert.match(sent.text, /Session:<\/b> <code>sess_exact_001/);
+    assert.match(sent.text, /Job:<\/b> <code>JOB-EXACT-001/);
+    assert.match(sent.text, /Booking state:<\/b> confirmed/);
+    assert.doesNotMatch(sent.text, /Shop state|Order:<\/b>/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE /case renders canonical MMS Pre-booking recovery correlation without exposing therapist internals", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let sent = null;
+  globalThis.fetch = async (_url, init = {}) => {
+    sent = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 3007 } });
+  };
+
+  try {
+    const response = await worker.fetch(req("/case"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            state: "reviewing",
+            tracking: true,
+            handoff_id: "HYPE-PER-20260919131100-acde5678",
+            target: "per",
+            recovery_case: {
+              case_ref: "HYPE-PER-20260919131100-acde5678",
+              domain: "mms",
+              state: "reviewing",
+              outcome_code: "awaiting_operations",
+              outcome_label: "รอทีมดำเนินการ",
+            },
+            recovery_correlation: {
+              domain: "mms",
+              state: "coordination_pending",
+              correlated: true,
+              case_ref: "HYPE-PER-20260919131100-acde5678",
+              prebooking_id: "mmspre_1234567890abcdef12345678",
+              prebooking_status: "coordination_pending",
+              service_date: "2026-10-02",
+              service_time: "19:00",
+              zone: "Sukhumvit",
+              live_refresh_status: "fresh",
+              therapist_id: "must-not-render",
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_operating_handoff_status");
+    assert.match(sent.text, /Recovery:<\/b> mms/);
+    assert.match(sent.text, /MMS Pre-booking:<\/b> <code>mmspre_1234567890abcdef12345678/);
+    assert.match(sent.text, /MMS state:<\/b> coordination_pending/);
+    assert.match(sent.text, /Schedule:<\/b> 2026-10-02 · 19:00/);
+    assert.match(sent.text, /Zone:<\/b> Sukhumvit/);
+    assert.doesNotMatch(sent.text, /must-not-render|therapist_id/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
