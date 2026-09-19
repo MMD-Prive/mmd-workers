@@ -265,14 +265,20 @@ async function handleTelegramIdentityBindStart({ message, chatId, startArg }, en
 
 async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (command === "help") {
+    const group = configuredMemberGroup(chatId, env);
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: hypeHelpText(),
+      text: group ? hypeMemberGroupCommandText(group) : hypeHelpText(),
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: hypeHelpButtons(env),
+      reply_markup: group ? hypeMemberGroupCommandButtons(env) : hypeHelpButtons(env),
     }, env);
-    return { handled: true, flow: "hype_operating_help", telegram };
+    return {
+      handled: true,
+      flow: group ? "hype_member_group_commands" : "hype_operating_help",
+      group: group || null,
+      telegram,
+    };
   }
 
   if (command === "points" || command === "coupons" || command === "careback") {
@@ -289,7 +295,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "สถานะบัญชีเป็นข้อมูลส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status หรือ /next",
+      text: "สถานะบัญชีเป็นข้อมูลส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next หรือ /booking\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -398,7 +404,7 @@ function parseHypeOperatingCommand(value) {
   if (/^\/points?(?:@\w+)?$/i.test(text) || ["แต้ม", "คะแนน", "ดูคะแนน", "ดูแต้ม"].includes(normalized)) return "points";
   if (/^\/coupons?(?:@\w+)?$/i.test(text) || ["คูปอง", "ดูคูปอง", "คูปองของฉัน"].includes(normalized)) return "coupons";
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
-  if (/^\/help(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง"].includes(normalized)) return "help";
+  if (/^\/(?:help|commands)(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง", "คำสั่ง", "ดูคำสั่ง", "commands"].includes(normalized)) return "help";
   return "";
 }
 
@@ -544,6 +550,52 @@ function hypeBookingButtons(env, result = {}) {
   rows.push([{ text: "Booking", url: publicUrl(env, "/booking") }]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };
+}
+
+function configuredMemberGroup(chatId, env) {
+  const id = clean(chatId);
+  if (!id) return "";
+  if (id === clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779")) return "premium";
+  if (id === clean(env.TELEGRAM_STANDARD_GROUP_ID || "-1002073919780")) return "standard";
+  return "";
+}
+
+function hypeMemberGroupCommandText(group) {
+  const label = group === "premium" ? "PREMIUM" : "STANDARD";
+  return [
+    `<b>HYPE · ${label} GROUP COMMANDS</b>`,
+    "",
+    "HYPE ใช้งานในกลุ่มนี้ได้ครับ โดยแยกคำสั่งสาธารณะกับข้อมูลส่วนตัวให้ชัดเจน",
+    "",
+    "<b>ใช้ในกลุ่มได้</b>",
+    "<b>/commands</b> หรือ <b>/help</b> — ดูคู่มือคำสั่ง",
+    "<b>/points</b> — ไปที่ MY MMD · Points",
+    "<b>/coupons</b> — ไปที่ MY MMD · Coupon Wallet",
+    "<b>/careback</b> — ดู CARE BACK Phase 2",
+    "",
+    "<b>ข้อมูลส่วนตัว — HYPE จะพาไปแชตส่วนตัว</b>",
+    "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
+    "<b>/next</b> — ขั้นตอนที่ต้องทำต่อ",
+    "<b>/booking</b> — progress งานและการจอง",
+    "",
+    "HYPE จะไม่แสดงชื่อ Model ของงาน, ยอดชำระ, Points balance, Coupon code หรือสถานะบัญชีส่วนตัวในกลุ่มครับ",
+  ].join("\n");
+}
+
+function hypeMemberGroupCommandButtons(env) {
+  return {
+    inline_keyboard: [
+      [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
+      [
+        { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
+        { text: "Booking", url: publicUrl(env, "/booking") },
+      ],
+      [
+        { text: "Points", url: publicUrl(env, "/my-mmd/points") },
+        { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
+      ],
+    ],
+  };
 }
 
 function hypeHelpText() {
@@ -709,6 +761,7 @@ function configuredJoinCleanupChats(env) {
   };
 
   add(env.TELEGRAM_STANDARD_GROUP_ID, "standard_group");
+  add(env.TELEGRAM_PREMIUM_GROUP_ID, "premium_group");
   add(env.TELEGRAM_MMD_CHAT_GROUP_ID, "mmd_chat");
   add(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID, "telegram_preview");
   return chats;
