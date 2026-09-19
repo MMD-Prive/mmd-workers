@@ -180,6 +180,93 @@ test("HYPE service recovery creates a Per handoff with recovery reason and exist
   }
 });
 
+
+test("HYPE owner-only case command writes acknowledgement through the guarded handoff contract", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  let transition = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/getChatMember")) {
+      return Response.json({ ok: true, result: { status: "creator" } });
+    }
+    if (target.includes("/sendMessage")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 3301 } });
+    }
+    throw new Error(`unexpected fetch ${target}`);
+  };
+
+  try {
+    const response = await worker.fetch(req("/case-ack HYPE-PER-20260919120000-deadbeef"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          transition = JSON.parse(await request.clone().text());
+          return Response.json({
+            ok: true,
+            state: "acknowledged",
+            handoff_id: "HYPE-PER-20260919120000-deadbeef",
+            target: "per",
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_owner_handoff_transition");
+    assert.equal(body.ok, true);
+    assert.equal(body.code_status, "acknowledged");
+    assert.equal(transition.operation, "transition");
+    assert.equal(transition.handoff_id, "HYPE-PER-20260919120000-deadbeef");
+    assert.equal(transition.state, "acknowledged");
+    assert.equal(transition.actor_role, "owner");
+    assert.match(sends.at(-1).text, /รับทราบเคสแล้ว/);
+    assert.match(sends.at(-1).text, /ไม่เปลี่ยน Payment \/ Job \/ Membership truth/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE rejects owner case state commands from non-owner Telegram users", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let contextCalled = false;
+  let sent = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/getChatMember")) {
+      return Response.json({ ok: true, result: { status: "member" } });
+    }
+    if (target.includes("/sendMessage")) {
+      sent = JSON.parse(String(init.body || "{}"));
+      return Response.json({ ok: true, result: { message_id: 3302 } });
+    }
+    throw new Error(`unexpected fetch ${target}`);
+  };
+
+  try {
+    const response = await worker.fetch(req("/case-resolve HYPE-PER-20260919120000-deadbeef"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          contextCalled = true;
+          throw new Error("non-owner must not reach state writer");
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_owner_handoff_transition");
+    assert.equal(body.ok, false);
+    assert.equal(body.code_status, "owner_required");
+    assert.equal(contextCalled, false);
+    assert.match(sent.text, /เฉพาะ Per/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("HYPE /case reads the explicitly written closed-loop state without inventing resolution", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   let sent = null;
