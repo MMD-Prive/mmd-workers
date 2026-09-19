@@ -163,7 +163,7 @@ worker deployment, Webflow publishing, or alias removal.
 | `/pay/membership` | `member-pages-worker` page, backend payment truth elsewhere | Medium | UI exists; final payment truth remains backend/payment worker concern. |
 | `/member/dashboard` page | TBD | Low | Current page route uses `mmd-redirect-worker` to `immigrate-worker`; target architecture wants non-legacy owner decision. This does not prove `/v1/member/dashboard`. |
 | `/v1/member/dashboard` API | TBD | Low | No exact handler or `/api/member/dashboard` mapping found in current source scan; Phase 3 must define and prove the backend API contract. |
-| `/member/payments` | `admin-worker` currently, TBD for member surface | Low | Front gate delegates to admin worker, but member surface ownership not locked. |
+| `/member/payments` | Webflow presentation + `member-pages-worker` member-safe BFF target + `payments-worker` money truth | High target lock | Webflow page source is verified; legacy admin/front-gate delegation is migration-only until the member-safe BFF production smoke passes. |
 | `/sigil/member/apply` | TBD | Low | UI exists; backend route missing. |
 | `/sigil/model/console` | TBD | Low | No exact canonical route owner found. |
 | `/public/access` | TBD page owner; `public-access-worker` API owner | Medium | Visible page owner is unresolved; `POST /public/api/access/intake` handler and route config are repo-proven, with live smoke pending. |
