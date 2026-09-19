@@ -1,0 +1,195 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import worker from "../src/index.js";
+
+const URL = "https://telegram-worker.mmd.test/telegram/webhook";
+
+function env(overrides = {}) {
+  return {
+    TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
+    TELEGRAM_BOT_TOKEN: "telegram-token",
+    TELEGRAM_BOT_USERNAME: "mmdprivebot",
+    TELEGRAM_CHAT_ID: "-1003546439681",
+    ...overrides,
+  };
+}
+
+function req(text, chat, fromId) {
+  return new Request(URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+    },
+    body: JSON.stringify({
+      update_id: 1,
+      message: {
+        message_id: 10,
+        text,
+        chat,
+        from: { id: fromId, username: "operator" },
+      },
+    }),
+  });
+}
+
+function summary() {
+  return {
+    ok: true,
+    mode: "hype_owner_summary_v1",
+    bangkok_date: "2026-09-19",
+    focus: { title: "ตรวจเงินก่อน", text: "มี Payment Review รอตรวจ 2 รายการ" },
+    counts: {
+      payment_review: 2,
+      historical_recovery: 1,
+      membership_review: 1,
+      jobs_need_confirm: 1,
+      jobs: 3,
+    },
+    review_required: {
+      payment: [{ client_name: "ลูกค้า A", amount_thb: 5000, text: "Deposit · พร้อมตรวจ" }],
+    },
+    calendar: {
+      today_jobs: [{ job_id: "JOB-1", model_name: "Model A", client_name: "ลูกค้า A", status: "รอคอนเฟิร์ม", time: "19:00" }],
+      tomorrow_jobs: [],
+      tomorrow_reconfirm: { pending: 1, overdue: 0 },
+    },
+    jobs: {
+      items: [{ job_id: "JOB-1", model_name: "Model A", client_name: "ลูกค้า A", status: "รอคอนเฟิร์ม", time: "19:00" }],
+    },
+    clients: { display_names: ["ลูกค้า A"] },
+    alerts: [{ title: "Owner Review", text: "มีเคสพิเศษ 1 รายการ" }],
+    next_actions: [{ priority: 1, label: "ตรวจ Payments", href: "/internal/admin/payments" }],
+  };
+}
+
+test("Owner Summary requires Telegram creator and delivers details in private", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  let ownerRead = 0;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const method = String(url).split("/").pop();
+    const payload = init.body ? JSON.parse(String(init.body)) : null;
+    if (method === "getChatMember") {
+      assert.equal(payload.chat_id, "-1003546439681");
+      assert.equal(payload.user_id, 111111);
+      return Response.json({ ok: true, result: { status: "creator" } });
+    }
+    if (method === "sendMessage") {
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 901, chat: { id: Number(payload.chat_id) } } });
+    }
+    throw new Error("unexpected Telegram method");
+  };
+
+  try {
+    const response = await worker.fetch(req(
+      "วันนี้มีอะไรต้องดูบ้าง",
+      { id: 111111, type: "private" },
+      111111,
+    ), env({
+      HYPE_OPERATIONS: {
+        async fetch(request) {
+          ownerRead += 1;
+          assert.equal(new URL(request.url).pathname, "/__internal/hype/owner-summary");
+          assert.equal(request.headers.get("x-mmd-service-binding"), "telegram-worker");
+          return Response.json(summary());
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_owner_summary");
+    assert.equal(body.ok, true);
+    assert.equal(ownerRead, 1);
+    assert.equal(sends.length, 1);
+    assert.equal(String(sends[0].chat_id), "111111");
+    assert.match(sends[0].text, /HYPE · PER OWNER SUMMARY/);
+    assert.match(sends[0].text, /Payment Review: 2/);
+    assert.match(sends[0].text, /ลูกค้า A/);
+    assert.match(sends[0].text, /Model A/);
+    assert.match(sends[0].text, /Read-only summary/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Owner Summary rejects non-creator before reading Ops truth", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let ownerRead = 0;
+  let sent = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const method = String(url).split("/").pop();
+    const payload = init.body ? JSON.parse(String(init.body)) : null;
+    if (method === "getChatMember") return Response.json({ ok: true, result: { status: "administrator" } });
+    if (method === "sendMessage") {
+      sent = payload;
+      return Response.json({ ok: true, result: { message_id: 902 } });
+    }
+    throw new Error("unexpected Telegram method");
+  };
+
+  try {
+    const response = await worker.fetch(req(
+      "/owner",
+      { id: -1003546439681, type: "supergroup" },
+      222222,
+    ), env({
+      HYPE_OPERATIONS: {
+        async fetch() {
+          ownerRead += 1;
+          return Response.json(summary());
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_owner_summary");
+    assert.equal(body.ok, false);
+    assert.equal(body.code_status, "owner_required");
+    assert.equal(ownerRead, 0);
+    assert.match(sent.text, /เฉพาะ Per · Owner Mode/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Owner Summary invoked in Ops group sends detail privately and only a safe ack to group", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+
+  globalThis.fetch = async (url, init = {}) => {
+    const method = String(url).split("/").pop();
+    const payload = init.body ? JSON.parse(String(init.body)) : null;
+    if (method === "getChatMember") return Response.json({ ok: true, result: { status: "creator" } });
+    if (method === "sendMessage") {
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 903 + sends.length } });
+    }
+    throw new Error("unexpected Telegram method");
+  };
+
+  try {
+    const response = await worker.fetch(req(
+      "/today",
+      { id: -1003546439681, type: "supergroup" },
+      111111,
+    ), env({
+      HYPE_OPERATIONS: { async fetch() { return Response.json(summary()); } },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    const privateCall = sends.find((x) => String(x.chat_id) === "111111");
+    const groupCall = sends.find((x) => String(x.chat_id) === "-1003546439681");
+    assert.ok(privateCall);
+    assert.ok(groupCall);
+    assert.match(privateCall.text, /ลูกค้า A/);
+    assert.doesNotMatch(groupCall.text, /ลูกค้า A|5,000|Payment Review: 2/);
+    assert.match(groupCall.text, /private chat/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
