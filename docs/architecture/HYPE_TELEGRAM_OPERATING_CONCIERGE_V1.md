@@ -579,10 +579,36 @@ Rules:
 - The taxonomy intentionally contains no `refund_completed`, `payment_confirmed`, or `delivered` outcome.
 - Outcome writes do not mutate Order, Payment, Fulfillment, Job, Calendar, Therapist assignment, MMS booking, or entitlement truth.
 
+## Canonical Booking + MMS Recovery correlation
+
+Recovery now uses the same Case Reference model across Shop, Booking/Job and MMS.
+
+Booking rules:
+
+- an explicit or previously materialized `booking_ref` may be correlated only after the exact Booking Request is read;
+- `resolver_payload_json.canonical_client_id` must match the currently resolved Canonical Client before Session or Job data is followed;
+- after ownership passes, correlation follows the existing exact chain `Booking Request → job_receipt.session_id → Session → Job`;
+- duplicate/conflicting exact records fail closed and are never guessed;
+- only bounded fields such as Booking Ref, Session ID, Job ID and canonical states enter Recovery context.
+
+MMS rules:
+
+- an explicit or previously materialized `mmspre_...` reference is checked through the canonical member-safe MMS pre-booking read;
+- the read is scoped by the currently resolved Canonical Client `member_ref`;
+- the requested Pre-booking must be present in that owned projection before it can be bound;
+- only customer-safe status, service date/time, zone and skills may enter Recovery context; Therapist IDs, LINE hashes and internal records remain excluded.
+
+For both domains:
+
+- the existing active Case Reference is reused only when domain and canonical reference are compatible;
+- `/case` refreshes the canonical authority before presenting Booking or MMS state;
+- failed ownership/authority checks leave correlation unbound without exposing foreign references;
+- correlation never mutates Job, Payment, Calendar, Therapist assignment, MMS booking or entitlement truth.
+
 ## Next implementation lanes
 
 1. bounded owner/operator UI controls for recovery outcomes beyond Telegram commands;
-2. optional canonical correlation adapters for exact Booking Request / MMS Pre-booking references while preserving the same Case Reference and lifecycle.
+2. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates.
 
 All future lanes must preserve the same authority and privacy locks.
 
