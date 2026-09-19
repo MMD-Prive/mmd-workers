@@ -551,7 +551,7 @@ test("ambiguous Shop recovery offers safe options and customer selection binds o
     assert.equal(foreign.status, 404);
     assert.equal(foreignBody.error, "handoff_not_found");
 
-    assert.equal(shopReads, 3);
+    assert.equal(shopReads, 2);
     assert.ok(matrixWrites.length >= 2);
   } finally {
     globalThis.fetch = originalFetch;
