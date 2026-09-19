@@ -251,7 +251,8 @@ function translateLeaf(el){
   var key=el.dataset&&el.dataset.mmdI18nKey||reverse[raw];
   if(!key)return;
   if(el.dataset)el.dataset.mmdI18nKey=key;
-  el.textContent=t(key);
+  var next=t(key);
+  if(raw!==next)el.textContent=next;
 }
 function translatePlaceholders(root){
   (root||document).querySelectorAll("input[placeholder],textarea[placeholder]").forEach(function(el){
@@ -259,7 +260,8 @@ function translatePlaceholders(root){
     var key=el.dataset.mmdI18nPlaceholder||reverse[raw];
     if(!key)return;
     el.dataset.mmdI18nPlaceholder=key;
-    el.setAttribute("placeholder",t(key));
+    var next=t(key);
+    if(raw!==next)el.setAttribute("placeholder",next);
   });
 }
 function translateLeaves(root){
@@ -267,19 +269,22 @@ function translateLeaves(root){
   scope.querySelectorAll("a,button,span,strong,small,p,h1,h2,h3,h4,div,label,summary,option").forEach(translateLeaf);
   translatePlaceholders(scope);
 }
+function syncComposite(selector,keys){
+  document.querySelectorAll(selector).forEach(function(el,i){
+    var b=el.querySelector("b"),key=keys[i];
+    if(!b||!key)return;
+    var desired=t(key),tail=null,node=b.nextSibling;
+    while(node){
+      if(node.nodeType===3){tail=node;break}
+      node=node.nextSibling;
+    }
+    if(!tail){el.appendChild(document.createTextNode(" "+desired));return}
+    if(String(tail.nodeValue||"").trim()!==desired)tail.nodeValue=" "+desired;
+  });
+}
 function composite(){
-  document.querySelectorAll("#mmdshop-rules-v1 .mmdr__layers span").forEach(function(el,i){
-    var keys=["rulesL1","rulesL2","rulesL3","rulesL4","rulesL5"],b=el.querySelector("b");
-    if(!b||!keys[i])return;
-    while(b.nextSibling)b.parentNode.removeChild(b.nextSibling);
-    el.appendChild(document.createTextNode(" "+t(keys[i])));
-  });
-  document.querySelectorAll("#mmdshop-rules-v1 .mmdr__accordion summary span").forEach(function(el,i){
-    var keys=["rulesS1","rulesS2","rulesS3","rulesS4","rulesS5"],b=el.querySelector("b");
-    if(!b||!keys[i])return;
-    while(b.nextSibling)b.parentNode.removeChild(b.nextSibling);
-    el.appendChild(document.createTextNode(" "+t(keys[i])));
-  });
+  syncComposite("#mmdshop-rules-v1 .mmdr__layers span",["rulesL1","rulesL2","rulesL3","rulesL4","rulesL5"]);
+  syncComposite("#mmdshop-rules-v1 .mmdr__accordion summary span",["rulesS1","rulesS2","rulesS3","rulesS4","rulesS5"]);
 }
 function syncLinks(){
   document.querySelectorAll('a[href^="/mmd-shop"]').forEach(function(a){
