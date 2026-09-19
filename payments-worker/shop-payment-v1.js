@@ -300,6 +300,60 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
   }
 }
 
+export async function enrichShopConfirmVerify(request, response, env) {
+  if (!response?.ok) return response;
+  const payload = await response.clone().json().catch(() => null);
+  const claims = payload?.claims;
+  const paymentType = code(claims?.payment_type || claims?.payment_stage);
+  if (!payload?.ok || paymentType !== SHOP_STAGE) return response;
+
+  const body = await request.clone().json().catch(() => null);
+  const token = text(body?.t || body?.token, 12000);
+  if (!token) return response;
+
+  const detailsRequest = new Request(new URL("/v1/confirm/details", request.url), {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify({ t: token, expected_role: "customer" }),
+  });
+  const detailsResponse = await maybeHandleShopConfirmationDetails(detailsRequest, env);
+  if (!detailsResponse) return response;
+
+  const details = await detailsResponse.clone().json().catch(() => null);
+  if (!detailsResponse.ok || !details?.ok) {
+    return json({
+      ok: false,
+      authority: "payments-worker",
+      error: details?.error || "shop_confirmation_details_unavailable",
+    }, detailsResponse.status || 409, request, env);
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store, private");
+  headers.set("x-mmd-shop-verify", "enriched");
+
+  return new Response(JSON.stringify({
+    ...payload,
+    payment_status: details.payment_status,
+    session_status: details.session_status,
+    claims: {
+      ...claims,
+      payment_type: SHOP_STAGE,
+      payment_status: details.payment_status,
+      session_status: details.session_status,
+      amount_thb: details.amount_thb,
+      shop_order: details.shop_order,
+      payment: details.payment,
+    },
+  }), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export async function preflightReviewedShopPayment(request, env) {
   const body = await request.clone().json().catch(() => null);
   const stage = code(body?.payment_stage || body?.stage || body?.payment_type);
