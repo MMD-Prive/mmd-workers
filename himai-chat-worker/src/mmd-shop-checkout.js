@@ -338,10 +338,11 @@ async function createOrderItems(env, orderRecordId, items) {
 
 async function createPaymentIntent(env, { orderId, total, email }) {
   const base = clean(env.MMD_PAYMENTS_BASE_URL || "https://sigil.mmdbkk.com", 500).replace(/\/+$/g, "");
-  const response = await fetch(`${base}/v1/pay/verify`, {
+  const response = await fetch(`${base}/v1/pay/shop-intent`, {
     method: "POST",
     headers: { "content-type": "application/json", origin: "https://mmdbkk.com" },
     body: JSON.stringify({
+      order_id: orderId,
       session_id: orderId,
       payment_stage: "shop",
       amount: total,
