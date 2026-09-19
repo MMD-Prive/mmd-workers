@@ -277,7 +277,7 @@ async function loadMmdStock(env) {
   return stock;
 }
 
-function validateAndPriceCart(cart, products, stock) {
+export function validateAndPriceCart(cart, products, stock) {
   return cart.map((line) => {
     const record = products.get(line.product_id);
     if (!record?.id) throw httpError(404, "product_not_found");
