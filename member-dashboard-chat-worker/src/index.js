@@ -41,6 +41,7 @@ const SERVICE_LINE_RICH_MENU_PUBLIC_WORLD_BASE_PATH = "/__internal/line/rich-men
 const SERVICE_LINE_RICH_MENU_PRIVATE_MEMBER_BASE_PATH = "/__internal/line/rich-menu/private-member";
 const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default";
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
+const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
@@ -1876,6 +1877,41 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
   return json({ ok: false, error: "not_found" }, 404);
 }
 
+async function handleServiceBoundShopShipping(request, env) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const lineUserId = getLineUserId(body);
+  const orderId = asString(body.order_id).slice(0, 180);
+  const courier = asString(body.courier).slice(0, 180) || "Courier";
+  const tracking = asString(body.tracking_number).slice(0, 220);
+  const customerName = asString(body.customer_name).slice(0, 180);
+
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_required" }, 400);
+  if (!orderId) return json({ ok: false, error: "order_id_required" }, 400);
+  if (!tracking) return json({ ok: false, error: "tracking_number_required" }, 400);
+
+  const message = [
+    "MMD SHOP · จัดส่งสินค้าแล้ว",
+    customerName ? `คุณ${customerName}` : "",
+    `Order: ${orderId}`,
+    `${courier}: ${tracking}`,
+    "",
+    "ติดตามสถานะเพิ่มเติมได้ที่ MY MMD → Orders",
+    "https://mmdbkk.com/my-mmd/orders",
+  ].filter(Boolean).join("\n");
+
+  const result = await deliverLineText(env, lineUserId, message, { trusted_event: true });
+  return json({
+    ok: result.ok === true,
+    status: result.ok === true ? "sent" : (result.error || "line_push_failed"),
+    order_id: orderId,
+  }, result.ok === true ? 200 : 502);
+}
+
 async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, kenjiEnabled) {
   const lineUserId = getLineUserId({ event });
   const shouldFetchProfile = Boolean(autoReplyEnabled && lineUserId && event?.source?.type === "user" && asString(env.LINE_CHANNEL_ACCESS_TOKEN));
@@ -2067,6 +2103,10 @@ export default {
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
       return handleLineWebhook(request, env, ctx);
+    }
+
+    if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_PATH) {
+      return handleServiceBoundShopShipping(request, env);
     }
 
     if (
