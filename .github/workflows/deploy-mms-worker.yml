@@ -213,38 +213,74 @@ jobs:
 
       - name: Verify production health, catalog, and dispatch fail-closed boundary
         shell: bash
+        env:
+          MMS_LIVE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -euo pipefail
-          url="${{ steps.deploy.outputs.url }}"
-          for attempt in $(seq 1 12); do
-            code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-health.json" --write-out '%{http_code}' "$url/health" || true)"
-            if [ "$code" = "200" ]; then break; fi
-            sleep 5
-          done
-          test "${code:-}" = "200"
-          curl --fail --silent --show-error "$url/mms/api/catalog" > "$RUNNER_TEMP/mms-catalog.json"
-
-          dispatch_code="$(curl --silent --show-error --output "$RUNNER_TEMP/mms-dispatch-unauth.json" --write-out '%{http_code}' "$url/male-massage/therapists/api/app/offers" || true)"
-          test "$dispatch_code" = "401"
-
           node <<'NODE'
           const fs = require("node:fs");
-          const health = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-health.json", "utf8"));
-          const catalog = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-catalog.json", "utf8"));
-          const unauth = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mms-dispatch-unauth.json", "utf8"));
+          const base = String(process.env.MMS_LIVE_URL || "").replace(/\/$/, "");
+          if (!/^https:\/\//.test(base)) throw new Error("MMS live URL is missing");
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function fetchJson(path, expectedStatuses, attempts = 1) {
+            let last = { status: 0, body: null, error: "" };
+            for (let attempt = 1; attempt <= attempts; attempt += 1) {
+              try {
+                const response = await fetch(base + path, {
+                  headers: { "user-agent": "mmd-mms-deploy-verifier/1" },
+                });
+                const text = await response.text();
+                let body = null;
+                try { body = text ? JSON.parse(text) : null; } catch {}
+                last = { status: response.status, body, error: body?.error?.code || "" };
+                console.log(`MMS verify ${path} attempt ${attempt}: HTTP ${response.status}${last.error ? ` ${last.error}` : ""}`);
+                if (expectedStatuses.includes(response.status)) return last;
+              } catch (error) {
+                last = { status: 0, body: null, error: String(error?.message || "FETCH_FAILED").slice(0, 120) };
+                console.log(`MMS verify ${path} attempt ${attempt}: fetch failed ${last.error}`);
+              }
+              if (attempt < attempts) await sleep(5000);
+            }
+            return last;
+          }
+
+          const healthResult = await fetchJson("/health", [200], 12);
+          if (healthResult.status !== 200) {
+            throw new Error(`mms-worker health unavailable after retries: HTTP ${healthResult.status} ${healthResult.error}`);
+          }
+
+          const catalogResult = await fetchJson("/mms/api/catalog", [200], 3);
+          if (catalogResult.status !== 200) {
+            throw new Error(`MMS catalog unavailable: HTTP ${catalogResult.status} ${catalogResult.error}`);
+          }
+
+          const dispatchResult = await fetchJson("/male-massage/therapists/api/app/offers", [401], 3);
+          if (dispatchResult.status !== 401) {
+            throw new Error(`dispatch fail-closed HTTP mismatch: ${dispatchResult.status} ${dispatchResult.error}`);
+          }
+
+          const health = healthResult.body || {};
+          const catalog = catalogResult.body || {};
+          const unauth = dispatchResult.body || {};
+
           if (!health.ok || health.worker !== "mms-worker") throw new Error("mms-worker health identity failed");
           if (!health.bindings?.coordinator || !health.bindings?.dispatch_coordinator || !health.bindings?.private_uploads) throw new Error("required production Durable Object/R2 bindings are missing");
           if (!health.bindings?.dispatch_jobs || !health.bindings?.dispatch_offers) throw new Error("dispatch table bindings are missing");
           if (!catalog.ok || catalog.data?.skills?.length !== 8) throw new Error("MMS skill catalog failed");
-          if (unauth?.ok !== false || unauth?.error?.code !== "THERAPIST_SESSION_REQUIRED") throw new Error(`dispatch fail-closed smoke failed: ${JSON.stringify(unauth)}`);
+          if (unauth?.ok !== false || unauth?.error?.code !== "THERAPIST_SESSION_REQUIRED") {
+            throw new Error(`dispatch fail-closed contract mismatch: ${String(unauth?.error?.code || "UNKNOWN").slice(0, 120)}`);
+          }
+
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
             "## mms-worker live",
             "",
-            `- URL: ${{ steps.deploy.outputs.url }}`,
+            `- URL: ${base}`,
             `- Version ID: ${process.env.MMS_WORKER_VERSION_ID}`,
             `- Version tag: ${process.env.MMS_WORKER_VERSION_TAG}`,
             `- Source SHA: ${process.env.GITHUB_SHA}`,
-            `- Traffic: 100%`,
+            "- Traffic: 100%",
             `- Core Durable Object: ${health.bindings.coordinator ? "ready" : "missing"}`,
             `- Dispatch Durable Object: ${health.bindings.dispatch_coordinator ? "ready" : "missing"}`,
             `- MMS Jobs table: ${health.bindings.dispatch_jobs ? "ready" : "missing"}`,
@@ -252,10 +288,9 @@ jobs:
             `- Private R2: ${health.bindings.private_uploads ? "ready" : "missing"}`,
             `- Airtable runtime secret: ${health.bindings.airtable ? "ready" : "pending"}`,
             `- Telegram notification: ${health.bindings.telegram ? "ready" : "pending"}`,
-            `- Therapist LINE Channel ID: 2011425652`,
-            `- Therapist LIFF ID: 2011425652-YqK1F6y8`,
-            `- Therapist auth secrets: ${{ steps.therapist-secrets.outputs.configured }}`,
-            `- Dispatch unauthenticated boundary: 401 THERAPIST_SESSION_REQUIRED`,
+            "- Therapist LINE Channel ID: 2011425652",
+            "- Therapist LIFF ID: 2011425652-YqK1F6y8",
+            "- Dispatch unauthenticated boundary: 401 THERAPIST_SESSION_REQUIRED",
             `- Skill catalog: ${catalog.data.skills.length}/8`,
             "",
           ].join("\n"));
