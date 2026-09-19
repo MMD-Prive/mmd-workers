@@ -194,8 +194,27 @@ jobs:
               "$origin/sigil/model/dashboard?lang=th&flow=verify&mmd_smoke=1")"
             cat "$anon_headers"
             test "$anon_code" = "302"
-            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker
-            asset="$(grep -oE '/sigil/model/dashboard-assets/[^\"'"'"' ]+\.(js|css)(\?[^\"'"'"' ]*)?' "$body" | head -n 1 || true)"
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$anon_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*line-miniapp-handoff-v1$'
+            tr -d '\r' < "$anon_headers" | grep -F -i -q 'location: https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify'
+
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -w "%{http_code}" \
+              -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
+              "$origin/sigil/model/dashboard?liff_env=published&mmd_smoke=1")"
+            cat "$headers"
+            test "$code" = "200"
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*lovable-presentation-proxy$'
+            grep -q 'lovable-model-dashboard' "$body"
+            if grep -q 'mmd-model-home-v3' "$body"; then
+              echo "Webflow fallback still owns $origin/sigil/model/dashboard" >&2
+              exit 1
+            fi
+
+            asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
             if [ -n "$asset" ]; then
               asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
               test "$asset_code" = "200"
