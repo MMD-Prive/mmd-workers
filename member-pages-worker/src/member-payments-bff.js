@@ -134,7 +134,12 @@ async function freshProfile(request, env, delegate) {
   const url = new URL(request.url);
   url.pathname = "/member/api/liff/profile";
   url.search = "";
-  const response = await delegate.fetch(new Request(url, request), env);
+  const headers = new Headers(request.headers);
+  const response = await delegate.fetch(new Request(url, {
+    method: "GET",
+    headers,
+    redirect: "manual",
+  }), env);
   const payload = await response.clone().json().catch(() => null);
   return { response, payload };
 }
