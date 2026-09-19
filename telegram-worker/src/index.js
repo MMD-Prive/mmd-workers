@@ -555,13 +555,14 @@ function hypeBookingButtons(env, result = {}) {
 function configuredMemberGroup(chatId, env) {
   const id = clean(chatId);
   if (!id) return "";
+  if (id === clean(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID)) return "preview";
   if (id === clean(env.TELEGRAM_PREMIUM_GROUP_ID || "-1001668261779")) return "premium";
   if (id === clean(env.TELEGRAM_STANDARD_GROUP_ID || "-1002073919780")) return "standard";
   return "";
 }
 
 function hypeMemberGroupCommandText(group) {
-  const label = group === "premium" ? "PREMIUM" : "STANDARD";
+  const label = group === "preview" ? "PREVIEW" : group === "premium" ? "PREMIUM" : "STANDARD";
   return [
     `<b>HYPE · ${label} GROUP COMMANDS</b>`,
     "",
@@ -724,6 +725,31 @@ function formatBangkokDateTime(value) {
   }).format(new Date(parsed));
 }
 
+function hypePreviewJoinWelcomeText() {
+  return [
+    "👋 <b>ยินดีต้อนรับสู่ MMD Privé Preview ครับ</b>",
+    "",
+    "ผม <b>HYPE</b> ผู้ช่วย Telegram ของ MMD",
+    "ถ้าอยากดูว่าผมช่วยอะไรได้บ้าง พิมพ์ <b>/commands</b> ได้เลยครับ",
+    "",
+    "ในกลุ่มนี้ผมช่วยพาไป Preview Models, CARE BACK, MY MMD, Points และ Coupons ได้",
+    "ส่วนข้อมูลสมาชิก งาน การจอง หรือการชำระ ผมจะพาไปคุยในแชตส่วนตัวเพื่อไม่ให้ข้อมูลส่วนตัวขึ้นในกลุ่มครับ 🔒",
+  ].join("\n");
+}
+
+function hypePreviewWelcomeButtons(env) {
+  return {
+    inline_keyboard: [
+      [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
+      [
+        { text: "Preview Models", url: publicUrl(env, "/profiles") },
+        { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
+      ],
+      [{ text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") }],
+    ],
+  };
+}
+
 async function cleanupConfiguredGroupJoinMessage(message, env) {
   if (!Array.isArray(message.new_chat_members) || message.new_chat_members.length === 0) return null;
 
@@ -744,12 +770,29 @@ async function cleanupConfiguredGroupJoinMessage(message, env) {
   }
 
   const deletion = await deleteTelegramMessage({ chat_id: chatId, message_id: messageId }, env);
+
+  let welcome = null;
+  if (surface === "telegram_preview") {
+    const humanMembers = message.new_chat_members.filter((member) => member && member.is_bot !== true);
+    if (humanMembers.length > 0) {
+      welcome = await sendTelegramMessage({
+        chat_id: chatId,
+        text: hypePreviewJoinWelcomeText(),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: hypePreviewWelcomeButtons(env),
+      }, env);
+    }
+  }
+
   return {
     handled: true,
     flow: "telegram_group_join_cleanup",
     surface,
     deleted: deletion.ok === true,
     telegram: deletion,
+    welcome_sent: welcome?.ok === true,
+    welcome,
   };
 }
 
