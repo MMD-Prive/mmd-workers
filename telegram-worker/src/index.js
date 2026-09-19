@@ -2325,10 +2325,10 @@ function hypeCanonicalRouteText(command) {
     return [
       "<b>HYPE · POINTS</b>",
       "",
-      "ยอด Points ที่เป็นทางการอ่านจาก MMD — Points Ledger ผ่าน MY MMD ครับ",
-      "HYPE จะไม่ทำสำเนายอดใน Telegram เพื่อไม่ให้ยอดคลาดเคลื่อนจากระบบจริง",
+      "ยอด Points ที่เป็นทางการอ่านจาก MMD — Points Ledger ผ่าน Member Wallet authority ครับ",
+      "ในห้องกลุ่ม HYPE จะไม่แสดง Points balance ส่วนตัว",
       "",
-      "กด <b>MY MMD · Points</b> ด้านล่างเพื่อดูยอดและประวัติที่ยืนยันแล้วได้เลยครับ",
+      "เปิดแชตส่วนตัวกับ HYPE เพื่ออ่านยอด verified แบบ bounded หรือกด <b>MY MMD · Points</b> เพื่อดูรายละเอียดครับ",
     ].join("\n");
   }
   if (command === "coupons") {
@@ -2336,9 +2336,9 @@ function hypeCanonicalRouteText(command) {
       "<b>HYPE · COUPONS</b>",
       "",
       "คูปองที่พร้อมใช้ / ใช้แล้ว / หมดอายุ ให้ยึด Coupon Wallet ใน MY MMD เป็นตัวจริงครับ",
-      "สำหรับ CARE BACK Phase 2 ต้องเชื่อมสิทธิ์และ Birthday Wish ตาม policy ก่อนคูปองจะพร้อมใช้",
+      "ในห้องกลุ่ม HYPE จะไม่แสดง Coupon code หรือสถานะบัญชีส่วนตัว",
       "",
-      "กด <b>MY MMD · Coupons</b> เพื่อดูสถานะล่าสุดได้เลยครับ",
+      "เปิดแชตส่วนตัวกับ HYPE เพื่ออ่าน bounded wallet หรือกด <b>MY MMD · Coupons</b> เพื่อดูรายละเอียดครับ",
     ].join("\n");
   }
   return [
