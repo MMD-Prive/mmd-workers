@@ -157,6 +157,7 @@ test("Himai supplier registration links a canonical Supplier record", async () =
 
 test("Kenji 2.0 separates MMD, MMS, venue, and talent lanes", () => {
   const cases = [
+      ["สมัคร Premium", "private_membership_signup", "intent=signup"],
     ["ไป dinner", "mmd_companion", /MMD Companion/],
     ["อยากนวด recovery", "mms_wellness", /MMS Wellness/],
     ["ไม่มีสถานที่ ใช้ Relax Spa", "partner_venue", /Relax Spa by 9/],
@@ -235,9 +236,9 @@ test("membership signup and renewal webhooks reply once without model use", asyn
   };
   try {
     const cases = [
-      ["สมัครสมาชิก", "membership_signup", "intent=signup"],
-      ["อยากสมัครสมาชิก", "membership_signup", "intent=signup"],
-      ["ขอสมัครสมาชิก", "membership_signup", "intent=signup"],
+      ["สมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
+      ["อยากสมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
+      ["ขอสมัครสมาชิก", "membership_signup", "/pay/membership?source=line"],
       ["ต่ออายุ", "membership_renewal", "intent=renew"],
       ["ต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
       ["ขอต่ออายุสมาชิก", "membership_renewal", "intent=renew"],
