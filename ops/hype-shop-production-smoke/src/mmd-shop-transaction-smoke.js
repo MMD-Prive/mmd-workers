@@ -183,8 +183,10 @@ export async function runMmdShopTransactionSmoke(env = {}) {
       && lineDryRun.body?.checks?.contains_my_mmd_orders === true
       && lineDryRun.body?.line_push_sent === false,
     customer_projection_contract: finalProjection.reservation.state === "committed"
-      && finalProjection.fulfillment.state === "completed"
-      && finalProjection.fulfillment.address === null,
+      && finalProjection.fulfillment.state === "refunded"
+      && finalProjection.fulfillment.refund_amount_thb === 2500
+      && finalProjection.fulfillment.address === null
+      && !Object.prototype.hasOwnProperty.call(finalProjection.fulfillment, "refund_reference"),
   };
 
   return {
