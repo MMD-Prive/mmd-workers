@@ -25,6 +25,33 @@ const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
 const MEMBERSHIP_SIGNUP_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=signup";
 const MEMBERSHIP_RENEW_URL = "https://mmdbkk.com/sigil/member/membership?source=line&intent=renew";
 const MEMBER_DASHBOARD_URL = "https://mmdbkk.com/member/dashboard";
+const MMD_SHOP_MEMBER_CONTEXT_PATH = "/__internal/mmd-shop/member-context";
+const MMD_SHOP_ORDERS_PATHS = new Set(["/member/api/shop/orders", "/member/api/shop/orders/"]);
+const SHOP_AIRTABLE_API = "https://api.airtable.com/v0";
+const SHOP_TABLES = Object.freeze({
+  customers: "tbllkfCySeL9fSfZw",
+  orders: "tblr8lbi2wMuRM1N4",
+  orderItems: "tbl37Iprxz4OLL65P",
+});
+const SHOP_CUSTOMER_FIELDS = Object.freeze({
+  memberId: "fldCjBe9gqIq6y7rR",
+});
+const SHOP_ORDER_FIELDS = Object.freeze({
+  orderId: "flde515MCoEq08YzU",
+  customer: "fldAY7M0IjvQiWdhH",
+  orderDate: "fld7NNIA2kYNQNekl",
+  orderStatus: "fldnCO3H5CpJoYmWD",
+  paymentStatus: "fldUpDeLdO6D9OUcd",
+  total: "fldYIwMzRJdKdznkY",
+});
+const SHOP_ITEM_FIELDS = Object.freeze({
+  name: "fldLR9aIu2m6DTr2e",
+  order: "fldSVk92UcASTOuOK",
+  quantity: "fldJkKWMZiVQ3g1a6",
+  price: "fldm746RgAwIbXYL7",
+  lineTotal: "fldr7KTPoSbnblo5I",
+  status: "flddJVVBAjVoyqcpY",
+});
 
 const LEGACY_IDENTIFY_PATHS = new Set(["/member/api/liff/identify", "/member/api/liff/identify/"]);
 const START_PATHS = new Set(["/member/api/liff/start", "/member/api/liff/start/"]);
@@ -95,6 +122,23 @@ const BROWSER_IDENTITY_FIELDS = [
 export default {
   async fetch(request, env = {}, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+
+    if (path === MMD_SHOP_MEMBER_CONTEXT_PATH) {
+      return handleMmdShopMemberContext(request, env);
+    }
+
+    if (MMD_SHOP_ORDERS_PATHS.has(path)) {
+      let response;
+      if (request.method === "OPTIONS") {
+        response = isApprovedOrigin(request, env)
+          ? new Response(null, { status: 204, headers: apiHeaders("GET,OPTIONS") })
+          : json({ ok: false, error: { code: "ORIGIN_NOT_ALLOWED", message: "Same-origin request required." } }, 403);
+      } else {
+        response = await handleMmdShopOrders(request, env);
+      }
+      return withLiffCors(request, response, env);
+    }
+
     if (isMmsMemberPrefix(path)) {
       let response;
       if (request.method === "OPTIONS") {
@@ -170,6 +214,199 @@ export default {
     return legacyWorker.fetch(request, env, ctx);
   },
 };
+
+
+export async function handleMmdShopMemberContext(request, env = {}) {
+  let url;
+  try { url = new URL(request.url); } catch { return json({ ok: false, error: { code: "NOT_FOUND" } }, 404); }
+  if (url.hostname !== "member-pages.internal" || normalizePath(url.pathname) !== MMD_SHOP_MEMBER_CONTEXT_PATH) {
+    return json({ ok: false, error: { code: "NOT_FOUND" } }, 404);
+  }
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  if (!env.LIFF_IDENTITY_KV || !env.LIFF_SESSION_SECRET) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+
+  const auth = await authenticateSession(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id) {
+    return json({ ok: false, error: { code: "MEMBER_REQUIRED" } }, 403);
+  }
+  const membershipStatus = String(auth.session.member_profile?.membership_status || "").trim().toLowerCase();
+  if (["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(membershipStatus)) {
+    return json({ ok: false, error: { code: "MEMBER_REVIEW_REQUIRED" } }, 403);
+  }
+
+  return json({
+    ok: true,
+    authority: "member-pages-worker",
+    schema: "mmd_shop_member_context_v1",
+    member_id: String(auth.session.member_id).trim().slice(0, 180),
+  }, 200);
+}
+
+export async function handleMmdShopOrders(request, env = {}) {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const originFailure = rejectUnapprovedOrigin(request, env);
+  if (originFailure) return originFailure;
+  if (new URL(request.url).search) return browserIdentityRejected();
+  if (!env.LIFF_IDENTITY_KV || !env.LIFF_SESSION_SECRET) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
+
+  const auth = await authenticateAndRotate(request, env);
+  if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id) {
+    return shopCommitJson(env, auth, { ok: false, error: { code: "MEMBER_REQUIRED" } }, 403);
+  }
+  const membershipStatus = String(auth.session.member_profile?.membership_status || "").trim().toLowerCase();
+  if (["blocked", "suspended", "revoked", "pending_review", "under_review"].includes(membershipStatus)) {
+    return shopCommitJson(env, auth, { ok: false, error: { code: "MEMBER_REVIEW_REQUIRED" } }, 403);
+  }
+
+  try {
+    const memberId = String(auth.session.member_id).trim();
+    const customers = await shopAirtableList(env, SHOP_TABLES.customers, Object.values(SHOP_CUSTOMER_FIELDS));
+    const customerIds = new Set(
+      customers
+        .filter((record) => String(record?.fields?.[SHOP_CUSTOMER_FIELDS.memberId] || "").trim() === memberId)
+        .map((record) => record.id)
+        .filter(Boolean),
+    );
+
+    if (!customerIds.size) {
+      return shopCommitJson(env, auth, {
+        ok: true,
+        authority: "member-pages-worker",
+        schema: "my_mmd_shop_orders_v1",
+        orders: [],
+        ownership: "server_member_id",
+      }, 200);
+    }
+
+    const orders = (await shopAirtableList(env, SHOP_TABLES.orders, Object.values(SHOP_ORDER_FIELDS)))
+      .filter((record) => {
+        const linked = Array.isArray(record?.fields?.[SHOP_ORDER_FIELDS.customer]) ? record.fields[SHOP_ORDER_FIELDS.customer] : [];
+        return linked.some((id) => customerIds.has(id));
+      })
+      .sort((a, b) => String(b?.fields?.[SHOP_ORDER_FIELDS.orderDate] || "").localeCompare(String(a?.fields?.[SHOP_ORDER_FIELDS.orderDate] || "")))
+      .slice(0, 50);
+
+    const orderRecordIds = new Set(orders.map((record) => record.id));
+    const items = (await shopAirtableList(env, SHOP_TABLES.orderItems, Object.values(SHOP_ITEM_FIELDS)))
+      .filter((record) => {
+        const linked = Array.isArray(record?.fields?.[SHOP_ITEM_FIELDS.order]) ? record.fields[SHOP_ITEM_FIELDS.order] : [];
+        return linked.some((id) => orderRecordIds.has(id));
+      });
+
+    const itemsByOrder = new Map();
+    for (const item of items) {
+      const linked = Array.isArray(item?.fields?.[SHOP_ITEM_FIELDS.order]) ? item.fields[SHOP_ITEM_FIELDS.order] : [];
+      for (const orderRecordId of linked) {
+        if (!orderRecordIds.has(orderRecordId)) continue;
+        const list = itemsByOrder.get(orderRecordId) || [];
+        list.push(safeMemberShopItem(item));
+        itemsByOrder.set(orderRecordId, list);
+      }
+    }
+
+    const output = [];
+    for (const order of orders) {
+      const fields = order.fields || {};
+      const orderId = String(fields[SHOP_ORDER_FIELDS.orderId] || "").trim().slice(0, 180);
+      const total = shopNumberOrNull(fields[SHOP_ORDER_FIELDS.total]);
+      const token = orderId && total > 0 ? await mintMemberShopToken(env, orderId, total) : "";
+      output.push({
+        order_id: orderId,
+        order_date: String(fields[SHOP_ORDER_FIELDS.orderDate] || "").trim().slice(0, 40) || null,
+        order_status: shopCode(fields[SHOP_ORDER_FIELDS.orderStatus]) || "draft",
+        payment_status: shopCode(fields[SHOP_ORDER_FIELDS.paymentStatus]) || "pending",
+        total_thb: total,
+        items: itemsByOrder.get(order.id) || [],
+        status_url: token ? `/mmd-shop/order?t=${encodeURIComponent(token)}` : null,
+        payment_url: token ? `/pay/checkout?t=${encodeURIComponent(token)}` : null,
+      });
+    }
+
+    return shopCommitJson(env, auth, {
+      ok: true,
+      authority: "member-pages-worker",
+      schema: "my_mmd_shop_orders_v1",
+      ownership: "server_member_id",
+      orders: output,
+    }, 200);
+  } catch (error) {
+    console.warn({ event: "my_mmd_shop_orders_failed", reason: String(error?.message || "unavailable").slice(0, 100) });
+    return shopCommitJson(env, auth, { ok: false, error: { code: "SHOP_ORDERS_UNAVAILABLE" } }, 503);
+  }
+}
+
+async function shopCommitJson(env, auth, payload, status) {
+  try {
+    await commitRotatedSession(env, auth);
+  } catch {
+    return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
+  }
+  return json(payload, status, { cookies: [sessionCookie(auth.newToken, SESSION_TTL_SECONDS)] });
+}
+
+async function shopAirtableList(env, tableId, fieldIds) {
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  if (!apiKey || !baseId) throw new Error("shop_airtable_not_configured");
+
+  const records = [];
+  let offset = "";
+  let pages = 0;
+  do {
+    const url = new URL(`${SHOP_AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    for (const fieldId of fieldIds) url.searchParams.append("fields[]", fieldId);
+    if (offset) url.searchParams.set("offset", offset);
+    const response = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(`shop_airtable_${response.status}`);
+    records.push(...(Array.isArray(payload.records) ? payload.records : []));
+    offset = String(payload.offset || "");
+    pages += 1;
+  } while (offset && pages < 20);
+  return records;
+}
+
+async function mintMemberShopToken(env, orderId, total) {
+  if (!env.PAYMENTS_WORKER?.fetch) return "";
+  try {
+    const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments.internal/v1/pay/shop-intent", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ order_id: orderId, session_id: orderId, payment_stage: "shop", amount: total }),
+    }));
+    const payload = await response.json().catch(() => ({}));
+    return response.ok && payload?.ok === true ? String(payload.customer_t || "").trim().slice(0, 12000) : "";
+  } catch {
+    return "";
+  }
+}
+
+function safeMemberShopItem(record) {
+  const fields = record?.fields || {};
+  return {
+    item_name: String(fields[SHOP_ITEM_FIELDS.name] || "MMD Shop Item").trim().slice(0, 240),
+    quantity: shopNumberOrNull(fields[SHOP_ITEM_FIELDS.quantity]) || 0,
+    unit_price_thb: shopNumberOrNull(fields[SHOP_ITEM_FIELDS.price]),
+    line_total_thb: shopNumberOrNull(fields[SHOP_ITEM_FIELDS.lineTotal]),
+    status: shopCode(fields[SHOP_ITEM_FIELDS.status]) || "draft",
+  };
+}
+
+function shopNumberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function shopCode(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
 
 async function handleMmsCatalog(request, env) {
   if (request.method !== "GET") return methodNotAllowed("GET");
