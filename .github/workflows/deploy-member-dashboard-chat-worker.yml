@@ -268,6 +268,25 @@ jobs:
             }
           ' "$catalog"
 
+          payments_headers="$RUNNER_TEMP/member-payments.headers"
+          payments_body="$RUNNER_TEMP/member-payments.json"
+          payments_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$payments_headers" -o "$payments_body" -w "%{http_code}" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/v1/member/payments || true)"
+          test "$payments_code" = "401"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payments_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$payments_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$payments_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$payments_headers"
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body?.error?.code !== "MEMBER_SESSION_REQUIRED" || body?.auth_required !== true) {
+              throw new Error(`Unexpected member payments unauthenticated contract: ${JSON.stringify(body)}`);
+            }
+          ' "$payments_body"
+
           auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
           auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
           curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
