@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   HYPE_SHOP_ORDERS_PATH,
+  HYPE_SHOP_ORDERS_SMOKE_PATH,
   handleHypeShopOrdersRpc,
+  handleHypeShopOrdersSmokeRpc,
   readBoundedShopOrdersForTelegram,
 } from "./src/hype-shop-orders.js";
 
@@ -12,6 +14,19 @@ function request(body, caller = "telegram-worker") {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      "x-mmd-service-binding": caller,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+
+function smokeRequest(body, caller = "hype-shop-production-smoke", host = "admin-worker.internal") {
+  return new Request(`https://${host}${HYPE_SHOP_ORDERS_SMOKE_PATH}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-internal-call": "true",
       "x-mmd-service-binding": caller,
     },
     body: JSON.stringify(body),
@@ -32,6 +47,118 @@ test("HYPE shop bridge is Telegram service-binding only", async () => {
     telegram_user_id: "111111",
   }, "browser"), baseEnv());
   assert.equal(response.status, 403);
+});
+
+test("HYPE Shop production smoke route is internal-service-only", async () => {
+  const wrongCaller = await handleHypeShopOrdersSmokeRpc(
+    smokeRequest({ line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }, "browser"),
+    baseEnv(),
+  );
+  assert.equal(wrongCaller.status, 403);
+
+  const publicHost = await handleHypeShopOrdersSmokeRpc(
+    smokeRequest({ line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }, "hype-shop-production-smoke", "admin-worker.malemodel-bkk.workers.dev"),
+    baseEnv(),
+  );
+  assert.equal(publicHost.status, 403);
+});
+
+test("HYPE Shop production smoke verifies empty synthetic ownership without returning customer data", async () => {
+  let upstream = null;
+  const response = await handleHypeShopOrdersSmokeRpc(
+    smokeRequest({ line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }),
+    baseEnv({
+      MEMBER_PAGES_SHOP_ORDERS: {
+        async fetch(req) {
+          upstream = {
+            url: req.url,
+            headers: Object.fromEntries(req.headers.entries()),
+            body: JSON.parse(await req.clone().text()),
+          };
+          return Response.json({
+            ok: true,
+            authority: "mmd.hype_shop_orders_projection.v1",
+            orders: [],
+            correlation: {
+              requested_order_id: null,
+              exact_owned_match: false,
+              auto_correlation_allowed: false,
+              candidate_count: 0,
+              candidate_order_id: null,
+              method: "no_recent_owned_order",
+            },
+            guardrails: {
+              read_only: true,
+              customer_safe_projection_only: true,
+              canonical_line_identity_required: true,
+              ownership_filtered_server_side: true,
+              payment_mutation_allowed: false,
+              fulfillment_mutation_allowed: false,
+              refund_mutation_allowed: false,
+              raw_notes_exposed: false,
+              address_exposed: false,
+              phone_exposed: false,
+            },
+          });
+        },
+      },
+    }),
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.state, "pass");
+  assert.equal(body.checks.zero_owned_orders, true);
+  assert.equal(body.checks.zero_candidates, true);
+  assert.equal(body.checks.ownership_filtered_server_side, true);
+  assert.equal(body.guardrails.customer_data_returned, false);
+  assert.equal(body.guardrails.business_truth_mutated, false);
+  assert.deepEqual(upstream.body, { line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" });
+  assert.equal(new URL(upstream.url).pathname, "/__internal/hype/shop-orders");
+  assert.equal(upstream.headers["x-mmd-internal-call"], "true");
+  assert.equal(upstream.headers["x-mmd-service-binding"], "admin-worker");
+  assert.doesNotMatch(JSON.stringify(body), /line_user_id|order_id|tracking|display_name|address|phone/i);
+});
+
+test("HYPE Shop production smoke fails closed if synthetic identity ever resolves to customer data", async () => {
+  const response = await handleHypeShopOrdersSmokeRpc(
+    smokeRequest({ line_user_id: "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }),
+    baseEnv({
+      MEMBER_PAGES_SHOP_ORDERS: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            authority: "mmd.hype_shop_orders_projection.v1",
+            orders: [{ order_id: "MMD-ORDER-SHOULD-NOT-LEAK" }],
+            correlation: {
+              candidate_count: 1,
+              candidate_order_id: "MMD-ORDER-SHOULD-NOT-LEAK",
+              auto_correlation_allowed: true,
+              method: "single_recent_owned_order",
+            },
+            guardrails: {
+              read_only: true,
+              ownership_filtered_server_side: true,
+              payment_mutation_allowed: false,
+              fulfillment_mutation_allowed: false,
+              refund_mutation_allowed: false,
+              address_exposed: false,
+              phone_exposed: false,
+            },
+          });
+        },
+      },
+    }),
+  );
+
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.ok, false);
+  assert.equal(body.state, "synthetic_collision_or_projection_violation");
+  assert.equal(body.checks.zero_owned_orders, false);
+  assert.equal(body.guardrails.customer_data_returned, false);
+  assert.doesNotMatch(JSON.stringify(body), /MMD-ORDER-SHOULD-NOT-LEAK|order_id/i);
 });
 
 test("HYPE shop bridge resolves canonical LINE then returns bounded owned projection", { concurrency: false }, async () => {
