@@ -54,7 +54,19 @@ const ITEM_FIELDS = Object.freeze({
   status: "flddJVVBAjVoyqcpY",
 });
 
-const PAID_FULFILLMENT_STATES = new Set(["confirmed", "preparing", "ready", "shipped", "completed"]);
+const PAID_FULFILLMENT_STATES = new Set([
+  "confirmed",
+  "preparing",
+  "ready",
+  "shipped",
+  "delivered",
+  "delivery_failed",
+  "completed",
+  "return_requested",
+  "return_received",
+  "refund_pending",
+]);
+const AFTERCARE_STATES = new Set(["return_requested", "return_received", "refund_pending", "refunded"]);
 
 export function isAdminShopOrdersPageRequest(path, method) {
   return PAGE_PATHS.has(normalizePath(path)) && ["GET", "HEAD"].includes(String(method || "GET").toUpperCase());
@@ -176,6 +188,7 @@ async function updateFulfillment(env, actor, body) {
 
   if (orderStatus === "cancelled" && state !== "cancelled") throw httpError(409, "cancelled_order_cannot_advance");
   if (PAID_FULFILLMENT_STATES.has(state) && paymentStatus !== "paid") throw httpError(409, "payment_not_verified");
+  if (state === "refunded" && !["paid", "refunded"].includes(paymentStatus)) throw httpError(409, "payment_not_refundable");
   if (state === "cancelled" && paymentStatus === "paid") throw httpError(409, "paid_order_refund_required");
 
   if (state === "shipped" && !clean(body?.tracking_number, 220)) {
@@ -190,6 +203,18 @@ async function updateFulfillment(env, actor, body) {
     throw httpError(409, `invalid_fulfillment_transition:${currentState}->${state}`);
   }
 
+  let refundConfirmation = null;
+  let effectivePaymentStatus = paymentStatus;
+  if (state === "refunded" && paymentStatus !== "refunded") {
+    refundConfirmation = await confirmRefundThroughPayments(env, {
+      order_id: orderId,
+      refund_reference: body?.refund_reference,
+      refund_method: body?.refund_method,
+      refund_amount_thb: body?.refund_amount_thb,
+    });
+    effectivePaymentStatus = code(refundConfirmation?.payment_status) || "refunded";
+  }
+
   let requested = transitionMmdShopFulfillment({
     ...current,
     state: currentState,
@@ -198,15 +223,21 @@ async function updateFulfillment(env, actor, body) {
     courier: body?.courier,
     tracking_number: body?.tracking_number,
     fulfillment_note: body?.fulfillment_note,
+    return_note: body?.return_note,
+    refund_reference: state === "refunded" ? body?.refund_reference : current.refund_reference,
+    refund_method: state === "refunded" ? body?.refund_method : current.refund_method,
+    refund_amount_thb: state === "refunded" ? body?.refund_amount_thb : current.refund_amount_thb,
   });
 
   const nextOrderStatus = state === "completed"
     ? "fulfilled"
     : state === "cancelled"
       ? "cancelled"
-      : PAID_FULFILLMENT_STATES.has(state)
-        ? "confirmed"
-        : orderStatus || "draft";
+      : orderStatus === "fulfilled" && AFTERCARE_STATES.has(state)
+        ? "fulfilled"
+        : PAID_FULFILLMENT_STATES.has(state)
+          ? "confirmed"
+          : orderStatus || "draft";
 
   if (state === "cancelled" && currentReservation?.state === "payment_review") {
     throw httpError(409, "payment_review_in_progress");
@@ -285,11 +316,12 @@ async function updateFulfillment(env, actor, body) {
   return {
     order_id: orderId,
     order_status: nextOrderStatus,
-    payment_status: paymentStatus,
+    payment_status: effectivePaymentStatus,
     items_updated: itemStatus ? items.length : 0,
     fulfillment: adminFulfillment(requested),
     reservation: nextReservation ? publicMmdShopReservation(nextReservation) : null,
     shipping_notification: shippingNotification,
+    refund_confirmation: refundConfirmation,
   };
 }
 
@@ -309,6 +341,43 @@ async function releaseReservationThroughShopWorker(env, reservation, reason) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok !== true || !data.reservation) {
     throw httpError(response.status || 502, data.error || "reservation_release_failed");
+  }
+  return data;
+}
+
+async function confirmRefundThroughPayments(env, input) {
+  if (!env.PAYMENTS_WORKER?.fetch) throw httpError(503, "payments_worker_binding_missing");
+  const token = clean(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+
+  const refundReference = clean(input?.refund_reference, 220);
+  const refundMethod = clean(input?.refund_method, 120);
+  const refundAmount = numberOrNull(input?.refund_amount_thb);
+  if (!refundReference) throw httpError(400, "refund_reference_required");
+  if (!refundMethod) throw httpError(400, "refund_method_required");
+  if (!(refundAmount > 0)) throw httpError(400, "refund_amount_required");
+
+  const response = await env.PAYMENTS_WORKER.fetch(
+    "https://payments.internal/v1/internal/shop/refund-confirm",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-token": token,
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "admin-worker",
+      },
+      body: JSON.stringify({
+        order_id: clean(input?.order_id, 180),
+        refund_reference: refundReference,
+        refund_method: refundMethod,
+        refund_amount_thb: refundAmount,
+      }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || code(data.payment_status) !== "refunded") {
+    throw httpError(response.status || 502, data.error || "shop_refund_confirmation_failed");
   }
   return data;
 }
@@ -378,9 +447,10 @@ async function notifyShippingCustomer(env, input) {
   return { ok: true, status: "sent", transport: "admin_line_token_fallback" };
 }
 
-function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
+export function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
   if (current === next) return true;
   if (next === "cancelled") return paymentStatus !== "paid" && current !== "completed";
+  if (current === "refund_pending" && next === "refunded") return ["paid", "refunded"].includes(paymentStatus);
   if (paymentStatus !== "paid") return false;
 
   if (current === "awaiting_payment") return next === "confirmed";
@@ -392,7 +462,12 @@ function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentSt
     if (method === "delivery") return next === "shipped";
     return next === "shipped" || next === "completed";
   }
-  if (current === "shipped") return next === "completed";
+  if (current === "shipped") return next === "delivered" || next === "delivery_failed";
+  if (current === "delivery_failed") return next === "ready" || next === "refund_pending";
+  if (current === "delivered") return next === "completed" || next === "return_requested";
+  if (current === "completed") return next === "return_requested";
+  if (current === "return_requested") return next === "return_received";
+  if (current === "return_received") return next === "refund_pending";
   return false;
 }
 
@@ -444,9 +519,11 @@ async function loadAdminOrders(env) {
         fulfillment: adminFulfillment(withResolvedState),
         fulfillment_state: resolvedState,
         reservation: reservation ? publicMmdShopReservation(reservation) : null,
-        can_advance_fulfillment: paymentStatus === "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
+        can_advance_fulfillment: paymentStatus === "paid" && orderStatus !== "cancelled" && !["refund_pending", "refunded"].includes(resolvedState),
         can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled" && reservation?.state !== "payment_review",
         can_fulfill: paymentStatus === "paid" && orderStatus === "confirmed",
+        can_open_return: paymentStatus === "paid" && ["delivered", "completed"].includes(resolvedState),
+        can_confirm_refund: paymentStatus === "paid" && resolvedState === "refund_pending",
       };
     })
     .filter((order) => order.order_id)
@@ -482,6 +559,11 @@ function metrics(orders) {
     preparing: 0,
     ready: 0,
     shipped: 0,
+    delivered: 0,
+    delivery_failed: 0,
+    returns: 0,
+    refund_pending: 0,
+    refunded: 0,
     completed: 0,
   };
   for (const order of orders) {
@@ -490,7 +572,12 @@ function metrics(orders) {
     if (order.fulfillment_state === "confirmed" || order.fulfillment_state === "preparing") out.preparing += 1;
     if (order.fulfillment_state === "ready") out.ready += 1;
     if (order.fulfillment_state === "shipped") out.shipped += 1;
-    if (order.fulfillment_state === "completed" || order.order_status === "fulfilled") out.completed += 1;
+    if (order.fulfillment_state === "delivered") out.delivered += 1;
+    if (order.fulfillment_state === "delivery_failed") out.delivery_failed += 1;
+    if (["return_requested", "return_received"].includes(order.fulfillment_state)) out.returns += 1;
+    if (order.fulfillment_state === "refund_pending") out.refund_pending += 1;
+    if (order.fulfillment_state === "refunded" || order.payment_status === "refunded") out.refunded += 1;
+    if (order.fulfillment_state === "completed" || (order.order_status === "fulfilled" && !AFTERCARE_STATES.has(order.fulfillment_state))) out.completed += 1;
   }
   return out;
 }

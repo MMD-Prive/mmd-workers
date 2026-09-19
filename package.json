@@ -58,6 +58,6 @@
     "test:kenji-member-memory": "node --test shared/kenji-member-memory-snapshot.test.mjs",
     "check:payments": "node --check payments-worker/index.js && node --check payments-worker/index.slip-evidence-clean.js",
     "test:payments": "npm run check:payments && node --test payments-worker/test/canonical-entrypoint.test.mjs",
-    "test:mmd-shop-commerce": "node --experimental-default-type=module --test himai-chat-worker/test/mmd-shop-reservation.test.mjs payments-worker/payment-instructions-v1.test.mjs ops/hype-shop-production-smoke/test/mmd-shop-transaction-smoke.test.mjs"
+    "test:mmd-shop-commerce": "node --experimental-default-type=module --test himai-chat-worker/test/mmd-shop-reservation.test.mjs payments-worker/payment-instructions-v1.test.mjs payments-worker/shop-refund-v1.test.mjs shared/mmd-shop-fulfillment-aftercare.test.mjs admin-worker/mmd-shop-orders-aftercare.test.mjs ops/hype-shop-production-smoke/test/mmd-shop-transaction-smoke.test.mjs"
   }
 }

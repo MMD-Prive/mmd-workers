@@ -8,7 +8,7 @@ var $=function(id){return document.getElementById(id)};
 var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})};
 var money=function(v){var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"—"};
 var orderLabel=function(v){return({draft:"รอชำระ / รอตรวจ",confirmed:"กำลังเตรียมรายการ",fulfilled:"สำเร็จ",cancelled:"ยกเลิก"})[String(v||"").toLowerCase()]||"กำลังตรวจ"};
-var fulfillmentLabel=function(v){return({awaiting_payment:"รอชำระ / รอตรวจ",confirmed:"ยืนยัน Order แล้ว",preparing:"กำลังเตรียมสินค้า",ready:"พร้อมส่ง / พร้อมรับ",shipped:"จัดส่งแล้ว",completed:"สำเร็จ",cancelled:"ยกเลิก"})[String(v||"").toLowerCase()]||""};
+var fulfillmentLabel=function(v){return({awaiting_payment:"รอชำระ / รอตรวจ",confirmed:"ยืนยัน Order แล้ว",preparing:"กำลังเตรียมสินค้า",ready:"พร้อมส่ง / พร้อมรับ",shipped:"จัดส่งแล้ว",delivered:"ส่งถึงแล้ว",delivery_failed:"จัดส่งไม่สำเร็จ",completed:"สำเร็จ",return_requested:"กำลังดำเนินการคืนสินค้า",return_received:"รับสินค้าคืนแล้ว",refund_pending:"กำลังคืนเงิน",refunded:"คืนเงินแล้ว",cancelled:"ยกเลิก"})[String(v||"").toLowerCase()]||""};
 var reservationLabel=function(v){return({reserved:"สำรองสินค้าแล้ว",payment_review:"กำลังตรวจการชำระ",committed:"ยืนยันสต๊อกสำหรับ Order แล้ว",expired:"หมดเวลาชำระ · คืนสต๊อกแล้ว",released:"คืนสต๊อกแล้ว"})[String(v||"").toLowerCase()]||""};
 var dateTime=function(v){if(!v)return"";try{return new Intl.DateTimeFormat("th-TH",{dateStyle:"medium",timeStyle:"short"}).format(new Date(v))}catch(e){return""}};
 var payLabel=function(v,proof,verified){if(verified)return"ยืนยันยอดแล้ว";if(proof)return"ได้รับหลักฐานแล้ว · รอตรวจ";return({pending:"รอการชำระเงิน",partial:"ชำระบางส่วน",paid:"ยืนยันยอดแล้ว",refunded:"คืนเงินแล้ว",failed:"ต้องตรวจใหม่"})[String(v||"").toLowerCase()]||"กำลังตรวจ"};
@@ -27,8 +27,8 @@ function renderFulfillment(f){
  var old=document.getElementById("orderFulfillment");if(old)old.remove();if(!f)return;
  var box=document.createElement("div");box.id="orderFulfillment";box.className="shop-fulfillment";
  var method=f.delivery_method==="pickup"?"รับสินค้าเอง / Pickup":f.delivery_method==="delivery"?"จัดส่ง":"กำลังยืนยันวิธีรับสินค้า";
- var tracking=f.tracking_number?(esc(f.courier||"Courier")+" · "+esc(f.tracking_number)):"";
- box.innerHTML='<small>FULFILLMENT</small><strong>'+esc(fulfillmentLabel(f.state)||method)+'</strong><p>'+esc(method)+(tracking?'<br>'+tracking:'')+'</p>';
+ var tracking=f.tracking_number?(esc(f.courier||"Courier")+" · "+esc(f.tracking_number)):"",refund=Number(f.refund_amount_thb)>0?("คืนเงิน "+esc(money(f.refund_amount_thb))+(f.refund_method?" · "+esc(f.refund_method):"")):"";
+ box.innerHTML='<small>FULFILLMENT</small><strong>'+esc(fulfillmentLabel(f.state)||method)+'</strong><p>'+esc(method)+(tracking?'<br>'+tracking:'')+(refund?'<br>'+refund:'')+'</p>';
  var pay=$("payCta");if(pay&&pay.parentNode)pay.parentNode.insertBefore(box,pay);else card.appendChild(box)
 }
 async function load(){

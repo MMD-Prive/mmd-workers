@@ -133,7 +133,7 @@ jobs:
             code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS -o "$body" -w "%{http_code}" -X POST -H "Authorization: Bearer ${SMOKE_TOKEN}" "$url" || true)"
             if [ "$code" = "200" ]; then
               cp "$body" "$final_body"
-              if node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const c=p?.checks||{}; const req=["admin_to_member_pages_binding","synthetic_line_has_no_owned_orders","projection_is_read_only","ownership_filter_active","private_contact_fields_blocked","unresolved_telegram_fails_closed","synthetic_reserve_expire","payment_review_blocks_expiry","inventory_out_once","fulfillment_delivery_lifecycle","line_shipping_dry_run","customer_projection_contract"]; if(p?.ok!==true||p?.state!=="pass"||!req.every((k)=>c[k]===true)||p?.guardrails?.customer_data_returned!==false||p?.guardrails?.business_truth_mutated!==false||p?.guardrails?.production_airtable_called!==false||p?.guardrails?.line_push_sent!==false) process.exit(1);' "$final_body"; then
+              if node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const c=p?.checks||{}; const req=["admin_to_member_pages_binding","synthetic_line_has_no_owned_orders","projection_is_read_only","ownership_filter_active","private_contact_fields_blocked","unresolved_telegram_fails_closed","synthetic_reserve_expire","payment_review_blocks_expiry","inventory_out_once","fulfillment_delivery_lifecycle","aftercare_refund_projection","line_shipping_dry_run","customer_projection_contract"]; if(p?.ok!==true||p?.state!=="pass"||!req.every((k)=>c[k]===true)||p?.guardrails?.customer_data_returned!==false||p?.guardrails?.business_truth_mutated!==false||p?.guardrails?.production_airtable_called!==false||p?.guardrails?.line_push_sent!==false) process.exit(1);' "$final_body"; then
                 passed=1
                 break
               fi
@@ -196,6 +196,7 @@ jobs:
             echo "- payment_review blocks expiry race: PASS"
             echo "- Inventory Out idempotency: PASS"
             echo "- fulfillment delivery lifecycle: PASS"
+            echo "- return/refund customer projection: PASS"
             echo "- LINE shipping dry-run: PASS"
             echo "- customer-safe Order projection: PASS"
             echo "- public internal endpoints blocked: PASS"

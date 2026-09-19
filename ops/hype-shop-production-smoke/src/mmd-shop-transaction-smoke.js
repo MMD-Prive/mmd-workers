@@ -114,7 +114,17 @@ export async function runMmdShopTransactionSmoke(env = {}) {
     tracking_number: "SMOKE-TRACK-260919",
   });
   const shippedProjection = publicMmdShopFulfillment(fulfillment);
+  fulfillment = transitionMmdShopFulfillment(fulfillment, { state: "delivered" });
   fulfillment = transitionMmdShopFulfillment(fulfillment, { state: "completed" });
+  fulfillment = transitionMmdShopFulfillment(fulfillment, { state: "return_requested", return_note: "synthetic return" });
+  fulfillment = transitionMmdShopFulfillment(fulfillment, { state: "return_received" });
+  fulfillment = transitionMmdShopFulfillment(fulfillment, { state: "refund_pending" });
+  fulfillment = transitionMmdShopFulfillment(fulfillment, {
+    state: "refunded",
+    refund_reference: "SMOKE-RF-260919",
+    refund_method: "PromptPay",
+    refund_amount_thb: 2500,
+  });
   store.orders[1].fields[F.orderNotes] = writeMmdShopFulfillment(
     store.orders[1].fields[F.orderNotes],
     fulfillment,
@@ -157,7 +167,14 @@ export async function runMmdShopTransactionSmoke(env = {}) {
     reservation_movement_sequence: reserveCount === 2 && releaseCount === 1 && outCount === 1,
     fulfillment_delivery_lifecycle: shippedProjection.state === "shipped"
       && shippedProjection.tracking_number === "SMOKE-TRACK-260919"
-      && fulfillmentRoundTrip?.state === "completed",
+      && Boolean(fulfillmentRoundTrip?.delivered_at)
+      && Boolean(fulfillmentRoundTrip?.completed_at),
+    aftercare_refund_projection: fulfillmentRoundTrip?.state === "refunded"
+      && fulfillmentRoundTrip?.refund_reference === "SMOKE-RF-260919"
+      && fulfillmentRoundTrip?.refund_amount_thb === 2500
+      && publicMmdShopFulfillment(fulfillmentRoundTrip).state === "refunded"
+      && publicMmdShopFulfillment(fulfillmentRoundTrip).refund_amount_thb === 2500
+      && !Object.prototype.hasOwnProperty.call(publicMmdShopFulfillment(fulfillmentRoundTrip), "refund_reference"),
     line_shipping_dry_run: lineDryRun.status === 200
       && lineDryRun.body?.ok === true
       && lineDryRun.body?.status === "dry_run"
@@ -166,8 +183,10 @@ export async function runMmdShopTransactionSmoke(env = {}) {
       && lineDryRun.body?.checks?.contains_my_mmd_orders === true
       && lineDryRun.body?.line_push_sent === false,
     customer_projection_contract: finalProjection.reservation.state === "committed"
-      && finalProjection.fulfillment.state === "completed"
-      && finalProjection.fulfillment.address === null,
+      && finalProjection.fulfillment.state === "refunded"
+      && finalProjection.fulfillment.refund_amount_thb === 2500
+      && finalProjection.fulfillment.address === null
+      && !Object.prototype.hasOwnProperty.call(finalProjection.fulfillment, "refund_reference"),
   };
 
   return {
@@ -183,6 +202,7 @@ export async function runMmdShopTransactionSmoke(env = {}) {
       out_movements: outCount,
       reservation_state: finalProjection.reservation.state,
       fulfillment_state: finalProjection.fulfillment.state,
+      refund_amount_thb: finalProjection.fulfillment.refund_amount_thb,
       line_dry_run_status: lineDryRun.body?.status || null,
     },
     guardrails: {
