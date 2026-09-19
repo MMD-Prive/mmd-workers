@@ -5,13 +5,22 @@ import {
   HYPE_CONTINUITY_PATH,
   HYPE_HANDOFF_PATH,
   HYPE_TRANSACTION_INTAKE_PATH,
+  HYPE_SUPERVISED_EXECUTION_PATH,
   handleHypeContinuityRpc,
   handleHypeHandoffRpc,
   handleHypeTransactionIntakeRpc,
+  handleHypeSupervisedExecutionRpc,
   normalizeTransactionFields,
   mergeTransactionDraft,
   canonicalTransactionRoute,
   transactionGuardrails,
+  executeP6Booking,
+  executeP6Mms,
+  executeP6PaymentProof,
+  executeP6Renewal,
+  safeExecutionReceipt,
+  p6ExecutionGuardrails,
+  buildExecutionId,
 } from "./src/hype-handoff-runtime.js";
 
 const ENV = {
@@ -54,6 +63,12 @@ test("HYPE continuity and handoff endpoints are service-binding only", async () 
     ENV,
   );
   assert.equal(transactionWrongCaller.status, 403);
+
+  const executionWrongCaller = await handleHypeSupervisedExecutionRpc(
+    internalRequest(HYPE_SUPERVISED_EXECUTION_PATH, { telegram_user_id: "111111", operation: "execute" }, "browser"),
+    ENV,
+  );
+  assert.equal(executionWrongCaller.status, 403);
 });
 
 test("HYPE continuity writes a bounded cross-channel Matrix row for a linked canonical client", { concurrency: false }, async () => {
@@ -237,4 +252,165 @@ test("P5 canonical transaction routes preserve lane authority and only accept si
   });
   assert.equal(unsafeProof.kind, "payment_status_resume");
   assert.equal(unsafeProof.href, "/member/payments");
+});
+
+
+test("P6 execution IDs are deterministic for the same draft and lane", async () => {
+  const a = await buildExecutionId("HYPE-DRAFT-BOOKING-ABC123", "booking");
+  const b = await buildExecutionId("HYPE-DRAFT-BOOKING-ABC123", "booking");
+  const other = await buildExecutionId("HYPE-DRAFT-BOOKING-ABC123", "mms");
+  assert.equal(a, b);
+  assert.notEqual(a, other);
+  assert.match(a, /^HYPE-EXEC-BOOKING-[a-f0-9]{16}$/);
+});
+
+test("P6 booking refuses canonical materialization until explicit Model preference exists", async () => {
+  const result = await executeP6Booking({}, {
+    draft: {
+      fields: {
+        service_intent: "dining",
+        preferred_date: "2026-09-25",
+        preferred_time: "19:30",
+        area: "Sathorn",
+      },
+    },
+  });
+  assert.equal(result.status, "review_required");
+  assert.equal(result.details.blocker, "model_preference_required");
+  assert.equal(result.canonical_href, "/booking");
+});
+
+test("P6 payment proof only prepares the canonical signed handoff and never verifies payment", () => {
+  const ready = executeP6PaymentProof({
+    route: { kind: "signed_payment_proof", href: "/sigil/pay?t=signed_123" },
+    draft: { fields: { evidence_present: true, evidence_type: "photo" } },
+  });
+  assert.equal(ready.status, "customer_action_required");
+  assert.equal(ready.authority, "payments-worker");
+  assert.equal(ready.canonical_href, "/sigil/pay?t=signed_123");
+  assert.equal(ready.details.raw_media_transferred, false);
+  assert.equal(ready.details.payment_verified, false);
+  assert.equal(ready.details.payment_marked_paid, false);
+
+  const missingIntent = executeP6PaymentProof({
+    route: { kind: "payment_status_resume", href: "/member/payments" },
+    draft: { fields: { evidence_present: true } },
+  });
+  assert.equal(missingIntent.status, "review_required");
+  assert.equal(missingIntent.canonical_href, "/member/payments");
+});
+
+test("P6 renewal queues current-package intent without granting or renewing membership", () => {
+  const result = executeP6Renewal({
+    route: { kind: "private_renewal_entry", href: "/sigil/member/membership?intent=renew" },
+  });
+  assert.equal(result.status, "queued");
+  assert.equal(result.details.package_change_requested, false);
+  assert.equal(result.details.membership_renewed, false);
+  assert.equal(result.details.entitlement_granted, false);
+});
+
+test("P6 MMS creates an idempotent canonical prebooking without inventing duration", { concurrency: false }, async () => {
+  const seen = [];
+  const env = {
+    MMS_WORKER: {
+      async fetch(request) {
+        const body = JSON.parse(await request.text());
+        seen.push(body);
+        return Response.json({
+          ok: true,
+          prebooking: {
+            prebooking_id: "mmspre_1234567890abcdef12345678",
+            status: "Options Ready",
+          },
+          matched_therapist_ids: ["therapist_a"],
+          storage: { coordinator: "persisted", airtable: "synced" },
+        }, { status: 201 });
+      },
+    },
+  };
+
+  const result = await executeP6Mms(env, {
+    executionId: "HYPE-EXEC-MMS-abcdef1234567890",
+    canonicalClientId: "recClientA1",
+    lineUserId: "U0123456789abcdef0123456789abcdef",
+    draft: {
+      fields: {
+        recipient_gender: "female",
+        zone: "sukhumvit",
+        service_date: "2026-09-26",
+        service_time: "20:00",
+        skills: ["aroma_therapy_oil"],
+      },
+    },
+  });
+
+  assert.equal(result.status, "materialized");
+  assert.equal(result.authority, "mms-worker");
+  assert.equal(result.details.booking_confirmed, false);
+  assert.equal(result.details.therapist_confirmed, false);
+  assert.equal(seen.length, 1);
+  assert.equal(Object.hasOwn(seen[0], "duration_minutes"), false);
+  assert.equal(seen[0].idempotency_key, "HYPE-EXEC-MMS-abcdef1234567890");
+});
+
+test("P6 MMS preserves explicit Therapist preference by forcing review instead of dropping it", async () => {
+  let called = false;
+  const result = await executeP6Mms({
+    MMS_WORKER: {
+      async fetch() {
+        called = true;
+        throw new Error("should not call MMS worker");
+      },
+    },
+  }, {
+    executionId: "HYPE-EXEC-MMS-abcdef1234567890",
+    canonicalClientId: "recClientA1",
+    lineUserId: "U0123456789abcdef0123456789abcdef",
+    draft: {
+      fields: {
+        recipient_gender: "female",
+        zone: "sukhumvit",
+        service_date: "2026-09-26",
+        service_time: "20:00",
+        skills: ["aroma_therapy_oil"],
+        therapist_preference: "Therapist A",
+      },
+    },
+  });
+
+  assert.equal(result.status, "review_required");
+  assert.equal(result.details.blocker, "therapist_preference_requires_canonical_resolution");
+  assert.equal(called, false);
+});
+
+test("P6 receipts expose only bounded customer-safe execution fields", () => {
+  const safe = safeExecutionReceipt({
+    schema: "mmd.hype_supervised_execution.v1",
+    execution_id: "HYPE-EXEC-BOOKING-abcdef1234567890",
+    draft_id: "HYPE-DRAFT-BOOKING-ABC123",
+    mode: "booking",
+    status: "materialized",
+    authority: "sigil-booking-worker",
+    canonical_ref: "kenji_ref_123",
+    canonical_href: "https://evil.example/internal/admin?token=secret",
+    replay_safe: true,
+    created_at: "2026-09-19T10:00:00.000Z",
+    details: {
+      mutation_scope: "booking_request_draft_only",
+      final_confirmation: false,
+      payment_confirmed: false,
+      secret: "must-not-copy",
+    },
+  });
+  assert.equal(safe.canonical_href, "");
+  assert.equal(Object.hasOwn(safe.details, "secret"), false);
+  assert.equal(safe.details.final_confirmation, false);
+
+  const guardrails = p6ExecutionGuardrails();
+  assert.equal(guardrails.idempotent, true);
+  assert.equal(guardrails.payment_marked_paid, false);
+  assert.equal(guardrails.job_confirmed, false);
+  assert.equal(guardrails.membership_renewed, false);
+  assert.equal(guardrails.mms_booking_confirmed, false);
 });
