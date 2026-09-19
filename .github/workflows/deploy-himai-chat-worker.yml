@@ -82,7 +82,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/himai-chat-worker-upload.log"; then
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]|pending Durable Object migration|Durable Object migrations must be applied with' "$RUNNER_TEMP/himai-chat-worker-upload.log"; then
             echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211." >&2
             cat "$RUNNER_TEMP/himai-chat-worker-upload.log" >&2
             exit 1
