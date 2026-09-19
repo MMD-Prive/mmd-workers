@@ -204,6 +204,43 @@ window.__MMD_CALENDAR_WEBFLOW_V2__=true;
       liveCta.addEventListener('click',e=>{e.preventDefault();load()});
     }
 
+    const actions=qs('.mcal__actions');
+    if(actions&&!/\.webflow\.io$/i.test(location.hostname)){
+      const reconcile=document.createElement('button');
+      reconcile.type='button';
+      reconcile.className='mcal__action mcal__action--ghost';
+      reconcile.textContent='Reconcile Cal';
+      reconcile.addEventListener('click',async()=>{
+        const original=reconcile.textContent;
+        reconcile.disabled=true;
+        reconcile.textContent='Reconciling…';
+        try{
+          const response=await fetch('/v1/admin/calendar/reconcile?horizon_days=60&limit=25',{
+            method:'POST',
+            credentials:'include',
+            cache:'no-store',
+            headers:{accept:'application/json'}
+          });
+          if(response.status===401||response.status===403){
+            location.href='/internal/admin/login?next='+encodeURIComponent('/internal/admin/calendar?date='+selected);
+            return;
+          }
+          const body=await response.json().catch(()=>null);
+          if(!response.ok||!body?.ok)throw new Error(body?.error||'reconcile_failed');
+          const created=Number(body?.summary?.created||0);
+          const existing=Number(body?.summary?.existing||0);
+          reconcile.textContent='Cal linked +'+created+(existing?' · existing '+existing:'');
+          await load();
+        }catch(error){
+          reconcile.textContent='Reconcile failed';
+          console.warn('[mmd-calendar] reconcile failed',error);
+        }finally{
+          setTimeout(()=>{reconcile.disabled=false;reconcile.textContent=original},2200);
+        }
+      });
+      actions.appendChild(reconcile);
+    }
+
     renderDate();
     load();
   };
