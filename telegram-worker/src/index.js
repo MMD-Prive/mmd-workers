@@ -541,6 +541,26 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
     return { handled: true, flow: "hype_operating_status", ok: false, code_status: "telegram_identity_invalid", telegram };
   }
 
+  if (command === "handoff_kenji" || command === "handoff_per") {
+    const contextWriter = env.HYPE_CONTEXT_WRITER;
+    if (!contextWriter?.fetch) {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ระบบส่งต่อพร้อม context ยังไม่พร้อมชั่วคราวครับ กรุณาติดต่อ MMD ทาง LINE Official ก่อนครับ",
+        disable_web_page_preview: true,
+        reply_markup: hypeHandoffButtons(env, command === "handoff_kenji" ? "kenji" : "per"),
+      }, env);
+      return { handled: true, flow: "hype_supervised_handoff", ok: false, code_status: "context_writer_unavailable", telegram };
+    }
+    return handleHypeCustomerHandoff({
+      message,
+      chatId,
+      telegramUserId,
+      target: command === "handoff_kenji" ? "kenji" : "per",
+      command,
+    }, env, contextWriter);
+  }
+
   const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
   if (!binding?.fetch) {
     const telegram = await sendTelegramMessage({
@@ -550,16 +570,6 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       reply_markup: hypeConnectButtons(env),
     }, env);
     return { handled: true, flow: "hype_operating_status", ok: false, code_status: "operations_unavailable", telegram };
-  }
-
-  if (command === "handoff_kenji" || command === "handoff_per") {
-    return handleHypeCustomerHandoff({
-      message,
-      chatId,
-      telegramUserId,
-      target: command === "handoff_kenji" ? "kenji" : "per",
-      command,
-    }, env, binding);
   }
 
   let result = null;
@@ -632,7 +642,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   }, env);
 
   const continuity = await recordHypeContinuity({
-    binding,
+    binding: env.HYPE_CONTEXT_WRITER,
     telegramUserId,
     command,
     customerMessage: clean(message.text || ""),
@@ -804,6 +814,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
 }
 
 async function recordHypeContinuity({ binding, telegramUserId, command, customerMessage, projection }) {
+  if (!binding?.fetch) return { ok: false, state: "context_writer_unavailable" };
   try {
     const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/continuity", {
       method: "POST",
