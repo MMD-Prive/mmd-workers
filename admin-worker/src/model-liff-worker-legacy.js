@@ -1,10 +1,12 @@
 import dashboardWorker from "./dashboard-worker.js";
 import { planPrivateUpload, uploadPrivateMedia } from "../../shared/private-media.mjs";
+import { issueModelTelegramBind, telegramConnectedFromFields } from "./telegram-identity-bind-authority.js";
 
 const EXCHANGE_PATH = "/v1/model/liff/exchange";
 const CURRENT_PATH = "/v1/model/session/current";
 const ACTION_PATH = "/v1/model/session/action";
 const PROFILE_PATH = "/v1/model/profile";
+const TELEGRAM_BIND_PATH = "/v1/model/telegram/bind";
 const MEDIA_PATH = "/v1/model/media";
 const MEDIA_UPLOAD_PATH = "/v1/model/media/upload";
 const COOKIE_NAME = "mmd_model_session_v1";
@@ -70,6 +72,11 @@ export default {
       if (method === "GET") return handleProfileRead(request, env);
       if (method === "PATCH") return handleProfileUpdate(request, env);
       return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+    }
+
+    if (path === TELEGRAM_BIND_PATH) {
+      if (method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+      return handleTelegramBind(request, env);
     }
 
     if (path === MEDIA_PATH) {
@@ -276,7 +283,7 @@ export function normalizeEtaMinutes(value) {
 }
 
 function isModelLiffPath(path) {
-  return path === EXCHANGE_PATH || path === CURRENT_PATH || path === ACTION_PATH || path === PROFILE_PATH || path === MEDIA_PATH || path === MEDIA_UPLOAD_PATH || path.startsWith(`${MEDIA_PATH}/`);
+  return path === EXCHANGE_PATH || path === CURRENT_PATH || path === ACTION_PATH || path === PROFILE_PATH || path === TELEGRAM_BIND_PATH || path === MEDIA_PATH || path === MEDIA_UPLOAD_PATH || path.startsWith(`${MEDIA_PATH}/`);
 }
 
 async function handleExchange(request, env) {
@@ -346,6 +353,14 @@ async function handleProfileRead(request, env) {
   const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
   if (main?.media_id) profile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
   return json({ ok: true, model: profile }, 200, request, env);
+}
+
+async function handleTelegramBind(request, env) {
+  const auth = await requireModelSession(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+  if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
+  const result = await issueModelTelegramBind(env, { model_record_id: auth.payload.model_record_id });
+  return json(result, result.ok ? 200 : result.status || 400, request, env);
 }
 
 async function handleProfileUpdate(request, env) {
@@ -688,6 +703,13 @@ function safeModelProfile(record) {
     availability_status: clean(fields.availability_status) || "busy",
     minimum_rate_90m: finiteOrNull(fields.minimum_rate_90m),
     rate_editable: false,
+    telegram_connected: telegramConnectedFromFields(fields),
+    telegram_verification_status: clean(fields.telegram_verification_status) || "not_connected",
+    telegram_username: telegramConnectedFromFields(fields) ? clean(fields.telegram_username).replace(/^@/, "") : "",
+    readiness: {
+      line_identity_verified: Boolean(clean(fields.line_user_id)),
+      telegram_connected: telegramConnectedFromFields(fields),
+    },
     current_profile_image_url: safeHttpUrl(fields["Public Image URL"]) || safeAttachmentUrl(attachments[0]),
   };
 }
