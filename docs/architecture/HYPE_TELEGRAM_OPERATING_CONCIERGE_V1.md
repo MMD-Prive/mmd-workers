@@ -605,10 +605,30 @@ For both domains:
 - failed ownership/authority checks leave correlation unbound without exposing foreign references;
 - correlation never mutates Job, Payment, Calendar, Therapist assignment, MMS booking or entitlement truth.
 
+## Owner / Operator Recovery Control
+
+Recovery workflow controls are available through the credential-bound admin surface:
+
+- page: `/internal/admin/recovery`;
+- API: `/v1/admin/recovery/cases`;
+- actor: credential-bound Owner or Admin only;
+- writes require same-origin browser requests;
+- browser code never receives or manufactures a service-binding credential.
+
+The UI exposes recent canonical Recovery Cases and exact Case Ref lookup. It projects only bounded Recovery metadata plus the already-bounded Shop / Booking / MMS correlation fields.
+
+Control order is deliberately strict:
+
+`prepared/sent → acknowledged → reviewing → resolved → customer_notified`
+
+A Case may only become `resolved` from `reviewing`, with an explicit terminal outcome valid for its domain. Non-terminal outcomes may be written without moving lifecycle state. The UI and Telegram commands share the same canonical transition engine, so taxonomy and monotonic-state checks cannot drift between surfaces.
+
+Recovery Control never mutates Payment, Order/Fulfillment, Job/Calendar, Therapist assignment, MMS booking or entitlement truth. Operators must refresh the corresponding canonical authority before any protected business action.
+
 ## Next implementation lanes
 
-1. bounded owner/operator UI controls for recovery outcomes beyond Telegram commands;
-2. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates.
+1. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates;
+2. optional Recovery queue filters/SLA indicators that remain workflow metadata and do not infer business truth.
 
 All future lanes must preserve the same authority and privacy locks.
 

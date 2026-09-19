@@ -441,6 +441,40 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/my-mmd/recovery-diagnostic*"
 zone_name = "mmdbkk.com"
 
+# Recovery Control owner/operator surface. Runtime pathname/method matching is exact;
+# wildcard companions only allow query strings through Cloudflare routing.
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/recovery*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/recovery/cases*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/recovery/cases*"
+zone_name = "mmdbkk.com"
+
 # Kenji Admin canonical control centre.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/kenji"

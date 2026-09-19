@@ -363,8 +363,17 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     });
   }
 
+  return transitionRecoveryCase(env, body);
+}
+
+export async function transitionRecoveryCase(env = {}, body = {}) {
+  const handoffId = clean(body.handoff_id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
+    return json({ ok: false, error: "handoff_id_invalid" }, 400);
+  }
+
   const nextState = token(body.state);
-  if (!["sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
+  if (!["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
     return json({ ok: false, error: "handoff_state_invalid" }, 400);
   }
 
@@ -475,11 +484,11 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     : null;
 
   const fields = {
-    [F.LAST_KENJI_ACTION]: `handoff_${nextState}`,
+    [F.LAST_KENJI_ACTION]: "handoff_" + nextState,
     [F.LAST_OUTCOME]: recoveryCase
-      ? `${handoffOutcome(nextState)}; recovery=${recoveryCase.domain}/${recoveryCase.outcome_code}`
+      ? handoffOutcome(nextState) + "; recovery=" + recoveryCase.domain + "/" + recoveryCase.outcome_code
       : handoffOutcome(nextState),
-    [F.STAGE]: `handoff_${nextState}`,
+    [F.STAGE]: "handoff_" + nextState,
     [F.AWAITING]: nextState === "resolved"
       ? "customer_notification"
       : nextState === "customer_notified"
@@ -488,7 +497,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
           ? "customer"
           : "mmd_review",
     [F.HANDOFF_REQUIRED]: !["resolved", "customer_notified"].includes(nextState),
-    [F.LAST_EVENT]: `hype_handoff_${nextState}:${handoffId}`,
+    [F.LAST_EVENT]: "hype_handoff_" + nextState + ":" + handoffId,
     [F.LAST_INTERACTION]: stamp,
     [F.UPDATED_AT]: stamp,
     [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
