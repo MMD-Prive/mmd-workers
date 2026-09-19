@@ -14,6 +14,7 @@ on:
       - "shared/private-media.mjs"
       - "scripts/ensure-private-media-bucket.mjs"
       - ".github/workflows/deploy-member-pages-worker.yml"
+      - "shared/payment-intelligence.mjs"
 
 concurrency:
   group: deploy-member-pages-worker-production
