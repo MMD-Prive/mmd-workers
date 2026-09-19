@@ -1859,7 +1859,7 @@ function safeRecoveryCorrelation(value = {}) {
     delivery_method: token(value.delivery_method) || null,
     courier: clean(value.courier, 180) || null,
     tracking_number: clean(value.tracking_number, 220) || null,
-    total_thb: nonNegative(value.total_thb),
+    total_thb: nullableNonNegative(value.total_thb),
     candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
     method: token(value.method) || "none",
   };
@@ -1917,7 +1917,7 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
     delivery_method: token(order.fulfillment?.delivery_method),
     courier: clean(order.fulfillment?.courier, 180) || null,
     tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
-    total_thb: nonNegative(order.total_thb),
+    total_thb: nullableNonNegative(order.total_thb),
     candidate_count: Number(correlation.candidate_count) || 1,
     source_authority: clean(read.body.authority, 160) || "member-pages-worker",
     live_truth_refresh_required: true,
@@ -2137,6 +2137,12 @@ function escapeFormula(value) {
 function nn(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function nullableNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function nonNegative(value) {
