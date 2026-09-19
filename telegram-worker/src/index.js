@@ -271,7 +271,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       text: group ? hypeMemberGroupCommandText(group) : hypeHelpText(),
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: group ? hypeMemberGroupCommandButtons(env) : hypeHelpButtons(env),
+      reply_markup: group ? hypeMemberGroupCommandButtons(env, group) : hypeHelpButtons(env),
     }, env);
     return {
       handled: true,
@@ -562,7 +562,24 @@ function configuredMemberGroup(chatId, env) {
 }
 
 function hypeMemberGroupCommandText(group) {
-  const label = group === "preview" ? "PREVIEW" : group === "premium" ? "PREMIUM" : "STANDARD";
+  if (group === "preview") {
+    return [
+      "<b>HYPE · PREVIEW COMMANDS</b>",
+      "",
+      "ใน Preview ผมจะไม่ดึง Model ทุกคนรวมกันครับ",
+      "ผมใช้มุมมองที่ลูกค้าเลือกไว้ใน MMD เท่านั้น: สำหรับผู้หญิง หรือ LGBT+",
+      "ถ้ายังไม่เลือก = hold ก่อน ไม่เดาเพศ/ความสนใจ และไม่โชว์ทั้งหมด",
+      "",
+      "<b>/commands</b> หรือ <b>/help</b> — ดูคู่มือ",
+      "<b>/careback</b> — CARE BACK Phase 2",
+      "<b>/points</b> — MY MMD · Points",
+      "<b>/coupons</b> — MY MMD · Coupon Wallet",
+      "",
+      "<b>ข้อมูลส่วนตัว</b> เช่น /status, /next, /booking ผมจะพาไปคุยใน private chat เท่านั้นครับ 🔒",
+    ].join("\n");
+  }
+
+  const label = group === "premium" ? "PREMIUM" : "STANDARD";
   return [
     `<b>HYPE · ${label} GROUP COMMANDS</b>`,
     "",
@@ -583,20 +600,21 @@ function hypeMemberGroupCommandText(group) {
   ].join("\n");
 }
 
-function hypeMemberGroupCommandButtons(env) {
-  return {
-    inline_keyboard: [
-      [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
-      [
-        { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
-        { text: "Booking", url: publicUrl(env, "/booking") },
-      ],
-      [
-        { text: "Points", url: publicUrl(env, "/my-mmd/points") },
-        { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
-      ],
-    ],
-  };
+function hypeMemberGroupCommandButtons(env, group = "") {
+  const rows = [];
+  if (group === "preview") {
+    rows.push([{ text: "เลือกมุมมองใน Hall", url: publicUrl(env, "/hall") }]);
+  }
+  rows.push([{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }]);
+  rows.push([
+    { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
+    { text: "Booking", url: publicUrl(env, "/booking") },
+  ]);
+  rows.push([
+    { text: "Points", url: publicUrl(env, "/my-mmd/points") },
+    { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
+  ]);
+  return { inline_keyboard: rows };
 }
 
 function hypeHelpText() {
@@ -732,20 +750,26 @@ function hypePreviewJoinWelcomeText() {
     "ผม <b>HYPE</b> ผู้ช่วย Telegram ของ MMD",
     "ถ้าอยากดูว่าผมช่วยอะไรได้บ้าง พิมพ์ <b>/commands</b> ได้เลยครับ",
     "",
-    "ในกลุ่มนี้ผมช่วยพาไป Preview Models, CARE BACK, MY MMD, Points และ Coupons ได้",
-    "ส่วนข้อมูลสมาชิก งาน การจอง หรือการชำระ ผมจะพาไปคุยในแชตส่วนตัวเพื่อไม่ให้ข้อมูลส่วนตัวขึ้นในกลุ่มครับ 🔒",
+    "<b>ก่อนแนะนำ Model ผมจะไม่ดึงทุกคนมาให้ดูรวมกัน</b>",
+    "ผมใช้มุมมองที่คุณเลือกไว้ใน MMD เท่านั้น — สำหรับผู้หญิง หรือ LGBT+",
+    "ถ้ายังไม่เคยเลือก ระบบจะ hold ไว้ก่อนและให้คุณเลือกเองครับ",
+    "",
+    "ผมไม่เดาเพศหรือความสนใจจากชื่อ รูป LINE หรือ Telegram ของคุณ",
+    "เลือกมุมมองใน Hall ก่อน แล้วผมค่อยพาไปยังสิ่งที่ตรงกับคุณครับ",
+    "",
+    "ข้อมูลสมาชิก งาน การจอง หรือการชำระ ผมจะพาไปคุยในแชตส่วนตัวเพื่อไม่ให้ข้อมูลส่วนตัวขึ้นในกลุ่มครับ 🔒",
   ].join("\n");
 }
 
 function hypePreviewWelcomeButtons(env) {
   return {
     inline_keyboard: [
+      [{ text: "เลือกมุมมองใน Hall", url: publicUrl(env, "/hall") }],
       [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
       [
-        { text: "Preview Models", url: publicUrl(env, "/profiles") },
         { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
+        { text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") },
       ],
-      [{ text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") }],
     ],
   };
 }
