@@ -7,6 +7,7 @@ export const KENJI_LV5_ACTION_RPC_PATH = "/v1/internal/kenji/actions/execute";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
 const AUTO_ACTIONS = new Set(["create_booking_request", "capture_booking_intent"]);
+const STANDARD_BOOKING_MIN_DURATION_HOURS = 1.5;
 const PROTECTED_ACTIONS = new Set([
   "assign_model", "create_calendar_hold", "apply_credit", "confirm_payment", "mark_paid",
   "confirm_job", "cancel_job", "reschedule_job", "grant_membership", "grant_private_access",
@@ -98,6 +99,7 @@ async function resolveAuthorizedModelMetadata(env, model = {}) {
 }
 
 export function evaluateKenjiLv5BookingAction(context = {}, modelAccess = {}, intent = {}) {
+  const bookingIntent = normalizeBookingIntent(intent);
   const reasons = [];
   if (context?.live_truth_complete !== true) reasons.push("live_truth_incomplete");
   if (context?.fan_in?.identity_resolution !== "canonical") reasons.push("canonical_client_unresolved");
@@ -111,22 +113,21 @@ export function evaluateKenjiLv5BookingAction(context = {}, modelAccess = {}, in
   if (!clean(modelAccess?.model?.working_name, 120)) reasons.push("canonical_model_name_missing");
   if (!recId(modelAccess?.model_access?.record_id)) reasons.push("canonical_model_record_missing");
   if (!["public", "private"].includes(token(modelAccess?.model_access?.visibility))) reasons.push("model_lane_unverified");
-  if (!isoDate(intent.date)) reasons.push("date_missing");
-  if (!hhmm(intent.time)) reasons.push("time_missing");
-  if (token(intent.trigger) === "deposit" && !hhmm(intent.end_time) && !positiveNumber(intent.duration_hours)) reasons.push("end_time_missing");
-  if (!clean(intent.location, 160)) reasons.push("location_missing");
-  if (token(intent.trigger) === "deposit" && !positiveNumber(intent.amount_thb)) reasons.push("rate_missing");
+  if (!isoDate(bookingIntent.date)) reasons.push("date_missing");
+  if (!hhmm(bookingIntent.time)) reasons.push("time_missing");
+  if (!clean(bookingIntent.location, 160)) reasons.push("location_missing");
+  if (token(bookingIntent.trigger) === "deposit" && !positiveNumber(bookingIntent.amount_thb)) reasons.push("rate_missing");
   return { ok: reasons.length === 0, reasons };
 }
 
 export function missingKenjiBookingIntentFields(intent = {}) {
+  const normalized = normalizeBookingIntent(intent);
   const missing = [];
-  if (!clean(intent.model_name, 120)) missing.push("model_name");
-  if (!isoDate(intent.date)) missing.push("date");
-  if (!hhmm(intent.time)) missing.push("time");
-  if (!hhmm(intent.end_time) && !positiveNumber(intent.duration_hours)) missing.push("duration_or_end_time");
-  if (!clean(intent.location, 160)) missing.push("location");
-  if (!positiveNumber(intent.amount_thb)) missing.push("rate");
+  if (!clean(normalized.model_name, 120)) missing.push("model_name");
+  if (!isoDate(normalized.date)) missing.push("date");
+  if (!hhmm(normalized.time)) missing.push("time");
+  if (!clean(normalized.location, 160)) missing.push("location");
+  if (!positiveNumber(normalized.amount_thb)) missing.push("rate");
   return missing;
 }
 
@@ -166,9 +167,9 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
     selected_model_id: recId(modelAccess?.model_access?.record_id),
     selected_model_name: clean(model.working_name, 120),
     resolved_model_key: clean(model.model_code, 80),
-    preferred_date: isoDate(intent.date),
-    preferred_time: hhmm(intent.time),
-    google_address: clean(intent.location, 240),
+    preferred_date: isoDate(normalizedIntent.date),
+    preferred_time: hhmm(normalizedIntent.time),
+    google_address: clean(normalizedIntent.location, 240),
     suppress_telegram_notify: action === "capture_booking_intent",
     client_notes: "Kenji LV5 P4 booking request. Draft only; official model/job/payment confirmation still required.",
     resolver_payload_json: {
@@ -187,14 +188,14 @@ export function buildKenjiLv5BookingDraftPayload({ context = {}, modelAccess = {
       intent: compact({
         trigger: token(intent.trigger),
         model_name: clean(intent.model_name, 120),
-        customer_name_wording: clean(intent.customer_name, 120),
-        date: isoDate(intent.date),
-        time: hhmm(intent.time),
+        customer_name_wording: clean(normalizedIntent.customer_name, 120),
+        date: isoDate(normalizedIntent.date),
+        time: hhmm(normalizedIntent.time),
         end_time: hhmm(intent.end_time),
         duration_hours: positiveNumber(intent.duration_hours) || undefined,
-        location: clean(intent.location, 160),
-        amount_thb: positiveNumber(intent.amount_thb) || undefined,
-        deposit_amount_thb_wording: positiveNumber(intent.deposit_amount_thb) || undefined,
+        location: clean(normalizedIntent.location, 160),
+        amount_thb: positiveNumber(normalizedIntent.amount_thb) || undefined,
+        deposit_amount_thb_wording: positiveNumber(normalizedIntent.deposit_amount_thb) || undefined,
         raw: clean(intent.raw, 1000),
         source_message_id: clean(intent.source_message_id, 120),
       }),
@@ -216,15 +217,24 @@ function addHours(time = "", durationHours = 0) {
 }
 
 function normalizeBookingIntent(input = {}) {
+  const time = hhmm(input.time);
+  const endTime = hhmm(input.end_time);
+  const suppliedDuration = positiveNumber(input.duration_hours);
+  const durationHours = time && !endTime
+    ? Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, suppliedDuration || 0)
+    : suppliedDuration;
   return compact({
     type: "booking",
     trigger: token(input.trigger),
     model_name: clean(input.model_name, 120),
     customer_name: clean(input.customer_name || input.customer_name_wording, 120),
     date: isoDate(input.date),
-    time: hhmm(input.time),
-    end_time: hhmm(input.end_time),
-    duration_hours: positiveNumber(input.duration_hours) || undefined,
+    time,
+    end_time: endTime,
+    duration_hours: durationHours || undefined,
+    duration_source: time && !endTime && (!suppliedDuration || suppliedDuration < STANDARD_BOOKING_MIN_DURATION_HOURS)
+      ? (suppliedDuration ? "mmd_standard_minimum_90m_floor" : "mmd_standard_minimum_90m_default")
+      : clean(input.duration_source, 80),
     location: clean(input.location, 160),
     amount_thb: positiveNumber(input.amount_thb) || undefined,
     deposit_amount_thb: positiveNumber(input.deposit_amount_thb || input.deposit_amount_thb_wording) || undefined,
@@ -238,11 +248,26 @@ function mergeBookingIntent(previous = {}, incoming = {}) {
 }
 
 export function buildKenjiCanonicalJobPayload({ context = {}, modelAccess = {}, intent = {}, actionId = "", refs = {} } = {}) {
+  const normalizedIntent = normalizeBookingIntent(intent);
   const client = context?.client_360 || {};
   const model = modelAccess?.model || {};
   const metadata = modelAccess?.model_access || {};
   const visibility = token(metadata.visibility) === "private" ? "private" : "public";
-  const endTime = hhmm(intent.end_time) || addHours(intent.time, intent.duration_hours);
+  const startTime = hhmm(normalizedIntent.time);
+  const explicitEnd = hhmm(normalizedIntent.end_time);
+  const suppliedDuration = positiveNumber(normalizedIntent.duration_hours) || STANDARD_BOOKING_MIN_DURATION_HOURS;
+  const minimumEnd = addHours(startTime, Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, suppliedDuration));
+  const explicitSpanMinutes = (() => {
+    if (!startTime || !explicitEnd) return 0;
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = explicitEnd.split(":").map(Number);
+    let diff = (eh * 60 + em) - (sh * 60 + sm);
+    if (diff <= 0) diff += 24 * 60;
+    return diff;
+  })();
+  const endTime = explicitEnd && explicitSpanMinutes >= Math.round(Math.max(STANDARD_BOOKING_MIN_DURATION_HOURS, suppliedDuration) * 60)
+    ? explicitEnd
+    : minimumEnd;
   const canonicalClientId = recId(client.canonical_client_id);
   const canonicalModelId = recId(metadata.record_id);
   return {
@@ -270,19 +295,19 @@ export function buildKenjiCanonicalJobPayload({ context = {}, modelAccess = {}, 
       job_visibility: visibility,
       model_folder: clean(metadata.folder, 80),
     },
-    schedule: { date: isoDate(intent.date), start: hhmm(intent.time), end: endTime },
-    location: { text: clean(intent.location, 160) },
+    schedule: { date: isoDate(normalizedIntent.date), start: hhmm(normalizedIntent.time), end: endTime },
+    location: { text: clean(normalizedIntent.location, 160) },
     payment: {
-      amount_thb: positiveNumber(intent.amount_thb),
-      service_amount_thb: positiveNumber(intent.amount_thb),
+      amount_thb: positiveNumber(normalizedIntent.amount_thb),
+      service_amount_thb: positiveNumber(normalizedIntent.amount_thb),
       payment_type: "deposit",
     },
-    amount_thb: positiveNumber(intent.amount_thb),
-    service_amount_thb: positiveNumber(intent.amount_thb),
+    amount_thb: positiveNumber(normalizedIntent.amount_thb),
+    service_amount_thb: positiveNumber(normalizedIntent.amount_thb),
     private_access: { selected_private_folder: clean(metadata.folder, 80) },
     notes: {
       handling: `Kenji LINE OFC deposit-triggered Create Job. Booking ref ${clean(refs.booking_ref, 80)}.`,
-      internal: `Action ${clean(actionId, 180)}. Customer wording: ${clean(intent.customer_name, 120) || "not supplied"}. Deposit wording: ${positiveNumber(intent.deposit_amount_thb) || "not supplied"}. Payment not verified.`,
+      internal: `Action ${clean(actionId, 180)}. Customer wording: ${clean(normalizedIntent.customer_name, 120) || "not supplied"}. Deposit wording: ${positiveNumber(normalizedIntent.deposit_amount_thb) || "not supplied"}. Payment not verified.`,
     },
   };
 }
@@ -349,7 +374,7 @@ export async function executeKenjiLv5SupervisedAction(env = {}, input = {}) {
   });
   intent.line_user_id = requestedLineId;
   const captureIntent = action === "capture_booking_intent";
-  const completeStandardBooking = Boolean(intent.model_name && intent.date && intent.time && intent.location);
+  const completeStandardBooking = Boolean(intent.model_name && normalizedIntent.date && normalizedIntent.time && normalizedIntent.location);
   if (!actionId || !canonicalClientId || !requestedLineId || (!captureIntent && !completeStandardBooking)) {
     return { ok: false, schema: KENJI_LV5_ACTION_SCHEMA, action, status: "invalid_action_request", executed: false };
   }
