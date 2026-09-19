@@ -52,7 +52,15 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
   const displayName = safeDisplayName(resolved.profile?.display_name);
   const serializedProfile = resolved.memberId ? serializeCustomer360Profile(resolved.profile) : null;
-  const presentation = canonicalPresentationContext(serializedProfile, resolved.profile, projection);
+  const protectedActiveThrough = projection?.lifecycle === "active" && !projection.expiresAt
+    ? await readOrCreateProtectedActiveThroughAnchor(env, sessionRef.lineUserId, projection)
+    : null;
+  const presentation = canonicalPresentationContext(
+    serializedProfile,
+    resolved.profile,
+    projection,
+    protectedActiveThrough,
+  );
   const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname)
     || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
   const needsContactProfile = /^\/api\/member\/app\/profile\/?$/.test(url.pathname)
@@ -402,7 +410,7 @@ function overlayProtectedDisplay(profile, projection, displayName) {
       ...(membershipExpiresAt ? { membership_expires_at: safeCalendarDate(member.membership_expires_at) || membershipExpiresAt } : {}) } } : {}) } } : {}) };
 }
 
-function canonicalPresentationContext(serializedProfile, rawProfile, projection) {
+function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null) {
   const source = isPlainObject(serializedProfile) ? serializedProfile : {};
   const customer360 = isPlainObject(source.customer_360) ? source.customer_360 : {};
   const member = isPlainObject(customer360.member) ? customer360.member : {};
@@ -413,7 +421,7 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection)
   const rawMember = isPlainObject(raw360.member) ? raw360.member : {};
   const membershipStart = safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
   const canonicalExpiry = safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
-  const membershipExpiresAt = canonicalExpiry || protectedConnectNowActiveThrough(projection);
+  const membershipExpiresAt = canonicalExpiry || safeCalendarDate(protectedActiveThrough) || null;
   const explicitlyPending = [raw.history_recovery_state, rawMember.history_recovery_state]
     .some((value) => String(value || "").trim().toLowerCase() === "pending");
   const historyPending = explicitlyPending || Boolean(projection && (!membershipStart || !canonicalExpiry));
@@ -423,15 +431,61 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection)
     historyRecoveryState: historyPending ? "recovery_pending" : null };
 }
 
-export function protectedConnectNowActiveThrough(projection, now = new Date()) {
+export function protectedConnectNowActiveThrough(projection, anchorDate) {
   if (!isPlainObject(projection)) return null;
   if (projection.lifecycle !== "active") return null;
   const capability = String(projection.capability || "").trim().toLowerCase();
   if (!PROTECTED_PRIORITY.includes(capability)) return null;
-  const anchor = now instanceof Date ? new Date(now.getTime()) : new Date(now);
-  if (!Number.isFinite(anchor.getTime())) return null;
+  const start = safeCalendarDate(anchorDate);
+  if (!start) return null;
+  const anchor = new Date(`${start}T00:00:00.000Z`);
   anchor.setUTCFullYear(anchor.getUTCFullYear() + 2);
   return anchor.toISOString().slice(0, 10);
+}
+
+export async function readOrCreateProtectedActiveThroughAnchor(env = {}, lineUserId = "", projection = {}, now = new Date()) {
+  const store = env.LIFF_IDENTITY_KV;
+  const secret = String(env.LIFF_SESSION_SECRET || "");
+  const lineId = canonicalLineId(lineUserId);
+  if (!store?.get || !store?.put || secret.length < 32 || !lineId) return null;
+  try {
+    const fingerprint = (await hmacHex(secret, `protected-active-through:${lineId}`)).slice(0, 32);
+    const key = `my-mmd:protected-active-through:v1:${fingerprint}`;
+    const existing = await store.get(key, "json");
+    const existingDate = safeCalendarDate(existing?.active_through);
+    if (existingDate) return existingDate;
+
+    const connectedOn = now instanceof Date && Number.isFinite(now.getTime())
+      ? now.toISOString().slice(0, 10)
+      : safeCalendarDate(now);
+    const activeThrough = protectedConnectNowActiveThrough(projection, connectedOn);
+    if (!activeThrough) return null;
+    const record = {
+      version: 1,
+      policy: "protected_connect_now_plus_2y_v1",
+      connected_on: connectedOn,
+      active_through: activeThrough,
+      capability_at_connect: String(projection.capability || "").trim().toLowerCase(),
+      contains_raw_line_id: false,
+      created_at: new Date().toISOString(),
+    };
+    await store.put(key, JSON.stringify(record));
+    console.info({
+      event: "my_mmd_protected_active_through_anchor_created",
+      component: "member-pages-worker",
+      policy: record.policy,
+      capability: record.capability_at_connect,
+      active_through: activeThrough,
+    });
+    return activeThrough;
+  } catch (error) {
+    console.warn({
+      event: "my_mmd_protected_active_through_anchor_failed",
+      component: "member-pages-worker",
+      failure_class: safeFailureClass(error),
+    });
+    return null;
+  }
 }
 
 function selectProtectedEntitlement(value, capability, lifecycle) {
