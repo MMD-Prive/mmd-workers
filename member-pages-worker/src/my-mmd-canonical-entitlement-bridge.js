@@ -1,5 +1,6 @@
 import { serializeCustomer360Profile } from "./customer-360-serializer.js";
 import { readClientBackedHistoryResult, resolveCanonicalClientForLine } from "./member-app-client-history.js";
+import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const SESSION_TTL_SECONDS = 15 * 60;
@@ -41,7 +42,10 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   if (!isMyMmdCanonicalEntitlementPath(url)) return null;
   const sessionRef = await readSessionRef(request, env);
   if (!sessionRef) return null;
-  const resolved = await readCanonicalMemberProfile(env, sessionRef.lineUserId);
+  const [resolved, recoveryStatus] = await Promise.all([
+    readCanonicalMemberProfile(env, sessionRef.lineUserId),
+    readMemberHistoryRecoveryStatus(env, sessionRef.lineUserId),
+  ]);
   if (!resolved) return { unavailable: true };
   if (resolved.entitlementSnapshot?.member_blocked === true && resolved.profile) {
     resolved.profile = { ...resolved.profile, membership_status: "blocked",
@@ -60,6 +64,7 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
     resolved.profile,
     projection,
     protectedActiveThrough,
+    recoveryStatus,
   );
   const needsClientHistory = /^\/api\/member\/app\/(?:history|profile|dashboard)\/?$/.test(url.pathname)
     || /^\/member\/api\/liff\/profile\/?$/.test(url.pathname);
@@ -86,7 +91,11 @@ export async function prepareMyMmdCanonicalEntitlementContext(request, env = {})
   return {
     profileRefreshed: true, memberId: resolved.memberId, displayName, lineConnected: true,
     membershipStart: presentation.membershipStart, membershipExpiresAt: presentation.membershipExpiresAt,
-    packageLabel: presentation.packageLabel, historyRecoveryState: presentation.historyRecoveryState, clientHistory, contactProfile, lineOfcNoteScan,
+    packageLabel: presentation.packageLabel,
+    historyRecoveryState: presentation.historyRecoveryState,
+    historyRecoveryStatus: presentation.historyRecoveryStatus,
+    historyReviewRequired: presentation.historyReviewRequired,
+    clientHistory, contactProfile, lineOfcNoteScan,
     ...(projection ? { capability: projection.capability, label: projection.label, lifecycle: projection.lifecycle,
       publicServiceAccess: projection.publicServiceAccess, source: RESOLVER_SOURCE } : { capability: null, source: PROFILE_SOURCE }),
   };
@@ -410,7 +419,7 @@ function overlayProtectedDisplay(profile, projection, displayName) {
       ...(membershipExpiresAt ? { membership_expires_at: safeCalendarDate(member.membership_expires_at) || membershipExpiresAt } : {}) } } : {}) } } : {}) };
 }
 
-function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null) {
+function canonicalPresentationContext(serializedProfile, rawProfile, projection, protectedActiveThrough = null, recoveryStatus = null) {
   const source = isPlainObject(serializedProfile) ? serializedProfile : {};
   const customer360 = isPlainObject(source.customer_360) ? source.customer_360 : {};
   const member = isPlainObject(customer360.member) ? customer360.member : {};
@@ -422,13 +431,39 @@ function canonicalPresentationContext(serializedProfile, rawProfile, projection,
   const membershipStart = safeCalendarDate(source.membership_start) || safeCalendarDate(member.membership_start) || projection?.startAt || null;
   const canonicalExpiry = safeCalendarDate(source.membership_expires_at) || safeCalendarDate(member.membership_expires_at) || projection?.expiresAt || null;
   const membershipExpiresAt = canonicalExpiry || safeCalendarDate(protectedActiveThrough) || null;
-  const explicitlyPending = [raw.history_recovery_state, rawMember.history_recovery_state]
-    .some((value) => String(value || "").trim().toLowerCase() === "pending");
-  const historyPending = explicitlyPending || Boolean(projection && (!membershipStart || !canonicalExpiry));
+  const recovery = projectHistoryRecoveryState(recoveryStatus, raw, rawMember);
   return { membershipStart,
     membershipExpiresAt,
     packageLabel: safeDisplayName(currentPackage.customer_safe_name) || projection?.packageLabel || null,
-    historyRecoveryState: historyPending ? "recovery_pending" : null };
+    historyRecoveryState: recovery.historyRecoveryState,
+    historyRecoveryStatus: recovery.historyRecoveryStatus,
+    historyReviewRequired: recovery.historyReviewRequired };
+}
+
+export function projectHistoryRecoveryState(recoveryStatus, rawProfile = {}, rawMember = {}) {
+  const state = String(recoveryStatus?.state || "").trim().toLowerCase();
+  if (state === "reconciled") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "reconciled", historyReviewRequired: false };
+  }
+  if (state === "review_required") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "review_required", historyReviewRequired: true };
+  }
+  if (state === "blocked") {
+    return { historyRecoveryState: null, historyRecoveryStatus: "blocked", historyReviewRequired: false };
+  }
+  if (state === "checking" || state === "in_progress") {
+    return { historyRecoveryState: "recovery_pending", historyRecoveryStatus: state, historyReviewRequired: false };
+  }
+
+  // Compatibility fallback only when there is no authoritative recovery state.
+  // Missing membership_start/expiry is metadata absence, not proof that recovery is running.
+  const explicitlyPending = [rawProfile?.history_recovery_state, rawMember?.history_recovery_state]
+    .some((value) => String(value || "").trim().toLowerCase() === "pending");
+  return {
+    historyRecoveryState: explicitlyPending ? "recovery_pending" : null,
+    historyRecoveryStatus: null,
+    historyReviewRequired: false,
+  };
 }
 
 export function protectedConnectNowActiveThrough(projection, anchorDate) {

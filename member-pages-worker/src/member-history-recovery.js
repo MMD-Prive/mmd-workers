@@ -81,12 +81,12 @@ export async function handleMemberHistoryRecoveryRequest(request, env = {}, ctx)
 
   if (STATUS_PATHS.has(url.pathname)) {
     if (request.method !== "GET") return methodNotAllowed("GET");
-    const status = await readRecoveryStatus(env, session.line_user_id);
+    const status = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
     return withCors(request, env, json({ ok: true, history_recovery: publicStatus(status) }, 200));
   }
 
   if (request.method !== "POST") return methodNotAllowed("POST");
-  const existing = await readRecoveryStatus(env, session.line_user_id);
+  const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) {
     return withCors(request, env, json({ ok: true, history_recovery: publicStatus(existing), accepted: false }, 200));
   }
@@ -107,8 +107,9 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   // LINE OFC history is the source of truth from the first login. Do not gate
   // the background scan on a pre-existing Member/Airtable wallet or a slip.
   if (!session || !safeLineUserId(session.line_user_id)) return false;
-  const existing = await readRecoveryStatus(env, session.line_user_id);
+  const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
+  if (!shouldAutoRunHistoryRecovery(existing, trigger)) return true;
   await markQueued(env, session.line_user_id, trigger);
   schedule(ctx, runMemberHistoryRecovery({
     env,
@@ -117,6 +118,12 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
     trigger,
   }));
   return true;
+}
+
+export function shouldAutoRunHistoryRecovery(status = {}, trigger = "login") {
+  if (String(trigger || "").trim().toLowerCase() === "manual_refresh") return true;
+  const state = String(status?.state || "").trim().toLowerCase();
+  return !["reconciled", "review_required"].includes(state);
 }
 
 export async function runMemberHistoryRecovery({
@@ -138,7 +145,7 @@ export async function runMemberHistoryRecovery({
   try {
     const held = await env.LIFF_IDENTITY_KV?.get(lockKey, "json").catch(() => null);
     if (held?.started_at && Date.now() - Date.parse(held.started_at) < LOCK_TTL_SECONDS * 1000) {
-      return await readRecoveryStatus(env, lineUserId);
+      return await readMemberHistoryRecoveryStatus(env, lineUserId);
     }
     if (env.LIFF_IDENTITY_KV?.put) {
       await env.LIFF_IDENTITY_KV.put(lockKey, JSON.stringify({ started_at: startedAt, trigger }), { expirationTtl: LOCK_TTL_SECONDS });
@@ -718,7 +725,7 @@ async function readSessionByToken(token, env) {
   }
 }
 
-async function readRecoveryStatus(env, lineUserId) {
+export async function readMemberHistoryRecoveryStatus(env, lineUserId) {
   if (!env.LIFF_IDENTITY_KV?.get) return statusPayload("checking", { reason: "status_unavailable" });
   const key = await recoveryKey("status", lineUserId);
   const stored = await env.LIFF_IDENTITY_KV.get(key, "json").catch(() => null);

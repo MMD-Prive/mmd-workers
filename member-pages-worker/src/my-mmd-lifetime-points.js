@@ -1,4 +1,5 @@
 import { readMemberAppSession } from "./member-app-api.js";
+import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -36,9 +37,18 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
   if (!(request instanceof Request) || request.method !== "GET" || !isMyMmdLifetimePointsPath(request)) return null;
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
   const session = await readMemberAppSession(request, env);
-  if (!session?.memberId) return null;
+  if (!session?.memberId || !session?.lineUserId) return null;
 
   try {
+    const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
+    const recoveryState = normalizeToken(recoveryStatus?.state);
+    if (["checking", "in_progress"].includes(recoveryState)) {
+      return { state: "checking", recoveryState, pointsRecoveryPending: true };
+    }
+    if (recoveryState === "blocked") {
+      return { state: "blocked", recoveryState, pointsRecoveryPending: false };
+    }
+
     const member = await resolveMember(env, session.memberId);
     if (!member) return null;
     const formula = pointsFormula(member.memberId, member.email);
@@ -47,7 +57,11 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
       filterByFormula: formula,
       maxRecords: MAX_RECORDS,
     });
-    return summarizeLifetimePoints(records);
+    return {
+      ...summarizeLifetimePoints(records),
+      recoveryState: normalizeToken(recoveryStatus?.state) || null,
+      pointsRecoveryPending: false,
+    };
   } catch (error) {
     console.warn({ event: "my_mmd_lifetime_points_lookup_failed", failure_class: safeFailure(error) });
     return null;
@@ -114,6 +128,13 @@ export function summarizeLifetimePoints(records = []) {
 }
 
 export function patchLifetimePointsPayload(path, payload, summary) {
+  if (summary?.pointsRecoveryPending === true || ["checking", "in_progress"].includes(normalizeToken(summary?.recoveryState))) {
+    return patchPendingLifetimePointsPayload(path, payload);
+  }
+  if (normalizeToken(summary?.recoveryState) === "blocked" || summary?.state === "blocked") {
+    return patchBlockedLifetimePointsPayload(path, payload);
+  }
+
   const safeSummary = {
     confirmedBalance: summary.confirmedBalance,
     earnedTotal: summary.earnedTotal,
@@ -205,6 +226,105 @@ export function patchLifetimePointsPayload(path, payload, summary) {
     };
   }
 
+  return payload;
+}
+
+function patchPendingLifetimePointsPayload(path, payload) {
+  if (/^\/api\/member\/app\/points\/?$/.test(path)) {
+    return {
+      ...payload,
+      state: "checking",
+      summary: {
+        ...(isObject(payload.summary) ? payload.summary : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: true,
+    };
+  }
+  if (/^\/api\/member\/app\/dashboard\/?$/.test(path)) {
+    return {
+      ...payload,
+      points: {
+        ...(isObject(payload.points) ? payload.points : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: true,
+    };
+  }
+  if (/^\/api\/member\/app\/profile\/?$/.test(path)) {
+    return { ...payload, points_confirmed: null, points_records_count: null, points_recovery_pending: true };
+  }
+  if (/^\/api\/member\/dashboard\/?$/.test(path)) {
+    const data = isObject(payload.data) ? payload.data : {};
+    return {
+      ...payload,
+      data: {
+        ...data,
+        points: {
+          ...(isObject(data.points) ? data.points : {}),
+          status: "checking",
+          value: null,
+          active_points: null,
+        },
+      },
+    };
+  }
+  if (/^\/member\/api\/liff\/profile\/?$/.test(path)) {
+    const data = isObject(payload.data) ? payload.data : {};
+    const customer360 = isObject(data.customer_360) ? data.customer_360 : {};
+    return {
+      ...payload,
+      data: {
+        ...data,
+        points: null,
+        points_records_count: null,
+        points_recovery_pending: true,
+        customer_360: {
+          ...customer360,
+          points: {
+            ...(isObject(customer360.points) ? customer360.points : {}),
+            status: "checking",
+            active_points: null,
+          },
+        },
+      },
+    };
+  }
+  return payload;
+}
+
+function patchBlockedLifetimePointsPayload(path, payload) {
+  if (/^\/api\/member\/app\/dashboard\/?$/.test(path)) {
+    return {
+      ...payload,
+      points: {
+        ...(isObject(payload.points) ? payload.points : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: false,
+      pointsRecoveryState: "blocked",
+    };
+  }
+  if (/^\/api\/member\/app\/points\/?$/.test(path)) {
+    return {
+      ...payload,
+      state: "checking",
+      summary: {
+        ...(isObject(payload.summary) ? payload.summary : {}),
+        confirmedBalance: null,
+        earnedTotal: null,
+        redeemedTotal: null,
+      },
+      pointsRecoveryPending: false,
+      pointsRecoveryState: "blocked",
+    };
+  }
   return payload;
 }
 
