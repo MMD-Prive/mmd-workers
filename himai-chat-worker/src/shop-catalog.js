@@ -75,11 +75,27 @@ async function getMmdProduct(env, slug) {
     return json({ ok: false, error: "product_not_found" }, 404);
   }
 
+  const variantGroup = product.variant_group || null;
+  const variants = variantGroup
+    ? products
+        .filter((item) =>
+          String(item.status || "").toLowerCase() === "active"
+          && item.variant_group === variantGroup
+        )
+        .sort((a, b) =>
+          Number(a.variant_order ?? 999) - Number(b.variant_order ?? 999)
+          || String(a.variant_value || a.sku || "").localeCompare(String(b.variant_value || b.sku || ""))
+        )
+    : [product];
+
   return json({
     ok: true,
     schema: "mmd_shop_product_v1",
     shop: "mmd-shop",
-    product
+    product,
+    variant_group: variantGroup,
+    variant_type: product.variant_type || null,
+    variants
   });
 }
 
@@ -145,6 +161,7 @@ async function loadProducts(env, shopKey) {
           )
         : false;
       const canonicalSlug = slugify(sku || productName || record.id);
+      const variant = shopKey === "mmd-shop" ? mmdVariantMeta(sku, productName) : null;
 
       return {
         id: record.id,
@@ -152,6 +169,11 @@ async function loadProducts(env, shopKey) {
         sku,
         canonical_slug: canonicalSlug,
         product_url: shopKey === "mmd-shop" ? `/mmd-shop/product/${encodeURIComponent(canonicalSlug)}` : null,
+        variant_group: variant?.group || null,
+        variant_type: variant?.type || null,
+        variant_label: variant?.label || null,
+        variant_value: variant?.value || null,
+        variant_order: variant?.order ?? null,
         category: selectName(recordFields["Category"]) || "Selected",
         status,
         curation_label: selectName(recordFields["Curation Label"]) || "",
@@ -276,6 +298,41 @@ function isRestrictedOnlineCheckout(sku, productName) {
   const code = String(sku || "").toUpperCase();
   const label = String(productName || "").toLowerCase();
   return /^PPP25-/.test(code) || /\bpod\b/.test(label);
+}
+
+function mmdVariantMeta(sku, productName) {
+  const code = String(sku || "").trim().toUpperCase();
+  const name = String(productName || "").trim();
+
+  const water = code.match(/^WGG-(10|25|50)$/);
+  if (water) {
+    return {
+      group: "wgg-water",
+      type: "size",
+      label: "Size",
+      value: `${water[1]}ml`,
+      order: Number(water[1])
+    };
+  }
+
+  if (/^PPP25-/.test(code)) {
+    const fromName = name.match(/[—–]\s*(.+)$/);
+    const raw = fromName?.[1] || code.replace(/^PPP25-/, "").replace(/[-_]+/g, " ");
+    const value = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    return {
+      group: "pod-premium-plus-25",
+      type: "flavour",
+      label: "Flavour",
+      value: value || code,
+      order: 999
+    };
+  }
+
+  return null;
 }
 
 function slugify(value) {
