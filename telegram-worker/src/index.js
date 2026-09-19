@@ -3,6 +3,7 @@ import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
 import { routeHypeNaturalLanguage } from "./hype-natural-language-router.js";
+import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../shared/concierge-capability-pack-v1.mjs";
 import { detectHypeTransactionStart, extractHypeTransactionFields, transactionMissingQuestion, transactionModeLabel } from "./hype-transaction-assistant.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
@@ -26,6 +27,7 @@ export default {
           worker: "telegram",
           preview_channel_configured: Boolean(clean(env.TELEGRAM_PREVIEW_CHANNEL_ID)),
           preview_bot_username: botUsername(env),
+          capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
@@ -439,6 +441,21 @@ async function handleTelegramWebhook(update, env) {
     }, env);
   }
 
+  const sharedCapability = detectSharedConciergeCapability(text);
+  const sharedCommand = sharedCapabilityToHypeCommand(sharedCapability, text);
+  if (sharedCommand) {
+    return handleHypeOperatingCommand({
+      message,
+      chatId,
+      command: sharedCommand,
+      routing: {
+        source: "shared_capability_pack",
+        confidence: 0.96,
+        domain: sharedCapability,
+      },
+    }, env);
+  }
+
   // Only look for an unfinished transaction draft after explicit/P4 routing
   // declines the message. This preserves minimal reads for normal status,
   // Points/Coupon routing and ambiguous protected-domain questions.
@@ -842,7 +859,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
     };
   }
 
-  if (command === "points" || command === "coupons" || command === "careback") {
+  if (command === "points" || command === "coupons" || command === "careback" || command === "hall") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
       text: hypeCanonicalRouteText(command),
@@ -856,7 +873,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /next, /booking, /payment, /submit, /progress, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /orders, /next, /booking, /payment, /mms-options, /support, /case, /submit, /progress, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -879,7 +896,60 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
     return { handled: true, flow: "hype_operating_status", ok: false, code_status: "telegram_identity_invalid", telegram };
   }
 
-  if (command === "handoff_kenji" || command === "handoff_per") {
+  if (command === "orders") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: [
+        "<b>HYPE · MMD SHOP ORDERS</b>",
+        "",
+        "ผมรับรู้ lane ของ MMD Shop แล้วครับ สถานะ Order/Payment ต้องยึด member-owned order record ใน MY MMD",
+        "ตอนนี้ HYPE จะพาไป canonical Orders โดยไม่เดาสถานะจาก Telegram",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "MY MMD · Orders", url: publicUrl(env, "/my-mmd/orders") }]] },
+    }, env);
+    return { handled: true, flow: "hype_operating_orders_route", telegram };
+  }
+
+  if (command === "mms_options") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: [
+        "<b>HYPE · MMS THERAPIST OPTIONS</b>",
+        "",
+        "เรื่อง Therapist Options ให้ HENNA / MMS เป็น specialist owner ครับ",
+        "HYPE ช่วยเชื่อม context ข้ามระบบได้ แต่ตัวเลือก/คิวจริงต้องมาจาก MMS Worker และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยัน",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "MMS Pre-booking", url: publicUrl(env, "/male-massage/member/mms-booking") }],
+          [{ text: "MMS Therapist / Services", url: publicUrl(env, "/male-massage/therapists/mms") }],
+        ],
+      },
+    }, env);
+    return { handled: true, flow: "hype_operating_mms_options_bridge", telegram };
+  }
+
+  if (command === "handoff_status") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: [
+        "<b>HYPE · HANDOFF STATUS</b>",
+        "",
+        "ผมรับรู้ closed-loop lane แล้วครับ แต่ตอนนี้จะไม่อ้างว่า Per/Kenji รับเรื่องหรือเคสจบแล้ว ถ้ายังไม่มี acknowledgement/review state จาก authority ปลายทาง",
+        "ถ้าต้องการส่งต่อ/ย้ำเคสพร้อม context เดิม ใช้ /human หรือ /kenji ได้ครับ",
+      ].join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: hypeHandoffButtons(env, "per"),
+    }, env);
+    return { handled: true, flow: "hype_operating_handoff_status_awareness", telegram };
+  }
+
+  if (command === "handoff_kenji" || command === "handoff_per" || command === "recovery") {
     const contextWriter = env.HYPE_CONTEXT_WRITER;
     if (!contextWriter?.fetch) {
       const telegram = await sendTelegramMessage({
@@ -1069,6 +1139,11 @@ function parseHypeOperatingCommand(value) {
     /^\/(?:progress|draftstatus)(?:@\w+)?$/i.test(text)
     || ["สถานะ draft", "สถานะดราฟต์", "เช็ก draft", "เช็กดราฟต์", "รายการนี้ถึงไหนแล้ว"].includes(normalized)
   ) return "transaction_progress";
+  if (/^\/orders?(?:@\w+)?$/i.test(text) || ["ออเดอร์ของฉัน", "ออร์เดอร์ของฉัน", "คำสั่งซื้อของฉัน", "mmd shop orders"].includes(normalized)) return "orders";
+  if (/^\/hall(?:@\w+)?$/i.test(text) || ["เปิด hall", "เลือกมุมมอง", "ดู hall"].includes(normalized)) return "hall";
+  if (/^\/(?:mms-options|therapists)(?:@\w+)?$/i.test(text) || ["mms options", "ตัวเลือก therapist", "หา therapist"].includes(normalized)) return "mms_options";
+  if (/^\/(?:support|recovery)(?:@\w+)?$/i.test(text) || ["แจ้งปัญหา", "ร้องเรียน", "งานมีปัญหา", "บริการมีปัญหา"].includes(normalized)) return "recovery";
+  if (/^\/(?:case|handoff-status)(?:@\w+)?$/i.test(text) || ["ตามเคส", "สถานะเคส", "ทีมรับเรื่องแล้วไหม"].includes(normalized)) return "handoff_status";
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/membership(?:@\w+)?$/i.test(text) || ["สมาชิก", "สถานะสมาชิก", "เช็กสมาชิก", "เช็คสมาชิก"].includes(normalized)) return "membership";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
@@ -1092,6 +1167,19 @@ function parseHypeOperatingCommand(value) {
   if (/^\/coupons?(?:@\w+)?$/i.test(text) || ["คูปอง", "ดูคูปอง", "คูปองของฉัน"].includes(normalized)) return "coupons";
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
   if (/^\/(?:help|commands)(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง", "คำสั่ง", "ดูคำสั่ง", "commands"].includes(normalized)) return "help";
+  return "";
+}
+
+function sharedCapabilityToHypeCommand(capability, text = "") {
+  if (capability === "shop_orders") return "orders";
+  if (capability === "mms_therapist_options") return "mms_options";
+  if (capability === "service_recovery") return "recovery";
+  if (capability === "closed_loop_handoff") return "handoff_status";
+  if (capability === "hall_model_discovery") return "hall";
+  if (capability === "care_back_coupon") return "careback";
+  if (capability === "points_coupon_balance") {
+    return /(?:coupon|คูปอง|voucher)/i.test(String(text || "")) ? "coupons" : "points";
+  }
   return "";
 }
 
@@ -1954,6 +2042,11 @@ function hypeHelpText() {
     "<b>/points</b> — ไปยังยอด Points canonical ใน MY MMD",
     "<b>/coupons</b> — ไปยัง Coupon Wallet canonical ใน MY MMD",
     "<b>/careback</b> — ดู CARE BACK Phase 2",
+    "<b>/orders</b> — เปิด MMD Shop Orders",
+    "<b>/hall</b> — เลือกมุมมอง Model discovery โดยไม่เดาเพศ/ความสนใจ",
+    "<b>/mms-options</b> — ส่งต่อ Therapist discovery ให้ HENNA / MMS",
+    "<b>/support</b> — เปิด Service Recovery พร้อม context",
+    "<b>/case</b> — ดูกติกา Closed-loop handoff / ติดตามเคส",
     "<b>/kenji</b> — ส่งต่อให้ Kenji พร้อม context เดิม",
     "<b>/human</b> — ส่งต่อให้ Per / ทีม พร้อม context เดิม",
     "<b>/help</b> — ดูเมนูนี้",
@@ -1975,6 +2068,10 @@ function hypeHelpButtons(env) {
         { text: "Coupons", url: publicUrl(env, "/my-mmd/coupons") },
       ],
       [{ text: "CARE BACK Phase 2", url: publicUrl(env, "/promotion/6-years-care-back") }],
+      [
+        { text: "Orders", url: publicUrl(env, "/my-mmd/orders") },
+        { text: "Hall", url: publicUrl(env, "/hall") },
+      ],
       [{ text: "Booking", url: publicUrl(env, "/booking") }],
     ],
   };
