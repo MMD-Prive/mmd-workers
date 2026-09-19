@@ -324,12 +324,12 @@ export async function handleHypeTransactionIntakeRpc(request, env = {}) {
       submitted_by_hype: false,
     },
     current_truth: {
-      membership_level: token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level),
-      membership_lifecycle: token(context?.entitlement?.lifecycle || context?.entitlement?.status),
-      payment_status: token(context?.payment?.status),
-      payment_paid: context?.payment?.paid === true,
-      payment_review_required: context?.payment?.review_required === true,
-      outstanding_amount_thb: nonNegative(context?.payment?.outstanding_amount_thb),
+      membership_level: token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level || context?.entitlement_live?.membership_level || context?.entitlement_live?.canonical_membership_level),
+      membership_lifecycle: token(context?.entitlement?.lifecycle || context?.entitlement?.status || context?.entitlement_live?.lifecycle || context?.entitlement_live?.status),
+      payment_status: token(context?.payment?.status || context?.payment_live?.status),
+      payment_paid: context?.payment?.paid === true || context?.payment_live?.paid === true,
+      payment_review_required: context?.payment?.review_required === true || context?.payment_live?.review_required === true,
+      outstanding_amount_thb: nonNegative(context?.payment?.outstanding_amount_thb || context?.payment_live?.outstanding_amount_thb),
     },
     guardrails: transactionGuardrails(),
   });
@@ -536,7 +536,7 @@ function transactionMissingFields(mode, fields = {}) {
 function canonicalTransactionRoute(mode, context = {}) {
   if (mode === "booking") return { href: "/booking", kind: "booking_entry" };
   if (mode === "renewal") {
-    const level = token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level);
+    const level = token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level || context?.entitlement_live?.membership_level || context?.entitlement_live?.canonical_membership_level);
     if (["private_standard", "private_premium", "standard", "premium", "vip", "svip", "black_card", "blackcard"].includes(level)) {
       return { href: "/sigil/member/membership?intent=renew", kind: "private_renewal_entry" };
     }
@@ -572,11 +572,11 @@ function signedPaymentHref(actions) {
 
 function canonicalSubmitReady(mode, draft, context, route) {
   if (mode === "payment_proof") {
-    if (context?.payment?.paid === true || context?.payment?.review_required === true) return false;
+    if (context?.payment?.paid === true || context?.payment_live?.paid === true || context?.payment?.review_required === true || context?.payment_live?.review_required === true) return false;
     return draft.complete === true && route.kind === "signed_payment_proof";
   }
   if (mode === "renewal") {
-    const lifecycle = token(context?.entitlement?.lifecycle || context?.entitlement?.status);
+    const lifecycle = token(context?.entitlement?.lifecycle || context?.entitlement?.status || context?.entitlement_live?.lifecycle || context?.entitlement_live?.status);
     if (["blocked", "suspended", "revoked"].includes(lifecycle)) return false;
     return route.kind === "private_renewal_entry" || route.kind === "public_membership_entry";
   }
@@ -584,8 +584,8 @@ function canonicalSubmitReady(mode, draft, context, route) {
 }
 
 function transactionState(mode, draft, context, route) {
-  if (mode === "payment_proof" && context?.payment?.paid === true) return "already_paid";
-  if (mode === "payment_proof" && context?.payment?.review_required === true) return "payment_review_pending";
+  if (mode === "payment_proof" && (context?.payment?.paid === true || context?.payment_live?.paid === true)) return "already_paid";
+  if (mode === "payment_proof" && (context?.payment?.review_required === true || context?.payment_live?.review_required === true)) return "payment_review_pending";
   if (!draft.complete) return "collecting";
   if (mode === "payment_proof" && route.kind !== "signed_payment_proof") return "payment_intent_required";
   if (!canonicalSubmitReady(mode, draft, context, route)) return "canonical_review_required";
