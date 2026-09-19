@@ -188,3 +188,24 @@ test("defaults PayPal card processing fee to 4% when config omits it", async () 
   assert.equal(payload.instructions.paypal_card.fee_thb, 400);
   assert.equal(payload.instructions.paypal_card.amount_due_thb, 10400);
 });
+
+
+test("does not expose payment methods when shop reservation is no longer accepting payment", async () => {
+  let airtableCalled = false;
+  const env = envWith();
+  env.AIRTABLE_HTTP.fetch = async () => {
+    airtableCalled = true;
+    return new Response(JSON.stringify(config()));
+  };
+  const response = await handlePaymentInstructions(
+    request(),
+    env,
+    detailsFetcher(details({ accepting_payment: false, amount_due_thb: 0 })),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.available, false);
+  assert.equal(payload.reason, "payment_not_accepting");
+  assert.equal("instructions" in payload, false);
+  assert.equal(airtableCalled, false);
+});
