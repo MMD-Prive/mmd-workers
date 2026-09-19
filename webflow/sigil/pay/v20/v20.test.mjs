@@ -32,7 +32,13 @@ for (const hook of [
 assert.match(head, /#sigil-pay-v20/);
 assert.match(head, /@media\(min-width:680px\)/);
 assert.match(head, /@media\(min-width:960px\)/);
-assert.doesNotMatch(head, /(^|[},\s])(body|button|input|textarea)\s*\{/m);
+for (const selector of ["body", "button", "input", "textarea"]) {
+  assert.doesNotMatch(
+    head,
+    new RegExp("(^|})\\s*" + selector + "(?=[\\s,{:#.\\[])", "m"),
+    selector + " styles must stay scoped to #sigil-pay-v20",
+  );
+}
 
 assert.match(footer, /expected_role:"customer"/);
 assert.match(footer, /mmd_payment_instructions_v1/);
@@ -40,7 +46,7 @@ assert.match(footer, /authority!=="payments-worker"/);
 assert.match(footer, /source_page","sigil_pay_v20"/);
 assert.match(footer, /credentials:"omit"/);
 assert.match(footer, /new AbortController\(\)/);
-assert.match(footer, /\.webflow\.io\$/);
+assert.match(footer, /\/\\\.webflow\\\.io\$\/i\.test\(location\.hostname\)/);
 assert.doesNotMatch(footer, /Account Number|PromptPay Ref|paypal\.com\/ncp\/payment/i);
 
 const runtime = footer.replace(/^\s*<script[^>]*>/i, "").replace(/<\/script>\s*$/i, "");
