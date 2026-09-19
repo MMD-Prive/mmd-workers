@@ -327,6 +327,7 @@ function hypePreviewIntroText() {
     "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
     "<b>/next</b> — ตอนนี้ต้องทำอะไรต่อ",
     "<b>/booking</b> — progress งานและการจอง",
+    "<b>/payment</b> — สถานะการชำระ / ยอดคงเหลือ / รอตรวจสลิป",
     "",
     "ข้อมูลส่วนตัวผมจะพาไปคุยใน private chat เท่านั้น และจะอ่านจากข้อมูล MMD ที่ยืนยันได้ ไม่เดาเองครับ 🔒",
   ].join("\n");
@@ -513,7 +514,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "สถานะบัญชีเป็นข้อมูลส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next หรือ /booking\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "สถานะบัญชีเป็นข้อมูลส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking หรือ /payment\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -559,8 +560,14 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
       body: JSON.stringify({
         telegram_user_id: telegramUserId,
         intent: {
-          type: command === "booking" ? "booking" : "general",
-          trigger: command === "next" ? "telegram_next" : command === "booking" ? "telegram_booking" : "telegram_status",
+          type: command === "booking" ? "booking" : command === "payment" ? "payment_status" : "general",
+          trigger: command === "next"
+            ? "telegram_next"
+            : command === "booking"
+              ? "telegram_booking"
+              : command === "payment"
+                ? "telegram_payment"
+                : "telegram_status",
         },
       }),
     }));
@@ -598,15 +605,27 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
     chat_id: chatId,
     text: command === "booking"
       ? renderHypeBookingStatus(result)
-      : renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
+      : command === "payment"
+        ? renderHypePaymentStatus(result)
+        : renderHypeOperatingStatus(result, { nextOnly: command === "next" }),
     parse_mode: "HTML",
     disable_web_page_preview: true,
-    reply_markup: command === "booking" ? hypeBookingButtons(env, result) : hypeStatusButtons(env, result),
+    reply_markup: command === "booking"
+      ? hypeBookingButtons(env, result)
+      : command === "payment"
+        ? hypePaymentButtons(env, result)
+        : hypeStatusButtons(env, result),
   }, env);
 
   return {
     handled: true,
-    flow: command === "next" ? "hype_operating_next" : command === "booking" ? "hype_operating_booking" : "hype_operating_status",
+    flow: command === "next"
+      ? "hype_operating_next"
+      : command === "booking"
+        ? "hype_operating_booking"
+        : command === "payment"
+          ? "hype_operating_payment"
+          : "hype_operating_status",
     ok: true,
     readiness: clean(result.readiness || result.state),
     telegram,
@@ -619,6 +638,21 @@ function parseHypeOperatingCommand(value) {
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
   if (/^\/booking(?:@\w+)?$/i.test(text) || ["การจอง", "เช็กการจอง", "เช็กงาน", "งานของฉัน"].includes(normalized)) return "booking";
+  if (
+    /^\/(?:payment|pay)(?:@\w+)?$/i.test(text)
+    || [
+      "การชำระเงิน",
+      "เช็กการชำระเงิน",
+      "เช็กยอด",
+      "ยอดคงเหลือ",
+      "จ่ายแล้วไหม",
+      "ชำระแล้วไหม",
+      "สลิปถึงยัง",
+      "สลิปถึงไหม",
+      "เหลือจ่ายเท่าไหร่",
+      "เหลือเท่าไหร่",
+    ].includes(normalized)
+  ) return "payment";
   if (/^\/points?(?:@\w+)?$/i.test(text) || ["แต้ม", "คะแนน", "ดูคะแนน", "ดูแต้ม"].includes(normalized)) return "points";
   if (/^\/coupons?(?:@\w+)?$/i.test(text) || ["คูปอง", "ดูคูปอง", "คูปองของฉัน"].includes(normalized)) return "coupons";
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
@@ -666,6 +700,66 @@ function renderHypeOperatingStatus(result = {}, { nextOnly = false } = {}) {
   lines.push("");
   lines.push("HYPE อ่านสถานะจากระบบจริงเท่านั้น และจะไม่ mark paid / grant membership / confirm job เองครับ");
   return lines.join("\n");
+}
+
+function renderHypePaymentStatus(result = {}) {
+  const payment = result.payment || {};
+  const job = result.job || {};
+  const next = result.next_action || null;
+  const lines = ["<b>HYPE · PAYMENT STATUS</b>"];
+
+  if (clean(result.display_name)) lines.push(escapeHtml(result.display_name));
+  lines.push("");
+
+  if (payment.paid === true) {
+    lines.push("<b>สถานะ:</b> ยืนยันการชำระแล้ว ✅");
+  } else if (payment.review_required === true || clean(payment.status).toLowerCase() === "pending_review") {
+    lines.push("<b>สถานะ:</b> ได้รับข้อมูลแล้ว · รอตรวจสอบหลักฐาน");
+    lines.push("HYPE ยังไม่ถือว่ายอดนี้ชำระสำเร็จจนกว่าระบบ Payment Authority จะยืนยันครับ");
+  } else {
+    lines.push(`<b>สถานะ:</b> ${escapeHtml(paymentLabel(payment))}`);
+  }
+
+  if (Number(payment.outstanding_amount_thb || 0) > 0) {
+    lines.push(`<b>ยอดคงเหลือที่ระบบยืนยัน:</b> ${escapeHtml(formatThb(payment.outstanding_amount_thb))}`);
+  }
+  if (Number(payment.credit_balance_thb || 0) > 0) {
+    lines.push(`<b>เครดิตที่ยืนยันแล้ว:</b> ${escapeHtml(formatThb(payment.credit_balance_thb))}`);
+  }
+
+  if (Number(job.active_count || 0) > 0 && job.next?.payment_state) {
+    lines.push(`<b>สถานะในงานล่าสุด:</b> ${escapeHtml(paymentLabel({ ...payment, status: job.next.payment_state }))}`);
+  }
+
+  lines.push("");
+  lines.push(`<b>ขั้นตอนต่อไป:</b> ${escapeHtml(clean(next?.label) || paymentNextActionLabel(payment))}`);
+
+  if (result.state === "partial") {
+    lines.push("");
+    lines.push("ข้อมูลบางส่วนยังรอระบบต้นทาง HYPE จะแสดงเฉพาะสิ่งที่ยืนยันได้ครับ");
+  }
+
+  lines.push("");
+  lines.push("HYPE อ่านจาก Payment Authority เท่านั้น และจะไม่ mark paid, เดายอด หรือรับรองสลิปเองครับ");
+  return lines.join("\n");
+}
+
+function paymentNextActionLabel(payment = {}) {
+  if (payment.paid === true) return "ยังไม่มี action เรื่องการชำระที่ต้องทำตอนนี้";
+  if (payment.review_required === true || clean(payment.status).toLowerCase() === "pending_review") {
+    return "รอ MMD ตรวจสอบหลักฐานการชำระเงิน";
+  }
+  if (Number(payment.outstanding_amount_thb || 0) > 0) return "ดำเนินการชำระยอดคงเหลือ";
+  return "เปิด MY MMD เพื่อตรวจสถานะการชำระล่าสุด";
+}
+
+function hypePaymentButtons(env, result = {}) {
+  const rows = [];
+  const next = result.next_action || {};
+  if (clean(next.href)) rows.push([{ text: clean(next.label) || "ดำเนินการต่อ", url: publicUrl(env, next.href) }]);
+  rows.push([{ text: "MY MMD · Payments", url: publicUrl(env, "/member/payments") }]);
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
+  return { inline_keyboard: rows };
 }
 
 function renderHypeBookingStatus(result = {}) {
@@ -842,6 +936,7 @@ function hypeHelpText() {
     "<b>/status</b> — ดูสถานะสมาชิก งาน และการชำระ",
     "<b>/next</b> — ดูว่าตอนนี้ต้องทำอะไรต่อ",
     "<b>/booking</b> — ดู progress งาน/การจองที่ระบบยืนยันได้",
+    "<b>/payment</b> — ดูสถานะการชำระ ยอดคงเหลือ และสถานะตรวจสลิป",
     "<b>/points</b> — ไปยังยอด Points canonical ใน MY MMD",
     "<b>/coupons</b> — ไปยัง Coupon Wallet canonical ใน MY MMD",
     "<b>/careback</b> — ดู CARE BACK Phase 2",
