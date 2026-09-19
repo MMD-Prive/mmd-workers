@@ -26,6 +26,20 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
     const url = new URL(String(input));
     if (url.hostname === "api.airtable.com") {
       const table = url.pathname.split("/").filter(Boolean)[2];
+      if (table === "tblzsmNLfP6J0kQ90") {
+        return Response.json({
+          records: [{
+            id: productId,
+            fields: {
+              fld0oKjoZrb1IqntV: "Water GG Plus 10ml",
+              fldhJE7UEE4VYHjR6: "WGG-10",
+              fldve5nrQmymoZgiX: ["MMD Shop"],
+              fldxYkkvmK9izvACA: "active",
+              fldD6Q5yido7pTlU0: 1000,
+            },
+          }],
+        });
+      }
       if (table === "tblwFgl4et1TOgtNn") {
         return Response.json({
           records: [{
@@ -109,6 +123,7 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
     assert.equal(firstBody.ok, true);
     assert.equal(firstBody.report.metrics.low_stock_batches, 1);
     assert.equal(firstBody.report.metrics.reconciliation_mismatches, 0);
+    assert.equal(firstBody.report.metrics.untracked_checkout_products, 0);
     assert.equal(firstBody.fingerprint_changed, true);
     assert.equal(firstBody.alert.ok, true);
     assert.equal(telegramCalls, 1);
