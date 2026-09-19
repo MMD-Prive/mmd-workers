@@ -51,6 +51,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
 
   const affectedClients = dedupe([
     ...paymentItems.map((item) => item.client_name),
+    ...historicalItems.map((item) => item.client_name),
     ...jobItems.map((item) => item.client_name),
     ...memberItems.map((item) => item.client_name),
   ]).slice(0, 8);
