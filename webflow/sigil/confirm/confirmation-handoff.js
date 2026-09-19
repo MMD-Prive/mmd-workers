@@ -27,7 +27,7 @@
     if (!link) return;
 
     const lang = currentModelLang();
-    const target = new URL(MODEL_LIFF_URL);
+    const target = new URL(`${MODEL_LIFF_URL}/`);
     target.searchParams.set("lang", lang);
     link.href = target.toString();
     link.textContent = lang === "en"
