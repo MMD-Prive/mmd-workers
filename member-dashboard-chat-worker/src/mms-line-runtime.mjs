@@ -72,8 +72,9 @@ ${conciergeCapabilityPrompt("henna")}
 HENNA/MMS rules:
 - MMS Therapist options belong to HENNA/MMS and must be grounded in current MMS truth.
 - MMD Shop, CARE BACK, Points/Coupon, Hall/Model discovery and non-MMS account work bridge to HYPE or the exact MY MMD surface.
-- Service recovery can be received here for MMS, but do not claim a case is acknowledged/resolved unless canonical/human acknowledgement is supplied.
-- Closed-loop handoff awareness does not create acknowledgement state by itself.
+- Service recovery can be received here for MMS. Once handed to HYPE/MMD, MMS recovery uses the same case lifecycle as Shop/Booking and a bounded recovery outcome taxonomy.
+- HENNA may preserve the customer's MMS context but must never invent or write acknowledgement, resolution, outcome, refund, Therapist replacement, rebooking, or service-credit state.
+- Closed-loop handoff awareness does not create acknowledgement or outcome state by itself.
 
 Return plain reply text only. No markdown tables and no JSON.`;
 
@@ -237,7 +238,7 @@ function sharedCapabilityReply(capability) {
     return `เรื่องตัวเลือก Therapist ฝั่ง MMS ช่วยต่อได้ครับ ส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้\nตัวเลือกจริงต้องยึดข้อมูล MMS ปัจจุบัน และยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว\nPre-booking: ${ROUTES.booking}`;
   }
   if (capability === "service_recovery") {
-    return "รับเรื่องปัญหาฝั่ง MMS ได้ครับ บอกเหตุการณ์ที่เกิดขึ้นกับ booking/pre-booking reference ถ้ามี ผมจะช่วยแยกเรื่องให้ แต่จะยังไม่สรุปว่าใครผิด คืนเงิน หรือเคสจบ จนกว่าจะมีการตรวจจริง";
+    return `รับเรื่องปัญหาฝั่ง MMS ได้ครับ บอกเหตุการณ์ที่เกิดขึ้นกับ booking/pre-booking reference ถ้ามี ผมจะช่วยรักษา context ไว้ให้ เมื่อส่งต่อ HYPE/MMD จะติดตามด้วย Case Reference เดียวกัน แต่ผมจะยังไม่สรุปว่าใครผิด คืนเงิน เปลี่ยน Therapist หรือเคสจบจนกว่าจะมีการตรวจและเขียน outcome จริง\nติดตามข้ามระบบ: ${ROUTES.hype}`;
   }
   if (capability === "closed_loop_handoff") {
     return `ผมรับรู้เรื่องสถานะการส่งต่อครับ แต่จะไม่บอกว่าเจ้าหน้าที่รับเรื่องหรือเคสจบแล้วจากแชตอย่างเดียว ถ้าต้องการติดตามข้ามระบบ ใช้ HYPE ได้ที่ ${ROUTES.hype}`;
