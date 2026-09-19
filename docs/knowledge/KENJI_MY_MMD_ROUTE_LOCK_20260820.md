@@ -12,6 +12,18 @@ Status: active, with payment section superseded by `MMD_CANONICAL_PAYMENT_MEMORY
 
 Lock the member-facing MY MMD route map used by Kenji AI, LINE OFC, Webflow, and fallback knowledge so customers are sent to the correct current page instead of stale compatibility routes.
 
+## Trust-state precedence — 2026-09-19
+
+Trust-state projection is governed by [`MY_MMD_TRUST_RULE_V1.md`](../architecture/MY_MMD_TRUST_RULE_V1.md).
+
+- Verified LINE + protected/canonical evidence never resolves to Guest.
+- Historical reconstruction state comes from recovery KV only; `reconciled` and `review_required` are terminal.
+- Missing legacy membership metadata alone does not keep recovery pending.
+- VIP / SVIP / Black Card without canonical expiry uses the durable first-connect +2y active-through policy.
+- Owner QA uses `/internal/admin/my-mmd/recovery`; do not repeatedly ask customers to reopen MY MMD for QA when internal evidence is sufficient.
+
+This Trust Rule overrides older route/presentation notes if they conflict on Guest, recovery, active-through, points-finalization, or QA behavior.
+
 ## Canonical routes
 
 - `/member/dashboard` — MY MMD Home / member status hub.
@@ -52,4 +64,6 @@ The same route map must be locked in:
 
 ## Precedence
 
-For any payment-route conflict, `MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` override this document's older wording.
+For trust-state conflicts, `docs/architecture/MY_MMD_TRUST_RULE_V1.md` is authoritative.
+
+For payment-route conflicts, `MMD_CANONICAL_PAYMENT_MEMORY_20260911.md` and `UNIFIED_PAYMENT_PROOF_FLOW_LOCK.md` override this document's older wording.
