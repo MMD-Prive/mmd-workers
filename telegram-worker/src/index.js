@@ -483,6 +483,10 @@ async function handleTelegramIdentityBindStart({ message, chatId, startArg }, en
 }
 
 async function handleHypeOperatingCommand({ message, chatId, command }, env) {
+  if (command === "owner_summary") {
+    return handleHypeOwnerSummary({ message, chatId }, env);
+  }
+
   if (command === "help") {
     const group = configuredMemberGroup(chatId, env);
     const telegram = await sendTelegramMessage({
@@ -635,6 +639,18 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
 function parseHypeOperatingCommand(value) {
   const text = clean(value);
   const normalized = text.toLowerCase();
+  if (
+    /^\/(?:owner|today|per)(?:@\w+)?$/i.test(text)
+    || [
+      "วันนี้มีอะไรต้องดูบ้าง",
+      "วันนี้มีอะไรให้ดูบ้าง",
+      "มีอะไรต้องดูบ้าง",
+      "สรุปงานวันนี้",
+      "สรุปวันนี้",
+      "owner summary",
+      "owner mode",
+    ].includes(normalized)
+  ) return "owner_summary";
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
   if (/^\/booking(?:@\w+)?$/i.test(text) || ["การจอง", "เช็กการจอง", "เช็กงาน", "งานของฉัน"].includes(normalized)) return "booking";
@@ -658,6 +674,228 @@ function parseHypeOperatingCommand(value) {
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
   if (/^\/(?:help|commands)(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง", "คำสั่ง", "ดูคำสั่ง", "commands"].includes(normalized)) return "help";
   return "";
+}
+
+async function handleHypeOwnerSummary({ message, chatId }, env) {
+  const telegramUserId = clean(message.from?.id);
+  const owner = await verifyHypeOwnerTelegram(telegramUserId, env);
+
+  if (!owner.ok) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: owner.reason === "owner_verification_unavailable"
+        ? "Owner Summary ยังตรวจสิทธิ์ผู้สั่งไม่ได้ครับ จึงไม่เปิดข้อมูล Ops ให้"
+        : "คำสั่งนี้ใช้ได้เฉพาะ Per · Owner Mode ครับ",
+      disable_web_page_preview: true,
+    }, env);
+    return {
+      handled: true,
+      flow: "hype_owner_summary",
+      ok: false,
+      code_status: owner.reason || "owner_required",
+      telegram,
+    };
+  }
+
+  const binding = env.HYPE_OPERATIONS || env.TELEGRAM_BIND_AUTHORITY;
+  if (!binding?.fetch) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "Owner Summary ยังอ่านระบบกลางไม่ได้ครับ ผมจะไม่สร้างสรุปจากข้อมูลค้างหรือเดาเอง",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "hype_owner_summary", ok: false, code_status: "operations_unavailable", telegram };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/owner-summary", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: "{}",
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "Owner Summary อ่าน canonical dashboard ไม่สำเร็จครับ ผมจะไม่สรุปแทนด้วยข้อมูลที่ไม่ยืนยัน",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "hype_owner_summary", ok: false, code_status: "owner_summary_unavailable", telegram };
+  }
+
+  const privateTarget = telegramUserId;
+  const privateMessage = await sendTelegramMessage({
+    chat_id: privateTarget,
+    text: renderHypeOwnerSummary(result),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: hypeOwnerSummaryButtons(env, result),
+  }, env);
+
+  if (privateMessage?.ok !== true) {
+    const telegram = clean(message.chat?.type).toLowerCase() === "private"
+      ? privateMessage
+      : await sendTelegramMessage({
+          chat_id: chatId,
+          text: "ผมตรวจว่าเป็น Per แล้วครับ แต่ยังส่ง Owner Summary เข้า private chat ไม่ได้ กรุณาเปิดแชต @mmdprivebot แล้วกด Start ก่อนครับ",
+          disable_web_page_preview: true,
+        }, env);
+    return {
+      handled: true,
+      flow: "hype_owner_summary",
+      ok: false,
+      code_status: "owner_private_delivery_failed",
+      telegram,
+    };
+  }
+
+  if (clean(message.chat?.type).toLowerCase() !== "private") {
+    await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ส่ง Owner Summary ล่าสุดให้ Per ใน private chat แล้วครับ 🔒",
+      disable_web_page_preview: true,
+    }, env);
+  }
+
+  return {
+    handled: true,
+    flow: "hype_owner_summary",
+    ok: true,
+    code_status: "owner_summary_delivered_private",
+    private_message_id: privateMessage?.result?.message_id || null,
+  };
+}
+
+async function verifyHypeOwnerTelegram(telegramUserId, env) {
+  if (!/^\d{5,20}$/.test(clean(telegramUserId))) {
+    return { ok: false, reason: "owner_identity_invalid" };
+  }
+
+  const opsChatId = clean(env.TELEGRAM_CHAT_ID || env.TELEGRAM_OPS_CHAT_ID || env.HYPE_CHAT_ID);
+  if (!opsChatId) return { ok: false, reason: "owner_verification_unavailable" };
+
+  let member;
+  try {
+    member = await callTelegramApiForPreviewIntro("getChatMember", {
+      chat_id: opsChatId,
+      user_id: Number(telegramUserId),
+    }, env);
+  } catch {
+    return { ok: false, reason: "owner_verification_unavailable" };
+  }
+
+  const status = clean(member?.result?.status).toLowerCase();
+  return status === "creator"
+    ? { ok: true, reason: "", status }
+    : { ok: false, reason: member?.ok === true ? "owner_required" : "owner_verification_unavailable", status };
+}
+
+function renderHypeOwnerSummary(result = {}) {
+  const counts = result.counts || {};
+  const review = result.review_required || {};
+  const calendar = result.calendar || {};
+  const jobs = result.jobs || {};
+  const alerts = Array.isArray(result.alerts) ? result.alerts : [];
+  const clients = result.clients || {};
+  const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
+  const lines = [
+    "<b>HYPE · PER OWNER SUMMARY</b>",
+    escapeHtml(clean(result.bangkok_date) || "วันนี้"),
+    "",
+    `<b>Focus:</b> ${escapeHtml(clean(result.focus?.title) || "ยังไม่มีเรื่องด่วน")}`,
+  ];
+
+  if (clean(result.focus?.text)) lines.push(escapeHtml(result.focus.text));
+  lines.push("");
+  lines.push("<b>REVIEW REQUIRED</b>");
+  lines.push(`• Payment Review: ${Number(counts.payment_review || 0)}`);
+  lines.push(`• Historical Recovery: ${Number(counts.historical_recovery || 0)}`);
+  lines.push(`• Membership: ${Number(counts.membership_review || 0)}`);
+  lines.push(`• Jobs / Confirm: ${Number(counts.jobs_need_confirm || 0)}`);
+
+  lines.push("");
+  lines.push("<b>CALENDAR / JOB</b>");
+  lines.push(`• วันนี้: ${Array.isArray(calendar.today_jobs) ? calendar.today_jobs.length : 0} งาน`);
+  lines.push(`• พรุ่งนี้: ${Array.isArray(calendar.tomorrow_jobs) ? calendar.tomorrow_jobs.length : 0} งาน`);
+  lines.push(`• Reconfirm pending: ${Number(calendar.tomorrow_reconfirm?.pending || 0)} · overdue: ${Number(calendar.tomorrow_reconfirm?.overdue || 0)}`);
+
+  const topJobs = Array.isArray(jobs.items) ? jobs.items.slice(0, 3) : [];
+  if (topJobs.length) {
+    lines.push("");
+    lines.push("<b>งานที่ควรเห็นตอนนี้</b>");
+    for (const job of topJobs) {
+      lines.push(`• ${escapeHtml(compactOwnerText([
+        job.job_id,
+        job.model_name,
+        job.client_name,
+        job.status,
+        job.time,
+      ]))}`);
+    }
+  }
+
+  const payments = Array.isArray(review.payment) ? review.payment.slice(0, 3) : [];
+  if (payments.length) {
+    lines.push("");
+    lines.push("<b>Payments รอตรวจ</b>");
+    for (const item of payments) {
+      lines.push(`• ${escapeHtml(compactOwnerText([
+        item.client_name,
+        Number(item.amount_thb || 0) > 0 ? formatThb(item.amount_thb) : "",
+        item.text,
+      ]))}`);
+    }
+  }
+
+  if (alerts.length) {
+    lines.push("");
+    lines.push("<b>Alerts / Needs Per</b>");
+    for (const item of alerts.slice(0, 3)) {
+      lines.push(`• ${escapeHtml(compactOwnerText([item.title, item.text]))}`);
+    }
+  }
+
+  if (Array.isArray(clients.display_names) && clients.display_names.length) {
+    lines.push("");
+    lines.push(`<b>Client context:</b> ${escapeHtml(clients.display_names.slice(0, 6).join(", "))}`);
+  }
+
+  if (actions.length) {
+    lines.push("");
+    lines.push("<b>ทำต่อ</b>");
+    for (const item of actions.slice(0, 4)) {
+      lines.push(`${Number(item.priority || 0) || "•"}. ${escapeHtml(clean(item.label) || "เปิดตรวจ")}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Read-only summary · เปอร์เป็นผู้ยืนยัน action ที่เปลี่ยน business truth");
+  return lines.join("\n").slice(0, 3900);
+}
+
+function hypeOwnerSummaryButtons(env, result = {}) {
+  const rows = [];
+  for (const item of (Array.isArray(result.next_actions) ? result.next_actions : []).slice(0, 4)) {
+    const href = clean(item.href);
+    if (!/^\/internal\//.test(href)) continue;
+    rows.push([{ text: clean(item.label) || "เปิดตรวจ", url: publicUrl(env, href) }]);
+  }
+  if (!rows.length) rows.push([{ text: "Owner Control Room", url: publicUrl(env, "/internal/admin/control-room") }]);
+  return { inline_keyboard: rows };
+}
+
+function compactOwnerText(parts) {
+  return parts.map((part) => clean(part)).filter(Boolean).join(" · ").slice(0, 360);
 }
 
 function renderHypeOperatingStatus(result = {}, { nextOnly = false } = {}) {

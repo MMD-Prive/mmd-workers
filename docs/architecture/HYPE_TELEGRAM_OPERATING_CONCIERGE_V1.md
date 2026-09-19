@@ -226,10 +226,45 @@ Rules:
 - HYPE must never mark paid, accept/reject a slip, or modify payment truth;
 - payment status is private-chat only and must not resolve Client 360 from a Telegram group.
 
+## Owner HYPE Summary
+
+Priority 2 is Owner Mode for Per.
+
+Supported owner prompts include:
+
+- `/owner`
+- `/today`
+- `/per`
+- `วันนี้มีอะไรต้องดูบ้าง`
+- `สรุปงานวันนี้`
+
+Owner authorization is Telegram-native and fail-closed:
+
+- the requester must be the `creator` of the canonical HYPE Ops chat (`TELEGRAM_CHAT_ID`);
+- `administrator`, `member`, unknown or Telegram API failure is not enough;
+- owner truth is not read until creator verification succeeds.
+
+Privacy:
+
+- detailed Owner Summary is delivered only to the verified owner's private Telegram chat;
+- if invoked from the HYPE Ops group, the group receives only a safe acknowledgement;
+- customer names, Model names, payment amounts, review queues and Client context must never be posted back into the group.
+
+Canonical source:
+
+- Owner Summary is derived from `admin-worker buildAdminDashboard()`;
+- Payment Review remains owned by Payment Review / payments authority;
+- Historical Recovery remains owned by the historical recovery runtime;
+- Job and reconfirm data remain canonical Session/reconfirm truth;
+- Membership review remains canonical Member/entitlement truth;
+- Client detail is opened on demand through canonical Client 360 rather than copied into HYPE as a new database.
+
+Owner Summary is read-only. HYPE may prioritize and link to actions but must not approve payments, change Job state, grant membership, or perform any protected mutation.
+
 ## Next implementation lanes
 
-1. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
-2. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+1. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+2. natural-language intent routing over the existing canonical domains
 3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.
