@@ -921,3 +921,8 @@ zone_name = "mmdbkk.com"
 [[services]]
 binding = "MMD_SHOP_WORKER"
 service = "himai-chat-worker"
+
+
+[[services]]
+binding = "MEMBER_DASHBOARD_CHAT_WORKER"
+service = "member-dashboard-chat-worker"
