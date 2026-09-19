@@ -29,6 +29,7 @@ const CUSTOMER_FIELDS = Object.freeze({
   customerOrigin: "fldSHQS36g44ngf0b",
   note: "fldiG60HuRFApYgVh",
   createdAt: "fldobLojYBjeRJHYf",
+  memberId: "fldCjBe9gqIq6y7rR",
 });
 
 const ORDER_FIELDS = Object.freeze({
@@ -78,11 +79,12 @@ export async function handleMmdShopCheckout(request, env) {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_json_body");
 
     const customerInput = normalizeCustomer(body.customer || body);
+    const memberContext = await resolveServerMemberContext(request, env);
     const cartInput = normalizeCart(body.items);
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
     const stock = await loadMmdStock(env);
     const pricedCart = validateAndPriceCart(cartInput, products, stock);
-    const customer = await findOrCreateCustomer(env, customerInput, body.source_path);
+    const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext);
     const orderId = makeOrderId();
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "untracked");
@@ -259,9 +261,17 @@ function validateAndPriceCart(cart, products, stock) {
   });
 }
 
-async function findOrCreateCustomer(env, customer, sourcePath) {
-  const found = await findExistingCustomer(env, customer);
-  if (found) return found;
+async function findOrCreateCustomer(env, customer, sourcePath, memberContext = null) {
+  const found = await findExistingCustomer(env, customer, memberContext);
+  if (found) {
+    if (memberContext?.member_id && clean(found.fields?.[CUSTOMER_FIELDS.memberId], 180) !== memberContext.member_id) {
+      const patched = await patchRecord(env, table(env, "customers"), found.id, {
+        [CUSTOMER_FIELDS.memberId]: memberContext.member_id,
+      });
+      return patched;
+    }
+    return found;
+  }
   const fields = {
     [CUSTOMER_FIELDS.name]: customer.name,
     [CUSTOMER_FIELDS.displayName]: customer.name,
@@ -275,19 +285,23 @@ async function findOrCreateCustomer(env, customer, sourcePath) {
     [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
   };
   if (customer.email) fields[CUSTOMER_FIELDS.email] = customer.email;
+  if (memberContext?.member_id) fields[CUSTOMER_FIELDS.memberId] = memberContext.member_id;
   return createRecord(env, table(env, "customers"), fields);
 }
 
-async function findExistingCustomer(env, customer) {
+async function findExistingCustomer(env, customer, memberContext = null) {
   let offset = "";
   let pages = 0;
   do {
     const params = new URLSearchParams({ pageSize: "100", returnFieldsByFieldId: "true" });
     params.append("fields[]", CUSTOMER_FIELDS.phone);
     params.append("fields[]", CUSTOMER_FIELDS.email);
+    params.append("fields[]", CUSTOMER_FIELDS.memberId);
     if (offset) params.set("offset", offset);
     const data = await airtable(env, `${encodeURIComponent(table(env, "customers"))}?${params}`, { method: "GET" });
     for (const record of data.records || []) {
+      const memberId = clean(record.fields?.[CUSTOMER_FIELDS.memberId], 180);
+      if (memberContext?.member_id && memberId === memberContext.member_id) return record;
       const phone = normalizePhone(record.fields?.[CUSTOMER_FIELDS.phone]);
       const email = clean(record.fields?.[CUSTOMER_FIELDS.email], 320).toLowerCase();
       if (phone && phone === customer.phone) return record;
@@ -297,6 +311,24 @@ async function findExistingCustomer(env, customer) {
     pages += 1;
   } while (offset && pages < 20);
   return null;
+}
+
+async function resolveServerMemberContext(request, env) {
+  if (!env.MEMBER_PAGES_WORKER?.fetch) return null;
+  const cookie = clean(request.headers.get("cookie"), 12000);
+  if (!cookie) return null;
+
+  try {
+    const response = await env.MEMBER_PAGES_WORKER.fetch(new Request("https://member-pages.internal/__internal/mmd-shop/member-context", {
+      method: "GET",
+      headers: { cookie, accept: "application/json" },
+    }));
+    const payload = await response.json().catch(() => null);
+    const memberId = clean(payload?.member_id, 180);
+    return response.ok && payload?.ok === true && memberId ? { member_id: memberId } : null;
+  } catch {
+    return null;
+  }
 }
 
 async function createOrder(env, input) {

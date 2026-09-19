@@ -2,6 +2,28 @@ name = "himai-chat-worker"
 main = "src/entry.js"
 compatibility_date = "2026-04-11"
 
+
+# Canonical MMD Shop checkout/status routes. Keep /mmd-shop itself Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/order*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/order*"
+zone_name = "mmdbkk.com"
+
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
 [vars]
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"

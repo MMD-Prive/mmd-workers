@@ -24,7 +24,11 @@ const ORDER_FIELDS = Object.freeze({
 });
 
 const ITEM_FIELDS = Object.freeze({
+  name: "fldLR9aIu2m6DTr2e",
   order: "fldSVk92UcASTOuOK",
+  quantity: "fldJkKWMZiVQ3g1a6",
+  price: "fldm746RgAwIbXYL7",
+  lineTotal: "fldr7KTPoSbnblo5I",
   status: "flddJVVBAjVoyqcpY",
 });
 
@@ -133,6 +137,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
     if (!payment?.id) throw httpError(404, "shop_payment_not_found");
 
     const total = positive(order.fields?.[ORDER_FIELDS.total]);
+    const orderItems = await findOrderItems(env, order.id);
     const paymentFields = payment.fields || {};
     const paymentStatus = code(paymentFields[PAYMENT_FIELDS.status]);
     const verificationStatus = code(paymentFields[PAYMENT_FIELDS.verification]);
@@ -187,6 +192,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
         schema: "mmd_shop_order_payment_context_v1",
         order_id: claims.session_id,
         order_record_id: order.id,
+        items: orderItems.map(safeShopOrderItem),
       },
     }, 200, request, env);
   } catch (error) {
@@ -289,7 +295,7 @@ async function findOrderItems(env, orderRecordId) {
     const url = new URL(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}`);
     url.searchParams.set("pageSize", "100");
     url.searchParams.set("returnFieldsByFieldId", "true");
-    url.searchParams.append("fields[]", ITEM_FIELDS.order);
+    for (const fieldId of Object.values(ITEM_FIELDS)) url.searchParams.append("fields[]", fieldId);
     if (offset) url.searchParams.set("offset", offset);
 
     const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` } });
@@ -306,6 +312,26 @@ async function findOrderItems(env, orderRecordId) {
   } while (offset && pages < 20);
 
   return matches;
+}
+
+function safeShopOrderItem(record) {
+  const fields = record?.fields || {};
+  const quantity = numberOrNull(fields[ITEM_FIELDS.quantity]) || 0;
+  const unitPrice = numberOrNull(fields[ITEM_FIELDS.price]);
+  const lineTotal = numberOrNull(fields[ITEM_FIELDS.lineTotal]);
+  return {
+    item_name: text(fields[ITEM_FIELDS.name], 240) || "MMD Shop Item",
+    quantity,
+    unit_price_thb: unitPrice,
+    line_total_thb: lineTotal,
+    status: code(fields[ITEM_FIELDS.status]) || "draft",
+  };
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 async function findFirst(env, tableId, formula) {

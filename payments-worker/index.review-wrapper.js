@@ -101,6 +101,8 @@ export default {
     }
 
     if (isCustomerSessionDetailsRequest(path, method)) {
+      const shopDetails = await maybeHandleShopConfirmationDetails(request.clone(), env);
+      if (shopDetails) return shopDetails;
       return handleCustomerSessionDetails(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
     }
 

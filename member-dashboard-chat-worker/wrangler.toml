@@ -75,6 +75,15 @@ zone_name = "mmdbkk.com"
 pattern = "sigil.mmdbkk.com/sigil/pay/renewal*"
 zone_name = "mmdbkk.com"
 
+# MY MMD Shop orders are same-origin and session-bound.
+[[routes]]
+pattern = "mmdbkk.com/member/api/shop/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/shop/*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/member/api/liff/*"
 zone_name = "mmdbkk.com"
