@@ -171,6 +171,76 @@ test("/human targets Per and requires confirmed Ops notification for success", {
   }
 });
 
+
+test("/progress renders exact Booking Request to Job correlation without exposing private receipt fields", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  let serviceBody = null;
+
+  globalThis.fetch = async (url, init = {}) => {
+    const method = String(url).split("/").pop();
+    if (method !== "sendMessage") throw new Error(`unexpected Telegram method ${method}`);
+    const payload = JSON.parse(String(init.body || "{}"));
+    sends.push(payload);
+    return Response.json({ ok: true, result: { message_id: 935 + sends.length } });
+  };
+
+  try {
+    const response = await worker.fetch(request("/progress"), baseEnv({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(req) {
+          serviceBody = JSON.parse(await req.clone().text());
+          return Response.json({
+            ok: true,
+            state: "execution_recorded",
+            mode: "booking",
+            execution: {
+              execution_id: "HYPE-EXEC-BOOKING-0123456789abcdef",
+              draft_id: "HYPE-DRAFT-BOOKING-ABC123",
+              mode: "booking",
+              status: "materialized",
+              authority: "sigil-booking-worker",
+              canonical_ref: "kenji_0123456789abcdef01234567",
+              canonical_href: "/booking",
+            },
+            authority_observation: {
+              source: "sigil-booking-worker",
+              state: "confirmed",
+              booking_ref: "kenji_0123456789abcdef01234567",
+              session_id: "sess_exact_001",
+              job_id: "JOB-EXACT-001",
+              job_state: "confirmed",
+              exact_correlation: true,
+              correlation_scope: "booking_ref_to_job_exact",
+              final_confirmation_observed: true,
+              inference_used: false,
+              payment_ref: "must-not-render",
+              customer_confirmation_url: "must-not-render",
+            },
+          });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_supervised_execution_status");
+    assert.equal(body.ok, true);
+    assert.equal(serviceBody.operation, "status");
+    assert.equal(serviceBody.telegram_user_id, "111111");
+
+    const customer = sends.find((x) => String(x.chat_id) === "111111");
+    assert.ok(customer);
+    assert.match(customer.text, /Booking Request → Job ตรงกันแบบ exact/);
+    assert.match(customer.text, /sess_exact_001/);
+    assert.match(customer.text, /JOB-EXACT-001/);
+    assert.match(customer.text, /Job state: confirmed/);
+    assert.match(customer.text, /explicit canonical Job state/);
+    assert.doesNotMatch(customer.text, /must-not-render|payment_ref|customer_confirmation_url/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("successful HYPE payment read records continuity best-effort without changing customer status", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const sends = [];

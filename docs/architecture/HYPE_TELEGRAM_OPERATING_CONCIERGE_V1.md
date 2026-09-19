@@ -476,11 +476,28 @@ Customer transaction details remain private-chat only. Calling `/submit` or `/pr
 
 Every observation includes `final_confirmation_observed=false` unless the owning authority explicitly exposes a final confirmation state. No cross-record inference is allowed.
 
+## Exact Booking Request -> Job correlation · P7
+
+HYPE `/progress` now performs a bounded exact correlation for Booking execution receipts.
+
+Correlation chain:
+
+1. take the exact `booking_ref` from the stored HYPE execution receipt;
+2. read exactly one `SIGIL Booking Requests` record by `booking_ref`;
+3. read only `resolver_payload_json.job_receipt.session_id`;
+4. read exactly one canonical Session and exactly one canonical Job by that same `session_id`;
+5. expose only bounded customer-safe correlation fields: Booking ref, Session id, Job id, Session state and Job state.
+
+No date/name/model matching is allowed. Missing receipt/session/job records remain uncorrelated. Duplicate Booking, Session or Job matches fail closed as conflict.
+
+`final_confirmation_observed=true` is allowed only when the exact correlated canonical Job itself exposes an explicit final/confirmed state. An unrelated active Job can never satisfy the observation.
+
+The correlation read does not mutate Booking, Session, Job, Payment, Calendar or Membership truth.
+
 ## Next implementation lanes
 
 1. operator acknowledgement state for failed or review-required executions;
-2. exact Booking Request -> Job correlation receipt once the booking authority exposes a bounded read contract;
-3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection.
+2. bounded Points + Coupon inline values from a canonical member-runtime projection.
 
 All future lanes must preserve the same authority and privacy locks.
 

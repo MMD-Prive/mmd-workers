@@ -1476,7 +1476,17 @@ function renderHypeExecutionCustomer(result = {}, operation = "execute") {
         if (clean(observed.membership_level)) lines.push(`• Membership: ${escapeHtml(clean(observed.membership_level))}`);
         if (clean(observed.lifecycle)) lines.push(`• Lifecycle: ${escapeHtml(clean(observed.lifecycle))}`);
         if (clean(observed.active_through)) lines.push(`• Active through: ${escapeHtml(clean(observed.active_through))}`);
-        if (observed.final_confirmation_observed !== true) {
+        if (observed.exact_correlation === true) {
+          lines.push("• Correlation: Booking Request → Job ตรงกันแบบ exact");
+          if (clean(observed.session_id)) lines.push(`• Session: <code>${escapeHtml(clean(observed.session_id))}</code>`);
+          if (clean(observed.job_id)) lines.push(`• Job: <code>${escapeHtml(clean(observed.job_id))}</code>`);
+          if (clean(observed.job_state)) lines.push(`• Job state: ${escapeHtml(clean(observed.job_state))}`);
+        } else if (clean(observed.correlation_scope)) {
+          lines.push(`• Correlation: ${escapeHtml(clean(observed.correlation_scope))}`);
+        }
+        if (observed.final_confirmation_observed === true) {
+          lines.push("• Final confirmation: พบ explicit canonical Job state แล้ว");
+        } else {
           lines.push("• Final confirmation: ยังไม่ถือว่ายืนยันจาก observation นี้");
         }
       }

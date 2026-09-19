@@ -24,6 +24,7 @@ import {
   p6ExecutionGuardrails,
   buildExecutionId,
   observeP6Authority,
+  observeExactBookingCorrelation,
 } from "./src/hype-handoff-runtime.js";
 
 const ENV = {
@@ -558,6 +559,199 @@ test("P6 receipts expose only bounded customer-safe execution fields", () => {
   assert.equal(guardrails.mms_booking_confirmed, false);
 });
 
+
+
+test("P6 booking observation correlates booking_ref to the exact canonical Session and Job", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const seen = [];
+
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    seen.push({
+      path: parsed.pathname,
+      formula: parsed.searchParams.get("filterByFormula"),
+      maxRecords: parsed.searchParams.get("maxRecords"),
+    });
+
+    if (parsed.pathname.endsWith("/tblBookingRequests")) {
+      return Response.json({
+        records: [{
+          id: "recBookingA1",
+          fields: {
+            booking_ref: "kenji_0123456789abcdef01234567",
+            resolver_payload_json: JSON.stringify({
+              job_creation_state: "created",
+              job_receipt: {
+                session_id: "sess_exact_001",
+                payment_ref: "pay_hidden_from_projection",
+              },
+            }),
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblSessions")) {
+      return Response.json({
+        records: [{
+          id: "recSessionA1",
+          fields: {
+            session_id: "sess_exact_001",
+            job_id: "JOB-EXACT-001",
+            session_state: "confirmed",
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblJobs")) {
+      return Response.json({
+        records: [{
+          id: "recJobA1",
+          fields: {
+            session_id: "sess_exact_001",
+            job_id: "JOB-EXACT-001",
+            status: "confirmed",
+            "Internal Notes": "must not leak",
+          },
+        }],
+      });
+    }
+    throw new Error(`unexpected fetch ${parsed.pathname}`);
+  };
+
+  try {
+    const observation = await observeExactBookingCorrelation({
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_API_KEY: "test-token",
+      AIRTABLE_TABLE_BOOKING_REQUESTS_ID: "tblBookingRequests",
+      AIRTABLE_TABLE_SESSIONS: "tblSessions",
+      AIRTABLE_TABLE_JOBS: "tblJobs",
+    }, {
+      mode: "booking",
+      status: "materialized",
+      canonical_ref: "kenji_0123456789abcdef01234567",
+    });
+
+    assert.equal(observation.source, "sigil-booking-worker");
+    assert.equal(observation.exact_correlation, true);
+    assert.equal(observation.correlation_scope, "booking_ref_to_job_exact");
+    assert.equal(observation.booking_ref, "kenji_0123456789abcdef01234567");
+    assert.equal(observation.session_id, "sess_exact_001");
+    assert.equal(observation.job_id, "JOB-EXACT-001");
+    assert.equal(observation.session_state, "confirmed");
+    assert.equal(observation.job_state, "confirmed");
+    assert.equal(observation.final_confirmation_observed, true);
+    assert.equal(observation.inference_used, false);
+    assert.equal(Object.hasOwn(observation, "payment_ref"), false);
+    assert.equal(Object.hasOwn(observation, "customer_confirmation_url"), false);
+    assert.equal(Object.hasOwn(observation, "model_confirmation_url"), false);
+
+    assert.equal(seen.length, 3);
+    assert.equal(seen.every((item) => item.maxRecords === "2"), true);
+    assert.match(seen[0].formula, /booking_ref/);
+    assert.match(seen[1].formula, /session_id/);
+    assert.match(seen[2].formula, /session_id/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("P6 booking observation does not infer a Job when booking receipt has no session_id", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let reads = 0;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    reads += 1;
+    if (parsed.pathname.endsWith("/tblBookingRequests")) {
+      return Response.json({
+        records: [{
+          id: "recBookingA1",
+          fields: {
+            booking_ref: "kenji_0123456789abcdef01234567",
+            resolver_payload_json: JSON.stringify({
+              job_creation_state: "review_required",
+            }),
+          },
+        }],
+      });
+    }
+    throw new Error("must not read Session or Job without exact job_receipt.session_id");
+  };
+
+  try {
+    const observation = await observeExactBookingCorrelation({
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_API_KEY: "test-token",
+      AIRTABLE_TABLE_BOOKING_REQUESTS_ID: "tblBookingRequests",
+      AIRTABLE_TABLE_SESSIONS: "tblSessions",
+      AIRTABLE_TABLE_JOBS: "tblJobs",
+    }, {
+      status: "materialized",
+      canonical_ref: "kenji_0123456789abcdef01234567",
+    });
+
+    assert.equal(reads, 1);
+    assert.equal(observation.exact_correlation, false);
+    assert.equal(observation.state, "review_required");
+    assert.equal(observation.correlation_scope, "booking_ref_exact_no_job_receipt");
+    assert.equal(observation.final_confirmation_observed, false);
+    assert.equal(Object.hasOwn(observation, "session_id"), false);
+    assert.equal(Object.hasOwn(observation, "job_id"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("P6 booking exact correlation fails closed on duplicate session/job matches", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/tblBookingRequests")) {
+      return Response.json({
+        records: [{
+          id: "recBookingA1",
+          fields: {
+            booking_ref: "kenji_0123456789abcdef01234567",
+            resolver_payload_json: JSON.stringify({
+              job_creation_state: "created",
+              job_receipt: { session_id: "sess_conflict_001" },
+            }),
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblSessions")) {
+      return Response.json({
+        records: [
+          { id: "recSessionA1", fields: { session_id: "sess_conflict_001" } },
+          { id: "recSessionA2", fields: { session_id: "sess_conflict_001" } },
+        ],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblJobs")) return Response.json({ records: [] });
+    throw new Error(`unexpected fetch ${parsed.pathname}`);
+  };
+
+  try {
+    const observation = await observeExactBookingCorrelation({
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_API_KEY: "test-token",
+      AIRTABLE_TABLE_BOOKING_REQUESTS_ID: "tblBookingRequests",
+      AIRTABLE_TABLE_SESSIONS: "tblSessions",
+      AIRTABLE_TABLE_JOBS: "tblJobs",
+    }, {
+      status: "materialized",
+      canonical_ref: "kenji_0123456789abcdef01234567",
+    });
+
+    assert.equal(observation.exact_correlation, false);
+    assert.equal(observation.state, "job_correlation_conflict");
+    assert.equal(observation.conflict, true);
+    assert.equal(observation.final_confirmation_observed, false);
+    assert.equal(observation.inference_used, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("P6 authority observation reads Payment truth without inferring it from the execution receipt", async () => {
   const observation = await observeP6Authority({}, {
