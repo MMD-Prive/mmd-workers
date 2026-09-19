@@ -1,0 +1,219 @@
+<section
+  id="sigil-pay-v19"
+  class="sp19"
+  data-sp19
+  data-api-base="https://sigil.mmdbkk.com"
+  data-details-path="/v1/confirm/details"
+  data-instructions-path="/v1/confirm/payment-instructions"
+  data-proof-path="/v1/pay/slip/evidence"
+  data-canonical-origin="https://mmdbkk.com"
+  data-payments-url="/member/payments"
+  data-help-url="https://lin.ee/xRqsALs"
+  aria-busy="true"
+>
+  <div class="sp19__shell">
+    <header class="sp19__top">
+      <a class="sp19__brand" href="/my-mmd/" aria-label="กลับ My MMD">
+        <span class="sp19__mark" aria-hidden="true"><i></i><b></b></span>
+        <span><strong>SĪGIL</strong><small>MMD Privé · Private Payment</small></span>
+      </a>
+      <span class="sp19__private"><i></i>PRIVATE</span>
+    </header>
+
+    <section class="sp19__state" data-sp19-loading aria-live="polite">
+      <span class="sp19__spinner" aria-hidden="true"></span>
+      <div><strong>กำลังเปิดรายการครับ</strong><p>MMD กำลังดึงรายละเอียดและช่องทางชำระเงินที่ผูกกับรายการนี้</p></div>
+    </section>
+
+    <section class="sp19__state sp19__state--error" data-sp19-error hidden aria-live="assertive">
+      <span class="sp19__state-icon" aria-hidden="true">!</span>
+      <div>
+        <strong data-sp19-error-title>เปิดรายการนี้ไม่ได้ครับ</strong>
+        <p data-sp19-error-message>ลองเปิดจากลิงก์ชำระเงินล่าสุดที่ MMD ส่งให้ครับ</p>
+        <div class="sp19__state-actions">
+          <button type="button" class="sp19__btn sp19__btn--ghost" data-sp19-retry>ลองอีกครั้ง</button>
+          <a class="sp19__btn sp19__btn--ghost" href="https://lin.ee/xRqsALs">ติดต่อ MMD</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="sp19__content" data-sp19-content hidden>
+      <section class="sp19__hero" aria-labelledby="sp19-title">
+        <div class="sp19__hero-media" aria-hidden="true">
+          <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aae047002118b905ee75391_Model%20Confirm%20Group.webp" alt="" loading="eager" fetchpriority="high">
+        </div>
+        <div class="sp19__hero-shade" aria-hidden="true"></div>
+        <div class="sp19__hero-copy">
+          <div class="sp19__hero-topline">
+            <p class="sp19__eyebrow">MMD · PRIVATE PAYMENT</p>
+            <span class="sp19__status-pill" data-sp19-status>รอการชำระเงิน</span>
+          </div>
+          <h1 id="sp19-title">รายการพร้อมแล้วครับ</h1>
+          <p class="sp19__hero-lead">เช็กรายละเอียดให้ตรง แล้วเลือกช่องทางที่สะดวกได้เลยครับ</p>
+          <div class="sp19__due">
+            <span>ยอดที่ชำระครั้งนี้</span>
+            <strong><i>฿</i><b data-sp19-amount>—</b></strong>
+            <small data-sp19-stage>ยอดที่ต้องชำระ</small>
+          </div>
+          <div class="sp19__hero-ref">
+            <span data-sp19-payment-ref>—</span>
+            <span data-sp19-session-id>—</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="sp19__layout">
+        <main class="sp19__main">
+          <section class="sp19__card" id="sp19-details">
+            <div class="sp19__section-head">
+              <div><p class="sp19__kicker">CHECK BEFORE PAY</p><h2>รายละเอียดรายการ</h2></div>
+              <span class="sp19__truth">ข้อมูลจาก MMD</span>
+            </div>
+
+            <div class="sp19__model">
+              <span class="sp19__avatar" data-sp19-model-initial>M</span>
+              <div><small>MODEL</small><strong data-sp19-model>—</strong><p data-sp19-service>Private Session</p></div>
+            </div>
+
+            <dl class="sp19__facts">
+              <div><dt>ลูกค้า</dt><dd data-sp19-client>—</dd></div>
+              <div><dt>วัน</dt><dd data-sp19-date>—</dd></div>
+              <div><dt>เวลา</dt><dd data-sp19-time>—</dd></div>
+              <div><dt>สถานที่</dt><dd><span data-sp19-location>—</span><a data-sp19-map href="#" target="_blank" rel="noopener noreferrer" hidden>เปิดแผนที่ ↗</a></dd></div>
+            </dl>
+
+            <div class="sp19__pricing">
+              <div><span>ราคาที่ตกลง</span><strong data-sp19-net>—</strong></div>
+              <div data-sp19-full-row hidden><span>ราคาปกติ</span><del data-sp19-full>—</del></div>
+              <div data-sp19-discount-row hidden><span>ส่วนลด</span><strong class="sp19__gold" data-sp19-discount>—</strong></div>
+              <div><span>ยอดที่ชำระตอนนี้</span><strong class="sp19__gold" data-sp19-due>—</strong></div>
+              <div data-sp19-balance-row hidden><span>คงเหลือหลังยอดนี้</span><strong data-sp19-balance>—</strong></div>
+            </div>
+          </section>
+
+          <section class="sp19__card" id="sp19-payment">
+            <div class="sp19__section-head">
+              <div><p class="sp19__kicker">PAYMENT</p><h2>เลือกช่องทางชำระเงิน</h2></div>
+              <span class="sp19__truth">Payment Truth</span>
+            </div>
+            <p class="sp19__body">ช่องทางและยอดด้านล่างมาจากระบบ MMD โดยตรงครับ เลือกวิธีที่สะดวกได้เลย</p>
+
+            <div class="sp19__method-state" data-sp19-method-state aria-live="polite">
+              <span class="sp19__mini-spinner" aria-hidden="true"></span>
+              <span>กำลังโหลดช่องทางชำระเงิน</span>
+            </div>
+
+            <div class="sp19__tabs" role="tablist" aria-label="ช่องทางชำระเงิน" data-sp19-tabs hidden>
+              <button type="button" class="sp19__tab" role="tab" data-sp19-method="promptpay" aria-selected="false">
+                <span>01</span><strong>QR PromptPay</strong><small>สแกนจากแอปธนาคาร</small>
+              </button>
+              <button type="button" class="sp19__tab" role="tab" data-sp19-method="bank_transfer" aria-selected="false">
+                <span>02</span><strong>โอนธนาคาร</strong><small>ดูเลขบัญชีเมื่อพร้อมโอน</small>
+              </button>
+              <button type="button" class="sp19__tab" role="tab" data-sp19-method="paypal_card" aria-selected="false">
+                <span>03</span><strong>Credit / Debit Card</strong><small>PayPal · ค่าดำเนินการตามระบบ</small>
+              </button>
+            </div>
+
+            <div class="sp19__panel" data-sp19-panel="promptpay" role="tabpanel" hidden>
+              <div class="sp19__panel-title"><div><small>PROMPTPAY</small><strong>สแกน QR แล้วชำระยอดนี้ได้เลยครับ</strong></div><span>แนะนำ</span></div>
+              <div class="sp19__qr-wrap">
+                <img data-sp19-qr src="" alt="PromptPay QR สำหรับรายการนี้" hidden>
+                <div class="sp19__qr-fallback" data-sp19-qr-fallback hidden>
+                  <small>PromptPay</small><strong data-sp19-promptpay-ref>—</strong>
+                </div>
+              </div>
+              <p class="sp19__hint">ตรวจยอดในแอปธนาคารให้ตรงกับยอดด้านบนก่อนยืนยันทุกครั้งครับ</p>
+            </div>
+
+            <div class="sp19__panel" data-sp19-panel="bank_transfer" role="tabpanel" hidden>
+              <div class="sp19__panel-title"><div><small>BANK TRANSFER</small><strong data-sp19-bank-name>โอนเข้าบัญชีธนาคาร</strong></div></div>
+              <div class="sp19__bank">
+                <div><span>ชื่อบัญชี</span><strong data-sp19-account-name>—</strong></div>
+                <div><span>เลขบัญชี</span><strong data-sp19-account-number>••••••••••</strong></div>
+                <div class="sp19__bank-actions">
+                  <button type="button" class="sp19__btn sp19__btn--ghost" data-sp19-bank-reveal>ดูเลขบัญชี</button>
+                  <button type="button" class="sp19__btn sp19__btn--ghost" data-sp19-bank-copy disabled>คัดลอก</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="sp19__panel" data-sp19-panel="paypal_card" role="tabpanel" hidden>
+              <div class="sp19__panel-title"><div><small>CREDIT / DEBIT CARD</small><strong>ชำระผ่าน PayPal</strong></div><span data-sp19-card-rate>+4%</span></div>
+              <div class="sp19__card-fee">
+                <div><span>ยอดบริการ</span><strong data-sp19-card-base>—</strong></div>
+                <div><span>ค่าดำเนินการบัตร</span><strong data-sp19-card-fee>—</strong></div>
+                <div><span>ยอดชำระผ่านบัตร</span><strong class="sp19__gold" data-sp19-card-total>—</strong></div>
+              </div>
+              <p class="sp19__hint">ค่าดำเนินการบัตรเป็น processing fee แยกจากค่าบริการครับ</p>
+              <a class="sp19__btn sp19__btn--gold sp19__btn--wide" data-sp19-paypal href="#" target="_blank" rel="noopener noreferrer">ชำระด้วยบัตร / PayPal ↗</a>
+            </div>
+          </section>
+
+          <section class="sp19__card" id="sp19-proof">
+            <div class="sp19__section-head">
+              <div><p class="sp19__kicker">PAYMENT PROOF</p><h2>ชำระแล้ว ส่งสลิปที่นี่ได้เลยครับ</h2></div>
+            </div>
+            <p class="sp19__body">ส่งครั้งเดียว ระบบจะผูกหลักฐานกับรายการนี้ให้ MMD ตรวจยอดต่อครับ การอัปโหลดสลิปยังไม่ถือว่าชำระสำเร็จจนกว่า MMD จะยืนยันยอด</p>
+
+            <div data-sp19-proof-form>
+              <label class="sp19__upload" for="sp19-file">
+                <input id="sp19-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" data-sp19-file>
+                <span>+</span><strong>เลือกสลิป</strong><small>JPG · PNG · WEBP · PDF / ไม่เกิน 10 MB</small>
+              </label>
+
+              <div class="sp19__file-card" data-sp19-file-card hidden>
+                <div class="sp19__preview" data-sp19-preview>FILE</div>
+                <div><strong data-sp19-file-name>—</strong><small data-sp19-file-size>—</small></div>
+                <button type="button" data-sp19-file-remove>เปลี่ยน</button>
+              </div>
+
+              <label class="sp19__field">
+                <span>หมายเหตุเพิ่มเติม <em>ไม่บังคับ</em></span>
+                <textarea rows="3" maxlength="500" placeholder="เช่น โอนจากชื่อบัญชีอื่น" data-sp19-note></textarea>
+              </label>
+
+              <label class="sp19__consent">
+                <input type="checkbox" data-sp19-consent>
+                <span>ตรวจสอบยอดเรียบร้อย และส่งหลักฐานนี้ให้ MMD ใช้ตรวจสอบการชำระเงิน</span>
+              </label>
+
+              <button type="button" class="sp19__btn sp19__btn--gold sp19__btn--wide" data-sp19-submit disabled>
+                <span data-sp19-submit-label>ส่งสลิปให้ MMD</span>
+              </button>
+              <p class="sp19__submit-status" data-sp19-submit-status aria-live="polite"></p>
+            </div>
+
+            <div class="sp19__proof-state" data-sp19-proof-state hidden></div>
+          </section>
+        </main>
+
+        <aside class="sp19__aside">
+          <section class="sp19__side-card">
+            <p class="sp19__kicker">STATUS</p>
+            <h2 data-sp19-side-status>รอการชำระเงิน</h2>
+            <p data-sp19-side-copy>เมื่อ MMD ตรวจยอดแล้ว สถานะจะอัปเดตให้เองครับ</p>
+          </section>
+          <section class="sp19__side-card">
+            <p class="sp19__kicker">MY MMD</p>
+            <h2>ติดตามรายการต่อได้ที่ My MMD</h2>
+            <p>หลังส่งสลิปแล้ว ดูสถานะและขั้นตอนถัดไปได้จาก My MMD ครับ</p>
+            <a class="sp19__btn sp19__btn--ghost sp19__btn--wide" href="/member/payments">ดูการชำระของฉัน</a>
+          </section>
+          <section class="sp19__side-card sp19__side-card--help">
+            <p class="sp19__kicker">MMD CONCIERGE</p>
+            <h2>อยากให้ช่วยเช็กก่อนชำระ ทักได้เลยครับ</h2>
+            <a class="sp19__text-link" href="https://lin.ee/xRqsALs">คุยกับ MMD ทาง LINE ↗</a>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="sp19__footer"><strong>SĪGIL</strong><span>MMD verifies every payment before confirmation.</span></footer>
+    </div>
+  </div>
+
+  <div class="sp19__sticky" data-sp19-sticky hidden>
+    <div><small data-sp19-sticky-stage>ยอดที่ชำระ</small><strong data-sp19-sticky-amount>฿—</strong></div>
+    <button type="button" class="sp19__btn sp19__btn--gold" data-sp19-sticky-action>เลือกช่องทาง</button>
+  </div>
+</section>
