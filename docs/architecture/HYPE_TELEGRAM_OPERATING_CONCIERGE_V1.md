@@ -157,8 +157,16 @@ Preview is a HYPE-managed public-safe Telegram surface.
 - `/commands` and `/help` show a Preview-labelled command guide
 - when a human joins Preview, HYPE deletes the Telegram join service message and posts a short welcome instead
 - bot joins are cleaned up without a welcome
-- Preview welcome text never resolves Client 360, entitlement, gender, job, payment, Points balance, or coupon code
+- Preview welcome text never resolves Client 360, entitlement, job, payment, Points balance, or coupon code
 - account-specific commands remain private-chat only
+- Model discovery must never fall back to all profiles
+- HYPE may use verified private gender routing context internally, but Model visibility still follows the customer's self-selected Hall audience
+- `female_view -> show_female_profiles`
+- `lgbt_view -> show_lgbt_profiles`
+- `unknown -> hold_until_selected`
+- `manual_review -> manual_review_only`
+- if no Hall audience is selected, HYPE routes to `/hall` first and does not recommend Models
+- Preview group copy must not disclose the customer's recorded gender/audience value
 
 ## Existing HYPE operational capabilities retained
 
