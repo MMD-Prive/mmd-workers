@@ -2896,6 +2896,16 @@ async function persistUnavailableRecoveryPicker(env, {
   staleReason,
   source,
 }) {
+  if (token(priorCorrelation?.picker_status) === "stale"
+      && clean(priorCorrelation?.last_reissue_source, 40) === clean(source, 40)) {
+    return recoveryPickerReplayResponse({
+      correlation: priorCorrelation,
+      priorPayload,
+      tracking,
+      handoffId,
+    });
+  }
+
   const stamp = new Date().toISOString();
   const updatedCorrelation = safeRecoveryCorrelation({
     ...priorCorrelation,
