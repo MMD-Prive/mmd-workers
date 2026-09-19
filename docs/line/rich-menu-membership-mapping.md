@@ -1,5 +1,7 @@
 # LINE Rich Menu Membership Mapping
 
+> **Canonical lane correction — 2026-09-19:** Public Membership selection is `/pay/membership` (Member / Elite / Red Card). Private Membership selection / renewal / upgrade is `/sigil/member/membership`. Payment status is `/member/payments`. Renewal compatibility routes `/sigil/pay/renewal` and `/pay/renewal` are redirect-only and must not be used as a Rich Menu destination. Signed Public checkout uses `/pay/checkout?t=...`; signed Private/Service payment uses `/sigil/pay?t=...`.
+
 Status: backend-owned Rich Menu publisher is available for Public World. No Webflow publish and no merge.
 
 > **Status: Superseded for LIFF identity routing.** This document retains the
@@ -79,9 +81,9 @@ The service-bound aliases under `/__internal/line/rich-menu/*` are only for `adm
 
 | Button | URL | Status |
 | --- | --- | --- |
-| สมัครสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=public_membership` | Worker-backed page, LIFF identity remains public membership intent. |
+| สมัครสมาชิก | `https://mmdbkk.com/pay/membership?source=line` | Worker-backed page, LIFF identity remains public membership intent. |
 | ตรวจสอบสถานะสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=member_status` | State-lookup-backed LIFF intent; does not collapse into generic public membership after identify. |
-| ต่ออายุสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=renewal` | LINE LIFF renewal mode; identity/evidence only until payment is officially verified. |
+| ต่ออายุสมาชิก | `https://mmdbkk.com/sigil/member/membership?source=line&intent=renew` | LINE LIFF renewal mode; identity/evidence only until payment is officially verified. |
 | ขอจอง/เลือกโมเดล | `https://mmdbkk.com/member/membership?source=line&entry_route=booking_request` | State-lookup-backed LIFF intent; active/current routes to `/sigil/booking`, expired routes renewal, no paid package stays public. |
 
 ## Private Rich Menu Button URLs
@@ -91,7 +93,7 @@ Private Rich Menu eligibility is a response state, not a dashboard unlock. The w
 | Button | URL | Status |
 | --- | --- | --- |
 | ตรวจสอบสถานะสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=member_status` | State-lookup-backed. Active/current returns private member eligibility. |
-| ต่ออายุสมาชิก | `https://mmdbkk.com/member/membership?source=line&entry_route=renewal` | Opens renewal mode inside LINE. Private menu is still navigation only and never sets membership truth. |
+| ต่ออายุสมาชิก | `https://mmdbkk.com/sigil/member/membership?source=line&intent=renew` | Opens renewal mode inside LINE. Private menu is still navigation only and never sets membership truth. |
 | ขอจอง/เลือกโมเดล | `https://mmdbkk.com/member/membership?source=line&entry_route=booking_request` | State-lookup-backed. Active/current routes `/sigil/booking`. |
 | Member dashboard | Not allowed as a Rich Menu action | Blocked until first real job/session unlock. |
 
@@ -187,7 +189,7 @@ Rich Menu and LIFF identity should stage or read context only. Promotion into tr
   "rich_menu_target": "private_member",
   "next_route": "/member/profile?status=active",
   "safe_next": {
-    "renewal": "/sigil/pay/renewal",
+    "renewal": "/sigil/member/membership?source=line&intent=renew",
     "booking": "/sigil/booking",
     "dashboard": null
   }
