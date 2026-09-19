@@ -174,11 +174,11 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
-      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      const shopResponse = await reconcileReviewedShopPayment(shopRequest.clone(), reviewResponse, env);
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), shopResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
-      const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
-      return reconcileReviewedShopPayment(shopRequest, finalResponse, env);
+      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);
