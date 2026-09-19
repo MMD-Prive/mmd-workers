@@ -331,23 +331,41 @@ async function loadProductsWorkspace(env) {
       const brands = selectList(fields[PRODUCT_FIELDS.brands]);
       const stock = stockByProduct.get(record.id) || { quantity_remaining: 0, active_batches: 0, low_stock: false };
       const supplierIds = linkedIds(fields[PRODUCT_FIELDS.supplier]);
+      const productName = clean(fields[PRODUCT_FIELDS.name], 220) || "Shop Item";
+      const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
+      const sharedStatus = code(fields[PRODUCT_FIELDS.status]) || "draft";
+      const productNote = clean(fields[PRODUCT_FIELDS.note], 1200) || null;
+      const mmdPrice = numberOrNull(fields[PRODUCT_FIELDS.mmdPrice]);
+      const mmdEnabled = includesMmdShop(brands);
+      const commerce = deriveMmdProductCommerceState({
+        sku,
+        product_name: productName,
+        product_note: productNote,
+        shared_status: sharedStatus,
+        mmd_enabled: mmdEnabled,
+        mmd_price_thb: mmdPrice,
+        supplier_count: supplierIds.length,
+        quantity_remaining: stock.quantity_remaining,
+        active_batches: stock.active_batches,
+      });
       return {
         id: record.id,
-        product_name: clean(fields[PRODUCT_FIELDS.name], 220) || "Shop Item",
-        sku: clean(fields[PRODUCT_FIELDS.sku], 120),
+        product_name: productName,
+        sku,
         category: selectName(fields[PRODUCT_FIELDS.category]) || "Other",
-        shared_status: code(fields[PRODUCT_FIELDS.status]) || "draft",
+        shared_status: sharedStatus,
         curation_label: selectName(fields[PRODUCT_FIELDS.curation]) || null,
-        product_note: clean(fields[PRODUCT_FIELDS.note], 1200) || null,
+        product_note: productNote,
         shared_cost_thb: numberOrNull(fields[PRODUCT_FIELDS.cost]),
-        mmd_price_thb: numberOrNull(fields[PRODUCT_FIELDS.mmdPrice]),
-        mmd_enabled: includesMmdShop(brands),
+        mmd_price_thb: mmdPrice,
+        mmd_enabled: mmdEnabled,
         brand_availability: brands,
         supplier_ids: supplierIds,
         suppliers: supplierIds.map((id) => supplierById.get(id) || id),
         quantity_remaining: stock.quantity_remaining,
         active_batches: stock.active_batches,
         low_stock: stock.low_stock,
+        ...commerce,
       };
     })
     .sort((a, b) => {
@@ -360,13 +378,56 @@ async function loadProductsWorkspace(env) {
     metrics: {
       all_products: rows.length,
       mmd_enabled: rows.filter((item) => item.mmd_enabled).length,
-      active_for_sale: rows.filter((item) => item.mmd_enabled && item.shared_status === "active" && number(item.mmd_price_thb) > 0).length,
+      active_for_sale: rows.filter((item) => item.checkout_eligible === true).length,
       needs_price: rows.filter((item) => item.mmd_enabled && !(number(item.mmd_price_thb) > 0)).length,
     },
     mutation_scope: {
       writable: ["mmd_enabled", "mmd_price_thb"],
       shared_fields_read_only: ["shared_status", "category", "curation_label", "product_note", "shared_cost_thb"],
     },
+  };
+}
+
+export function deriveMmdProductCommerceState(input = {}) {
+  const sku = clean(input.sku, 120);
+  const productName = clean(input.product_name, 220);
+  const productNote = clean(input.product_note, 1200);
+  const sharedStatus = code(input.shared_status);
+  const enabled = input.mmd_enabled === true;
+  const price = numberOrNull(input.mmd_price_thb);
+  const supplierCount = Math.max(0, integer(input.supplier_count) || 0);
+  const quantity = Math.max(0, number(input.quantity_remaining));
+  const activeBatches = Math.max(0, integer(input.active_batches) || 0);
+  const restricted = /^PPP25-/i.test(sku) || /\bpod\b/i.test(productName);
+  const onDemand = /\bon[-\s]*demand\b/i.test(productNote);
+  const stockTracked = activeBatches > 0;
+  const checkoutEligible = enabled
+    && sharedStatus === "active"
+    && price != null
+    && price > 0
+    && !restricted
+    && (
+      (onDemand && supplierCount > 0)
+      || (!onDemand && stockTracked && quantity > 0)
+    );
+
+  return {
+    availability_mode: onDemand ? "on_demand" : "stock",
+    stock_status: onDemand ? "on_demand" : stockTracked ? "tracked" : "untracked",
+    checkout_eligible: checkoutEligible,
+    online_checkout_status: restricted
+      ? "restricted"
+      : onDemand
+        ? checkoutEligible ? "on_demand" : "unavailable"
+        : !stockTracked
+          ? "stock_untracked"
+          : quantity <= 0
+            ? "out_of_stock"
+            : price == null || price <= 0
+              ? "ask_shop"
+              : checkoutEligible
+                ? "available"
+                : "unavailable",
   };
 }
 
