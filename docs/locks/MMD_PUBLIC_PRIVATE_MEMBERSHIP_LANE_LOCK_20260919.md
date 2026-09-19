@@ -27,7 +27,7 @@ Updated: 2026-09-19
   - unsigned -> `/sigil/member/membership`
   - signed `t` -> `/sigil/pay?t=<same token>`
   - it must never capture or redirect canonical Public `/pay/membership`.
-- `/sigil/pay/renew` = compatibility alias -> `/sigil/member/membership?intent=renew`.
+- `/sigil/pay/renew` = compatibility alias: signed `t` -> `/sigil/pay?t=<same token>`; unsigned -> `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/renewal` and `/pay/renewal` = redirect-only compatibility.
   - signed `t` -> `/sigil/pay?t=<same token>`
   - unsigned -> `/sigil/member/membership?intent=renew`
