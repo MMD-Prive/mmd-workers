@@ -283,6 +283,10 @@ async function createCalBooking(env, record, fetchImpl = fetch) {
       language: "en",
     },
     bookingFieldsResponses: { title },
+    location: {
+      type: "attendeeDefined",
+      location: clean(env.CAL_INTERNAL_HOLD_LOCATION, 180) || "MMD Internal Hold",
+    },
     metadata: {
       session_id: sid,
       job_id: jid || "",

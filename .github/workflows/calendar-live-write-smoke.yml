@@ -1,4 +1,5 @@
 name: Calendar Live Write Smoke
+# Contract probe 2026-09-20: attendeeDefined location is required by event type 7057823.
 
 on:
   workflow_dispatch:
