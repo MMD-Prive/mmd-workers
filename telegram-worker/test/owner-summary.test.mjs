@@ -93,9 +93,11 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
       HYPE_OPERATIONS: {
         async fetch(request) {
           ownerRead += 1;
+          let path = "";
+          try { path = new URL(String(request?.url || "")).pathname; } catch {}
           ownerRequests.push({
-            path: new URL(request.url).pathname,
-            caller: request.headers.get("x-mmd-service-binding"),
+            path,
+            caller: request?.headers?.get?.("x-mmd-service-binding") || "",
           });
           return Response.json(summary());
         },
