@@ -18,7 +18,9 @@ const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 const BOOKING_SIGNAL_RE = /(จอง|book|booking|reserve|นัด|คิว|ว่าง|available|availability|เช็กคิว|เช็คคิว|รับงาน)/i;
 const DEPOSIT_RE = /(?:มัดจำ|deposit)/i;
 const LOCATION_PREFIX_RE = /(?:^|[\s,])(?:โซน|แถว|สถานที่|ที่)\s*[:：-]?\s*([^,\n]{2,80})/i;
-const RATE_PREFIX_RE = /(?:เรท|ราคา|ค่าตัว|ยอดรวม|rate|total)\s*[:：=]?/i;
+const RATE_PREFIX_RE = /(?:เรท|ราคา|ค่าตัว|ยอดรวม|rate|total|PN)\s*[:：=]?/i;
+const MODEL_CODE_NAME_RE = /^\s*((?:EMs?|em[s]?)[-_]?\d{1,4})\s+([A-Za-z][A-Za-z0-9._-]{1,40})\s*$/i;
+const DISCOUNT_FROM_RE = /(?:discount(?:ed)?\s+from|จาก(?:ราคา)?ปกติ|ปกติ)\s*[:：-]?\s*([0-9][0-9,]*(?:\.[0-9]+)?)/i;
 const NON_LOCATION_RE = /^(?:โอเค|ok|okay|ครับ|ค่ะ|คะ|ได้|เอา|ใช่|yes|ขอบคุณ|thanks?|ตกลง|รับทราบ|เรียบร้อย|โอ|อือ|อื้อ)[.!\s]*$/i;
 
 function text(value, max = 500) {
@@ -75,12 +77,34 @@ function placeLike(raw = "") {
   return value;
 }
 
+function extractModelCodeName(raw = "") {
+  const match = text(raw, 160).match(MODEL_CODE_NAME_RE);
+  if (!match) return null;
+  return { model_code: text(match[1], 40), working_name: text(match[2], 80) };
+}
+
+function extractDiscountFromAmount(raw = "") {
+  const match = text(raw, 200).match(DISCOUNT_FROM_RE);
+  if (!match) return 0;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : 0;
+}
+
+function looseLocationBesideTime(raw = "") {
+  const withoutClock = text(raw, 160)
+    .replace(/(?:เวลา\s*)?\d{1,2}[:.]\d{2}/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return placeLike(withoutClock);
+}
+
 export function parseKenjiBookingFragment(event = {}, currentIntent = "", {
   now = new Date(),
   priorActive = false,
 } = {}) {
   const raw = eventText(event);
-  const modelName = extractOperationalModelName(raw);
+  const codeName = extractModelCodeName(raw);
+  const modelName = extractOperationalModelName(raw) || text(codeName?.model_code, 40);
   const date = extractOperationalDate(raw, now);
   const time = extractOperationalTime(raw);
   const durationHours = extractOperationalDurationHours(raw);
@@ -88,13 +112,17 @@ export function parseKenjiBookingFragment(event = {}, currentIntent = "", {
   const explicitLocation = LOCATION_PREFIX_RE.test(raw);
   let location = explicitLocation ? extractOperationalLocation(raw, modelName) : "";
   let amount = extractOperationalRate(raw);
+  const originalAmount = extractDiscountFromAmount(raw);
   const depositAmount = extractOperationalDepositAmount(raw);
   const deposit = DEPOSIT_RE.test(raw);
-  const bookingSignal = BOOKING_SIGNAL_RE.test(raw);
+  const bookingSignal = BOOKING_SIGNAL_RE.test(raw) || Boolean(codeName);
   const intent = token(currentIntent);
 
   if (!amount && priorActive) {
     amount = parseLooseAmount(raw);
+  }
+  if (!location && priorActive && time && !modelName && !date && !durationHours && !endTime && !amount && !depositAmount) {
+    location = looseLocationBesideTime(raw);
   }
   if (!location && priorActive && !modelName && !date && !time && !durationHours && !endTime && !amount && !depositAmount) {
     location = placeLike(raw);
@@ -106,6 +134,7 @@ export function parseKenjiBookingFragment(event = {}, currentIntent = "", {
     booking_signal: bookingSignal,
     deposit_signal: deposit,
     model_name: modelName,
+    model_working_name_hint: text(codeName?.working_name, 80),
     customer_name: extractOperationalCustomerName(raw),
     date,
     time,
@@ -113,6 +142,8 @@ export function parseKenjiBookingFragment(event = {}, currentIntent = "", {
     duration_hours: durationHours,
     location,
     amount_thb: amount,
+    original_amount_thb: originalAmount,
+    pricing_adjustment: amount && originalAmount && originalAmount > amount ? "discount" : "",
     deposit_amount_thb: depositAmount,
   };
 }
@@ -127,6 +158,7 @@ function startSignal(fragment = {}) {
 function materialFields(fragment = {}) {
   const fields = {};
   if (text(fragment.model_name, 120)) fields.model_name = text(fragment.model_name, 120);
+  if (text(fragment.model_working_name_hint, 120)) fields.model_working_name_hint = text(fragment.model_working_name_hint, 120);
   if (text(fragment.customer_name, 120)) fields.customer_name = text(fragment.customer_name, 120);
   if (/^\d{4}-\d{2}-\d{2}$/.test(text(fragment.date, 10))) fields.date = text(fragment.date, 10);
   if (/^\d{2}:\d{2}$/.test(text(fragment.time, 5))) fields.time = text(fragment.time, 5);
@@ -134,6 +166,8 @@ function materialFields(fragment = {}) {
   if (positiveNumber(fragment.duration_hours)) fields.duration_hours = positiveNumber(fragment.duration_hours);
   if (text(fragment.location, 160)) fields.location = text(fragment.location, 160);
   if (positiveNumber(fragment.amount_thb)) fields.amount_thb = positiveNumber(fragment.amount_thb);
+  if (positiveNumber(fragment.original_amount_thb)) fields.original_amount_thb = positiveNumber(fragment.original_amount_thb);
+  if (text(fragment.pricing_adjustment, 40)) fields.pricing_adjustment = text(fragment.pricing_adjustment, 40);
   if (positiveNumber(fragment.deposit_amount_thb)) fields.deposit_amount_thb = positiveNumber(fragment.deposit_amount_thb);
   if (fragment.deposit_signal === true) fields.trigger = "deposit";
   return fields;
@@ -354,5 +388,8 @@ export const KENJI_BOOKING_ACCUMULATOR_INTERNALS = Object.freeze({
   materialFields,
   parseLooseAmount,
   placeLike,
+  extractModelCodeName,
+  extractDiscountFromAmount,
+  looseLocationBesideTime,
   mergedIntent,
 });
