@@ -34,6 +34,14 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
 });
 
+test("bare MMD MODEL entry keeps the exact published Mini App base URL", () => {
+  const request = new Request("https://mmdbkk.com/sigil/model/dashboard");
+  assert.equal(
+    modelMiniAppHandoffUrl(request),
+    "https://miniapp.line.me/2010864854-N34SgCqq",
+  );
+});
+
 test("anonymous dashboard entry hands off to the canonical LINE Mini App before LIFF init", async () => {
   const request = new Request(
     "https://mmdbkk.com/sigil/model/dashboard?lang=th&flow=verify&activation=signed.token&unknown=drop-me",
