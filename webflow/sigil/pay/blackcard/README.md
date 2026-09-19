@@ -32,3 +32,10 @@ This route is the Black Card entry surface for the canonical signed payment flow
 - Route: `/sigil/pay/blackcard`
 
 Files in this folder are a source snapshot of the Webflow page after the v18 restore.
+
+## Visual assets · 2026-09-19
+- Hero: `Sigil Black 01.webp`
+- Payment summary image: `Sigil Black 02.webp`
+- MMD note image: `Sigil Black 03.webp`
+- Payment proof card background: `Sigil Black 04.webp`
+- All four assets are presentation-only. Signed-token validation, payment instructions, payment destinations, proof upload, and verification authority remain unchanged.
