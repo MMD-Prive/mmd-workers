@@ -673,10 +673,55 @@ Owner Summary consumes the same server-side queue projection and exposes:
 
 HYPE only presents this information to verified Owner Mode. It does not auto-transition a case, auto-resolve an outcome or execute protected business actions from an SLA indicator.
 
+## Recovery Queue Assignment
+
+Coordination assignment uses:
+
+`mmd-recovery-assignment-v1-20260919`
+
+Assignment is stored inside the existing Recovery Case payload and is explicitly not an authority grant, lock, business owner record or canonical service assignment.
+
+Supported states:
+
+- `unassigned` — no operator has claimed coordination ownership;
+- `assigned` — one credential-bound Owner/Admin actor is recorded as the current coordinator.
+
+Supported browser actions:
+
+- `claim` — claim an unassigned open Case for yourself;
+- `release` — release your own assignment;
+- `takeover` — Owner-only coordination takeover.
+
+Rules:
+
+- an operator cannot claim over another current assignment;
+- an operator cannot release another actor's assignment;
+- Owner may takeover or release another assignment;
+- closed `customer_notified` Cases cannot be newly claimed/taken over;
+- claim/release/takeover never changes Recovery lifecycle state or outcome;
+- assignment writes do not update Recovery `state_updated_at`, so they cannot reset or extend the operational SLA clock;
+- assignment never gates or grants Resolve authority. Existing protected-action authority checks remain independent.
+
+Queue filters add:
+
+- `assignment=all / assigned / unassigned`.
+
+Queue metrics add:
+
+- assigned open Cases;
+- unassigned open Cases;
+- attention Cases that are still unassigned.
+
+Within the same SLA tier, unassigned Cases are surfaced before assigned Cases so the Owner can see coordination gaps without treating assignment as business truth.
+
+Owner Summary exposes only bounded assignment labels such as `Per`, `Owner` or `Operator`. Internal assignment keys are not projected to Telegram or browser output.
+
+HYPE Owner Summary may recommend opening the unassigned Recovery queue. HYPE itself remains read-only and cannot claim, release or takeover a Case.
+
 ## Next implementation lanes
 
 1. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates;
-2. optional queue assignment / operator ownership metadata if needed, without granting new business authority.
+2. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model.
 
 All future lanes must preserve the same authority and privacy locks.
 
