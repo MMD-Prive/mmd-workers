@@ -1,0 +1,6 @@
+<!-- MMD /sigil/pay/membership canonical compatibility bridge · updated 2026-09-19 -->
+<meta name="robots" content="noindex,nofollow">
+<script>
+(function(){"use strict";var p=String(location.pathname||"").replace(/\/+$/,"")||"/",q=new URLSearchParams(location.search||""),t=q.get("t")||"",x="";function pay(v){var u=new URL("/sigil/pay",location.origin);u.searchParams.set("t",v);return u.pathname+u.search}function member(){var u=new URL("/sigil/member/membership",location.origin);["plan","package","tier","code","promo","src","campaign","from"].forEach(function(k){var v=q.get(k);if(v)u.searchParams.set(k,v)});return u.pathname+u.search+(location.hash||"")}if(p==="/sigil/pay/renew")x="/sigil/pay/renewal"+(location.search||"")+(location.hash||"");else if(p==="/sigil/pay/membership"||p==="/pay/membership")x=t?pay(t):member();else if(p==="/sigil/pay/payment")x=t?pay(t):"/member/payments";if(x){window.MMDLegacyPaymentRouteBridgeV1={from:p,to:x,canonical:true,updated:"2026-09-19"};location.replace(x)}})();
+</script>
+<noscript><meta http-equiv="refresh" content="0;url=/sigil/member/membership"></noscript>
