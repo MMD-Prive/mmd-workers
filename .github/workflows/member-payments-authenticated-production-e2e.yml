@@ -1,6 +1,11 @@
 name: Member payments authenticated production E2E
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/member-payments-authenticated-production-e2e.yml"
   workflow_dispatch:
     inputs:
       expected_lane:
@@ -28,7 +33,7 @@ jobs:
     env:
       ORIGIN: https://mmdbkk.com
       REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
-      EXPECTED_LANE: ${{ inputs.expected_lane }}
+      EXPECTED_LANE: ${{ inputs.expected_lane || 'any' }}
     steps:
       - name: Require real member LIFF credential
         shell: bash
