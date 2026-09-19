@@ -187,6 +187,20 @@ export async function reserveMmdShopStock(env, input) {
     allocations,
     Number(env.MMD_SHOP_RESERVATION_TTL_MINUTES || 45),
   );
+
+  const orderRecordId = validRecordId(input?.order_record_id);
+  if (orderRecordId) {
+    try {
+      const baseNotes = clean(input?.order_notes, 14000);
+      await patchRecord(env, table(env, "orders"), orderRecordId, {
+        [ORDER_FIELDS.notes]: writeMmdShopReservation(baseNotes, reservation),
+      });
+    } catch (error) {
+      await bestEffortReleaseAllocations(env, orderId, allocations, "reservation_metadata_write_failed");
+      throw error;
+    }
+  }
+
   return reservation;
 }
 
