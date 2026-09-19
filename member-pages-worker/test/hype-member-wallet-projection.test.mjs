@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { CareBackStoreError } from "../src/care-back-claim-store.js";
 import {
   HYPE_MEMBER_WALLET_PATH,
   handleHypeMemberWallet,
@@ -182,9 +183,7 @@ test("HYPE coupon read conflicts collapse to review_required without internal co
         throw new Error("must remain read-only");
       },
       async readCouponWallet() {
-        const error = new Error("CARE_BACK_CODE_CONFLICT");
-        error.name = "CareBackStoreError";
-        throw error;
+        throw new CareBackStoreError("CARE_BACK_CODE_CONFLICT");
       },
     },
   }));
@@ -192,6 +191,6 @@ test("HYPE coupon read conflicts collapse to review_required without internal co
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.coupon.status, "unavailable");
+  assert.equal(body.coupon.status, "review_required");
   assert.doesNotMatch(JSON.stringify(body), /CARE_BACK_CODE_CONFLICT/);
 });
