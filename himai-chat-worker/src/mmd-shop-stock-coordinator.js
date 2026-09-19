@@ -47,7 +47,7 @@ export class MmdShopStockCoordinator {
       if (url.pathname === "/expire") {
         const result = await expireMmdShopReservations(this.env);
         const payment_expiry = [];
-        for (const orderId of result.expired_order_ids || []) {
+        for (const orderId of result.payment_expiry_order_ids || result.expired_order_ids || []) {
           payment_expiry.push(await expirePaymentIntent(this.env, orderId));
         }
         return { ok: true, ...result, payment_expiry };
