@@ -8,6 +8,7 @@ import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
 import {
+  commitViaMmdShopCoordinator,
   expireViaMmdShopCoordinator,
   releaseViaMmdShopCoordinator,
   MmdShopStockCoordinator,
@@ -22,7 +23,10 @@ export default {
     const path = normalizePath(url.pathname);
 
     if (path === "/mmd-shop/internal/reservation/release" && request.method.toUpperCase() === "POST") {
-      return handleInternalReservationRelease(request, env);
+      return handleInternalReservationMutation(request, env, "release");
+    }
+    if (path === "/mmd-shop/internal/reservation/commit" && request.method.toUpperCase() === "POST") {
+      return handleInternalReservationMutation(request, env, "commit");
     }
 
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
@@ -81,7 +85,7 @@ export default {
   },
 };
 
-async function handleInternalReservationRelease(request, env) {
+async function handleInternalReservationMutation(request, env, action) {
   const expected = String(env.INTERNAL_TOKEN || "").trim();
   const supplied = String(
     request.headers.get("x-internal-token")
@@ -98,10 +102,12 @@ async function handleInternalReservationRelease(request, env) {
   if (!reservation) return json({ ok: false, error: "reservation_required" }, 400);
 
   try {
-    const result = await releaseViaMmdShopCoordinator(env, reservation, body?.reason || "released");
+    const result = action === "commit"
+      ? await commitViaMmdShopCoordinator(env, reservation)
+      : await releaseViaMmdShopCoordinator(env, reservation, body?.reason || "released");
     return json({ ok: true, ...result }, 200);
   } catch (error) {
-    return json({ ok: false, error: String(error?.message || error || "release_failed") }, Number(error?.status || 500));
+    return json({ ok: false, error: String(error?.message || error || "reservation_mutation_failed") }, Number(error?.status || 500));
   }
 }
 
