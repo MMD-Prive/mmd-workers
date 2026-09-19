@@ -130,12 +130,13 @@ export function transitionMmdShopFulfillment(current, patch = {}) {
 export function publicMmdShopFulfillment(value, options = {}) {
   const item = sanitizeFulfillment(value || {});
   const includeAddress = options.includeAddress === true;
+  const maskPhoneValue = options.maskPhone !== false;
   return {
     schema: MMD_SHOP_FULFILLMENT_SCHEMA,
     state: item.state || "awaiting_payment",
     delivery_method: item.delivery_method || null,
     recipient_name: item.recipient_name || null,
-    phone: item.phone ? maskPhone(item.phone) : null,
+    phone: item.phone ? (maskPhoneValue ? maskPhone(item.phone) : item.phone) : null,
     address: includeAddress && item.delivery_method === "delivery"
       ? {
           address_line1: item.address_line1 || null,
