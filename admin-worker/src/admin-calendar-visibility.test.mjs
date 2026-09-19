@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -92,6 +92,32 @@ test('signed owner API reads MMD calendar without requiring auth/me actor projec
     assert.equal(r.status,200);const body=await r.json();assert.equal(body.schema,'mmd.admin.calendar.v1');assert.deepEqual(body.items,[]);
   });
 });
+test('signed owner can preview and run Cal reconcile only through private service binding',async()=>{
+  const calls=[];
+  const bridge={
+    async fetch(request){
+      calls.push({url:request.url,method:request.method});
+      const url=new URL(request.url);
+      assert.equal(url.hostname,'cal-sync.internal');
+      assert.equal(url.pathname,'/internal/holds/reconcile');
+      if(request.method==='GET')return Response.json({ok:true,mode:'preview',count:1,candidates:[{session_id:'SES-1'}]});
+      if(request.method==='POST')return Response.json({ok:true,mode:'write',candidates:1,summary:{created:1,existing:0,in_progress:0,skipped:0,deferred:0}});
+      return new Response(null,{status:405});
+    },
+  };
+  const scoped={...env,CAL_SYNC_WORKER:bridge};
+  const getResponse=await entry.fetch(await request('/v1/admin/calendar/reconcile?horizon_days=60&limit=10'),scoped,{});
+  assert.equal(getResponse.status,200);
+  assert.equal(getResponse.headers.get('x-mmd-calendar-write-authority'),'cal-sync-worker');
+  assert.equal((await getResponse.json()).mode,'preview');
+  const postResponse=await entry.fetch(await request('/v1/admin/calendar/reconcile?horizon_days=60&limit=10','owner','POST'),scoped,{});
+  assert.equal(postResponse.status,200);
+  const postBody=await postResponse.json();
+  assert.equal(postBody.mode,'write');
+  assert.equal(postBody.summary.created,1);
+  assert.deepEqual(calls.map(x=>x.method),['GET','POST']);
+});
+
 test('invalid date and unsupported writes do not reach data sources',async()=>{
   await withFetch(()=>{throw Error('must not fetch');},async()=>{
     assert.equal((await entry.fetch(await request('/v1/admin/calendar?date=2026-02-30'),env,{})).status,400);
