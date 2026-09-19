@@ -4,7 +4,8 @@ const STATUS_PATH = "/__internal/member-status/resolve";
 const PROFILE_PATH = "/__internal/member-profile/read";
 const MEMBER_TABLE = "Members";
 const CLIENT_TABLE = "Clients";
-const STAGING_TABLE = "LINE OFC Client Import Staging";
+const LEGACY_STAGING_TABLE = "LINE OFC Client Import Staging";
+const FAST_TRUST_STAGING_TABLE = "MMD — LINE OFC Client Import Staging";
 const ENTITLEMENT_TABLE = "MMD — Member Entitlements";
 const COMMITTED_LINE_MATCH_TYPE = "line_user_id_exact";
 const COMMITTED_LINE_DECISION = "link_existing_client";
@@ -100,7 +101,7 @@ export async function resolveLineOaFastTrust(env = {}, lineUserId) {
   if (!lineId) return { tier: null, reason: "invalid_line_identity" };
   if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return { tier: null, reason: "airtable_unavailable" };
 
-  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID || STAGING_TABLE).trim();
+  const stagingTable = String(env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE || FAST_TRUST_STAGING_TABLE).trim();
   try {
     const records = await airtableList(env, stagingTable, {
       filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
@@ -249,7 +250,7 @@ export async function recoverCanonicalMemberLineLink(env = {}, lineUserId) {
 
   const memberTable = String(env.AIRTABLE_TABLE_MEMBERS || MEMBER_TABLE);
   const clientTable = String(env.AIRTABLE_TABLE_CLIENTS || CLIENT_TABLE);
-  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || STAGING_TABLE);
+  const stagingTable = String(env.AIRTABLE_TABLE_LINE_OFC_STAGING || LEGACY_STAGING_TABLE);
   const entitlementTable = String(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || ENTITLEMENT_TABLE);
   const memberLineField = String(env.AIRTABLE_MEMBERS_LINE_USER_ID_FIELD || "line_id").trim();
   const memberEmailField = String(env.AIRTABLE_MEMBERS_EMAIL_FIELD || "Contact Email").trim();
