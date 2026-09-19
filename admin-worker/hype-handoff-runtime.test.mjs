@@ -310,6 +310,17 @@ test("HYPE Shop recovery correlates canonical Order Payment Fulfillment and reus
     assert.match(matrixRecord.fields.important_open_loops_json, /shop_recovery/);
     assert.match(matrixRecord.fields.do_not_ask_again_json, /shop_order_reference/);
 
+    // Simulate the owning operator advancing the same case before the customer
+    // follows up again. Correlation refresh must never move the state backwards.
+    stored.handoff_tracking = {
+      ...stored.handoff_tracking,
+      state: "reviewing",
+      updated_at: "2026-09-19T12:15:00.000Z",
+      actor_role: "owner",
+    };
+    matrixRecord.fields.payload_json = JSON.stringify(stored);
+    matrixRecord.fields.conversation_stage = "handoff_reviewing";
+
     const second = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
       telegram_user_id: "111111",
       target: "per",
@@ -322,6 +333,11 @@ test("HYPE Shop recovery correlates canonical Order Payment Fulfillment and reus
     assert.equal(second.status, 200);
     assert.equal(secondBody.handoff_id, firstBody.handoff_id);
     assert.equal(secondBody.recovery_correlation.case_ref, firstBody.handoff_id);
+    const refreshed = JSON.parse(matrixRecord.fields.payload_json);
+    assert.equal(refreshed.handoff_tracking.state, "reviewing");
+    assert.equal(refreshed.handoff_tracking.actor_role, "owner");
+    assert.equal(matrixRecord.fields.conversation_stage, "handoff_reviewing");
+    assert.match(matrixRecord.fields.last_confirmed_outcome, /context refreshed without changing authority state/);
     assert.equal(shopReads, 2);
     assert.equal(matrixWrites.length, 2);
 
