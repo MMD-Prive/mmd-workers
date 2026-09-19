@@ -7,7 +7,7 @@ const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
-const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_model_liff_primary_v1";
+const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
 const MODEL_LIFF_IDS = Object.freeze({
   developing: "2010864852-MuzunIKU",
