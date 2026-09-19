@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      ORIGIN: https://www.mmdbkk.com
+      # Canonical admin-session smoke host. The apex route is the proven owner-bound\n      # ingress used by authenticated production E2E workflows.\n      ORIGIN: https://mmdbkk.com
       ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
       MANIFEST: docs/knowledge/KENJI_KNOWLEDGE_SEED_PACK_V1.normalized.json
     steps:
@@ -103,14 +103,21 @@ jobs:
             --data-urlencode "credential=$ADMIN_LOGIN_CREDENTIAL" \
             --data-urlencode "next=/internal/admin/kenji" \
             "$ORIGIN/internal/admin/login/session")"
-          test "$login_code" = "303"
-          grep -qi '^location: /internal/admin/kenji' "$login_headers"
+          echo "Kenji owner login HTTP $login_code"
+          login_location="$(awk 'BEGIN{IGNORECASE=1} /^location:/{sub(/\r$/, "", $0); sub(/^[^:]+:[[:space:]]*/, "", $0); print; exit}' "$login_headers")"
+          echo "Kenji owner login location=${login_location:-missing}"
+          if [ "$login_code" != "303" ]; then
+            sed -E '/^set-cookie:/Id' "$login_headers" >&2 || true
+            exit 1
+          fi
+          test "$login_location" = "/internal/admin/kenji"
           grep -q 'mmd_admin_gate_v1' "$cookie_jar"
 
           auth_body="$RUNNER_TEMP/kenji-seed-auth.json"
           auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
             -b "$cookie_jar" -o "$auth_body" -w "%{http_code}" \
             "$ORIGIN/v1/admin/auth/me")"
+          echo "Kenji owner auth/me HTTP $auth_code"
           test "$auth_code" = "200"
           jq -e '.ok == true' "$auth_body" >/dev/null
           echo "Canonical admin session authenticated."
