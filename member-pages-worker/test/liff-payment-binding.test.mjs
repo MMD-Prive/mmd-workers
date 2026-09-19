@@ -169,6 +169,10 @@ describe("LIFF payments-worker binding", () => {
     assert.equal(stored.payment_binding_status, "canonical_pending");
     assert.equal(stored.payment_ref, "pay_1234567890abcdef");
     assert.equal(stored.payment_stage, "membership");
+    assert.equal(stored.payment_package_code, "premium");
+    assert.equal(stored.payment_amount_thb, 1999);
+    assert.equal(stored.customer_payment_url, "https://mmdbkk.com/sigil/pay?t=signed_token_123");
+    assert.ok(Date.parse(stored.payment_intent_created_at));
     assert.equal(stored.route_after_liff, "/member/payments");
     assert.equal(stored.renewal_offer.amount_thb, 1999);
   });
