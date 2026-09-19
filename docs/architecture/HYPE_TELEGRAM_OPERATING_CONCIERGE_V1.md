@@ -465,10 +465,21 @@ P6 may emit bounded internal Telegram alerts to the canonical Booking / Payment 
 
 Customer transaction details remain private-chat only. Calling `/submit` or `/progress` in Standard, Premium, Preview or another group must not read or execute the customer's draft.
 
+### P6 progress observation
+
+`/progress` reads the stored execution receipt and then performs a bounded canonical observation where a direct authority read exists.
+
+- Payment -> current Payment Authority state such as paid / review_required / pending;
+- MMS -> canonical pre-booking status from `MMS_WORKER` by exact prebooking ref;
+- Renewal -> current entitlement level/lifecycle/active-through only; HYPE must not infer that renewal completed merely because entitlement is active;
+- Booking -> receipt-level request state only unless an exact canonical correlation is available; HYPE must not infer Job confirmation from an unrelated active Job.
+
+Every observation includes `final_confirmation_observed=false` unless the owning authority explicitly exposes a final confirmation state. No cross-record inference is allowed.
+
 ## Next implementation lanes
 
-1. authority-result close-loop observation for Booking/Payment/Renewal/MMS receipts without inferring completion;
-2. operator acknowledgement state for failed or review-required executions;
+1. operator acknowledgement state for failed or review-required executions;
+2. exact Booking Request -> Job correlation receipt once the booking authority exposes a bounded read contract;
 3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection.
 
 All future lanes must preserve the same authority and privacy locks.
