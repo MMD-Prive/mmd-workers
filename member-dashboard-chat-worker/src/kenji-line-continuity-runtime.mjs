@@ -79,6 +79,18 @@ function unique(values = []) {
   return [...new Set(values.map(text).filter(Boolean))];
 }
 
+function parseObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  const raw = text(value);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
 function eventText(event = {}) {
   if (event?.type === "message" && event?.message?.type === "text") return text(event.message.text);
   if (event?.type === "postback") return text(event?.postback?.displayText || event?.postback?.data);
@@ -159,7 +171,7 @@ async function airtableWrite(env = {}, table = "", method = "POST", body = {}) {
 function mapMatrixRecord(row = null) {
   if (!row?.fields) return null;
   const x = row.fields;
-  return buildConversationMatrixV1({
+  const matrix = buildConversationMatrixV1({
     matrix_id: x[F.MATRIX_ID],
     client_record_id: Array.isArray(x[F.MATRIX_CLIENT]) ? x[F.MATRIX_CLIENT][0] : "",
     conversation_id_hash: x[F.MATRIX_CONVERSATION_HASH],
@@ -192,6 +204,10 @@ function mapMatrixRecord(row = null) {
     matrix_status: x[F.MATRIX_STATUS],
     version: x[F.MATRIX_VERSION],
   });
+  return {
+    ...matrix,
+    payload_json: parseObject(x[F.MATRIX_PAYLOAD]),
+  };
 }
 
 async function findMatrix(env, conversationHash, timeoutMs = AIRTABLE_READ_TIMEOUT_MS) {
@@ -507,6 +523,7 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
     [F.MATRIX_STATUS]: matrix.matrix_status,
     [F.MATRIX_VERSION]: matrix.version,
     [F.MATRIX_PAYLOAD]: JSON.stringify({
+      ...parseObject(continuity?.matrix?.payload_json),
       runtime_schema: "mmd.kenji_line_continuity_runtime.v1",
       continuity_schema: text(continuity.schema),
       continuity_decision: text(continuity.decision),
@@ -542,6 +559,86 @@ async function recoverContinuityStorageForWrite(env = {}, continuity = {}) {
     storage_status: "ready",
     available: true,
     write_recovered: true,
+  };
+}
+
+export async function writeKenjiLineBookingAccumulatorState({
+  env = {},
+  continuity = {},
+  bookingDraft = {},
+  lastEventId = "",
+  now = "",
+} = {}) {
+  const writeContinuity = await recoverContinuityStorageForWrite(env, continuity);
+  if (text(writeContinuity.storage_status) !== "ready" || !text(writeContinuity.conversation_hash)) {
+    return {
+      skipped: true,
+      reason: "continuity_storage_unavailable",
+      recovery_attempted: text(continuity.storage_status) !== "ready" && Boolean(text(continuity.conversation_hash)),
+    };
+  }
+
+  const stamp = text(now) || new Date().toISOString();
+  const prior = writeContinuity.matrix || {};
+  const priorPayload = parseObject(prior.payload_json);
+  const payload = {
+    ...priorPayload,
+    booking_draft_v1: bookingDraft,
+  };
+  const version = Math.max(0, Number(prior.version) || 0) + 1;
+  const matrix = buildConversationMatrixV1({
+    ...prior,
+    matrix_id: text(prior.matrix_id) || `kcm1_line_${text(writeContinuity.conversation_hash).slice(0, 20)}`,
+    client_record_id: text(writeContinuity.client_record_id || prior.client_record_id),
+    conversation_id_hash: text(writeContinuity.conversation_hash || prior.conversation_id_hash),
+    channel: LINE_CHANNEL,
+    conversation_scope: text(prior.conversation_scope) || `line:${text(writeContinuity.conversation_hash).slice(0, 20)}`,
+    topic: "booking",
+    subtopic: text(prior.subtopic) || "booking_accumulator",
+    relationship_context: text(prior.relationship_context) || (writeContinuity.client_record_id ? "known_customer" : "new_contact"),
+    conversation_stage: "in_progress",
+    awaiting_from: "customer",
+    pending_action: Array.isArray(bookingDraft?.missing_fields) && bookingDraft.missing_fields.length
+      ? `collect booking fields: ${bookingDraft.missing_fields.join(",")}`
+      : "run canonical booking readiness checks",
+    continuity_summary: "Booking fields are accumulated in Conversation Matrix. Protected truth must be refreshed before action.",
+    important_open_loops: Array.isArray(bookingDraft?.missing_fields) && bookingDraft.missing_fields.length
+      ? ["booking_fields"]
+      : ["booking_readiness"],
+    handoff_required: false,
+    handoff_owner: "none",
+    handoff_reason: "",
+    live_truth_required: true,
+    live_truth_domains: unique([...(Array.isArray(prior.live_truth_domains) ? prior.live_truth_domains : []), "booking", "availability"]),
+    last_event_id: text(lastEventId || prior.last_event_id),
+    last_interaction_at: stamp,
+    state_updated_at: stamp,
+    state_expires_at: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    matrix_status: "active",
+    version,
+  });
+
+  const fields = matrixFields(matrix, { ...writeContinuity, matrix: { ...prior, payload_json: payload } }, {}, false, false);
+  fields[F.MATRIX_PAYLOAD] = JSON.stringify(payload);
+  fields[F.MATRIX_LAST_EVENT] = text(lastEventId || prior.last_event_id);
+  fields[F.MATRIX_LAST_INTERACTION] = stamp;
+  fields[F.MATRIX_UPDATED_AT] = stamp;
+  fields[F.MATRIX_VERSION] = version;
+
+  const recordId = text(writeContinuity.matrix_record_id);
+  const result = recordId
+    ? await airtableWrite(env, matrixTable(env), "PATCH", { records: [{ id: recordId, fields }], typecast: true })
+    : await airtableWrite(env, matrixTable(env), "POST", { records: [{ fields }], typecast: true });
+
+  if (!result.ok) return { skipped: true, reason: result.reason, status: result.status, matrix, booking_draft: bookingDraft };
+  const row = Array.isArray(result.payload?.records) ? result.payload.records[0] : result.payload;
+  return {
+    id: text(row?.id),
+    created: !recordId,
+    recovered: writeContinuity.write_recovered === true,
+    version,
+    matrix: { ...matrix, payload_json: payload },
+    booking_draft: bookingDraft,
   };
 }
 
