@@ -707,7 +707,7 @@ test("Booking recovery binds an owned Booking Request and exact Job chain to the
     }
 
     if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
-    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+    throw new Error(`unexpected fetch ${parsed.pathname} ${method}`);
   };
 
   try {
@@ -797,7 +797,7 @@ test("Booking recovery fails closed when the Booking Request belongs to another 
       return Response.json({ records: [matrixRecord] });
     }
     if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
-    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+    throw new Error(`unexpected fetch ${parsed.pathname} ${method}`);
   };
 
   try {
@@ -858,7 +858,7 @@ test("MMS recovery binds only an owned canonical Pre-booking to the same Case Re
       return Response.json({ records: [matrixRecord] });
     }
     if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
-    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+    throw new Error(`unexpected fetch ${parsed.pathname} ${method}`);
   };
 
   const mmsBinding = {
