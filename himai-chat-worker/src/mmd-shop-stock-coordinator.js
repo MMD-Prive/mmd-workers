@@ -1,4 +1,10 @@
 import {
+  inspectMmdShopStockHealth,
+  formatMmdShopStockHealthAlert,
+  mmdShopStockHealthFingerprint,
+} from "./mmd-shop-stock-health.js";
+import { sendMmdShopOperationalAlert } from "./shop-alerts.js";
+import {
   abortMmdShopPaymentClaim,
   claimMmdShopReservationForPayment,
   commitMmdShopReservation,
@@ -51,6 +57,43 @@ export class MmdShopStockCoordinator {
           payment_expiry.push(await expirePaymentIntent(this.env, orderId));
         }
         return { ok: true, ...result, payment_expiry };
+      }
+      if (url.pathname === "/stock-health") {
+        const report = await inspectMmdShopStockHealth(this.env);
+        const fingerprint = mmdShopStockHealthFingerprint(report);
+        const previous = String(await this.state.storage.get("stock_health_fingerprint") || "");
+        const actionable = Number(report.metrics?.low_stock_batches || 0) > 0
+          || Number(report.metrics?.reconciliation_mismatches || 0) > 0;
+        const healthyFingerprint = JSON.stringify({ low: [], mismatch: [] });
+        let alert = { ok: true, skipped: true, reason: "unchanged" };
+
+        if (fingerprint !== previous) {
+          if (actionable) {
+            alert = await sendMmdShopOperationalAlert(
+              this.env,
+              formatMmdShopStockHealthAlert(report),
+            );
+          } else if (previous && previous !== healthyFingerprint) {
+            alert = await sendMmdShopOperationalAlert(
+              this.env,
+              formatMmdShopStockHealthAlert(report, { recovered: true }),
+            );
+          } else {
+            alert = { ok: true, skipped: true, reason: "healthy_initial_state" };
+          }
+
+          if (alert.ok === true || alert.skipped === true) {
+            await this.state.storage.put("stock_health_fingerprint", fingerprint);
+            await this.state.storage.put("stock_health_checked_at", new Date().toISOString());
+          }
+        }
+
+        return {
+          ok: true,
+          report,
+          fingerprint_changed: fingerprint !== previous,
+          alert,
+        };
       }
       return { ok: false, error: "not_found", status: 404 };
     };
@@ -146,4 +189,8 @@ export async function commitViaMmdShopCoordinator(env, reservation) {
 
 export async function expireViaMmdShopCoordinator(env) {
   return requestCoordinator(env, "/expire", {});
+}
+
+export async function stockHealthViaMmdShopCoordinator(env) {
+  return requestCoordinator(env, "/stock-health", {});
 }
