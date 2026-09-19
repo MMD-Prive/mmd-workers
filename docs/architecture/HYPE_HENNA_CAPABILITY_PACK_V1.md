@@ -122,6 +122,7 @@ Required behavior:
 - recovery picker callback data carries only Case Reference + picker revision + option index; canonical Order / Booking / MMS references stay server-side, and ownership is re-checked before binding; legacy callbacks remain stale-safe;
 - after selection, carry the bounded Order / Payment / Fulfillment snapshot under that same Case Reference without moving the handoff lifecycle backwards;
 - when a picker snapshot is stale, refresh canonical authority and reissue choices under the same Case Reference; never map an old option index onto a newer candidate array and never reset lifecycle/SLA state;
+- Recovery Control / Owner Summary may expose bounded picker revision/watch metadata and Owner-only canonical refresh; this remains interaction coordination only, does not let HYPE/HENNA choose a candidate, and does not enable HENNA auto reply;
 - Shop, Booking and MMS recovery use the same Case lifecycle plus `mmd-recovery-outcome-taxonomy-v1-20260919`;
 - Recovery outcome is workflow metadata written by an allowed authority. It never substitutes for Payment / Order / Job / MMS business truth;
 - refresh canonical Shop truth before any protected follow-up.
