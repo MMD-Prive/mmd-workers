@@ -25,7 +25,7 @@ function makeEnv() {
   return {
     INTERNAL_TOKEN: "internal-secret",
     AIRTABLE_BASE_ID: "appTest",
-    AIRTABLE_TOKEN: "token",
+    AIRTABLE_API_KEY: "token",
   };
 }
 
