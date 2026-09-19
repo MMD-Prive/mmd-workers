@@ -2026,6 +2026,243 @@ function safeRecoveryCorrelation(value = {}) {
   };
 }
 
+function safeRecoveryOrderOption(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const orderId = clean(value.order_id, 180);
+  if (!orderId) return null;
+  return {
+    order_id: orderId,
+    order_date: clean(value.order_date, 40) || null,
+    order_status: token(value.order_status) || "unknown",
+    payment_status: token(value.payment_status) || "unknown",
+    fulfillment_state: token(value.fulfillment_state) || "unknown",
+    total_thb: nullableNonNegative(value.total_thb),
+    item_summary: clean(value.item_summary, 240) || "MMD Shop Order",
+  };
+}
+
+function recoveryOrderOptionFromOrder(order = {}) {
+  const orderId = clean(order.order_id, 180);
+  if (!orderId) return null;
+  const names = (Array.isArray(order.items) ? order.items : [])
+    .map((item) => clean(item?.item_name, 100))
+    .filter(Boolean)
+    .slice(0, 2);
+  const extra = Math.max(0, (Array.isArray(order.items) ? order.items.length : 0) - names.length);
+  return safeRecoveryOrderOption({
+    order_id: orderId,
+    order_date: clean(order.order_date, 40),
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    total_thb: nullableNonNegative(order.total_thb),
+    item_summary: names.length
+      ? `${names.join(", ")}${extra ? ` +${extra}` : ""}`
+      : "MMD Shop Order",
+  });
+}
+
+function safeRecoveryCase(value = {}, tracking = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const caseRef = clean(value.case_ref || tracking.id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)) return null;
+  const domain = normalizeRecoveryDomain(value.domain);
+  const state = token(tracking.state || value.state) || "prepared";
+  const outcomeCode = token(value.outcome_code) || "intake_received";
+  const label = recoveryOutcomeLabel(domain, outcomeCode);
+  return {
+    schema: "mmd.recovery_case.v1",
+    taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+    case_ref: caseRef,
+    domain,
+    state,
+    outcome_code: label ? outcomeCode : "intake_received",
+    outcome_label: label || recoveryOutcomeLabel(domain, "intake_received"),
+    outcome_terminal: isTerminalRecoveryOutcome(domain, label ? outcomeCode : "intake_received"),
+    actor_role: token(value.actor_role || tracking.actor_role) || "hype",
+    updated_at: clean(value.updated_at || tracking.updated_at, 80) || null,
+    business_truth_mutated: false,
+  };
+}
+
+function mergeRecoveryCase(prior, seed, tracking, stamp) {
+  if (!seed && !prior) return null;
+  const caseRef = clean(seed?.case_ref || prior?.case_ref || tracking?.id, 180);
+  if (!caseRef) return null;
+  const priorSame = prior && clean(prior.case_ref, 180) === caseRef;
+  const seedDomain = normalizeRecoveryDomain(seed?.domain);
+  const domain = priorSame && prior.domain !== "unclassified"
+    ? prior.domain
+    : seedDomain;
+  const outcomeCode = priorSame
+    ? prior.outcome_code || "intake_received"
+    : token(seed?.outcome_code) || "intake_received";
+  return safeRecoveryCase({
+    case_ref: caseRef,
+    domain,
+    state: token(tracking?.state) || "prepared",
+    outcome_code: outcomeCode,
+    actor_role: priorSame ? prior.actor_role : "hype",
+    updated_at: priorSame ? prior.updated_at : stamp,
+  }, tracking);
+}
+
+function evolveRecoveryCase(prior, { caseRef, domain, state, outcomeCode, actorRole, stamp }) {
+  return safeRecoveryCase({
+    ...prior,
+    case_ref: caseRef,
+    domain,
+    state,
+    outcome_code: outcomeCode || prior?.outcome_code || "intake_received",
+    actor_role: actorRole,
+    updated_at: stamp,
+  }, {
+    id: caseRef,
+    state,
+    actor_role: actorRole,
+    updated_at: stamp,
+  });
+}
+
+async function selectShopRecoveryOrderForCase(env, { telegramUserId, handoffId, selectionIndex }) {
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+  if (identity?.status !== "resolved" || !canonicalClientId) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const fields = matrix.record.fields || {};
+  const linkedClients = Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT].map((id) => clean(id, 80)) : [];
+  if (!linkedClients.includes(canonicalClientId)) {
+    return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+  }
+
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  if (["resolved", "customer_notified"].includes(token(tracking.state))) {
+    return json({ ok: false, state: "selection_locked", error: "recovery_case_terminal" }, 409);
+  }
+
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (!priorCorrelation || priorCorrelation.domain !== "mmd_shop") {
+    return json({ ok: false, state: "selection_unavailable", error: "shop_recovery_not_active" }, 409);
+  }
+
+  const option = priorCorrelation.options?.[selectionIndex] || null;
+  if (!option?.order_id) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_order_option_stale" }, 409);
+  }
+
+  if (priorCorrelation.correlated === true) {
+    if (clean(priorCorrelation.order_id, 180) === clean(option.order_id, 180)) {
+      return json({
+        ok: true,
+        state: "correlated",
+        replayed: true,
+        handoff_id: handoffId,
+        recovery_correlation: priorCorrelation,
+        recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+        guardrails: handoffStatusGuardrails(),
+      });
+    }
+    return json({ ok: false, state: "selection_locked", error: "recovery_order_already_bound" }, 409);
+  }
+
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, option.order_id);
+  const correlation = read.body?.correlation || {};
+  const order = read.status === 200 && read.body?.ok === true && correlation.exact_owned_match === true
+    ? (Array.isArray(read.body.orders) ? read.body.orders : [])
+        .find((item) => clean(item?.order_id, 180) === clean(option.order_id, 180))
+    : null;
+  if (!order) {
+    return json({ ok: false, state: "selection_unavailable", error: "selected_order_not_owned_or_stale" }, 409);
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = {
+    ...priorCorrelation,
+    state: "correlated",
+    correlated: true,
+    case_ref: handoffId,
+    order_id: clean(order.order_id, 180),
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    candidate_count: Math.max(1, priorCorrelation.candidate_count || 1),
+    method: "customer_selected_owned_order",
+    selection_locked: true,
+    selected_by: "customer",
+    selected_at: stamp,
+    source_authority: clean(read.body.authority, 160) || priorCorrelation.source_authority || "member-pages-worker",
+    live_refresh_status: "fresh",
+    refreshed_at: stamp,
+  };
+
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, tracking);
+  const recoveryCase = evolveRecoveryCase(
+    priorRecoveryCase || safeRecoveryCase({
+      case_ref: handoffId,
+      domain: "mmd_shop",
+      outcome_code: "intake_received",
+    }, tracking),
+    {
+      caseRef: handoffId,
+      domain: "mmd_shop",
+      state: token(tracking.state) || "prepared",
+      outcomeCode: priorRecoveryCase?.outcome_code || "intake_received",
+      actorRole: "customer",
+      stamp,
+    },
+  );
+
+  const version = Math.max(0, Number(fields[F.VERSION]) || 0) + 1;
+  const dontAsk = unique([...parseList(fields[F.DONT_ASK]), "shop_order_reference"]);
+  const loops = unique([...parseList(fields[F.OPEN_LOOPS]), "service_recovery", "shop_recovery", "human_handoff"]);
+  const patch = {
+    [F.LAST_CUSTOMER_ACTION]: `selected_shop_order:${clean(order.order_id, 180)}`,
+    [F.LAST_KENJI_ACTION]: "recovery_order_correlated",
+    [F.LAST_OUTCOME]: `Shop Order selected by customer and bound to existing Case Ref ${handoffId}; handoff state unchanged`,
+    [F.DONT_ASK]: JSON.stringify(dontAsk),
+    [F.OPEN_LOOPS]: JSON.stringify(loops),
+    [F.LAST_EVENT]: `hype_recovery_order_selected:${handoffId}`,
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      recovery_correlation: updatedCorrelation,
+      recovery_case: recoveryCase,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{ id: matrix.record.id, fields: patch }],
+    typecast: true,
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: "correlated",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: safeRecoveryCorrelation(updatedCorrelation),
+    recovery_case: recoveryCase,
+    guardrails: handoffStatusGuardrails(),
+  });
+}
+
 async function refreshShopRecoveryCorrelation(env, telegramUserId, prior = {}) {
   const orderId = clean(prior.order_id, 180);
   if (!orderId) return { ...prior, live_refresh_status: "unavailable", refreshed_at: null };
