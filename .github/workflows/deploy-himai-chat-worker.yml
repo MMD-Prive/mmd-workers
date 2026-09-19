@@ -152,14 +152,14 @@ jobs:
           console.log(`verified ${desired.length}/${desired.length} MMD Shop routes`);
           NODE
 
-      - name: Verify production health and catalog route
+      - name: Verify production MMD Shop catalog routes
         if: steps.route_sync.outcome == 'success'
         run: |
           set -euo pipefail
-          body="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-chat-worker.malemodel-bkk.workers.dev/health)"
-          echo "$body"
-          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.app !== "Himai Shop") process.exit(1)' "$body"
+          worker_catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-chat-worker.malemodel-bkk.workers.dev/mmd-shop/api/products)"
+          echo "$worker_catalog"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.shop !== "mmd-shop" || !Array.isArray(b.products)) process.exit(1)' "$worker_catalog"
 
-          catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/products)"
-          echo "$catalog"
-          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || !Array.isArray(b.products)) process.exit(1)' "$catalog"
+          custom_catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/products)"
+          echo "$custom_catalog"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.shop !== "mmd-shop" || !Array.isArray(b.products)) process.exit(1)' "$custom_catalog"
