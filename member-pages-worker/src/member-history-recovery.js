@@ -109,6 +109,9 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   if (!session || !safeLineUserId(session.line_user_id)) return false;
   const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
+  if (trigger !== "manual_refresh" && ["reconciled", "review_required"].includes(existing.state)) {
+    return true;
+  }
   await markQueued(env, session.line_user_id, trigger);
   schedule(ctx, runMemberHistoryRecovery({
     env,
