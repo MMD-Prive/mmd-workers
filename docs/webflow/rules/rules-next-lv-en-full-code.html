@@ -1,0 +1,900 @@
+<!--
+MMD PRIVÉ /rules — Next LV EN Webflow Full Code
+Route: /rules
+Placement: Webflow custom code / embed page source
+Notes:
+- Keeps the existing main Hito hero image as the page hero.
+- Adds Rules 01 as a separate lane image section under the hero, not as a hero replacement.
+- Mobile is compact; desktop is intentionally expansive.
+- Links split into customer/member and model lanes.
+-->
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&display=swap');
+
+  :root {
+    --mmd-bg: #050505;
+    --mmd-panel: rgba(14, 13, 12, 0.92);
+    --mmd-panel-strong: rgba(20, 18, 15, 0.96);
+    --mmd-line: rgba(226, 187, 105, 0.24);
+    --mmd-line-strong: rgba(226, 187, 105, 0.42);
+    --mmd-cream: #fff7e8;
+    --mmd-soft: rgba(255, 247, 232, 0.88);
+    --mmd-muted: rgba(255, 247, 232, 0.68);
+    --mmd-gold: #d9ad57;
+    --mmd-gold-soft: #f1d08a;
+    --mmd-black: #060606;
+    --mmd-ease: 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    background: var(--mmd-bg) !important;
+  }
+
+  .mmd-rules-page,
+  .mmd-rules-page * {
+    box-sizing: border-box;
+    font-family: "Noto Sans Thai", "LINE Seed Sans TH", "Line Seed Sans TH", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: geometricPrecision;
+  }
+
+  .mmd-rules-page {
+    min-height: 100svh;
+    color: var(--mmd-cream);
+    background:
+      radial-gradient(circle at 12% 0%, rgba(217, 173, 87, 0.13), transparent 31%),
+      radial-gradient(circle at 92% 10%, rgba(65, 44, 18, 0.22), transparent 36%),
+      linear-gradient(180deg, #050505 0%, #030303 100%);
+    padding: 14px 12px 38px;
+    overflow: hidden;
+  }
+
+  .mmd-rules-shell {
+    width: min(100%, 1520px);
+    margin: 0 auto;
+  }
+
+  .mmd-rules-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .mmd-rules-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--mmd-cream);
+    text-decoration: none;
+  }
+
+  .mmd-rules-brand-mark {
+    width: 46px;
+    flex: 0 0 46px;
+  }
+
+  .mmd-rules-brand-mark img {
+    display: block;
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.56));
+  }
+
+  .mmd-rules-brand-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .mmd-rules-brand-kicker,
+  .mmd-rules-brand-title,
+  .mmd-rules-pill,
+  .mmd-rules-eyebrow,
+  .mmd-rules-kicker,
+  .mmd-rules-btn,
+  .mmd-rules-lane-btn strong {
+    font-family: "Outfit", "Noto Sans Thai", sans-serif;
+  }
+
+  .mmd-rules-brand-kicker {
+    color: var(--mmd-gold-soft);
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-brand-title {
+    color: var(--mmd-cream);
+    font-size: 15px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-pills {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 7px;
+  }
+
+  .mmd-rules-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 1px solid var(--mmd-line);
+    background: rgba(255, 255, 255, 0.035);
+    color: #f2d38d;
+    font-size: 9px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-hero {
+    position: relative;
+    min-height: 500px;
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    background: #080808;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+    isolation: isolate;
+  }
+
+  .mmd-rules-hero-media,
+  .mmd-rules-hero-overlay {
+    position: absolute;
+    inset: 0;
+  }
+
+  .mmd-rules-hero-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 500px;
+    object-fit: cover;
+    object-position: 72% center;
+    filter: brightness(1.18) contrast(1.04) saturate(1.03);
+  }
+
+  .mmd-rules-hero-overlay {
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.04) 0%, rgba(0,0,0,0.28) 52%, rgba(0,0,0,0.82) 100%),
+      linear-gradient(90deg, rgba(0,0,0,0.84) 0%, rgba(0,0,0,0.5) 46%, rgba(0,0,0,0.08) 100%);
+    z-index: 1;
+  }
+
+  .mmd-rules-hero-inner {
+    position: relative;
+    z-index: 2;
+    min-height: 500px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 156px 16px 18px;
+  }
+
+  .mmd-rules-hero-copy {
+    max-width: 640px;
+  }
+
+  .mmd-rules-eyebrow {
+    margin: 0 0 10px;
+    color: #fff4e3;
+    font-size: 10px;
+    line-height: 1.2;
+    font-weight: 900;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    text-shadow: 0 8px 24px rgba(0,0,0,0.75);
+  }
+
+  .mmd-rules-headline {
+    margin: 0;
+    color: #fff6e5;
+    -webkit-text-fill-color: #fff6e5;
+    font-family: "Outfit", "Noto Sans Thai", sans-serif;
+    font-size: clamp(46px, 13vw, 68px);
+    line-height: 0.96;
+    font-weight: 900;
+    letter-spacing: -0.055em;
+    text-transform: uppercase;
+    text-shadow: 0 10px 30px rgba(0,0,0,0.75);
+  }
+
+  .mmd-rules-headline span {
+    display: block;
+    width: fit-content;
+    color: var(--mmd-gold);
+    -webkit-text-fill-color: var(--mmd-gold);
+    text-shadow: 0 10px 30px rgba(0,0,0,0.78), 0 0 18px rgba(217,173,87,0.18);
+  }
+
+  .mmd-rules-lead {
+    max-width: 610px;
+    margin: 13px 0 0;
+    color: rgba(255,247,232,0.94);
+    font-size: 14px;
+    line-height: 1.7;
+    text-shadow: 0 8px 24px rgba(0,0,0,0.72);
+  }
+
+  .mmd-rules-lane-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 14px auto 0;
+    padding: 10px;
+    border: 1px solid var(--mmd-line);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at 16% 0%, rgba(241, 208, 138, 0.12), transparent 32%),
+      linear-gradient(180deg, rgba(20,18,15,0.94), rgba(7,7,7,0.97));
+    box-shadow: 0 24px 70px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.045);
+    overflow: hidden;
+  }
+
+  .mmd-rules-lane-image {
+    position: relative;
+    min-height: 168px;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #080808;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.34);
+  }
+
+  .mmd-rules-lane-image img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 168px;
+    object-fit: cover;
+    object-position: center;
+    filter: brightness(1.08) contrast(1.04) saturate(1.03);
+  }
+
+  .mmd-rules-lane-image::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.02), rgba(0,0,0,0.34)),
+      linear-gradient(90deg, rgba(0,0,0,0.24), rgba(0,0,0,0.02) 55%, rgba(0,0,0,0.2));
+  }
+
+  .mmd-rules-lane-content {
+    padding: 4px 4px 2px;
+  }
+
+  .mmd-rules-signature {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 13px;
+  }
+
+  .mmd-rules-signature img {
+    display: block;
+    width: 66px;
+    height: auto;
+    filter: drop-shadow(0 10px 22px rgba(0,0,0,0.58));
+  }
+
+  .mmd-rules-signature span {
+    display: block;
+    width: 28px;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(217,173,87,0.72), transparent);
+  }
+
+  .mmd-rules-kicker {
+    margin: 0 0 8px;
+    color: var(--mmd-gold-soft);
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-lane-title,
+  .mmd-rules-section-title {
+    margin: 0;
+    color: var(--mmd-cream);
+    font-size: 24px;
+    line-height: 1.18;
+    font-weight: 900;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+  }
+
+  .mmd-rules-lane-text,
+  .mmd-rules-section-lead,
+  .mmd-rules-card-text {
+    margin: 10px 0 0;
+    color: var(--mmd-soft);
+    font-size: 13.5px;
+    line-height: 1.66;
+  }
+
+  .mmd-rules-lane-actions,
+  .mmd-rules-cta-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 9px;
+    margin-top: 14px;
+  }
+
+  .mmd-rules-lane-btn,
+  .mmd-rules-btn {
+    min-height: 58px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    padding: 13px 15px;
+    border-radius: 18px;
+    border: 1px solid rgba(226,187,105,0.28);
+    background: rgba(255,255,255,0.035);
+    color: #fff1c5;
+    text-decoration: none;
+    transition: transform var(--mmd-ease), border-color var(--mmd-ease), background var(--mmd-ease), box-shadow var(--mmd-ease);
+  }
+
+  .mmd-rules-lane-btn:hover,
+  .mmd-rules-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(226,187,105,0.5);
+    background: rgba(255,255,255,0.055);
+    box-shadow: 0 14px 34px rgba(0,0,0,0.22);
+  }
+
+  .mmd-rules-lane-btn strong {
+    color: inherit;
+    font-size: 13px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-lane-btn span {
+    color: rgba(255,247,232,0.74);
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+
+  .mmd-rules-btn {
+    align-items: center;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-lane-btn.is-gold,
+  .mmd-rules-btn-gold {
+    color: #171107;
+    -webkit-text-fill-color: #171107;
+    border-color: rgba(255,255,255,0.16);
+    background: linear-gradient(180deg, #fff0be 0%, #d6a14a 58%, #9d6b23 100%);
+    box-shadow: 0 14px 34px rgba(175,125,42,0.24), inset 0 1px 0 rgba(255,255,255,0.32);
+  }
+
+  .mmd-rules-lane-btn.is-gold span {
+    color: rgba(23,17,7,0.72);
+  }
+
+  .mmd-rules-writing,
+  .mmd-rules-visuals,
+  .mmd-rules-cta {
+    margin-top: 14px;
+  }
+
+  .mmd-rules-writing,
+  .mmd-rules-cta {
+    padding: 18px 15px;
+    border-radius: 22px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, rgba(18,18,18,0.9), rgba(8,8,8,0.95));
+    box-shadow: 0 22px 56px rgba(0,0,0,0.36);
+  }
+
+  .mmd-rules-section-kicker {
+    margin: 0 0 10px;
+    color: var(--mmd-gold-soft);
+    font-family: "Outfit", "Noto Sans Thai", sans-serif;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .mmd-rules-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .mmd-rules-block {
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(226,187,105,0.18);
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.016));
+  }
+
+  .mmd-rules-block-no {
+    margin-bottom: 10px;
+    color: #e6c678;
+    font-family: "Outfit", "Noto Sans Thai", sans-serif;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+  }
+
+  .mmd-rules-block-title {
+    margin: 0 0 8px;
+    color: var(--mmd-cream);
+    font-size: 18px;
+    line-height: 1.25;
+    font-weight: 900;
+  }
+
+  .mmd-rules-block-text {
+    margin: 0;
+    color: rgba(255,247,232,0.82);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 13.5px;
+    line-height: 1.66;
+  }
+
+  .mmd-rules-visuals {
+    display: none;
+  }
+
+  .mmd-rules-visual-card {
+    position: relative;
+    min-height: 230px;
+    border-radius: 24px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #080808;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.28);
+  }
+
+  .mmd-rules-visual-card img {
+    width: 100%;
+    height: 100%;
+    min-height: 230px;
+    object-fit: cover;
+    object-position: center;
+    filter: brightness(1.02) contrast(1.04) saturate(1.02);
+  }
+
+  .mmd-rules-visual-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.66)), linear-gradient(90deg, rgba(0,0,0,0.42), rgba(0,0,0,0.04));
+  }
+
+  .mmd-rules-visual-copy {
+    position: absolute;
+    z-index: 2;
+    left: 16px;
+    right: 16px;
+    bottom: 14px;
+  }
+
+  .mmd-rules-visual-copy strong {
+    display: block;
+    color: var(--mmd-cream);
+    font-size: 16px;
+    line-height: 1.18;
+    font-weight: 900;
+  }
+
+  .mmd-rules-visual-copy span {
+    display: block;
+    margin-top: 6px;
+    color: rgba(255,247,232,0.78);
+    font-size: 12.5px;
+    line-height: 1.45;
+  }
+
+  .mmd-fade-up {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(5px);
+    transition: opacity 700ms cubic-bezier(0.22,1,0.36,1), transform 700ms cubic-bezier(0.22,1,0.36,1), filter 700ms cubic-bezier(0.22,1,0.36,1);
+  }
+
+  .mmd-fade-up.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+
+  @media screen and (min-width: 768px) {
+    .mmd-rules-page {
+      padding: 22px 18px 56px;
+    }
+
+    .mmd-rules-topbar {
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .mmd-rules-brand-mark {
+      width: 56px;
+      flex-basis: 56px;
+    }
+
+    .mmd-rules-brand-title {
+      font-size: 20px;
+    }
+
+    .mmd-rules-hero,
+    .mmd-rules-hero-inner,
+    .mmd-rules-hero-image {
+      min-height: 680px;
+    }
+
+    .mmd-rules-hero {
+      border-radius: 30px;
+    }
+
+    .mmd-rules-hero-inner {
+      padding: 56px 46px 44px;
+    }
+
+    .mmd-rules-headline {
+      font-size: clamp(88px, 9vw, 138px);
+    }
+
+    .mmd-rules-lead {
+      max-width: 720px;
+      font-size: 19px;
+      line-height: 1.72;
+    }
+
+    .mmd-rules-lane-panel {
+      grid-template-columns: minmax(360px, 0.94fr) minmax(0, 1fr);
+      gap: 20px;
+      margin-top: 18px;
+      padding: 14px;
+      border-radius: 30px;
+    }
+
+    .mmd-rules-lane-image,
+    .mmd-rules-lane-image img {
+      min-height: 310px;
+    }
+
+    .mmd-rules-lane-image {
+      border-radius: 24px;
+    }
+
+    .mmd-rules-lane-content {
+      align-self: center;
+      padding: 22px 18px 22px 0;
+    }
+
+    .mmd-rules-signature img {
+      width: 82px;
+    }
+
+    .mmd-rules-lane-title,
+    .mmd-rules-section-title {
+      font-size: 36px;
+    }
+
+    .mmd-rules-lane-text,
+    .mmd-rules-section-lead {
+      max-width: 680px;
+      font-size: 15.5px;
+      line-height: 1.72;
+    }
+
+    .mmd-rules-lane-actions,
+    .mmd-rules-cta-actions {
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      max-width: 640px;
+    }
+
+    .mmd-rules-lane-btn,
+    .mmd-rules-btn {
+      min-height: 74px;
+      padding: 14px 18px;
+      border-radius: 22px;
+    }
+
+    .mmd-rules-writing,
+    .mmd-rules-cta {
+      padding: 28px 24px;
+    }
+
+    .mmd-rules-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .mmd-rules-visuals {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 16px;
+    }
+  }
+
+  @media screen and (min-width: 992px) {
+    .mmd-rules-page {
+      padding: 30px 28px 80px;
+    }
+
+    .mmd-rules-brand-mark {
+      width: 62px;
+      flex-basis: 62px;
+    }
+
+    .mmd-rules-hero,
+    .mmd-rules-hero-inner,
+    .mmd-rules-hero-image {
+      min-height: 820px;
+    }
+
+    .mmd-rules-hero {
+      border-radius: 36px;
+    }
+
+    .mmd-rules-hero-inner {
+      padding: 80px 76px 64px;
+    }
+
+    .mmd-rules-headline {
+      font-size: clamp(112px, 8.2vw, 164px);
+    }
+
+    .mmd-rules-lead {
+      max-width: 780px;
+      font-size: 22px;
+    }
+
+    .mmd-rules-lane-panel {
+      grid-template-columns: minmax(540px, 0.96fr) minmax(440px, 1fr);
+      gap: 30px;
+      padding: 18px;
+      border-radius: 36px;
+    }
+
+    .mmd-rules-lane-image,
+    .mmd-rules-lane-image img {
+      min-height: 440px;
+    }
+
+    .mmd-rules-lane-content {
+      padding: 34px 36px 34px 0;
+    }
+
+    .mmd-rules-signature img {
+      width: 96px;
+    }
+
+    .mmd-rules-lane-title,
+    .mmd-rules-section-title {
+      font-size: clamp(42px, 3.4vw, 60px);
+      letter-spacing: -0.05em;
+    }
+
+    .mmd-rules-lane-text,
+    .mmd-rules-section-lead {
+      font-size: 16.5px;
+    }
+
+    .mmd-rules-writing,
+    .mmd-rules-cta {
+      padding: 42px 38px;
+      border-radius: 30px;
+    }
+
+    .mmd-rules-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .mmd-rules-block {
+      padding: 18px;
+    }
+
+    .mmd-rules-block-text {
+      display: block;
+      overflow: visible;
+      font-size: 13.5px;
+      line-height: 1.72;
+    }
+
+    .mmd-rules-visual-card,
+    .mmd-rules-visual-card img {
+      min-height: 320px;
+    }
+
+    .mmd-rules-visual-copy {
+      left: 24px;
+      right: 24px;
+      bottom: 22px;
+    }
+
+    .mmd-rules-visual-copy strong {
+      font-size: 24px;
+    }
+
+    .mmd-rules-visual-copy span {
+      max-width: 540px;
+      font-size: 14px;
+    }
+
+    .mmd-rules-cta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+  }
+
+  @media screen and (max-width: 767px) {
+    .mmd-rules-topbar {
+      flex-direction: column;
+    }
+
+    .mmd-rules-pills {
+      justify-content: flex-start;
+    }
+
+    .mmd-rules-lane-text {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+  }
+</style>
+
+<main class="mmd-rules-page">
+  <div class="mmd-rules-shell">
+    <header class="mmd-rules-topbar">
+      <a class="mmd-rules-brand" href="/rules" aria-label="MMD Privé Rules">
+        <div class="mmd-rules-brand-mark">
+          <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" />
+        </div>
+        <div class="mmd-rules-brand-copy">
+          <span class="mmd-rules-brand-kicker">MMD PRIVÉ</span>
+          <span class="mmd-rules-brand-title">PRIVATE RULES</span>
+        </div>
+      </a>
+
+      <div class="mmd-rules-pills" aria-label="Rules pillars">
+        <span class="mmd-rules-pill">PRIVACY</span>
+        <span class="mmd-rules-pill">RESPECT</span>
+        <span class="mmd-rules-pill">NO DRUGS</span>
+      </div>
+    </header>
+
+    <section class="mmd-rules-hero" aria-label="MMD Privé private rules hero">
+      <div class="mmd-rules-hero-media">
+        <img class="mmd-rules-hero-image" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69ac303cafc2d25c8c34f9dc_hito_rules_hero.webp" alt="MMD Privé private rules hero" />
+        <div class="mmd-rules-hero-overlay"></div>
+      </div>
+      <div class="mmd-rules-hero-inner">
+        <div class="mmd-rules-hero-copy">
+          <div class="mmd-rules-eyebrow">MMD PRIVÉ / RULES</div>
+          <h1 class="mmd-rules-headline">PRIVATE <span>RULES</span></h1>
+          <p class="mmd-rules-lead">Privacy, respect, and clear boundaries come first. Every request is handled carefully before anything moves forward.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="mmd-rules-lane-panel mmd-fade-up" aria-label="Choose your rules lane">
+      <div class="mmd-rules-lane-image">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a70ae3a117cdd19b3cafedc_Rules%2001.webp" alt="MMD Privé private rules lane review desk" loading="lazy" />
+      </div>
+
+      <div class="mmd-rules-lane-content">
+        <div class="mmd-rules-signature" aria-label="MMD Privé">
+          <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" loading="lazy" />
+          <span></span>
+        </div>
+        <p class="mmd-rules-kicker">READ BEFORE CHOOSING</p>
+        <h2 class="mmd-rules-lane-title">Choose the rules lane that matches your status.</h2>
+        <p class="mmd-rules-lane-text">This page explains the central rules of MMD. After login, details are separated into customer/member and model/applicant lanes so each person sees the right information without making the mobile page too long.</p>
+        <div class="mmd-rules-lane-actions">
+          <a class="mmd-rules-lane-btn is-gold" href="/rules/customer"><strong>Member Lane</strong><span>For customers and members</span></a>
+          <a class="mmd-rules-lane-btn" href="/rules/model"><strong>Model Lane</strong><span>For models and applicants</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="rules-blocks" class="mmd-rules-writing mmd-fade-up">
+      <div class="mmd-rules-writing-head">
+        <div class="mmd-rules-section-kicker">MMD PRIVÉ / CORE RULES</div>
+        <h3 class="mmd-rules-section-title">What to understand before entering</h3>
+        <p class="mmd-rules-section-lead">These rules are not here to make access difficult. They exist so every step stays clear, safe, private, and traceable.</p>
+      </div>
+
+      <div class="mmd-rules-grid">
+        <article class="mmd-rules-block"><div class="mmd-rules-block-no">01</div><h4 class="mmd-rules-block-title">Privacy First</h4><p class="mmd-rules-block-text">Personal information, conversations, photos, contact details, and service-related activity must be handled carefully inside a private system. MMD does not push sensitive details into personal social media spaces.</p></article>
+        <article class="mmd-rules-block"><div class="mmd-rules-block-no">02</div><h4 class="mmd-rules-block-title">Respect & Boundaries</h4><p class="mmd-rules-block-text">Respect and clear boundaries are basic rules. If something is unclear, it must be asked and confirmed first. Guessing should never replace direct communication.</p></article>
+        <article class="mmd-rules-block"><div class="mmd-rules-block-no">03</div><h4 class="mmd-rules-block-title">No Drugs Policy</h4><p class="mmd-rules-block-text">MMD does not support work involving drugs in any form. If a request appears risky or does not align with this rule, the process may be declined or stopped immediately.</p></article>
+        <article class="mmd-rules-block"><div class="mmd-rules-block-no">04</div><h4 class="mmd-rules-block-title">Clarity Before Action</h4><p class="mmd-rules-block-text">Every step should continue only when there is enough clarity, whether it involves access, identity confirmation, information submission, or use of a private system page.</p></article>
+      </div>
+    </section>
+
+    <div class="mmd-rules-visuals" aria-label="Rules visual support">
+      <article class="mmd-rules-visual-card mmd-fade-up">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a70ae3a371367c6458fd8cb_Rules%2003.webp" alt="MMD Privé privacy and respect rules visual" loading="lazy" />
+        <div class="mmd-rules-visual-copy"><strong>Privacy / Respect / Safety</strong><span>Information, boundaries, and safety must stay under one controlled system.</span></div>
+      </article>
+      <article class="mmd-rules-visual-card mmd-fade-up">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a70ae3ad6212e697ebbc203_Rules%2002.webp" alt="MMD Privé rules next step visual" loading="lazy" />
+        <div class="mmd-rules-visual-copy"><strong>Next Step</strong><span>Choose the path that matches your status before entering deeper details.</span></div>
+      </article>
+    </div>
+
+    <section class="mmd-rules-cta mmd-fade-up">
+      <div class="mmd-rules-cta-copy">
+        <div class="mmd-rules-section-kicker">READY</div>
+        <h3 class="mmd-rules-section-title">When the basics are clear, move to the right lane.</h3>
+        <p class="mmd-rules-section-lead">Read the central rules first, then continue through the lane that matches your role.</p>
+      </div>
+      <div class="mmd-rules-cta-actions">
+        <a href="/rules/customer" class="mmd-rules-btn mmd-rules-btn-gold">Member Rules</a>
+        <a href="/rules/model" class="mmd-rules-btn">Model Rules</a>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var blocks = document.querySelectorAll(".mmd-fade-up, .mmd-rules-block");
+    if (!("IntersectionObserver" in window)) {
+      blocks.forEach(function (block) { block.classList.add("is-visible"); });
+      return;
+    }
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.14, rootMargin: "0px 0px -5% 0px" });
+    blocks.forEach(function (block, index) {
+      block.classList.add("mmd-fade-up");
+      block.style.transitionDelay = Math.min(index, 8) * 60 + "ms";
+      observer.observe(block);
+    });
+  });
+</script>
+Need maybe create md too? Fine. Need create PR. 

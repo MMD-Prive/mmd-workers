@@ -1,0 +1,50 @@
+#mmd-review{--mr-bg:#101312;--mr-panel:#191e1b;--mr-line:#394138;--mr-text:#f5f1e7;--mr-muted:#c2c6bc;--mr-gold:#e7c988;box-sizing:border-box;min-height:100vh;padding:24px max(20px,calc((100vw - 1120px)/2));background:var(--mr-bg);color:var(--mr-text);font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,sans-serif;color-scheme:dark}
+#mmd-review *,#mmd-review *::before,#mmd-review *::after{box-sizing:border-box}
+#mmd-review h1{font-size:clamp(30px,5vw,42px);line-height:1.2;letter-spacing:-.03em;margin:6px 0 10px;color:var(--mr-text)}
+#mmd-review h2{font-size:21px;line-height:1.4;margin:0;color:var(--mr-text);overflow-wrap:anywhere}
+#mmd-review p{margin:8px 0;color:var(--mr-text)}
+#mmd-review a{color:var(--mr-gold);text-decoration:none}
+#mmd-review a:hover{text-decoration:underline}
+#mmd-review .mr-nav,#mmd-review .mr-header,#mmd-review .mr-toolbar,#mmd-review .mr-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+#mmd-review .mr-nav{font-size:13px;color:var(--mr-muted);padding-bottom:26px;border-bottom:1px solid var(--mr-line)}
+#mmd-review .mr-header{padding:28px 0 24px}
+#mmd-review .mr-eyebrow{color:var(--mr-gold);font-size:12px;font-weight:700;letter-spacing:.13em}
+#mmd-review .mr-muted{color:var(--mr-muted);font-size:14px}
+#mmd-review .mr-badge{border:1px solid var(--mr-line);border-radius:30px;padding:6px 12px;color:var(--mr-muted);font-size:13px}
+#mmd-review .mr-toolbar{padding:16px 0;border-top:1px solid var(--mr-line);border-bottom:1px solid var(--mr-line)}
+#mmd-review label{color:var(--mr-text);display:block}
+#mmd-review button,#mmd-review select,#mmd-review textarea{font:inherit;color:var(--mr-text);background:#242b25;border:1px solid #596253;border-radius:10px;min-height:44px;padding:9px 14px}
+#mmd-review button{cursor:pointer;font-weight:600}
+#mmd-review button:hover:not(:disabled){border-color:var(--mr-gold);background:#30392f}
+#mmd-review button:disabled{cursor:not-allowed;opacity:.45}
+#mmd-review :focus-visible{outline:3px solid var(--mr-gold);outline-offset:3px}
+#mmd-review select{margin-left:8px}
+#mmd-review #mr-status{color:var(--mr-muted);padding:14px 0}
+#mmd-review .mr-list{display:grid;gap:12px}
+#mmd-review .mr-card{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px;border:1px solid var(--mr-line);border-radius:14px;background:var(--mr-panel);min-width:0}
+#mmd-review .mr-card-info{min-width:0;flex:1}
+#mmd-review .mr-card h2{font-size:17px}
+#mmd-review .mr-kind{font-size:12px;color:var(--mr-gold);font-weight:700;letter-spacing:.05em}
+#mmd-review .mr-card button{flex-shrink:0}
+#mmd-review .mr-empty{padding:42px 20px;text-align:center;border:1px dashed var(--mr-line);border-radius:14px;color:var(--mr-muted)}
+#mmd-review #mr-more{margin-top:20px}
+#mmd-review .mr-help{margin-top:32px;padding:20px;border-left:2px solid var(--mr-gold);background:var(--mr-panel);color:var(--mr-text)}
+#mmd-review .mr-help p{color:var(--mr-muted);font-size:14px;margin-bottom:0}
+#mmd-review dialog{width:min(780px,calc(100vw - 24px));max-height:92vh;padding:24px;border:1px solid var(--mr-line);border-radius:18px;background:var(--mr-bg);color:var(--mr-text);overflow:auto}
+#mmd-review dialog::backdrop{background:#000c}
+#mmd-review .mr-media{display:flex;justify-content:center;align-items:center;min-height:180px;background:#060807;border-radius:12px;margin-top:20px;overflow:hidden}
+#mmd-review .mr-media img,#mmd-review .mr-media video{display:block;max-width:100%;max-height:46vh;object-fit:contain}
+#mmd-review .mr-check{display:flex;gap:12px;align-items:center;margin:18px 0}
+#mmd-review input[type=checkbox]{width:20px;height:20px;flex-shrink:0;accent-color:var(--mr-gold)}
+#mmd-review textarea{display:block;width:100%;resize:vertical;margin:8px 0 16px}
+#mmd-review .mr-actions{display:flex;flex-wrap:wrap;gap:10px}
+#mmd-review .mr-primary{background:var(--mr-gold);color:#171d16;border-color:var(--mr-gold)}
+#mmd-review .mr-primary:hover:not(:disabled){background:#f6dda8}
+#mmd-review .mr-danger{color:#ffc1b7;border-color:#8c594f}
+#mmd-review [hidden]{display:none!important}
+@media(max-width:540px){#mmd-review{padding:18px}#mmd-review .mr-card{flex-wrap:wrap}#mmd-review .mr-card button{width:100%}#mmd-review .mr-nav span{display:none}#mmd-review dialog{padding:18px}#mmd-review .mr-actions button{width:100%}}
+/* FINAL MMD CONTRAST SAFETY LAYER */
+#mmd-review h1,#mmd-review h2,#mmd-review label,#mmd-review strong{color:var(--mr-text)!important;-webkit-text-fill-color:var(--mr-text)!important;background-image:none!important}
+#mmd-review .mr-muted,#mmd-review .mr-help p,#mmd-review #mr-status{color:var(--mr-muted)!important;-webkit-text-fill-color:var(--mr-muted)!important}
+#mmd-review .mr-eyebrow,#mmd-review .mr-kind,#mmd-review a{color:var(--mr-gold)!important;-webkit-text-fill-color:var(--mr-gold)!important}
+#mmd-review button{-webkit-text-fill-color:currentColor!important;background-image:none!important}
