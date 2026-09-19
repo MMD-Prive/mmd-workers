@@ -32,7 +32,7 @@ Expected:
 - A signed membership alias may remain a `200` compatibility bridge or redirect only to `/sigil/pay?t=...`; if redirected, the payment URL must carry only the signed `t` authority token.
 - Membership aliases must never redirect to `/sigil/pay/renewal` and must never preserve browser-provided amount, account, PromptPay, or package values as payment authority.
 - `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes. They must not render Renewal Payment Review, bank/QR, proof upload, or other fallback UI.
-- `/sigil/pay/renew` should bridge directly to `/sigil/member/membership?intent=renew`.
+- `/sigil/pay/renew` should bridge signed `t` to `/sigil/pay?t=<same token>` and unsigned traffic to `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment` is retired as a standalone payment UI; unsigned traffic may bridge to `/member/payments`, while a valid signed `t` may bridge to `/sigil/pay?t=...`.
 - Unknown routes do not redirect to `/default`, `/autodirect`, or `/sigil/pay/renewal`.
 
