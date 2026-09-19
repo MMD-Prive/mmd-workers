@@ -6,6 +6,9 @@ const PRESENTATION_ORIGIN = "https://mmdmodel.lovable.app";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
+const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
+const MODEL_LIFF_ID = "2010864854-N34SgCqq";
+const MODEL_LIFF_URL = `https://miniapp.line.me/${MODEL_LIFF_ID}`;
 const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
 
@@ -97,6 +100,74 @@ export function isPresentationRootRuntimePath(pathname = "") {
 export function isWishStatusAssetPath(pathname = "") {
   const path = normalizePath(pathname);
   return path === WISH_STATUS_JS_PATH || path === WISH_STATUS_CSS_PATH;
+}
+
+function hasCookie(request, name) {
+  const raw = String(request.headers.get("cookie") || "");
+  return raw.split(";").some((part) => {
+    const index = part.indexOf("=");
+    if (index < 0) return false;
+    return part.slice(0, index).trim() === name && part.slice(index + 1).trim().length > 0;
+  });
+}
+
+export function hasModelSessionCookie(request) {
+  return hasCookie(request, MODEL_SESSION_COOKIE);
+}
+
+export function hasLineRedirectContext(request) {
+  const url = new URL(request.url);
+  const p = url.searchParams;
+  return p.has("liff.state")
+    || p.has("liff_state")
+    || p.has("liffClientId")
+    || p.has("liffRedirectUri")
+    || p.has("access_token")
+    || (p.has("code") && p.has("state"));
+}
+
+export function modelMiniAppHandoffUrl(request) {
+  const source = new URL(request.url);
+  const target = new URL(MODEL_LIFF_URL);
+
+  const env = source.searchParams.get("liff_env");
+  if (env === "developing" || env === "review") target.searchParams.set("liff_env", env);
+
+  const lang = source.searchParams.get("lang");
+  if (lang === "th" || lang === "en" || lang === "zh") target.searchParams.set("lang", lang);
+
+  if (source.searchParams.get("flow") === "verify") target.searchParams.set("flow", "verify");
+  if (source.searchParams.get("handoff") === "job-confirmed") {
+    target.searchParams.set("handoff", "job-confirmed");
+  }
+
+  const activation = String(source.searchParams.get("activation") || "");
+  if (activation && activation.length <= 4096) target.searchParams.set("activation", activation);
+
+  return target.toString();
+}
+
+export function shouldHandoffToMiniApp(request) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) return false;
+  if (!isPresentationUiPath(new URL(request.url).pathname)) return false;
+  if (hasModelSessionCookie(request)) return false;
+  if (hasLineRedirectContext(request)) return false;
+  return true;
+}
+
+function miniAppHandoff(request) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: modelMiniAppHandoffUrl(request),
+      "cache-control": "no-store",
+      "x-mmd-worker": WORKER_NAME,
+      "x-mmd-route-owner": WORKER_NAME,
+      "x-mmd-model-entry": "line-miniapp-handoff-v1",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
 }
 
 function presentationRequestHeaders(request, { runtime = false } = {}) {
@@ -320,7 +391,10 @@ export default {
     const path = normalizePath(new URL(request.url).pathname);
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
-    if (isPresentationUiPath(path)) return proxyPage(request);
+    if (isPresentationUiPath(path)) {
+      if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
+      return proxyPage(request);
+    }
     return new Response("Not Found", {
       status: 404,
       headers: { "cache-control": "no-store", "x-mmd-worker": WORKER_NAME },

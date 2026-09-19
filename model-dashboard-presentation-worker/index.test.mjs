@@ -9,6 +9,10 @@ import {
   presentationUrlForAsset,
   rewritePresentationHtml,
   rewritePresentationText,
+  hasModelSessionCookie,
+  hasLineRedirectContext,
+  modelMiniAppHandoffUrl,
+  shouldHandoffToMiniApp,
 } from "./src/index.js";
 
 test("matches only Model Dashboard presentation namespace plus explicit runtime aliases", () => {
@@ -24,6 +28,48 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.js"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.css"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
+});
+
+test("anonymous dashboard entry hands off to the canonical LINE Mini App before LIFF init", async () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?lang=th&flow=verify&activation=signed.token&state=drop-me&access_token=drop-me",
+  );
+  assert.equal(hasModelSessionCookie(request), false);
+  assert.equal(hasLineRedirectContext(request), false);
+  assert.equal(
+    modelMiniAppHandoffUrl(request),
+    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+  );
+  assert.equal(shouldHandoffToMiniApp(request), true);
+
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(request);
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    "https://miniapp.line.me/2010864854-N34SgCqq?lang=th&flow=verify&activation=signed.token",
+  );
+  assert.equal(response.headers.get("x-mmd-model-entry"), "line-miniapp-handoff-v1");
+});
+
+test("dashboard stays on presentation when a Model session or real LINE redirect context is present", () => {
+  const sessionRequest = new Request("https://mmdbkk.com/sigil/model/dashboard", {
+    headers: { cookie: "mmd_model_session_v1=opaque-session" },
+  });
+  assert.equal(hasModelSessionCookie(sessionRequest), true);
+  assert.equal(shouldHandoffToMiniApp(sessionRequest), false);
+
+  const liffState = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?liff.state=%3Fflow%3Dverify&access_token=opaque",
+  );
+  assert.equal(hasLineRedirectContext(liffState), true);
+  assert.equal(shouldHandoffToMiniApp(liffState), false);
+
+  const oauth = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?code=callback-code&state=callback-state",
+  );
+  assert.equal(hasLineRedirectContext(oauth), true);
+  assert.equal(shouldHandoffToMiniApp(oauth), false);
 });
 
 test("maps canonical dashboard route to current Model Hub root and preserves LINE callback query", () => {
