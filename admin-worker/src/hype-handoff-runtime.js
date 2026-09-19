@@ -280,7 +280,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!body) return json({ ok: false, error: "invalid_json" }, 400);
 
   const operation = token(body.operation || "read");
-  if (!["read", "transition", "select_recovery_order"].includes(operation)) {
+  if (!["read", "transition", "select_recovery_order", "select_recovery_booking", "select_recovery_mms"].includes(operation)) {
     return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
   }
 
@@ -360,6 +360,21 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       telegramUserId,
       handoffId,
       selectionIndex,
+    });
+  }
+
+  if (operation === "select_recovery_booking" || operation === "select_recovery_mms") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+    const selectionIndex = Number(body.selection_index);
+    if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
+      return json({ ok: false, error: "recovery_candidate_selection_invalid" }, 400);
+    }
+    return selectRecoveryCandidateForCase(env, {
+      telegramUserId,
+      handoffId,
+      selectionIndex,
+      domain: operation === "select_recovery_booking" ? "booking" : "mms",
     });
   }
 
