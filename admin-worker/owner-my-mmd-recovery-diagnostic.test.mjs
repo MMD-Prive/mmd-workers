@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import coreWorker from "./src/admin-login-hero-worker-core.js";
+import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-session.js";
 import {
   OWNER_MY_MMD_RECOVERY_API_PATH,
   OWNER_MY_MMD_RECOVERY_PAGE_PATH,
@@ -130,4 +132,54 @@ test("owner page is noindex and does not embed customer identity", async () => {
   const html = await response.text();
   assert.match(html, /MY MMD Recovery Diagnostic/);
   assert.doesNotMatch(html, new RegExp(LINE_ID));
+});
+
+
+test("active admin core dispatches owner diagnostic behind credential-bound session", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "api.airtable.com") {
+      return Response.json({
+        id: CLIENT_ID,
+        fields: {
+          "Client Name (Display)": "เชน",
+          line_user_id: LINE_ID,
+        },
+      });
+    }
+    throw new Error("unexpected_fetch:" + url.toString());
+  };
+
+  const runtimeEnv = {
+    ...env(),
+    ADMIN_LOGIN_CREDENTIAL: "owner-credential",
+    ADMIN_SESSION_SECRET: "owner-session-secret",
+  };
+  const token = await createCredentialBoundAdminSession(
+    new Request("https://mmdbkk.com/internal/admin/login/session"),
+    { id: "per", role: "owner", auth_method: "credential" },
+    runtimeEnv,
+  );
+
+  try {
+    const req = new Request(
+      "https://mmdbkk.com" + OWNER_MY_MMD_RECOVERY_API_PATH + "?client_id=" + CLIENT_ID,
+      {
+        method: "GET",
+        headers: {
+          Cookie: "mmd_admin_gate_v1=" + token,
+          Origin: "https://mmdbkk.com",
+          Accept: "application/json",
+        },
+      },
+    );
+    const response = await coreWorker.fetch(req, runtimeEnv, {});
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.customer.display_name, "เชน");
+    assert.equal(body.recovery.state, "reconciled");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
