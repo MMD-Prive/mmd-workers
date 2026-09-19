@@ -17,7 +17,10 @@ Root ownership markers:
 Current page contract:
 - `data-payments-endpoint="/v1/member/payments"`
 
-The endpoint must be served through a member-safe authenticated BFF before legacy admin/front-gate delegation is retired.
+Source implementation is now defined as:
+`member-dashboard-chat-worker exact ingress -> MEMBER_PAGES_WORKER service binding -> member-pages-worker/src/member-payments-bff.js`.
+
+Production acceptance is still required before legacy/admin delegation is retired.
 
 ## Authority
 
@@ -35,3 +38,26 @@ Money truth remains `payments-worker`; Official Verify is final.
 
 See:
 - `docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md`
+
+
+## BFF response contract
+
+`GET /v1/member/payments` (and HEAD) uses the signed LIFF/member session only.
+
+Response:
+- `schema = mmd_member_payments_v1`
+- `authority = member-pages-worker`
+- `money_authority = payments-worker`
+- `member` contains display-only member context
+- `records` contains customer-safe current intent + verified historical payments only
+
+Current intent:
+- comes only from a backend-created payment intent remembered in the short-lived LIFF session;
+- may expose only the exact backend-issued `/pay/checkout?t=...` or `/sigil/pay?t=...` URL;
+- never accepts browser-selected member/payment context.
+
+Verified history:
+- comes from the safe member profile / Customer 360 projection;
+- never exposes admin review fields, raw Airtable IDs, risk/fraud fields, bank destination, QR authority or internal notes.
+
+Production status: source ready in the feature change; route/deploy + authenticated live acceptance remain pending until merged and verified.
