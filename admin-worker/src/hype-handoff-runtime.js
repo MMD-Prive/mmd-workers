@@ -1611,8 +1611,23 @@ async function upsertContinuityMatrix(env, input = {}) {
   const priorTracking = parseObject(priorPayload.handoff_tracking);
   const stamp = new Date().toISOString();
   const handoff = input.handoff;
+  const reusedHandoff = Boolean(
+    handoff
+    && clean(priorTracking.id, 180)
+    && clean(priorTracking.id, 180) === clean(handoff.id, 180)
+    && ["prepared", "sent", "acknowledged", "reviewing"].includes(token(priorTracking.state)),
+  );
   const tracking = handoff
-    ? { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
+    ? reusedHandoff
+      ? {
+          ...priorTracking,
+          id: handoff.id,
+          target: handoff.target,
+          state: token(priorTracking.state),
+          updated_at: clean(priorTracking.updated_at, 80) || stamp,
+          actor_role: token(priorTracking.actor_role) || "hype",
+        }
+      : { id: handoff.id, target: handoff.target, state: "prepared", updated_at: stamp, actor_role: "hype" }
     : priorTracking;
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const existingLoops = parseList(prior[F.OPEN_LOOPS]);
@@ -1630,7 +1645,11 @@ async function upsertContinuityMatrix(env, input = {}) {
     ...(input.customerMessage ? ["latest_customer_request"] : []),
     ...(input.recoveryCorrelation?.correlated === true ? ["shop_order_reference"] : []),
   ]);
-  const stage = handoff ? "handoff" : deriveStage(input.projection);
+  const stage = handoff
+    ? reusedHandoff && token(tracking.state) !== "prepared"
+      ? `handoff_${token(tracking.state)}`
+      : "handoff"
+    : deriveStage(input.projection);
   const targetLabel = handoff?.target === "kenji" ? "Kenji" : handoff?.target === "per" ? "Per" : "none";
   const summary = buildContinuitySummary({
     command: input.command,
@@ -1652,9 +1671,13 @@ async function upsertContinuityMatrix(env, input = {}) {
     [F.LAST_INTENT]: clean(input.command, 120) || "general",
     [F.LAST_REQUEST]: input.customerMessage || `HYPE command: ${clean(input.command, 80)}`,
     [F.LAST_CUSTOMER_ACTION]: handoff ? `requested_handoff:${handoff.target}` : `hype_command:${clean(input.command, 80)}`,
-    [F.LAST_KENJI_ACTION]: handoff ? "handoff_context_prepared" : "hype_context_recorded",
+    [F.LAST_KENJI_ACTION]: handoff
+      ? reusedHandoff ? "handoff_context_refreshed" : "handoff_context_prepared"
+      : "hype_context_recorded",
     [F.LAST_OUTCOME]: handoff
-      ? "handoff_pending; protected current truth must be refreshed before action"
+      ? reusedHandoff
+        ? `handoff_${token(tracking.state)}; context refreshed without changing authority state`
+        : "handoff_pending; protected current truth must be refreshed before action"
       : "HYPE read-only status delivered; no business truth changed",
     [F.STAGE]: stage,
     [F.AWAITING]: handoff ? (handoff.target === "per" ? "mmd_review" : "kenji") : awaitingFromProjection(input.projection),
