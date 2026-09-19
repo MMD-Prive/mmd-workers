@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createInternalHoldForSession, isModelConfirmActionRequest } from "./src/model-confirm-cal-hold.js";
+import { createInternalHoldForSession, ensureInternalHoldThroughBridge, isModelConfirmActionRequest } from "./src/model-confirm-cal-hold.js";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -126,4 +126,35 @@ test("only the canonical model session action route is eligible", () => {
   assert.equal(isModelConfirmActionRequest(new Request("https://mmdbkk.com/v1/model/session/action", { method: "POST" })), true);
   assert.equal(isModelConfirmActionRequest(new Request("https://mmdbkk.com/v1/model/session/current", { method: "POST" })), false);
   assert.equal(isModelConfirmActionRequest(new Request("https://mmdbkk.com/v1/model/session/action", { method: "GET" })), false);
+});
+
+
+test("production Model Confirm bridge uses private cal-sync service binding only", async () => {
+  const calls = [];
+  const env = {
+    CAL_SYNC_WORKER: {
+      async fetch(request) {
+        calls.push(request);
+        const url = new URL(request.url);
+        assert.equal(url.hostname, "cal-sync.internal");
+        assert.equal(url.pathname, "/internal/holds/ensure");
+        assert.equal(request.method, "POST");
+        const body = await request.json();
+        assert.equal(body.session_id, "sess_bridge_1");
+        return Response.json({ ok:true, state:"created", booking_uid:"cal_bridge_uid_1" });
+      },
+    },
+  };
+  const result = await ensureInternalHoldThroughBridge(env, "sess_bridge_1");
+  assert.deepEqual(result, { ok:true, state:"created", booking_uid:"cal_bridge_uid_1" });
+  assert.equal(calls.length,1);
+});
+
+test("production Model Confirm bridge fails closed without cal-sync binding", async () => {
+  const result = await ensureInternalHoldThroughBridge({}, "sess_bridge_missing");
+  assert.deepEqual(result, {
+    ok:false,
+    state:"deferred",
+    reason:"cal_sync_service_binding_missing",
+  });
 });
