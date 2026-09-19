@@ -32,6 +32,10 @@ zone_name = "mmdbkk.com"
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
 [vars]
 MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
 APP_NAME = "Himai Shop"
