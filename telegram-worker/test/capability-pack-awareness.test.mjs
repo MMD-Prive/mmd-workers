@@ -676,6 +676,16 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
             handoff_id: "HYPE-PER-20260919120000-deadbeef",
             target: "per",
             updated_at: "2026-09-19T12:01:00.000Z",
+            recovery_case: {
+              schema: "mmd.recovery_case.v1",
+              taxonomy_version: "mmd-recovery-outcome-taxonomy-v1-20260919",
+              case_ref: "HYPE-PER-20260919120000-deadbeef",
+              domain: "mmd_shop",
+              state: "reviewing",
+              outcome_code: "awaiting_operations",
+              outcome_label: "รอทีมดำเนินการ",
+              outcome_terminal: false,
+            },
             recovery_correlation: {
               domain: "mmd_shop",
               state: "correlated",
@@ -701,6 +711,8 @@ test("HYPE /case reads the explicitly written closed-loop state without inventin
     assert.match(sent.text, /HYPE-PER-20260919120000-deadbeef/);
     assert.match(sent.text, /MMD-ORDER-001/);
     assert.match(sent.text, /payment paid · fulfillment shipped/);
+    assert.match(sent.text, /Recovery:<\/b> mmd_shop/);
+    assert.match(sent.text, /รอทีมดำเนินการ/);
     assert.doesNotMatch(sent.text, /แจ้งลูกค้าแล้ว|แก้ไขแล้วและยืนยัน/i);
   } finally {
     globalThis.fetch = originalFetch;
