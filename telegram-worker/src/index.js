@@ -2200,6 +2200,8 @@ function renderHypeOwnerSummary(result = {}) {
   const jobs = result.jobs || {};
   const alerts = Array.isArray(result.alerts) ? result.alerts : [];
   const clients = result.clients || {};
+  const recovery = result.recovery_queue || {};
+  const watchNow = Array.isArray(result.what_to_watch_now) ? result.what_to_watch_now : [];
   const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
   const lines = [
     "<b>HYPE · PER OWNER SUMMARY</b>",
@@ -2215,6 +2217,28 @@ function renderHypeOwnerSummary(result = {}) {
   lines.push(`• Historical Recovery: ${Number(counts.historical_recovery || 0)}`);
   lines.push(`• Membership: ${Number(counts.membership_review || 0)}`);
   lines.push(`• Jobs / Confirm: ${Number(counts.jobs_need_confirm || 0)}`);
+  lines.push(`• Recovery attention: ${Number(counts.recovery_attention || 0)} · overdue: ${Number(counts.recovery_overdue || 0)}`);
+
+  if (recovery.available === true) {
+    lines.push("");
+    lines.push("<b>RECOVERY QUEUE · ต้องดูอะไรตอนนี้</b>");
+    lines.push(`• Open: ${Number(recovery.open_count || 0)} · Attention: ${Number(recovery.attention_count || 0)} · Overdue: ${Number(recovery.overdue_count || 0)}`);
+    if (watchNow.length) {
+      for (const item of watchNow.slice(0, 5)) {
+        lines.push(`• ${escapeHtml(compactOwnerText([
+          item.client_name,
+          item.domain,
+          item.state,
+          item.sla_status,
+          ownerAgeText(item.since_update_minutes),
+          ownerRecoveryAttentionLabel(item.next_attention),
+        ]))}`);
+      }
+    } else {
+      lines.push("• ยังไม่มี Recovery Case ที่เข้า attention window");
+    }
+    lines.push("Operational SLA เท่านั้น · ไม่ใช่ Payment / Job / Fulfillment / MMS truth");
+  }
 
   lines.push("");
   lines.push("<b>CALENDAR / JOB</b>");
@@ -2289,6 +2313,23 @@ function hypeOwnerSummaryButtons(env, result = {}) {
 
 function compactOwnerText(parts) {
   return parts.map((part) => clean(part)).filter(Boolean).join(" · ").slice(0, 360);
+}
+
+function ownerAgeText(value) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 0) return "";
+  if (minutes < 60) return minutes + "m since update";
+  if (minutes < 1440) return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m since update";
+  return Math.floor(minutes / 1440) + "d " + Math.floor((minutes % 1440) / 60) + "h since update";
+}
+
+function ownerRecoveryAttentionLabel(value) {
+  const key = clean(value).toLowerCase();
+  if (key === "acknowledge_case") return "Acknowledge";
+  if (key === "start_review") return "Start review";
+  if (key === "review_and_update_outcome") return "Review / update outcome";
+  if (key === "notify_customer") return "Notify customer";
+  return "";
 }
 
 async function handleHypeShopOrdersCommand({ chatId, telegramUserId, message }, env) {
