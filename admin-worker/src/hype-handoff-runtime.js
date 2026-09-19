@@ -2073,6 +2073,13 @@ function safeRecoveryCorrelation(value = {}) {
     source_authority: clean(value.source_authority, 160) || null,
     live_refresh_status: token(value.live_refresh_status) || null,
     refreshed_at: clean(value.refreshed_at, 80) || null,
+    picker_revision: normalizePickerRevision(value.picker_revision),
+    picker_status: token(value.picker_status) || null,
+    picker_issued_at: clean(value.picker_issued_at, 80) || null,
+    picker_reissued_at: clean(value.picker_reissued_at, 80) || null,
+    picker_reissue_count: boundedPickerReissueCount(value.picker_reissue_count),
+    last_stale_reason: token(value.last_stale_reason) || null,
+    last_reissue_source: clean(value.last_reissue_source, 40) || null,
   };
 
   if (domain === "booking") {
@@ -2218,6 +2225,33 @@ function recoveryOperatorLine(correlation = null, handoffId = "") {
 function boundedCandidateCount(value) {
   const n = Number(value);
   return Number.isInteger(n) ? Math.max(0, Math.min(50, n)) : 0;
+}
+
+function normalizePickerRevision(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 999999 ? n : null;
+}
+
+function boundedPickerReissueCount(value) {
+  const n = Number(value);
+  return Number.isInteger(n) ? Math.max(0, Math.min(9999, n)) : 0;
+}
+
+function effectivePickerRevision(correlation = {}) {
+  return normalizePickerRevision(correlation.picker_revision)
+    || (Array.isArray(correlation.options) && correlation.options.length ? 1 : null);
+}
+
+function pickerCallbackSource(pickerRevision, selectionIndex) {
+  return normalizePickerRevision(pickerRevision)
+    ? "r" + normalizePickerRevision(pickerRevision) + "_" + selectionIndex
+    : "legacy_" + selectionIndex;
+}
+
+function recoveryPickerAlreadyReissued(correlation = {}) {
+  return boundedPickerReissueCount(correlation.picker_reissue_count) > 0
+    || Number(effectivePickerRevision(correlation) || 0) > 1
+    || ["reissued", "no_current_candidates"].includes(token(correlation.picker_status));
 }
 
 function safeRecoveryBookingOption(value = {}) {
@@ -3232,6 +3266,10 @@ function handoffStatusGuardrails() {
     payment_mutated: false,
     job_mutated: false,
     entitlement_mutated: false,
+    picker_revision_interaction_metadata_only: true,
+    picker_refresh_business_truth_mutated: false,
+    picker_refresh_resets_lifecycle: false,
+    picker_refresh_resets_sla: false,
     state_requires_explicit_operator_write: true,
   };
 }
