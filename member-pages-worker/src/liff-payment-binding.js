@@ -113,8 +113,9 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
 
   try {
     // Airtable stores the canonical payments-worker session bridge only. The
-    // signed /sigil/pay URL stays in the LIFF response and is not persisted in
-    // the gateway table, avoiding a second payment/proof authority surface.
+    // signed /sigil/pay URL is kept only in the short-lived signed LIFF session
+    // so /member/payments can resume the exact backend-issued handoff. It is not
+    // persisted in the gateway table and never becomes a second money authority.
     await gatewayStore.upsertSession({
       session_id: session.session_id,
       payment_intent_session_id: payment.session_id,
@@ -126,6 +127,10 @@ export async function completeValidatedLiffPaymentIntent(request, guardedRespons
     session.payment_binding_status = "canonical_pending";
     session.payment_ref = payment.payment_ref;
     session.payment_stage = canonicalStage;
+    session.payment_package_code = requestedPackage;
+    session.payment_amount_thb = amountThb;
+    session.customer_payment_url = payment.customer_payment_url;
+    session.payment_intent_created_at = new Date().toISOString();
     session.route_after_liff = CANONICAL_STATUS_ROUTE;
     session.next_screen_key = "payment_start";
     if (renewalOffer?.status === "ready") {
