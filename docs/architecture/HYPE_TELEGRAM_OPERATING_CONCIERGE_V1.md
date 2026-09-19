@@ -204,11 +204,32 @@ After V1 production verification, HYPE adds:
 
 This keeps HYPE useful without creating a second Points or Coupon authority.
 
+## Payment status explanation
+
+HYPE may answer payment-status questions in private Telegram chat from the bounded canonical payment projection.
+
+Supported examples include:
+
+- `/payment`
+- `จ่ายแล้วไหม`
+- `ชำระแล้วไหม`
+- `สลิปถึงยัง`
+- `ยอดคงเหลือ`
+- `เหลือจ่ายเท่าไหร่`
+
+Rules:
+
+- `pending_review` means evidence is awaiting review; it must never be described as paid;
+- `paid=true` is the only customer-safe paid confirmation exposed by this projection;
+- outstanding amount and verified credit may be shown only from canonical numeric fields;
+- HYPE must never infer a payment from Job status, a Telegram message, a slip image, or customer wording;
+- HYPE must never mark paid, accept/reject a slip, or modify payment truth;
+- payment status is private-chat only and must not resolve Client 360 from a Telegram group.
+
 ## Next implementation lanes
 
-1. customer-safe payment proof status explanation
-2. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
-3. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
-4. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
+1. owner/internal HYPE summary using Client 360 + Job + Payment + Calendar
+2. supervised handoff to Kenji/Per with existing context, without making the customer repeat their story
+3. future Points/Coupon inline values only if a canonical member-runtime service contract explicitly exposes a bounded Telegram-safe read projection
 
 All future lanes must preserve the same authority and privacy locks.
