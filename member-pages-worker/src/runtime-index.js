@@ -22,6 +22,10 @@ import {
   isKenjiLineMemberTruthRequest,
 } from "./kenji-line-member-truth.js";
 import {
+  handleHypeMemberWallet,
+  isHypeMemberWalletRequest,
+} from "./hype-member-wallet-projection.js";
+import {
   handleKenjiLineMemberTruthHealth,
   isKenjiLineMemberTruthHealthRequest,
 } from "./kenji-line-member-truth-health.js";
@@ -90,6 +94,9 @@ export default {
     }
     if (isKenjiLineMemberTruthRequest(request)) {
       return handleKenjiLineMemberTruth(request, env);
+    }
+    if (isHypeMemberWalletRequest(request)) {
+      return handleHypeMemberWallet(request, env);
     }
     if (isTrustedCareBackBookingApproval(request)) {
       return handleTrustedCareBackBookingApproval(request, env);

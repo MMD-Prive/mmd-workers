@@ -670,6 +670,12 @@ service = "mmd-slip-extractor"
 binding = "MODEL_DRIVE_DIRECTORY"
 service = "member-pages-worker"
 
+# Bounded customer-safe Points + Coupon projection for HYPE.
+# Identity is resolved in admin-worker first; member-pages-worker owns points/coupon truth.
+[[services]]
+binding = "MEMBER_PAGES_MEMBER_WALLET"
+service = "member-pages-worker"
+
 # ใช้สำหรับ CORS (browser calls)
 # Private scheduling bridge for Admin Calendar diagnostics.
 # No public credential is exposed; the downstream Worker remains independently deployable.

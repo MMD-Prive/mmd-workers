@@ -869,7 +869,12 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
     };
   }
 
-  if (command === "points" || command === "coupons" || command === "careback" || command === "hall") {
+  const privateChat = clean(message.chat?.type).toLowerCase() === "private";
+  if (
+    command === "careback"
+    || command === "hall"
+    || (!privateChat && (command === "points" || command === "coupons"))
+  ) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
       text: hypeCanonicalRouteText(command),
@@ -880,10 +885,10 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
     return { handled: true, flow: `hype_operating_${command}_route`, telegram };
   }
 
-  if (clean(message.chat?.type).toLowerCase() !== "private") {
+  if (!privateChat) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /orders, /next, /booking, /payment, /mms-options, /support, /case, /submit, /progress, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /points, /coupons, /orders, /next, /booking, /payment, /mms-options, /support, /case, /submit, /progress, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -904,6 +909,14 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
       reply_markup: hypeConnectButtons(env),
     }, env);
     return { handled: true, flow: "hype_operating_status", ok: false, code_status: "telegram_identity_invalid", telegram };
+  }
+
+  if (command === "points" || command === "coupons") {
+    return handleHypeMemberWalletCommand({
+      chatId,
+      telegramUserId,
+      command,
+    }, env);
   }
 
   if (command === "orders") {
@@ -1962,6 +1975,157 @@ function compactOwnerText(parts) {
   return parts.map((part) => clean(part)).filter(Boolean).join(" · ").slice(0, 360);
 }
 
+async function handleHypeMemberWalletCommand({ chatId, telegramUserId, command }, env) {
+  const binding = env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ตอนนี้ HYPE ยังอ่าน Member Wallet จากระบบกลางไม่ได้ครับ กรุณาเปิด MY MMD เพื่อตรวจข้อมูลล่าสุด",
+      disable_web_page_preview: true,
+      reply_markup: hypeCanonicalRouteButtons(env, command),
+    }, env);
+    return { handled: true, flow: `hype_operating_${command}_inline`, ok: false, code_status: "wallet_unavailable", telegram };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/member-wallet", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        scope: command,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (status === 404 && result?.state === "connect_required") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ยังอ่านข้อมูลส่วนตัวไม่ได้ครับ กรุณาเชื่อม Telegram กับ MY MMD ก่อน",
+      disable_web_page_preview: true,
+      reply_markup: hypeConnectButtons(env),
+    }, env);
+    return { handled: true, flow: `hype_operating_${command}_inline`, ok: false, code_status: "connect_required", telegram };
+  }
+
+  if (status === 409 && result?.state === "line_identity_required") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "บัญชี Telegram นี้เชื่อมกับ Client แล้ว แต่ยังไม่มี LINE identity ที่ใช้ยืนยัน Member Wallet ครับ กรุณาเปิด MY MMD ผ่าน LINE ก่อน",
+      disable_web_page_preview: true,
+      reply_markup: hypeConnectButtons(env),
+    }, env);
+    return { handled: true, flow: `hype_operating_${command}_inline`, ok: false, code_status: "line_identity_required", telegram };
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: result?.state === "review_required"
+        ? "Member Wallet มีข้อมูลที่ต้องให้ MMD ตรวจสอบก่อนครับ HYPE จะไม่เดายอดหรือสถานะคูปองให้"
+        : "ตอนนี้ HYPE อ่าน Member Wallet จาก canonical authority ไม่สำเร็จครับ กรุณาเปิด MY MMD เพื่อตรวจข้อมูลล่าสุด",
+      disable_web_page_preview: true,
+      reply_markup: hypeCanonicalRouteButtons(env, command),
+    }, env);
+    return {
+      handled: true,
+      flow: `hype_operating_${command}_inline`,
+      ok: false,
+      code_status: clean(result?.state || "wallet_unavailable"),
+      telegram,
+    };
+  }
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: command === "points"
+      ? renderHypePointsInline(result)
+      : renderHypeCouponInline(result),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: hypeCanonicalRouteButtons(env, command),
+  }, env);
+
+  return {
+    handled: true,
+    flow: `hype_operating_${command}_inline`,
+    ok: telegram?.ok === true,
+    code_status: command === "points"
+      ? clean(result.points?.status || "unavailable")
+      : clean(result.coupon?.status || "unavailable"),
+    telegram,
+  };
+}
+
+function renderHypePointsInline(result = {}) {
+  const points = result.points || {};
+  const lines = ["<b>HYPE · POINTS</b>"];
+  if (clean(result.display_name)) lines.push(escapeHtml(result.display_name));
+  lines.push("");
+
+  if (clean(points.status) === "verified" && Number.isInteger(Number(points.active_points)) && Number(points.active_points) >= 0) {
+    lines.push(`<b>Active Points:</b> ${Number(points.active_points).toLocaleString("en-US")} Points`);
+    lines.push("<b>Rate:</b> 100 THB = 1 Point");
+    lines.push("");
+    lines.push("ยอดนี้เป็น bounded read จาก Member Points authority ณ ตอนที่ตรวจครับ");
+  } else {
+    lines.push("ตอนนี้ยังไม่มียอด Points ที่ canonical source ยืนยันได้ครับ");
+    lines.push("HYPE จะไม่ตีความยอดที่ไม่ verified เป็น 0");
+  }
+
+  lines.push("");
+  lines.push("HYPE อ่านอย่างเดียว · ไม่เพิ่ม ลด ย้อนรายการ หรือแก้ Points Ledger ครับ");
+  return lines.join("\n");
+}
+
+function renderHypeCouponInline(result = {}) {
+  const coupon = result.coupon || {};
+  const state = clean(coupon.status).toLowerCase();
+  const labels = {
+    ready: "พร้อมใช้",
+    wish_required: "รอ Birthday Wish",
+    verification_required: "รอตรวจสิทธิ์",
+    used: "ใช้แล้ว",
+    expired: "หมดอายุ",
+    revoked: "ถูกระงับ",
+    invalid: "ต้องให้ MMD ตรวจสอบ",
+    review_required: "ต้องให้ MMD ตรวจสอบ",
+    unavailable: "ยังตรวจสอบไม่ได้",
+  };
+  const lines = ["<b>HYPE · COUPON WALLET</b>"];
+  if (clean(result.display_name)) lines.push(escapeHtml(result.display_name));
+  lines.push("");
+  lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || "ยังตรวจสอบไม่ได้")}`);
+
+  if (state === "ready" && /^[A-HJ-NP-Z2-9]{6}$/.test(clean(coupon.code))) {
+    lines.push(`<b>Code:</b> <code>${escapeHtml(clean(coupon.code))}</code>`);
+    if (Number.isInteger(Number(coupon.approved_discount_percent)) && Number(coupon.approved_discount_percent) > 0) {
+      lines.push(`<b>Approved discount:</b> ${Number(coupon.approved_discount_percent)}%`);
+    } else {
+      lines.push("<b>Discount:</b> ยืนยันตาม Model / รูปแบบงานเมื่อใช้สิทธิ์");
+    }
+    if (clean(coupon.expires_at)) lines.push(`<b>Expires:</b> ${escapeHtml(formatDateOnly(coupon.expires_at))}`);
+    if (coupon.single_use === true) lines.push("<b>Use:</b> 1 ครั้ง");
+  } else if (state === "wish_required") {
+    lines.push("ส่ง Birthday Wish ใน CARE BACK ก่อน ระบบจึงจะตรวจขั้นคูปองต่อได้ครับ");
+  } else if (state === "verification_required") {
+    lines.push("สิทธิ์คูปองยังรอ canonical verification ครับ");
+  }
+
+  lines.push("");
+  lines.push("HYPE อ่าน Coupon Wallet อย่างเดียว และไม่ activate / reissue / เปลี่ยนส่วนลดเองครับ");
+  return lines.join("\n");
+}
+
 function renderHypeOperatingStatus(result = {}, { nextOnly = false } = {}) {
   const member = result.membership || {};
   const job = result.job || {};
@@ -2161,10 +2325,10 @@ function hypeCanonicalRouteText(command) {
     return [
       "<b>HYPE · POINTS</b>",
       "",
-      "ยอด Points ที่เป็นทางการอ่านจาก MMD — Points Ledger ผ่าน MY MMD ครับ",
-      "HYPE จะไม่ทำสำเนายอดใน Telegram เพื่อไม่ให้ยอดคลาดเคลื่อนจากระบบจริง",
+      "ยอด Points ที่เป็นทางการอ่านจาก MMD — Points Ledger ผ่าน Member Wallet authority ครับ",
+      "ในห้องกลุ่ม HYPE จะไม่แสดง Points balance ส่วนตัว",
       "",
-      "กด <b>MY MMD · Points</b> ด้านล่างเพื่อดูยอดและประวัติที่ยืนยันแล้วได้เลยครับ",
+      "เปิดแชตส่วนตัวกับ HYPE เพื่ออ่านยอด verified แบบ bounded หรือกด <b>MY MMD · Points</b> เพื่อดูรายละเอียดครับ",
     ].join("\n");
   }
   if (command === "coupons") {
@@ -2172,9 +2336,9 @@ function hypeCanonicalRouteText(command) {
       "<b>HYPE · COUPONS</b>",
       "",
       "คูปองที่พร้อมใช้ / ใช้แล้ว / หมดอายุ ให้ยึด Coupon Wallet ใน MY MMD เป็นตัวจริงครับ",
-      "สำหรับ CARE BACK Phase 2 ต้องเชื่อมสิทธิ์และ Birthday Wish ตาม policy ก่อนคูปองจะพร้อมใช้",
+      "ในห้องกลุ่ม HYPE จะไม่แสดง Coupon code หรือสถานะบัญชีส่วนตัว",
       "",
-      "กด <b>MY MMD · Coupons</b> เพื่อดูสถานะล่าสุดได้เลยครับ",
+      "เปิดแชตส่วนตัวกับ HYPE เพื่ออ่าน bounded wallet หรือกด <b>MY MMD · Coupons</b> เพื่อดูรายละเอียดครับ",
     ].join("\n");
   }
   return [
@@ -2298,8 +2462,8 @@ function hypeHelpText() {
     "<b>/next</b> — ดูว่าตอนนี้ต้องทำอะไรต่อ",
     "<b>/booking</b> — ดู progress งาน/การจองที่ระบบยืนยันได้",
     "<b>/payment</b> — ดูสถานะการชำระ ยอดคงเหลือ และสถานะตรวจสลิป",
-    "<b>/points</b> — ไปยังยอด Points canonical ใน MY MMD",
-    "<b>/coupons</b> — ไปยัง Coupon Wallet canonical ใน MY MMD",
+    "<b>/points</b> — ดูยอด Points ที่ canonical source ยืนยันแล้ว",
+    "<b>/coupons</b> — ดูสถานะ Coupon Wallet แบบ bounded read",
     "<b>/careback</b> — ดู CARE BACK Phase 2",
     "<b>/orders</b> — เปิด MMD Shop Orders",
     "<b>/hall</b> — เลือกมุมมอง Model discovery โดยไม่เดาเพศ/ความสนใจ",
