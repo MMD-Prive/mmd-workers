@@ -101,7 +101,7 @@ jobs:
           }
           console.log(`PREVIEW intro message_id=${body.message_id}`);
           console.log(`bot=@${body.bot_username}`);
-          console.log(`chat_id=${body.chat_id}`);
+          console.log(`chat_id=${body.chat_id}`);\n          console.log(`resolved_by=${body.resolved_by || "unknown"}`);\n          console.log(`configured_chat_id=${body.configured_chat_id || "none"}`);\n          console.log(`public_handle=${body.public_handle || "none"}`);
           console.log(`chat_type=${body.chat_type || "unknown"}`);
           console.log(`linked_group_id=${body.linked_group_id || "none"}`);
           console.log(`linked_group_ready=${body.linked_group_ready === true}`);
