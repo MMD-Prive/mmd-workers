@@ -7,6 +7,7 @@ import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-
 import {
   RECOVERY_CONTROL_API_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
+  RECOVERY_PICKER_INTELLIGENCE_VERSION,
   RECOVERY_QUEUE_ASSIGNMENT_VERSION,
   RECOVERY_QUEUE_SLA_VERSION,
   buildRecoveryControlTransition,
@@ -29,6 +30,8 @@ function env() {
     AIRTABLE_API_KEY: "test-airtable-key",
     AIRTABLE_BASE_ID: "appTest0000000000",
     AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID: "tblMatrix",
+    AIRTABLE_TABLE_CLIENTS_ID: "tblClients",
+    AIRTABLE_TABLE_BOOKING_REQUESTS_ID: "tblBookingRequests",
     ADMIN_LOGIN_CREDENTIAL: "owner-credential",
     ADMIN_SESSION_SECRET: "owner-session-secret",
   };
@@ -78,6 +81,61 @@ function matrixRecord(state = "reviewing", outcome = "awaiting_operations") {
       version: 4,
     },
   };
+}
+
+function pickerRecord(status = "reissued", revision = 2, state = "reviewing") {
+  const row = matrixRecord(state);
+  const payload = JSON.parse(row.fields.payload_json);
+  payload.recovery_correlation = {
+    domain: "booking",
+    state: status === "no_current_candidates" ? "no_current_candidates" : "ambiguous",
+    correlated: false,
+    case_ref: CASE_REF,
+    candidate_count: status === "no_current_candidates" ? 0 : 2,
+    options: status === "no_current_candidates" ? [] : [
+      {
+        booking_ref: "kenji_aaaaaaaaaaaaaaaaaaaaaaaa",
+        request_status: "pending",
+        preferred_date: "2026-10-02",
+        preferred_time: "19:00",
+        selected_model_name: "Model A",
+        summary: "Model A · private",
+      },
+      {
+        booking_ref: "kenji_bbbbbbbbbbbbbbbbbbbbbbbb",
+        request_status: "pending",
+        preferred_date: "2026-10-03",
+        preferred_time: "20:00",
+        selected_model_name: "Model B",
+        summary: "Model B · private",
+      },
+    ],
+    method: "stale_picker_reissued",
+    source_authority: "sigil-booking-worker",
+    live_refresh_status: status === "stale" ? "unavailable" : "fresh",
+    picker_revision: revision,
+    picker_status: status,
+    picker_issued_at: "2026-09-19T14:00:00.000Z",
+    picker_reissued_at: "2026-09-19T14:30:00.000Z",
+    picker_reissue_count: Math.max(0, revision - 1),
+    last_stale_reason: status === "stale" ? "booking_authority_unavailable" : "selected_candidate_stale",
+    last_reissue_source: "r1_1",
+  };
+  payload.recovery_assignment = {
+    policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+    status: "assigned",
+    assignee_key: "credential:per",
+    assignee_label: "Per",
+    assignee_role: "owner",
+    assignee_lane: "owner",
+    claimed_at: "2026-09-19T14:10:00.000Z",
+    updated_at: "2026-09-19T14:10:00.000Z",
+    revision: 2,
+    coordination_only: true,
+    grants_authority: false,
+  };
+  row.fields.payload_json = JSON.stringify(payload);
+  return row;
 }
 
 function request(path, options = {}) {
@@ -131,6 +189,10 @@ test("Recovery Control projection excludes private payload fields and exposes bo
   assert.equal(projected.assignment.policy_version, RECOVERY_QUEUE_ASSIGNMENT_VERSION);
   assert.equal(projected.assignment.status, "unassigned");
   assert.equal(projected.assignment.grants_authority, false);
+  assert.equal(projected.picker.policy_version, RECOVERY_PICKER_INTELLIGENCE_VERSION);
+  assert.equal(projected.picker.queue_state, "selected");
+  assert.equal(projected.picker.interaction_only, true);
+  assert.equal(projected.picker.business_truth_inferred, false);
   assert.equal(projected.correlation.booking_ref, "kenji_0123456789abcdef01234567");
   assert.equal(projected.correlation.session_id, "sess_exact_001");
   assert.equal(projected.correlation.job_id, "JOB-EXACT-001");
@@ -160,7 +222,7 @@ test("Recovery Queue derives case age and operational SLA only from workflow tim
 
 test("Recovery Queue filters domain/state and ranks overdue attention first", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
-  const booking = matrixRecord("reviewing");
+  const booking = pickerRecord("reissued", 2, "reviewing");
   const shop = matrixRecord("acknowledged");
   shop.id = "recMatrixShop";
   shop.fields.pending_reference = "HYPE-PER-20260919193000-acde5678";
@@ -211,7 +273,14 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     assert.equal(all.queue.overdue_count, 1);
     assert.equal(all.queue.assigned_count, 1);
     assert.equal(all.queue.unassigned_count, 1);
-    assert.equal(all.queue.attention_unassigned_count, 1);
+    assert.equal(all.queue.attention_unassigned_count, 0);
+    assert.equal(all.queue.picker_waiting_reselection_count, 1);
+    assert.equal(all.queue.picker_authority_unavailable_count, 0);
+    assert.equal(all.queue.picker_no_candidates_count, 0);
+    assert.equal(all.queue.picker_selected_count, 1);
+    assert.equal(all.queue.picker_watch_count, 1);
+    assert.equal(all.queue.picker_attention[0].picker_state, "waiting_reselection");
+    assert.equal(all.queue.picker_attention[0].picker_revision, 2);
     assert.equal(all.cases[0].case_ref, CASE_REF);
     assert.equal(all.cases[0].sla.status, "overdue");
     assert.equal(all.queue.operational_only, true);
@@ -228,6 +297,17 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     assert.equal(unassigned.cases.length, 1);
     assert.equal(unassigned.cases[0].case_ref, CASE_REF);
     assert.equal(unassigned.filters.assignment, "unassigned");
+
+    const reselection = await readRecoveryQueueIntelligence(env(), {
+      limit: 12,
+      domain: "all",
+      state: "open",
+      picker: "waiting_reselection",
+    }, now);
+    assert.equal(reselection.cases.length, 1);
+    assert.equal(reselection.cases[0].case_ref, CASE_REF);
+    assert.equal(reselection.cases[0].picker.queue_state, "waiting_reselection");
+    assert.equal(reselection.filters.picker, "waiting_reselection");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -260,8 +340,10 @@ test("Recovery Control page is noindex and rejects non-credential actors", async
   assert.match(html, /Recovery Control/);
   assert.match(html, /MMD Shop, Booking และ MMS/);
   assert.match(html, /ทุก Assignment/);
-  assert.match(html, /Claim Case/);
+  assert.match(html, /ทุก Picker/);
+  assert.match(html, /Refresh Current Choices/);
   assert.match(html, /mmd-recovery-assignment-v1-20260919/);
+  assert.match(html, /mmd-recovery-picker-intelligence-v1-20260920/);
 });
 
 test("Recovery Control API list and exact read are bounded", { concurrency: false }, async () => {
@@ -283,7 +365,9 @@ test("Recovery Control API list and exact read are bounded", { concurrency: fals
     assert.equal(listBody.cases[0].case_ref, CASE_REF);
     assert.equal(listBody.filters.state, "open");
     assert.equal(listBody.filters.assignment, "all");
+    assert.equal(listBody.filters.picker, "all");
     assert.equal(listBody.sla_version, RECOVERY_QUEUE_SLA_VERSION);
+    assert.equal(listBody.picker_intelligence_version, RECOVERY_PICKER_INTELLIGENCE_VERSION);
     assert.equal(listBody.assignment_version, RECOVERY_QUEUE_ASSIGNMENT_VERSION);
     assert.equal(listBody.queue.operational_only, true);
     assert.equal(listBody.queue.business_truth_inferred, false);
@@ -302,6 +386,9 @@ test("Recovery Control API list and exact read are bounded", { concurrency: fals
     assert.equal(exactBody.guardrails.browser_service_binding_exposed, false);
     assert.equal(exactBody.guardrails.assignment_coordination_metadata_only, true);
     assert.equal(exactBody.guardrails.assignment_grants_authority, false);
+    assert.equal(exactBody.guardrails.picker_manual_refresh_owner_only, true);
+    assert.equal(exactBody.guardrails.picker_manual_refresh_grants_authority, false);
+    assert.equal(exactBody.guardrails.picker_manual_refresh_selects_candidate, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -475,6 +562,147 @@ test("Recovery assignment conflicts fail closed and Owner may takeover/release w
     assert.equal(ownerRelease.status, 200);
     assert.equal((await ownerRelease.json()).case.assignment.status, "unassigned");
     assert.equal(patchCount, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Owner manual picker refresh reissues canonical choices without resetting lifecycle, SLA, assignment, or outcome", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let stored = pickerRecord("reissued", 2, "reviewing");
+  const before = JSON.parse(stored.fields.payload_json);
+  const originalTrackingUpdatedAt = before.handoff_tracking.updated_at;
+  const originalRecoveryUpdatedAt = before.recovery_case.updated_at;
+  const originalOutcome = before.recovery_case.outcome_code;
+  const originalAssignment = structuredClone(before.recovery_assignment);
+  const originalStateUpdatedAt = stored.fields.state_updated_at;
+  let patchCount = 0;
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    const method = String(init.method || "GET").toUpperCase();
+    if (url.hostname !== "api.airtable.com") throw new Error("unexpected_fetch:" + url.toString());
+
+    if (url.pathname.endsWith("/tblClients/" + CLIENT_ID)) {
+      return Response.json({
+        id: CLIENT_ID,
+        fields: {
+          telegram_user_id: "111111",
+          telegram_verification_status: "verified",
+          line_user_id: "U0123456789abcdef0123456789abcdef",
+          "Client Name": "คุณเชน",
+        },
+      });
+    }
+
+    if (url.pathname.endsWith("/tblBookingRequests")) {
+      return Response.json({
+        records: [
+          {
+            id: "recBookingC",
+            fields: {
+              booking_ref: "kenji_cccccccccccccccccccccccc",
+              "Request Status": "pending",
+              "Created At": "2026-09-19T16:00:00.000Z",
+              "Preferred Date": "2026-10-04",
+              "Preferred Time": "21:00",
+              "Selected Model Name": "Model C",
+              lane: "private",
+              resolver_payload_json: JSON.stringify({ canonical_client_id: CLIENT_ID }),
+            },
+          },
+        ],
+      });
+    }
+
+    if (url.pathname.endsWith("/tblMatrix") && method === "GET") {
+      return Response.json({ records: [stored] });
+    }
+    if (url.pathname.endsWith("/tblMatrix") && method === "PATCH") {
+      patchCount += 1;
+      const body = JSON.parse(String(init.body || "{}"));
+      stored = { id: stored.id, fields: { ...stored.fields, ...body.records[0].fields } };
+      return Response.json({ records: [stored] });
+    }
+
+    throw new Error("unexpected_fetch:" + url.toString() + ":" + method);
+  };
+
+  try {
+    const response = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          case_ref: CASE_REF,
+          action: "refresh_picker",
+          picker_revision: 2,
+        }),
+      }),
+      env(),
+      actor("owner"),
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.action, "refresh_picker");
+    assert.equal(body.picker_state, "picker_reissued");
+    assert.equal(body.replayed, false);
+    assert.equal(body.case.picker.revision, 3);
+    assert.equal(body.case.picker.queue_state, "waiting_reselection");
+    assert.equal(body.case.picker.candidate_count, 1);
+    assert.equal(body.case.controls.can_refresh_picker, true);
+    assert.equal(body.guardrails.picker_manual_refresh_grants_authority, false);
+    assert.equal(patchCount, 1);
+
+    const after = JSON.parse(stored.fields.payload_json);
+    assert.equal(after.handoff_tracking.state, "reviewing");
+    assert.equal(after.handoff_tracking.updated_at, originalTrackingUpdatedAt);
+    assert.equal(after.recovery_case.updated_at, originalRecoveryUpdatedAt);
+    assert.equal(after.recovery_case.outcome_code, originalOutcome);
+    assert.deepEqual(after.recovery_assignment, originalAssignment);
+    assert.equal(stored.fields.state_updated_at, originalStateUpdatedAt);
+    assert.equal(after.business_truth_mutated, false);
+    assert.equal(after.recovery_correlation.correlated, false);
+    assert.equal(after.recovery_correlation.picker_revision, 3);
+    assert.equal(after.recovery_correlation.candidate_count, 1);
+
+    const duplicate = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          case_ref: CASE_REF,
+          action: "refresh_picker",
+          picker_revision: 2,
+        }),
+      }),
+      env(),
+      actor("owner"),
+    );
+    const duplicateBody = await duplicate.json();
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicateBody.replayed, true);
+    assert.equal(duplicateBody.case.picker.revision, 3);
+    assert.equal(patchCount, 1);
+
+    const adminDenied = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          case_ref: CASE_REF,
+          action: "refresh_picker",
+          picker_revision: 3,
+        }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(adminDenied.status, 403);
+    assert.equal((await adminDenied.json()).error, "recovery_picker_refresh_owner_required");
+    assert.equal(patchCount, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
