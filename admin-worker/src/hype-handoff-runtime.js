@@ -2808,6 +2808,7 @@ async function buildBookingRecoveryCorrelation(env, input = {}) {
       options: candidates.options,
     });
   }
+  const pickerIssuedAt = new Date().toISOString();
   return safeRecoveryCorrelation({
     domain: "booking",
     state: "ambiguous",
@@ -2817,6 +2818,10 @@ async function buildBookingRecoveryCorrelation(env, input = {}) {
     method: "customer_select_owned_booking",
     source_authority: "sigil-booking-worker",
     live_refresh_status: "fresh",
+    picker_revision: 1,
+    picker_status: "active",
+    picker_issued_at: pickerIssuedAt,
+    picker_reissue_count: 0,
   });
 }
 
@@ -2987,6 +2992,7 @@ async function buildMmsRecoveryCorrelation(env, input = {}) {
       options: candidates.options,
     });
   }
+  const pickerIssuedAt = new Date().toISOString();
   return safeRecoveryCorrelation({
     domain: "mms",
     state: "ambiguous",
@@ -2996,6 +3002,10 @@ async function buildMmsRecoveryCorrelation(env, input = {}) {
     method: "customer_select_owned_mms_prebooking",
     source_authority: "mms-worker/member-prebookings",
     live_refresh_status: "fresh",
+    picker_revision: 1,
+    picker_status: "active",
+    picker_issued_at: pickerIssuedAt,
+    picker_reissue_count: 0,
   });
 }
 
@@ -3115,15 +3125,21 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
     .slice(0, 5);
 
   if (correlation.auto_correlation_allowed !== true || !candidateOrderId) {
+    const ambiguous = Number(correlation.candidate_count) > 1;
+    const pickerIssuedAt = ambiguous ? new Date().toISOString() : null;
     return {
       domain: "mmd_shop",
-      state: Number(correlation.candidate_count) > 1 ? "ambiguous" : "unmatched",
+      state: ambiguous ? "ambiguous" : "unmatched",
       correlated: false,
       candidate_count: Number(correlation.candidate_count) || 0,
       method: clean(correlation.method, 120) || "none",
       options,
       source_authority: clean(read.body.authority, 160) || "member-pages-worker",
       live_truth_refresh_required: true,
+      picker_revision: ambiguous ? 1 : null,
+      picker_status: ambiguous ? "active" : null,
+      picker_issued_at: pickerIssuedAt,
+      picker_reissue_count: 0,
     };
   }
 
