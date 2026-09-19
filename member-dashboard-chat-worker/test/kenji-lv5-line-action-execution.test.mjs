@@ -18,7 +18,7 @@ const modelGate = {
   required: true,
   status: "match",
   model: { model_code: "EMs20", working_name: "Rossi" },
-  parsed: { type: "booking", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท" },
+  parsed: { type: "booking", model_name: "Rossi", date: "2026-09-20", time: "20:00", location: "สุขุมวิท", amount_thb: 9000 },
 };
 const decision = {
   text: "prepared",
@@ -37,6 +37,15 @@ test("P4 action ID is stable per LINE message and user", () => {
   const two = KENJI_LV5_LINE_ACTION_INTERNALS.actionId(structuredClone(event));
   assert.equal(one, two);
   assert.match(one, /^line:/);
+});
+
+test("P4 Matrix action ID stays stable when the final field arrives in a later LINE message", () => {
+  const one = structuredClone(modelGate);
+  one.parsed.matrix_action_id = "matrix:kbd1_test_booking";
+  const nextEvent = structuredClone(event);
+  nextEvent.message.id = "different-final-field-message";
+  assert.equal(KENJI_LV5_LINE_ACTION_INTERNALS.resolvedActionId(event, one.parsed, false), "matrix:kbd1_test_booking");
+  assert.equal(KENJI_LV5_LINE_ACTION_INTERNALS.resolvedActionId(nextEvent, one.parsed, false), "matrix:kbd1_test_booking");
 });
 
 test("deposit trigger is eligible for silent capture before booking fields are complete", () => {
