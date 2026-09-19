@@ -257,7 +257,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!body) return json({ ok: false, error: "invalid_json" }, 400);
 
   const operation = token(body.operation || "read");
-  if (!["read", "transition"].includes(operation)) {
+  if (!["read", "transition", "select_recovery_order"].includes(operation)) {
     return json({ ok: false, error: "handoff_status_operation_invalid" }, 400);
   }
 
@@ -281,10 +281,13 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
 
     const tracking = handoffTrackingFromRecord(matrix.record);
     if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
-    let recoveryCorrelation = safeRecoveryCorrelation(parseObject(parseObject(matrix.record.fields?.[F.PAYLOAD]).recovery_correlation));
+
+    const payload = parseObject(matrix.record.fields?.[F.PAYLOAD]);
+    let recoveryCorrelation = safeRecoveryCorrelation(parseObject(payload.recovery_correlation));
     if (recoveryCorrelation?.correlated === true && recoveryCorrelation.order_id) {
       recoveryCorrelation = await refreshShopRecoveryCorrelation(env, telegramUserId, recoveryCorrelation);
     }
+    const recoveryCase = safeRecoveryCase(payload.recovery_case, tracking);
 
     return json({
       ok: true,
@@ -296,6 +299,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       actor_role: tracking.actor_role || null,
       terminal: ["resolved", "customer_notified"].includes(tracking.state),
       recovery_correlation: recoveryCorrelation,
+      recovery_case: recoveryCase,
       guardrails: handoffStatusGuardrails(),
     });
   }
@@ -304,6 +308,21 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
   if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
     return json({ ok: false, error: "handoff_id_invalid" }, 400);
   }
+
+  if (operation === "select_recovery_order") {
+    const telegramUserId = telegramId(body.telegram_user_id);
+    if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+    const selectionIndex = Number(body.selection_index);
+    if (!Number.isInteger(selectionIndex) || selectionIndex < 0 || selectionIndex > 4) {
+      return json({ ok: false, error: "recovery_order_selection_invalid" }, 400);
+    }
+    return selectShopRecoveryOrderForCase(env, {
+      telegramUserId,
+      handoffId,
+      selectionIndex,
+    });
+  }
+
   const nextState = token(body.state);
   if (!["sent", "acknowledged", "reviewing", "resolved", "customer_notified"].includes(nextState)) {
     return json({ ok: false, error: "handoff_state_invalid" }, 400);
@@ -325,7 +344,61 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     }, 409);
   }
 
-  if (currentState === nextState) {
+  const prior = matrix.record.fields || {};
+  const priorPayload = parseObject(prior[F.PAYLOAD]);
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, current);
+  const actorRole = token(body.actor_role || "operator");
+  const requestedOutcome = token(body.recovery_outcome_code);
+  const requestedDomain = body.recovery_domain
+    ? normalizeRecoveryDomain(body.recovery_domain)
+    : priorRecoveryCase?.domain || "unclassified";
+
+  if (priorRecoveryCase && priorRecoveryCase.domain !== "unclassified"
+      && requestedDomain !== priorRecoveryCase.domain) {
+    return json({
+      ok: false,
+      state: "transition_rejected",
+      error: "recovery_domain_change_forbidden",
+      current_domain: priorRecoveryCase.domain,
+      requested_domain: requestedDomain,
+    }, 409);
+  }
+
+  if (requestedOutcome && !["owner", "operator"].includes(actorRole)) {
+    return json({ ok: false, error: "recovery_outcome_authority_required" }, 403);
+  }
+
+  const effectiveDomain = priorRecoveryCase?.domain === "unclassified"
+    ? requestedDomain
+    : priorRecoveryCase?.domain || requestedDomain;
+  const effectiveOutcome = requestedOutcome || priorRecoveryCase?.outcome_code || "";
+
+  if (priorRecoveryCase && ["resolved", "customer_notified"].includes(nextState)) {
+    if (!effectiveOutcome || !isTerminalRecoveryOutcome(effectiveDomain, effectiveOutcome)) {
+      return json({
+        ok: false,
+        state: "transition_rejected",
+        error: "recovery_terminal_outcome_required",
+        recovery_domain: effectiveDomain,
+        allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, { terminal: true }),
+      }, 409);
+    }
+  } else if (requestedOutcome && !recoveryOutcomeAllowed(effectiveDomain, requestedOutcome, nextState)) {
+    return json({
+      ok: false,
+      state: "transition_rejected",
+      error: "recovery_outcome_invalid_for_state",
+      recovery_domain: effectiveDomain,
+      requested_outcome: requestedOutcome,
+      requested_state: nextState,
+      allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, {
+        terminal: ["resolved", "customer_notified"].includes(nextState),
+      }),
+    }, 409);
+  }
+
+  const noRecoveryChange = !requestedOutcome && !body.recovery_domain;
+  if (currentState === nextState && noRecoveryChange) {
     return json({
       ok: true,
       state: nextState,
@@ -333,14 +406,12 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       handoff_id: handoffId,
       target: current.target || normalizeTargetFromHandoffId(handoffId),
       updated_at: current.updated_at || null,
+      recovery_case: priorRecoveryCase,
       guardrails: handoffStatusGuardrails(),
     });
   }
 
-  const prior = matrix.record.fields || {};
-  const priorPayload = parseObject(prior[F.PAYLOAD]);
   const stamp = new Date().toISOString();
-  const actorRole = token(body.actor_role || "operator");
   const target = current.target || normalizeTargetFromHandoffId(handoffId);
   const version = Math.max(0, Number(prior[F.VERSION]) || 0) + 1;
   const tracking = {
@@ -350,16 +421,30 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     updated_at: stamp,
     actor_role: actorRole || "operator",
   };
+  const recoveryCase = priorRecoveryCase
+    ? evolveRecoveryCase(priorRecoveryCase, {
+        caseRef: handoffId,
+        domain: effectiveDomain,
+        state: nextState,
+        outcomeCode: effectiveOutcome,
+        actorRole: actorRole || "operator",
+        stamp,
+      })
+    : null;
 
   const fields = {
     [F.LAST_KENJI_ACTION]: `handoff_${nextState}`,
-    [F.LAST_OUTCOME]: handoffOutcome(nextState),
+    [F.LAST_OUTCOME]: recoveryCase
+      ? `${handoffOutcome(nextState)}; recovery=${recoveryCase.domain}/${recoveryCase.outcome_code}`
+      : handoffOutcome(nextState),
     [F.STAGE]: `handoff_${nextState}`,
     [F.AWAITING]: nextState === "resolved"
       ? "customer_notification"
       : nextState === "customer_notified"
         ? "none"
-        : "mmd_review",
+        : recoveryCase?.outcome_code === "awaiting_customer"
+          ? "customer"
+          : "mmd_review",
     [F.HANDOFF_REQUIRED]: !["resolved", "customer_notified"].includes(nextState),
     [F.LAST_EVENT]: `hype_handoff_${nextState}:${handoffId}`,
     [F.LAST_INTERACTION]: stamp,
@@ -372,6 +457,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       handoff_id: handoffId,
       handoff_target: target,
       handoff_tracking: tracking,
+      recovery_case: recoveryCase,
       live_truth_refresh_required: true,
       business_truth_mutated: false,
     }),
@@ -390,9 +476,11 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     handoff_id: handoffId,
     target,
     updated_at: stamp,
+    recovery_case: recoveryCase,
     guardrails: handoffStatusGuardrails(),
   });
 }
+
 
 export async function handleHypeTransactionIntakeRpc(request, env = {}) {
   const gate = validateRequest(request, HYPE_TRANSACTION_INTAKE_PATH);
