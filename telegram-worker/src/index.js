@@ -1919,6 +1919,14 @@ function renderRecoveryCorrelationOpsLines(correlation = {}, handoffId = "") {
     ];
   }
 
+  if (domain === "booking" && correlation.state === "ambiguous") {
+    return [
+      "",
+      `<b>Booking recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(correlation.candidate_count || 0)} Booking Request ที่เป็นของลูกค้า`,
+      "HYPE ไม่เลือก Booking/Job แทนลูกค้า และ server จะ re-check canonical ownership ก่อน bind",
+    ];
+  }
+
   if (domain === "mms" && correlation.correlated === true) {
     return [
       "",
@@ -1928,6 +1936,14 @@ function renderRecoveryCorrelationOpsLines(correlation = {}, handoffId = "") {
       ...(clean(correlation.service_date) ? [`Schedule: ${escapeHtml(clean(correlation.service_date))}${clean(correlation.service_time) ? ` · ${escapeHtml(clean(correlation.service_time))}` : ""}`] : []),
       ...(clean(correlation.zone) ? [`Zone: ${escapeHtml(clean(correlation.zone))}`] : []),
       `Case: <code>${escapeHtml(caseRef)}</code>`,
+    ];
+  }
+
+  if (domain === "mms" && correlation.state === "ambiguous") {
+    return [
+      "",
+      `<b>MMS recovery:</b> รอลูกค้าเลือก 1 จาก ${Number(correlation.candidate_count || 0)} Pre-booking ที่เป็นของลูกค้า`,
+      "HYPE ไม่เลือก MMS Pre-booking แทนลูกค้า และ server จะ re-check canonical ownership ก่อน bind",
     ];
   }
 
@@ -1970,6 +1986,13 @@ function renderRecoveryCorrelationCustomerLines(correlation = {}) {
     return lines;
   }
 
+  if (domain === "booking" && correlation.state === "ambiguous") {
+    return [
+      `<b>Booking:</b> ยังไม่ได้เลือก · มี ${Number(correlation.candidate_count || 0)} รายการที่เป็นไปได้`,
+      "เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ว่า Booking Request ยังเป็นของคุณก่อนผูกเข้ากับ Case เดิม",
+    ];
+  }
+
   if (domain === "mms" && correlation.correlated === true) {
     const lines = [
       `<b>MMS Pre-booking:</b> <code>${escapeHtml(clean(correlation.prebooking_id) || "-")}</code>`,
@@ -1983,6 +2006,13 @@ function renderRecoveryCorrelationCustomerLines(correlation = {}) {
       lines.push("<b>MMS state:</b> refresh จาก canonical MMS authority ไม่สำเร็จ จึงไม่ใช้ snapshot เดิมเป็นสถานะปัจจุบัน");
     }
     return lines;
+  }
+
+  if (domain === "mms" && correlation.state === "ambiguous") {
+    return [
+      `<b>MMS Pre-booking:</b> ยังไม่ได้เลือก · มี ${Number(correlation.candidate_count || 0)} รายการที่เป็นไปได้`,
+      "เลือกจากปุ่มด้านล่างได้ครับ HYPE จะ re-check ว่า Pre-booking ยังเป็นของคุณก่อนผูกเข้ากับ Case เดิม",
+    ];
   }
 
   return [];
