@@ -67,7 +67,7 @@ test("public catalog is server-owned and contains Member, Elite and Red Card", a
   const payload = await response.json();
   assert.deepEqual(payload.packages.map((item) => [item.package_code, item.amount_thb, item.duration_days]), [
     ["mmd_member", 690, 365],
-    ["elite", 4999, 730],
+    ["elite", 4990, 730],
     ["red_card", 11499, 365],
   ]);
   assert.equal(payload.payment_surface, "/pay/checkout");
@@ -113,9 +113,9 @@ test("purchase derives amount server-side and accepts only signed public checkou
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(payload.redirect_to, "https://mmdbkk.com/pay/checkout?t=signed_public");
-  assert.equal(payload.package.amount_thb, 4999);
+  assert.equal(payload.package.amount_thb, 4990);
   assert.equal(payload.entitlement_granted, false);
-  assert.equal(fx.calls[0].amount, 4999);
+  assert.equal(fx.calls[0].amount, 4990);
   assert.equal(fx.calls[0].package_code, "elite");
   assert.equal(fx.calls[0].payment_stage, "membership");
 
@@ -123,7 +123,7 @@ test("purchase derives amount server-side and accepts only signed public checkou
   assert.equal(stored.payment_ref, "pay_public_1");
   assert.equal(stored.payment_binding_status, "canonical_pending");
   assert.equal(stored.payment_package_code, "elite");
-  assert.equal(stored.payment_amount_thb, 4999);
+  assert.equal(stored.payment_amount_thb, 4990);
   assert.equal(stored.customer_payment_url, "https://mmdbkk.com/pay/checkout?t=signed_public");
   assert.equal(stored.route_after_liff, "/member/payments");
 });
