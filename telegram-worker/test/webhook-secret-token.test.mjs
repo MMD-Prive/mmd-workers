@@ -896,3 +896,107 @@ for (const [command, expectedPath, expectedText] of [
     }
   });
 }
+
+
+for (const [groupName, chatId] of [
+  ["standard", "-1002073919780"],
+  ["premium", "-1001668261779"],
+]) {
+  test(`HYPE /commands publishes a group-safe command guide in ${groupName} group`, { concurrency: false }, async () => {
+    const originalFetch = globalThis.fetch;
+    let telegramBody = null;
+    let operationsCalled = false;
+
+    globalThis.fetch = async (_url, init = {}) => {
+      telegramBody = JSON.parse(String(init.body || "{}"));
+      return Response.json({ ok: true, result: { message_id: 700, chat: { id: Number(chatId) } } });
+    };
+
+    try {
+      const response = await worker.fetch(new Request(WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+        },
+        body: JSON.stringify({
+          update_id: 9300,
+          message: {
+            message_id: 150,
+            text: "/commands",
+            chat: { id: Number(chatId), type: "supergroup" },
+            from: { id: 111111, username: "member" },
+          },
+        }),
+      }), env({
+        TELEGRAM_STANDARD_GROUP_ID: "-1002073919780",
+        TELEGRAM_PREMIUM_GROUP_ID: "-1001668261779",
+        HYPE_OPERATIONS: {
+          async fetch() {
+            operationsCalled = true;
+            throw new Error("group command guide must not read client truth");
+          },
+        },
+      }));
+
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(body.handled, true);
+      assert.equal(body.flow, "hype_member_group_commands");
+      assert.equal(body.group, groupName);
+      assert.equal(operationsCalled, false);
+      assert.match(telegramBody.text, new RegExp(groupName.toUpperCase()));
+      assert.match(telegramBody.text, /\/commands/);
+      assert.match(telegramBody.text, /\/status/);
+      assert.match(telegramBody.text, /ข้อมูลส่วนตัว/);
+      assert.doesNotMatch(telegramBody.text, /คุณเอ็ม|Book EI|5,000|canonical_client_id|payment_ref/i);
+
+      const buttons = telegramBody.reply_markup.inline_keyboard.flat();
+      assert.equal(buttons.some((button) => button.url === "https://t.me/mmdprivebot"), true);
+      assert.equal(buttons.some((button) => new URL(button.url).pathname === "/my-mmd/"), true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
+
+test("Premium group join service message cleanup is configured without exposing member data", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+
+  globalThis.fetch = async (url, init = {}) => {
+    telegramCalls.push({ url: String(url), body: JSON.parse(String(init.body || "{}")) });
+    return Response.json({ ok: true, result: true });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9301,
+        message: {
+          message_id: 151,
+          chat: { id: -1001668261779, type: "supergroup" },
+          from: { id: 111111, username: "member" },
+          new_chat_members: [{ id: 222222, first_name: "New Member" }],
+        },
+      }),
+    }), env({
+      TELEGRAM_PREMIUM_GROUP_ID: "-1001668261779",
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "telegram_group_join_cleanup");
+    assert.equal(body.surface, "premium_group");
+    assert.equal(body.deleted, true);
+    assert.equal(telegramCalls.some((call) => /deleteMessage$/.test(call.url)), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
