@@ -12,7 +12,7 @@ const SAFE_REPLIES = Object.freeze({
   care_back_coupon: "CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ พี่เฮนน่ารู้ทางส่งต่อ แต่จะไม่เปิดหรือสร้างสิทธิ์แทนระบบ\nCARE BACK: https://www.mmdbkk.com/promotion/6-years-care-back\nCoupon Wallet: https://www.mmdbkk.com/my-mmd/coupons",
   mms_therapist_options: "เรื่องตัวเลือก Therapist ฝั่ง MMS พี่เฮนน่ารับต่อได้ครับ 💚\nส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้ ตัวเลือกจริงต้องยึดจาก MMS ปัจจุบันและยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว",
   hall_model_discovery: "ถ้าหมายถึง Model ฝั่ง MMD Privé ไม่ใช่ MMS ให้เลือกมุมมองผ่าน Hall ก่อนนะครับ HENNA จะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้\nhttps://www.mmdbkk.com/hall\nเรื่องข้ามระบบใช้ HYPE @mmdprivebot ได้ครับ",
-  points_coupon_balance: "Points / Coupon ของ MMD เป็นข้อมูลสมาชิกครับ พี่เฮนน่าจะไม่เดายอดจากแชต\nPoints: https://www.mmdbkk.com/my-mmd/points\nCoupons: https://www.mmdbkk.com/my-mmd/coupons\nถ้าต้องการให้ช่วยต่อข้ามระบบ ใช้ HYPE @mmdprivebot ได้ครับ",
+  points_coupon_balance: "Points / Coupon ของ MMD เป็นข้อมูลสมาชิกครับ พี่เฮนน่าจะไม่เดายอดจากแชต MMS และจะไม่อ่าน wallet ของ MMD เอง\nถ้าต้องการดูยอดที่ยืนยันแล้ว เปิด HYPE @mmdprivebot แบบ private ได้ครับ — HYPE อ่านเฉพาะ bounded canonical wallet หลังยืนยันตัวตน\nPoints: https://www.mmdbkk.com/my-mmd/points\nCoupons: https://www.mmdbkk.com/my-mmd/coupons",
 });
 
 export function lineBotStatus(env) {

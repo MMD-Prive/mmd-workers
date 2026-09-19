@@ -51,6 +51,9 @@ test("HENNA recognizes shared MMD capability pack 1-7 without taking cross-syste
   assert.match(hennaReply("mms_therapist_options"), /ไม่ถือว่า Confirm Therapist/);
   assert.match(hennaReply("hall_model_discovery"), /ไม่เดาเพศ\/มุมมอง/);
   assert.match(hennaReply("points_coupon_balance"), /จะไม่เดายอด/);
+  assert.match(hennaReply("points_coupon_balance"), /HYPE @mmdprivebot แบบ private/);
+  assert.match(hennaReply("points_coupon_balance"), /bounded canonical wallet/);
+  assert.doesNotMatch(hennaReply("points_coupon_balance"), /ยอด.*\d+\s*Points|Code:\s*[A-HJ-NP-Z2-9]{6}/i);
   assert.equal(hennaReply("manual_recovery"), "");
   assert.equal(hennaReply("manual_handoff_status"), "");
 });
