@@ -7,12 +7,24 @@ import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
-import { expireViaMmdShopCoordinator, releaseViaMmdShopCoordinator, MmdShopStockCoordinator } from "./mmd-shop-stock-coordinator.js";
+import {
+  expireViaMmdShopCoordinator,
+  releaseViaMmdShopCoordinator,
+  MmdShopStockCoordinator,
+} from "./mmd-shop-stock-coordinator.js";
 import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
+
+export { MmdShopStockCoordinator };
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const path = normalizePath(url.pathname);
+
+    if (path === "/mmd-shop/internal/reservation/release" && request.method.toUpperCase() === "POST") {
+      return handleInternalReservationRelease(request, env);
+    }
+
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
@@ -58,8 +70,55 @@ export default {
     }
 
     return himaiChatWorker.fetch(request, env, ctx);
-  }
+  },
+
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(
+      expireViaMmdShopCoordinator(env)
+        .then((result) => console.log(JSON.stringify({ event: "mmd_shop_reservation_expiry_sweep", ...result })))
+        .catch((error) => console.error("MMD Shop reservation expiry sweep failed:", error))
+    );
+  },
 };
+
+async function handleInternalReservationRelease(request, env) {
+  const expected = String(env.INTERNAL_TOKEN || "").trim();
+  const supplied = String(
+    request.headers.get("x-internal-token")
+    || request.headers.get("authorization")
+    || ""
+  ).replace(/^Bearer\s+/i, "").trim();
+
+  if (!expected || supplied !== expected) {
+    return json({ ok: false, error: "internal_auth_required" }, 401);
+  }
+
+  const body = await request.json().catch(() => null);
+  const reservation = body?.reservation || readMmdShopReservation(body?.notes || "");
+  if (!reservation) return json({ ok: false, error: "reservation_required" }, 400);
+
+  try {
+    const result = await releaseViaMmdShopCoordinator(env, reservation, body?.reason || "released");
+    return json({ ok: true, ...result }, 200);
+  } catch (error) {
+    return json({ ok: false, error: String(error?.message || error || "release_failed") }, Number(error?.status || 500));
+  }
+}
+
+function normalizePath(value) {
+  const path = String(value || "/").replace(/\/{2,}/g, "/");
+  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
 
 function errorResponse(code, error) {
   return new Response(JSON.stringify({
