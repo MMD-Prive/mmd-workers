@@ -40,6 +40,7 @@ AIRTABLE_TABLE_ACCESS_LOG = "System — Access Log"
 AIRTABLE_TABLE_AUTH_IDENTITIES = "MMD — Auth Identities"
 AIRTABLE_TABLE_AUTH_LOGIN_CODES = "MMD — Auth Login Codes"
 AIRTABLE_TABLE_AUTH_SESSIONS = "MMD — Auth Sessions"
+AIRTABLE_MEMBER_LINE_USER_ID_FIELD = "line_user_id"
 
 # Members summary is compatibility/readback only. Entitlement decisions come from
 # MMD — Member Entitlements through my_mmd_entitlement_resolver_v1.

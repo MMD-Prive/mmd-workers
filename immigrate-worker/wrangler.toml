@@ -209,6 +209,7 @@ zone_name = "mmdbkk.com"
 
 # Secrets:
 # wrangler secret put INTERNAL_TOKEN
+# wrangler secret put INTERNAL_SERVICE_SECRET
 # wrangler secret put AIRTABLE_API_KEY
 
 # Exact/narrow routes above let the post-login worker-rendered admin pages and

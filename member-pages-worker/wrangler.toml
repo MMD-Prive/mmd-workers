@@ -120,6 +120,14 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 # binding. Do not restore mmd-redirect-worker or attach this implementation
 # worker directly to mmdbkk.com.
 
+[[services]]
+binding = "PROMOTION_WORKER"
+service = "promotion-worker"
+
+[[services]]
+binding = "PROMOTION_MEMBER_STATUS_RESOLVER"
+service = "mmd-auth-worker"
+
 [observability]
 enabled = true
 head_sampling_rate = 1
