@@ -856,7 +856,7 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /membership, /next, /booking, /payment, /submit, /progress, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
@@ -896,6 +896,23 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
       telegramUserId,
       target: command === "handoff_kenji" ? "kenji" : "per",
       command,
+    }, env, contextWriter);
+  }
+
+  if (command === "transaction_submit" || command === "transaction_progress") {
+    const contextWriter = env.HYPE_CONTEXT_WRITER;
+    if (!contextWriter?.fetch) {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ระบบ Supervised Execution ยังไม่พร้อมชั่วคราวครับ ผมจะไม่สร้างรายการจริงจาก draft ที่ยังส่งต่อไม่ได้",
+        disable_web_page_preview: true,
+      }, env);
+      return { handled: true, flow: "hype_supervised_execution", ok: false, code_status: "context_writer_unavailable", telegram };
+    }
+    return handleHypeSupervisedExecution({
+      chatId,
+      telegramUserId,
+      operation: command === "transaction_progress" ? "status" : "execute",
     }, env, contextWriter);
   }
 
@@ -1044,6 +1061,14 @@ function parseHypeOperatingCommand(value) {
       "owner mode",
     ].includes(normalized)
   ) return "owner_summary";
+  if (
+    /^\/(?:submit|execute)(?:@\w+)?$/i.test(text)
+    || ["ส่ง draft", "ส่งดราฟต์", "ส่งรายการนี้", "ดำเนินการ draft", "ดำเนินการดราฟต์", "ส่งต่อรายการนี้"].includes(normalized)
+  ) return "transaction_submit";
+  if (
+    /^\/(?:progress|draftstatus)(?:@\w+)?$/i.test(text)
+    || ["สถานะ draft", "สถานะดราฟต์", "เช็ก draft", "เช็กดราฟต์", "รายการนี้ถึงไหนแล้ว"].includes(normalized)
+  ) return "transaction_progress";
   if (/^\/status(?:@\w+)?$/i.test(text) || ["สถานะ", "เช็กสถานะ", "ดูสถานะ"].includes(normalized)) return "status";
   if (/^\/membership(?:@\w+)?$/i.test(text) || ["สมาชิก", "สถานะสมาชิก", "เช็กสมาชิก", "เช็คสมาชิก"].includes(normalized)) return "membership";
   if (/^\/next(?:@\w+)?$/i.test(text) || ["ต้องทำอะไรต่อ", "ทำอะไรต่อ", "ขั้นตอนต่อไป"].includes(normalized)) return "next";
@@ -1068,6 +1093,158 @@ function parseHypeOperatingCommand(value) {
   if (/^\/careback(?:@\w+)?$/i.test(text) || ["care back", "careback", "โปร 6 ปี", "โปรโมชัน 6 ปี"].includes(normalized)) return "careback";
   if (/^\/(?:help|commands)(?:@\w+)?$/i.test(text) || ["ช่วยอะไรได้บ้าง", "hype ช่วยอะไรได้บ้าง", "คำสั่ง", "ดูคำสั่ง", "commands"].includes(normalized)) return "help";
   return "";
+}
+
+async function handleHypeSupervisedExecution({ chatId, telegramUserId, operation }, env, binding) {
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/transaction-execute", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation,
+        telegram_user_id: telegramUserId,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const missing = Array.isArray(result?.missing_fields) ? result.missing_fields : [];
+    const text = result?.state === "draft_incomplete"
+      ? [
+          "Transaction Draft ยังไม่ครบครับ",
+          missing.length ? `ยังขาด: ${missing.join(", ")}` : "กรุณาส่งข้อมูลที่ขาดให้ HYPE ก่อน",
+          "",
+          "ผมจะไม่ execute รายการที่ข้อมูลยังไม่ครบครับ",
+        ].join("\n")
+      : result?.state === "connect_required" || result?.state === "line_identity_required"
+        ? "ต้องเชื่อม MY MMD / LINE identity ให้ครบก่อน ผมจึงจะทำ supervised execution ได้ครับ"
+        : "Supervised Execution ยังทำต่อไม่ได้ครับ ผมเก็บ draft เดิมไว้และจะไม่สร้าง business truth แทนระบบ";
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text,
+      disable_web_page_preview: true,
+      reply_markup: result?.state === "connect_required" || result?.state === "line_identity_required"
+        ? hypeConnectButtons(env)
+        : undefined,
+    }, env);
+    return {
+      handled: true,
+      flow: "hype_supervised_execution",
+      ok: false,
+      code_status: clean(result?.state || result?.error || "execution_unavailable"),
+      telegram,
+    };
+  }
+
+  let alert = null;
+  if (operation === "execute" && result.replayed !== true && result.ops_alert) {
+    try {
+      alert = await telegramNotify({
+        flow: clean(result.ops_alert.flow || "alerts"),
+        text: renderHypeExecutionOperatorAlert(result),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }, env);
+    } catch {
+      alert = { ok: false, error: "execution_alert_failed" };
+    }
+  }
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: renderHypeExecutionCustomer(result, operation),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: hypeExecutionButtons(env, result),
+  }, env);
+
+  return {
+    handled: true,
+    flow: operation === "status" ? "hype_supervised_execution_status" : "hype_supervised_execution",
+    ok: telegram?.ok === true,
+    code_status: clean(result.state || result.execution?.status || "execution_recorded"),
+    execution_id: clean(result.execution?.execution_id),
+    mode: clean(result.mode || result.execution?.mode),
+    replayed: result.replayed === true,
+    operator_notified: alert?.ok === true,
+    telegram,
+  };
+}
+
+function renderHypeExecutionCustomer(result = {}, operation = "execute") {
+  const receipt = result.execution || {};
+  const status = clean(receipt.status || result.state);
+  const mode = clean(receipt.mode || result.mode);
+  const label = ({
+    booking: "Booking",
+    payment_proof: "Payment Proof",
+    renewal: "Membership Renewal",
+    mms: "MMS Pre-booking",
+  })[mode] || "Transaction";
+  const lines = [`<b>HYPE · P6 ${escapeHtml(label)}</b>`];
+
+  if (operation === "status") {
+    if (!receipt.execution_id) {
+      lines.push("", "Draft ยังไม่มี supervised execution receipt ครับ");
+    } else {
+      lines.push("", `<b>Status:</b> ${escapeHtml(status || "unknown")}`);
+      lines.push(`<b>Execution:</b> <code>${escapeHtml(clean(receipt.execution_id))}</code>`);
+      if (clean(receipt.canonical_ref)) lines.push(`<b>Canonical ref:</b> <code>${escapeHtml(clean(receipt.canonical_ref))}</code>`);
+    }
+  } else {
+    lines.push("");
+    lines.push(escapeHtml(clean(result.customer_message) || executionStatusMessage(status)));
+    if (result.replayed === true) lines.push("คำสั่งนี้ถูกทำไว้แล้วครับ ระบบคืน receipt เดิมและไม่สร้างรายการซ้ำ");
+    if (clean(receipt.execution_id)) lines.push(`<b>Execution:</b> <code>${escapeHtml(clean(receipt.execution_id))}</code>`);
+    if (clean(receipt.canonical_ref)) lines.push(`<b>Canonical ref:</b> <code>${escapeHtml(clean(receipt.canonical_ref))}</code>`);
+  }
+
+  lines.push("");
+  lines.push("HYPE ทำได้เฉพาะ supervised low-risk step — final confirmation/payment/membership/assignment ยังเป็นของ canonical authority ครับ");
+  return lines.join("\n").slice(0, 3900);
+}
+
+function executionStatusMessage(status) {
+  return ({
+    materialized: "สร้าง canonical request/pre-booking ระดับ draft แล้วครับ",
+    queued: "ส่ง supervised intent เข้า queue แล้วครับ",
+    customer_action_required: "เตรียม canonical handoff แล้วครับ ขั้นต่อไปต้องให้คุณเปิดหน้ารายการจริง",
+    review_required: "รายการนี้ต้องให้ MMD/canonical authority ตรวจต่อครับ",
+    execution_recorded: "มี execution receipt ของรายการนี้แล้วครับ",
+    draft_ready: "Draft พร้อม แต่ยังไม่ได้ execute ครับ",
+  })[status] || "อัปเดต supervised execution แล้วครับ";
+}
+
+function hypeExecutionButtons(env, result = {}) {
+  const rows = [];
+  const href = clean(result.execution?.canonical_href);
+  if (href) rows.push([{ text: "เปิดรายการในระบบจริง", url: publicUrl(env, href) }]);
+  rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
+  return { inline_keyboard: rows };
+}
+
+function renderHypeExecutionOperatorAlert(result = {}) {
+  const receipt = result.execution || {};
+  const alert = result.ops_alert || {};
+  return [
+    `⚙️ <b>${escapeHtml(clean(alert.title) || "HYPE P6 · SUPERVISED EXECUTION")}</b>`,
+    `<b>Mode:</b> ${escapeHtml(clean(receipt.mode || result.mode) || "-")}`,
+    `<b>Status:</b> ${escapeHtml(clean(receipt.status || result.state) || "-")}`,
+    clean(receipt.execution_id) ? `<b>Execution:</b> <code>${escapeHtml(clean(receipt.execution_id))}</code>` : "",
+    clean(receipt.canonical_ref) ? `<b>Ref:</b> <code>${escapeHtml(clean(receipt.canonical_ref))}</code>` : "",
+    Array.isArray(alert.blockers) && alert.blockers.length ? `<b>Blockers:</b> ${escapeHtml(alert.blockers.join(", "))}` : "",
+    "",
+    "Protected final action remains pending canonical authority.",
+  ].filter(Boolean).join("\n").slice(0, 3500);
 }
 
 async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, target, command }, env, binding) {
@@ -1753,6 +1930,8 @@ function hypeHelpText() {
     "<b>/proof</b> — เตรียม Payment Proof handoff",
     "<b>/renew</b> — เตรียม Membership Renewal",
     "<b>/mms</b> — เริ่ม MMS Pre-booking draft",
+    "<b>/submit</b> — ให้ HYPE ทำ supervised low-risk step จาก draft ปัจจุบัน",
+    "<b>/progress</b> — ดู execution receipt / สถานะของ draft ล่าสุด",
     "<b>/next</b> — ดูว่าตอนนี้ต้องทำอะไรต่อ",
     "<b>/booking</b> — ดู progress งาน/การจองที่ระบบยืนยันได้",
     "<b>/payment</b> — ดูสถานะการชำระ ยอดคงเหลือ และสถานะตรวจสลิป",
