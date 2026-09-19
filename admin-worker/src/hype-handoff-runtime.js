@@ -2001,6 +2001,7 @@ function isShopRecoveryMessage(value) {
 function extractShopOrderId(value) {
   const text = clean(value, 500);
   const patterns = [
+    /^\/(?:orders?|support|recovery)(?:@\w+)?\s+([A-Za-z0-9][A-Za-z0-9_-]{3,79})\b/i,
     /(?:order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ)\s*(?:id|ref|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,79})/i,
     /\b(MMD[-_][A-Za-z0-9_-]{3,76})\b/i,
   ];
