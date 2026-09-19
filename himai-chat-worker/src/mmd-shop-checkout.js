@@ -1,4 +1,5 @@
 import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
+import { publicMmdShopReservation, releaseMmdShopReservation, reserveMmdShopStock, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -77,6 +78,10 @@ export async function handleMmdShopCheckout(request, env) {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
+  let reservation = null;
+  let order = null;
+  let orderId = "";
+
   try {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_json_body");
@@ -89,18 +94,25 @@ export async function handleMmdShopCheckout(request, env) {
     const stock = await loadMmdStock(env);
     const pricedCart = validateAndPriceCart(cartInput, products, stock);
     const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext);
-    const orderId = makeOrderId();
+    orderId = makeOrderId();
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "untracked");
 
-    const order = await createOrder(env, {
+    reservation = await reserveMmdShopStock(env, {
+      order_id: orderId,
+      items: pricedCart,
+    });
+
+    order = await createOrder(env, {
       orderId,
       customerRecordId: customer.id,
       total,
       stockConfirmationRequired,
       sourcePath: clean(body.source_path, 300) || "/mmd-shop",
       shipping,
+      reservation,
     });
+
     const orderItems = await createOrderItems(env, order.id, pricedCart);
 
     const telegram = await notifyOrder(env, {
@@ -109,6 +121,7 @@ export async function handleMmdShopCheckout(request, env) {
       customerName: customerInput.name,
       items: pricedCart,
       stockConfirmationRequired,
+      reservation,
     }).catch(() => ({ ok: false }));
 
     if (telegram.ok) {
@@ -117,7 +130,16 @@ export async function handleMmdShopCheckout(request, env) {
 
     const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email });
     if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
-      await appendOrderNote(env, order, `payment_initialization_failed=${clean(payment?.error || "payment_url_missing", 500)}`).catch(() => null);
+      const released = await releaseMmdShopReservation(env, reservation, "payment_initialization_failed").catch(() => null);
+      if (released?.reservation) reservation = released.reservation;
+      const currentNotes = clean(order?.fields?.[ORDER_FIELDS.notes], 14000);
+      await patchRecord(env, table(env, "orders"), order.id, {
+        [ORDER_FIELDS.orderStatus]: "cancelled",
+        [ORDER_FIELDS.notes]: writeMmdShopReservation(
+          [currentNotes, `payment_initialization_failed=${clean(payment?.error || "payment_url_missing", 500)}`].filter(Boolean).join("\n"),
+          reservation,
+        ),
+      }).catch(() => null);
       return json({
         ok: false,
         error: "payment_initialization_failed",
@@ -125,6 +147,7 @@ export async function handleMmdShopCheckout(request, env) {
         order_created: true,
         order_id: orderId,
         total_thb: total,
+        reservation: publicMmdShopReservation(reservation),
       }, 502);
     }
 
@@ -132,11 +155,12 @@ export async function handleMmdShopCheckout(request, env) {
       `payment_ref=${clean(payment.payment_ref, 220)}`,
       "payment_stage=shop",
       "money_truth=payments-worker",
+      `reservation_expires_at=${clean(reservation?.expires_at, 80)}`,
     ].join("; ")).catch(() => null);
 
     return json({
       ok: true,
-      schema: "mmd_shop_checkout_v1",
+      schema: "mmd_shop_checkout_v2",
       order_id: orderId,
       order_record_id: order.id,
       customer_record_id: customer.id,
@@ -148,6 +172,7 @@ export async function handleMmdShopCheckout(request, env) {
       order_status: "draft",
       official_payment_verification_required: true,
       stock_confirmation_required: stockConfirmationRequired,
+      reservation: publicMmdShopReservation(reservation),
       fulfillment: publicMmdShopFulfillment(createMmdShopFulfillment({ shipping })),
       items: pricedCart.map((item, index) => ({
         order_item_record_id: orderItems[index]?.id || null,
@@ -162,8 +187,21 @@ export async function handleMmdShopCheckout(request, env) {
       })),
     });
   } catch (error) {
+    if (reservation?.state === "reserved") {
+      const released = await releaseMmdShopReservation(env, reservation, "checkout_failed").catch(() => null);
+      if (released?.reservation) reservation = released.reservation;
+    }
+    if (order?.id) {
+      const currentNotes = clean(order?.fields?.[ORDER_FIELDS.notes], 14000);
+      await patchRecord(env, table(env, "orders"), order.id, {
+        [ORDER_FIELDS.orderStatus]: "cancelled",
+        [ORDER_FIELDS.notes]: reservation
+          ? writeMmdShopReservation([currentNotes, `checkout_failed=${clean(error?.message, 300)}`].filter(Boolean).join("\n"), reservation)
+          : currentNotes,
+      }).catch(() => null);
+    }
     console.error("MMD Shop checkout error:", error);
-    return json({ ok: false, error: clean(error?.message || error || "checkout_failed", 300) }, Number(error?.status || 500));
+    return json({ ok: false, error: clean(error?.message || error || "checkout_failed", 300), order_id: orderId || null }, Number(error?.status || 500));
   }
 }
 
@@ -390,7 +428,8 @@ async function createOrder(env, input) {
     "payment_verification_required=true",
   ];
   const fulfillment = createMmdShopFulfillment({ shipping: input.shipping });
-  const notes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);
+  const fulfillmentNotes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);
+  const notes = writeMmdShopReservation(fulfillmentNotes, input.reservation);
 
   return createRecord(env, table(env, "orders"), {
     [ORDER_FIELDS.orderId]: input.orderId,
@@ -462,7 +501,8 @@ async function notifyOrder(env, input) {
         `Customer: <b>${escapeHtml(input.customerName)}</b>`,
         ...lines,
         `Total: <b>${money(input.total)} THB</b>`,
-        input.stockConfirmationRequired ? "Stock: <b>confirmation required for untracked item(s)</b>" : "Stock: tracked",
+        input.stockConfirmationRequired ? "Stock: <b>confirmation required for untracked item(s)</b>" : "Stock: reserved",
+        input.reservation?.expires_at ? `Reservation until: <code>${escapeHtml(input.reservation.expires_at)}</code>` : "",
         "Payment: pending · official verification required",
       ].join("\n"),
     }),
