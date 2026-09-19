@@ -18,6 +18,7 @@ const {
   sharedCapabilityReply,
   verifyLineSignature,
   capabilityPackVersion,
+  recoveryOutcomeTaxonomyVersion,
 } = MMS_LINE_RUNTIME_INTERNALS;
 
 test("MMS LINE route is isolated from MMD webhook", () => {
@@ -58,6 +59,7 @@ test("support and services stay customer-facing", () => {
 
 test("MMS LINE runtime knows capability pack 1-7 and preserves HENNA/HYPE ownership", () => {
   assert.equal(capabilityPackVersion, "mmd-concierge-capability-pack-v1-20260919");
+  assert.equal(recoveryOutcomeTaxonomyVersion, "mmd-recovery-outcome-taxonomy-v1-20260919");
   assert.match(deterministicReply("GG Water ของผมถึงไหนแล้ว"), /MY MMD/);
   assert.match(deterministicReply("CARE BACK คูปองเปิดหรือยัง"), /Coupon Wallet/);
   assert.match(deterministicReply("ช่วยหา therapist ที่เหมาะหน่อย"), /ตัวเลือก Therapist/);
@@ -93,5 +95,6 @@ test("MMS webhook health reports configuration without exposing secrets", async 
   assert.equal(body.rich_menu_mode, "24/7");
   assert.equal(body.rich_menu_publisher, "raw-or-url-v2");
   assert.equal(body.capability_pack, "mmd-concierge-capability-pack-v1-20260919");
+  assert.equal(body.recovery_outcome_taxonomy, "mmd-recovery-outcome-taxonomy-v1-20260919");
   assert.equal(JSON.stringify(body).includes("present"), false);
 });
