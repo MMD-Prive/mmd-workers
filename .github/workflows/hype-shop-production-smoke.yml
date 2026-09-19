@@ -15,6 +15,7 @@ on:
       - "himai-chat-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
+      - "shared/mmd-shop-stock-reconciliation.mjs"
       - "telegram-worker/src/index.js"
       - "ops/hype-shop-production-smoke/**"
       - ".github/workflows/hype-shop-production-smoke.yml"

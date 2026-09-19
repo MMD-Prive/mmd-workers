@@ -98,6 +98,10 @@ function buildTelegramText(input) {
   return lines.join("\n");
 }
 
+export async function sendMmdShopOperationalAlert(env, text) {
+  return sendShopAlertToTelegram(env, "mmd-shop", "shop_owner", String(text || "").slice(0, 4000));
+}
+
 function threadId(env, shop, lane) {
   const key = shop === "mmd-shop"
     ? {

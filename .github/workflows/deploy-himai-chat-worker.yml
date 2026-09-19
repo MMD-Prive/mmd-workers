@@ -9,6 +9,7 @@ on:
       - "himai-chat-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
+      - "shared/mmd-shop-stock-reconciliation.mjs"
       - ".github/workflows/deploy-himai-chat-worker.yml"
 
 concurrency:
@@ -54,8 +55,10 @@ jobs:
           node --check src/mmd-shop-order-page.js
           node --check src/mmd-shop-product-page.js
           node --check src/mmd-shop-stock-coordinator.js
+          node --check src/mmd-shop-stock-health.js
           node --check ../shared/mmd-shop-stock-reservation.mjs
           node --check ../shared/mmd-shop-fulfillment.mjs
+          node --check ../shared/mmd-shop-stock-reconciliation.mjs
           grep -Fq 'name = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
           grep -Fq 'binding = "PAYMENTS_WORKER"' wrangler.toml
           grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml

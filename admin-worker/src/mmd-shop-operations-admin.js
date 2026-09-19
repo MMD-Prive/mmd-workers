@@ -1,3 +1,5 @@
+import { buildMmdShopStockReconciliation } from "../../shared/mmd-shop-stock-reconciliation.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 const PAGE_INVENTORY = "/internal/admin/shop/inventory";
@@ -230,14 +232,49 @@ async function loadInventoryWorkspace(env) {
     .filter(Boolean)
     .sort((a, b) => a.product_name.localeCompare(b.product_name, "th"));
 
-  const recentMovements = movements
-    .map((record) => safeMovement(record, productById, supplierById))
+  const safeMovements = movements
+    .map((record) => safeMovement(record, productById, supplierById));
+  const recentMovements = safeMovements
+    .slice()
     .sort((a, b) => String(b.movement_date || "").localeCompare(String(a.movement_date || "")))
     .slice(0, 100);
 
+  const reconciliation = buildMmdShopStockReconciliation({
+    batches: safeBatches,
+    movements: safeMovements,
+    low_stock_threshold: Number(env.MMD_SHOP_LOW_STOCK_THRESHOLD || 5),
+  });
+  const reconciliationByBatch = new Map(reconciliation.batches.map((item) => [item.batch_id, item]));
+  const enrichedBatches = safeBatches.map((batch) => ({
+    ...batch,
+    reconciliation: reconciliationByBatch.get(batch.id) || null,
+  }));
+  const reconciliationByProduct = new Map();
+  for (const row of reconciliation.batches) {
+    if (!row.product_id) continue;
+    const current = reconciliationByProduct.get(row.product_id) || {
+      reserved_units: 0,
+      available_units: 0,
+      physical_estimate_units: 0,
+      reconciliation_mismatches: 0,
+    };
+    current.reserved_units += Number(row.reserved_units || 0);
+    current.available_units += Number(row.available_units || 0);
+    current.physical_estimate_units += Number(row.physical_estimate_units || 0);
+    if (row.reconciliation_status === "mismatch") current.reconciliation_mismatches += 1;
+    reconciliationByProduct.set(row.product_id, current);
+  }
+  for (const product of productRows) {
+    const health = reconciliationByProduct.get(product.id);
+    product.available_units = health?.available_units ?? product.quantity_remaining;
+    product.reserved_units = health?.reserved_units ?? 0;
+    product.physical_estimate_units = health?.physical_estimate_units ?? product.quantity_remaining;
+    product.reconciliation_mismatches = health?.reconciliation_mismatches ?? 0;
+  }
+
   return {
     products: productRows,
-    batches: safeBatches
+    batches: enrichedBatches
       .sort((a, b) => String(b.received_date || "").localeCompare(String(a.received_date || "")))
       .slice(0, 300),
     suppliers: suppliers
@@ -248,12 +285,16 @@ async function loadInventoryWorkspace(env) {
       }))
       .sort((a, b) => a.supplier_name.localeCompare(b.supplier_name, "th")),
     movements: recentMovements,
+    reconciliation,
     metrics: {
       products: productRows.length,
       tracked_products: productRows.filter((item) => item.active_batches > 0).length,
       active_batches: safeBatches.filter((item) => item.batch_status === "active").length,
-      low_batches: safeBatches.filter((item) => item.batch_status === "active" && item.low_stock).length,
-      total_units: productRows.reduce((sum, item) => sum + number(item.quantity_remaining), 0),
+      low_batches: reconciliation.metrics.low_stock_batches,
+      reconciliation_mismatches: reconciliation.metrics.reconciliation_mismatches,
+      reserved_units: reconciliation.metrics.reserved_units,
+      total_units: reconciliation.metrics.available_units,
+      physical_estimate_units: reconciliation.metrics.physical_estimate_units,
     },
   };
 }
