@@ -11,9 +11,15 @@ import {
   transitionMmdShopFulfillment,
   writeMmdShopFulfillment,
 } from "../shared/mmd-shop-fulfillment.mjs";
+import {
+  publicMmdShopReservation,
+  readMmdShopReservation,
+  writeMmdShopReservation,
+} from "../shared/mmd-shop-stock-reservation.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
+export const SHOP_EXPIRE_INTENT_PATH = "/v1/internal/shop/expire-intent";
 const SHOP_STAGE = "shop";
 
 const TABLES = Object.freeze({
@@ -57,6 +63,69 @@ export function isShopIntentRequest(path, method) {
   return normalizePath(path) === SHOP_INTENT_PATH && ["POST", "OPTIONS"].includes(String(method || "POST").toUpperCase());
 }
 
+export async function handleShopIntentExpiry(request, env) {
+  if (normalizePath(new URL(request.url).pathname) !== SHOP_EXPIRE_INTENT_PATH) return null;
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+
+  const expected = text(env.INTERNAL_TOKEN, 5000);
+  const supplied = text(
+    request.headers.get("x-internal-token")
+    || request.headers.get("authorization")
+    || "",
+    5000,
+  ).replace(/^Bearer\s+/i, "");
+  if (!expected || supplied !== expected) return json({ ok: false, error: "internal_auth_required" }, 401, request, env);
+
+  const body = await request.json().catch(() => null);
+  const orderId = text(body?.order_id || body?.session_id, 180);
+  if (!orderId) return json({ ok: false, error: "order_id_required" }, 400, request, env);
+
+  try {
+    const payment = await findPaymentByOrderId(env, orderId);
+    if (!payment?.id) {
+      await markOrderPaymentExpirySynced(env, orderId);
+      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "payment_not_found" }, 200, request, env);
+    }
+
+    const fields = payment.fields || {};
+    const paymentStatus = code(fields[PAYMENT_FIELDS.status]);
+    const intentStatus = code(fields[PAYMENT_FIELDS.intentStatus]);
+    if (paymentStatus === "paid" || intentStatus === "confirmed") {
+      return json({
+        ok: false,
+        authority: "payments-worker",
+        order_id: orderId,
+        error: "payment_already_paid_expiry_conflict",
+        manual_review_required: true,
+      }, 409, request, env);
+    }
+    if (intentStatus === "cancelled") {
+      await markOrderPaymentExpirySynced(env, orderId);
+      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: true, idempotent: true }, 200, request, env);
+    }
+
+    const notes = appendNote(
+      fields[PAYMENT_FIELDS.notes],
+      `shop_reservation_expired_at=${new Date().toISOString()}; order_id=${orderId}; expired_by=payments-worker`,
+    );
+    await patchRecord(env, table(env, "payments"), payment.id, {
+      [PAYMENT_FIELDS.intentStatus]: "Cancelled",
+      [PAYMENT_FIELDS.notes]: notes,
+    });
+    await markOrderPaymentExpirySynced(env, orderId);
+
+    return json({
+      ok: true,
+      authority: "payments-worker",
+      order_id: orderId,
+      expired: true,
+      intent_status: "cancelled",
+    }, 200, request, env);
+  } catch (error) {
+    return json({ ok: false, authority: "payments-worker", error: text(error?.message || error, 300) }, Number(error?.status || 500), request, env);
+  }
+}
+
 export async function handleShopIntent(request, env) {
   if (request.method.toUpperCase() === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(request, env) });
@@ -73,6 +142,15 @@ export async function handleShopIntent(request, env) {
 
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
+    const orderPaymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    if (orderStatus === "cancelled") throw httpError(409, "shop_order_cancelled");
+    if (reservation && ["expired", "released"].includes(reservation.state)) throw httpError(409, "shop_order_reservation_expired");
+    if (reservation?.state === "reserved" && Date.parse(reservation.expires_at || "") <= Date.now() && orderPaymentStatus !== "paid") {
+      throw httpError(409, "shop_order_reservation_expired");
+    }
+
     const orderTotal = positive(order.fields?.[ORDER_FIELDS.total]);
     if (orderTotal == null || Math.abs(orderTotal - amount) > 0.009) throw httpError(409, "shop_order_amount_mismatch");
 
@@ -145,6 +223,13 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
 
     const total = positive(order.fields?.[ORDER_FIELDS.total]);
     const orderItems = await findOrderItems(env, order.id);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    const reservationExpired = Boolean(
+      reservation && (
+        ["expired", "released"].includes(reservation.state)
+        || (reservation.state === "reserved" && Number.isFinite(Date.parse(reservation.expires_at || "")) && Date.parse(reservation.expires_at || "") <= Date.now())
+      )
+    );
     const paymentFields = payment.fields || {};
     const paymentStatus = code(paymentFields[PAYMENT_FIELDS.status]);
     const verificationStatus = code(paymentFields[PAYMENT_FIELDS.verification]);
@@ -160,7 +245,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
       session_id: claims.session_id,
       payment_ref: claims.payment_ref,
       payment_type: SHOP_STAGE,
-      session_status: text(order.fields?.[ORDER_FIELDS.orderStatus], 80) || "draft",
+      session_status: reservationExpired ? "cancelled" : (text(order.fields?.[ORDER_FIELDS.orderStatus], 80) || "draft"),
       payment_status: text(order.fields?.[ORDER_FIELDS.paymentStatus], 80) || "pending",
       client_name: "MMD Shop Customer",
       model_name: "MMD Shop",
@@ -189,11 +274,12 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
         schema: "customer_payment_display_v1",
         stage: SHOP_STAGE,
         method: normalizeMethod(paymentFields[PAYMENT_FIELDS.method]),
-        amount_due_thb: verified ? 0 : total,
+        amount_due_thb: verified || reservationExpired ? 0 : total,
         qr_url: null,
         proof_status_available: true,
         proof_received: proofReceived,
         verified,
+        accepting_payment: !verified && !reservationExpired,
       },
       shop_order: {
         schema: "mmd_shop_order_payment_context_v1",
@@ -204,6 +290,9 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
           const value = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]);
           return value ? publicMmdShopFulfillment(value) : null;
         })(),
+        reservation: (() => {
+          return reservation ? publicMmdShopReservation(reservation) : null;
+        })(),
       },
     }, 200, request, env);
   } catch (error) {
@@ -211,21 +300,139 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
   }
 }
 
-export async function reconcileReviewedShopPayment(request, response, env) {
+export async function enrichShopConfirmVerify(request, response, env) {
   if (!response?.ok) return response;
+  const payload = await response.clone().json().catch(() => null);
+  const claims = payload?.claims;
+  const paymentType = code(claims?.payment_type || claims?.payment_stage);
+  if (!payload?.ok || paymentType !== SHOP_STAGE) return response;
+
+  const body = await request.clone().json().catch(() => null);
+  const token = text(body?.t || body?.token, 12000);
+  if (!token) return response;
+
+  const detailsRequest = new Request(new URL("/v1/confirm/details", request.url), {
+    method: "POST",
+    headers: request.headers,
+    body: JSON.stringify({ t: token, expected_role: "customer" }),
+  });
+  const detailsResponse = await maybeHandleShopConfirmationDetails(detailsRequest, env);
+  if (!detailsResponse) return response;
+
+  const details = await detailsResponse.clone().json().catch(() => null);
+  if (!detailsResponse.ok || !details?.ok) {
+    return json({
+      ok: false,
+      authority: "payments-worker",
+      error: details?.error || "shop_confirmation_details_unavailable",
+    }, detailsResponse.status || 409, request, env);
+  }
+
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store, private");
+  headers.set("x-mmd-shop-verify", "enriched");
+
+  return new Response(JSON.stringify({
+    ...payload,
+    payment_status: details.payment_status,
+    session_status: details.session_status,
+    claims: {
+      ...claims,
+      payment_type: SHOP_STAGE,
+      payment_status: details.payment_status,
+      session_status: details.session_status,
+      amount_thb: details.amount_thb,
+      shop_order: details.shop_order,
+      payment: details.payment,
+    },
+  }), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+export async function preflightReviewedShopPayment(request, env) {
   const body = await request.clone().json().catch(() => null);
   const stage = code(body?.payment_stage || body?.stage || body?.payment_type);
-  if (stage !== SHOP_STAGE) return response;
-
-  const payload = await response.clone().json().catch(() => null);
-  if (!payload?.ok) return response;
+  if (stage !== SHOP_STAGE) return null;
 
   const orderId = text(body?.session_id || body?.order_id, 180);
-  if (!orderId) return response;
+  if (!orderId) return json({ ok: false, authority: "payments-worker", error: "shop_order_id_required" }, 400, request, env);
 
   try {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+
+    const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
+    const paymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+
+    if (paymentStatus === "paid") return null;
+    if (orderStatus === "cancelled") throw httpError(409, "shop_order_cancelled");
+    if (reservation && ["expired", "released"].includes(reservation.state)) {
+      throw httpError(409, "shop_order_reservation_expired");
+    }
+    if (reservation?.state === "reserved") {
+      const expires = Date.parse(reservation.expires_at || "");
+      if (Number.isFinite(expires) && expires <= Date.now()) {
+        throw httpError(409, "shop_order_reservation_expired");
+      }
+    }
+
+    if (reservation && reservation.state !== "committed") {
+      const reviewKey = paymentReviewKey(body, orderId);
+      await mutateReservationThroughShopWorker(env, "claim-payment", reservation, reviewKey, "");
+    }
+
+    return null;
+  } catch (error) {
+    return json({
+      ok: false,
+      authority: "payments-worker",
+      error: text(error?.message || error || "shop_payment_preflight_failed", 300),
+      payment_committed: false,
+    }, Number(error?.status || 409), request, env);
+  }
+}
+
+export async function reconcileReviewedShopPayment(request, response, env) {
+  const body = await request.clone().json().catch(() => null);
+  const stage = code(body?.payment_stage || body?.stage || body?.payment_type);
+  if (stage !== SHOP_STAGE) return response;
+
+  const orderId = text(body?.session_id || body?.order_id, 180);
+  if (!orderId) return response;
+  const reviewKey = paymentReviewKey(body, orderId);
+
+  const payload = response ? await response.clone().json().catch(() => null) : null;
+  if (!response?.ok || !payload?.ok) {
+    try {
+      const order = await findOrderByOrderId(env, orderId);
+      const reservation = readMmdShopReservation(order?.fields?.[ORDER_FIELDS.notes]);
+      if (reservation?.state === "payment_review") {
+        await mutateReservationThroughShopWorker(env, "abort-payment-claim", reservation, reviewKey, "review_not_committed");
+      }
+    } catch (error) {
+      console.error("MMD Shop payment claim abort failed:", error);
+    }
+    return response;
+  }
+
+  try {
+    const order = await findOrderByOrderId(env, orderId);
+    if (!order?.id) throw httpError(404, "shop_order_not_found");
+
+    const existingReservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    let committedReservation = existingReservation;
+    if (existingReservation && ["reserved", "payment_review"].includes(existingReservation.state)) {
+      const committed = await commitReservationThroughShopWorker(env, existingReservation);
+      committedReservation = committed.reservation;
+    } else if (existingReservation && existingReservation.state !== "committed") {
+      throw httpError(409, `shop_reservation_not_committable:${existingReservation.state}`);
+    }
 
     const paymentAuditNote = appendNote(
       order.fields?.[ORDER_FIELDS.notes],
@@ -233,7 +440,10 @@ export async function reconcileReviewedShopPayment(request, response, env) {
     );
     const existingFulfillment = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]) || createMmdShopFulfillment();
     const confirmedFulfillment = transitionMmdShopFulfillment(existingFulfillment, { state: "confirmed" });
-    const orderNotes = writeMmdShopFulfillment(paymentAuditNote, confirmedFulfillment);
+    const fulfillmentNotes = writeMmdShopFulfillment(paymentAuditNote, confirmedFulfillment);
+    const orderNotes = committedReservation
+      ? writeMmdShopReservation(fulfillmentNotes, committedReservation)
+      : fulfillmentNotes;
 
     await patchRecord(env, table(env, "orders"), order.id, {
       [ORDER_FIELDS.orderStatus]: "confirmed",
@@ -266,6 +476,8 @@ export async function reconcileReviewedShopPayment(request, response, env) {
         payment_status: "paid",
         items_confirmed: items.length,
         fulfillment: publicMmdShopFulfillment(confirmedFulfillment),
+        reservation: committedReservation ? publicMmdShopReservation(committedReservation) : null,
+        inventory_out_committed: committedReservation ? committedReservation.state === "committed" : null,
       },
     }), { status: response.status, headers });
   } catch (error) {
@@ -277,6 +489,45 @@ export async function reconcileReviewedShopPayment(request, response, env) {
       shop_order_reconcile_required: true,
     }, Number(error?.status || 502), request, env);
   }
+}
+
+
+function paymentReviewKey(body, orderId) {
+  return text(body?.payment_ref || body?.transaction_ref || orderId, 500) || orderId;
+}
+
+async function mutateReservationThroughShopWorker(env, action, reservation, reviewKey = "", reason = "") {
+  if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
+  const token = text(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+
+  const allowed = new Set(["claim-payment", "abort-payment-claim", "commit"]);
+  if (!allowed.has(action)) throw httpError(500, "invalid_reservation_mutation_action");
+
+  const response = await env.MMD_SHOP_WORKER.fetch(
+    `https://himai-chat-worker.internal/mmd-shop/internal/reservation/${action}`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-token": token,
+      },
+      body: JSON.stringify({
+        reservation,
+        review_key: reviewKey || undefined,
+        reason: reason || undefined,
+      }),
+    }
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || !data.reservation) {
+    throw httpError(response.status || 502, data.error || `reservation_${action}_failed`);
+  }
+  return data;
+}
+
+async function commitReservationThroughShopWorker(env, reservation) {
+  return mutateReservationThroughShopWorker(env, "commit", reservation);
 }
 
 async function createPaymentRecord(env, input) {
@@ -297,6 +548,59 @@ async function createPaymentRecord(env, input) {
 
 async function findOrderByOrderId(env, orderId) {
   return findFirst(env, table(env, "orders"), `{Order ID}='${formulaValue(orderId)}'`);
+}
+
+async function markOrderPaymentExpirySynced(env, orderId) {
+  const order = await findOrderByOrderId(env, orderId);
+  if (!order?.id) return false;
+  const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+  if (!reservation || reservation.state !== "expired") return false;
+  if (reservation.payment_expiry_synced_at) return true;
+
+  const next = {
+    ...reservation,
+    payment_expiry_synced_at: new Date().toISOString(),
+  };
+  await patchRecord(env, table(env, "orders"), order.id, {
+    [ORDER_FIELDS.notes]: writeMmdShopReservation(order.fields?.[ORDER_FIELDS.notes], next),
+  });
+  return true;
+}
+
+async function findPaymentByOrderId(env, orderId) {
+  const baseId = text(env.AIRTABLE_BASE_ID, 100);
+  const apiKey = airtableToken(env);
+  const tableId = table(env, "payments");
+  let offset = "";
+  let pages = 0;
+
+  do {
+    const url = new URL(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    for (const fieldId of [
+      PAYMENT_FIELDS.sessionId,
+      PAYMENT_FIELDS.status,
+      PAYMENT_FIELDS.intentStatus,
+      PAYMENT_FIELDS.notes,
+      PAYMENT_FIELDS.paymentRef,
+    ]) url.searchParams.append("fields[]", fieldId);
+    if (offset) url.searchParams.set("offset", offset);
+
+    const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw httpError(502, "shop_payment_lookup_failed");
+
+    const found = (Array.isArray(data.records) ? data.records : []).find((record) =>
+      text(record.fields?.[PAYMENT_FIELDS.sessionId], 180) === orderId
+    );
+    if (found) return found;
+
+    offset = text(data.offset, 300);
+    pages += 1;
+  } while (offset && pages < 20);
+
+  return null;
 }
 
 async function findPaymentByRef(env, paymentRef) {
