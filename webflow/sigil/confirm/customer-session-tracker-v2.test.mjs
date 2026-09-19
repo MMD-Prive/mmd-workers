@@ -12,12 +12,12 @@ test("customer tracker polls the same signed confirmation link and renders final
   assert.match(source, /data-final-payment/);
 });
 
-test("final proof upload keeps evidence pending until official verification", () => {
-  assert.match(source, /\/v1\/pay\/slip\/evidence/);
-  assert.match(source, /form\.append\("payment_ref", paymentRef\)/);
-  assert.match(source, /form\.append\("payment_stage", "final"\)/);
-  assert.match(source, /form\.append\("source_page", "job_confirmation"\)/);
-  assert.match(source, /รับหลักฐานแล้ว · MMD กำลังตรวจยอด/);
+test("final payment reuses canonical SIGIL PAY and never owns a second proof uploader", () => {
+  assert.match(source, /\/sigil\/pay\?t=/);
+  assert.match(source, /data-final-pay-link/);
+  assert.match(source, /ไม่ต้องส่งซ้ำ/);
   assert.match(source, /ชำระยอดคงเหลือเรียบร้อย · Model สามารถเริ่มงานได้/);
-  assert.doesNotMatch(source, /proof_received\)\s*\{[^}]*ชำระยอดคงเหลือเรียบร้อย/s);
+  assert.doesNotMatch(source, /\/v1\/pay\/slip\/evidence/);
+  assert.doesNotMatch(source, /FormData\(/);
+  assert.doesNotMatch(source, /data-final-proof-file/);
 });
