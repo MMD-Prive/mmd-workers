@@ -1,4 +1,4 @@
-import { transitionRecoveryCase } from "./hype-handoff-runtime.js";
+import { refreshRecoveryPickerForOwner, transitionRecoveryCase } from "./hype-handoff-runtime.js";
 import {
   RECOVERY_OUTCOME_TAXONOMY_VERSION,
   isTerminalRecoveryOutcome,
@@ -12,8 +12,10 @@ export const RECOVERY_CONTROL_PAGE_PATH = "/internal/admin/recovery";
 export const RECOVERY_CONTROL_API_PATH = "/v1/admin/recovery/cases";
 export const RECOVERY_QUEUE_SLA_VERSION = "mmd-recovery-queue-sla-v1-20260919";
 export const RECOVERY_QUEUE_ASSIGNMENT_VERSION = "mmd-recovery-assignment-v1-20260919";
+export const RECOVERY_PICKER_INTELLIGENCE_VERSION = "mmd-recovery-picker-intelligence-v1-20260920";
 
 const RECOVERY_QUEUE_ASSIGNMENT_FILTERS = Object.freeze(["all", "assigned", "unassigned"]);
+const RECOVERY_QUEUE_PICKER_FILTERS = Object.freeze(["all", "waiting_reselection", "authority_unavailable", "no_candidates", "selected"]);
 const RECOVERY_QUEUE_STATES = Object.freeze(["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"]);
 const RECOVERY_QUEUE_DOMAINS = Object.freeze(["mmd_shop", "booking", "mms", "unclassified"]);
 const RECOVERY_ATTENTION_TARGET_MINUTES = Object.freeze({
@@ -68,9 +70,11 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
       sla_version: RECOVERY_QUEUE_SLA_VERSION,
       assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      picker_intelligence_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
       domain: normalizeQueueDomainFilter(url.searchParams.get("domain")).value,
       state: normalizeQueueStateFilter(url.searchParams.get("state")).value,
       assignment: normalizeQueueAssignmentFilter(url.searchParams.get("assignment")).value,
+      picker: normalizeQueuePickerFilter(url.searchParams.get("picker")).value,
       owner_mode: recoveryAssignmentActor(actor).owner === true,
     }), 200);
   }
@@ -90,6 +94,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
         taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
         sla_version: RECOVERY_QUEUE_SLA_VERSION,
         assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+        picker_intelligence_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
         guardrails: recoveryControlGuardrails(),
       });
     }
@@ -97,13 +102,15 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
     const domainFilter = normalizeQueueDomainFilter(url.searchParams.get("domain"));
     const stateFilter = normalizeQueueStateFilter(url.searchParams.get("state"));
     const assignmentFilter = normalizeQueueAssignmentFilter(url.searchParams.get("assignment"));
-    if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok) {
+    const pickerFilter = normalizeQueuePickerFilter(url.searchParams.get("picker"));
+    if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok || !pickerFilter.ok) {
       return json({
         ok: false,
         error: "recovery_queue_filter_invalid",
         allowed_domains: ["all", ...RECOVERY_QUEUE_DOMAINS],
         allowed_states: ["open", "all", ...RECOVERY_QUEUE_STATES],
         allowed_assignments: RECOVERY_QUEUE_ASSIGNMENT_FILTERS,
+        allowed_picker_states: RECOVERY_QUEUE_PICKER_FILTERS,
       }, 400);
     }
 
@@ -112,6 +119,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       domain: domainFilter.value,
       state: stateFilter.value,
       assignment: assignmentFilter.value,
+      picker: pickerFilter.value,
     });
     if (!result.ok) return json(result, 503);
     return json({
@@ -123,6 +131,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
       sla_version: RECOVERY_QUEUE_SLA_VERSION,
       assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      picker_intelligence_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
       guardrails: recoveryControlGuardrails(),
     });
   }
@@ -144,6 +153,33 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
   if (!current.ok) return json(current, statusForReadError(current.error));
 
   const requestedAction = token(body.action);
+  if (requestedAction === "refresh_picker") {
+    if (recoveryAssignmentActor(actor).owner !== true) {
+      return json({ ok: false, error: "recovery_picker_refresh_owner_required" }, 403);
+    }
+    const expectedPickerRevision = Number(body.picker_revision);
+    if (!Number.isInteger(expectedPickerRevision) || expectedPickerRevision < 1 || expectedPickerRevision > 999999) {
+      return json({ ok: false, error: "expected_picker_revision_required" }, 400);
+    }
+    const refresh = await refreshRecoveryPickerForOwner(env, {
+      handoff_id: caseRef,
+      expected_picker_revision: expectedPickerRevision,
+      actor_role: "owner",
+    });
+    if (!refresh.ok) return json(refresh, refresh.status || 409);
+    const refreshedPicker = await readRecoveryCase(env, caseRef);
+    return json({
+      ok: true,
+      authority: "mmd.recovery_control.v1",
+      action: requestedAction,
+      replayed: refresh.replayed === true,
+      picker_state: refresh.state,
+      case: refreshedPicker.ok ? refreshedPicker.case : current.case,
+      picker_intelligence_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
+      guardrails: recoveryControlGuardrails(),
+    });
+  }
+
   if (["claim", "release", "takeover"].includes(requestedAction)) {
     const assignmentWrite = await mutateRecoveryAssignment(env, current, actor, requestedAction);
     if (!assignmentWrite.ok) {
@@ -255,7 +291,8 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
   const domainFilter = normalizeQueueDomainFilter(options.domain);
   const stateFilter = normalizeQueueStateFilter(options.state);
   const assignmentFilter = normalizeQueueAssignmentFilter(options.assignment);
-  if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok) {
+  const pickerFilter = normalizeQueuePickerFilter(options.picker);
+  if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok || !pickerFilter.ok) {
     return { ok: false, error: "recovery_queue_filter_invalid" };
   }
 
@@ -282,6 +319,7 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
       && (stateFilter.value === "all"
         || (stateFilter.value === "open" ? item.state !== "customer_notified" : item.state === stateFilter.value))
       && (assignmentFilter.value === "all" || item.assignment.status === assignmentFilter.value)
+      && (pickerFilter.value === "all" || item.picker.queue_state === pickerFilter.value)
     ));
     const ordered = [...filtered].sort(compareRecoveryQueuePriority);
     const attention = [...active]
@@ -289,6 +327,11 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
       .sort(compareRecoveryQueuePriority)
       .slice(0, 5)
       .map(projectAttentionItem);
+    const pickerAttention = [...active]
+      .filter((item) => ["waiting_reselection", "authority_unavailable", "no_candidates"].includes(item.picker.queue_state))
+      .sort(compareRecoveryPickerPriority)
+      .slice(0, 5)
+      .map(projectPickerAttentionItem);
 
     return {
       ok: true,
@@ -297,6 +340,7 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
         domain: domainFilter.value,
         state: stateFilter.value,
         assignment: assignmentFilter.value,
+        picker: pickerFilter.value,
       },
       queue: {
         policy_version: RECOVERY_QUEUE_SLA_VERSION,
@@ -312,9 +356,16 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
           item.assignment.status === "unassigned"
           && (item.sla.attention_required === true || item.state === "resolved")
         )).length,
+        picker_waiting_reselection_count: active.filter((item) => item.picker.queue_state === "waiting_reselection").length,
+        picker_authority_unavailable_count: active.filter((item) => item.picker.queue_state === "authority_unavailable").length,
+        picker_no_candidates_count: active.filter((item) => item.picker.queue_state === "no_candidates").length,
+        picker_selected_count: active.filter((item) => item.picker.queue_state === "selected").length,
+        picker_watch_count: active.filter((item) => ["waiting_reselection", "authority_unavailable", "no_candidates"].includes(item.picker.queue_state)).length,
         by_domain: countBy(active, (item) => item.domain),
         by_state: countBy(active, (item) => item.state),
+        by_picker_state: countBy(active, (item) => item.picker.queue_state),
         attention,
+        picker_attention: pickerAttention,
         operational_only: true,
         business_truth_inferred: false,
       },
@@ -366,6 +417,7 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
   const age = recoveryCaseAge(caseRef, now);
   const sla = recoverySlaIndicator(state, updatedAt, now);
   const assignment = projectRecoveryAssignment(payload.recovery_assignment);
+  const picker = projectRecoveryPicker(payload.recovery_correlation, domain);
 
   return {
     case_ref: caseRef,
@@ -384,6 +436,7 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
     sla,
     next_attention: recoveryNextAttention(state),
     assignment,
+    picker,
     actor_role: token(tracking.actor_role || recovery.actor_role) || null,
     correlation: projectCorrelation(payload.recovery_correlation, domain),
     controls: {
@@ -397,6 +450,7 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
       can_claim: state !== "customer_notified" && assignment.status === "unassigned",
       can_release: assignment.status === "assigned",
       can_takeover: state !== "customer_notified" && assignment.status === "assigned",
+      can_refresh_picker: !["resolved", "customer_notified"].includes(state) && picker.manual_refresh_eligible === true,
     },
   };
 }
@@ -468,6 +522,11 @@ function recoveryControlGuardrails() {
     assignment_coordination_metadata_only: true,
     assignment_grants_authority: false,
     assignment_resets_sla: false,
+    picker_interaction_metadata_only: true,
+    picker_manual_refresh_owner_only: true,
+    picker_manual_refresh_grants_authority: false,
+    picker_manual_refresh_selects_candidate: false,
+    picker_manual_refresh_resets_sla: false,
     sla_operational_metadata_only: true,
     sla_business_truth_inferred: false,
   };
@@ -581,6 +640,57 @@ function compareRecoveryQueuePriority(a, b) {
   return (b?.age?.minutes ?? -1) - (a?.age?.minutes ?? -1);
 }
 
+function compareRecoveryPickerPriority(a, b) {
+  const score = {
+    authority_unavailable: 0,
+    no_candidates: 1,
+    waiting_reselection: 2,
+    selected: 3,
+    other: 4,
+  };
+  const left = score[a?.picker?.queue_state] ?? 5;
+  const right = score[b?.picker?.queue_state] ?? 5;
+  if (left !== right) return left - right;
+  return compareRecoveryQueuePriority(a, b);
+}
+
+function projectPickerAttentionItem(item) {
+  return {
+    case_ref: item.case_ref,
+    client_name: item.customer?.display_name || "Canonical Client",
+    domain: item.domain,
+    state: item.state,
+    outcome_code: item.outcome_code,
+    sla_status: item.sla.status,
+    since_update_minutes: item.sla.since_update_minutes,
+    case_age_minutes: item.age.minutes,
+    next_attention: item.next_attention,
+    picker_state: item.picker.queue_state,
+    picker_status: item.picker.status,
+    picker_revision: item.picker.revision,
+    picker_candidate_count: item.picker.candidate_count,
+    picker_reissue_count: item.picker.reissue_count,
+    picker_last_stale_reason: item.picker.last_stale_reason,
+    picker_next_attention: pickerNextAttention(item.picker.queue_state),
+    assignment_status: item.assignment.status,
+    assigned_to: item.assignment.assignee_label,
+    assigned_lane: item.assignment.assignee_lane,
+    picker_state: item.picker.queue_state,
+    picker_status: item.picker.status,
+    picker_revision: item.picker.revision,
+    picker_candidate_count: item.picker.candidate_count,
+    picker_next_attention: pickerNextAttention(item.picker.queue_state),
+    href: RECOVERY_CONTROL_PAGE_PATH + "?case_ref=" + encodeURIComponent(item.case_ref),
+  };
+}
+
+function pickerNextAttention(queueState) {
+  if (queueState === "authority_unavailable") return "owner_refresh_picker";
+  if (queueState === "no_candidates") return "inspect_no_current_candidates";
+  if (queueState === "waiting_reselection") return "wait_customer_reselection";
+  return "";
+}
+
 function projectAttentionItem(item) {
   return {
     case_ref: item.case_ref,
@@ -629,6 +739,75 @@ function normalizeQueueAssignmentFilter(value) {
   return RECOVERY_QUEUE_ASSIGNMENT_FILTERS.includes(raw)
     ? { ok: true, value: raw }
     : { ok: false, value: "all" };
+}
+
+function normalizeQueuePickerFilter(value) {
+  const raw = token(value || "all");
+  return RECOVERY_QUEUE_PICKER_FILTERS.includes(raw)
+    ? { ok: true, value: raw }
+    : { ok: false, value: "all" };
+}
+
+function projectRecoveryPicker(value, domain) {
+  const raw = parseObject(value);
+  const sameDomain = normalizeRecoveryDomain(raw.domain) === domain;
+  if (!sameDomain) {
+    return {
+      policy_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
+      status: "none",
+      queue_state: "other",
+      revision: null,
+      candidate_count: 0,
+      reissue_count: 0,
+      manual_refresh_eligible: false,
+      interaction_only: true,
+      business_truth_inferred: false,
+    };
+  }
+
+  const status = token(raw.picker_status) || (raw.correlated === true ? "selected" : "none");
+  const revisionRaw = Number(raw.picker_revision);
+  const revision = Number.isInteger(revisionRaw) && revisionRaw >= 1 && revisionRaw <= 999999 ? revisionRaw : null;
+  const candidateRaw = Number(raw.candidate_count);
+  const candidateCount = Number.isInteger(candidateRaw) ? Math.max(0, Math.min(50, candidateRaw)) : 0;
+  const reissueRaw = Number(raw.picker_reissue_count);
+  const reissueCount = Number.isInteger(reissueRaw) ? Math.max(0, Math.min(9999, reissueRaw)) : 0;
+  const liveRefresh = token(raw.live_refresh_status);
+  const queueState = raw.correlated === true || status === "selected"
+    ? "selected"
+    : status === "reissued"
+      ? "waiting_reselection"
+      : status === "stale" && liveRefresh === "unavailable"
+        ? "authority_unavailable"
+        : status === "no_current_candidates"
+          ? "no_candidates"
+          : "other";
+
+  return {
+    policy_version: RECOVERY_PICKER_INTELLIGENCE_VERSION,
+    status,
+    queue_state: queueState,
+    revision,
+    candidate_count: candidateCount,
+    reissue_count: reissueCount,
+    delivery_status: ["pending_customer_delivery", "delivered"].includes(token(raw.picker_delivery_status))
+      ? token(raw.picker_delivery_status)
+      : null,
+    delivery_revision: (() => {
+      const value = Number(raw.picker_delivery_revision);
+      return Number.isInteger(value) && value >= 1 && value <= 999999 ? value : null;
+    })(),
+    delivered_at: clean(raw.picker_delivered_at, 80) || null,
+    issued_at: clean(raw.picker_issued_at, 80) || null,
+    reissued_at: clean(raw.picker_reissued_at, 80) || null,
+    live_refresh_status: liveRefresh || null,
+    last_stale_reason: token(raw.last_stale_reason) || null,
+    manual_refresh_eligible: raw.correlated !== true
+      && revision !== null
+      && ["active", "reissued", "stale", "no_current_candidates"].includes(status),
+    interaction_only: true,
+    business_truth_inferred: false,
+  };
 }
 
 function projectRecoveryAssignment(value) {

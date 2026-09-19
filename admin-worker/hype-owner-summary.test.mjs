@@ -50,8 +50,14 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
       assigned_count: 1,
       unassigned_count: 2,
       attention_unassigned_count: 1,
+      picker_waiting_reselection_count: 1,
+      picker_authority_unavailable_count: 1,
+      picker_no_candidates_count: 0,
+      picker_selected_count: 1,
+      picker_watch_count: 2,
       by_domain: { booking: 2, mms: 1 },
       by_state: { reviewing: 2, resolved: 1 },
+      by_picker_state: { authority_unavailable: 1, waiting_reselection: 1, selected: 1 },
       attention: [
         {
           case_ref: "HYPE-PER-20260919010000-acde1234",
@@ -84,6 +90,51 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
           href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919050000-acde5678",
         },
       ],
+      picker_attention: [
+        {
+          case_ref: "HYPE-PER-20260919010000-acde1234",
+          client_name: "คุณเชน",
+          domain: "booking",
+          state: "reviewing",
+          outcome_code: "awaiting_operations",
+          sla_status: "overdue",
+          since_update_minutes: 420,
+          case_age_minutes: 510,
+          next_attention: "review_and_update_outcome",
+          picker_state: "authority_unavailable",
+          picker_status: "stale",
+          picker_revision: 3,
+          picker_candidate_count: 2,
+          picker_reissue_count: 2,
+          picker_last_stale_reason: "booking_authority_unavailable",
+          picker_next_attention: "owner_refresh_picker",
+          assignment_status: "unassigned",
+          assigned_to: null,
+          assigned_lane: null,
+          href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919010000-acde1234",
+        },
+        {
+          case_ref: "HYPE-PER-20260919060000-acde9999",
+          client_name: "คุณเลือกใหม่",
+          domain: "mms",
+          state: "acknowledged",
+          outcome_code: "awaiting_customer",
+          sla_status: "fresh",
+          since_update_minutes: 20,
+          case_age_minutes: 120,
+          next_attention: "start_review",
+          picker_state: "waiting_reselection",
+          picker_status: "reissued",
+          picker_revision: 2,
+          picker_candidate_count: 1,
+          picker_reissue_count: 1,
+          picker_next_attention: "wait_customer_reselection",
+          assignment_status: "assigned",
+          assigned_to: "Per",
+          assigned_lane: "owner",
+          href: "/internal/admin/recovery?case_ref=HYPE-PER-20260919060000-acde9999",
+        },
+      ],
       operational_only: true,
       business_truth_inferred: false,
     },
@@ -99,13 +150,24 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
   assert.equal(summary.counts.recovery_assigned, 1);
   assert.equal(summary.counts.recovery_unassigned, 2);
   assert.equal(summary.counts.recovery_attention_unassigned, 1);
+  assert.equal(summary.counts.recovery_picker_waiting_reselection, 1);
+  assert.equal(summary.counts.recovery_picker_authority_unavailable, 1);
+  assert.equal(summary.counts.recovery_picker_no_candidates, 0);
+  assert.equal(summary.counts.recovery_picker_selected, 1);
+  assert.equal(summary.counts.recovery_picker_watch, 2);
   assert.equal(summary.recovery_queue.available, true);
   assert.equal(summary.recovery_queue.operational_only, true);
   assert.equal(summary.recovery_queue.business_truth_inferred, false);
   assert.equal(summary.what_to_watch_now[0].client_name, "คุณเชน");
   assert.equal(summary.what_to_watch_now[0].assignment_status, "unassigned");
+  assert.equal(summary.what_to_watch_now[0].picker_state, "authority_unavailable");
+  assert.equal(summary.what_to_watch_now[0].picker_revision, 3);
+  assert.equal(summary.what_to_watch_now[0].picker_next_attention, "owner_refresh_picker");
+  assert.equal(summary.what_to_watch_now[1].client_name, "คุณเลือกใหม่");
   assert.equal(summary.what_to_watch_now[1].assigned_to, "Per");
-  assert.equal(summary.next_actions[1].href, "/internal/admin/recovery?assignment=unassigned");
+  assert.equal(summary.what_to_watch_now[1].picker_state, "waiting_reselection");
+  assert.equal(summary.next_actions[1].href, "/internal/admin/recovery?picker=authority_unavailable");
+  assert.equal(summary.next_actions[2].href, "/internal/admin/recovery?assignment=unassigned");
   assert.equal(summary.review_required.count, 7);
   assert.equal(summary.calendar.today_jobs.length, 1);
   assert.equal(summary.calendar.tomorrow_jobs.length, 1);
@@ -115,6 +177,10 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
   assert.equal(summary.next_actions[0].href, "/internal/admin/payments");
   assert.equal(summary.authority.recovery_assignment_policy, "mmd-recovery-assignment-v1-20260919");
   assert.equal(summary.authority.recovery_assignment_grants_authority, false);
+  assert.equal(summary.authority.recovery_picker_policy, "mmd-recovery-picker-intelligence-v1-20260920");
+  assert.equal(summary.authority.recovery_picker_interaction_metadata_only, true);
+  assert.equal(summary.authority.recovery_picker_manual_refresh_owner_only, true);
+  assert.equal(summary.authority.recovery_picker_grants_authority, false);
   assert.equal(summary.authority.read_only, true);
 
   const serialized = JSON.stringify(summary);

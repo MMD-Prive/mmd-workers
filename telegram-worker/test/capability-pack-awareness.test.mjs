@@ -998,6 +998,120 @@ test("duplicate old Booking callback replays the current revision without sendin
   }
 });
 
+
+test("owner-refreshed pending picker is delivered on old callback then acknowledged exactly once", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  const backendCalls = [];
+  const caseRef = "HYPE-PER-20260920110800-acde2005";
+  let deliveryStatus = "pending_customer_delivery";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3430 + telegramCalls.length } });
+  };
+
+  const operations = {
+    async fetch(request) {
+      const body = JSON.parse(await request.clone().text());
+      backendCalls.push(body);
+      if (body.operation === "ack_recovery_picker_delivery") {
+        assert.equal(body.telegram_user_id, "111111");
+        assert.equal(body.handoff_id, caseRef);
+        assert.equal(body.picker_revision, 3);
+        deliveryStatus = "delivered";
+        return Response.json({
+          ok: true,
+          state: "picker_delivered",
+          replayed: false,
+          handoff_id: caseRef,
+          picker_revision: 3,
+        });
+      }
+      assert.equal(body.operation, "select_recovery_booking");
+      assert.equal(body.picker_revision, 2);
+      assert.equal(body.selection_index, 1);
+      return Response.json({
+        ok: true,
+        state: "picker_reissued",
+        replayed: true,
+        picker_delivery_required: deliveryStatus === "pending_customer_delivery",
+        handoff_id: caseRef,
+        target: "per",
+        recovery_correlation: {
+          domain: "booking",
+          state: "ambiguous",
+          correlated: false,
+          case_ref: caseRef,
+          candidate_count: 1,
+          picker_revision: 3,
+          picker_status: "reissued",
+          picker_reissue_count: 2,
+          picker_delivery_status: deliveryStatus,
+          picker_delivery_revision: 3,
+          options: [{
+            booking_ref: "kenji_eeeeeeeeeeeeeeeeeeeeeeee",
+            request_status: "pending",
+            preferred_date: "2026-10-06",
+            preferred_time: "21:00",
+            summary: "Model E · private",
+          }],
+        },
+      });
+    },
+  };
+
+  try {
+    const first = await worker.fetch(callbackReq("hrbp|" + caseRef + "|2|1"), env({
+      HYPE_CONTEXT_WRITER: operations,
+    }));
+    const firstBody = await first.json();
+
+    assert.equal(firstBody.flow, "hype_recovery_booking_picker");
+    assert.equal(firstBody.code_status, "picker_reissued");
+    assert.equal(firstBody.replayed, true);
+    assert.equal(firstBody.delivery_acknowledged, true);
+    assert.equal(firstBody.picker_revision, 3);
+    assert.deepEqual(backendCalls.map((item) => item.operation), [
+      "select_recovery_booking",
+      "ack_recovery_picker_delivery",
+    ]);
+
+    const firstCustomerMessages = telegramCalls.filter(
+      (item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111",
+    );
+    assert.equal(firstCustomerMessages.length, 1);
+    assert.match(firstCustomerMessages[0].payload.text, /BOOKING UPDATED/);
+    const callbacks = firstCustomerMessages[0].payload.reply_markup.inline_keyboard
+      .flat()
+      .map((item) => item.callback_data)
+      .filter(Boolean);
+    assert.deepEqual(callbacks, ["hrbp|" + caseRef + "|3|0"]);
+
+    const second = await worker.fetch(callbackReq("hrbp|" + caseRef + "|2|1"), env({
+      HYPE_CONTEXT_WRITER: operations,
+    }));
+    const secondBody = await second.json();
+
+    assert.equal(secondBody.ok, true);
+    assert.equal(secondBody.replayed, true);
+    assert.equal(secondBody.picker_revision, 3);
+    assert.deepEqual(backendCalls.map((item) => item.operation), [
+      "select_recovery_booking",
+      "ack_recovery_picker_delivery",
+      "select_recovery_booking",
+    ]);
+    const allCustomerMessages = telegramCalls.filter(
+      (item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111",
+    );
+    assert.equal(allCustomerMessages.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("stale picker with no current candidates keeps the Case and does not emit an empty replacement picker", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const telegramCalls = [];

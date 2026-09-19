@@ -1,5 +1,5 @@
 import { buildAdminDashboard } from "./dashboard-worker.js";
-import { RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
+import { RECOVERY_PICKER_INTELLIGENCE_VERSION, RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -58,6 +58,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
     recovery_overdue: nn(recovery.overdue_count),
     recovery_unassigned: nn(recovery.unassigned_count),
     recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
+    recovery_picker_waiting_reselection: nn(recovery.picker_waiting_reselection_count),
+    recovery_picker_authority_unavailable: nn(recovery.picker_authority_unavailable_count),
+    recovery_picker_no_candidates: nn(recovery.picker_no_candidates_count),
+    recovery_picker_watch: nn(recovery.picker_watch_count),
   };
 
   const affectedClients = dedupe([
@@ -69,11 +73,18 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
 
   const nextActions = [];
   if (reviewCounts.payment_review > 0) nextActions.push(action(1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
-  if (reviewCounts.recovery_attention_unassigned > 0) nextActions.push(action(2, "รับ Recovery ที่ยังไม่มีคนดู", "/internal/admin/recovery?assignment=unassigned", "recovery_queue_assignment_metadata"));
-  else if (reviewCounts.recovery_attention > 0) nextActions.push(action(2, "ดู Recovery ที่ต้องจัดการ", "/internal/admin/recovery", "recovery_queue_operational_metadata"));
-  if (reviewCounts.historical_recovery > 0) nextActions.push(action(3, "ตรวจ Historical Recovery", "/internal/admin/payments/historical-backfill", "historical-slip-backfill-runtime"));
-  if (reviewCounts.jobs_need_confirm > 0 || reviewCounts.reconfirm_overdue > 0) nextActions.push(action(4, "เช็กงานและการคอนเฟิร์ม", "/internal/admin/jobs", "session-reconfirm-runtime"));
-  if (reviewCounts.membership_review > 0) nextActions.push(action(5, "เช็ก Membership", "/internal/admin/member-intelligence", "canonical-members"));
+  if (reviewCounts.recovery_picker_authority_unavailable > 0) {
+    nextActions.push(action(2, "ดู Picker ที่ refresh ไม่ได้", "/internal/admin/recovery?picker=authority_unavailable", "recovery_picker_interaction_metadata"));
+  } else if (reviewCounts.recovery_picker_no_candidates > 0) {
+    nextActions.push(action(2, "ดู Picker ที่ไม่มี Candidate", "/internal/admin/recovery?picker=no_candidates", "recovery_picker_interaction_metadata"));
+  } else if (reviewCounts.recovery_picker_waiting_reselection > 0) {
+    nextActions.push(action(2, "ดูเคสรอลูกค้าเลือกใหม่", "/internal/admin/recovery?picker=waiting_reselection", "recovery_picker_interaction_metadata"));
+  }
+  if (reviewCounts.recovery_attention_unassigned > 0) nextActions.push(action(3, "รับ Recovery ที่ยังไม่มีคนดู", "/internal/admin/recovery?assignment=unassigned", "recovery_queue_assignment_metadata"));
+  else if (reviewCounts.recovery_attention > 0) nextActions.push(action(3, "ดู Recovery ที่ต้องจัดการ", "/internal/admin/recovery", "recovery_queue_operational_metadata"));
+  if (reviewCounts.historical_recovery > 0) nextActions.push(action(4, "ตรวจ Historical Recovery", "/internal/admin/payments/historical-backfill", "historical-slip-backfill-runtime"));
+  if (reviewCounts.jobs_need_confirm > 0 || reviewCounts.reconfirm_overdue > 0) nextActions.push(action(5, "เช็กงานและการคอนเฟิร์ม", "/internal/admin/jobs", "session-reconfirm-runtime"));
+  if (reviewCounts.membership_review > 0) nextActions.push(action(6, "เช็ก Membership", "/internal/admin/member-intelligence", "canonical-members"));
   if (!nextActions.length) nextActions.push(action(1, "เปิด Owner Control Room", "/internal/admin/control-room", "read_only_observation"));
 
   return {
@@ -96,6 +107,11 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_assigned: nn(recovery.assigned_count),
       recovery_unassigned: nn(recovery.unassigned_count),
       recovery_attention_unassigned: nn(recovery.attention_unassigned_count),
+      recovery_picker_waiting_reselection: nn(recovery.picker_waiting_reselection_count),
+      recovery_picker_authority_unavailable: nn(recovery.picker_authority_unavailable_count),
+      recovery_picker_no_candidates: nn(recovery.picker_no_candidates_count),
+      recovery_picker_selected: nn(recovery.picker_selected_count),
+      recovery_picker_watch: nn(recovery.picker_watch_count),
     },
     review_required: {
       count: reviewCounts.payment_review
@@ -108,7 +124,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       membership: memberItems,
     },
     recovery_queue: recovery,
-    what_to_watch_now: recovery.attention.slice(0, 5),
+    what_to_watch_now: mergeRecoveryWatchItems(recovery.picker_attention, recovery.attention).slice(0, 5),
     calendar: {
       today,
       tomorrow,
@@ -151,6 +167,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_sla_policy: RECOVERY_QUEUE_SLA_VERSION,
       recovery_assignment_policy: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
       recovery_assignment_grants_authority: false,
+      recovery_picker_policy: RECOVERY_PICKER_INTELLIGENCE_VERSION,
+      recovery_picker_interaction_metadata_only: true,
+      recovery_picker_manual_refresh_owner_only: true,
+      recovery_picker_grants_authority: false,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
@@ -169,9 +189,16 @@ function projectRecoveryQueueSummary(result = null) {
       assigned_count: 0,
       unassigned_count: 0,
       attention_unassigned_count: 0,
+      picker_waiting_reselection_count: 0,
+      picker_authority_unavailable_count: 0,
+      picker_no_candidates_count: 0,
+      picker_selected_count: 0,
+      picker_watch_count: 0,
       by_domain: {},
       by_state: {},
+      by_picker_state: {},
       attention: [],
+      picker_attention: [],
       operational_only: true,
       business_truth_inferred: false,
     };
@@ -187,25 +214,61 @@ function projectRecoveryQueueSummary(result = null) {
     assigned_count: nn(queue.assigned_count),
     unassigned_count: nn(queue.unassigned_count),
     attention_unassigned_count: nn(queue.attention_unassigned_count),
+    picker_waiting_reselection_count: nn(queue.picker_waiting_reselection_count),
+    picker_authority_unavailable_count: nn(queue.picker_authority_unavailable_count),
+    picker_no_candidates_count: nn(queue.picker_no_candidates_count),
+    picker_selected_count: nn(queue.picker_selected_count),
+    picker_watch_count: nn(queue.picker_watch_count),
     by_domain: safeCountMap(queue.by_domain),
     by_state: safeCountMap(queue.by_state),
-    attention: (Array.isArray(queue.attention) ? queue.attention : []).slice(0, 5).map((item) => ({
-      case_ref: clean(item.case_ref, 180),
-      client_name: clean(item.client_name, 120) || "Canonical Client",
-      domain: clean(item.domain, 40),
-      state: clean(item.state, 40),
-      sla_status: clean(item.sla_status, 40),
-      since_update_minutes: nullableNonNegative(item.since_update_minutes),
-      case_age_minutes: nullableNonNegative(item.case_age_minutes),
-      next_attention: clean(item.next_attention, 80),
-      assignment_status: clean(item.assignment_status, 40) || "unassigned",
-      assigned_to: clean(item.assigned_to, 120) || null,
-      assigned_lane: clean(item.assigned_lane, 40) || null,
-      href: safeInternalHref(item.href) || "/internal/admin/recovery",
-    })),
+    by_picker_state: safeCountMap(queue.by_picker_state),
+    attention: (Array.isArray(queue.attention) ? queue.attention : []).slice(0, 5).map(projectRecoveryWatchItem),
+    picker_attention: (Array.isArray(queue.picker_attention) ? queue.picker_attention : []).slice(0, 5).map(projectRecoveryWatchItem),
     operational_only: true,
     business_truth_inferred: false,
   };
+}
+
+function projectRecoveryWatchItem(item = {}) {
+  return {
+    case_ref: clean(item.case_ref, 180),
+    client_name: clean(item.client_name, 120) || "Canonical Client",
+    domain: clean(item.domain, 40),
+    state: clean(item.state, 40),
+    sla_status: clean(item.sla_status, 40),
+    since_update_minutes: nullableNonNegative(item.since_update_minutes),
+    case_age_minutes: nullableNonNegative(item.case_age_minutes),
+    next_attention: clean(item.next_attention, 80),
+    assignment_status: clean(item.assignment_status, 40) || "unassigned",
+    assigned_to: clean(item.assigned_to, 120) || null,
+    assigned_lane: clean(item.assigned_lane, 40) || null,
+    picker_state: clean(item.picker_state, 40) || "other",
+    picker_status: clean(item.picker_status, 40) || null,
+    picker_revision: nullablePositive(item.picker_revision),
+    picker_candidate_count: nullableNonNegative(item.picker_candidate_count),
+    picker_reissue_count: nullableNonNegative(item.picker_reissue_count),
+    picker_last_stale_reason: clean(item.picker_last_stale_reason, 80) || null,
+    picker_next_attention: clean(item.picker_next_attention, 80) || null,
+    href: safeInternalHref(item.href) || "/internal/admin/recovery",
+  };
+}
+
+function mergeRecoveryWatchItems(primary = [], secondary = []) {
+  const out = [];
+  const seen = new Set();
+  for (const item of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(secondary) ? secondary : [])]) {
+    const ref = clean(item?.case_ref, 180);
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    out.push(item);
+  }
+  return out;
+}
+
+function nullablePositive(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 function safeCountMap(value) {

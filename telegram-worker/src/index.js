@@ -529,6 +529,8 @@ async function handleHypeRecoveryPickerRefreshResult({
   const state = clean(result?.state).toLowerCase();
   const replayed = result?.replayed === true;
   const correlation = result?.recovery_correlation || {};
+  const deliveryRequired = result?.picker_delivery_required === true
+    || clean(correlation.picker_delivery_status).toLowerCase() === "pending_customer_delivery";
   const caseRef = clean(result?.handoff_id || handoffId);
   const messageId = Number(callback?.message?.message_id);
   const domainLabel = domain === "mmd_shop" ? "Order" : domain === "booking" ? "Booking" : "MMS Pre-booking";
@@ -554,7 +556,7 @@ async function handleHypeRecoveryPickerRefreshResult({
     }, env).catch(() => null);
   }
 
-  if (replayed) {
+  if (replayed && !deliveryRequired) {
     return {
       handled: true,
       flow: recoveryPickerFlow(domain),
@@ -614,6 +616,21 @@ async function handleHypeRecoveryPickerRefreshResult({
     ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   }, env);
 
+  let deliveryAck = null;
+  if (
+    telegram?.ok === true
+    && state === "picker_reissued"
+    && clean(correlation.picker_delivery_status).toLowerCase() === "pending_customer_delivery"
+    && Number.isInteger(Number(correlation.picker_revision))
+  ) {
+    deliveryAck = await acknowledgeHypeRecoveryPickerDelivery({
+      env,
+      telegramUserId: clean(callback?.from?.id),
+      handoffId: caseRef,
+      pickerRevision: Number(correlation.picker_revision),
+    });
+  }
+
   return {
     handled: true,
     flow: recoveryPickerFlow(domain),
@@ -621,9 +638,37 @@ async function handleHypeRecoveryPickerRefreshResult({
     code_status: state || "picker_refresh_recorded",
     handoff_id: caseRef,
     picker_revision: Number(correlation.picker_revision) || null,
-    replayed: false,
+    replayed,
+    delivery_acknowledged: deliveryAck?.ok === true,
     telegram,
   };
+}
+
+async function acknowledgeHypeRecoveryPickerDelivery({ env, telegramUserId, handoffId, pickerRevision }) {
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch || !/^\d{5,20}$/.test(clean(telegramUserId))) return { ok: false, state: "binding_unavailable" };
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "ack_recovery_picker_delivery",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        picker_revision: pickerRevision,
+      }),
+    }));
+    const body = await response.json().catch(() => null);
+    return {
+      ok: response.ok && body?.ok === true,
+      state: clean(body?.state || (response.ok ? "ok" : "failed")),
+    };
+  } catch {
+    return { ok: false, state: "ack_unavailable" };
+  }
 }
 
 function recoveryPickerFlow(domain) {
@@ -2644,6 +2689,7 @@ function renderHypeOwnerSummary(result = {}) {
     lines.push("");
     lines.push("<b>RECOVERY QUEUE · ต้องดูอะไรตอนนี้</b>");
     lines.push(`• Open: ${Number(recovery.open_count || 0)} · Attention: ${Number(recovery.attention_count || 0)} · Unassigned: ${Number(recovery.unassigned_count || 0)} · Overdue: ${Number(recovery.overdue_count || 0)}`);
+    lines.push(`• Picker: reselection ${Number(recovery.picker_waiting_reselection_count || 0)} · authority unavailable ${Number(recovery.picker_authority_unavailable_count || 0)} · no candidates ${Number(recovery.picker_no_candidates_count || 0)}`);
     if (watchNow.length) {
       for (const item of watchNow.slice(0, 5)) {
         lines.push(`• ${escapeHtml(compactOwnerText([
@@ -2652,14 +2698,15 @@ function renderHypeOwnerSummary(result = {}) {
           item.state,
           item.sla_status,
           item.assignment_status === "assigned" ? ("รับโดย " + (item.assigned_to || "Operator")) : "ยังไม่มีคนรับ",
+          ownerRecoveryPickerLabel(item),
           ownerAgeText(item.since_update_minutes),
-          ownerRecoveryAttentionLabel(item.next_attention),
+          ownerRecoveryAttentionLabel(item.picker_next_attention || item.next_attention),
         ]))}`);
       }
     } else {
       lines.push("• ยังไม่มี Recovery Case ที่เข้า attention window");
     }
-    lines.push("Assignment/SLA เป็น coordination metadata เท่านั้น · ไม่เพิ่ม authority และไม่ใช่ Payment / Job / Fulfillment / MMS truth");
+    lines.push("Assignment / Picker / SLA เป็น operational metadata เท่านั้น · ไม่เพิ่ม authority และไม่ใช่ Payment / Job / Fulfillment / MMS truth");
   }
 
   lines.push("");
@@ -2745,12 +2792,26 @@ function ownerAgeText(value) {
   return Math.floor(minutes / 1440) + "d " + Math.floor((minutes % 1440) / 60) + "h since update";
 }
 
+function ownerRecoveryPickerLabel(item = {}) {
+  const state = clean(item.picker_state).toLowerCase();
+  const revision = Number(item.picker_revision);
+  const prefix = Number.isInteger(revision) && revision > 0 ? ("Picker r" + revision + " ") : "";
+  if (state === "waiting_reselection") return prefix + "รอลูกค้าเลือกใหม่";
+  if (state === "authority_unavailable") return prefix + "refresh authority ไม่ได้";
+  if (state === "no_candidates") return prefix + "ไม่มี Candidate ปัจจุบัน";
+  if (state === "selected") return prefix + "เลือกแล้ว";
+  return "";
+}
+
 function ownerRecoveryAttentionLabel(value) {
   const key = clean(value).toLowerCase();
   if (key === "acknowledge_case") return "Acknowledge";
   if (key === "start_review") return "Start review";
   if (key === "review_and_update_outcome") return "Review / update outcome";
   if (key === "notify_customer") return "Notify customer";
+  if (key === "owner_refresh_picker") return "Owner refresh choices";
+  if (key === "inspect_no_current_candidates") return "Inspect no candidates";
+  if (key === "wait_customer_reselection") return "Wait customer reselection";
   return "";
 }
 
