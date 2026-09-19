@@ -51,6 +51,7 @@ import {
   handleShopIntent,
   isShopIntentRequest,
   maybeHandleShopConfirmationDetails,
+  preflightReviewedShopPayment,
   reconcileReviewedShopPayment,
 } from "./shop-payment-v1.js";
 
@@ -132,6 +133,9 @@ export default {
       const shopRequest = request.clone();
       const doubleMomentRequest = request.clone();
       const finalPaymentRequest = request.clone();
+      const shopPreflight = await preflightReviewedShopPayment(shopRequest.clone(), env);
+      if (shopPreflight) return shopPreflight;
+
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
