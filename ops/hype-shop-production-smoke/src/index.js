@@ -16,6 +16,11 @@ export default {
       return Response.json({ ok: false, error: "not_found" }, { status: 404, headers: JSON_HEADERS });
     }
 
+    const expiresAt = Number(env.SMOKE_EXPIRES_AT || 0);
+    if (!Number.isFinite(expiresAt) || expiresAt <= 0 || Date.now() > expiresAt) {
+      return Response.json({ ok: false, error: "smoke_expired" }, { status: 410, headers: JSON_HEADERS });
+    }
+
     const lineUserId = String(env.SMOKE_LINE_ID || "").trim();
     const telegramUserId = String(env.SMOKE_TELEGRAM_ID || "").trim();
     if (!/^U[0-9a-f]{32}$/i.test(lineUserId) || !/^\d{5,20}$/.test(telegramUserId)) {
