@@ -1,4 +1,6 @@
-import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";\n\nconst AIRTABLE_API = "https://api.airtable.com/v0";
+import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
+
+const AIRTABLE_API = "https://api.airtable.com/v0";
 
 const TABLES = Object.freeze({
   products: "tblzsmNLfP6J0kQ90",
