@@ -22,6 +22,7 @@ test("HENNA exposes fail-closed configuration status", () => {
     auto_reply_enabled: false,
     persona: "HENNA",
     capability_pack: "mmd-concierge-capability-pack-v1-20260919",
+    recovery_outcome_taxonomy: "mmd-recovery-outcome-taxonomy-v1-20260919",
   });
 });
 
