@@ -49,3 +49,26 @@ Optional overrides:
 - `MMD_TIMEZONE` (defaults to `Asia/Bangkok`)
 
 Cal API requests use API v2 with `cal-api-version: 2026-02-25`.
+
+
+## Production live-write ownership — 2026-09-20
+
+Outbound Internal Hold creation is now owned by `cal-sync-worker`, not by the browser and not by a direct Cal call from the admin presentation layer.
+
+Production command path:
+
+`Model Confirm -> admin-worker -> CAL_SYNC_WORKER service binding -> /internal/holds/ensure -> CalInternalHoldCoordinator -> Cal API -> MMD — Cal Booking Links`
+
+Safety locks:
+
+- `CAL_SHADOW_MODE=true` remains unchanged for inbound Cal webhook lifecycle handling.
+- `CAL_INTERNAL_HOLD_WRITE_ENABLED=true` authorizes only MMD Internal Hold creation/linking.
+- No public Worker route exposes `/internal/holds/*`; the hostname gate is `cal-sync.internal`.
+- The Durable Object coordinator serializes by canonical `session_id` and prevents concurrent duplicate creation.
+- A 15-minute scheduled reconciler self-heals future confirmed/unpaid Sessions that remain unlinked.
+- `payments-worker`/Payments verification remains the deposit authority. Verified deposits are skipped.
+- Past/started, unconfirmed, unsupported-duration, or ambiguous sessions fail closed.
+- Cal cancellation/reschedule/payment signals do not mutate MMD Session, Payment, Client, Membership, pricing, credit, or cancellation truth.
+- Owner reconciliation is exposed only behind the existing credential-bound admin gate at `/v1/admin/calendar/reconcile`.
+- `GET /v1/admin/calendar/reconcile` previews bounded candidates; `POST` reconciles the bounded queue, or targets exactly one Session when `session_id` is supplied.
+- Production live-write verification uses `Calendar Live Write Smoke`, creates a uniquely named future fixture, verifies the Cal UID and ledger mapping, then cancels the Cal booking and deletes all smoke fixture records.
