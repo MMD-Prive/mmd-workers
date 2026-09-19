@@ -23,12 +23,21 @@ function bookingIntentActionId(event = {}) {
   return `line:deposit:${twoHourBucket}:${user.slice(-12)}`.slice(0, 180);
 }
 
+function matrixActionId(parsed = {}) {
+  const id = text(parsed?.matrix_action_id, 180);
+  return /^[A-Za-z0-9:_-]{8,180}$/.test(id) ? id : "";
+}
+
+function resolvedActionId(event = {}, parsed = {}, captureIntent = false) {
+  return matrixActionId(parsed) || (captureIntent ? bookingIntentActionId(event) : actionId(event));
+}
+
 export function shouldCaptureKenjiLv5BookingIntent({ event = {}, modelGate = {}, canonicalClientId = "" } = {}) {
   const parsed = modelGate?.parsed || {};
   return Boolean(
     event?.source?.type === "user"
     && lineUserId(event)
-    && bookingIntentActionId(event)
+    && resolvedActionId(event, parsed, true)
     && /^rec[A-Za-z0-9]+$/.test(text(canonicalClientId, 80))
     && text(parsed.type, 40) === "booking"
     && text(parsed.trigger, 40) === "deposit"
@@ -40,7 +49,7 @@ export function shouldExecuteKenjiLv5BookingAction({ event = {}, modelGate = {},
   return Boolean(
     event?.source?.type === "user"
     && lineUserId(event)
-    && actionId(event)
+    && resolvedActionId(event, parsed, false)
     && /^rec[A-Za-z0-9]+$/.test(text(canonicalClientId, 80))
     && modelGate?.required === true
     && modelGate?.status === "match"
@@ -49,6 +58,7 @@ export function shouldExecuteKenjiLv5BookingAction({ event = {}, modelGate = {},
     && /^\d{4}-\d{2}-\d{2}$/.test(text(parsed.date, 10))
     && /^\d{2}:\d{2}$/.test(text(parsed.time, 5))
     && text(parsed.location, 160)
+    && Number(parsed.amount_thb || 0) > 0
     && decision?.live_truth_verified === true
     && text(decision?.operational?.primary_action, 80) === "prepare_booking_intent"
   );
@@ -68,7 +78,7 @@ export async function executeKenjiLv5LineBookingAction({ env = {}, event = {}, m
   const payload = {
     schema: "mmd.kenji_supervised_action.v1",
     action: captureIntent ? "capture_booking_intent" : "create_booking_request",
-    action_id: captureIntent ? bookingIntentActionId(event) : actionId(event),
+    action_id: resolvedActionId(event, parsed, captureIntent),
     client: {
       canonical_client_id: text(canonicalClientId, 80),
       line_user_id: lineUserId(event),
@@ -174,4 +184,4 @@ export function applyKenjiLv5BookingActionToDecision(decision = {}, actionResult
   };
 }
 
-export const KENJI_LV5_LINE_ACTION_INTERNALS = Object.freeze({ actionId, bookingIntentActionId, lineUserId });
+export const KENJI_LV5_LINE_ACTION_INTERNALS = Object.freeze({ actionId, bookingIntentActionId, matrixActionId, resolvedActionId, lineUserId });
