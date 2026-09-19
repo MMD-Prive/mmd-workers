@@ -11,7 +11,9 @@ import { renderRecoveryControlPage, renderRecoveryControlForbidden } from "./rec
 export const RECOVERY_CONTROL_PAGE_PATH = "/internal/admin/recovery";
 export const RECOVERY_CONTROL_API_PATH = "/v1/admin/recovery/cases";
 export const RECOVERY_QUEUE_SLA_VERSION = "mmd-recovery-queue-sla-v1-20260919";
+export const RECOVERY_QUEUE_ASSIGNMENT_VERSION = "mmd-recovery-assignment-v1-20260919";
 
+const RECOVERY_QUEUE_ASSIGNMENT_FILTERS = Object.freeze(["all", "assigned", "unassigned"]);
 const RECOVERY_QUEUE_STATES = Object.freeze(["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"]);
 const RECOVERY_QUEUE_DOMAINS = Object.freeze(["mmd_shop", "booking", "mms", "unclassified"]);
 const RECOVERY_ATTENTION_TARGET_MINUTES = Object.freeze({
@@ -65,8 +67,10 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       case_ref: normalizeCaseRef(url.searchParams.get("case_ref")),
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
       sla_version: RECOVERY_QUEUE_SLA_VERSION,
+      assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
       domain: normalizeQueueDomainFilter(url.searchParams.get("domain")).value,
       state: normalizeQueueStateFilter(url.searchParams.get("state")).value,
+      assignment: normalizeQueueAssignmentFilter(url.searchParams.get("assignment")).value,
     }), 200);
   }
 
@@ -83,18 +87,22 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
         authority: "mmd.recovery_control.v1",
         case: result.case,
         taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+        sla_version: RECOVERY_QUEUE_SLA_VERSION,
+        assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
         guardrails: recoveryControlGuardrails(),
       });
     }
 
     const domainFilter = normalizeQueueDomainFilter(url.searchParams.get("domain"));
     const stateFilter = normalizeQueueStateFilter(url.searchParams.get("state"));
-    if (!domainFilter.ok || !stateFilter.ok) {
+    const assignmentFilter = normalizeQueueAssignmentFilter(url.searchParams.get("assignment"));
+    if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok) {
       return json({
         ok: false,
         error: "recovery_queue_filter_invalid",
         allowed_domains: ["all", ...RECOVERY_QUEUE_DOMAINS],
         allowed_states: ["open", "all", ...RECOVERY_QUEUE_STATES],
+        allowed_assignments: RECOVERY_QUEUE_ASSIGNMENT_FILTERS,
       }, 400);
     }
 
@@ -102,6 +110,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       limit: boundedInt(url.searchParams.get("limit"), 1, 25, 12),
       domain: domainFilter.value,
       state: stateFilter.value,
+      assignment: assignmentFilter.value,
     });
     if (!result.ok) return json(result, 503);
     return json({
@@ -112,6 +121,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       filters: result.filters,
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
       sla_version: RECOVERY_QUEUE_SLA_VERSION,
+      assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
       guardrails: recoveryControlGuardrails(),
     });
   }
@@ -132,9 +142,27 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
   const current = await readRecoveryCase(env, caseRef);
   if (!current.ok) return json(current, statusForReadError(current.error));
 
+  const requestedAction = token(body.action);
+  if (["claim", "release", "takeover"].includes(requestedAction)) {
+    const assignmentWrite = await mutateRecoveryAssignment(env, current, actor, requestedAction);
+    if (!assignmentWrite.ok) {
+      return json(assignmentWrite, assignmentWrite.status || 409);
+    }
+    const refreshedAssignment = await readRecoveryCase(env, caseRef);
+    return json({
+      ok: true,
+      authority: "mmd.recovery_control.v1",
+      action: requestedAction,
+      replayed: assignmentWrite.replayed === true,
+      case: refreshedAssignment.ok ? refreshedAssignment.case : current.case,
+      assignment_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      guardrails: recoveryControlGuardrails(),
+    });
+  }
+
   const transition = buildRecoveryControlTransition(
     current.case,
-    token(body.action),
+    requestedAction,
     token(body.outcome_code),
   );
   if (!transition.ok) return json(transition, transition.status || 409);
@@ -164,7 +192,7 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
   return json({
     ok: true,
     authority: "mmd.recovery_control.v1",
-    action: token(body.action),
+    action: requestedAction,
     replayed: payload.replayed === true,
     case: refreshed.ok ? refreshed.case : {
       ...current.case,
@@ -225,7 +253,8 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
   const limit = boundedInt(options.limit, 1, 25, 12);
   const domainFilter = normalizeQueueDomainFilter(options.domain);
   const stateFilter = normalizeQueueStateFilter(options.state);
-  if (!domainFilter.ok || !stateFilter.ok) {
+  const assignmentFilter = normalizeQueueAssignmentFilter(options.assignment);
+  if (!domainFilter.ok || !stateFilter.ok || !assignmentFilter.ok) {
     return { ok: false, error: "recovery_queue_filter_invalid" };
   }
 
@@ -251,6 +280,7 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
       (domainFilter.value === "all" || item.domain === domainFilter.value)
       && (stateFilter.value === "all"
         || (stateFilter.value === "open" ? item.state !== "customer_notified" : item.state === stateFilter.value))
+      && (assignmentFilter.value === "all" || item.assignment.status === assignmentFilter.value)
     ));
     const ordered = [...filtered].sort(compareRecoveryQueuePriority);
     const attention = [...active]
@@ -265,6 +295,7 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
       filters: {
         domain: domainFilter.value,
         state: stateFilter.value,
+        assignment: assignmentFilter.value,
       },
       queue: {
         policy_version: RECOVERY_QUEUE_SLA_VERSION,
@@ -274,6 +305,12 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
         attention_count: active.filter((item) => item.sla.attention_required === true || item.state === "resolved").length,
         overdue_count: active.filter((item) => item.sla.status === "overdue").length,
         watch_count: active.filter((item) => item.sla.status === "watch").length,
+        assigned_count: active.filter((item) => item.assignment.status === "assigned").length,
+        unassigned_count: active.filter((item) => item.assignment.status === "unassigned").length,
+        attention_unassigned_count: active.filter((item) => (
+          item.assignment.status === "unassigned"
+          && (item.sla.attention_required === true || item.state === "resolved")
+        )).length,
         by_domain: countBy(active, (item) => item.domain),
         by_state: countBy(active, (item) => item.state),
         attention,
@@ -304,7 +341,7 @@ async function readRecoveryCase(env, caseRef) {
     const record = Array.isArray(payload.records) ? payload.records[0] : null;
     const projected = record ? projectRecoveryRecord(record) : null;
     if (!projected || projected.case_ref !== caseRef) return { ok: false, error: "recovery_case_not_found" };
-    return { ok: true, case: projected };
+    return { ok: true, case: projected, record };
   } catch {
     return { ok: false, error: "airtable_read_failed" };
   }
@@ -327,6 +364,7 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
   const updatedAt = clean(tracking.updated_at || recovery.updated_at || fields[F.UPDATED_AT], 80) || null;
   const age = recoveryCaseAge(caseRef, now);
   const sla = recoverySlaIndicator(state, updatedAt, now);
+  const assignment = projectRecoveryAssignment(payload.recovery_assignment);
 
   return {
     case_ref: caseRef,
@@ -344,6 +382,7 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
     age,
     sla,
     next_attention: recoveryNextAttention(state),
+    assignment,
     actor_role: token(tracking.actor_role || recovery.actor_role) || null,
     correlation: projectCorrelation(payload.recovery_correlation, domain),
     controls: {
@@ -354,6 +393,9 @@ export function projectRecoveryRecord(record = {}, now = new Date()) {
       can_set_outcome: state !== "resolved" && state !== "customer_notified",
       can_resolve: state === "reviewing",
       can_mark_customer_notified: state === "resolved" || state === "customer_notified",
+      can_claim: state !== "customer_notified" && assignment.status === "unassigned",
+      can_release: assignment.status === "assigned",
+      can_takeover: state !== "customer_notified" && assignment.status === "assigned",
     },
   };
 }
@@ -422,6 +464,9 @@ function recoveryControlGuardrails() {
     entitlement_mutated: false,
     browser_service_binding_exposed: false,
     same_origin_write_required: true,
+    assignment_coordination_metadata_only: true,
+    assignment_grants_authority: false,
+    assignment_resets_sla: false,
     sla_operational_metadata_only: true,
     sla_business_truth_inferred: false,
   };
@@ -528,6 +573,8 @@ function compareRecoveryQueuePriority(a, b) {
   const left = score[a?.sla?.status] ?? 5;
   const right = score[b?.sla?.status] ?? 5;
   if (left !== right) return left - right;
+  if (a.assignment?.status === "unassigned" && b.assignment?.status !== "unassigned") return -1;
+  if (b.assignment?.status === "unassigned" && a.assignment?.status !== "unassigned") return 1;
   if (a.state === "resolved" && b.state !== "resolved") return -1;
   if (b.state === "resolved" && a.state !== "resolved") return 1;
   return (b?.age?.minutes ?? -1) - (a?.age?.minutes ?? -1);
@@ -544,6 +591,9 @@ function projectAttentionItem(item) {
     since_update_minutes: item.sla.since_update_minutes,
     case_age_minutes: item.age.minutes,
     next_attention: item.next_attention,
+    assignment_status: item.assignment.status,
+    assigned_to: item.assignment.assignee_label,
+    assigned_lane: item.assignment.assignee_lane,
     href: RECOVERY_CONTROL_PAGE_PATH + "?case_ref=" + encodeURIComponent(item.case_ref),
   };
 }
@@ -571,6 +621,192 @@ function normalizeQueueStateFilter(value) {
   if (!raw || raw === "open") return { ok: true, value: "open" };
   if (raw === "all" || RECOVERY_QUEUE_STATES.includes(raw)) return { ok: true, value: raw };
   return { ok: false, value: "open" };
+}
+
+function normalizeQueueAssignmentFilter(value) {
+  const raw = token(value || "all");
+  return RECOVERY_QUEUE_ASSIGNMENT_FILTERS.includes(raw)
+    ? { ok: true, value: raw }
+    : { ok: false, value: "all" };
+}
+
+function projectRecoveryAssignment(value) {
+  const raw = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const status = token(raw.status) === "assigned" && clean(raw.assignee_label, 120) ? "assigned" : "unassigned";
+  return {
+    policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+    status,
+    assignee_label: status === "assigned" ? clean(raw.assignee_label, 120) : null,
+    assignee_role: status === "assigned" ? token(raw.assignee_role) || null : null,
+    assignee_lane: status === "assigned" ? token(raw.assignee_lane) || null : null,
+    claimed_at: status === "assigned" ? clean(raw.claimed_at, 80) || null : null,
+    updated_at: clean(raw.updated_at, 80) || null,
+    revision: Math.max(0, Number(raw.revision) || 0),
+    coordination_only: true,
+    grants_authority: false,
+  };
+}
+
+async function mutateRecoveryAssignment(env, current, actor, action) {
+  const record = current?.record;
+  const currentCase = current?.case;
+  if (!record?.id || !currentCase?.case_ref) return { ok: false, status: 404, error: "recovery_case_not_found" };
+
+  const actorIdentity = recoveryAssignmentActor(actor);
+  if (!actorIdentity.ok) return { ok: false, status: 403, error: "recovery_assignment_actor_invalid" };
+
+  const fields = record.fields || {};
+  const payload = parseRawObject(fields[F.PAYLOAD]);
+  if (!payload.ok) return { ok: false, status: 409, error: payload.error };
+  const currentRaw = payload.value.recovery_assignment && typeof payload.value.recovery_assignment === "object"
+    ? payload.value.recovery_assignment
+    : {};
+  const currentAssignment = projectRecoveryAssignment(currentRaw);
+  const currentKey = clean(currentRaw.assignee_key, 180);
+  const stamp = new Date().toISOString();
+  const revision = currentAssignment.revision + 1;
+
+  if (action === "claim") {
+    if (currentCase.state === "customer_notified") {
+      return { ok: false, status: 409, error: "closed_case_assignment_forbidden" };
+    }
+    if (currentAssignment.status === "assigned" && currentKey !== actorIdentity.key) {
+      return {
+        ok: false,
+        status: 409,
+        error: "recovery_assignment_conflict",
+        assigned_to: currentAssignment.assignee_label,
+      };
+    }
+    if (currentAssignment.status === "assigned" && currentKey === actorIdentity.key) {
+      return { ok: true, replayed: true, assignment: currentAssignment };
+    }
+    return persistRecoveryAssignment(env, record, payload.value, {
+      policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      status: "assigned",
+      assignee_key: actorIdentity.key,
+      assignee_label: actorIdentity.label,
+      assignee_role: actorIdentity.role,
+      assignee_lane: actorIdentity.lane,
+      claimed_at: stamp,
+      updated_at: stamp,
+      revision,
+      coordination_only: true,
+      grants_authority: false,
+    });
+  }
+
+  if (action === "takeover") {
+    if (!actorIdentity.owner) return { ok: false, status: 403, error: "recovery_assignment_takeover_owner_required" };
+    if (currentCase.state === "customer_notified") {
+      return { ok: false, status: 409, error: "closed_case_assignment_forbidden" };
+    }
+    if (currentAssignment.status === "assigned" && currentKey === actorIdentity.key) {
+      return { ok: true, replayed: true, assignment: currentAssignment };
+    }
+    return persistRecoveryAssignment(env, record, payload.value, {
+      policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      status: "assigned",
+      assignee_key: actorIdentity.key,
+      assignee_label: actorIdentity.label,
+      assignee_role: actorIdentity.role,
+      assignee_lane: actorIdentity.lane,
+      claimed_at: stamp,
+      updated_at: stamp,
+      revision,
+      coordination_only: true,
+      grants_authority: false,
+    });
+  }
+
+  if (action === "release") {
+    if (currentAssignment.status !== "assigned") {
+      return { ok: true, replayed: true, assignment: currentAssignment };
+    }
+    if (currentKey !== actorIdentity.key && !actorIdentity.owner) {
+      return { ok: false, status: 403, error: "recovery_assignment_release_forbidden" };
+    }
+    return persistRecoveryAssignment(env, record, payload.value, {
+      policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+      status: "unassigned",
+      released_at: stamp,
+      released_by_role: actorIdentity.role,
+      updated_at: stamp,
+      revision,
+      coordination_only: true,
+      grants_authority: false,
+    });
+  }
+
+  return { ok: false, status: 400, error: "recovery_assignment_action_invalid" };
+}
+
+function recoveryAssignmentActor(actor) {
+  const id = token(actor?.id);
+  const role = token(actor?.role);
+  if (!id || !["owner", "admin"].includes(role) || token(actor?.auth_method) !== "credential") {
+    return { ok: false };
+  }
+  const owner = role === "owner" || id === "per";
+  return {
+    ok: true,
+    key: "credential:" + id,
+    role,
+    owner,
+    lane: owner ? "owner" : "operator",
+    label: id === "per" ? "Per" : owner ? "Owner" : "Operator",
+  };
+}
+
+async function persistRecoveryAssignment(env, record, payload, assignment) {
+  const config = airtableConfig(env);
+  if (!config.ok) return { ok: false, status: 503, error: config.error };
+  const url = AIRTABLE_API + "/" + encodeURIComponent(config.baseId) + "/" + encodeURIComponent(config.table);
+
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        authorization: "Bearer " + config.token,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        records: [{
+          id: record.id,
+          fields: {
+            [F.PAYLOAD]: JSON.stringify({ ...payload, recovery_assignment: assignment }),
+          },
+        }],
+        typecast: true,
+      }),
+    });
+    if (!response.ok) return { ok: false, status: 503, error: "airtable_write_" + response.status };
+    return {
+      ok: true,
+      replayed: false,
+      assignment: projectRecoveryAssignment(assignment),
+      workflow_timestamp_mutated: false,
+      business_truth_mutated: false,
+    };
+  } catch {
+    return { ok: false, status: 503, error: "airtable_write_failed" };
+  }
+}
+
+function parseRawObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return { ok: true, value };
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return { ok: true, value: {} };
+  if (raw.length > 100000) return { ok: false, error: "recovery_payload_too_large" };
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? { ok: true, value: parsed }
+      : { ok: false, error: "recovery_payload_invalid" };
+  } catch {
+    return { ok: false, error: "recovery_payload_invalid" };
+  }
 }
 
 function airtableConfig(env) {
