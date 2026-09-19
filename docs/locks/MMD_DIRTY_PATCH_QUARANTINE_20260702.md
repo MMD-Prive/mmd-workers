@@ -28,7 +28,7 @@ Dirty patch file:
 - `/pay/membership` is the canonical Public Membership selection UI and is never payment authority.
 - `/sigil/pay/membership` is a Private legacy compatibility bridge only and is never payment authority.
 - `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes: signed `t` -> `/sigil/pay?t=...`; unsigned -> `/sigil/member/membership?intent=renew`; no fallback UI.
-- `/sigil/pay/renew` is a compatibility alias to `/sigil/member/membership?intent=renew`.
+- `/sigil/pay/renew` is a compatibility alias: signed `t` -> `/sigil/pay?t=<same token>`; unsigned -> `/sigil/member/membership?intent=renew`.
 - `/sigil/pay/payment` is a retired generic payment alias.
 - Membership aliases must never be treated as renewal evidence or redirected into `/sigil/pay/renewal` by generic route logic.
 - Unknown routes must never redirect to `/default`, `/autodirect`, or `/sigil/pay/renewal`.
