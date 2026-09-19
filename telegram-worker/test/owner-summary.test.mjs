@@ -66,14 +66,14 @@ function summary() {
 test("Owner Summary requires Telegram creator and delivers details in private", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const sends = [];
+  const memberChecks = [];
   let ownerRead = 0;
 
   globalThis.fetch = async (url, init = {}) => {
     const method = String(url).split("/").pop();
     const payload = init.body ? JSON.parse(String(init.body)) : null;
     if (method === "getChatMember") {
-      assert.equal(payload.chat_id, "-1003546439681");
-      assert.equal(payload.user_id, 111111);
+      memberChecks.push(payload);
       return Response.json({ ok: true, result: { status: "creator" } });
     }
     if (method === "sendMessage") {
@@ -102,6 +102,7 @@ test("Owner Summary requires Telegram creator and delivers details in private", 
     const body = await response.json();
     assert.equal(body.flow, "hype_owner_summary");
     assert.equal(body.ok, true);
+    assert.deepEqual(memberChecks, [{ chat_id: "-1003546439681", user_id: 111111 }]);
     assert.equal(ownerRead, 1);
     assert.equal(sends.length, 1);
     assert.equal(String(sends[0].chat_id), "111111");
