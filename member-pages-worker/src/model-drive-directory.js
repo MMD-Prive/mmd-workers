@@ -91,11 +91,30 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
     candidates.push(resolved);
   }
 
-  return candidates
+  const qualified = candidates
     .filter((item) => item.score >= 0.28)
-    .sort((a, b) => b.score - a.score || a.folder_name.localeCompare(b.folder_name))
+    .sort((a, b) => b.score - a.score || a.folder_name.localeCompare(b.folder_name));
+
+  return collapseDescendantsOfUniqueExactModelMatch(q, qualified)
     .slice(0, 24)
     .map(({ score, ...item }) => item);
+}
+
+export function collapseDescendantsOfUniqueExactModelMatch(query, candidates = []) {
+  const rows = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  const exact = rows.filter((item) => modelNameScore(query, item?.folder_name) === 1);
+  if (exact.length !== 1) return rows;
+
+  const root = exact[0];
+  const rootPath = clean(root?.folder_path, 1400);
+  if (!rootPath) return rows;
+  const prefix = `${rootPath} / `;
+
+  return rows.filter((item) => {
+    if (item === root || item?.drive_folder_id === root?.drive_folder_id) return true;
+    const path = clean(item?.folder_path, 1400);
+    return !path.startsWith(prefix);
+  });
 }
 
 export async function resolveApprovedModelFolder(accessToken, folderId, env = {}, seed = null) {
