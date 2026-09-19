@@ -94,6 +94,16 @@ export async function handleCanonicalConfirmLink(request, env) {
     const locationName = requiredText(body.location_name, "location_name", 300);
     const googleMapUrl = text(body.google_map_url, 1000);
     const amountThb = positiveNumber(body.amount_thb ?? body.amount, "amount_thb");
+    const originalAmountCandidate = optionalNonNegativeNumber(
+      body.original_amount_thb ?? body.payment_original_amount_thb,
+      "original_amount_thb",
+    );
+    const originalAmountThb = originalAmountCandidate != null && originalAmountCandidate >= amountThb
+      ? originalAmountCandidate
+      : amountThb;
+    const pricingAdjustment = clean(body.pricing_adjustment).toLowerCase();
+    const discountThb = Math.max(0, originalAmountThb - amountThb);
+    const discountMode = discountThb > 0 && pricingAdjustment === "discount" ? "amount" : "none";
     const payModelThb = optionalNonNegativeNumber(
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
@@ -119,10 +129,10 @@ export async function handleCanonicalConfirmLink(request, env) {
     }
     const pricing = paymentStage === "deposit"
       ? {
-          full_price_thb: serviceAmountThb,
-          discount_mode: "none",
-          discount_percent: 0,
-          discount_thb: 0,
+          full_price_thb: Math.max(originalAmountThb, serviceAmountThb),
+          discount_mode: discountMode,
+          discount_percent: null,
+          discount_thb: discountMode === "amount" ? discountThb : 0,
           net_price_thb: serviceAmountThb,
           deposit_basis_thb: serviceAmountThb,
           deposit_percent: CUSTOMER_DEPOSIT_PERCENT,
