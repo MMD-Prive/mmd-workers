@@ -60,6 +60,11 @@ const PUBLIC_MENU_TEXT = [
   "Dashboard and private actions stay locked until trusted worker state allows them.",
 ].join("\n");
 
+const LINE_ACK_TEXT = [
+  "รับข้อความแล้วครับ Kenji ส่งเข้าระบบ MMD แล้ว",
+  "ถ้าเป็นเรื่องจองงาน สลิป VIP Black Card หรือข้อมูลส่วนตัว จะให้ Per / owner ตรวจสอบก่อนตอบยืนยันครับ",
+].join("\n");
+
 const PRIVATE_MARKERS = [
   /airtable/gi,
   /record[_\s-]?id/gi,
