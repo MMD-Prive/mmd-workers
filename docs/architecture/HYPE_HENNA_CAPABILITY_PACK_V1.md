@@ -166,11 +166,13 @@ Canonical surfaces:
 
 Current capability boundary:
 
-- Coupon Wallet has a canonical member-owned read path.
-- Points remains route-only in HYPE until a bounded Telegram-safe Points projection is explicitly approved.
-- HENNA never guesses MMD member balances from MMS chat.
+- HYPE private chat may read the bounded canonical member-wallet projection only after verified Telegram → Canonical Client → canonical LINE identity.
+- Points are shown only when the canonical Points source is explicitly `verified`; unknown/unverified never becomes zero.
+- Coupon code is shown only when canonical Coupon Wallet state is exactly `ready`; other states expose status only.
+- Standard/Premium/Preview/group surfaces remain route-only and never read/display Points balances or Coupon codes.
+- HENNA remains route-only for MMD Points/Coupon and bridges the customer to HYPE / MY MMD; HENNA never guesses MMD member balances from MMS chat.
 
-No assistant may grant Points, mint a coupon, extend validity, or infer balance from historical chat.
+No assistant may grant Points, mint/activate/reissue a coupon, extend validity, change the discount, or infer balance from historical chat.
 
 ---
 
