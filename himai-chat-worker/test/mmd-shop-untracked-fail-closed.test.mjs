@@ -30,6 +30,17 @@ test("checkout pricing rejects an active MMD product with no tracked stock befor
   );
 });
 
+test("checkout pricing allows explicit on-demand supplier fulfillment without inventory", () => {
+  const product = checkoutProduct();
+  product.fields.fldAT8hnluV4CtF3c = "15ml / black bottle / on-demand / no stock";
+  product.fields.fldJCZ7YzsUjIItKf = ["recSupplier123456"];
+  const products = new Map([[PRODUCT_ID, product]]);
+  const priced = validateAndPriceCart([{ product_id: PRODUCT_ID, quantity: 1 }], products, new Map());
+  assert.equal(priced.length, 1);
+  assert.equal(priced[0].stock_status, "on_demand");
+  assert.equal(priced[0].available, null);
+});
+
 test("checkout pricing accepts only tracked positive stock", () => {
   const products = new Map([[PRODUCT_ID, checkoutProduct()]]);
   const priced = validateAndPriceCart(
@@ -78,6 +89,49 @@ test("catalog marks active priced MMD product as stock_untracked when no active 
     assert.equal(body.product.stock_status, "untracked");
     assert.equal(body.product.checkout_eligible, false);
     assert.equal(body.product.online_checkout_status, "stock_untracked");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("catalog classifies explicit on-demand product separately from untracked stock", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("tblzsmNLfP6J0kQ90")) {
+      return Response.json({
+        records: [{
+          id: PRODUCT_ID,
+          fields: {
+            "Product Name": "Glenburgies Pop Plus 10ml — Black Bottle",
+            "SKU": "GLEN-POP15-BLK",
+            "Brand Availability": ["MMD Shop"],
+            "Category": "Selected",
+            "Status": "active",
+            "Curation Label": "MMD Pick",
+            "Supplier": ["recSupplier123456"],
+            "Product Note": "15ml / black bottle / on-demand / no stock",
+            "MMD Shop Selling Price THB": 1500,
+          },
+        }],
+      });
+    }
+    if (url.pathname.includes("tblwFgl4et1TOgtNn")) return Response.json({ records: [] });
+    if (url.pathname.includes("tbl81bnFyASeXCj9x")) {
+      return Response.json({ records: [{ id: "recSupplier123456", fields: { "Supplier Name": "SUP — Glenburgies Pop Plus" } }] });
+    }
+    return new Response("not found", { status: 404 });
+  };
+  try {
+    const response = await handleShopCatalog(
+      new Request("https://www.mmdbkk.com/mmd-shop/api/product/glen-pop15-blk"),
+      { AIRTABLE_BASE_ID: "appTest", AIRTABLE_TOKEN: "token" },
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.product.stock_status, "on_demand");
+    assert.equal(body.product.checkout_eligible, true);
+    assert.equal(body.product.online_checkout_status, "on_demand");
   } finally {
     globalThis.fetch = originalFetch;
   }
