@@ -565,6 +565,18 @@ async function executeP6Mms(env, input = {}) {
   }
 
   const f = input.draft.fields || {};
+  if (clean(f.therapist_preference, 120)) {
+    return {
+      status: "review_required",
+      authority: "mms-worker",
+      canonical_href: "/male-massage/member/mms-booking",
+      customer_message: "คุณระบุ Therapist preference ไว้ครับ แต่ HYPE ยังไม่มี canonical Therapist ID ที่ยืนยัน จึงส่งให้ MMS ตรวจแทนการเดาหรือทิ้ง preference",
+      ops_alert: { flow: "alerts", title: "HYPE P6 · MMS THERAPIST PREFERENCE REVIEW" },
+      details: { blocker: "therapist_preference_requires_canonical_resolution" },
+    };
+  }
+
+  const duration = Number(f.duration_minutes);
   const payload = {
     idempotency_key: input.executionId,
     member_ref: input.canonicalClientId,
@@ -573,7 +585,7 @@ async function executeP6Mms(env, input = {}) {
     zone: clean(f.zone, 80),
     service_date: clean(f.service_date, 20),
     service_time: clean(f.service_time, 8),
-    duration_minutes: Number(f.duration_minutes || 120),
+    ...(Number.isFinite(duration) && duration >= 60 && duration <= 300 ? { duration_minutes: duration } : {}),
     skills: Array.isArray(f.skills) ? f.skills.slice(0, 6) : [],
     requested_therapist_ids: [],
     note: clean(f.note, 800) || "Prepared by HYPE P6. Pre-booking only; Therapist confirmation remains canonical MMS authority.",
