@@ -134,6 +134,7 @@ async function airtableList(env, table, { formula = "", maxRecords = 100, return
 
 function canonicalClientProjection(record = {}, fallback = {}) {
   const fields = record?.fields || {};
+  const gender = explicitCanonicalCustomerGender(fields);
   return {
     canonical_client_id: recId(record?.id || fallback.client_id),
     display_name: firstText(
@@ -148,9 +149,52 @@ function canonicalClientProjection(record = {}, fallback = {}) {
     email: normalizeEmail(firstText(fallback.member_email, fields["Contact Email"], fields.email)),
     line_user_id: lineId(firstText(fallback.line_user_id, fields.line_user_id, fields["LINE User ID"])),
     telegram_user_id: telegramId(firstText(fallback.telegram_user_id, fields.telegram_user_id, fields["Telegram User ID"])),
+    customer_gender: gender.value,
+    customer_gender_source: gender.source,
     per_rename: firstText(fallback.per_rename, fallback.remembered_name),
     source: fallback.per_rename_authoritative === true ? "per_rename_authoritative" : "canonical_client",
   };
+}
+
+function explicitCanonicalCustomerGender(fields = {}) {
+  const directCandidates = [
+    fields["Customer Gender"],
+    fields["Client Gender"],
+    fields["Gender"],
+    fields.gender,
+    fields["Sex"],
+    fields.sex,
+    fields["เพศ"],
+  ];
+  for (const candidate of directCandidates) {
+    const normalized = normalizeCustomerGender(candidate);
+    if (normalized) return { value: normalized, source: "canonical_field" };
+  }
+
+  const note = firstText(
+    fields["LINE OFC Notes"],
+    fields["Client Notes"],
+    fields["Notes"],
+    fields.notes,
+  );
+  if (note) {
+    const match = note.match(/(?:^|\n)\s*(?:gender|sex|เพศ)\s*[:=]\s*([^\n,;|]+)/i);
+    const normalized = normalizeCustomerGender(match?.[1]);
+    if (normalized) return { value: normalized, source: "explicit_labeled_note" };
+  }
+
+  return { value: "unknown", source: "not_recorded" };
+}
+
+function normalizeCustomerGender(value) {
+  const raw = clean(value, 80).normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
+  if (!raw) return "";
+  if (["male", "man", "m", "ชาย", "ผู้ชาย"].includes(raw)) return "male";
+  if (["female", "woman", "f", "หญิง", "ผู้หญิง"].includes(raw)) return "female";
+  if (["nonbinary", "non-binary", "non binary", "nb", "นอนไบนารี"].includes(raw)) return "nonbinary";
+  if (["other", "อื่น", "อื่นๆ"].includes(raw)) return "other";
+  if (["prefer not to say", "prefer_not_to_say", "ไม่ระบุ", "ไม่ประสงค์ระบุ"].includes(raw)) return "prefer_not_to_say";
+  return "";
 }
 
 export async function resolveLiveCanonicalClient(env = {}, input = {}) {
@@ -569,6 +613,8 @@ export function buildKenjiLv5LiveFanInProjection({
       status: resolved ? "resolved" : "unresolved",
       canonical_client_id: canonicalClientId,
       display_name: clean(client.display_name, 120),
+      customer_gender: clean(client.customer_gender, 40) || "unknown",
+      customer_gender_source: clean(client.customer_gender_source, 80) || "not_recorded",
       relationship_context: clean(client360?.data?.relationship?.relationship_state || client360?.data?.relationship?.summary, 160),
     },
     entitlement: entitlementProjected,
