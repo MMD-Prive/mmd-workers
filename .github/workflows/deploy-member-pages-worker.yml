@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "member-pages-worker/**"
+      - "shared/my-mmd-fast-trust-source.mjs"
+      - "scripts/validate-my-mmd-fast-trust-airtable-schema.mjs"
       - "shared/private-media.mjs"
       - "scripts/ensure-private-media-bucket.mjs"
       - ".github/workflows/deploy-member-pages-worker.yml"
@@ -73,6 +75,9 @@ jobs:
           }
           console.log("LIFF gateway Airtable read preflight passed");
           NODE
+
+      - name: Verify My MMD Fast Trust Airtable schema
+        run: node scripts/validate-my-mmd-fast-trust-airtable-schema.mjs
 
       - name: Verify Birthday Wish Airtable write access
         shell: bash
