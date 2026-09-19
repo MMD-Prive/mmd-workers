@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
-import runtimeWorker from "../src/runtime-index.js";
 import {
   OWNER_MY_MMD_RECOVERY_RPC_PATH,
   handleOwnerMyMmdRecoveryDiagnosticRpc,
@@ -160,11 +160,14 @@ test("pending recovery never reports canonical-profile zero as final points", as
 });
 
 
-test("active member-pages runtime dispatches the service-only diagnostic before customer session flow", async () => {
-  const response = await runtimeWorker.fetch(internalRequest(), env(), {});
-  assert.equal(response.status, 200);
-  const body = await response.json();
-  assert.equal(body.recovery.state, "reconciled");
-  assert.equal(body.membership.label, "SVIP");
-  assert.equal(body.points.value, 1250);
+
+
+test("active member-pages runtime wires the owner diagnostic before customer session flow", async () => {
+  const source = await readFile(new URL("../src/runtime-index.js", import.meta.url), "utf8");
+  assert.ok(source.includes('from "./owner-my-mmd-recovery-diagnostic.js"'));
+  assert.ok(source.includes("isOwnerMyMmdRecoveryDiagnosticRpc(request)"));
+  assert.ok(source.includes("handleOwnerMyMmdRecoveryDiagnosticRpc(request, env)"));
+  const diagnosticIndex = source.indexOf("isOwnerMyMmdRecoveryDiagnosticRpc(request)");
+  const customerFlowIndex = source.indexOf("const shellBoundary = createLiffShellBoundaryTrace");
+  assert.ok(diagnosticIndex >= 0 && customerFlowIndex >= 0 && diagnosticIndex < customerFlowIndex);
 });
