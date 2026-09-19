@@ -36,6 +36,12 @@ import {
   isAdminShopOrdersApiRequest,
   isAdminShopOrdersPageRequest,
 } from "./mmd-shop-orders-admin.js";
+import {
+  handleAdminShopOperationsApi,
+  handleAdminShopOperationsPage,
+  isAdminShopOperationsApiRequest,
+  isAdminShopOperationsPageRequest,
+} from "./mmd-shop-operations-admin.js";
 export * from "./admin-login-hero-worker-pre-model-line-link.js";
 
 export const ADMIN_OWNER_DASHBOARD_PATH = "/internal/admin/dashboard";
@@ -186,6 +192,16 @@ export default {
     if (isAdminShopOrdersApiRequest(normalizedPath, method)) {
       const actor = await readCredentialBoundAdminActor(request, env);
       return handleAdminShopOrdersApi(request, env, actor);
+    }
+
+    if (isAdminShopOperationsPageRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, env);
+      return handleAdminShopOperationsPage(request, actor);
+    }
+
+    if (isAdminShopOperationsApiRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, env);
+      return handleAdminShopOperationsApi(request, env, actor);
     }
 
     if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {

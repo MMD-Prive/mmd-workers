@@ -1,4 +1,4 @@
-const AIRTABLE_API = "https://api.airtable.com/v0";
+import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";\n\nconst AIRTABLE_API = "https://api.airtable.com/v0";
 
 const TABLES = Object.freeze({
   products: "tblzsmNLfP6J0kQ90",
@@ -30,6 +30,7 @@ const CUSTOMER_FIELDS = Object.freeze({
   note: "fldiG60HuRFApYgVh",
   createdAt: "fldobLojYBjeRJHYf",
   memberId: "fldCjBe9gqIq6y7rR",
+  lineUserId: "fldhL0PHPwrkT8X3p",
 });
 
 const ORDER_FIELDS = Object.freeze({
@@ -79,6 +80,7 @@ export async function handleMmdShopCheckout(request, env) {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_json_body");
 
     const customerInput = normalizeCustomer(body.customer || body);
+    const shipping = normalizeMmdShopShipping(body.shipping || {}, customerInput);
     const memberContext = await resolveServerMemberContext(request, env);
     const cartInput = normalizeCart(body.items);
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
@@ -95,6 +97,7 @@ export async function handleMmdShopCheckout(request, env) {
       total,
       stockConfirmationRequired,
       sourcePath: clean(body.source_path, 300) || "/mmd-shop",
+      shipping,
     });
     const orderItems = await createOrderItems(env, order.id, pricedCart);
 
@@ -143,6 +146,7 @@ export async function handleMmdShopCheckout(request, env) {
       order_status: "draft",
       official_payment_verification_required: true,
       stock_confirmation_required: stockConfirmationRequired,
+      fulfillment: publicMmdShopFulfillment(createMmdShopFulfillment({ shipping })),
       items: pricedCart.map((item, index) => ({
         order_item_record_id: orderItems[index]?.id || null,
         product_id: item.product_id,
@@ -264,32 +268,47 @@ function validateAndPriceCart(cart, products, stock) {
 async function findOrCreateCustomer(env, customer, sourcePath, memberContext = null) {
   const found = await findExistingCustomer(env, customer, memberContext);
   if (found) {
-    if (memberContext?.member_id && clean(found.fields?.[CUSTOMER_FIELDS.memberId], 180) !== memberContext.member_id) {
-      const patched = await patchRecord(env, table(env, "customers"), found.id, {
-        [CUSTOMER_FIELDS.memberId]: memberContext.member_id,
-      });
-      return patched;
+    const currentMemberId = clean(found.fields?.[CUSTOMER_FIELDS.memberId], 180);
+    const currentLineUserId = clean(found.fields?.[CUSTOMER_FIELDS.lineUserId], 220);
+    const verifiedMemberId = clean(memberContext?.member_id, 180);
+    const verifiedLineUserId = clean(memberContext?.line_user_id, 220);
+
+    if (verifiedMemberId && currentMemberId && currentMemberId !== verifiedMemberId) {
+      throw httpError(409, "shop_member_identity_conflict");
     }
+    if (verifiedLineUserId && currentLineUserId && currentLineUserId !== verifiedLineUserId) {
+      throw httpError(409, "shop_line_identity_conflict");
+    }
+
+    const patch = {};
+    if (verifiedMemberId && !currentMemberId) patch[CUSTOMER_FIELDS.memberId] = verifiedMemberId;
+    if (verifiedLineUserId && !currentLineUserId) patch[CUSTOMER_FIELDS.lineUserId] = verifiedLineUserId;
+    if (Object.keys(patch).length) return patchRecord(env, table(env, "customers"), found.id, patch);
     return found;
   }
+
   const fields = {
     [CUSTOMER_FIELDS.name]: customer.name,
     [CUSTOMER_FIELDS.displayName]: customer.name,
     [CUSTOMER_FIELDS.phone]: customer.phone,
     [CUSTOMER_FIELDS.brandOrigin]: "MMD Shop",
-    [CUSTOMER_FIELDS.acquisitionChannel]: "web",
+    [CUSTOMER_FIELDS.acquisitionChannel]: memberContext?.member_id ? "mmd_member" : "web",
     [CUSTOMER_FIELDS.sourcePath]: clean(sourcePath, 300) || "/mmd-shop",
     [CUSTOMER_FIELDS.signupStatus]: "active",
-    [CUSTOMER_FIELDS.customerOrigin]: "web",
-    [CUSTOMER_FIELDS.note]: "Created by MMD Shop web checkout.",
+    [CUSTOMER_FIELDS.customerOrigin]: memberContext?.member_id ? "mmd_member" : "web",
+    [CUSTOMER_FIELDS.note]: memberContext?.member_id
+      ? "Created by MMD Shop checkout with server-verified MY MMD identity."
+      : "Created by MMD Shop web checkout.",
     [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
   };
   if (customer.email) fields[CUSTOMER_FIELDS.email] = customer.email;
   if (memberContext?.member_id) fields[CUSTOMER_FIELDS.memberId] = memberContext.member_id;
+  if (memberContext?.line_user_id) fields[CUSTOMER_FIELDS.lineUserId] = memberContext.line_user_id;
   return createRecord(env, table(env, "customers"), fields);
 }
 
 async function findExistingCustomer(env, customer, memberContext = null) {
+  const records = [];
   let offset = "";
   let pages = 0;
   do {
@@ -297,19 +316,45 @@ async function findExistingCustomer(env, customer, memberContext = null) {
     params.append("fields[]", CUSTOMER_FIELDS.phone);
     params.append("fields[]", CUSTOMER_FIELDS.email);
     params.append("fields[]", CUSTOMER_FIELDS.memberId);
+    params.append("fields[]", CUSTOMER_FIELDS.lineUserId);
     if (offset) params.set("offset", offset);
     const data = await airtable(env, `${encodeURIComponent(table(env, "customers"))}?${params}`, { method: "GET" });
-    for (const record of data.records || []) {
-      const memberId = clean(record.fields?.[CUSTOMER_FIELDS.memberId], 180);
-      if (memberContext?.member_id && memberId === memberContext.member_id) return record;
-      const phone = normalizePhone(record.fields?.[CUSTOMER_FIELDS.phone]);
-      const email = clean(record.fields?.[CUSTOMER_FIELDS.email], 320).toLowerCase();
-      if (phone && phone === customer.phone) return record;
-      if (customer.email && email && email === customer.email) return record;
-    }
+    records.push(...(data.records || []));
     offset = clean(data.offset, 300);
     pages += 1;
   } while (offset && pages < 20);
+
+  const verifiedMemberId = clean(memberContext?.member_id, 180);
+  const verifiedLineUserId = clean(memberContext?.line_user_id, 220);
+
+  if (verifiedMemberId) {
+    const exactMember = records.find((record) =>
+      clean(record.fields?.[CUSTOMER_FIELDS.memberId], 180) === verifiedMemberId
+    );
+    if (exactMember) return exactMember;
+  }
+
+  if (verifiedLineUserId) {
+    const exactLine = records.find((record) =>
+      clean(record.fields?.[CUSTOMER_FIELDS.lineUserId], 220) === verifiedLineUserId
+    );
+    if (exactLine) return exactLine;
+  }
+
+  for (const record of records) {
+    const boundMemberId = clean(record.fields?.[CUSTOMER_FIELDS.memberId], 180);
+    const boundLineUserId = clean(record.fields?.[CUSTOMER_FIELDS.lineUserId], 220);
+
+    // Phone/email may link only an unbound shop customer. A browser contact value
+    // never overrides or adopts an already-bound MY MMD / LINE identity.
+    if (boundMemberId || boundLineUserId) continue;
+
+    const phone = normalizePhone(record.fields?.[CUSTOMER_FIELDS.phone]);
+    const email = clean(record.fields?.[CUSTOMER_FIELDS.email], 320).toLowerCase();
+    if (phone && phone === customer.phone) return record;
+    if (customer.email && email && email === customer.email) return record;
+  }
+
   return null;
 }
 
@@ -325,7 +370,10 @@ async function resolveServerMemberContext(request, env) {
     }));
     const payload = await response.json().catch(() => null);
     const memberId = clean(payload?.member_id, 180);
-    return response.ok && payload?.ok === true && memberId ? { member_id: memberId } : null;
+    const lineUserId = clean(payload?.line_user_id, 220);
+    return response.ok && payload?.ok === true && memberId
+      ? { member_id: memberId, line_user_id: lineUserId || null }
+      : null;
   } catch {
     return null;
   }
@@ -339,6 +387,9 @@ async function createOrder(env, input) {
     input.stockConfirmationRequired ? "stock_confirmation_required=true" : "stock_confirmation_required=false",
     "payment_verification_required=true",
   ];
+  const fulfillment = createMmdShopFulfillment({ shipping: input.shipping });
+  const notes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);
+
   return createRecord(env, table(env, "orders"), {
     [ORDER_FIELDS.orderId]: input.orderId,
     [ORDER_FIELDS.customer]: [input.customerRecordId],
@@ -346,7 +397,7 @@ async function createOrder(env, input) {
     [ORDER_FIELDS.orderStatus]: "draft",
     [ORDER_FIELDS.paymentStatus]: "pending",
     [ORDER_FIELDS.total]: input.total,
-    [ORDER_FIELDS.notes]: noteLines.join("; "),
+    [ORDER_FIELDS.notes]: notes,
     [ORDER_FIELDS.source]: "web",
     [ORDER_FIELDS.telegramSent]: false,
   });

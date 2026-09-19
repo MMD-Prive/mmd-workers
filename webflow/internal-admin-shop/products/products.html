@@ -1,0 +1,53 @@
+<main id="mmd-shop-products-admin-v1" data-api="/v1/admin/shop/products" data-update-api="/v1/admin/shop/products/update">
+  <header class="shopops-top">
+    <a class="shopops-brand" href="/internal/admin/shop/orders"><span>MMD</span><small>SHOP OPS</small></a>
+    <nav class="shopops-nav" aria-label="Shop admin">
+      <a href="/internal/admin/shop/orders">Orders</a>
+      <a href="/internal/admin/shop/inventory">Inventory</a>
+      <a class="is-active" href="/internal/admin/shop/products">Products</a>
+    </nav>
+  </header>
+
+  <section class="shopops-hero">
+    <div>
+      <span class="shopops-kicker">OWNER OPERATIONS · PRODUCTS</span>
+      <h1>สินค้า MMD Shop</h1>
+      <p>เปิด/ปิด MMD Shop และกำหนดราคา MMD โดยไม่แก้ shared status, category, curation หรือข้อมูลที่ Himai ใช้ร่วมกัน</p>
+    </div>
+    <button class="shopops-btn shopops-btn--ghost" type="button" data-refresh>รีเฟรช</button>
+  </section>
+
+  <section class="shopops-metrics shopops-metrics--four" aria-label="Product metrics">
+    <article><small>สินค้าทั้งหมด</small><strong data-metric="all_products">—</strong></article>
+    <article><small>เปิดใน MMD</small><strong data-metric="mmd_enabled">—</strong></article>
+    <article><small>พร้อมขาย</small><strong data-metric="active_for_sale">—</strong></article>
+    <article><small>ยังไม่มีราคา</small><strong data-metric="needs_price">—</strong></article>
+  </section>
+
+  <section class="shopops-panel">
+    <div class="shopops-panelhead shopops-panelhead--wrap">
+      <div><span class="shopops-kicker">MMD CATALOG CONTROL</span><h2>Price & Availability</h2></div>
+      <div class="shopops-toolbar">
+        <label class="shopops-search"><span>ค้นหา</span><input type="search" data-search placeholder="ชื่อสินค้า / SKU"></label>
+        <select class="shopops-filter" data-filter aria-label="กรองสินค้า">
+          <option value="all">ทั้งหมด</option>
+          <option value="enabled">เปิดใน MMD</option>
+          <option value="disabled">ยังไม่เปิด</option>
+          <option value="needs_price">ต้องใส่ราคา</option>
+          <option value="low_stock">Low Stock</option>
+        </select>
+      </div>
+    </div>
+    <div class="shopops-callout">
+      <strong>Shared fields เป็น Read-only ในหน้านี้</strong>
+      <span>Status / Category / Curation / Product Note ยังเป็นข้อมูลร่วมกับ Himai Shop เพื่อป้องกันการแก้ข้ามร้านโดยไม่ตั้งใจ</span>
+    </div>
+    <div class="shopops-state" data-state>กำลังโหลด Product Catalog…</div>
+    <div class="shopops-stack" data-products hidden></div>
+  </section>
+
+  <footer class="shopops-foot">
+    <a href="/internal/admin/shop/inventory">← Inventory</a>
+    <a href="/internal/admin/shop/orders">Orders →</a>
+  </footer>
+</main>

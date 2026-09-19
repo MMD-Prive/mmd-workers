@@ -4,6 +4,13 @@ import {
   signConfirmToken,
   verifyConfirmToken,
 } from "./index.js";
+import {
+  createMmdShopFulfillment,
+  publicMmdShopFulfillment,
+  readMmdShopFulfillment,
+  transitionMmdShopFulfillment,
+  writeMmdShopFulfillment,
+} from "../shared/mmd-shop-fulfillment.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
@@ -193,6 +200,10 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
         order_id: claims.session_id,
         order_record_id: order.id,
         items: orderItems.map(safeShopOrderItem),
+        fulfillment: (() => {
+          const value = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]);
+          return value ? publicMmdShopFulfillment(value) : null;
+        })(),
       },
     }, 200, request, env);
   } catch (error) {
@@ -216,10 +227,18 @@ export async function reconcileReviewedShopPayment(request, response, env) {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
 
+    const paymentAuditNote = appendNote(
+      order.fields?.[ORDER_FIELDS.notes],
+      `payment_verified_at=${new Date().toISOString()}; payment_ref=${text(body?.payment_ref || body?.transaction_ref, 220)}; verified_by=payments-worker`,
+    );
+    const existingFulfillment = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]) || createMmdShopFulfillment();
+    const confirmedFulfillment = transitionMmdShopFulfillment(existingFulfillment, { state: "confirmed" });
+    const orderNotes = writeMmdShopFulfillment(paymentAuditNote, confirmedFulfillment);
+
     await patchRecord(env, table(env, "orders"), order.id, {
       [ORDER_FIELDS.orderStatus]: "confirmed",
       [ORDER_FIELDS.paymentStatus]: "paid",
-      [ORDER_FIELDS.notes]: appendNote(order.fields?.[ORDER_FIELDS.notes], `payment_verified_at=${new Date().toISOString()}; payment_ref=${text(body?.payment_ref || body?.transaction_ref, 220)}; verified_by=payments-worker`),
+      [ORDER_FIELDS.notes]: orderNotes,
     });
 
     const items = await findOrderItems(env, order.id);
@@ -246,6 +265,7 @@ export async function reconcileReviewedShopPayment(request, response, env) {
         order_status: "confirmed",
         payment_status: "paid",
         items_confirmed: items.length,
+        fulfillment: publicMmdShopFulfillment(confirmedFulfillment),
       },
     }), { status: response.status, headers });
   } catch (error) {
