@@ -52,3 +52,22 @@ test("personal status routes remain protected and contain no raw Worker URL", ()
     assert.doesNotMatch(reply, /ชำระสำเร็จ|สมาชิก(?:เป็น|อยู่ในสถานะ) active|แต้มเข้าแล้ว/i);
   }
 });
+
+
+test("explicit Private membership signup is separated from generic Public signup", () => {
+  const generic = lineTextEvent("สมัครสมาชิก");
+  assert.equal(inferLineIntent("สมัครสมาชิก", generic), "membership_signup");
+
+  for (const text of ["สมัคร Private Membership", "สมัคร Standard", "สมัคร Premium"]) {
+    const event = lineTextEvent(text);
+    assert.equal(inferLineIntent(text, event), "private_membership_signup");
+    assert.deepEqual(decideKenjiCapability({ intent: "private_membership_signup", text }), {
+      capability: "deterministic_truth",
+      requested_domain: "none",
+      requires_truth: false,
+      allow_direct_answer: true,
+      allow_model: true,
+      handoff_required: false,
+    });
+  }
+});
