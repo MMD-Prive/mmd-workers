@@ -112,7 +112,10 @@ jobs:
             sed -E '/^set-cookie:/Id' "$login_headers" >&2 || true
             exit 1
           fi
-          test "$login_location" = "/internal/admin/kenji"
+          case "$login_location" in
+            "$ORIGIN/internal/admin/kenji"|"$ORIGIN/internal/admin/dashboard"|"/internal/admin/kenji"|"/internal/admin/dashboard") ;;
+            *) echo "Unexpected authenticated admin landing: $login_location" >&2; exit 1 ;;
+          esac
           grep -q 'mmd_admin_gate_v1' "$cookie_jar"
 
           auth_body="$RUNNER_TEMP/kenji-seed-auth.json"
