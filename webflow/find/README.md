@@ -31,3 +31,5 @@ This page collects preferences only. It must not invent availability, entitlemen
 - `bangkok-mood.html` — Bangkok mood visual rail
 - `head.html` — page-scoped styles including mobile-first V2 contrast layer
 - `footer.html` — request-flow runtime and customer-facing validation/status copy
+- `runtime-copy-guard.html` — positive-copy fallback guard for legacy runtime messages
+- `legacy-font-override.html` — retired old display-font override; LINE Seed Sans TH remains canonical
