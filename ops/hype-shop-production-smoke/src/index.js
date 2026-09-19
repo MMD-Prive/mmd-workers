@@ -1,3 +1,5 @@
+import { runMmdShopTransactionSmoke } from "./mmd-shop-transaction-smoke.js";
+
 const JSON_HEADERS = Object.freeze({
   "content-type": "application/json; charset=utf-8",
   "cache-control": "no-store",
@@ -42,6 +44,8 @@ export default {
       body: { telegram_user_id: telegramUserId },
     });
 
+    const transaction = await runMmdShopTransactionSmoke(env);
+
     const checks = {
       admin_to_member_pages_binding: diagnostic.status === 200
         && diagnostic.body?.ok === true
@@ -58,8 +62,16 @@ export default {
       unresolved_telegram_fails_closed: identityGate.status === 404
         && identityGate.body?.state === "connect_required"
         && identityGate.body?.error === "canonical_client_unresolved",
+      synthetic_reserve_expire: transaction.checks?.reserve_created === true
+        && transaction.checks?.expiry_releases_stock === true,
+      payment_review_blocks_expiry: transaction.checks?.payment_review_blocks_expiry === true,
+      inventory_out_once: transaction.checks?.inventory_out_once === true
+        && transaction.checks?.reservation_movement_sequence === true,
+      fulfillment_delivery_lifecycle: transaction.checks?.fulfillment_delivery_lifecycle === true,
+      line_shipping_dry_run: transaction.checks?.line_shipping_dry_run === true,
+      customer_projection_contract: transaction.checks?.customer_projection_contract === true,
     };
-    const ok = Object.values(checks).every(Boolean);
+    const ok = Object.values(checks).every(Boolean) && transaction.ok === true;
 
     return Response.json({
       ok,
@@ -72,11 +84,15 @@ export default {
         identity_gate_status: identityGate.status,
         identity_gate_state: safeToken(identityGate.body?.state),
         identity_gate_error: safeToken(identityGate.body?.error),
+        transaction_state: safeToken(transaction.state),
+        transaction_observations: transaction.observations,
       },
       guardrails: {
         synthetic_only: true,
         customer_data_returned: false,
-        business_truth_mutated: false,
+        business_truth_mutated: transaction.guardrails?.business_truth_mutated === true,
+        production_airtable_called: transaction.guardrails?.production_airtable_called === true,
+        line_push_sent: transaction.guardrails?.line_push_sent === true,
         order_created: false,
         payment_changed: false,
         fulfillment_changed: false,
