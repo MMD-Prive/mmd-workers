@@ -58,3 +58,39 @@ test("profile and dashboard receive the same lifetime points total", () => {
   assert.equal(dashboard.data.points.expiring_points, 0);
   assert.equal(dashboard.data.points.nearest_expiry, null);
 });
+
+
+test("dashboard never finalizes temporary zero while history recovery is still pending", () => {
+  const patched = patchLifetimePointsPayload("/api/member/app/dashboard", {
+    points: { confirmedBalance: 0, earnedTotal: 0, redeemedTotal: 0 },
+    pointsRecoveryPending: false,
+  }, {
+    state: "checking",
+    recoveryState: "in_progress",
+    pointsRecoveryPending: true,
+  });
+
+  assert.equal(patched.points.confirmedBalance, null);
+  assert.equal(patched.points.earnedTotal, null);
+  assert.equal(patched.points.redeemedTotal, null);
+  assert.equal(patched.pointsRecoveryPending, true);
+});
+
+test("real zero is final only after reconciled or review_required", () => {
+  for (const recoveryState of ["reconciled", "review_required"]) {
+    const patched = patchLifetimePointsPayload("/api/member/app/dashboard", {
+      points: { confirmedBalance: null },
+      pointsRecoveryPending: true,
+    }, {
+      state: "resolved",
+      recoveryState,
+      pointsRecoveryPending: false,
+      confirmedBalance: 0,
+      earnedTotal: 0,
+      redeemedTotal: 0,
+      recordsCount: 0,
+    });
+    assert.equal(patched.points.confirmedBalance, 0);
+    assert.equal(patched.pointsRecoveryPending, false);
+  }
+});
