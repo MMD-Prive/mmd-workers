@@ -135,12 +135,8 @@
       <div class="mjc16__final-amount"><small>ยอดคงเหลือ</small><span data-final-amount>—</span></div>
     </div>
     <div class="mjc16__pay-methods" data-final-methods><div class="mjc16__pay-method">กำลังโหลดช่องทางชำระเงิน…</div></div>
-    <form class="mjc16__proof-form" data-final-proof-form>
-      <label class="mjc16__section-kicker" for="mjc16FinalSlip">อัปโหลดหลักฐานการชำระเงิน</label>
-      <input class="mjc16__proof-file" id="mjc16FinalSlip" data-final-proof-file type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required>
-      <button class="mjc16__proof-submit" data-final-proof-submit type="submit">ส่งหลักฐานให้ MMD ตรวจยอด</button>
-    </form>
-    <p class="mjc16__proof-status" data-final-proof-status>หลักฐานจะยังไม่ถือว่าชำระแล้ว จนกว่า MMD จะตรวจและยืนยันยอด</p>
+    <a class="mjc16__proof-submit" data-final-pay-link href="#" style="display:flex;align-items:center;justify-content:center;text-decoration:none">ชำระยอดคงเหลือ / ส่งสลิป</a>
+    <p class="mjc16__proof-status" data-final-proof-status>ระบบจะพาไปหน้า SIGIL PAY เดียวของงานนี้ เพื่อชำระและส่งสลิปครั้งเดียว</p>
   </section>
   <a class="mjc16__aftercare" data-session-aftercare href="/aftercare" hidden>ให้คะแนนและ Aftercare ⭐</a>
 </section>`;
@@ -161,11 +157,6 @@
       else root.querySelector(".mjc16__wrap")?.appendChild(tracker);
     }
     mounted = Boolean($('[data-session-tracker]'));
-    const proofForm = $('[data-final-proof-form]');
-    if (mounted && proofForm && proofForm.dataset.bound !== "1") {
-      proofForm.dataset.bound = "1";
-      proofForm.addEventListener("submit", submitFinalProof);
-    }
     return mounted;
   }
 
@@ -244,72 +235,30 @@
 
     const amount = $('[data-final-amount]');
     if (amount) amount.textContent = money(payment.amount_due_thb);
-    const form = $('[data-final-proof-form]');
-    const file = $('[data-final-proof-file]');
-    const submit = $('[data-final-proof-submit]');
+    const payLink = $('[data-final-pay-link]');
+    const canonicalPayUrl = token ? `/sigil/pay?t=${encodeURIComponent(token)}` : "";
+
     if (payment.verified) {
-      if (form) form.hidden = true;
+      if (payLink) payLink.hidden = true;
       setProofStatus("ชำระยอดคงเหลือเรียบร้อย · Model สามารถเริ่มงานได้", "is-paid");
       const methods = $('[data-final-methods]');
       if (methods) methods.innerHTML = '<div class="mjc16__pay-method"><strong>PAYMENT VERIFIED</strong>MMD ตรวจและยืนยันยอดเรียบร้อยแล้ว</div>';
       return;
     }
     if (payment.proof_received) {
-      if (form) form.hidden = true;
-      setProofStatus("รับหลักฐานแล้ว · MMD กำลังตรวจยอด", "is-waiting");
+      if (payLink) payLink.hidden = true;
+      setProofStatus("รับหลักฐานแล้ว · MMD กำลังตรวจยอด · ไม่ต้องส่งซ้ำ", "is-waiting");
       const methods = $('[data-final-methods]');
-      if (methods) methods.innerHTML = '<div class="mjc16__pay-method"><strong>PENDING REVIEW</strong>ไม่ต้องส่งสลิปซ้ำ ระบบจะแจ้งสถานะหลัง MMD ตรวจยอด</div>';
+      if (methods) methods.innerHTML = '<div class="mjc16__pay-method"><strong>PENDING REVIEW</strong>ระบบรับสลิปแล้วและกำลังรอ MMD ตรวจยอด</div>';
       return;
     }
-    if (form) form.hidden = false;
-    if (file) file.disabled = false;
-    if (submit) submit.disabled = false;
-    setProofStatus("หลักฐานจะยังไม่ถือว่าชำระแล้ว จนกว่า MMD จะตรวจและยืนยันยอด");
-    if (instructionsRef !== clean(payload.payment_ref)) loadPaymentInstructions(clean(payload.payment_ref));
-  }
 
-  async function submitFinalProof(event) {
-    event.preventDefault();
-    const payment = lastPayload?.payment;
-    const paymentRef = clean(lastPayload?.payment_ref);
-    const sessionId = clean(lastPayload?.session_id);
-    const fileInput = $('[data-final-proof-file]');
-    const submit = $('[data-final-proof-submit]');
-    const file = fileInput?.files?.[0];
-    if (!paymentRef || !sessionId || payment?.stage !== "final" || !file) {
-      setProofStatus("กรุณาเลือกไฟล์สลิปก่อนส่ง", "is-error");
-      return;
+    if (payLink) {
+      payLink.hidden = !canonicalPayUrl;
+      if (canonicalPayUrl) payLink.href = canonicalPayUrl;
     }
-    if (Number(file.size || 0) > 15 * 1024 * 1024) {
-      setProofStatus("ไฟล์ใหญ่เกิน 15 MB กรุณาเลือกไฟล์ใหม่", "is-error");
-      return;
-    }
-    if (submit) submit.disabled = true;
-    if (fileInput) fileInput.disabled = true;
-    setProofStatus("กำลังส่งหลักฐานเข้าระบบ…", "is-waiting");
-    const form = new FormData();
-    form.append("file", file, file.name || "final-payment-proof");
-    form.append("payment_ref", paymentRef);
-    form.append("session_id", sessionId);
-    form.append("payment_stage", "final");
-    form.append("proof_type", "payment_slip");
-    form.append("source_page", "job_confirmation");
-    try {
-      const response = await fetch(`${API}/v1/pay/slip/evidence`, {
-        method: "POST",
-        credentials: "omit",
-        body: form,
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.ok === false) throw new Error(data?.error || "payment_proof_submit_failed");
-      if (lastPayload?.payment) lastPayload.payment.proof_received = true;
-      renderFinalPayment(lastPayload);
-      await load();
-    } catch {
-      if (submit) submit.disabled = false;
-      if (fileInput) fileInput.disabled = false;
-      setProofStatus("ส่งหลักฐานไม่สำเร็จ กรุณาลองใหม่หรือติดต่อ MMD", "is-error");
-    }
+    setProofStatus("กดชำระยอดคงเหลือ ระบบจะเปิด SIGIL PAY ของงานเดิมเพื่อชำระและส่งสลิป");
+    if (instructionsRef !== clean(payload.payment_ref)) loadPaymentInstructions(clean(payload.payment_ref));
   }
 
   function setBadge(text, mode = "") {
