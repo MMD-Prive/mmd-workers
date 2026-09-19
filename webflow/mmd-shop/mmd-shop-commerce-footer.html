@@ -30,6 +30,31 @@ var products=[];
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
 function money(v){var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"สอบถามราคา"}
 function restricted(p){return /^PPP25-/i.test(p.sku||"")||/\bpod\b/i.test(p.product_name||"")}
+function checkoutStatusText(p){
+ var s=String(p&&p.online_checkout_status||"").toLowerCase();
+ if(s==="out_of_stock")return "สินค้าหมดชั่วคราว";
+ if(s==="stock_untracked")return "กำลังตรวจสต๊อกก่อนเปิดรับรายการ";
+ if(s==="on_demand")return "กำลังยืนยัน Supplier ก่อนเปิดรับรายการ";
+ if(s==="restricted")return "ไม่เปิด Online Checkout สำหรับสินค้ากลุ่มนี้";
+ return "ยังไม่เปิดรับรายการออนไลน์";
+}
+function toast(msg){var t=document.getElementById("mmdToast");if(t){t.textContent=msg;t.classList.add("show");setTimeout(function(){t.classList.remove("show")},1400)}}
+function reconcileCart(){
+ var current=cart().filter(function(x){return x&&x.product_id}),next=[],changed=false;
+ current.forEach(function(x){
+  var p=products.find(function(v){return v.id===x.product_id});
+  if(!p||p.checkout_eligible!==true||restricted(p)){changed=true;return}
+  var qty=Math.max(1,Math.floor(Number(x.qty)||1));
+  if(String(p.stock_status||"").toLowerCase()==="tracked"){
+   var available=Math.max(0,Math.floor(Number(p.available)||0));
+   if(available<=0){changed=true;return}
+   if(qty>available){qty=available;changed=true}
+  }
+  next.push(Object.assign({},x,{qty:qty}));
+ });
+ if(changed)localStorage.setItem(KEY,JSON.stringify(next));
+ return changed;
+}
 function img(p){var s=(p.sku||"").toUpperCase();if(s.indexOf("WGG-")===0)return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2bc2521dbd91c40072a0_GG%20Water%2003.webp";if(s.indexOf("PPP25-")===0)return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2de261bf62d20a6d4a9e_Pod%20Plus%20MMD.webp";return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c1e2f03656a00250f4531_MMD%20Shop%20Luxury%20Gift%20Box.webp"}
 function cart(){try{var c=JSON.parse(localStorage.getItem(KEY)||"[]");return Array.isArray(c)?c:[]}catch(e){return[]}}
 function save(c){localStorage.setItem(KEY,JSON.stringify(c));renderCart()}
@@ -37,9 +62,12 @@ function renderProducts(){
  if(!grid)return;
  var active=products.filter(function(p){return String(p.status||"").toLowerCase()==="active"});
  grid.innerHTML=active.map(function(p){
-  var locked=restricted(p),priced=Number(p.selling_price_thb)>0;
+  var locked=restricted(p),priced=Number(p.selling_price_thb)>0,eligible=p.checkout_eligible===true&&!locked&&priced;
   var detail=p.product_url||("/mmd-shop/product/"+encodeURIComponent(String(p.sku||p.id||"product").toLowerCase()));
-  return '<article class="mmd-card"><div class="mmd-card-media"><img src="'+img(p)+'" alt="'+esc(p.product_name)+'" loading="lazy"><span class="mmd-badge">'+esc(p.curation_label||p.category||"MMD Pick")+'</span></div><div class="mmd-card-body"><h3>'+esc(p.product_name)+'</h3><p>'+esc(p.description||"MMD curated selection")+'</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span>'+money(p.selling_price_thb)+'</div><a class="mmd-shop-detail" href="'+esc(detail)+'">ดูรายละเอียด</a>'+(locked?'<div class="mmd-shop-restricted">ไม่เปิด Online Checkout สำหรับสินค้ากลุ่มนี้</div>':'<button class="mmd-shop-buy" type="button" data-shop-add="'+esc(p.id)+'" '+(!priced?'disabled':'')+'>เพิ่มลง Cart</button>')+'</div></div></article>'
+  var action=eligible
+   ? '<button class="mmd-shop-buy" type="button" data-shop-add="'+esc(p.id)+'">เพิ่มลง Cart</button>'
+   : '<div class="mmd-shop-restricted">'+esc(locked?"ไม่เปิด Online Checkout สำหรับสินค้ากลุ่มนี้":checkoutStatusText(p))+'</div>';
+  return '<article class="mmd-card"><div class="mmd-card-media"><img src="'+img(p)+'" alt="'+esc(p.product_name)+'" loading="lazy"><span class="mmd-badge">'+esc(p.curation_label||p.category||"MMD Pick")+'</span></div><div class="mmd-card-body"><h3>'+esc(p.product_name)+'</h3><p>'+esc(p.description||"MMD curated selection")+'</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span>'+money(p.selling_price_thb)+'</div><a class="mmd-shop-detail" href="'+esc(detail)+'">ดูรายละเอียด</a>'+action+'</div></div></article>'
  }).join("");
 }
 function renderCart(){
@@ -51,10 +79,15 @@ function renderCart(){
  if(total)total.textContent=money(sum);
 }
 function add(id){
- var p=products.find(function(x){return x.id===id});if(!p||restricted(p)||!(Number(p.selling_price_thb)>0))return;
+ var p=products.find(function(x){return x.id===id});
+ if(!p||p.checkout_eligible!==true||restricted(p)||!(Number(p.selling_price_thb)>0)){toast(p?checkoutStatusText(p):"ยังไม่สามารถเพิ่มสินค้านี้ได้");return}
  var c=cart().filter(function(x){return x&&x.product_id});var found=c.find(function(x){return x.product_id===id});
+ if(String(p.stock_status||"").toLowerCase()==="tracked"){
+  var available=Math.max(0,Math.floor(Number(p.available)||0)),current=found?Math.max(0,Math.floor(Number(found.qty)||0)):0;
+  if(current>=available){toast("สต๊อกที่พร้อมสั่งมี "+available+" ชิ้น");return}
+ }
  if(found)found.qty+=1;else c.push({product_id:p.id,key:p.id,name:p.product_name,sku:p.sku,price:money(p.selling_price_thb),unit_price_thb:Number(p.selling_price_thb),qty:1});
- save(c);var t=document.getElementById("mmdToast");if(t){t.textContent="เพิ่มลง Cart แล้ว";t.classList.add("show");setTimeout(function(){t.classList.remove("show")},1200)}
+ save(c);toast("เพิ่มลง Cart แล้ว");
 }
 function syncShippingVisibility(){
  var method=document.getElementById("mmdShopDeliveryMethod"),fields=document.getElementById("mmdShopShippingFields");
@@ -84,6 +117,13 @@ async function checkout(){
  }
  var c=cart().filter(function(x){return x&&x.product_id});
  if(!c.length){status.textContent="กรุณาเพิ่มสินค้าลง Cart ก่อน";return}
+ if(reconcileCart()){
+  renderCart();
+  status.textContent="Cart ถูกอัปเดตตามสต๊อกล่าสุดแล้ว กรุณาตรวจรายการอีกครั้ง";
+  return
+ }
+ var blocked=c.find(function(x){var p=products.find(function(v){return v.id===x.product_id});return !p||p.checkout_eligible!==true||restricted(p)});
+ if(blocked){status.textContent="มีสินค้าที่ไม่พร้อมสั่งซื้อ กรุณานำออกจาก Cart";return}
  if(name.length<2||phone.replace(/\D/g,"").length<8){status.textContent="กรุณากรอกชื่อและเบอร์โทรให้ครบ";return}
  if(method==="delivery"&&(shipping.address_line1.length<5||!shipping.district||!shipping.province||shipping.postal_code.length!==5)){status.textContent="กรุณากรอกที่อยู่ เขต/อำเภอ จังหวัด และรหัสไปรษณีย์ให้ครบ";return}
  btn.disabled=true;status.textContent="กำลังสร้าง Order ตรวจยอด และบันทึกข้อมูลจัดส่ง…";
@@ -100,6 +140,6 @@ async function checkout(){
 grid&&grid.addEventListener("click",function(e){var b=e.target.closest("[data-shop-add]");if(b)add(b.getAttribute("data-shop-add"))});
 list&&list.addEventListener("click",function(e){var b=e.target.closest("[data-shop-remove]");if(!b)return;var c=cart().filter(function(x){return x&&x.product_id});c.splice(Number(b.getAttribute("data-shop-remove")),1);save(c)});
 bubble&&bubble.addEventListener("click",function(){setTimeout(function(){injectCheckout();renderCart()},0)});
-fetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw 0;products=data.products||[];renderProducts();renderCart();injectCheckout();if(location.hash==="#cart"&&bubble){window.setTimeout(function(){bubble.click()},60)}}).catch(function(){if(grid)grid.innerHTML='<p class="mmd-copy">ยังโหลดรายการสินค้าไม่ได้ กรุณาลองใหม่อีกครั้ง</p>'});
+fetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw 0;products=data.products||[];var cartChanged=reconcileCart();renderProducts();renderCart();injectCheckout();if(cartChanged)toast("Cart อัปเดตตามสต๊อกล่าสุดแล้ว");if(location.hash==="#cart"&&bubble){window.setTimeout(function(){bubble.click()},60)}}).catch(function(){if(grid)grid.innerHTML='<p class="mmd-copy">ยังโหลดรายการสินค้าไม่ได้ กรุณาลองใหม่อีกครั้ง</p>'});
 })();
 </script>
