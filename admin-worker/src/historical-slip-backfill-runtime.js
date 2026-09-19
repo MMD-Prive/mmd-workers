@@ -54,7 +54,12 @@ async function listBackfillProofs(request, env) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
   const formula = `FIND('${formulaValue(`\"schema\":\"${SCHEMA}\"`)}',{note})>0`;
-  const records = await airtableList(env, paymentProofTable(env), { filterByFormula: formula, maxRecords: limit });
+  const records = await airtableList(env, paymentProofTable(env), {
+    filterByFormula: formula,
+    maxRecords: limit,
+    "sort[0][field]": "created_at",
+    "sort[0][direction]": "desc",
+  });
   const items = records
     .map(safeProofSummary)
     .filter(Boolean)
