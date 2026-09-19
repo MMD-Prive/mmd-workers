@@ -108,6 +108,7 @@ const ALLOWED_NEXT_PATHS = [
   "/internal/admin/create-session",
   "/internal/admin/kenji",
   "/internal/admin/kenji-knowledge",
+  "/internal/ceo/models",
   OWNER_MY_MMD_RECOVERY_PAGE_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
   "/internal/jobs/create-job",
