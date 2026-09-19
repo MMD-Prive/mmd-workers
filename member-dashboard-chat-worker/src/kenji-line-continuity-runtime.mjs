@@ -315,7 +315,7 @@ function stageForTurn({ continuity = {}, decision = {}, delivered = false, attem
     return "handoff";
   }
   if (delivered && decision.live_truth_verified === true && ["membership_status", "points_status"].includes(intent)) return "resolved";
-  if (delivered && ["membership_signup", "membership_renewal"].includes(intent)) return "awaiting_customer";
+  if (delivered && ["membership_signup", "private_membership_signup", "membership_renewal"].includes(intent)) return "awaiting_customer";
   if (delivered && TERMINAL_AUTO_REPLY_INTENTS.has(intent)) return "resolved";
   if (text(continuity.decision) === "continuation" && text(continuity.conversation_stage)) return text(continuity.conversation_stage);
   return "in_progress";
@@ -346,7 +346,8 @@ function actionForIntent(intent = "", continuity = {}) {
   if (text(continuity.decision) === "continuation") return "followed_up_on_open_thread";
   if (value === "payment_slip") return "submitted_payment_proof";
   if (value === "membership_renewal") return "requested_membership_renewal";
-  if (value === "membership_signup") return "requested_membership_signup";
+  if (value === "membership_signup") return "requested_public_membership_signup";
+  if (value === "private_membership_signup") return "requested_private_membership_signup";
   if (value === "availability_request") return "requested_availability_review";
   if (value === "pricing_review") return "requested_pricing_review";
   return value ? `asked:${value}`.slice(0, 160) : "customer_message_received";
@@ -357,7 +358,8 @@ function doNotAskForTurn(intent = "", continuity = {}) {
   const value = text(intent).toLowerCase();
   if (value === "payment_slip") base.push("payment_proof");
   if (value === "membership_renewal") base.push("renewal_intent");
-  if (value === "membership_signup") base.push("membership_signup_intent");
+  if (value === "membership_signup") base.push("public_membership_signup_intent");
+  if (value === "private_membership_signup") base.push("private_membership_signup_intent");
   return unique(base);
 }
 
