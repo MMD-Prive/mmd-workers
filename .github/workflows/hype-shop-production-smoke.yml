@@ -164,7 +164,7 @@ jobs:
           telegram_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$telegram_body" -w "%{http_code}" "https://telegram-worker.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health")"
           cat "$telegram_body"
           test "$telegram_code" = "200"
-          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(p?.ok!==true) throw new Error("telegram health is not ok"); if(p?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HYPE capability pack");' "$telegram_body"
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(p?.ok!==true) throw new Error("telegram health is not ok"); if(p?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HYPE capability pack"); if(p?.recovery_outcome_taxonomy!=="mmd-recovery-outcome-taxonomy-v1-20260919") throw new Error("unexpected Recovery outcome taxonomy");' "$telegram_body"
 
       - name: Record acceptance summary
         if: success()
@@ -180,6 +180,7 @@ jobs:
             echo "- unresolved Telegram fail-closed: PASS"
             echo "- public internal endpoints blocked: PASS"
             echo "- telegram HYPE capability pack health: PASS"
+            echo "- recovery outcome taxonomy health: PASS"
             echo "- customer data used: NONE"
             echo "- business truth mutation: NONE"
           } >> "$GITHUB_STEP_SUMMARY"
