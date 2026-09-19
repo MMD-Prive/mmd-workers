@@ -1,0 +1,55 @@
+name: Deploy public-access-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "public-access-worker/**"
+      - ".github/workflows/deploy-public-access-worker.yml"
+      - ".github/workflows/public-access-production-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-public-access-worker-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Require deploy credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate public-access worker source
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check public-access-worker/src/index.js
+          grep -q 'sigil.mmdbkk.com/public/api/\*' public-access-worker/wrangler.toml
+          grep -q 'AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"' public-access-worker/wrangler.toml
+
+      - name: Deploy public-access-worker
+        shell: bash
+        run: npx wrangler deploy --config public-access-worker/wrangler.toml

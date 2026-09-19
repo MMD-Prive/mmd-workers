@@ -1,0 +1,127 @@
+name: Member payments authenticated production E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_lane:
+        description: "Require a current backend-issued signed handoff: any, public, private, or none"
+        required: true
+        default: any
+        type: choice
+        options:
+          - any
+          - public
+          - private
+          - none
+
+permissions:
+  contents: read
+
+concurrency:
+  group: member-payments-authenticated-production-e2e
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      EXPECTED_LANE: ${{ inputs.expected_lane }}
+    steps:
+      - name: Require real member LIFF credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${REAL_MEMBER_LIFF_ID_TOKEN:-}" ]; then
+            echo "MY_MMD_E2E_ID_TOKEN is not configured. Refusing to downgrade authenticated acceptance to a synthetic session." >&2
+            exit 1
+          fi
+          echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
+
+      - name: Establish real verified member session
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar="$RUNNER_TEMP/member-payments-e2e.cookies"
+          start_headers="$RUNNER_TEMP/member-payments-start.headers"
+          start_body="$RUNNER_TEMP/member-payments-start.json"
+          start_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$start_headers" -c "$jar" -o "$start_body" -w "%{http_code}"             -X POST "$ORIGIN/member/api/liff/start"             -H "Origin: $ORIGIN"             -H "Accept: application/json"             -H "Content-Type: application/json"             --data-binary "$(jq -nc --arg id_token "$REAL_MEMBER_LIFF_ID_TOKEN" '{id_token:$id_token,intent:"status",liff_intent:"status"}')")"
+          echo "LIFF start HTTP $start_code"
+          test "$start_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$start_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$start_headers"
+          grep -q '__Host-mmd_liff_session' "$jar"
+          jq -e '.ok == true and (.data | type == "object")' "$start_body" >/dev/null
+          echo "COOKIE_JAR=$jar" >> "$GITHUB_ENV"
+
+      - name: Verify authenticated member payments BFF
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$RUNNER_TEMP/member-payments-auth.headers"
+          body="$RUNNER_TEMP/member-payments-auth.json"
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" -w "%{http_code}"             -H "Origin: $ORIGIN"             "$ORIGIN/v1/member/payments")"
+          echo "member payments authenticated HTTP $code"
+          test "$code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$headers"
+
+          node - "$body" "$EXPECTED_LANE" <<'NODE'
+          const fs = require("node:fs");
+          const [file, expectedLane] = process.argv.slice(2);
+          const raw = fs.readFileSync(file, "utf8");
+          const body = JSON.parse(raw);
+          if (body?.ok !== true || body?.schema !== "mmd_member_payments_v1") throw new Error("unexpected authenticated BFF schema");
+          if (body?.authority !== "member-pages-worker" || body?.money_authority !== "payments-worker") throw new Error("authority boundary mismatch");
+          if (body?.surface_role !== "status_history_navigation") throw new Error("wrong surface role");
+          if (body?.official_verification_required !== true || body?.proof_is_evidence_only !== true) throw new Error("verification safety lock missing");
+          if (!Array.isArray(body?.records)) throw new Error("records must be an array");
+
+          const forbiddenKeys = new Set([
+            "line_user_id","lineUserId","airtable_record_id","record_id","admin_note",
+            "internal_note","bank_account","promptpay_destination","qr_payload","verification_actor"
+          ]);
+          const walk = (value, path = "$") => {
+            if (!value || typeof value !== "object") return;
+            if (Array.isArray(value)) return value.forEach((v, i) => walk(v, path + "[" + i + "]"));
+            for (const [k, v] of Object.entries(value)) {
+              if (forbiddenKeys.has(k)) throw new Error("customer-unsafe field leaked at " + path + "." + k);
+              walk(v, path + "." + k);
+            }
+          };
+          walk(body);
+
+          const current = body.records.find((r) => r && r.payment_ref);
+          if (current?.official_status === "pending_review" && "customer_payment_url" in current) {
+            throw new Error("pending_review must suppress the pay action");
+          }
+          const signed = current?.customer_payment_url || "";
+          let lane = "none";
+          if (signed) {
+            const url = new URL(signed);
+            if (url.origin !== "https://mmdbkk.com" || [...url.searchParams.keys()].join(",") !== "t" || !url.searchParams.get("t")) {
+              throw new Error("signed handoff is not canonical");
+            }
+            if (url.pathname === "/pay/checkout") lane = "public";
+            else if (url.pathname === "/sigil/pay") lane = "private";
+            else throw new Error("unexpected signed handoff lane");
+          }
+          if (expectedLane === "public" && lane !== "public") throw new Error("current real session does not prove the required Public handoff");
+          if (expectedLane === "private" && lane !== "private") throw new Error("current real session does not prove the required Private handoff");
+          if (expectedLane === "any" && lane === "none") throw new Error("current real session has no backend-issued signed handoff; run against an account with a current pending payment intent");
+          if (expectedLane === "none" && lane !== "none") throw new Error("expected no current signed handoff");
+          console.log("PASS authenticated member payments E2E; lane=" + lane + " records=" + body.records.length);
+          NODE
+
+      - name: Verify browser-selected payment context fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/member-payments-context-reject.json"
+          code="$(curl -sS -b "$COOKIE_JAR" -o "$body" -w "%{http_code}"             -H "Origin: $ORIGIN"             "$ORIGIN/v1/member/payments?payment_ref=browser-selected")"
+          test "$code" = "400"
+          jq -e '.error.code == "BROWSER_PAYMENT_CONTEXT_REJECTED"' "$body" >/dev/null
