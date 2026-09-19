@@ -21,6 +21,7 @@ test("HENNA exposes fail-closed configuration status", () => {
     channel_id: "2011386859",
     auto_reply_enabled: false,
     persona: "HENNA",
+    capability_pack: "mmd-concierge-capability-pack-v1-20260919",
   });
 });
 
@@ -34,6 +35,24 @@ test("HENNA separates stable replies from manual-only decisions", () => {
   assert.equal(classifyHennaIntent("คำถามที่ไม่มีข้อมูลยืนยัน"), "manual_unknown");
   assert.match(hennaReply("booking"), /พี่เฮนน่า/);
   assert.equal(hennaReply("manual_price"), "");
+});
+
+test("HENNA recognizes shared MMD capability pack 1-7 without taking cross-system authority", () => {
+  assert.equal(classifyHennaIntent("GG Water ของผมถึงไหนแล้ว"), "shop_orders");
+  assert.equal(classifyHennaIntent("CARE BACK คูปองของผม"), "care_back_coupon");
+  assert.equal(classifyHennaIntent("ช่วยหา therapist ที่เหมาะหน่อย"), "mms_therapist_options");
+  assert.equal(classifyHennaIntent("งานมีปัญหา น้องยังไม่มา"), "manual_recovery");
+  assert.equal(classifyHennaIntent("เรื่องที่ส่งให้เปอร์ถึงไหนแล้ว"), "manual_handoff_status");
+  assert.equal(classifyHennaIntent("ขอดู model ใน Hall"), "hall_model_discovery");
+  assert.equal(classifyHennaIntent("แต้มคงเหลือเท่าไหร่"), "points_coupon_balance");
+
+  assert.match(hennaReply("shop_orders"), /MY MMD/);
+  assert.match(hennaReply("care_back_coupon"), /Coupon Wallet/);
+  assert.match(hennaReply("mms_therapist_options"), /ไม่ถือว่า Confirm Therapist/);
+  assert.match(hennaReply("hall_model_discovery"), /ไม่เดาเพศ\/มุมมอง/);
+  assert.match(hennaReply("points_coupon_balance"), /จะไม่เดายอด/);
+  assert.equal(hennaReply("manual_recovery"), "");
+  assert.equal(hennaReply("manual_handoff_status"), "");
 });
 
 test("LINE webhook rejects an invalid signature", async () => {

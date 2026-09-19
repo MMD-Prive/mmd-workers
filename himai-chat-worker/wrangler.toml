@@ -20,6 +20,14 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/mmd-shop/order*"
 zone_name = "mmdbkk.com"
 
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/product/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/product/*"
+zone_name = "mmdbkk.com"
+
 [[services]]
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"

@@ -9,11 +9,18 @@ const SHOP_CONFIG = Object.freeze({
   }
 });
 
+const MMD_PRODUCT_PREFIX = "/mmd-shop/api/product/";
+
 export async function handleShopCatalog(request, env) {
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
+  const productLookup = url.pathname.startsWith(MMD_PRODUCT_PREFIX);
 
-  if (method === "OPTIONS" && (url.pathname === "/shop/api/products" || url.pathname === "/mmd-shop/api/products")) {
+  if (method === "OPTIONS" && (
+    url.pathname === "/shop/api/products" ||
+    url.pathname === "/mmd-shop/api/products" ||
+    productLookup
+  )) {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
@@ -25,12 +32,60 @@ export async function handleShopCatalog(request, env) {
     return listProducts(env, "mmd-shop");
   }
 
+  if (method === "GET" && productLookup) {
+    const slug = decodeLookup(url.pathname.slice(MMD_PRODUCT_PREFIX.length));
+    return getMmdProduct(env, slug);
+  }
+
   return null;
 }
 
 async function listProducts(env, shopKey) {
   const shop = SHOP_CONFIG[shopKey];
   if (!shop) return json({ ok: false, error: "Unknown shop" }, 400);
+
+  const products = await loadProducts(env, shopKey);
+
+  return json({
+    ok: true,
+    shop: shopKey,
+    shop_name: shop.publicName,
+    pricing_source: shop.priceField,
+    source_table: env.SHARED_SHOP_PRODUCTS_TABLE_ID || "tblzsmNLfP6J0kQ90",
+    products
+  });
+}
+
+async function getMmdProduct(env, slug) {
+  if (!slug) return json({ ok: false, error: "product_slug_required" }, 400);
+
+  const products = await loadProducts(env, "mmd-shop");
+  const needle = normalizeLookup(slug);
+  const product = products.find((item) => {
+    const keys = [
+      item.id,
+      item.sku,
+      item.canonical_slug,
+      item.product_name
+    ].map(normalizeLookup);
+    return keys.includes(needle);
+  });
+
+  if (!product || String(product.status || "").toLowerCase() !== "active") {
+    return json({ ok: false, error: "product_not_found" }, 404);
+  }
+
+  return json({
+    ok: true,
+    schema: "mmd_shop_product_v1",
+    shop: "mmd-shop",
+    product
+  });
+}
+
+async function loadProducts(env, shopKey) {
+  const shop = SHOP_CONFIG[shopKey];
+  if (!shop) return [];
 
   const tableId = env.SHARED_SHOP_PRODUCTS_TABLE_ID || "tblzsmNLfP6J0kQ90";
   const fields = [
@@ -55,7 +110,7 @@ async function listProducts(env, shopKey) {
     loadSupplierNames(env)
   ]);
 
-  const products = (result.records || [])
+  return (result.records || [])
     .map((record) => {
       const recordFields = record.fields || {};
       const brandAvailability = normalizeSelectList(recordFields["Brand Availability"]);
@@ -68,17 +123,29 @@ async function listProducts(env, shopKey) {
 
       if (!shouldShow) return null;
 
+      const stockTracked = stockByProduct.has(record.id);
       const stock = stockByProduct.get(record.id) || { available: null, low: false };
       const sellingPrice = numberOrNull(recordFields[shop.priceField]);
       const supplierIds = Array.isArray(recordFields["Supplier"]) ? recordFields["Supplier"] : [];
       const supplier = supplierIds.map((id) => supplierNames.get(id) || id);
+      const sku = recordFields["SKU"] || "";
+      const productName = recordFields["Product Name"] || "";
+      const status = selectName(recordFields["Status"]) || "";
+      const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName);
+      const trackedOut = stockTracked && Number(stock.available) <= 0;
+      const checkoutEligible = shopKey === "mmd-shop"
+        ? status.toLowerCase() === "active" && sellingPrice > 0 && !restricted && !trackedOut
+        : false;
+      const canonicalSlug = slugify(sku || productName || record.id);
 
       return {
         id: record.id,
-        product_name: recordFields["Product Name"] || "",
-        sku: recordFields["SKU"] || "",
+        product_name: productName,
+        sku,
+        canonical_slug: canonicalSlug,
+        product_url: shopKey === "mmd-shop" ? `/mmd-shop/product/${encodeURIComponent(canonicalSlug)}` : null,
         category: selectName(recordFields["Category"]) || "Selected",
-        status: selectName(recordFields["Status"]) || "",
+        status,
         curation_label: selectName(recordFields["Curation Label"]) || "",
         supplier,
         selling_price_thb: sellingPrice,
@@ -87,19 +154,21 @@ async function listProducts(env, shopKey) {
         curator_note: recordFields["Product Note"] || "",
         available: stock.available,
         low_stock: stock.low,
-        image_url: ""
+        stock_status: stockTracked ? "tracked" : "untracked",
+        checkout_eligible: checkoutEligible,
+        online_checkout_status: restricted
+          ? "restricted"
+          : trackedOut
+            ? "out_of_stock"
+            : sellingPrice === null || sellingPrice <= 0
+              ? "ask_shop"
+              : checkoutEligible
+                ? "available"
+                : "unavailable",
+        image_url: productImageUrl(sku)
       };
     })
     .filter(Boolean);
-
-  return json({
-    ok: true,
-    shop: shopKey,
-    shop_name: shop.publicName,
-    pricing_source: shop.priceField,
-    source_table: tableId,
-    products
-  });
 }
 
 async function loadHimaiStockByProduct(env) {
@@ -174,6 +243,43 @@ async function loadSupplierNames(env) {
     names.set(record.id, record.fields?.["Supplier Name"] || record.id);
   }
   return names;
+}
+
+function productImageUrl(sku) {
+  const code = String(sku || "").toUpperCase();
+  if (code.startsWith("WGG-")) {
+    return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2bc2521dbd91c40072a0_GG%20Water%2003.webp";
+  }
+  if (code.startsWith("PPP25-")) {
+    return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2de261bf62d20a6d4a9e_Pod%20Plus%20MMD.webp";
+  }
+  return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c1e2f03656a00250f4531_MMD%20Shop%20Luxury%20Gift%20Box.webp";
+}
+
+function isRestrictedOnlineCheckout(sku, productName) {
+  const code = String(sku || "").toUpperCase();
+  const label = String(productName || "").toLowerCase();
+  return /^PPP25-/.test(code) || /\bpod\b/.test(label);
+}
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "product";
+}
+
+function normalizeLookup(value) {
+  return slugify(String(value || "").replace(/^rec/i, "rec"));
+}
+
+function decodeLookup(value) {
+  try {
+    return decodeURIComponent(String(value || "")).trim();
+  } catch {
+    return String(value || "").trim();
+  }
 }
 
 function selectName(value) {

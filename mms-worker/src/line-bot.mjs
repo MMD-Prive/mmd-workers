@@ -1,3 +1,5 @@
+import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const MAX_WEBHOOK_BYTES = 64 * 1024;
 
@@ -6,6 +8,11 @@ const SAFE_REPLIES = Object.freeze({
   services: "MMS มีบริการนวดถึงที่แบบเป็นส่วนตัวครับ ทั้ง Aroma Oil, Thai, Sport, Office Syndrome, Health/Fitness Advisor, Herbal Compress, Partner-Present และ Women Massage\n\nบอกพี่เฮนน่าได้เลยครับว่าสนใจแบบไหน และต้องการรับบริการบริเวณไหน 💚",
   apply: "สนใจสมัครเป็น Therapist กับ MMS ได้เลยครับ 💚\nกรอกข้อมูลผ่านหน้าใบสมัครอย่างเป็นส่วนตัว แล้วทีมงานจะตรวจประสบการณ์ ทักษะ และติดต่อกลับเป็นรายบุคคลครับ\nhttps://www.mmdbkk.com/apply/mms-therapist",
   how_to: "MMS เป็นบริการส่ง Therapist ที่ผ่านการคัดเลือกไปดูแลคุณตามสถานที่นัดหมายครับ ขั้นแรกส่งคำขอจอง จากนั้นทีมงานจะตรวจบริการ พื้นที่ และคิว Therapist ก่อนยืนยันทุกครั้ง\n\nดูวิธีใช้บริการ: https://www.mmdbkk.com/male-massage/how-to-use",
+  shop_orders: "เรื่อง MMD Shop ให้เช็กจาก MY MMD โดยตรงนะครับ เพราะสถานะ Order/Payment เป็นข้อมูลสมาชิก\nhttps://www.mmdbkk.com/my-mmd/orders\nถ้าต้องการคุยข้ามระบบต่อ ใช้ HYPE @mmdprivebot ได้ครับ",
+  care_back_coupon: "CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ พี่เฮนน่ารู้ทางส่งต่อ แต่จะไม่เปิดหรือสร้างสิทธิ์แทนระบบ\nCARE BACK: https://www.mmdbkk.com/promotion/6-years-care-back\nCoupon Wallet: https://www.mmdbkk.com/my-mmd/coupons",
+  mms_therapist_options: "เรื่องตัวเลือก Therapist ฝั่ง MMS พี่เฮนน่ารับต่อได้ครับ 💚\nส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้ ตัวเลือกจริงต้องยึดจาก MMS ปัจจุบันและยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว",
+  hall_model_discovery: "ถ้าหมายถึง Model ฝั่ง MMD Privé ไม่ใช่ MMS ให้เลือกมุมมองผ่าน Hall ก่อนนะครับ HENNA จะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้\nhttps://www.mmdbkk.com/hall\nเรื่องข้ามระบบใช้ HYPE @mmdprivebot ได้ครับ",
+  points_coupon_balance: "Points / Coupon ของ MMD เป็นข้อมูลสมาชิกครับ พี่เฮนน่าจะไม่เดายอดจากแชต\nPoints: https://www.mmdbkk.com/my-mmd/points\nCoupons: https://www.mmdbkk.com/my-mmd/coupons\nถ้าต้องการให้ช่วยต่อข้ามระบบ ใช้ HYPE @mmdprivebot ได้ครับ",
 });
 
 export function lineBotStatus(env) {
@@ -16,12 +23,22 @@ export function lineBotStatus(env) {
     channel_id: clean(env.MMS_LINE_CHANNEL_ID),
     auto_reply_enabled: enabled(env.LINE_AUTO_REPLY_ENABLED),
     persona: "HENNA",
+    capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
   };
 }
 
 export function classifyHennaIntent(input) {
   const text = normalize(input);
   if (!text) return "ignore";
+
+  const sharedCapability = detectSharedConciergeCapability(text);
+  if (sharedCapability === "shop_orders") return "shop_orders";
+  if (sharedCapability === "care_back_coupon") return "care_back_coupon";
+  if (sharedCapability === "mms_therapist_options") return "mms_therapist_options";
+  if (sharedCapability === "service_recovery") return "manual_recovery";
+  if (sharedCapability === "closed_loop_handoff") return "manual_handoff_status";
+  if (sharedCapability === "hall_model_discovery") return "hall_model_discovery";
+  if (sharedCapability === "points_coupon_balance") return "points_coupon_balance";
   if (matches(text, ["สมัคร", "สมัครงาน", "therapist", "job", "ร่วมงาน"])) return "apply";
   if (matches(text, ["วิธีใช้", "ใช้งานยังไง", "ขั้นตอน", "how to", "howto"])) return "how_to";
   if (matches(text, ["บริการอะไร", "มีบริการ", "ประเภทนวด", "นวดอะไร", "service"])) return "services";

@@ -7,6 +7,7 @@
   const COUPON_ENTRY = "/coupon";
   const LIFF_STATUS = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status";
   const CARE_BACK_WISH = "/promotion/6-years-care-back/wish";
+  const PUBLIC_MEMBERSHIP = "/pay/membership";
 
   function setLinks(selector, target, root = document) {
     root.querySelectorAll(selector).forEach((anchor) => {
@@ -218,6 +219,10 @@
   function patch() {
     const path = location.pathname.replace(/\/+$/, "") || "/";
     let root;
+    const PUBLIC_MEMBERSHIP_SURFACES = new Set(["/", "/hall", "/profiles", "/public/access", "/services/companion", "/booking"]);
+    if (PUBLIC_MEMBERSHIP_SURFACES.has(path)) {
+      setLinks('a[href="/membership"],a[href^="/membership?"]', PUBLIC_MEMBERSHIP);
+    }
 
     if (path === "/member/login") {
       const target = memberLoginTarget();

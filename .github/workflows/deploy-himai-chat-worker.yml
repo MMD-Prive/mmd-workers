@@ -50,6 +50,7 @@ jobs:
           node --check src/shop-catalog.js
           node --check src/mmd-shop-checkout.js
           node --check src/mmd-shop-order-page.js
+          node --check src/mmd-shop-product-page.js
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
 
@@ -105,6 +106,8 @@ jobs:
             "www.mmdbkk.com/mmd-shop/api/*",
             "mmdbkk.com/mmd-shop/order*",
             "www.mmdbkk.com/mmd-shop/order*",
+            "mmdbkk.com/mmd-shop/product/*",
+            "www.mmdbkk.com/mmd-shop/product/*",
           ];
 
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,3 +166,7 @@ jobs:
           catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/products)"
           echo "$catalog"
           node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || !Array.isArray(b.products)) process.exit(1)' "$catalog"
+
+          product="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/wgg-10)"
+          echo "$product"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.schema !== "mmd_shop_product_v1" || !b.product || b.product.sku !== "WGG-10") process.exit(1)' "$product"
