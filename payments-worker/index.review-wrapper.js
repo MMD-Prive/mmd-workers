@@ -50,6 +50,7 @@ import {
 import {
   handleShopIntent,
   handleShopIntentExpiry,
+  enrichShopConfirmVerify,
   isShopIntentRequest,
   maybeHandleShopConfirmationDetails,
   preflightReviewedShopPayment,
@@ -129,7 +130,13 @@ export default {
     }
 
     if (isUnifiedConfirmVerifyRequest(path, method)) {
-      return enrichUnifiedConfirmVerify(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const shopVerifyRequest = request.clone();
+      const verifiedResponse = await enrichUnifiedConfirmVerify(
+        request,
+        env,
+        (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx),
+      );
+      return enrichShopConfirmVerify(shopVerifyRequest, verifiedResponse, env);
     }
 
     if (isReviewedProofRequest(path, method)) {
