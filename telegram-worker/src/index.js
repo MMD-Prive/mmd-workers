@@ -1199,6 +1199,22 @@ function renderHypeExecutionCustomer(result = {}, operation = "execute") {
       lines.push("", `<b>Status:</b> ${escapeHtml(status || "unknown")}`);
       lines.push(`<b>Execution:</b> <code>${escapeHtml(clean(receipt.execution_id))}</code>`);
       if (clean(receipt.canonical_ref)) lines.push(`<b>Canonical ref:</b> <code>${escapeHtml(clean(receipt.canonical_ref))}</code>`);
+
+      const observed = result.authority_observation || {};
+      if (clean(observed.source)) {
+        lines.push("");
+        lines.push("<b>Canonical observation</b>");
+        lines.push(`• Source: ${escapeHtml(clean(observed.source))}`);
+        if (clean(observed.state)) lines.push(`• State: ${escapeHtml(clean(observed.state))}`);
+        if (observed.paid === true) lines.push("• Payment: paid ✅");
+        else if (observed.review_required === true) lines.push("• Payment: review required");
+        if (clean(observed.membership_level)) lines.push(`• Membership: ${escapeHtml(clean(observed.membership_level))}`);
+        if (clean(observed.lifecycle)) lines.push(`• Lifecycle: ${escapeHtml(clean(observed.lifecycle))}`);
+        if (clean(observed.active_through)) lines.push(`• Active through: ${escapeHtml(clean(observed.active_through))}`);
+        if (observed.final_confirmation_observed !== true) {
+          lines.push("• Final confirmation: ยังไม่ถือว่ายืนยันจาก observation นี้");
+        }
+      }
     }
   } else {
     lines.push("");
