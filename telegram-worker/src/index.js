@@ -160,7 +160,7 @@ async function handleTelegramWebhook(update, env) {
 
   const text = clean(message.text || "");
   const startArg = parseStartArg(text);
-  if (startArg === PREVIEW_START) {
+  if (startArg.toLowerCase() === PREVIEW_START) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
       text: previewVerificationRequiredText(),
@@ -176,6 +176,10 @@ async function handleTelegramWebhook(update, env) {
     };
   }
 
+  if (/^bind_[A-Za-z0-9_-]{20,60}$/.test(startArg)) {
+    return handleTelegramIdentityBindStart({ message, chatId, startArg }, env);
+  }
+
   if (text === "/start" || text.toLowerCase().startsWith("/start@")) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
@@ -188,6 +192,70 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handleTelegramIdentityBindStart({ message, chatId, startArg }, env) {
+  const telegramUserId = clean(message.from?.id);
+  const telegramUsername = clean(message.from?.username || "");
+  if (!/^\d{5,20}$/.test(telegramUserId)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "เชื่อม Telegram ไม่สำเร็จครับ กรุณากลับไปที่ MMD แล้วกด Connect Telegram ใหม่อีกครั้ง",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "telegram_identity_bind", ok: false, code_status: "telegram_identity_invalid", telegram };
+  }
+  const binding = env.TELEGRAM_BIND_AUTHORITY;
+  if (!binding?.fetch) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ระบบเชื่อม Telegram ยังไม่พร้อมชั่วคราวครับ กรุณาลองใหม่อีกครั้งภายหลัง",
+      disable_web_page_preview: true,
+    }, env);
+    return { handled: true, flow: "telegram_identity_bind", ok: false, code_status: "bind_authority_unavailable", telegram };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/telegram-identity-bind", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mmd-service-binding": "telegram-worker" },
+      body: JSON.stringify({
+        operation: "consume",
+        start_arg: startArg,
+        telegram_user_id: telegramUserId,
+        telegram_username: telegramUsername,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  const connected = status >= 200 && status < 300 && result?.ok === true && result?.telegram_connected === true;
+  const role = result?.role === "model" ? "Model" : "Member";
+  const text = connected
+    ? `เชื่อม Telegram กับ MMD เรียบร้อยแล้วครับ\n\nสถานะ: ${role} · Telegram Connected ✅\nLINE ยังคงเป็นตัวตนหลักของบัญชีนี้`
+    : result?.error === "telegram_bind_expired"
+      ? "ลิงก์ Connect Telegram หมดอายุแล้วครับ กรุณากลับไปที่ MMD แล้วขอลิงก์ใหม่"
+      : result?.error === "telegram_identity_already_bound" || result?.error === "telegram_bind_registry_conflict"
+        ? "พบ Telegram binding ที่ต้องให้ MMD ตรวจสอบครับ ระบบจะไม่เปลี่ยนบัญชีเดิมอัตโนมัติ"
+        : "เชื่อม Telegram ไม่สำเร็จครับ กรุณากลับไปที่ MMD แล้วกด Connect Telegram ใหม่อีกครั้ง";
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text,
+    disable_web_page_preview: true,
+  }, env);
+  return {
+    handled: true,
+    flow: "telegram_identity_bind",
+    ok: connected,
+    code_status: connected ? "connected" : clean(result?.error || "bind_failed"),
+    telegram,
+  };
 }
 
 async function cleanupConfiguredGroupJoinMessage(message, env) {
@@ -389,7 +457,7 @@ function previewChannelUrl(env) {
 
 function parseStartArg(text) {
   const match = clean(text).match(/^\/start(?:@\w+)?(?:\s+(.+))?$/i);
-  return clean(match?.[1]).toLowerCase();
+  return clean(match?.[1]);
 }
 
 function requireTelegramSecret(req, env) {
