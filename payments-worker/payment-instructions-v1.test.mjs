@@ -46,6 +46,7 @@ function config(fields = {}) {
         "Account Name EN": "Test Receiver",
         "Account Number": "1112223334",
         "PayPal URL": "https://www.paypal.com/example",
+        "Card Fee Percent": 4,
         Methods: ["promptpay", "bank_transfer", "paypal_card"],
         "QR Strategy": "dynamic_amount",
         "Effective From": "2026-01-01T00:00:00.000Z",
@@ -111,6 +112,11 @@ test("forces customer confirmation validation and returns current-stage amount",
   assert.match(payload.instructions.promptpay.qr_url, /\/30000\.00\.png$/);
   assert.equal(payload.instructions.bank_transfer.account_number, "1112223334");
   assert.equal(payload.instructions.paypal_card.enabled, true);
+  assert.equal(payload.instructions.paypal_card.fee_percent, 4);
+  assert.equal(payload.instructions.paypal_card.fee_thb, 1200);
+  assert.equal(payload.instructions.paypal_card.service_amount_thb, 30000);
+  assert.equal(payload.instructions.paypal_card.amount_due_thb, 31200);
+  assert.equal(payload.instructions.paypal_card.fee_scope, "processing_fee_only");
   assert.equal(response.headers.get("cache-control"), "no-store, private");
 });
 
@@ -167,4 +173,18 @@ test("propagates signed confirmation rejection before reading payment configurat
   assert.equal(response.status, 401);
   assert.equal(payload.error, "invalid_confirmation_token");
   assert.equal(airtableCalled, false);
+});
+
+
+test("defaults PayPal card processing fee to 4% when config omits it", async () => {
+  const response = await handlePaymentInstructions(
+    request(),
+    envWith(config({ "Card Fee Percent": undefined })),
+    detailsFetcher(details({ amount_due_thb: 10000 })),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.instructions.paypal_card.fee_percent, 4);
+  assert.equal(payload.instructions.paypal_card.fee_thb, 400);
+  assert.equal(payload.instructions.paypal_card.amount_due_thb, 10400);
 });
