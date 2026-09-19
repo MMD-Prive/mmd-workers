@@ -137,6 +137,43 @@ test("catalog classifies explicit on-demand product separately from untracked st
   }
 });
 
+test("stock health excludes explicit on-demand products from untracked alerts", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const table = url.pathname.split("/").filter(Boolean)[2];
+    if (table === "tblzsmNLfP6J0kQ90") {
+      return Response.json({
+        records: [{
+          id: PRODUCT_ID,
+          fields: {
+            fld0oKjoZrb1IqntV: "Glenburgies Pop Plus 10ml — Black Bottle",
+            fldhJE7UEE4VYHjR6: "GLEN-POP15-BLK",
+            fldve5nrQmymoZgiX: ["MMD Shop"],
+            fldxYkkvmK9izvACA: "active",
+            fldAT8hnluV4CtF3c: "15ml / black bottle / on-demand / no stock",
+            fldD6Q5yido7pTlU0: 1500,
+          },
+        }],
+      });
+    }
+    if (table === "tblwFgl4et1TOgtNn" || table === "tblASifwHdArNKQP2") {
+      return Response.json({ records: [] });
+    }
+    throw new Error("unexpected fetch " + String(input));
+  };
+  try {
+    const report = await inspectMmdShopStockHealth({ AIRTABLE_BASE_ID: "appTest", AIRTABLE_TOKEN: "token" });
+    assert.equal(report.metrics.active_checkout_products, 1);
+    assert.equal(report.metrics.on_demand_checkout_products, 1);
+    assert.equal(report.metrics.untracked_checkout_products, 0);
+    assert.deepEqual(report.actionable.untracked_product_ids, []);
+    assert.equal(report.on_demand_products[0].sku, "GLEN-POP15-BLK");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("stock health exposes untracked checkout products as actionable", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
