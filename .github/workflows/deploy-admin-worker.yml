@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "admin-worker/**"
+      - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/mmd-shop-fulfillment.mjs"
       - "shared/private-media.mjs"
       - "scripts/ensure-private-media-bucket.mjs"
       - "knowledge/kenji/**"
