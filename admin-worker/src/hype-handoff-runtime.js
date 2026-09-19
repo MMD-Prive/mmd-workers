@@ -2,10 +2,12 @@ import {
   resolveKenjiLv5LiveContext,
   resolveLiveCanonicalClient,
 } from "./kenji-lv5-live-context.js";
+import { executeKenjiLv5SupervisedAction } from "./kenji-lv5-supervised-action.js";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
 export const HYPE_TRANSACTION_INTAKE_PATH = "/__internal/hype/transaction-intake";
+export const HYPE_SUPERVISED_EXECUTION_PATH = "/__internal/hype/transaction-execute";
 
 const MATRIX_TABLE_FALLBACK = "tblS6iRgPjYLBqZJh";
 const MATRIX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -335,6 +337,482 @@ export async function handleHypeTransactionIntakeRpc(request, env = {}) {
   });
 }
 
+export async function handleHypeSupervisedExecutionRpc(request, env = {}) {
+  const gate = validateRequest(request, HYPE_SUPERVISED_EXECUTION_PATH);
+  if (gate) return gate;
+
+  const body = await readBody(request);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const telegramUserId = telegramId(body.telegram_user_id);
+  if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+
+  const operation = token(body.operation || "execute");
+  if (!["execute", "status"].includes(operation)) {
+    return json({ ok: false, error: "execution_operation_invalid" }, 400);
+  }
+
+  const context = await resolveKenjiLv5LiveContext(env, {
+    telegram_user_id: telegramUserId,
+    intent: { type: "transaction_execution", trigger: "telegram_hype_p6" },
+  }).catch(() => null);
+  const canonicalClientId = recordId(context?.client_360?.canonical_client_id);
+  if (!canonicalClientId) return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+
+  const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
+  const lineUserId = lineId(identity?.client?.line_user_id);
+  if (!lineUserId) return json({ ok: false, state: "line_identity_required", error: "line_identity_not_linked" }, 409);
+
+  const draft = await readTransactionDraftMatrix(env, lineUserId);
+  if (!draft.ok) {
+    const status = draft.error === "transaction_draft_not_found" ? 404 : 503;
+    return json({ ok: false, state: "draft_unavailable", error: draft.error }, status);
+  }
+
+  const requestedDraftId = clean(body.draft_id, 180);
+  if (requestedDraftId && requestedDraftId !== draft.draft_id) {
+    return json({ ok: false, state: "draft_conflict", error: "draft_id_mismatch" }, 409);
+  }
+
+  const existingReceipt = parseObject(draft.payload?.supervised_execution);
+  if (operation === "status") {
+    return json({
+      ok: true,
+      state: Object.keys(existingReceipt).length ? "execution_recorded" : "draft_ready",
+      mode: draft.mode,
+      draft_id: draft.draft_id,
+      execution: safeExecutionReceipt(existingReceipt),
+      guardrails: p6ExecutionGuardrails(),
+    });
+  }
+
+  if (!draft.complete) {
+    return json({
+      ok: false,
+      state: "draft_incomplete",
+      error: "transaction_draft_incomplete",
+      mode: draft.mode,
+      draft_id: draft.draft_id,
+      missing_fields: draft.missing_fields,
+      guardrails: p6ExecutionGuardrails(),
+    }, 409);
+  }
+
+  const executionId = await buildExecutionId(draft.draft_id, draft.mode);
+  if (
+    existingReceipt.execution_id === executionId
+    && ["materialized", "queued", "customer_action_required", "review_required"].includes(token(existingReceipt.status))
+  ) {
+    return json({
+      ok: true,
+      state: "idempotent_replay",
+      replayed: true,
+      mode: draft.mode,
+      draft_id: draft.draft_id,
+      execution: safeExecutionReceipt(existingReceipt),
+      guardrails: p6ExecutionGuardrails(),
+    });
+  }
+
+  const route = canonicalTransactionRoute(draft.mode, context);
+  const result = await executeP6Lane(env, {
+    mode: draft.mode,
+    draft,
+    context,
+    canonicalClientId,
+    lineUserId,
+    executionId,
+    route,
+  });
+
+  const receipt = {
+    schema: "mmd.hype_supervised_execution.v1",
+    execution_id: executionId,
+    draft_id: draft.draft_id,
+    mode: draft.mode,
+    status: result.status,
+    authority: result.authority,
+    canonical_ref: clean(result.canonical_ref, 180),
+    canonical_href: clean(result.canonical_href || route.href, 1000),
+    replay_safe: true,
+    created_at: new Date().toISOString(),
+    business_truth_mutated: false,
+    protected_confirmation_performed: false,
+    details: result.details || {},
+  };
+
+  const persisted = await writeExecutionReceipt(env, draft, receipt);
+  if (!persisted.ok) {
+    return json({
+      ok: false,
+      state: "execution_receipt_write_failed",
+      error: persisted.error,
+      retry_safe: true,
+      execution: safeExecutionReceipt(receipt),
+      guardrails: p6ExecutionGuardrails(),
+    }, 503);
+  }
+
+  return json({
+    ok: true,
+    state: result.status,
+    replayed: false,
+    mode: draft.mode,
+    draft_id: draft.draft_id,
+    execution: safeExecutionReceipt(receipt),
+    ops_alert: result.ops_alert || null,
+    customer_message: clean(result.customer_message, 1200),
+    guardrails: p6ExecutionGuardrails(),
+  });
+}
+
+async function executeP6Lane(env, input = {}) {
+  const mode = input.mode;
+  if (mode === "booking") return executeP6Booking(env, input);
+  if (mode === "mms") return executeP6Mms(env, input);
+  if (mode === "payment_proof") return executeP6PaymentProof(input);
+  if (mode === "renewal") return executeP6Renewal(input);
+  return {
+    status: "review_required",
+    authority: "canonical_backend_and_per",
+    customer_message: "รายการนี้ยังไม่มี supervised execution lane ที่เปิดใช้งานครับ",
+  };
+}
+
+async function executeP6Booking(env, input = {}) {
+  const f = input.draft.fields || {};
+  if (!clean(f.model_preference, 120)) {
+    return {
+      status: "review_required",
+      authority: "sigil-booking-worker",
+      canonical_href: "/booking",
+      customer_message: "Booking Draft ครบข้อมูลพื้นฐานแล้ว แต่ยังไม่ได้ระบุ Model จึงยัง materialize เป็น canonical booking request ไม่ได้ครับ",
+      details: { blocker: "model_preference_required" },
+    };
+  }
+
+  const action = await executeKenjiLv5SupervisedAction(env, {
+    action: "create_booking_request",
+    action_id: input.executionId,
+    canonical_client_id: input.canonicalClientId,
+    line_user_id: input.lineUserId,
+    intent: {
+      trigger: "hype_p6_supervised_booking",
+      model_name: clean(f.model_preference, 120),
+      date: clean(f.preferred_date, 20),
+      time: clean(f.preferred_time, 8),
+      location: clean(f.area, 180),
+      raw: "HYPE P6 supervised booking materialization",
+    },
+  });
+
+  if (action?.ok === true && action?.status === "booking_request_created") {
+    return {
+      status: "materialized",
+      authority: "sigil-booking-worker",
+      canonical_ref: clean(action.booking_ref || action.request_session_id, 180),
+      canonical_href: "/booking",
+      customer_message: "สร้าง canonical Booking Request draft แล้วครับ ยังไม่ใช่การ confirm งาน/Model/Payment",
+      ops_alert: {
+        flow: "booking",
+        title: "HYPE P6 · BOOKING REQUEST MATERIALIZED",
+        ref: clean(action.booking_ref || action.request_session_id, 180),
+      },
+      details: {
+        mutation_scope: "booking_request_draft_only",
+        final_confirmation: false,
+        payment_confirmed: false,
+        model_assigned: false,
+        calendar_hold_created: false,
+      },
+    };
+  }
+
+  if (action?.status === "action_blocked") {
+    return {
+      status: "review_required",
+      authority: "canonical_backend_and_per",
+      canonical_href: "/booking",
+      customer_message: "Booking Request ผ่าน supervised gate ไม่ครบครับ ผมเก็บ draft เดิมไว้และส่งต่อให้ MMD ตรวจแทน",
+      ops_alert: {
+        flow: "booking",
+        title: "HYPE P6 · BOOKING REVIEW REQUIRED",
+        blockers: Array.isArray(action.blockers) ? action.blockers.slice(0, 8) : [],
+      },
+      details: { blockers: Array.isArray(action.blockers) ? action.blockers.slice(0, 8) : [] },
+    };
+  }
+
+  return {
+    status: "review_required",
+    authority: "canonical_backend_and_per",
+    canonical_href: "/booking",
+    customer_message: "Booking Request ยังสร้างไม่สำเร็จครับ ผมจะไม่สร้าง Job หรือยืนยัน Model แทนระบบ",
+    ops_alert: { flow: "booking", title: "HYPE P6 · BOOKING EXECUTION NEEDS REVIEW" },
+    details: { upstream_status: clean(action?.status, 120), retry_safe: action?.retry_safe === true },
+  };
+}
+
+async function executeP6Mms(env, input = {}) {
+  if (!env.MMS_WORKER?.fetch) {
+    return {
+      status: "review_required",
+      authority: "mms-worker",
+      canonical_href: "/male-massage/member/mms-booking",
+      customer_message: "MMS canonical worker ยังไม่พร้อมสำหรับ supervised pre-booking ครับ",
+      details: { blocker: "mms_service_binding_unavailable" },
+    };
+  }
+
+  const f = input.draft.fields || {};
+  const payload = {
+    idempotency_key: input.executionId,
+    member_ref: input.canonicalClientId,
+    line_user_id: input.lineUserId,
+    recipient_gender: clean(f.recipient_gender, 40),
+    zone: clean(f.zone, 80),
+    service_date: clean(f.service_date, 20),
+    service_time: clean(f.service_time, 8),
+    duration_minutes: Number(f.duration_minutes || 120),
+    skills: Array.isArray(f.skills) ? f.skills.slice(0, 6) : [],
+    requested_therapist_ids: [],
+    note: clean(f.note, 800) || "Prepared by HYPE P6. Pre-booking only; Therapist confirmation remains canonical MMS authority.",
+    language: "th",
+  };
+
+  try {
+    const response = await env.MMS_WORKER.fetch(new Request("https://mms.internal/mms/api/prebookings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    }));
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok !== true) {
+      return {
+        status: "review_required",
+        authority: "mms-worker",
+        canonical_href: "/male-massage/member/mms-booking",
+        customer_message: "MMS pre-booking ยังสร้างไม่สำเร็จครับ ผมเก็บ draft เดิมไว้ให้ทีมตรวจ",
+        ops_alert: { flow: "alerts", title: "HYPE P6 · MMS PREBOOKING REVIEW REQUIRED" },
+        details: { upstream_status: response.status, upstream_code: clean(data?.error?.code || data?.error, 120) },
+      };
+    }
+
+    const prebookingId = clean(data?.prebooking?.prebooking_id, 180);
+    return {
+      status: "materialized",
+      authority: "mms-worker",
+      canonical_ref: prebookingId,
+      canonical_href: "/male-massage/member/mms-booking",
+      customer_message: "สร้าง MMS canonical pre-booking แล้วครับ ระบบอาจมีตัวเลือก Therapist แต่ยังไม่ถือว่า confirm Therapist/Booking/Payment",
+      ops_alert: {
+        flow: "alerts",
+        title: "HYPE P6 · MMS PREBOOKING MATERIALIZED",
+        ref: prebookingId,
+      },
+      details: {
+        duplicate: data?.duplicate === true,
+        matched_options_count: Array.isArray(data?.matched_therapist_ids) ? data.matched_therapist_ids.length : 0,
+        therapist_confirmed: false,
+        booking_confirmed: false,
+      },
+    };
+  } catch {
+    return {
+      status: "review_required",
+      authority: "mms-worker",
+      canonical_href: "/male-massage/member/mms-booking",
+      customer_message: "MMS pre-booking service ติดต่อไม่ได้ครับ ผมจะไม่ confirm รายการแทนระบบ",
+      details: { upstream_status: "unavailable" },
+    };
+  }
+}
+
+function executeP6PaymentProof(input = {}) {
+  const route = input.route || {};
+  const ready = route.kind === "signed_payment_proof";
+  return {
+    status: ready ? "customer_action_required" : "review_required",
+    authority: "payments-worker",
+    canonical_href: route.href || "/member/payments",
+    customer_message: ready
+      ? "ผมเตรียม Payment Proof handoff ให้แล้วครับ กรุณาเปิดหน้ารายการจริงเพื่ออัปโหลดหลักฐานเข้า Payment Authority"
+      : "ผมยังไม่พบ signed payment intent ของรายการนี้ จึงไม่ย้ายไฟล์ Telegram เข้า Payment Authority แบบเดาครับ",
+    ops_alert: {
+      flow: "payment",
+      title: ready ? "HYPE P6 · PAYMENT PROOF HANDOFF READY" : "HYPE P6 · PAYMENT PROOF NEEDS CANONICAL INTENT",
+    },
+    details: {
+      evidence_present: input.draft.fields?.evidence_present === true,
+      raw_media_transferred: false,
+      payment_verified: false,
+      payment_marked_paid: false,
+    },
+  };
+}
+
+function executeP6Renewal(input = {}) {
+  const route = input.route || {};
+  const ready = ["private_renewal_entry", "public_membership_entry"].includes(route.kind);
+  return {
+    status: ready ? "queued" : "review_required",
+    authority: "membership_authority",
+    canonical_href: route.href || "/my-mmd/",
+    customer_message: ready
+      ? "ผมเตรียม Renewal handoff ตามแพ็กเกจปัจจุบันแล้วครับ ขั้นต่อไปต้องเปิดหน้าต่ออายุและให้ Payment/Membership Authority ยืนยัน"
+      : "Membership lane ยัง resolve ไม่ครบครับ ผมจะไม่เลือก tier หรือสร้างสิทธิ์ใหม่แทนระบบ",
+    ops_alert: {
+      flow: "membership",
+      title: ready ? "HYPE P6 · RENEWAL INTENT QUEUED" : "HYPE P6 · RENEWAL REVIEW REQUIRED",
+    },
+    details: {
+      package_change_requested: false,
+      membership_renewed: false,
+      entitlement_granted: false,
+    },
+  };
+}
+
+async function buildExecutionId(draftId, mode) {
+  const digest = await sha256Hex(`${draftId}|${mode}|hype-p6-supervised-execution-v1`);
+  return `HYPE-EXEC-${mode.toUpperCase()}-${digest.slice(0, 16)}`;
+}
+
+async function writeExecutionReceipt(env, draft, receipt) {
+  const recordIdValue = clean(draft.matrix_record_id, 120);
+  if (!recordIdValue) return { ok: false, error: "matrix_record_missing" };
+  const priorPayload = parseObject(draft.payload);
+  const stamp = new Date().toISOString();
+  const updatedPayload = {
+    ...priorPayload,
+    supervised_execution: receipt,
+    live_truth_refresh_required: true,
+    business_truth_mutated: false,
+  };
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{
+      id: recordIdValue,
+      fields: {
+        [F.LAST_KENJI_ACTION]: `hype_supervised_execution:${receipt.mode}`,
+        [F.LAST_OUTCOME]: executionOutcomeText(receipt),
+        [F.STAGE]: "supervised_execution",
+        [F.AWAITING]: executionAwaiting(receipt),
+        [F.PENDING_ACTION]: executionPendingAction(receipt),
+        [F.PENDING_REF]: receipt.execution_id,
+        [F.CONTINUITY]: executionContinuity(receipt),
+        [F.TRUTH_REQUIRED]: true,
+        [F.TRUTH_DOMAINS]: transactionTruthDomains(receipt.mode),
+        [F.UPDATED_AT]: stamp,
+        [F.LAST_INTERACTION]: stamp,
+        [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+        [F.PAYLOAD]: JSON.stringify(updatedPayload),
+      },
+    }],
+    typecast: true,
+  });
+  return write.ok ? { ok: true } : { ok: false, error: write.error || "execution_receipt_write_failed" };
+}
+
+function safeExecutionReceipt(value = {}) {
+  const receipt = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return {
+    schema: clean(receipt.schema, 80),
+    execution_id: clean(receipt.execution_id, 180),
+    draft_id: clean(receipt.draft_id, 180),
+    mode: normalizeTransactionMode(receipt.mode),
+    status: token(receipt.status),
+    authority: clean(receipt.authority, 120),
+    canonical_ref: clean(receipt.canonical_ref, 180),
+    canonical_href: safeCustomerHref(receipt.canonical_href),
+    replay_safe: receipt.replay_safe === true,
+    created_at: clean(receipt.created_at, 80),
+    details: safeExecutionDetails(receipt.details),
+  };
+}
+
+function safeExecutionDetails(value = {}) {
+  const d = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return compactFields({
+    blocker: clean(d.blocker, 120),
+    blockers: Array.isArray(d.blockers) ? d.blockers.map((x) => clean(x, 120)).filter(Boolean).slice(0, 8) : undefined,
+    mutation_scope: clean(d.mutation_scope, 120),
+    final_confirmation: d.final_confirmation === true,
+    payment_confirmed: d.payment_confirmed === true,
+    model_assigned: d.model_assigned === true,
+    calendar_hold_created: d.calendar_hold_created === true,
+    duplicate: d.duplicate === true,
+    matched_options_count: nonNegative(d.matched_options_count),
+    therapist_confirmed: d.therapist_confirmed === true,
+    booking_confirmed: d.booking_confirmed === true,
+    raw_media_transferred: d.raw_media_transferred === true,
+    payment_verified: d.payment_verified === true,
+    payment_marked_paid: d.payment_marked_paid === true,
+    package_change_requested: d.package_change_requested === true,
+    membership_renewed: d.membership_renewed === true,
+    entitlement_granted: d.entitlement_granted === true,
+    retry_safe: d.retry_safe === true,
+  });
+}
+
+function safeCustomerHref(value) {
+  const href = clean(value, 1000);
+  if (!href || href.startsWith("//")) return "";
+  if (/^\/(?:booking|member\/payments|my-mmd\/|sigil\/member\/membership|pay\/membership|sigil\/pay|pay\/checkout|male-massage\/member\/mms-booking)/.test(href)) return href;
+  return "";
+}
+
+function executionOutcomeText(receipt = {}) {
+  const status = token(receipt.status);
+  if (status === "materialized") return "Supervised low-risk request materialized; protected final confirmation still pending.";
+  if (status === "queued") return "Supervised intent queued; canonical authority still must complete the transaction.";
+  if (status === "customer_action_required") return "Canonical handoff prepared; customer action is required before authority review.";
+  return "Supervised execution requires canonical review; no protected truth was changed.";
+}
+
+function executionAwaiting(receipt = {}) {
+  const status = token(receipt.status);
+  if (status === "customer_action_required") return "customer";
+  if (receipt.mode === "payment_proof") return "payment_authority";
+  if (receipt.mode === "renewal") return "membership_authority";
+  if (receipt.mode === "mms") return "mms";
+  if (receipt.mode === "booking") return "mmd_review";
+  return "canonical_authority";
+}
+
+function executionPendingAction(receipt = {}) {
+  const status = token(receipt.status);
+  if (status === "customer_action_required") return "customer opens canonical submit surface";
+  if (status === "materialized") return "canonical authority reviews and continues request";
+  if (status === "queued") return "canonical authority processes queued intent";
+  return "manual/canonical review required";
+}
+
+function executionContinuity(receipt = {}) {
+  return [
+    `HYPE P6 supervised execution ${receipt.execution_id || ""}.`,
+    `Mode ${receipt.mode || "unknown"}, status ${receipt.status || "review_required"}.`,
+    "Idempotent receipt recorded. Protected confirmation/payment/membership authority remains unchanged.",
+  ].join(" ").slice(0, 1200);
+}
+
+function p6ExecutionGuardrails() {
+  return {
+    supervised_execution: true,
+    idempotent: true,
+    business_truth_mutated: false,
+    payment_marked_paid: false,
+    payment_verified: false,
+    job_confirmed: false,
+    model_final_assigned: false,
+    calendar_hold_created: false,
+    membership_granted: false,
+    membership_renewed: false,
+    therapist_confirmed: false,
+    mms_booking_confirmed: false,
+    protected_actions_require_canonical_authority: true,
+  };
+}
+
 async function readTransactionDraftMatrix(env, lineUserId) {
   const hash = await sha256Hex(`line_ofc:${lineUserId}`);
   const existing = await findMatrix(env, hash);
@@ -348,6 +826,8 @@ async function readTransactionDraftMatrix(env, lineUserId) {
   return {
     ok: true,
     persisted: true,
+    matrix_record_id: clean(existing.record?.id, 120),
+    payload,
     draft_id: clean(draft.draft_id, 160) || clean(prior[F.PENDING_REF], 160),
     mode,
     fields: merged.fields,
