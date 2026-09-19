@@ -1433,7 +1433,7 @@ async function handleHypeOwnerHandoffTransition({ chatId, telegramUserId, state,
           ]
         : []),
       "",
-      "อัปเดตเฉพาะ handoff/recovery case state · ไม่เปลี่ยน Payment / Job / Membership / Order truth",
+      "อัปเดตเฉพาะ handoff/recovery case state · ไม่เปลี่ยน Payment / Job / Membership truth และไม่เปลี่ยน Order truth",
     ].join("\n"),
     parse_mode: "HTML",
     disable_web_page_preview: true,
