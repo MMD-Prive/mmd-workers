@@ -517,6 +517,120 @@ async function handleTelegramWebhook(update, env) {
   return { handled: false, reason: "no_matching_command" };
 }
 
+async function handleHypeRecoveryPickerRefreshResult({
+  callback,
+  callbackId,
+  chatId,
+  domain,
+  handoffId,
+  result,
+  env,
+}) {
+  const state = clean(result?.state).toLowerCase();
+  const replayed = result?.replayed === true;
+  const correlation = result?.recovery_correlation || {};
+  const caseRef = clean(result?.handoff_id || handoffId);
+  const messageId = Number(callback?.message?.message_id);
+  const domainLabel = domain === "mmd_shop" ? "Order" : domain === "booking" ? "Booking" : "MMS Pre-booking";
+  const answerText = state === "picker_reissued"
+    ? replayed
+      ? "รายการล่าสุดของเคสนี้ถูกออกไว้แล้วครับ"
+      : "รายการนี้มีการอัปเดตแล้วครับ ผมดึงรายการล่าสุดให้ใหม่"
+    : state === "no_current_candidates"
+      ? "รายการเดิมเปลี่ยนแล้ว และตอนนี้ยังไม่มีรายการปัจจุบันให้เลือกครับ"
+      : "รายการเดิมเปลี่ยนแล้ว แต่ตอนนี้ผมยังดึงรายการล่าสุดอย่างปลอดภัยไม่ได้ครับ";
+
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    text: answerText,
+    show_alert: state !== "picker_reissued",
+  }, env).catch(() => null);
+
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    }, env).catch(() => null);
+  }
+
+  if (replayed) {
+    return {
+      handled: true,
+      flow: recoveryPickerFlow(domain),
+      ok: true,
+      code_status: state || "picker_reissue_replayed",
+      handoff_id: caseRef,
+      picker_revision: Number(correlation.picker_revision) || null,
+      replayed: true,
+    };
+  }
+
+  const lines = [
+    "<b>HYPE · " + escapeHtml(domainLabel.toUpperCase()) + " UPDATED</b>",
+    "<b>Reference:</b> <code>" + escapeHtml(caseRef) + "</code>",
+    "",
+  ];
+  let replyMarkup;
+
+  if (state === "picker_reissued") {
+    const count = Number(correlation.candidate_count || 0);
+    lines.push(
+      escapeHtml(domainLabel) + " ของเคสนี้มีการเปลี่ยนแปลงครับ",
+      "ผมดึงรายการปัจจุบันจาก canonical authority ให้ใหม่แล้ว" + (count ? " · " + count + " รายการ" : ""),
+      "",
+      count === 1
+        ? "ตอนนี้เหลือ 1 รายการ กรุณากดยืนยันรายการใหม่นี้อีกครั้ง — ผมจะไม่ตีความการกดรายการเก่าว่าหมายถึงรายการใหม่"
+        : "เลือกจากรายการล่าสุดด้านล่างได้เลยครับ",
+      "",
+      "Case เดิมยังอยู่ คุณไม่ต้องเล่าเรื่องใหม่",
+    );
+    replyMarkup = hypeHandoffButtons(env, result?.target === "kenji" ? "kenji" : "per", {
+      handoff_id: caseRef,
+      recovery_correlation: correlation,
+    });
+  } else if (state === "no_current_candidates") {
+    lines.push(
+      "รายการที่คุณกดไม่ใช่ candidate ปัจจุบันแล้วครับ",
+      "ตอนนี้ระบบยังไม่พบรายการที่เป็นของคุณและเลือกได้สำหรับเคสนี้",
+      "",
+      "Case เดิมยังเปิดอยู่ ทีมยังติดตามต่อได้ และคุณไม่ต้องเปิดเคสใหม่หรือเล่าเรื่องซ้ำ",
+      "HYPE จะไม่เดารายการอื่นแทนคุณ",
+    );
+  } else {
+    lines.push(
+      "รายการที่คุณกดต้อง refresh จากระบบต้นทางก่อนครับ",
+      "ตอนนี้ canonical authority ยังตอบกลับไม่พร้อม ผมจึงไม่ใช้ snapshot เก่าเป็นข้อมูลปัจจุบัน",
+      "",
+      "Case เดิมยังอยู่และไม่ถูกปิด คุณไม่ต้องเล่าเรื่องใหม่",
+    );
+  }
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: lines.join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  }, env);
+
+  return {
+    handled: true,
+    flow: recoveryPickerFlow(domain),
+    ok: telegram?.ok === true,
+    code_status: state || "picker_refresh_recorded",
+    handoff_id: caseRef,
+    picker_revision: Number(correlation.picker_revision) || null,
+    replayed: false,
+    telegram,
+  };
+}
+
+function recoveryPickerFlow(domain) {
+  if (domain === "mmd_shop") return "hype_recovery_order_picker";
+  if (domain === "booking") return "hype_recovery_booking_picker";
+  return "hype_recovery_mms_picker";
+}
 async function handleHypeRecoveryCandidateCallback(callback, env) {
   const data = clean(callback?.data);
   const match = /^(hrbp|hrmp)\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|(?:(\d{1,6})\|)?([0-4])$/i.exec(data);
