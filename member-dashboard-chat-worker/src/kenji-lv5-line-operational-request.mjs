@@ -16,6 +16,10 @@ import {
   applyKenjiLv5BookingActionToDecision,
   executeKenjiLv5LineBookingAction,
 } from "./kenji-lv5-line-action-execution.mjs";
+import {
+  accumulateKenjiLineBookingDraft,
+  recordKenjiBookingAccumulatorAction,
+} from "./kenji-line-booking-accumulator.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 
@@ -114,7 +118,24 @@ function needsCanonicalCalendarMapping(gate = {}) {
   if (gate.required !== true || gate.status !== "match") return false;
   const requested = normalizedModelRef(gate?.parsed?.model_name);
   const canonical = normalizedModelRef(gate?.model?.working_name);
-  return Boolean(requested && canonical && requested !== canonical);
+  const modelCode = normalizedModelRef(gate?.model?.model_code);
+  return Boolean(requested && canonical && requested !== canonical && requested !== modelCode);
+}
+
+function canonicalizeVerifiedModelIntent(parsedIntent = null, gate = {}) {
+  if (!parsedIntent || typeof parsedIntent !== "object" || gate?.status !== "match") return parsedIntent;
+  const requested = text(parsedIntent.model_name, 120);
+  const requestedKey = normalizedModelRef(requested);
+  const canonical = text(gate?.model?.working_name, 120);
+  const canonicalKey = normalizedModelRef(canonical);
+  const modelCodeKey = normalizedModelRef(gate?.model?.model_code);
+  if (!requestedKey || !canonical || requestedKey === canonicalKey) return parsedIntent;
+  if (requestedKey !== modelCodeKey) return parsedIntent;
+  return {
+    ...parsedIntent,
+    requested_model_ref: requested,
+    model_name: canonical,
+  };
 }
 
 function isPreparedBookingDecision(decision = {}, modelGate = {}) {
@@ -130,7 +151,11 @@ function isDepositBookingIntent(modelGate = {}) {
     && text(modelGate?.parsed?.trigger, 40) === "deposit";
 }
 
-async function applyP4Action(env, event, modelGate, decision) {
+async function applyP4Action(env, event, modelGate, decision, accumulator = null) {
+  if (accumulator?.active === true && accumulator?.action_allowed !== true) {
+    const status = accumulator?.locked === true ? "matrix_booking_already_actioned" : "matrix_booking_incomplete";
+    return { decision, result: { attempted: false, executed: false, status } };
+  }
   if (!isPreparedBookingDecision(decision, modelGate) && !isDepositBookingIntent(modelGate)) {
     return { decision, result: { attempted: false, executed: false, status: "not_eligible" } };
   }
@@ -166,7 +191,6 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   const raw = eventText(event);
   if (!raw) return null;
   const currentIntent = inferLineIntent(raw, event);
-  if (!isKenjiLv5LineOperationalCandidate(event, currentIntent)) return null;
 
   if (!enabled(env.LINE_KENJI_AI_ENABLED) || !enabled(env.LINE_KENJI_BOOKING_INTENT_ENABLED ?? "true")) return null;
   const runtime = await requestKenjiRuntimeStatus(env).catch(() => ({ ok: false }));
@@ -174,14 +198,33 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   if (runtime?.ok !== true || controls.all_kenji_mutations === true) return null;
   const replyAllowed = isLineReplyAllowed(env, controls);
 
-  const modelGate = await resolveKenjiLv5LineModelGate({ env, event, currentIntent }).catch(() => ({ required: true, status: "unavailable" }));
+  const accumulator = await accumulateKenjiLineBookingDraft({ env, event, currentIntent }).catch(() => null);
+  const operationalCandidate = isKenjiLv5LineOperationalCandidate(event, currentIntent)
+    || accumulator?.accepted === true
+    || accumulator?.active === true;
+  if (!operationalCandidate) return null;
+
+  const accumulatedIntent = accumulator?.merged_intent || null;
+  let modelGate = await resolveKenjiLv5LineModelGate({
+    env,
+    event,
+    currentIntent,
+    parsedIntent: accumulatedIntent,
+  }).catch(() => ({ required: true, status: "unavailable", parsed: accumulatedIntent }));
   let decision;
   if (modelGate.required === true && modelGate.status !== "match") {
     decision = gateDecision(currentIntent, modelGate);
   } else if (needsCanonicalCalendarMapping(modelGate)) {
     decision = aliasCalendarDecision(currentIntent, modelGate);
   } else {
-    decision = await resolveKenjiLv5LineOperationalDecision({ env, event, currentIntent }).catch(() => null);
+    const liveIntent = canonicalizeVerifiedModelIntent(accumulatedIntent, modelGate);
+    if (liveIntent && liveIntent !== modelGate.parsed) modelGate = { ...modelGate, parsed: liveIntent };
+    decision = await resolveKenjiLv5LineOperationalDecision({
+      env,
+      event,
+      currentIntent,
+      parsedIntent: liveIntent,
+    }).catch(() => null);
   }
   if (!decision?.text) return null;
 
@@ -193,11 +236,26 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
       ...(decision.operational || {}),
       operational_intent: text(modelGate?.parsed?.type || decision?.operational?.operational_intent, 80),
       model_access_status: modelGate.required === true ? text(modelGate.status, 80) : "not_required",
+      matrix_booking_draft_id: text(accumulator?.draft?.draft_id, 80),
+      matrix_booking_ready: accumulator?.draft?.ready === true,
+      matrix_booking_missing: Array.isArray(accumulator?.draft?.missing_fields) ? accumulator.draft.missing_fields : [],
+      matrix_booking_revision: Number(accumulator?.draft?.revision || 0),
     },
   };
 
-  const p4 = await applyP4Action(env, event, modelGate, decision);
+  const p4 = await applyP4Action(env, event, modelGate, decision, accumulator);
   decision = p4.decision;
+  if (accumulator?.draft?.draft_id && p4?.result?.attempted === true) {
+    const actionStateWrite = recordKenjiBookingAccumulatorAction({
+      env,
+      event,
+      currentIntent,
+      draft: accumulator.draft,
+      actionResult: p4.result,
+    }).catch(() => ({ skipped: true, reason: "matrix_action_state_write_failed" }));
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(actionStateWrite);
+    else await actionStateWrite;
+  }
   const delivery = replyAllowed
     ? await sendReply(env, replyToken(event), decision.text)
     : { ok: false, suppressed: true, error: "line_auto_reply_paused" };
@@ -229,4 +287,4 @@ export async function tryHandleKenjiLv5LineOperationalRequest(request, env = {},
   };
 }
 
-export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
+export const KENJI_LV5_LINE_REQUEST_INTERNALS = Object.freeze({ needsCanonicalCalendarMapping, canonicalizeVerifiedModelIntent, isPreparedBookingDecision, isDepositBookingIntent, isLineReplyAllowed });
