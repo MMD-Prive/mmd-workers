@@ -1,0 +1,35 @@
+name: Retire mmd-redirect-worker once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/retire-mmd-redirect-worker-once.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Validate hard-disabled worker
+        run: |
+          node --check mmd-redirect-worker/src/index.js
+          grep -q 'REDIRECT_WORKER_DISABLED = true' mmd-redirect-worker/src/index.js
+      - name: Dry run
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars --config mmd-redirect-worker/wrangler.toml
+      - name: Deploy hard-disabled worker
+        run: npx --yes wrangler@4 deploy --keep-vars --config mmd-redirect-worker/wrangler.toml

@@ -1,0 +1,35 @@
+name: MMS customer history contract
+
+on:
+  pull_request:
+    paths:
+      - "scripts/line-official-legacy/**"
+      - "member-pages-worker/**"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs"
+      - "shared/mms-customer-history-route.mjs"
+      - "webflow/mms/member-booking/**"
+      - ".github/workflows/mms-customer-history-contract.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify import, review, customer ownership and route boundaries
+        run: >-
+          node --experimental-global-webcrypto --test
+          scripts/line-official-legacy/history-evidence-intake.test.js
+          scripts/line-official-legacy/history-materializer.test.js
+          scripts/line-official-legacy/history-review-queue.test.js
+          member-pages-worker/test/mms-customer-history.test.mjs
+          member-pages-worker/test/member-app-client-history.test.mjs
+          member-pages-worker/test/mms-member-api.test.mjs
+          member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs

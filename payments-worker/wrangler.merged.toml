@@ -1,13 +1,46 @@
 name = "payments-worker"
-main = "src/index.js"
+main = "index.review-wrapper.js"
 compatibility_date = "2026-01-20"
 
-kv_namespaces = [
-  { binding = "PAY_SESSIONS_KV", id = "a9b6e92309024aa8a7ed1869d2c80afd" }
+# Production entrypoint:
+# - index.review-wrapper.js adds unified payment + proof intake and reviewed-proof handoff.
+# - index.phase1.js owns verified Base Points Phase 1 awards.
+# - index.with-slip-evidence.js remains the evidence-only compatibility writer.
+# - unified-payment-proof.js locks one payment_ref per session/stage, writes web proof records,
+#   blocks repeat proof submission, and exposes current proof/payment state to /sigil/pay.
+# - /v1/confirm/payment-instructions returns customer-safe payment destinations only after
+#   signed confirmation/session/payment validation; destinations remain server-side in Airtable.
+# - /v1/internal/payments/historical-slip/reviewed validates reviewed historical
+#   Payment Proof evidence before entering the canonical trusted notify path.
+# - /v1/internal/payments/reviewed-proof re-reads Payment Proof evidence inside
+#   payments-worker before entering the same canonical trusted notify path.
+# - all other payment/session handling delegates to index.js.
+# Base Points use a 100 THB pool with remainder carry and do not expire with membership.
+
+routes = [
+  { pattern = "sigil.mmdbkk.com/v1/pay/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/payments/*", zone_name = "mmdbkk.com" },
+  { pattern = "sigil.mmdbkk.com/v1/confirm/*", zone_name = "mmdbkk.com" }
 ]
 
+kv_namespaces = [
+  { binding = "PAY_SESSIONS_KV", id = "e0c6b8a0785e462dad6d01f61a893e87" }
+]
+
+[[r2_buckets]]
+binding = "PAYMENT_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
+
+[[durable_objects.bindings]]
+name = "POINTS_PHASE1_COORDINATOR"
+class_name = "PointsPhase1Coordinator"
+
+[[migrations]]
+tag = "points-phase1-v1"
+new_sqlite_classes = ["PointsPhase1Coordinator"]
+
 [vars]
-ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com\""
+ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
 
 WEB_BASE_URL = "https://mmdprive.webflow.io"
 CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
@@ -15,7 +48,11 @@ CONFIRM_BASE_URL = "https://mmdprive.webflow.io"
 PAY_SESSIONS_TTL_DAYS = "30"
 PAY_TOKEN_TTL_SECONDS = "2592000"
 
-# LOCK: 100 THB = 1 point
+# Secret: PAYMENT_CONFIRMATION_SIGNING_SECRET
+# CONFIRM_KEY remains a temporary migration fallback until the dedicated secret is active.
+
+# Legacy base-worker award is suppressed by index.phase1.js on trusted notify;
+# canonical Phase 1 conversion is fixed at 100 THB = 1 Point in points-phase1.js.
 POINTS_RATE = "100"
 
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
@@ -25,7 +62,9 @@ AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS = "tbl8z2MQpIqcdylim"
 AIRTABLE_TABLE_MEMBERS                 = "tblgWc5VRon5o8Mhk"
 AIRTABLE_TABLE_BOOKINGS                = "tbl8no0NkZ3LDgCXK"
 AIRTABLE_TABLE_PAYMENTS                = "tblWGGJJOx5eBvBZJ"
-AIRTABLE_TABLE_MEMBER_PACKAGES          = "member_packages"
+AIRTABLE_TABLE_PAYMENT_PROOFS          = "tblfJfM4Sqag9zrLi"
+AIRTABLE_TABLE_PAYMENT_INSTRUCTIONS    = "tblTPC2yV1P3CwbgU"
+AIRTABLE_TABLE_MEMBER_PACKAGES         = "member_packages"
 AIRTABLE_TABLE_SESSIONS                = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_POINTS_LEDGER           = "points_ledger"
 AIRTABLE_TABLE_PACKAGES                = "packages"
@@ -61,6 +100,20 @@ AT_PAYMENTS__PACKAGE_CODE          = "fldfyHYVrzbGPvMJR"
 AT_PAYMENTS__CREATED_AT            = "flduxcPpowBxEZSLu"
 
 TELEGRAM_CHAT_ID = "-1003546439681"
-TG_THREAD_CONFIRM = "61"
+TG_THREAD_PAYMENTS_MEMBERSHIP = "20"
+TG_THREAD_PAYMENTS_CONFIRM = "22"
+TG_THREAD_ALERTS = "9"
 TG_THREAD_POINTS = "17"
 
+# Compatibility aliases for legacy payment senders.
+TG_THREAD_MEMBERSHIP = "20"
+TG_THREAD_CONFIRM = "22"
+TG_THREAD_PAYMENT = "22"
+
+# Secrets: AUTH_SERVICE_ADMIN_TO_PAYMENTS, AUTH_SERVICE_IMMIGRATE_TO_PAYMENTS,
+# AUTH_SERVICE_EVENTS_TO_PAYMENTS
+
+
+[[services]]
+binding = "MMD_SHOP_WORKER"
+service = "himai-chat-worker"

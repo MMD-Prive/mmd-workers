@@ -1,0 +1,78 @@
+name: Sync MMD Rich Menu Cron
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - "member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs"
+      - ".github/workflows/sync-mmd-rich-menu-cron.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  sync-cron:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      WORKER_NAME: "member-dashboard-chat-worker"
+      MMD_RICH_MENU_CRON: "0 * * * *"
+
+    steps:
+      - name: Sync and verify MMD Rich Menu cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || "").trim();
+          const accountId = String(process.env.CLOUDFLARE_ACCOUNT_ID || "").trim();
+          const worker = String(process.env.WORKER_NAME || "").trim();
+          const desiredCron = String(process.env.MMD_RICH_MENU_CRON || "").trim();
+
+          if (!token || !accountId || !worker || !desiredCron) {
+            throw new Error("missing Cloudflare cron sync configuration");
+          }
+
+          const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${encodeURIComponent(worker)}/schedules`;
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          };
+
+          async function cf(method, body) {
+            const response = await fetch(url, {
+              method,
+              headers,
+              ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`Cloudflare schedules ${method} failed: ${response.status} ${JSON.stringify(payload?.errors || payload)}`);
+            }
+            return payload.result || {};
+          }
+
+          const current = await cf("GET");
+          const existing = Array.isArray(current.schedules) ? current.schedules : [];
+          const crons = [...new Set(existing.map((item) => String(item?.cron || "").trim()).filter(Boolean))];
+
+          if (!crons.includes(desiredCron)) {
+            await cf("PUT", [...crons, desiredCron].map((cron) => ({ cron })));
+          }
+
+          const verified = await cf("GET");
+          const verifiedCrons = Array.isArray(verified.schedules)
+            ? verified.schedules.map((item) => String(item?.cron || "").trim())
+            : [];
+
+          if (!verifiedCrons.includes(desiredCron)) {
+            throw new Error(`MMD Rich Menu cron missing after sync: ${desiredCron}`);
+          }
+
+          console.log(`MMD Rich Menu cron verified: ${desiredCron}`);
+          NODE
