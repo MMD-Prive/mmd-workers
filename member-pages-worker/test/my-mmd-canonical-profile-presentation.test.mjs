@@ -5,6 +5,7 @@ import {
   applyMyMmdCanonicalEntitlementResponse,
   projectProtectedEntitlement,
   protectedConnectNowActiveThrough,
+  readOrCreateProtectedActiveThroughAnchor,
   readLineOfcNoteScan,
 } from "../src/my-mmd-canonical-entitlement-bridge.js";
 
@@ -210,12 +211,62 @@ test("protected active member without canonical expiry gets connect-now +2y acti
     packageLabel: "SVIP Membership",
   };
   assert.equal(
-    protectedConnectNowActiveThrough(projection, new Date("2026-09-19T00:00:00.000Z")),
+    protectedConnectNowActiveThrough(projection, "2026-09-19"),
     "2028-09-19",
   );
 });
 
 test("connect-now active-through policy never applies to grace or non-protected capability", () => {
-  assert.equal(protectedConnectNowActiveThrough({ capability: "svip", lifecycle: "grace" }, new Date("2026-09-19T00:00:00Z")), null);
-  assert.equal(protectedConnectNowActiveThrough({ capability: "premium", lifecycle: "active" }, new Date("2026-09-19T00:00:00Z")), null);
+  assert.equal(protectedConnectNowActiveThrough({ capability: "svip", lifecycle: "grace" }, "2026-09-19"), null);
+  assert.equal(protectedConnectNowActiveThrough({ capability: "premium", lifecycle: "active" }, "2026-09-19"), null);
+});
+
+
+test("protected active-through anchor is durable and does not slide on later requests", async () => {
+  const memory = new Map();
+  const store = {
+    async get(key, format) {
+      assert.equal(format, "json");
+      const raw = memory.get(key);
+      return raw ? JSON.parse(raw) : null;
+    },
+    async put(key, value) {
+      memory.set(key, value);
+    },
+  };
+  const env = {
+    LIFF_IDENTITY_KV: store,
+    LIFF_SESSION_SECRET: "s".repeat(64),
+  };
+  const projection = {
+    capability: "svip",
+    label: "SVIP",
+    lifecycle: "active",
+    publicServiceAccess: true,
+    startAt: null,
+    expiresAt: null,
+    packageLabel: "SVIP Membership",
+  };
+  const lineId = `U${"a".repeat(32)}`;
+
+  const first = await readOrCreateProtectedActiveThroughAnchor(
+    env,
+    lineId,
+    projection,
+    new Date("2026-09-19T10:00:00.000Z"),
+  );
+  const later = await readOrCreateProtectedActiveThroughAnchor(
+    env,
+    lineId,
+    projection,
+    new Date("2027-03-01T10:00:00.000Z"),
+  );
+
+  assert.equal(first, "2028-09-19");
+  assert.equal(later, "2028-09-19");
+  assert.equal(memory.size, 1);
+  const stored = JSON.parse([...memory.values()][0]);
+  assert.equal(stored.contains_raw_line_id, false);
+  assert.equal(stored.policy, "protected_connect_now_plus_2y_v1");
+  assert.doesNotMatch(JSON.stringify(stored), new RegExp(lineId));
 });
