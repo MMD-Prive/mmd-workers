@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import {
   HYPE_CONTINUITY_PATH,
   HYPE_HANDOFF_PATH,
+  HYPE_HANDOFF_STATUS_PATH,
   HYPE_TRANSACTION_INTAKE_PATH,
   HYPE_SUPERVISED_EXECUTION_PATH,
   handleHypeContinuityRpc,
   handleHypeHandoffRpc,
+  handleHypeHandoffStatusRpc,
   handleHypeTransactionIntakeRpc,
   handleHypeSupervisedExecutionRpc,
   normalizeTransactionFields,
@@ -58,6 +60,12 @@ test("HYPE continuity and handoff endpoints are service-binding only", async () 
     ENV,
   );
   assert.equal(wrongCaller.status, 403);
+
+  const statusWrongCaller = await handleHypeHandoffStatusRpc(
+    internalRequest(HYPE_HANDOFF_STATUS_PATH, { operation: "read", telegram_user_id: "111111" }, "browser"),
+    ENV,
+  );
+  assert.equal(statusWrongCaller.status, 403);
 
   const transactionWrongCaller = await handleHypeTransactionIntakeRpc(
     internalRequest(HYPE_TRANSACTION_INTAKE_PATH, { telegram_user_id: "111111", mode: "booking" }, "browser"),
@@ -183,6 +191,140 @@ test("HYPE continuity stays canonical-only when LINE identity is not linked", { 
   }
 });
 
+
+
+test("HYPE handoff status reads only the explicitly recorded operator state", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/tblClients")) {
+      return Response.json({
+        records: [{
+          id: "recClientA1",
+          fields: {
+            telegram_user_id: "111111",
+            telegram_verification_status: "verified",
+            line_user_id: "U0123456789abcdef0123456789abcdef",
+            "Client Name": "Client A",
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && (!init.method || init.method === "GET")) {
+      return Response.json({
+        records: [{
+          id: "recMatrixA1",
+          fields: {
+            pending_reference: "HYPE-PER-20260919120000-deadbeef",
+            state_updated_at: "2026-09-19T12:01:00.000Z",
+            payload_json: JSON.stringify({
+              handoff_id: "HYPE-PER-20260919120000-deadbeef",
+              handoff_target: "per",
+              handoff_tracking: {
+                id: "HYPE-PER-20260919120000-deadbeef",
+                target: "per",
+                state: "reviewing",
+                updated_at: "2026-09-19T12:01:00.000Z",
+                actor_role: "owner",
+              },
+            }),
+          },
+        }],
+      });
+    }
+    throw new Error(`unexpected fetch ${parsed.pathname} ${init.method || "GET"}`);
+  };
+
+  try {
+    const response = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "read",
+      telegram_user_id: "111111",
+    }), ENV);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.state, "reviewing");
+    assert.equal(body.handoff_id, "HYPE-PER-20260919120000-deadbeef");
+    assert.equal(body.target, "per");
+    assert.equal(body.guardrails.protected_business_truth_mutated, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE handoff transition writes conversation state only and rejects backwards state", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const writes = [];
+  let currentState = "sent";
+  globalThis.fetch = async (url, init = {}) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/tblMatrix") && (!init.method || init.method === "GET")) {
+      return Response.json({
+        records: [{
+          id: "recMatrixA1",
+          fields: {
+            pending_reference: "HYPE-PER-20260919120000-deadbeef",
+            matrix_status: "active",
+            version: 2,
+            payload_json: JSON.stringify({
+              handoff_id: "HYPE-PER-20260919120000-deadbeef",
+              handoff_target: "per",
+              handoff_tracking: {
+                id: "HYPE-PER-20260919120000-deadbeef",
+                target: "per",
+                state: currentState,
+                updated_at: "2026-09-19T12:00:30.000Z",
+                actor_role: "hype",
+              },
+            }),
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix") && init.method === "PATCH") {
+      const payload = JSON.parse(String(init.body || "{}"));
+      writes.push(payload);
+      const nextPayload = JSON.parse(payload.records[0].fields.payload_json);
+      currentState = nextPayload.handoff_tracking.state;
+      return Response.json({ records: [{ id: "recMatrixA1", fields: payload.records[0].fields }] });
+    }
+    throw new Error(`unexpected fetch ${parsed.pathname} ${init.method || "GET"}`);
+  };
+
+  try {
+    const response = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "transition",
+      handoff_id: "HYPE-PER-20260919120000-deadbeef",
+      state: "acknowledged",
+      actor_role: "owner",
+    }), ENV);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.state, "acknowledged");
+    assert.equal(body.guardrails.payment_mutated, false);
+    assert.equal(writes.length, 1);
+
+    const serialized = JSON.stringify(writes[0]);
+    assert.match(serialized, /handoff_acknowledged/);
+    const writtenPayload = JSON.parse(writes[0].records[0].fields.payload_json);
+    assert.equal(writtenPayload.handoff_tracking.state, "acknowledged");
+    assert.equal(writtenPayload.handoff_tracking.actor_role, "owner");
+    assert.doesNotMatch(serialized, /payment_status|job_status|membership_status|entitlement_grant/i);
+
+    const backwards = await handleHypeHandoffStatusRpc(internalRequest(HYPE_HANDOFF_STATUS_PATH, {
+      operation: "transition",
+      handoff_id: "HYPE-PER-20260919120000-deadbeef",
+      state: "sent",
+      actor_role: "owner",
+    }), ENV);
+    const backwardsBody = await backwards.json();
+    assert.equal(backwards.status, 409);
+    assert.equal(backwardsBody.error, "handoff_transition_invalid");
+    assert.equal(backwardsBody.current_state, "acknowledged");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("P5 transaction helpers prepare booking and MMS drafts without protected truth", () => {
   const booking = mergeTransactionDraft("booking", {}, normalizeTransactionFields("booking", {
