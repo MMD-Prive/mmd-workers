@@ -20,9 +20,12 @@ function resolve(urlString) {
   return { replaced, bridge: window.MMDLegacyPaymentRouteBridgeV1 || null };
 }
 
-test("renew alias preserves query and hash but hands off to canonical renewal", () => {
-  const out = resolve("https://mmdbkk.com/sigil/pay/renew?t=signed&src=legacy#proof");
-  assert.equal(out.replaced, "/sigil/pay/renewal?t=signed&src=legacy#proof");
+test("renew alias preserves signed authority by handing off directly to canonical private payment", () => {
+  const signed = resolve("https://mmdbkk.com/sigil/pay/renew?t=signed&src=legacy#proof");
+  assert.equal(signed.replaced, "/sigil/pay?t=signed");
+
+  const unsigned = resolve("https://mmdbkk.com/sigil/pay/renew?src=legacy#proof");
+  assert.equal(unsigned.replaced, "/sigil/member/membership?intent=renew&src=legacy#proof");
 });
 
 test("signed SIGIL membership alias goes only to canonical signed private payment route", () => {
