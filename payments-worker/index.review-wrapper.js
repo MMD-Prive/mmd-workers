@@ -49,6 +49,7 @@ import {
 } from "./final-payment-flow.js";
 import {
   handleShopIntent,
+  handleShopIntentExpiry,
   isShopIntentRequest,
   maybeHandleShopConfirmationDetails,
   preflightReviewedShopPayment,
@@ -78,6 +79,9 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    const shopExpiryResponse = await handleShopIntentExpiry(request.clone(), env);
+    if (shopExpiryResponse) return shopExpiryResponse;
 
     if (isShopIntentRequest(path, method)) {
       return handleShopIntent(request, env);
