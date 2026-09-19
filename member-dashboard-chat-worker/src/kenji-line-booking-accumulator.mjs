@@ -85,14 +85,15 @@ export function parseKenjiBookingFragment(event = {}, currentIntent = "", {
   const time = extractOperationalTime(raw);
   const durationHours = extractOperationalDurationHours(raw);
   const endTime = extractOperationalEndTime(raw, time);
-  let location = extractOperationalLocation(raw, modelName);
+  const explicitLocation = LOCATION_PREFIX_RE.test(raw);
+  let location = explicitLocation ? extractOperationalLocation(raw, modelName) : "";
   let amount = extractOperationalRate(raw);
   const depositAmount = extractOperationalDepositAmount(raw);
   const deposit = DEPOSIT_RE.test(raw);
   const bookingSignal = BOOKING_SIGNAL_RE.test(raw);
   const intent = token(currentIntent);
 
-  if (!amount && priorActive && ["pricing_review", "mmd_companion", "availability_request"].includes(intent)) {
+  if (!amount && priorActive) {
     amount = parseLooseAmount(raw);
   }
   if (!location && priorActive && !modelName && !date && !time && !durationHours && !endTime && !amount && !depositAmount) {
