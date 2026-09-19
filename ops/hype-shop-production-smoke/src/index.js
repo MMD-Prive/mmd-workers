@@ -68,6 +68,7 @@ export default {
       inventory_out_once: transaction.checks?.inventory_out_once === true
         && transaction.checks?.reservation_movement_sequence === true,
       fulfillment_delivery_lifecycle: transaction.checks?.fulfillment_delivery_lifecycle === true,
+      aftercare_refund_projection: transaction.checks?.aftercare_refund_projection === true,
       line_shipping_dry_run: transaction.checks?.line_shipping_dry_run === true,
       customer_projection_contract: transaction.checks?.customer_projection_contract === true,
     };
