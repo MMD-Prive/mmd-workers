@@ -129,21 +129,34 @@ test("model access silent state does not reveal private model existence or sched
   assert.doesNotMatch(reply, /ว่าง|ไม่ว่าง|มีนายแบบ|ไม่มีนายแบบ/);
 });
 
-test("model code or alias must not bypass canonical calendar-name mapping", () => {
+test("verified model code maps to canonical Calendar name while an unverified alias still blocks", () => {
   const same = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
     required: true,
     status: "match",
     parsed: { model_name: "Rossi" },
     model: { working_name: "Rossi", model_code: "EMs20" },
   });
-  const alias = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+  const code = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
     required: true,
     status: "match",
     parsed: { model_name: "EMs20" },
     model: { working_name: "Rossi", model_code: "EMs20" },
   });
+  const alias = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
+    required: true,
+    status: "match",
+    parsed: { model_name: "Ross" },
+    model: { working_name: "Rossi", model_code: "EMs20" },
+  });
+  const mapped = KENJI_LV5_LINE_REQUEST_INTERNALS.canonicalizeVerifiedModelIntent(
+    { type: "booking", model_name: "EMs20", date: "2026-09-20" },
+    { status: "match", model: { working_name: "Rossi", model_code: "EMs20" } },
+  );
   assert.equal(same, false);
+  assert.equal(code, false);
   assert.equal(alias, true);
+  assert.equal(mapped.model_name, "Rossi");
+  assert.equal(mapped.requested_model_ref, "EMs20");
 });
 
 test("LINE auto-reply pause suppresses customer delivery without disabling booking mutation flow", () => {
