@@ -10,6 +10,18 @@ import { renderRecoveryControlPage, renderRecoveryControlForbidden } from "./rec
 
 export const RECOVERY_CONTROL_PAGE_PATH = "/internal/admin/recovery";
 export const RECOVERY_CONTROL_API_PATH = "/v1/admin/recovery/cases";
+export const RECOVERY_QUEUE_SLA_VERSION = "mmd-recovery-queue-sla-v1-20260919";
+
+const RECOVERY_QUEUE_STATES = Object.freeze(["prepared", "sent", "acknowledged", "reviewing", "resolved", "customer_notified"]);
+const RECOVERY_QUEUE_DOMAINS = Object.freeze(["mmd_shop", "booking", "mms", "unclassified"]);
+const RECOVERY_ATTENTION_TARGET_MINUTES = Object.freeze({
+  prepared: 60,
+  sent: 60,
+  acknowledged: 120,
+  reviewing: 360,
+  resolved: 120,
+  customer_notified: null,
+});
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MATRIX_TABLE_FALLBACK = "tblS6iRgPjYLBqZJh";
@@ -52,6 +64,9 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
     return html(renderRecoveryControlPage({
       case_ref: normalizeCaseRef(url.searchParams.get("case_ref")),
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+      sla_version: RECOVERY_QUEUE_SLA_VERSION,
+      domain: normalizeQueueDomainFilter(url.searchParams.get("domain")).value,
+      state: normalizeQueueStateFilter(url.searchParams.get("state")).value,
     }), 200);
   }
 
@@ -72,13 +87,31 @@ export async function handleRecoveryControl(request, env = {}, actor = null) {
       });
     }
 
-    const result = await listRecoveryCases(env, boundedInt(url.searchParams.get("limit"), 1, 25, 12));
+    const domainFilter = normalizeQueueDomainFilter(url.searchParams.get("domain"));
+    const stateFilter = normalizeQueueStateFilter(url.searchParams.get("state"));
+    if (!domainFilter.ok || !stateFilter.ok) {
+      return json({
+        ok: false,
+        error: "recovery_queue_filter_invalid",
+        allowed_domains: ["all", ...RECOVERY_QUEUE_DOMAINS],
+        allowed_states: ["open", "all", ...RECOVERY_QUEUE_STATES],
+      }, 400);
+    }
+
+    const result = await readRecoveryQueueIntelligence(env, {
+      limit: boundedInt(url.searchParams.get("limit"), 1, 25, 12),
+      domain: domainFilter.value,
+      state: stateFilter.value,
+    });
     if (!result.ok) return json(result, 503);
     return json({
       ok: true,
       authority: "mmd.recovery_control.v1",
       cases: result.cases,
+      queue: result.queue,
+      filters: result.filters,
       taxonomy_version: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+      sla_version: RECOVERY_QUEUE_SLA_VERSION,
       guardrails: recoveryControlGuardrails(),
     });
   }
@@ -185,13 +218,20 @@ export function buildRecoveryControlTransition(currentCase = {}, action = "", ou
   return { ok: false, status: 400, error: "recovery_action_invalid" };
 }
 
-async function listRecoveryCases(env, limit) {
+export async function readRecoveryQueueIntelligence(env, options = {}, now = new Date()) {
   const config = airtableConfig(env);
   if (!config.ok) return config;
 
+  const limit = boundedInt(options.limit, 1, 25, 12);
+  const domainFilter = normalizeQueueDomainFilter(options.domain);
+  const stateFilter = normalizeQueueStateFilter(options.state);
+  if (!domainFilter.ok || !stateFilter.ok) {
+    return { ok: false, error: "recovery_queue_filter_invalid" };
+  }
+
   const url = new URL(AIRTABLE_API + "/" + encodeURIComponent(config.baseId) + "/" + encodeURIComponent(config.table));
-  url.searchParams.set("pageSize", "50");
-  url.searchParams.set("maxRecords", "50");
+  url.searchParams.set("pageSize", "100");
+  url.searchParams.set("maxRecords", "100");
   url.searchParams.set("sort[0][field]", F.UPDATED_AT);
   url.searchParams.set("sort[0][direction]", "desc");
 
@@ -201,8 +241,46 @@ async function listRecoveryCases(env, limit) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return { ok: false, error: "airtable_read_" + response.status };
+
     const records = Array.isArray(payload.records) ? payload.records : [];
-    return { ok: true, cases: records.map(projectRecoveryRecord).filter(Boolean).slice(0, limit) };
+    const projected = records
+      .map((record) => projectRecoveryRecord(record, now))
+      .filter(Boolean);
+    const active = projected.filter((item) => item.state !== "customer_notified");
+    const filtered = projected.filter((item) => (
+      (domainFilter.value === "all" || item.domain === domainFilter.value)
+      && (stateFilter.value === "all"
+        || (stateFilter.value === "open" ? item.state !== "customer_notified" : item.state === stateFilter.value))
+    ));
+    const ordered = [...filtered].sort(compareRecoveryQueuePriority);
+    const attention = [...active]
+      .filter((item) => item.sla.attention_required === true || item.state === "resolved")
+      .sort(compareRecoveryQueuePriority)
+      .slice(0, 5)
+      .map(projectAttentionItem);
+
+    return {
+      ok: true,
+      cases: ordered.slice(0, limit),
+      filters: {
+        domain: domainFilter.value,
+        state: stateFilter.value,
+      },
+      queue: {
+        policy_version: RECOVERY_QUEUE_SLA_VERSION,
+        total_fetched: projected.length,
+        open_count: active.length,
+        filtered_count: filtered.length,
+        attention_count: active.filter((item) => item.sla.attention_required === true || item.state === "resolved").length,
+        overdue_count: active.filter((item) => item.sla.status === "overdue").length,
+        watch_count: active.filter((item) => item.sla.status === "watch").length,
+        by_domain: countBy(active, (item) => item.domain),
+        by_state: countBy(active, (item) => item.state),
+        attention,
+        operational_only: true,
+        business_truth_inferred: false,
+      },
+    };
   } catch {
     return { ok: false, error: "airtable_read_failed" };
   }
@@ -232,7 +310,7 @@ async function readRecoveryCase(env, caseRef) {
   }
 }
 
-export function projectRecoveryRecord(record = {}) {
+export function projectRecoveryRecord(record = {}, now = new Date()) {
   const fields = record.fields || {};
   const payload = parseObject(fields[F.PAYLOAD]);
   const recovery = parseObject(payload.recovery_case);
@@ -246,6 +324,10 @@ export function projectRecoveryRecord(record = {}) {
   const rawOutcome = token(recovery.outcome_code) || "intake_received";
   const outcomeCode = recoveryOutcomeLabel(domain, rawOutcome) ? rawOutcome : "intake_received";
 
+  const updatedAt = clean(tracking.updated_at || recovery.updated_at || fields[F.UPDATED_AT], 80) || null;
+  const age = recoveryCaseAge(caseRef, now);
+  const sla = recoverySlaIndicator(state, updatedAt, now);
+
   return {
     case_ref: caseRef,
     customer: {
@@ -258,7 +340,10 @@ export function projectRecoveryRecord(record = {}) {
     outcome_code: outcomeCode,
     outcome_label: recoveryOutcomeLabel(domain, outcomeCode),
     outcome_terminal: isTerminalRecoveryOutcome(domain, outcomeCode),
-    updated_at: clean(tracking.updated_at || recovery.updated_at || fields[F.UPDATED_AT], 80) || null,
+    updated_at: updatedAt,
+    age,
+    sla,
+    next_attention: recoveryNextAttention(state),
     actor_role: token(tracking.actor_role || recovery.actor_role) || null,
     correlation: projectCorrelation(payload.recovery_correlation, domain),
     controls: {
@@ -337,7 +422,155 @@ function recoveryControlGuardrails() {
     entitlement_mutated: false,
     browser_service_binding_exposed: false,
     same_origin_write_required: true,
+    sla_operational_metadata_only: true,
+    sla_business_truth_inferred: false,
   };
+}
+
+export function recoverySlaIndicator(stateValue, updatedAtValue, now = new Date()) {
+  const state = token(stateValue);
+  if (state === "customer_notified") {
+    return {
+      policy_version: RECOVERY_QUEUE_SLA_VERSION,
+      status: "closed",
+      target_minutes: null,
+      since_update_minutes: minutesSince(updatedAtValue, now),
+      minutes_remaining: null,
+      breached_by_minutes: 0,
+      attention_required: false,
+      source: "workflow_updated_at_only",
+      operational_only: true,
+      business_truth_inferred: false,
+    };
+  }
+
+  const target = Number(RECOVERY_ATTENTION_TARGET_MINUTES[state]);
+  const elapsed = minutesSince(updatedAtValue, now);
+  if (!Number.isFinite(target) || target <= 0 || elapsed === null) {
+    return {
+      policy_version: RECOVERY_QUEUE_SLA_VERSION,
+      status: "unknown",
+      target_minutes: Number.isFinite(target) && target > 0 ? target : null,
+      since_update_minutes: elapsed,
+      minutes_remaining: null,
+      breached_by_minutes: 0,
+      attention_required: false,
+      source: "workflow_updated_at_only",
+      operational_only: true,
+      business_truth_inferred: false,
+    };
+  }
+
+  const ratio = elapsed / target;
+  const status = elapsed >= target ? "overdue" : ratio >= 0.75 ? "watch" : "fresh";
+  return {
+    policy_version: RECOVERY_QUEUE_SLA_VERSION,
+    status,
+    target_minutes: target,
+    since_update_minutes: elapsed,
+    minutes_remaining: Math.max(0, target - elapsed),
+    breached_by_minutes: Math.max(0, elapsed - target),
+    attention_required: status === "overdue" || status === "watch",
+    source: "workflow_updated_at_only",
+    operational_only: true,
+    business_truth_inferred: false,
+  };
+}
+
+function recoveryCaseAge(caseRef, now) {
+  const openedAt = caseRefOpenedAt(caseRef);
+  const elapsed = openedAt ? Math.max(0, Math.floor((now.getTime() - openedAt.getTime()) / 60000)) : null;
+  return {
+    opened_at: openedAt ? openedAt.toISOString() : null,
+    minutes: elapsed,
+    bucket: ageBucket(elapsed),
+    source: "case_ref_timestamp",
+  };
+}
+
+function caseRefOpenedAt(caseRef) {
+  const match = /^HYPE-(?:PER|KENJI)-(d{14})-[a-f0-9]{8}$/i.exec(clean(caseRef, 180));
+  if (!match) return null;
+  const s = match[1];
+  const iso = s.slice(0,4) + "-" + s.slice(4,6) + "-" + s.slice(6,8)
+    + "T" + s.slice(8,10) + ":" + s.slice(10,12) + ":" + s.slice(12,14) + ".000Z";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function ageBucket(minutes) {
+  if (minutes === null) return "unknown";
+  if (minutes < 60) return "under_1h";
+  if (minutes < 240) return "1_4h";
+  if (minutes < 720) return "4_12h";
+  if (minutes < 1440) return "12_24h";
+  return "24h_plus";
+}
+
+function minutesSince(value, now) {
+  const parsed = Date.parse(clean(value, 80));
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.floor((now.getTime() - parsed) / 60000));
+}
+
+function recoveryNextAttention(stateValue) {
+  const state = token(stateValue);
+  if (state === "prepared" || state === "sent") return "acknowledge_case";
+  if (state === "acknowledged") return "start_review";
+  if (state === "reviewing") return "review_and_update_outcome";
+  if (state === "resolved") return "notify_customer";
+  if (state === "customer_notified") return "closed";
+  return "inspect_case";
+}
+
+function compareRecoveryQueuePriority(a, b) {
+  const score = { overdue: 0, watch: 1, fresh: 2, unknown: 3, closed: 4 };
+  const left = score[a?.sla?.status] ?? 5;
+  const right = score[b?.sla?.status] ?? 5;
+  if (left !== right) return left - right;
+  if (a.state === "resolved" && b.state !== "resolved") return -1;
+  if (b.state === "resolved" && a.state !== "resolved") return 1;
+  return (b?.age?.minutes ?? -1) - (a?.age?.minutes ?? -1);
+}
+
+function projectAttentionItem(item) {
+  return {
+    case_ref: item.case_ref,
+    client_name: item.customer?.display_name || "Canonical Client",
+    domain: item.domain,
+    state: item.state,
+    outcome_code: item.outcome_code,
+    sla_status: item.sla.status,
+    since_update_minutes: item.sla.since_update_minutes,
+    case_age_minutes: item.age.minutes,
+    next_attention: item.next_attention,
+    href: RECOVERY_CONTROL_PAGE_PATH + "?case_ref=" + encodeURIComponent(item.case_ref),
+  };
+}
+
+function countBy(items, keyer) {
+  const out = {};
+  for (const item of items) {
+    const key = clean(keyer(item), 80) || "unknown";
+    out[key] = (out[key] || 0) + 1;
+  }
+  return out;
+}
+
+function normalizeQueueDomainFilter(value) {
+  const raw = token(value || "all");
+  if (!raw || raw === "all") return { ok: true, value: "all" };
+  const domain = normalizeRecoveryDomain(raw);
+  return RECOVERY_QUEUE_DOMAINS.includes(domain) && (domain !== "unclassified" || raw === "unclassified")
+    ? { ok: true, value: domain }
+    : { ok: false, value: "all" };
+}
+
+function normalizeQueueStateFilter(value) {
+  const raw = token(value || "open");
+  if (!raw || raw === "open") return { ok: true, value: "open" };
+  if (raw === "all" || RECOVERY_QUEUE_STATES.includes(raw)) return { ok: true, value: raw };
+  return { ok: false, value: "open" };
 }
 
 function airtableConfig(env) {
