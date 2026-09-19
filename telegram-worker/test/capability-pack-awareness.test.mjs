@@ -436,8 +436,8 @@ test("ambiguous Shop recovery renders customer-safe inline Order picker on the s
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrop|HYPE-PER-20260919124500-feedface|0",
-      "hrop|HYPE-PER-20260919124500-feedface|1",
+      "hrop|HYPE-PER-20260919124500-feedface|1|0",
+      "hrop|HYPE-PER-20260919124500-feedface|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /MMD-ORDER-A|MMD-ORDER-B/);
     assert.match(ops.text, /Recovery domain:<\/b> mmd_shop/);
@@ -599,8 +599,8 @@ test("ambiguous Booking recovery renders customer-safe picker and callback conta
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrbp|" + caseRef + "|0",
-      "hrbp|" + caseRef + "|1",
+      "hrbp|" + caseRef + "|1|0",
+      "hrbp|" + caseRef + "|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /kenji_|Model A|Model B/);
     assert.match(customer.reply_markup.inline_keyboard[0][0].text, /2026-10-02/);
@@ -765,8 +765,8 @@ test("ambiguous MMS recovery renders customer-safe picker and callback contains 
       .map((item) => item.callback_data)
       .filter(Boolean);
     assert.deepEqual(callbacks, [
-      "hrmp|" + caseRef + "|0",
-      "hrmp|" + caseRef + "|1",
+      "hrmp|" + caseRef + "|1|0",
+      "hrmp|" + caseRef + "|1|1",
     ]);
     assert.doesNotMatch(callbacks.join("|"), /mmspre_|Sukhumvit|Silom/);
     assert.match(customer.reply_markup.inline_keyboard[1][0].text, /Silom/);
@@ -843,6 +843,267 @@ test("MMS recovery picker callback sends only Case/index to server and never cla
     assert.match(customer.payload.text, /mmspre_222222222222222222222222/);
     assert.match(customer.payload.text, /Case เดิม/);
     assert.match(customer.payload.text, /ไม่ได้ confirm Therapist, Booking หรือ Payment/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("revisioned Booking stale callback clears old buttons and reissues safe revision 2 on the same Case", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  let selection = null;
+  const caseRef = "HYPE-PER-20260920110000-acde2001";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3400 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrbp|" + caseRef + "|1|1"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          selection = JSON.parse(await request.clone().text());
+          return Response.json({
+            ok: true,
+            state: "picker_reissued",
+            replayed: false,
+            handoff_id: caseRef,
+            target: "per",
+            recovery_correlation: {
+              domain: "booking",
+              state: "ambiguous",
+              correlated: false,
+              case_ref: caseRef,
+              candidate_count: 2,
+              picker_revision: 2,
+              picker_status: "reissued",
+              picker_reissue_count: 1,
+              options: [
+                {
+                  booking_ref: "kenji_cccccccccccccccccccccccc",
+                  request_status: "pending",
+                  preferred_date: "2026-10-04",
+                  preferred_time: "19:00",
+                  summary: "Model C · private",
+                },
+                {
+                  booking_ref: "kenji_dddddddddddddddddddddddd",
+                  request_status: "pending",
+                  preferred_date: "2026-10-05",
+                  preferred_time: "20:30",
+                  summary: "Model D · private",
+                },
+              ],
+            },
+            recovery_case: {
+              case_ref: caseRef,
+              domain: "booking",
+              state: "reviewing",
+              outcome_code: "intake_received",
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.flow, "hype_recovery_booking_picker");
+    assert.equal(body.code_status, "picker_reissued");
+    assert.equal(body.handoff_id, caseRef);
+    assert.equal(body.picker_revision, 2);
+    assert.equal(selection.operation, "select_recovery_booking");
+    assert.equal(selection.handoff_id, caseRef);
+    assert.equal(selection.picker_revision, 1);
+    assert.equal(selection.selection_index, 1);
+    assert.equal(Object.hasOwn(selection, "booking_ref"), false);
+    assert.equal(Object.hasOwn(selection, "job_id"), false);
+
+    const edit = telegramCalls.find((item) => item.target.includes("/editMessageReplyMarkup"));
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(edit);
+    assert.deepEqual(edit.payload.reply_markup, { inline_keyboard: [] });
+    assert.ok(customer);
+    assert.match(customer.payload.text, /BOOKING UPDATED/);
+    assert.match(customer.payload.text, new RegExp(caseRef));
+    assert.match(customer.payload.text, /Case เดิมยังอยู่/);
+
+    const callbacks = customer.payload.reply_markup.inline_keyboard
+      .flat()
+      .map((item) => item.callback_data)
+      .filter(Boolean);
+    assert.deepEqual(callbacks, [
+      "hrbp|" + caseRef + "|2|0",
+      "hrbp|" + caseRef + "|2|1",
+    ]);
+    assert.doesNotMatch(callbacks.join("|"), /kenji_|Model C|Model D|JOB-/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("duplicate old Booking callback replays the current revision without sending another picker message", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  const caseRef = "HYPE-PER-20260920110500-acde2002";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3420 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrbp|" + caseRef + "|1|1"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            state: "picker_reissued",
+            replayed: true,
+            handoff_id: caseRef,
+            target: "per",
+            recovery_correlation: {
+              domain: "booking",
+              state: "ambiguous",
+              correlated: false,
+              case_ref: caseRef,
+              candidate_count: 2,
+              picker_revision: 2,
+              picker_status: "reissued",
+              picker_reissue_count: 1,
+              options: [
+                { booking_ref: "kenji_cccccccccccccccccccccccc", preferred_date: "2026-10-04", preferred_time: "19:00", summary: "Model C" },
+                { booking_ref: "kenji_dddddddddddddddddddddddd", preferred_date: "2026-10-05", preferred_time: "20:30", summary: "Model D" },
+              ],
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.ok, true);
+    assert.equal(body.replayed, true);
+    assert.equal(body.picker_revision, 2);
+    assert.ok(telegramCalls.some((item) => item.target.includes("/answerCallbackQuery")));
+    assert.ok(telegramCalls.some((item) => item.target.includes("/editMessageReplyMarkup")));
+    assert.equal(telegramCalls.some((item) => item.target.includes("/sendMessage")), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("stale picker with no current candidates keeps the Case and does not emit an empty replacement picker", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  const caseRef = "HYPE-PER-20260920111000-acde2003";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3440 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrmp|" + caseRef + "|1|0"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            state: "no_current_candidates",
+            replayed: false,
+            handoff_id: caseRef,
+            target: "per",
+            recovery_correlation: {
+              domain: "mms",
+              state: "no_current_candidates",
+              correlated: false,
+              case_ref: caseRef,
+              candidate_count: 0,
+              picker_revision: 2,
+              picker_status: "no_current_candidates",
+              options: [],
+            },
+            recovery_case: {
+              case_ref: caseRef,
+              domain: "mms",
+              state: "acknowledged",
+              outcome_code: "intake_received",
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.code_status, "no_current_candidates");
+    assert.equal(body.handoff_id, caseRef);
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(customer);
+    assert.match(customer.payload.text, new RegExp(caseRef));
+    assert.match(customer.payload.text, /Case เดิมยังเปิดอยู่/);
+    assert.match(customer.payload.text, /ไม่ต้องเปิดเคสใหม่หรือเล่าเรื่องซ้ำ/);
+    assert.equal(customer.payload.reply_markup, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("authority-unavailable stale refresh keeps the Case and never reuses stale options as current truth", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  const caseRef = "HYPE-PER-20260920111500-acde2004";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3460 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrop|" + caseRef + "|1|0"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch() {
+          return Response.json({
+            ok: true,
+            state: "authority_unavailable",
+            replayed: false,
+            handoff_id: caseRef,
+            target: "per",
+            recovery_correlation: {
+              domain: "mmd_shop",
+              state: "ambiguous",
+              correlated: false,
+              case_ref: caseRef,
+              candidate_count: 2,
+              picker_revision: 1,
+              picker_status: "stale",
+              live_refresh_status: "unavailable",
+              options: [
+                { order_id: "MMD-OLD-A", item_summary: "Old A" },
+                { order_id: "MMD-OLD-B", item_summary: "Old B" },
+              ],
+            },
+          });
+        },
+      },
+    }));
+    const body = await response.json();
+
+    assert.equal(body.code_status, "authority_unavailable");
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(customer);
+    assert.match(customer.payload.text, /canonical authority ยังตอบกลับไม่พร้อม/);
+    assert.match(customer.payload.text, /Case เดิมยังอยู่/);
+    assert.equal(customer.payload.reply_markup, undefined);
+    assert.doesNotMatch(customer.payload.text, /MMD-OLD-A|MMD-OLD-B/);
   } finally {
     globalThis.fetch = originalFetch;
   }
