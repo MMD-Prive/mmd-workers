@@ -93,7 +93,8 @@ export function buildMmdShopStockReconciliation(input = {}) {
 export function mmdShopStockHealthFingerprint(report = {}) {
   const low = [...(report?.actionable?.low_stock_batch_ids || [])].sort();
   const mismatch = [...(report?.actionable?.mismatch_batch_ids || [])].sort();
-  return JSON.stringify({ low, mismatch });
+  const untracked = [...(report?.actionable?.untracked_product_ids || [])].sort();
+  return JSON.stringify({ low, mismatch, untracked });
 }
 
 function reservationKey(referenceId) {
