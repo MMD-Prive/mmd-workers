@@ -294,7 +294,8 @@ function validateAndPriceCart(cart, products, stock) {
     if (price === null) throw httpError(409, "product_price_unavailable");
 
     const inventory = stock.get(record.id);
-    if (inventory && line.quantity > inventory.available) throw httpError(409, "insufficient_stock");
+    if (!inventory) throw httpError(409, "stock_untracked");
+    if (inventory.available <= 0 || line.quantity > inventory.available) throw httpError(409, "insufficient_stock");
     return {
       product_id: record.id,
       product_name: productName || "MMD Shop Item",
@@ -303,9 +304,9 @@ function validateAndPriceCart(cart, products, stock) {
       quantity: line.quantity,
       unit_price_thb: price,
       line_total_thb: roundMoney(price * line.quantity),
-      available: inventory ? inventory.available : null,
-      low_stock: Boolean(inventory?.low),
-      stock_status: inventory ? "tracked" : "untracked",
+      available: inventory.available,
+      low_stock: Boolean(inventory.low),
+      stock_status: "tracked",
     };
   });
 }
