@@ -7,10 +7,13 @@ import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-
 import {
   RECOVERY_CONTROL_API_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
+  RECOVERY_QUEUE_SLA_VERSION,
   buildRecoveryControlTransition,
   handleRecoveryControl,
   isRecoveryOperatorActor,
   projectRecoveryRecord,
+  readRecoveryQueueIntelligence,
+  recoverySlaIndicator,
 } from "./src/recovery-control.js";
 
 const CASE_REF = "HYPE-PER-20260919150000-acde1234";
@@ -130,6 +133,81 @@ test("Recovery Control projection excludes private payload fields and exposes bo
   assert.doesNotMatch(JSON.stringify(projected), /private_note|payment_ref|must-not-leak/);
 });
 
+
+test("Recovery Queue derives case age and operational SLA only from workflow timestamps", () => {
+  const now = new Date("2026-09-19T22:00:00.000Z");
+  const projected = projectRecoveryRecord(matrixRecord("reviewing"), now);
+  assert.equal(projected.age.minutes, 420);
+  assert.equal(projected.age.bucket, "4_12h");
+  assert.equal(projected.sla.policy_version, RECOVERY_QUEUE_SLA_VERSION);
+  assert.equal(projected.sla.status, "overdue");
+  assert.equal(projected.sla.target_minutes, 360);
+  assert.equal(projected.sla.since_update_minutes, 420);
+  assert.equal(projected.sla.breached_by_minutes, 60);
+  assert.equal(projected.sla.operational_only, true);
+  assert.equal(projected.sla.business_truth_inferred, false);
+  assert.equal(projected.next_attention, "review_and_update_outcome");
+
+  const resolved = recoverySlaIndicator("resolved", "2026-09-19T21:00:00.000Z", now);
+  assert.equal(resolved.status, "fresh");
+  assert.equal(resolved.target_minutes, 120);
+  assert.equal(resolved.attention_required, false);
+});
+
+test("Recovery Queue filters domain/state and ranks overdue attention first", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const booking = matrixRecord("reviewing");
+  const shop = matrixRecord("acknowledged");
+  shop.id = "recMatrixShop";
+  shop.fields.pending_reference = "HYPE-PER-20260919193000-acde5678";
+  const shopPayload = JSON.parse(shop.fields.payload_json);
+  shopPayload.display_name = "คุณ Shop";
+  shopPayload.handoff_tracking.id = shop.fields.pending_reference;
+  shopPayload.handoff_tracking.state = "acknowledged";
+  shopPayload.handoff_tracking.updated_at = "2026-09-19T21:00:00.000Z";
+  shopPayload.recovery_case.case_ref = shop.fields.pending_reference;
+  shopPayload.recovery_case.domain = "mmd_shop";
+  shopPayload.recovery_case.state = "acknowledged";
+  shopPayload.recovery_correlation = {
+    domain: "mmd_shop",
+    correlated: true,
+    state: "correlated",
+    case_ref: shop.fields.pending_reference,
+    order_id: "MMD-ORDER-1",
+    payment_status: "paid",
+    fulfillment_state: "packing",
+  };
+  shop.fields.payload_json = JSON.stringify(shopPayload);
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    if (url.hostname === "api.airtable.com") return Response.json({ records: [shop, booking] });
+    throw new Error("unexpected_fetch:" + url.toString());
+  };
+
+  try {
+    const now = new Date("2026-09-19T22:00:00.000Z");
+    const all = await readRecoveryQueueIntelligence(env(), { limit: 12, domain: "all", state: "open" }, now);
+    assert.equal(all.ok, true);
+    assert.equal(all.queue.open_count, 2);
+    assert.equal(all.queue.attention_count, 1);
+    assert.equal(all.queue.overdue_count, 1);
+    assert.equal(all.cases[0].case_ref, CASE_REF);
+    assert.equal(all.cases[0].sla.status, "overdue");
+    assert.equal(all.queue.operational_only, true);
+    assert.equal(all.queue.business_truth_inferred, false);
+
+    const filtered = await readRecoveryQueueIntelligence(env(), { limit: 12, domain: "mmd_shop", state: "acknowledged" }, now);
+    assert.equal(filtered.cases.length, 1);
+    assert.equal(filtered.cases[0].domain, "mmd_shop");
+    assert.equal(filtered.cases[0].state, "acknowledged");
+    assert.equal(filtered.queue.by_domain.booking, 1);
+    assert.equal(filtered.queue.by_domain.mmd_shop, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Recovery Control ignores generic handoffs that are not Recovery Cases", () => {
   const row = matrixRecord();
   const payload = JSON.parse(row.fields.payload_json);
@@ -175,6 +253,10 @@ test("Recovery Control API list and exact read are bounded", { concurrency: fals
     const listBody = await list.json();
     assert.equal(listBody.cases.length, 1);
     assert.equal(listBody.cases[0].case_ref, CASE_REF);
+    assert.equal(listBody.filters.state, "open");
+    assert.equal(listBody.sla_version, RECOVERY_QUEUE_SLA_VERSION);
+    assert.equal(listBody.queue.operational_only, true);
+    assert.equal(listBody.queue.business_truth_inferred, false);
     assert.doesNotMatch(JSON.stringify(listBody), /private_note|payment_ref|must-not-leak/);
 
     const exact = await handleRecoveryControl(
