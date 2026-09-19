@@ -6,6 +6,74 @@ const PRESENTATION_ORIGIN = "https://mmdmodel.lovable.app";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
+const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
+const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
+
+const WISH_STATUS_JS = `(() => {
+  "use strict";
+  const ID = "mmd-wish-pending-v1";
+  const ENDPOINT = "/v1/model/session/current?mode=year6_direct_wish";
+  if (document.getElementById(ID)) return;
+
+  function renderPending() {
+    if (document.getElementById(ID)) return;
+    const node = document.createElement("aside");
+    node.id = ID;
+    node.className = "mmd-wish-pending-v1";
+    node.setAttribute("role", "status");
+    node.setAttribute("aria-live", "polite");
+    node.innerHTML = '<span class="mmd-wish-pending-v1__dot" aria-hidden="true"></span>' +
+      '<div class="mmd-wish-pending-v1__copy"><small>MODEL WISH</small><strong>รอยืนยัน</strong>' +
+      '<span>MMD ได้รับคำอวยพรแล้ว · พี่เปอร์กำลังตรวจให้ครับ สถานะนี้ไม่กระทบการเข้า Dashboard หรือการรับงาน</span></div>' +
+      '<a class="mmd-wish-pending-v1__link" href="/sigil/model/wish">ดูคำอวยพร</a>';
+    document.body.prepend(node);
+  }
+
+  fetch(ENDPOINT, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+    headers: { accept: "application/json" },
+  }).then((response) => response.ok ? response.json() : null)
+    .then((payload) => {
+      if (payload && payload.ok === true && payload.submitted === true && payload.state === "manual_review") {
+        renderPending();
+      }
+    }).catch(() => {});
+})();`;
+
+const WISH_STATUS_CSS = `
+#mmd-wish-pending-v1.mmd-wish-pending-v1{
+  position:relative;z-index:2147480000;width:min(calc(100% - 24px),1180px);margin:12px auto 0;
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:11px;align-items:center;
+  padding:13px 14px;border:1px solid rgba(232,196,119,.44);border-radius:18px;
+  background:linear-gradient(180deg,rgba(61,49,19,.96),rgba(35,29,14,.96));
+  box-shadow:0 14px 42px rgba(0,0,0,.24);color:#fff8ec;
+  font-family:"IBM Plex Sans Thai","Noto Sans Thai",system-ui,sans-serif;
+}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__dot{
+  width:10px;height:10px;border-radius:50%;background:#f1c75b;
+  box-shadow:0 0 0 5px rgba(241,199,91,.12);
+}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__copy{min-width:0;display:grid;gap:2px}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__copy small{
+  color:#f6d783;font-size:9px;line-height:1.2;font-weight:800;letter-spacing:.14em;
+}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__copy strong{
+  color:#ffe29a;font-size:15px;line-height:1.35;font-weight:800;
+}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__copy span{
+  color:rgba(255,248,236,.78);font-size:11.5px;line-height:1.5;
+}
+#mmd-wish-pending-v1 .mmd-wish-pending-v1__link{
+  grid-column:2;justify-self:start;color:#ffe29a;text-decoration:none;font-size:11px;font-weight:700;
+  border-bottom:1px solid rgba(255,226,154,.45);
+}
+@media(min-width:640px){
+  #mmd-wish-pending-v1.mmd-wish-pending-v1{grid-template-columns:auto minmax(0,1fr) auto;padding:14px 16px}
+  #mmd-wish-pending-v1 .mmd-wish-pending-v1__link{grid-column:3;grid-row:1;justify-self:end;align-self:center}
+}
+`;
 
 function normalizePath(pathname = "") {
   const value = String(pathname || "/").replace(/\/{2,}/g, "/");
@@ -24,6 +92,11 @@ export function isPresentationAssetPath(pathname = "") {
 export function isPresentationRootRuntimePath(pathname = "") {
   const path = normalizePath(pathname);
   return ROOT_RUNTIME_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
+export function isWishStatusAssetPath(pathname = "") {
+  const path = normalizePath(pathname);
+  return path === WISH_STATUS_JS_PATH || path === WISH_STATUS_CSS_PATH;
 }
 
 function presentationRequestHeaders(request, { runtime = false } = {}) {
@@ -93,6 +166,16 @@ export function rewritePresentationHtml(html) {
     output = output.replace(
       new RegExp(`href=["']\\/${suffix}(?:\\/)?["']`, "g"),
       `href="${UI_PREFIX}/${suffix}"`,
+    );
+  }
+  if (!output.includes('data-mmd-wish-status-assets="v1"')) {
+    output = output.replace(
+      /<\/head\s*>/i,
+      `<link rel="stylesheet" href="${WISH_STATUS_CSS_PATH}" data-mmd-wish-status-assets="v1"></head>`,
+    );
+    output = output.replace(
+      /<\/body\s*>/i,
+      `<script src="${WISH_STATUS_JS_PATH}" defer data-mmd-wish-status-runtime="v1"></script></body>`,
     );
   }
   return output;
@@ -190,6 +273,35 @@ async function proxyRuntime(request) {
   });
 }
 
+function wishStatusAssetResponse(pathname, method = "GET") {
+  const path = normalizePath(pathname);
+  const isHead = String(method || "GET").toUpperCase() === "HEAD";
+  if (!["GET", "HEAD"].includes(String(method || "GET").toUpperCase())) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "public, max-age=300" } });
+  }
+  if (path === WISH_STATUS_JS_PATH) {
+    return new Response(isHead ? null : WISH_STATUS_JS, {
+      status: 200,
+      headers: {
+        "content-type": "application/javascript; charset=utf-8",
+        "cache-control": "public, max-age=300",
+        "x-mmd-dashboard-addon": "wish-status-v1",
+      },
+    });
+  }
+  if (path === WISH_STATUS_CSS_PATH) {
+    return new Response(isHead ? null : WISH_STATUS_CSS, {
+      status: 200,
+      headers: {
+        "content-type": "text/css; charset=utf-8",
+        "cache-control": "public, max-age=300",
+        "x-mmd-dashboard-addon": "wish-status-v1",
+      },
+    });
+  }
+  return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
+}
+
 function unavailable() {
   return new Response("MMD Model Dashboard is temporarily unavailable.", {
     status: 502,
@@ -206,6 +318,7 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) return proxyPage(request);
     return new Response("Not Found", {
