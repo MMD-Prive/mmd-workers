@@ -4,6 +4,15 @@ import {
 } from "./kenji-lv5-live-context.js";
 import { executeKenjiLv5SupervisedAction } from "./kenji-lv5-supervised-action.js";
 import { readBoundedShopOrdersForTelegram } from "./hype-shop-orders.js";
+import {
+  RECOVERY_OUTCOME_TAXONOMY_VERSION,
+  inferRecoveryDomain,
+  isTerminalRecoveryOutcome,
+  normalizeRecoveryDomain,
+  recoveryOutcomeAllowed,
+  recoveryOutcomeCodesForDomain,
+  recoveryOutcomeLabel,
+} from "../shared/recovery-outcome-taxonomy-v1.mjs";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
