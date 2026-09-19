@@ -69,3 +69,12 @@ TG_THREAD_MMD_SHOP_ALERTS = "162"
 
 [triggers]
 crons = ["*/5 * * * *"]
+
+
+[[durable_objects.bindings]]
+name = "MMD_SHOP_STOCK_COORDINATOR"
+class_name = "MmdShopStockCoordinator"
+
+[[migrations]]
+tag = "mmd-shop-stock-coordinator-v1"
+new_sqlite_classes = ["MmdShopStockCoordinator"]
