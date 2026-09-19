@@ -61,6 +61,9 @@ export function createMmdShopFulfillment(input = {}) {
     courier: "",
     tracking_number: "",
     fulfillment_note: "",
+    shipping_notification_status: "",
+    shipping_notification_key: "",
+    shipping_notified_at: "",
     created_at: now,
     updated_at: now,
     confirmed_at: "",
@@ -151,6 +154,8 @@ export function publicMmdShopFulfillment(value, options = {}) {
     courier: item.courier || null,
     tracking_number: item.tracking_number || null,
     fulfillment_note: item.fulfillment_note || null,
+    shipping_notification_status: item.shipping_notification_status || null,
+    shipping_notified_at: item.shipping_notified_at || null,
     updated_at: item.updated_at || null,
     confirmed_at: item.confirmed_at || null,
     preparing_at: item.preparing_at || null,
@@ -188,6 +193,9 @@ function pickFulfillmentPatch(patch) {
     "courier",
     "tracking_number",
     "fulfillment_note",
+    "shipping_notification_status",
+    "shipping_notification_key",
+    "shipping_notified_at",
   ]) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) out[key] = patch[key];
   }
@@ -213,6 +221,9 @@ function sanitizeFulfillment(value) {
     courier: clean(value?.courier, 180),
     tracking_number: clean(value?.tracking_number, 220),
     fulfillment_note: clean(value?.fulfillment_note, 1200),
+    shipping_notification_status: clean(value?.shipping_notification_status, 80),
+    shipping_notification_key: clean(value?.shipping_notification_key, 500),
+    shipping_notified_at: clean(value?.shipping_notified_at, 80),
     created_at: clean(value?.created_at, 80),
     updated_at: clean(value?.updated_at, 80),
     confirmed_at: clean(value?.confirmed_at, 80),

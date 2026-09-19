@@ -49,8 +49,11 @@ import {
 } from "./final-payment-flow.js";
 import {
   handleShopIntent,
+  handleShopIntentExpiry,
+  enrichShopConfirmVerify,
   isShopIntentRequest,
   maybeHandleShopConfirmationDetails,
+  preflightReviewedShopPayment,
   reconcileReviewedShopPayment,
 } from "./shop-payment-v1.js";
 
@@ -77,6 +80,9 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    const shopExpiryResponse = await handleShopIntentExpiry(request.clone(), env);
+    if (shopExpiryResponse) return shopExpiryResponse;
 
     if (isShopIntentRequest(path, method)) {
       return handleShopIntent(request, env);
@@ -124,7 +130,13 @@ export default {
     }
 
     if (isUnifiedConfirmVerifyRequest(path, method)) {
-      return enrichUnifiedConfirmVerify(request, env, (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx));
+      const shopVerifyRequest = request.clone();
+      const verifiedResponse = await enrichUnifiedConfirmVerify(
+        request,
+        env,
+        (nextRequest) => phase1Worker.fetch(nextRequest, env, ctx),
+      );
+      return enrichShopConfirmVerify(shopVerifyRequest, verifiedResponse, env);
     }
 
     if (isReviewedProofRequest(path, method)) {
@@ -132,6 +144,9 @@ export default {
       const shopRequest = request.clone();
       const doubleMomentRequest = request.clone();
       const finalPaymentRequest = request.clone();
+      const shopPreflight = await preflightReviewedShopPayment(shopRequest.clone(), env);
+      if (shopPreflight) return shopPreflight;
+
       const reviewResponse = await handleReviewedProof(request, env, ctx, async (body) => {
         if (!String(env.INTERNAL_TOKEN || "").trim()) {
           return json({ ok: false, error: "payments_internal_token_not_ready", authority: "payments-worker" }, 503);
@@ -166,11 +181,11 @@ export default {
           body: JSON.stringify(body),
         }), env, ctx);
       });
-      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), reviewResponse, env);
+      const shopResponse = await reconcileReviewedShopPayment(shopRequest.clone(), reviewResponse, env);
+      const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), shopResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
-      const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
-      return reconcileReviewedShopPayment(shopRequest, finalResponse, env);
+      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
     }
 
     return phase1Worker.fetch(request, env, ctx);

@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - "payments-worker/**"
+      - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/mmd-shop-fulfillment.mjs"
       - "shared/membership-promotion-policy.mjs"
       - "shared/membership-promotion-policy.test.mjs"
       - ".github/workflows/deploy-payments-worker.yml"
@@ -45,6 +47,9 @@ jobs:
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/payment-instructions-v1.js
+          node --check shared/mmd-shop-stock-reservation.mjs
+          node --check shared/mmd-shop-fulfillment.mjs
+          grep -Fq 'binding = "MMD_SHOP_WORKER"' payments-worker/wrangler.merged.toml
           node --check payments-worker/final-payment-flow.js
           node --check payments-worker/double-moment-purchase-v1.js
           node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js

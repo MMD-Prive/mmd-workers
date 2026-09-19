@@ -6,6 +6,11 @@ import {
   transitionMmdShopFulfillment,
   writeMmdShopFulfillment,
 } from "../../shared/mmd-shop-fulfillment.mjs";
+import {
+  publicMmdShopReservation,
+  readMmdShopReservation,
+  writeMmdShopReservation,
+} from "../../shared/mmd-shop-stock-reservation.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAGE_PATHS = new Set(["/internal/admin/shop/orders", "/internal/admin/shop/orders/"]);
@@ -178,12 +183,14 @@ async function updateFulfillment(env, actor, body) {
   }
 
   const current = normalizedFulfillment(fields);
+  const currentReservation = readMmdShopReservation(fields[ORDER_FIELDS.notes]);
+  let nextReservation = currentReservation;
   const currentState = fulfillmentStateFromOrder(orderStatus, paymentStatus, current.state);
   if (state !== currentState && !isAllowedFulfillmentTransition(currentState, state, current.delivery_method, paymentStatus)) {
     throw httpError(409, `invalid_fulfillment_transition:${currentState}->${state}`);
   }
 
-  const requested = transitionMmdShopFulfillment({
+  let requested = transitionMmdShopFulfillment({
     ...current,
     state: currentState,
   }, {
@@ -201,10 +208,21 @@ async function updateFulfillment(env, actor, body) {
         ? "confirmed"
         : orderStatus || "draft";
 
-  const nextNotes = writeMmdShopFulfillment(
+  if (state === "cancelled" && currentReservation?.state === "payment_review") {
+    throw httpError(409, "payment_review_in_progress");
+  }
+  if (state === "cancelled" && currentReservation?.state === "reserved") {
+    const released = await releaseReservationThroughShopWorker(env, currentReservation, "admin_cancelled");
+    nextReservation = released.reservation;
+  }
+
+  const fulfillmentNotes = writeMmdShopFulfillment(
     appendAudit(fields[ORDER_FIELDS.notes], actor, `fulfillment_state:${state}`),
     requested,
   );
+  const nextNotes = nextReservation
+    ? writeMmdShopReservation(fulfillmentNotes, nextReservation)
+    : fulfillmentNotes;
 
   await patchRecord(env, TABLES.orders, order.id, {
     [ORDER_FIELDS.orderStatus]: nextOrderStatus,
@@ -230,13 +248,134 @@ async function updateFulfillment(env, actor, body) {
     ));
   }
 
+  let shippingNotification = null;
+  if (state === "shipped") {
+    const key = `${orderId}:${clean(requested.courier, 180)}:${clean(requested.tracking_number, 220)}`;
+    if (!(current.shipping_notification_status === "sent" && current.shipping_notification_key === key)) {
+      const customerIds = Array.isArray(fields[ORDER_FIELDS.customer]) ? fields[ORDER_FIELDS.customer] : [];
+      const customers = await listRecords(env, TABLES.customers, Object.values(CUSTOMER_FIELDS));
+      const customer = customers.find((record) => customerIds.includes(record.id));
+      shippingNotification = await notifyShippingCustomer(env, {
+        order_id: orderId,
+        line_user_id: clean(customer?.fields?.[CUSTOMER_FIELDS.lineUserId], 220),
+        customer_name: clean(customer?.fields?.[CUSTOMER_FIELDS.displayName] || customer?.fields?.[CUSTOMER_FIELDS.name], 180),
+        courier: requested.courier,
+        tracking_number: requested.tracking_number,
+      }).catch((error) => ({ ok: false, status: "failed", error: clean(error?.message, 180) }));
+
+      requested = transitionMmdShopFulfillment(requested, {
+        state: "shipped",
+        shipping_notification_status: shippingNotification?.status || (shippingNotification?.ok ? "sent" : "failed"),
+        shipping_notification_key: key,
+        shipping_notified_at: shippingNotification?.ok ? new Date().toISOString() : "",
+      });
+
+      const notificationNotesBase = writeMmdShopFulfillment(nextNotes, requested);
+      const notificationNotes = nextReservation
+        ? writeMmdShopReservation(notificationNotesBase, nextReservation)
+        : notificationNotesBase;
+      await patchRecord(env, TABLES.orders, order.id, {
+        [ORDER_FIELDS.notes]: notificationNotes,
+      });
+    } else {
+      shippingNotification = { ok: true, status: "sent", idempotent: true };
+    }
+  }
+
   return {
     order_id: orderId,
     order_status: nextOrderStatus,
     payment_status: paymentStatus,
     items_updated: itemStatus ? items.length : 0,
     fulfillment: adminFulfillment(requested),
+    reservation: nextReservation ? publicMmdShopReservation(nextReservation) : null,
+    shipping_notification: shippingNotification,
   };
+}
+
+async function releaseReservationThroughShopWorker(env, reservation, reason) {
+  if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
+  const token = clean(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+
+  const response = await env.MMD_SHOP_WORKER.fetch("https://himai-chat-worker.internal/mmd-shop/internal/reservation/release", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-token": token,
+    },
+    body: JSON.stringify({ reservation, reason }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || !data.reservation) {
+    throw httpError(response.status || 502, data.error || "reservation_release_failed");
+  }
+  return data;
+}
+
+async function notifyShippingCustomer(env, input) {
+  const lineUserId = clean(input?.line_user_id, 220);
+  if (!lineUserId) return { ok: false, status: "skipped_no_line_identity" };
+
+  const payload = {
+    line_user_id: lineUserId,
+    order_id: clean(input?.order_id, 180),
+    customer_name: clean(input?.customer_name, 180),
+    courier: clean(input?.courier, 180) || "Courier",
+    tracking_number: clean(input?.tracking_number, 220),
+  };
+
+  if (env.MEMBER_DASHBOARD_CHAT_WORKER?.fetch) {
+    try {
+      const response = await env.MEMBER_DASHBOARD_CHAT_WORKER.fetch(
+        "https://member-dashboard-chat-worker.local/__internal/line/shop-shipping-notify",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-mmd-internal-call": "true",
+            "x-mmd-service-binding": "admin-worker",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.ok === true) return { ok: true, status: "sent", transport: "line_runtime_binding" };
+    } catch (_) {
+      // Fall through to the legacy direct LINE token only if it is configured.
+    }
+  }
+
+  const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN, 5000);
+  if (!token) return { ok: false, status: "skipped_line_runtime_unavailable" };
+
+  const text = [
+    "MMD SHOP · จัดส่งสินค้าแล้ว",
+    payload.customer_name ? `คุณ${payload.customer_name}` : "",
+    `Order: ${payload.order_id}`,
+    `${payload.courier}: ${payload.tracking_number}`,
+    "",
+    "ติดตามสถานะเพิ่มเติมได้ที่ MY MMD → Orders",
+    "https://mmdbkk.com/my-mmd/orders",
+  ].filter(Boolean).join("\n");
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      to: lineUserId,
+      messages: [{ type: "text", text }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = clean(await response.text().catch(() => ""), 500);
+    return { ok: false, status: `failed_http_${response.status}`, error: body || null };
+  }
+  return { ok: true, status: "sent", transport: "admin_line_token_fallback" };
 }
 
 function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
@@ -281,6 +420,7 @@ async function loadAdminOrders(env) {
       const customerIds = Array.isArray(fields[ORDER_FIELDS.customer]) ? fields[ORDER_FIELDS.customer] : [];
       const customer = customerById.get(customerIds[0])?.fields || {};
       const fulfillment = normalizedFulfillment(fields);
+      const reservation = readMmdShopReservation(fields[ORDER_FIELDS.notes]);
       const paymentStatus = code(fields[ORDER_FIELDS.paymentStatus]) || "pending";
       const orderStatus = code(fields[ORDER_FIELDS.orderStatus]) || "draft";
       const resolvedState = fulfillmentStateFromOrder(orderStatus, paymentStatus, fulfillment.state);
@@ -303,8 +443,9 @@ async function loadAdminOrders(env) {
         items: itemsByOrder.get(record.id) || [],
         fulfillment: adminFulfillment(withResolvedState),
         fulfillment_state: resolvedState,
+        reservation: reservation ? publicMmdShopReservation(reservation) : null,
         can_advance_fulfillment: paymentStatus === "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
-        can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled",
+        can_cancel: paymentStatus !== "paid" && orderStatus !== "fulfilled" && orderStatus !== "cancelled" && reservation?.state !== "payment_review",
         can_fulfill: paymentStatus === "paid" && orderStatus === "confirmed",
       };
     })

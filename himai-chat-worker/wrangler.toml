@@ -32,7 +32,12 @@ zone_name = "mmdbkk.com"
 binding = "MEMBER_PAGES_WORKER"
 service = "member-pages-worker"
 
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
 [vars]
+MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_SUPPLIERS_TABLE = "Shared — Suppliers"
@@ -64,3 +69,16 @@ TG_THREAD_MMD_SHOP_ALERTS = "162"
 # INTERNAL_TOKEN                      - Internal endpoint authorization
 # TELEGRAM_BOT_TOKEN                  - HYPE Telegram bot token used for shop notifications
 # HIMAI_DISTRIBUTOR_PORTAL_TOKENS     - Distributor portal access map (JSON)
+
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+
+[[durable_objects.bindings]]
+name = "MMD_SHOP_STOCK_COORDINATOR"
+class_name = "MmdShopStockCoordinator"
+
+[[migrations]]
+tag = "mmd-shop-stock-coordinator-v1"
+new_sqlite_classes = ["MmdShopStockCoordinator"]

@@ -59,6 +59,9 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     currency: "THB",
   };
 
+  if (payment.accepting_payment === false) {
+    return responseJson({ ...base, available: false, reason: "payment_not_accepting" }, 200, responseHeaders);
+  }
   if (payment.verified) {
     return responseJson({ ...base, available: false, reason: "payment_verified" }, 200, responseHeaders);
   }
