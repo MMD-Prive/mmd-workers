@@ -411,4 +411,5 @@ export const TMIB_STORY_INTERNALS = Object.freeze({
   CATALOG: TMIB_EPISODE_CATALOG,
   paymentGrantsTmib,
   membershipGrantsTmib,
+  canonicalPayUrl,
 });
