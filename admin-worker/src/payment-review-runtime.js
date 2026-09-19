@@ -6,6 +6,7 @@ import {
   parseOperatorPaymentContext,
   resolveOperatorPaymentContext,
 } from "./payment-review-owner-context.js";
+import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -205,6 +206,21 @@ async function commitReview(request, env, actor) {
     error: safeCode(error?.message || error || "payment_review_audit_write_failed"),
   }));
 
+  let jobLinkDispatch = { status: "not_applicable", dispatched: false };
+  try {
+    jobLinkDispatch = await dispatchApprovedJobLinks(env, {
+      session_id: approval.session_id,
+      payment_stage: approval.payment_stage,
+      payment_ref: approval.payment_ref,
+    });
+  } catch (error) {
+    jobLinkDispatch = {
+      status: "failed",
+      dispatched: false,
+      error: safeCode(error?.message || error || "job_link_dispatch_failed"),
+    };
+  }
+
   return json({
     ok: true,
     decision: "approve",
@@ -224,6 +240,7 @@ async function commitReview(request, env, actor) {
     membership_expire_at: isoOrText(payload.membership_expire_at) || null,
     membership_write_through: safeMembershipWriteThrough(payload.membership_write_through),
     money_truth_changed: true,
+    job_link_dispatch: jobLinkDispatch,
   });
 }
 

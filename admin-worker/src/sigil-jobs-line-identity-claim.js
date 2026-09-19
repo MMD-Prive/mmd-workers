@@ -328,17 +328,20 @@ async function resolveModel(request, env, idToken) {
 
 function safeClaimResponse(data, role) {
   const released = data?.released_from_hold === true || data?.operational_status === "linked";
-  const nextUrl = role === "customer" ? clean(data?.customer_confirmation_url, 3000) : clean(data?.model_confirmation_url, 3000);
+  const paymentUrl = clean(data?.customer_payment_url, 3000);
   return {
     ok: true,
     identity_linked: true,
     role,
     released,
     operational_status: clean(data?.operational_status, 120) || (released ? "linked" : "pending_identity_link"),
-    next_url: released && nextUrl ? nextUrl : null,
+    next_url: released && role === "customer" && paymentUrl ? paymentUrl : null,
+    payment_dispatch_state: released ? "awaiting_payment_approval" : "pending_identity_link",
     message: released
-      ? "ยืนยัน LINE สำเร็จ งานพร้อมขั้นตอนยืนยันต่อแล้ว"
-      : "ยืนยัน LINE สำเร็จแล้ว งานจะเปิดลิงก์ยืนยันเมื่ออีกฝ่ายยืนยันครบ",
+      ? role === "customer"
+        ? "ยืนยัน LINE สำเร็จแล้ว กรุณาชำระและส่งสลิปผ่าน SIGIL PAY ของงานนี้ครับ"
+        : "ยืนยัน LINE สำเร็จแล้ว กรุณารอ MMD ยืนยันการชำระก่อน ระบบจึงจะปล่อยลิงก์งานให้ Model"
+      : "ยืนยัน LINE สำเร็จแล้ว งานจะเปิดขั้นตอนชำระเงินเมื่อข้อมูลที่จำเป็นเชื่อมครบ",
   };
 }
 

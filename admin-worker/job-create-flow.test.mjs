@@ -80,7 +80,7 @@ async function run(body, options = {}) {
   } finally { globalThis.fetch = original; }
 }
 
-test('active Create Job form reaches canonical Session, Payment and Job with correct links and payout', async () => {
+test('active Create Job returns only payment URL while storing confirmation links server-side', async () => {
   const h = await run(form());
   assert.equal(h.status, 200, JSON.stringify(h.data));
   assert.equal(h.data.linkage.status, 'linked');
@@ -95,7 +95,14 @@ test('active Create Job form reaches canonical Session, Payment and Job with cor
   assert.equal(s.fldiDSz0wW9Ct9I3P, '2026-09-21T02:00:00+07:00');
   assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line\n\[SIGIL Pricing v1\]/);
   assert.equal(h.kv.size, 2);
-  assert.match(h.data.customer_confirmation_url, /\?t=/);
+  assert.match(h.data.customer_payment_url, /^https:\/\/mmdbkk\.com\/sigil\/pay\?t=/);
+  assert.equal(h.data.payment_dispatch_state, 'awaiting_payment_approval');
+  assert.equal(h.data.confirmation_release_state, 'held_until_payment_approved');
+  assert.equal(Object.hasOwn(h.data, 'customer_confirmation_url'), false);
+  assert.equal(Object.hasOwn(h.data, 'model_confirmation_url'), false);
+  assert.equal(Object.hasOwn(h.data, 'raw'), false);
+  assert.match(s.fldi9ZdoiUXzSv1rI, /\/confirm\/job-confirmation\?t=/);
+  assert.match(s.fld0mFma9J9yfEaKb, /\/confirm\/job-model\?t=/);
 });
 
 for (const visibility of ['private', 'public']) test(`pending ${visibility} creates an operational Job without Payment, tokens, notification or reconfirm`, async () => {

@@ -1,7 +1,8 @@
 /* Source mirror for Webflow registered script SigilJobsLineClaimV20.
- * If an older held Session has no claim URLs in the create response, request
- * fresh short-lived LINE claim URLs through the existing admin-owned create
- * route. The owner never types Airtable record IDs.
+ * Canonical 2026-09-19:
+ * - unresolved LINE identity may receive short-lived identity claim links;
+ * - linked jobs expose only Customer Payment URL before payment approval;
+ * - Member + Model job URLs remain server-held until Official Verify.
  */
 (() => {
   if (location.pathname !== "/sigil/jobs" || window.__mmdClaim20) return;
@@ -37,28 +38,34 @@
     const root = document.getElementById("mmd-sigil-job-v9");
     const actions = root?.querySelector(".sj10__success-actions");
     if (!actions) return;
-    actions.querySelectorAll("[data-copy-customer],[data-copy-model],[data-url-output],[data-reconcile-wrap],[data-line-claim-v19]").forEach((element) => element.remove());
-    let wrap = actions.querySelector("[data-line-claim-v20]");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.dataset.lineClaimV20 = "1";
-      wrap.style.cssText = "display:flex;flex:1 1 100%;gap:10px;flex-wrap:wrap";
-      actions.prepend(wrap);
-    }
-    wrap.innerHTML = "";
-    const customerFinal = data?.customer_confirmation_url || "";
-    const modelFinal = data?.model_confirmation_url || "";
+    actions.querySelectorAll("[data-copy-customer],[data-copy-model],[data-url-output],[data-reconcile-wrap],[data-line-claim-v19],[data-line-claim-v20]").forEach((element) => element.remove());
+
+    const wrap = document.createElement("div");
+    wrap.dataset.lineClaimV20 = "1";
+    wrap.style.cssText = "display:flex;flex:1 1 100%;gap:10px;flex-wrap:wrap";
+    actions.prepend(wrap);
+
+    const paymentUrl = data?.customer_payment_url || "";
     const customerClaim = data?.customer_identity_url || "";
     const modelClaim = data?.model_identity_url || "";
+    if (customerClaim || modelClaim) {
+      wrap.append(
+        box("Customer · ยืนยัน LINE", customerClaim, customerClaim ? "" : "LINE ลูกค้าเชื่อมแล้ว"),
+        box("Model · ยืนยัน LINE", modelClaim, modelClaim ? "" : "LINE Model เชื่อมแล้ว"),
+      );
+      return;
+    }
     wrap.append(
-      box(customerFinal ? "Customer Confirmation URL" : "Customer · ยืนยัน LINE", customerFinal || customerClaim, customerClaim ? "ส่งลิงก์นี้ให้ลูกค้ากดใน LINE" : "กำลังออกลิงก์…"),
-      box(modelFinal ? "Model Confirmation URL" : "Model · ยืนยัน LINE", modelFinal || modelClaim, modelClaim ? "ส่งลิงก์นี้ให้นายแบบกดใน LINE" : "กำลังออกลิงก์…"),
+      box("Customer Payment URL", paymentUrl, "กำลังสร้าง Payment Intent…"),
+      box("Member URL", "", "รอ MMD Approve Payment แล้วระบบจะส่งผ่าน Telegram"),
+      box("Model URL", "", "รอ MMD Approve Payment แล้วระบบจะส่งผ่าน Telegram"),
     );
   }
 
   async function refreshIdentityLinks(data) {
-    const sessionId = data?.session_id || data?.raw?.session_id;
-    if (!sessionId || data?.customer_identity_url || data?.model_identity_url || data?.customer_confirmation_url) return data;
+    const sessionId = data?.session_id;
+    const held = data?.operational_status === "pending_client_link" || data?.pending_client_link === true;
+    if (!held || !sessionId || data?.customer_identity_url || data?.model_identity_url) return data;
     try {
       const response = await originalFetch("/v1/admin/job/create", {
         method: "POST",
@@ -71,13 +78,7 @@
           page: "/sigil/jobs",
         }),
       });
-      const raw = await response.text();
-      let payload;
-      try {
-        payload = JSON.parse(raw);
-      } catch {
-        throw new Error("ออกลิงก์ยืนยัน LINE ไม่สำเร็จ");
-      }
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok || payload?.ok === false) throw new Error(payload?.error || "ออกลิงก์ยืนยัน LINE ไม่สำเร็จ");
       return { ...data, ...payload };
     } catch (error) {
