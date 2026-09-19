@@ -131,14 +131,18 @@ async function loadProducts(env, shopKey) {
       const sku = recordFields["SKU"] || "";
       const productName = recordFields["Product Name"] || "";
       const status = selectName(recordFields["Status"]) || "";
+      const note = recordFields["Product Note"] || "";
       const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName);
+      const onDemand = shopKey === "mmd-shop" && isOnDemandProduct(note);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
       const checkoutEligible = shopKey === "mmd-shop"
         ? status.toLowerCase() === "active"
           && sellingPrice > 0
           && !restricted
-          && stockTracked
-          && Number(stock.available) > 0
+          && (
+            (onDemand && supplierIds.length > 0)
+            || (stockTracked && Number(stock.available) > 0)
+          )
         : false;
       const canonicalSlug = slugify(sku || productName || record.id);
 
@@ -154,18 +158,20 @@ async function loadProducts(env, shopKey) {
         supplier,
         selling_price_thb: sellingPrice,
         price_status: sellingPrice === null || sellingPrice <= 0 ? "ask_shop" : "priced",
-        description: recordFields["Product Note"] || "",
-        curator_note: recordFields["Product Note"] || "",
-        available: stock.available,
-        low_stock: stock.low,
-        stock_status: stockTracked ? "tracked" : "untracked",
+        description: note,
+        curator_note: note,
+        available: onDemand ? null : stock.available,
+        low_stock: onDemand ? false : stock.low,
+        stock_status: onDemand ? "on_demand" : stockTracked ? "tracked" : "untracked",
         checkout_eligible: checkoutEligible,
         online_checkout_status: restricted
           ? "restricted"
-          : !stockTracked
-            ? "stock_untracked"
-            : trackedOut
-              ? "out_of_stock"
+          : onDemand
+            ? checkoutEligible ? "on_demand" : "unavailable"
+            : !stockTracked
+              ? "stock_untracked"
+              : trackedOut
+                ? "out_of_stock"
               : sellingPrice === null || sellingPrice <= 0
                 ? "ask_shop"
                 : checkoutEligible
@@ -260,6 +266,10 @@ function productImageUrl(sku) {
     return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2de261bf62d20a6d4a9e_Pod%20Plus%20MMD.webp";
   }
   return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c1e2f03656a00250f4531_MMD%20Shop%20Luxury%20Gift%20Box.webp";
+}
+
+function isOnDemandProduct(note) {
+  return /\bon[-\s]*demand\b/i.test(String(note || ""));
 }
 
 function isRestrictedOnlineCheckout(sku, productName) {

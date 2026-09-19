@@ -103,6 +103,24 @@ test("reservation metadata round-trips and exposes expiry",()=>{
   assert.ok(publicMmdShopReservation(decoded).expires_at);
 });
 
+test("reservation accepts explicit on-demand item without inventory allocation", async () => {
+  const mock = mockAirtable();
+  try {
+    const reservation = await reserveMmdShopStock(makeEnv(), {
+      order_id: "MMD-ORDER-1",
+      order_record_id: mock.orders[0].id,
+      order_notes: mock.orders[0].fields[F.orderNotes],
+      items: [{ product_id: mock.productId, quantity: 1, stock_status: "on_demand" }],
+    });
+    assert.equal(reservation.state, "reserved");
+    assert.deepEqual(reservation.allocations, []);
+    assert.equal(mock.batch.fields[F.remaining], 5);
+    assert.equal(mock.movements.length, 0);
+  } finally {
+    mock.restore();
+  }
+});
+
 test("reservation fails closed when checkout item is untracked", async () => {
   const mock = mockAirtable();
   try {

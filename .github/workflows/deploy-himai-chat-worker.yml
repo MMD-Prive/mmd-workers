@@ -221,3 +221,7 @@ jobs:
           product="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/wgg-10)"
           echo "$product"
           node -e 'const b=JSON.parse(process.argv[1]); const p=b.product||{}; if (b.ok !== true || b.schema !== "mmd_shop_product_v1" || p.sku !== "WGG-10") process.exit(1); if (p.checkout_eligible === true && p.stock_status !== "tracked") throw new Error("untracked_product_must_not_be_checkout_eligible"); if (p.stock_status === "untracked" && p.online_checkout_status !== "stock_untracked") throw new Error("untracked_catalog_status_mismatch");' "$product"
+
+          on_demand="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/glen-pop15-blk)"
+          echo "$on_demand"
+          node -e 'const b=JSON.parse(process.argv[1]); const p=b.product||{}; if (b.ok !== true || p.sku !== "GLEN-POP15-BLK") process.exit(1); if (p.stock_status !== "on_demand" || p.online_checkout_status !== "on_demand" || p.checkout_eligible !== true) throw new Error("glenburgies_on_demand_contract_failed");' "$on_demand"

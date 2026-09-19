@@ -18,6 +18,7 @@ const PRODUCT_FIELDS = Object.freeze({
   brandAvailability: "fldve5nrQmymoZgiX",
   status: "fldxYkkvmK9izvACA",
   supplier: "fldJCZ7YzsUjIItKf",
+  note: "fldAT8hnluV4CtF3c",
   mmdPrice: "fldD6Q5yido7pTlU0",
 });
 
@@ -97,7 +98,7 @@ export async function handleMmdShopCheckout(request, env) {
     const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext);
     orderId = makeOrderId();
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
-    const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "untracked");
+    const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "on_demand");
 
     order = await createOrder(env, {
       orderId,
@@ -294,8 +295,10 @@ export function validateAndPriceCart(cart, products, stock) {
     if (price === null) throw httpError(409, "product_price_unavailable");
 
     const inventory = stock.get(record.id);
-    if (!inventory) throw httpError(409, "stock_untracked");
-    if (inventory.available <= 0 || line.quantity > inventory.available) throw httpError(409, "insufficient_stock");
+    const onDemand = isOnDemandProduct(fields[PRODUCT_FIELDS.note]);
+    if (!inventory && !onDemand) throw httpError(409, "stock_untracked");
+    if (!onDemand && (inventory.available <= 0 || line.quantity > inventory.available)) throw httpError(409, "insufficient_stock");
+    if (onDemand && linkedIds(fields[PRODUCT_FIELDS.supplier]).length === 0) throw httpError(409, "on_demand_supplier_unavailable");
     return {
       product_id: record.id,
       product_name: productName || "MMD Shop Item",
@@ -304,9 +307,9 @@ export function validateAndPriceCart(cart, products, stock) {
       quantity: line.quantity,
       unit_price_thb: price,
       line_total_thb: roundMoney(price * line.quantity),
-      available: inventory.available,
-      low_stock: Boolean(inventory.low),
-      stock_status: "tracked",
+      available: onDemand ? null : inventory.available,
+      low_stock: onDemand ? false : Boolean(inventory.low),
+      stock_status: onDemand ? "on_demand" : "tracked",
     };
   });
 }
@@ -509,7 +512,7 @@ async function notifyOrder(env, input) {
         `Customer: <b>${escapeHtml(input.customerName)}</b>`,
         ...lines,
         `Total: <b>${money(input.total)} THB</b>`,
-        input.stockConfirmationRequired ? "Stock: <b>confirmation required for untracked item(s)</b>" : "Stock: reserved",
+        input.stockConfirmationRequired ? "Stock: <b>on-demand supplier confirmation required</b>" : "Stock: reserved",
         input.reservation?.expires_at ? `Reservation until: <code>${escapeHtml(input.reservation.expires_at)}</code>` : "",
         "Payment: pending · official verification required",
       ].join("\n"),
@@ -574,6 +577,10 @@ function bangkokDate() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${map.year}-${map.month}-${map.day}`;
+}
+
+function isOnDemandProduct(note) {
+  return /\bon[-\s]*demand\b/i.test(clean(note, 500));
 }
 
 function isRestrictedCheckoutProduct(sku, name) {
