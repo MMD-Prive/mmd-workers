@@ -299,8 +299,8 @@ Examples:
 - `งานวันศุกร์โอเคยัง` -> Booking
 - `สมาชิกหมดเมื่อไหร่` -> Membership
 - `สลิปถึงยัง` / `เหลือจ่ายเท่าไหร่` -> Payment
-- `แต้มผมมีเท่าไหร่` -> Points canonical route
-- `คูปองใช้ได้ไหม` -> Coupon Wallet canonical route
+- `แต้มผมมีเท่าไหร่` -> bounded Points read in private chat
+- `คูปองใช้ได้ไหม` -> bounded Coupon Wallet read in private chat
 - `CARE BACK ใช้ยังไง` -> CARE BACK
 - `ต้องทำอะไรต่อจากนี้` -> Next Action
 
@@ -309,7 +309,7 @@ Routing rules:
 - explicit slash commands and explicit handoff/owner commands take precedence;
 - natural-language routing is deterministic and domain-scoped; it does not use model-generated business truth;
 - a private domain such as Membership, Booking or Payment remains private-chat only even when detected from natural language;
-- Points/Coupons remain route-only until a bounded canonical wallet projection is explicitly approved;
+- Points/Coupons use the bounded canonical wallet projection in private HYPE chat only; group surfaces remain route-only and must never resolve private wallet truth;
 - if two protected domains are both strongly signalled and nearly tied, HYPE asks the customer to clarify instead of selecting an authority;
 - generic conversation without a strong domain signal is left unclassified rather than guessed;
 - the router chooses which canonical authority to read; it never decides the business result itself.
@@ -494,10 +494,38 @@ No date/name/model matching is allowed. Missing receipt/session/job records rema
 
 The correlation read does not mutate Booking, Session, Job, Payment, Calendar or Membership truth.
 
+## Bounded Points + Coupon inline projection · P7
+
+Private HYPE chat may read a bounded member wallet projection after both identity gates pass:
+
+`verified Telegram -> Canonical Client -> canonical LINE identity -> member-pages-worker`
+
+Points rules:
+
+- expose only `active_points` when the canonical member profile marks Points as `verified`;
+- an unavailable/unverified source is never rendered as zero;
+- rate is the canonical baseline `100 THB = 1 Point`;
+- HYPE cannot add, subtract, expire, restore or rewrite Points Ledger entries.
+
+Coupon rules:
+
+- source is the canonical CARE BACK Coupon Wallet owned by member-pages-worker;
+- identity hash is derived server-side from the canonical LINE identity with the existing LIFF secret; Telegram never supplies a member id, identity hash or coupon code;
+- expose Coupon code only when wallet state is exactly `ready` and the code passes the canonical format gate;
+- expose approved discount only when the wallet already contains a bounded approved percentage;
+- `wish_required`, `verification_required`, `used`, `expired`, `revoked`, `invalid` and review states expose state only, not a usable code;
+- HYPE cannot activate, mint, reissue, extend or change coupon discount.
+
+Privacy:
+
+- private HYPE chat may show the bounded values after canonical Telegram + LINE binding;
+- Standard/Premium/Preview/group surfaces remain route-only and must never read or display Points balances or Coupon codes;
+- HENNA remains route-only for MMD Points/Coupon and must bridge to HYPE/MY MMD.
+
 ## Next implementation lanes
 
 1. operator acknowledgement state for failed or review-required executions;
-2. bounded Points + Coupon inline values from a canonical member-runtime projection.
+2. optional bounded MMD Shop order-status projection after the same identity/privacy pattern.
 
 All future lanes must preserve the same authority and privacy locks.
 
