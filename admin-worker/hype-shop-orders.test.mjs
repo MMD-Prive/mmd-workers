@@ -118,7 +118,13 @@ test("HYPE Shop production smoke verifies empty synthetic ownership without retu
   assert.equal(new URL(upstream.url).pathname, "/__internal/hype/shop-orders");
   assert.equal(upstream.headers["x-mmd-internal-call"], "true");
   assert.equal(upstream.headers["x-mmd-service-binding"], "admin-worker");
-  assert.doesNotMatch(JSON.stringify(body), /line_user_id|order_id|tracking|display_name|address|phone/i);
+  assert.equal(Object.hasOwn(body, "orders"), false);
+  assert.equal(Object.hasOwn(body, "line_user_id"), false);
+  assert.equal(Object.hasOwn(body, "order_id"), false);
+  assert.doesNotMatch(
+    JSON.stringify(body),
+    /tracking_number|display_name|recipient_name|address_line1|address_line2|postal_code|delivery_note|fulfillment_note/i,
+  );
 });
 
 test("HYPE Shop production smoke fails closed if synthetic identity ever resolves to customer data", async () => {
