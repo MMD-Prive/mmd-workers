@@ -159,21 +159,31 @@ test("write-back PATCH contains bounded state and no raw customer message", asyn
     client_record_id: "recClient",
     matrix_record_id: "recMatrix",
     storage_status: "ready",
-    matrix: buildConversationMatrixV1({
-      matrix_id: "kcm1_line_test",
-      client_record_id: "recClient",
-      conversation_id_hash: "abc123",
-      channel: "line_ofc",
-      conversation_scope: "line:test",
-      topic: "membership",
-      relationship_context: "active_member",
-      last_customer_intent: "membership_renewal",
-      conversation_stage: "awaiting_payment_verification",
-      do_not_ask_again: ["membership_package", "payment_proof"],
-      important_open_loops: ["payment_verification", "entitlement_refresh"],
-      live_truth_domains: ["membership", "entitlement", "payment"],
-      version: 3,
-    }),
+    matrix: {
+      ...buildConversationMatrixV1({
+        matrix_id: "kcm1_line_test",
+        client_record_id: "recClient",
+        conversation_id_hash: "abc123",
+        channel: "line_ofc",
+        conversation_scope: "line:test",
+        topic: "membership",
+        relationship_context: "active_member",
+        last_customer_intent: "membership_renewal",
+        conversation_stage: "awaiting_payment_verification",
+        do_not_ask_again: ["membership_package", "payment_proof"],
+        important_open_loops: ["payment_verification", "entitlement_refresh"],
+        live_truth_domains: ["membership", "entitlement", "payment"],
+        version: 3,
+      }),
+      payload_json: {
+        booking_draft_v1: {
+          schema: "mmd.kenji_booking_accumulator.v1",
+          draft_id: "kbd1_keep_me",
+          model_name: "EMs16",
+          amount_thb: 15000,
+        },
+      },
+    },
   };
 
   const result = await withFetch(async (_url, init = {}) => {
@@ -197,6 +207,10 @@ test("write-back PATCH contains bounded state and no raw customer message", asyn
   assert.equal(posted.records[0].fields.conversation_stage, "awaiting_payment_verification");
   assert.equal(posted.records[0].fields.last_customer_intent, "payment_status");
   assert.deepEqual(JSON.parse(posted.records[0].fields.do_not_ask_again_json), ["membership_package", "payment_proof"]);
+  const payload = JSON.parse(posted.records[0].fields.payload_json);
+  assert.equal(payload.booking_draft_v1.draft_id, "kbd1_keep_me");
+  assert.equal(payload.booking_draft_v1.model_name, "EMs16");
+  assert.equal(payload.booking_draft_v1.amount_thb, 15000);
   const serialized = JSON.stringify(posted);
   assert.equal(serialized.includes("ได้ยังครับ"), false);
   assert.equal(serialized.includes("Utest123"), false);
