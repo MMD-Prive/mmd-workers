@@ -1,6 +1,6 @@
 # MMD /member/payments Owner Lock
 
-Status: LOCKED TARGET ARCHITECTURE  
+Status: LOCKED ARCHITECTURE · BFF SOURCE IMPLEMENTED · PRODUCTION ACCEPTANCE PENDING  
 Updated: 2026-09-19
 
 ## Canonical customer route
@@ -25,15 +25,29 @@ It is not:
 The page renders customer-safe payment state and navigation only.
 
 ### Member-facing status BFF
-- target owner: `member-pages-worker`
-- contract: authenticated member/session read, customer-safe payment records only
+- owner: `member-pages-worker`
+- source: `member-pages-worker/src/member-payments-bff.js`
+- public ingress target: exact `/v1/member/payments` through `member-dashboard-chat-worker`
+- ingress transport: `MEMBER_PAGES_WORKER` service binding
+- contract: verified LINE/member session read, customer-safe payment records only
+- response schema: `mmd_member_payments_v1`
 - the BFF must never expose admin review controls, internal notes, fraud/risk fields, raw Airtable records, or backend credentials.
 
-The current Webflow page declares `data-payments-endpoint="/v1/member/payments"`; that endpoint contract must be served by the member-facing BFF before any legacy/admin delegation is removed.
+The current Webflow page declares `data-payments-endpoint="/v1/member/payments"`. Source implementation and route configuration are now explicit; production acceptance remains required before any legacy/admin delegation is removed.
 
 ### Money truth
 - `payments-worker` is the sole payment authority for amount, payment reference, payment destination, QR, card fee, proof verification and official payment state.
 - Official Verify remains final truth.
+
+## Read model
+
+The BFF combines two bounded customer-safe sources:
+1. current payment intent remembered in the short-lived signed LIFF session after `payments-worker` creates it;
+2. verified historical payments from the refreshed safe member-profile / Customer 360 projection.
+
+A pending intent may remain visible for a LINE-verified signup session even before a Member row exists. This does not grant membership.
+
+The browser cannot select member identity, payment_ref, amount, package, payment lane or verification state through query/body fields.
 
 ## Signed handoff
 
@@ -84,4 +98,8 @@ Webflow must not:
 Legacy/admin-worker page delegation is not the canonical architecture. Route migration must converge on:
 `Webflow presentation -> member-pages-worker member-safe BFF -> payments-worker money truth`.
 
-Do not remove a legacy production bridge until the member-safe BFF endpoint and route ingress have passed production smoke.
+Do not remove a legacy production bridge until:
+- unauthenticated production ingress proves 401 fail-closed plus the expected route-owner/upstream headers;
+- an authenticated real member session returns only customer-safe records;
+- a current backend-issued signed handoff resumes correctly;
+- Official Verify/history refresh replaces or suppresses stale pending presentation correctly.
