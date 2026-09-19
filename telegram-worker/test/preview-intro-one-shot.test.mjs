@@ -9,7 +9,7 @@ function env(overrides = {}) {
   return {
     TELEGRAM_BOT_TOKEN: "hype-bot-token",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
-    TELEGRAM_PREVIEW_GROUP_ID: "-1002393788585",
+    TELEGRAM_PREVIEW_CHANNEL_ID: "-1002393788585",
     HYPE_PREVIEW_INTRO_TOKEN: "preview-intro-secret",
     ...overrides,
   };
@@ -33,7 +33,7 @@ test("Preview intro endpoint requires ephemeral token", async () => {
   assert.deepEqual(body, { ok: false, error: "unauthorized" });
 });
 
-test("Preview intro verifies HYPE + group before sending one public-safe intro", { concurrency: false }, async () => {
+test("Preview intro supports the Preview channel and discovers its linked discussion group", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
 
@@ -46,7 +46,23 @@ test("Preview intro verifies HYPE + group before sending one public-safe intro",
       return Response.json({ ok: true, result: { id: 777001, username: "mmdprivebot", is_bot: true } });
     }
     if (method === "getChat") {
-      return Response.json({ ok: true, result: { id: -1002393788585, type: "supergroup", title: "MMD Preview" } });
+      if (String(payload.chat_id) === "-1002393788585") {
+        return Response.json({
+          ok: true,
+          result: {
+            id: -1002393788585,
+            type: "channel",
+            title: "MMD Preview",
+            linked_chat_id: -1009988776655,
+          },
+        });
+      }
+      if (String(payload.chat_id) === "-1009988776655") {
+        return Response.json({
+          ok: true,
+          result: { id: -1009988776655, type: "supergroup", title: "MMD Preview Discussion" },
+        });
+      }
     }
     if (method === "getChatMember") {
       return Response.json({ ok: true, result: { status: "administrator", user: { id: 777001, is_bot: true } } });
@@ -65,7 +81,19 @@ test("Preview intro verifies HYPE + group before sending one public-safe intro",
     assert.equal(body.ok, true);
     assert.equal(body.bot_username, "mmdprivebot");
     assert.equal(body.message_id, 4100);
-    assert.deepEqual(calls.map((call) => call.method), ["getMe", "getChat", "getChatMember", "sendMessage"]);
+    assert.equal(body.chat_type, "channel");
+    assert.equal(body.linked_group_id, "-1009988776655");
+    assert.equal(body.linked_group_ready, true);
+    assert.equal(body.linked_group_type, "supergroup");
+    assert.equal(body.linked_group_membership, "administrator");
+    assert.deepEqual(calls.map((call) => call.method), [
+      "getMe",
+      "getChat",
+      "getChatMember",
+      "getChat",
+      "getChatMember",
+      "sendMessage",
+    ]);
 
     const sent = calls.find((call) => call.method === "sendMessage").payload;
     assert.match(sent.text, /สวัสดีครับ ผม HYPE/);
