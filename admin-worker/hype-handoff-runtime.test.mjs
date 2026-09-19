@@ -396,7 +396,7 @@ test("ambiguous Shop recovery offers safe options and customer selection binds o
       return Response.json({ records: [matrixRecord] });
     }
     if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
-    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+    throw new Error("unexpected fetch " + parsed.pathname + " " + method);
   };
 
   const shopBinding = {
@@ -596,7 +596,7 @@ test("Booking and MMS recovery share the canonical Case lifecycle and domain tax
           return Response.json({ records: [matrixRecord] });
         }
         if (parsed.hostname === "api.airtable.com") return Response.json({ records: [] });
-        throw new Error(\`unexpected fetch \${parsed.pathname}\`);
+        throw new Error("unexpected fetch " + parsed.pathname);
       };
 
       const opened = await handleHypeHandoffRpc(internalRequest(HYPE_HANDOFF_PATH, {
@@ -668,7 +668,7 @@ test("Recovery case cannot resolve without a terminal domain outcome and rejects
       };
       return Response.json({ records: [matrixRecord] });
     }
-    throw new Error(\`unexpected fetch \${parsed.pathname} \${method}\`);
+    throw new Error("unexpected fetch " + parsed.pathname + " " + method);
   };
 
   try {
