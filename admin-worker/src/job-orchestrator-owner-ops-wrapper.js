@@ -133,7 +133,7 @@ async function handleCalendar(request, env, ctx, url, method) {
   if (date !== null && !calendarDate(date)) return calendarJsonResponse({ ok: false, error: "invalid_calendar_date" }, 400);
   if (url.pathname === CALENDAR_PAGE_PATH) {
     if (method !== "GET" && method !== "HEAD") return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD" } });
-    const page = await calendarPageResponse(env, date || "");
+    const page = await calendarPageResponse(request, env, date || "");
     return method === "HEAD" ? new Response(null, { status: page.status, headers: page.headers }) : page;
   }
   if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
