@@ -6,7 +6,7 @@ const ROUTES = Object.freeze([
       /(?:สลิป|slip|payment|paid|ชำระ|จ่าย|โอน|ยอดคงเหลือ|เหลือจ่าย|balance due|deposit)/i,
     ],
     weak: [
-      /(?:เงิน|ยอด|มัดจำ|หลักฐาน|โอนแล้ว|จ่ายแล้ว|ถึงยัง|ถึงไหม|ตรวจ(?:สลิป|ยอด)?)/i,
+      /(?:เงิน|ยอด|มัดจำ|หลักฐาน|ถึงยัง|ถึงไหม|ตรวจ(?:สลิป|ยอด)?)/i,
     ],
   },
   {
@@ -180,7 +180,7 @@ function noRoute(reason, scores = []) {
 
 function normalize(value) {
   return String(value ?? "")
-    .normalize("NFKC")
+    .normalize("NFC")
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
