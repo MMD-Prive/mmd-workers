@@ -15,9 +15,13 @@ This is intentionally different from generic legacy evidence. It is a narrow tru
 Only the MMD-controlled LINE OA renamed name field from the canonical contact staging projection is authoritative for this fast path:
 
 - canonical table: `MMD — LINE OFC Client Import Staging`
-- field: `line_renamed_name`
+- verified LINE identity field: `LINE User ID`
+- MMD-controlled rename field: `Current LINE Rename`
+- canonical Client link field: `Canonical Client`
 
 The legacy `LINE OFC Client Import Staging` table may contain webhook/import history and is **not** the default Fast Trust authority. It remains available only to legacy identity-recovery paths that explicitly depend on its older review schema.
+
+The table name and field names above are one schema contract. Runtime code must consume them through the shared `shared/my-mmd-fast-trust-source.mjs` adapter. A table migration without matching field migration is invalid and deployment must fail before production.
 
 The customer-editable LINE display name is never authoritative for this rule.
 
@@ -50,7 +54,7 @@ Canonical mapping:
 <name> BlackCard  -> Black Card immediately
 ```
 
-The marker must come from `line_renamed_name` supplied by MMD's LINE OA/customer-management evidence, not from a customer-controlled profile field.
+The marker must come from `Current LINE Rename` supplied by MMD's LINE OA/customer-management evidence, not from a customer-controlled profile field.
 
 ## Resolution precedence
 
@@ -58,13 +62,23 @@ For a verified LINE identity:
 
 ```text
 verified LINE
--> lookup MMD-controlled `line_renamed_name`
+-> lookup MMD-controlled `Current LINE Rename`
 -> trusted suffix present?
    -> yes: grant mapped Fast Trust tier now
    -> no: continue normal canonical Member / entitlement / recovery flow
 ```
 
 Fast Trust precedence overrides the temporary UI states `new`, `checking`, or `no canonical member link` for tier display/access.
+
+### Anti-false-Guest invariant
+
+A verified LINE identity must never be classified as a new Guest merely because historical Member/entitlement reconstruction is incomplete.
+
+- exact canonical Client link present + member truth unresolved -> show `checking / recovery`, never signup;
+- Fast Trust source unavailable or schema lookup failed + member truth unresolved -> show `checking / recovery`, never signup;
+- only a successful canonical lookup that proves no protected marker and no canonical Client link may continue as a genuine Guest/new-member state.
+
+This rule prevents storage/schema incidents from being converted into customer-facing membership decisions.
 
 A trusted marker holder must not be shown:
 
@@ -118,7 +132,7 @@ If the resolver later contains stronger current canonical data, reconcile delibe
 
 ## Security boundary
 
-This policy is safe only because `line_renamed_name` is treated as MMD-operated evidence.
+This policy is safe only because `Current LINE Rename` is treated as MMD-operated evidence.
 
 Required safeguards:
 
@@ -169,5 +183,18 @@ Presentation must not infer the tier directly from names.
 ## One-line canon
 
 ```text
-MMD-controlled `line_renamed_name` ending in VIP / SVIP / Black Card = grant that tier immediately; recover historical details afterwards.
+MMD-controlled `Current LINE Rename` ending in VIP / SVIP / Black Card = grant that tier immediately; recover historical details afterwards.
 ```
+
+
+## Deployment schema guard
+
+Both `mmd-auth-worker` and `member-pages-worker` deployments must run
+`scripts/validate-my-mmd-fast-trust-airtable-schema.mjs` against the production Airtable base before deploy.
+
+The preflight must prove that:
+- the canonical table is readable;
+- `LINE User ID`, `Current LINE Rename`, and `Canonical Client` exist;
+- the exact LINE lookup formula is accepted by Airtable.
+
+If any of these checks fail, deployment fails closed. It must not ship a Worker that can silently degrade known members into Guest/signup.

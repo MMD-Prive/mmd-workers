@@ -11,6 +11,9 @@ on:
       - "member-pages-worker/src/my-mmd-fast-trust-response.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
+      - "shared/my-mmd-fast-trust-source.mjs"
+      - "shared/my-mmd-fast-trust-source.test.mjs"
+      - "scripts/validate-my-mmd-fast-trust-airtable-schema.mjs"
       - ".github/workflows/my-mmd-fast-trust-ci.yml"
   push:
     branches:
@@ -24,6 +27,9 @@ on:
       - "member-pages-worker/src/my-mmd-fast-trust-response.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-pages-worker/test/my-mmd-fast-trust-response.test.mjs"
+      - "shared/my-mmd-fast-trust-source.mjs"
+      - "shared/my-mmd-fast-trust-source.test.mjs"
+      - "scripts/validate-my-mmd-fast-trust-airtable-schema.mjs"
       - ".github/workflows/my-mmd-fast-trust-ci.yml"
 
 permissions:
@@ -47,11 +53,14 @@ jobs:
           node --check auth-worker/src/my-mmd-runtime-index.js
           node --check member-pages-worker/src/my-mmd-fast-trust-response.js
           node --check member-pages-worker/src/runtime-index.js
+          node --check shared/my-mmd-fast-trust-source.mjs
+          node --check scripts/validate-my-mmd-fast-trust-airtable-schema.mjs
       - name: Fast Trust tests
         run: |
           node --experimental-global-webcrypto --test auth-worker/test/my-mmd-fast-trust.test.mjs
           node --experimental-global-webcrypto --test auth-worker/test/my-mmd-fast-trust-entitlement.test.mjs
           node --experimental-global-webcrypto --test member-pages-worker/test/my-mmd-fast-trust-response.test.mjs
+          node --test shared/my-mmd-fast-trust-source.test.mjs
       - name: Existing resolver regressions
         run: |
           npm run test:auth-liff-profile

@@ -18,7 +18,7 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function makeEnv(rename) {
+async function makeEnv(rename, { canonicalClient = false, airtableStatus = 200 } = {}) {
   const hash = await hmacHex(SECRET, `session:${TOKEN}`);
   return {
     LIFF_SESSION_SECRET: SECRET,
@@ -39,8 +39,19 @@ async function makeEnv(rename) {
       async fetch(request) {
         const url = new URL(request.url);
         assert.equal(decodeURIComponent(url.pathname.split("/").pop()), "MMD — LINE OFC Client Import Staging");
+        assert.equal(url.searchParams.get("filterByFormula"), `{LINE User ID}='${LINE_ID}'`);
+        if (airtableStatus !== 200) {
+          return Response.json({ error: { type: "TEST_FAILURE" } }, { status: airtableStatus });
+        }
         return Response.json({
-          records: [{ id: "recFastTrust", fields: { line_user_id: LINE_ID, line_renamed_name: rename } }],
+          records: [{
+            id: "recFastTrust",
+            fields: {
+              "LINE User ID": LINE_ID,
+              "Current LINE Rename": rename,
+              ...(canonicalClient ? { "Canonical Client": [{ id: "recCanonicalClient" }] } : {}),
+            },
+          }],
         });
       },
     },
@@ -127,6 +138,86 @@ test("Fast Trust patches the LIFF profile so protected tiers survive safe serial
   assert.equal(body.data.membership_status, "active");
   assert.equal(body.data.customer_360.member.tier, "SVIP");
   assert.match(body.data.membership_expires_at, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("known canonical Client never falls through to Guest/signup while membership recovery is pending", async () => {
+  const env = await makeEnv("ลูกค้า Premium", { canonicalClient: true });
+  const response = Response.json({
+    state: "resolved",
+    membership: {
+      level: "guest",
+      levelVerified: false,
+      status: "checking",
+      access: "checking",
+      lifecycle: "new",
+      nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+    },
+    lifecycle: "new",
+    nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+  });
+
+  const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
+  const body = await patched.json();
+
+  assert.equal(body.state, "checking");
+  assert.equal(body.membership.level, "unknown");
+  assert.equal(body.membership.levelVerified, false);
+  assert.equal(body.membership.lifecycle, "checking");
+  assert.equal(body.lifecycle, "checking");
+  assert.equal(body.nextAction.kind, "checking");
+  assert.doesNotMatch(JSON.stringify(body), /"kind":"signup"/);
+  assert.equal(patched.headers.get("x-mmd-member-resolution-guard"), "known_client_resolution_pending");
+});
+
+test("Fast Trust source failure fails neutral instead of showing Guest/signup", async () => {
+  const env = await makeEnv("", { airtableStatus: 422 });
+  const response = Response.json({
+    state: "resolved",
+    membership: {
+      level: "guest",
+      levelVerified: false,
+      status: "checking",
+      access: "checking",
+      lifecycle: "new",
+      nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+    },
+    lifecycle: "new",
+    nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+  });
+
+  const patched = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
+  const body = await patched.json();
+
+  assert.equal(body.state, "checking");
+  assert.equal(body.membership.level, "unknown");
+  assert.equal(body.membership.lifecycle, "checking");
+  assert.equal(body.nextAction.kind, "checking");
+  assert.equal(patched.headers.get("x-mmd-member-resolution-guard"), "fast_trust_source_unavailable");
+  assert.equal(patched.headers.get("x-mmd-fast-trust-lookup"), "unavailable");
+});
+
+test("successful lookup with no canonical Client and no protected marker may remain a real Guest/new signup", async () => {
+  const env = await makeEnv("ลูกค้าใหม่");
+  const original = {
+    state: "resolved",
+    membership: {
+      level: "guest",
+      levelVerified: false,
+      status: "checking",
+      access: "checking",
+      lifecycle: "new",
+      nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+    },
+    lifecycle: "new",
+    nextAction: { kind: "signup", label: "สมัครสมาชิก", url: "/pay/membership" },
+  };
+  const patched = await applyMyMmdFastTrustResponse(
+    request("/api/member/app/dashboard"),
+    Response.json(original),
+    env,
+  );
+  assert.deepEqual(await patched.json(), original);
+  assert.equal(patched.headers.get("x-mmd-member-resolution-guard"), null);
 });
 
 test("non trusted rename leaves response unchanged", async () => {
