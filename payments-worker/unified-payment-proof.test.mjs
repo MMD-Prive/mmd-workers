@@ -95,7 +95,7 @@ test("confirmation verification does not hide unexpected runtime failures", asyn
   }), /unexpected_binding_failure/);
 });
 
-test("payment intent exposes one signed SIGIL pay handoff", async () => {
+test("private membership payment intent stays on signed SIGIL pay", async () => {
   const kvWrites = [];
   const env = {
     PAYMENT_CONFIRMATION_SIGNING_SECRET: "unit-test-key",
@@ -120,6 +120,46 @@ test("payment intent exposes one signed SIGIL pay handoff", async () => {
   assert.match(data.customer_payment_url, /^https:\/\/mmdbkk\.com\/sigil\/pay\?t=/);
   assert.equal(data.unified_payment_flow, "v1");
   assert.equal(kvWrites.length, 1);
+});
+
+test("public membership payment intent uses signed public checkout", async () => {
+  const env = {
+    PAYMENT_CONFIRMATION_SIGNING_SECRET: "unit-test-key",
+    PAY_TOKEN_TTL_SECONDS: "3600",
+    PAY_SESSIONS_KV: { async put() {} },
+  };
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ session_id: "public-member-a", payment_stage: "membership", amount: 690, package_code: "mmd_member" }),
+  });
+  const response = await handleUnifiedPaymentIntent(request, env, async (nextRequest) => {
+    const body = await nextRequest.json();
+    return Response.json({ ok: true, ...body, status: "pending" });
+  });
+  const data = await response.json();
+  assert.match(data.customer_payment_url, /^https:\/\/mmdbkk\.com\/pay\/checkout\?t=/);
+  assert.equal(data.payment_surface, "public");
+});
+
+test("TMIB story intent uses the same signed public checkout", async () => {
+  const env = {
+    PAYMENT_CONFIRMATION_SIGNING_SECRET: "unit-test-key",
+    PAY_TOKEN_TTL_SECONDS: "3600",
+    PAY_SESSIONS_KV: { async put() {} },
+  };
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ session_id: "tmib-a", payment_stage: "tmib_story", amount: 299, package_code: "tmib_act_001" }),
+  });
+  const response = await handleUnifiedPaymentIntent(request, env, async (nextRequest) => {
+    const body = await nextRequest.json();
+    return Response.json({ ok: true, ...body, status: "pending" });
+  });
+  const data = await response.json();
+  assert.match(data.customer_payment_url, /^https:\/\/mmdbkk\.com\/pay\/checkout\?t=/);
+  assert.equal(data.payment_surface, "public");
 });
 
 test("reviewed membership materialization uses canonical calendar-year terms", () => {
