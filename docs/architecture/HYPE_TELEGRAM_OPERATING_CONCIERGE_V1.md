@@ -104,6 +104,30 @@ Phase 2 remains CARE BACK CONTINUES (1–30 September 2026), uses the same benef
 
 Identity verification alone does not open the coupon. A Birthday Wish must be saved before personal coupon activation/display, and pre-verification customer copy is limited to "ส่วนลดสูงสุด 10%" / "UP TO 10% OFF".
 
+## Member group command guide
+
+HYPE may publish a command guide in the canonical MMD member groups:
+
+- Standard group: `TELEGRAM_STANDARD_GROUP_ID=-1002073919780`
+- Premium group: `TELEGRAM_PREMIUM_GROUP_ID=-1001668261779`
+
+Group-safe commands:
+
+- `/commands` / `/help` — show the command guide
+- `/points` — route to MY MMD Points
+- `/coupons` — route to MY MMD Coupon Wallet
+- `/careback` — show the current CARE BACK route
+
+Private-data commands:
+
+- `/status`
+- `/next`
+- `/booking`
+
+When private-data commands are used in Standard or Premium groups, HYPE must not call Client 360 or expose customer status in the group. It must route the user to a private HYPE chat instead.
+
+The group command guide must never expose customer names, model names from a customer's active job, payment amounts, Points balances, coupon codes, entitlement details, or other account-specific data.
+
 ## Existing HYPE operational capabilities retained
 
 - Telegram internal notification routing by canonical topic
