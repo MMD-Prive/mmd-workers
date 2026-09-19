@@ -373,17 +373,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
     : priorRecoveryCase?.domain || requestedDomain;
   const effectiveOutcome = requestedOutcome || priorRecoveryCase?.outcome_code || "";
 
-  if (priorRecoveryCase && ["resolved", "customer_notified"].includes(nextState)) {
-    if (!effectiveOutcome || !isTerminalRecoveryOutcome(effectiveDomain, effectiveOutcome)) {
-      return json({
-        ok: false,
-        state: "transition_rejected",
-        error: "recovery_terminal_outcome_required",
-        recovery_domain: effectiveDomain,
-        allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, { terminal: true }),
-      }, 409);
-    }
-  } else if (requestedOutcome && !recoveryOutcomeAllowed(effectiveDomain, requestedOutcome, nextState)) {
+  if (requestedOutcome && !recoveryOutcomeAllowed(effectiveDomain, requestedOutcome, nextState)) {
     return json({
       ok: false,
       state: "transition_rejected",
@@ -395,6 +385,18 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
         terminal: ["resolved", "customer_notified"].includes(nextState),
       }),
     }, 409);
+  }
+
+  if (priorRecoveryCase && ["resolved", "customer_notified"].includes(nextState)) {
+    if (!effectiveOutcome || !isTerminalRecoveryOutcome(effectiveDomain, effectiveOutcome)) {
+      return json({
+        ok: false,
+        state: "transition_rejected",
+        error: "recovery_terminal_outcome_required",
+        recovery_domain: effectiveDomain,
+        allowed_outcomes: recoveryOutcomeCodesForDomain(effectiveDomain, { terminal: true }),
+      }, 409);
+    }
   }
 
   const noRecoveryChange = !requestedOutcome && !body.recovery_domain;
