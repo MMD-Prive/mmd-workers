@@ -94,6 +94,10 @@ export async function handleCanonicalConfirmLink(request, env) {
     const locationName = requiredText(body.location_name, "location_name", 300);
     const googleMapUrl = text(body.google_map_url, 1000);
     const amountThb = positiveNumber(body.amount_thb ?? body.amount, "amount_thb");
+    const originalAmountThb = body.original_amount_thb == null || body.original_amount_thb === ""
+      ? null
+      : positiveNumber(body.original_amount_thb, "original_amount_thb");
+    const pricingAdjustment = text(body.pricing_adjustment, 40).toLowerCase();
     const payModelThb = optionalNonNegativeNumber(
       body.pay_model_thb ?? body.pay_model ?? body.model_pay_thb ?? body.model_pay,
       "pay_model_thb",
@@ -107,6 +111,23 @@ export async function handleCanonicalConfirmLink(request, env) {
     if (body.service_amount_thb != null && positiveNumber(body.service_amount_thb, "service_amount_thb") !== serviceAmountThb) {
       throw httpError(400, "service_amount_component_mismatch");
     }
+    if (originalAmountThb !== null && originalAmountThb < serviceAmountThb) {
+      throw httpError(400, "original_amount_below_service_amount");
+    }
+    if (pricingAdjustment && !new Set(["discount", "none"]).has(pricingAdjustment)) {
+      throw httpError(400, "unsupported_pricing_adjustment");
+    }
+    if (pricingAdjustment === "discount" && !(originalAmountThb > serviceAmountThb)) {
+      throw httpError(400, "discount_original_amount_required");
+    }
+    if (originalAmountThb > serviceAmountThb && pricingAdjustment === "none") {
+      throw httpError(400, "pricing_adjustment_mismatch");
+    }
+    const displayFullPriceThb = originalAmountThb ?? serviceAmountThb;
+    const discountThb = Math.max(0, displayFullPriceThb - serviceAmountThb);
+    const discountPercent = discountThb > 0
+      ? Math.round((discountThb / displayFullPriceThb) * 10000) / 100
+      : 0;
     const fixedDepositThb = computeFixedCustomerDeposit(serviceAmountThb);
     const fixedBalanceThb = Math.max(0, serviceAmountThb - fixedDepositThb);
     if (paymentStage === "deposit") {
@@ -119,10 +140,10 @@ export async function handleCanonicalConfirmLink(request, env) {
     }
     const pricing = paymentStage === "deposit"
       ? {
-          full_price_thb: serviceAmountThb,
-          discount_mode: "none",
-          discount_percent: 0,
-          discount_thb: 0,
+          full_price_thb: displayFullPriceThb,
+          discount_mode: discountThb > 0 ? "fixed" : "none",
+          discount_percent: discountPercent,
+          discount_thb: discountThb,
           net_price_thb: serviceAmountThb,
           deposit_basis_thb: serviceAmountThb,
           deposit_percent: CUSTOMER_DEPOSIT_PERCENT,
