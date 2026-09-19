@@ -12,173 +12,99 @@ permissions:
 jobs:
   introduce-hype:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    environment: mmd-slip-extractor-staging
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: telegram-worker
     env:
-      AUTH_SERVICE_LINE_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_LINE_TO_TELEGRAM || secrets.TELEGRAM_INTERNAL_TOKEN || secrets.INTERNAL_API_TOKEN }}
-      AUTH_SERVICE_AUTH_TO_TELEGRAM: ${{ secrets.AUTH_SERVICE_AUTH_TO_TELEGRAM }}
-      TELEGRAM_BOT_TOKEN_GENERIC: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_URL: "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
-      STANDARD_GROUP_ID: "-1002073919780"
-      PREMIUM_GROUP_ID: "-1001668261779"
-      HYPE_BOT_USERNAME: "mmdprivebot"
-      MMD_BASE_URL: "https://www.mmdbkk.com"
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      INTRO_URL: "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/member-groups/introduce-hype"
     steps:
-      - name: Send one-time HYPE introduction through production worker
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Cloudflare token
+        run: npx --yes wrangler@4 whoami
+
+      - name: Introduce HYPE with ephemeral Worker token
         shell: bash
         run: |
           set -euo pipefail
 
-          # Historical failed runs never reached a successful send. A manual
-          # rerun of this run must not duplicate a successful announcement.
           if [ "${GITHUB_RUN_ATTEMPT}" != "1" ]; then
             echo "Skipping duplicate introduction on rerun attempt ${GITHUB_RUN_ATTEMPT}"
             exit 0
           fi
 
-          line_service_token="$(printf '%s' "${AUTH_SERVICE_LINE_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
-          auth_service_token="$(printf '%s' "${AUTH_SERVICE_AUTH_TO_TELEGRAM:-}" | tr -d '\r\n' | xargs)"
-          generic_bot_token="$(printf '%s' "${TELEGRAM_BOT_TOKEN_GENERIC:-}" | tr -d '\r\n' | xargs)"
+          intro_token="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("base64url"))')"
+          echo "::add-mask::${intro_token}"
 
-          health_code="$(curl -sS -o "$RUNNER_TEMP/hype-health.json" -w '%{http_code}'             'https://telegram-worker.malemodel-bkk.workers.dev/health' || true)"
-          test "$health_code" = "200"
+          cleanup() {
+            set +e
+            printf 'y\n' | npx --yes wrangler@4 secret delete HYPE_MEMBER_GROUP_INTRO_TOKEN >"$RUNNER_TEMP/hype-intro-secret-delete.log" 2>&1
+            cleanup_status=$?
+            cat "$RUNNER_TEMP/hype-intro-secret-delete.log"
+            if [ "$cleanup_status" -ne 0 ]; then
+              echo "Ephemeral HYPE intro secret cleanup failed" >&2
+              return "$cleanup_status"
+            fi
+          }
+          trap cleanup EXIT
 
-          verify_generic_hype_bot() {
-            if [ -z "$generic_bot_token" ]; then
-              return 1
+          printf '%s' "$intro_token" | npx --yes wrangler@4 secret put HYPE_MEMBER_GROUP_INTRO_TOKEN
+
+          response_file="$RUNNER_TEMP/hype-member-group-intro.json"
+          delivered=false
+
+          for attempt in $(seq 1 10); do
+            code="$(curl -sS -o "$response_file" -w '%{http_code}'               -X POST "$INTRO_URL"               -H "Authorization: Bearer ${intro_token}"               -H 'Content-Type: application/json'               --data '{"confirm":"INTRODUCE_HYPE_MEMBER_GROUPS_V1"}' || true)"
+
+            if [ "$code" = "200" ]; then
+              delivered=true
+              break
             fi
-            echo "::add-mask::${generic_bot_token}"
-            response="$RUNNER_TEMP/hype-getme.json"
-            code="$(curl -sS -o "$response" -w '%{http_code}'               "https://api.telegram.org/bot${generic_bot_token}/getMe" || true)"
-            if [ "$code" != "200" ]; then
-              return 1
+
+            # Secret propagation can briefly leave the endpoint disabled.
+            if [ "$code" = "503" ] || [ "$code" = "401" ]; then
+              sleep 2
+              continue
             fi
-            HYPE_BOT_USERNAME="$HYPE_BOT_USERNAME" node - "$response" <<'NODE'
+
+            break
+          done
+
+          if [ "$delivered" != "true" ]; then
+            node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          let body = {};
+          try { body = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+          console.error(`HYPE intro failed: ${body.error || body.detail || "HTTP failure"}`);
+          if (body.failed_group) console.error(`failed_group=${body.failed_group}`);
+          if (body.stage) console.error(`stage=${body.stage}`);
+          if (body.telegram?.description) console.error(`telegram=${body.telegram.description}`);
+          NODE
+            exit 1
+          fi
+
+          node - "$response_file" <<'NODE'
           const fs = require("node:fs");
           const file = process.argv[2];
           const body = JSON.parse(fs.readFileSync(file, "utf8"));
-          const expected = String(process.env.HYPE_BOT_USERNAME || "").replace(/^@/, "").toLowerCase();
-          const actual = String(body?.result?.username || "").toLowerCase();
-          if (body.ok !== true || !actual || actual !== expected) process.exit(1);
-          console.log(`generic bot verified as @${actual}`);
-          NODE
+          if (body.ok !== true || !Array.isArray(body.sent) || body.sent.length !== 2) {
+            throw new Error("HYPE intro did not confirm both groups");
           }
-
-          send_intro() {
-            group_id="$1"
-            group_label="$2"
-            payload="$RUNNER_TEMP/hype-intro-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
-            bot_payload="$RUNNER_TEMP/hype-intro-bot-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
-
-            GROUP_ID="$group_id" GROUP_LABEL="$group_label" node <<'NODE'
-          const fs = require("node:fs");
-          const groupId = process.env.GROUP_ID;
-          const groupLabel = process.env.GROUP_LABEL;
-          const bot = process.env.HYPE_BOT_USERNAME;
-          const base = process.env.MMD_BASE_URL;
-
-          const text = [
-            "👋 <b>สวัสดีครับ ผม HYPE</b>",
-            `ผู้ช่วย Telegram ของ MMD Privé ประจำห้อง <b>${groupLabel}</b>`,
-            "",
-            "ตั้งแต่วันนี้ ถ้าต้องการเช็กทางไป หรือให้ผมช่วยดูว่าต้องทำอะไรต่อ เรียกผมได้เลยครับ",
-            "",
-            "<b>ใช้ในกลุ่มนี้ได้</b>",
-            "<b>/commands</b> — ดูคำสั่งทั้งหมดที่ผมช่วยได้",
-            "<b>/points</b> — ไปที่ MY MMD · Points",
-            "<b>/coupons</b> — เปิด Coupon Wallet",
-            "<b>/careback</b> — ดู 6 YEARS CARE BACK · Phase 2",
-            "",
-            "<b>เรื่องส่วนตัว</b>",
-            "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
-            "<b>/next</b> — ตอนนี้ต้องทำอะไรต่อ",
-            "<b>/booking</b> — progress งานและการจอง",
-            "",
-            "ถ้าพิมพ์คำสั่งส่วนตัวในกลุ่ม ผมจะไม่เปิดข้อมูลตรงนี้ครับ ผมจะพาไปคุยกันในแชตส่วนตัวแทน 🔒",
-            "",
-            "ผมอ่านจากระบบ MMD ที่ยืนยันได้เท่านั้น ไม่เดาสถานะ และไม่เปลี่ยนสิทธิ์หรือยืนยันงานแทน MMD/Per ครับ",
-            "",
-            "เริ่มเรียกผมได้เลยครับ → <b>/commands</b>",
-          ].join("\n");
-
-          const telegramPayload = {
-            chat_id: groupId,
-            text,
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${bot}` }],
-                [
-                  { text: "MY MMD", url: `${base}/my-mmd/` },
-                  { text: "Booking", url: `${base}/booking` },
-                ],
-              ],
-            },
-          };
-
-          fs.writeFileSync(
-            process.env.RUNNER_TEMP + `/hype-intro-bot-${groupLabel.toLowerCase()}.json`,
-            JSON.stringify(telegramPayload),
-          );
-          fs.writeFileSync(
-            process.env.RUNNER_TEMP + `/hype-intro-${groupLabel.toLowerCase()}.json`,
-            JSON.stringify({
-              ...telegramPayload,
-              flow: "system",
-              source: "hype_member_group_intro_v1",
-            }),
-          );
-          NODE
-
-            try_service() {
-              label="$1"
-              token="$2"
-              if [ -z "$token" ]; then
-                echo "${group_label} ${label}: unavailable"
-                return 1
-              fi
-              echo "::add-mask::${token}"
-              response="$RUNNER_TEMP/hype-intro-${group_label,,}-${label}.json"
-              code="$(curl -sS -o "$response" -w '%{http_code}'                 -X POST "$TELEGRAM_URL"                 -H "Authorization: Bearer ${token}"                 -H 'Content-Type: application/json'                 --data-binary "@$payload" || true)"
-              if [ "$code" = "200" ] && node - "$response" "$group_label" "$label" <<'NODE'
-          const fs = require("node:fs");
-          const [file, group, mode] = process.argv.slice(2);
-          const body = JSON.parse(fs.readFileSync(file, "utf8"));
-          const messageId = body?.telegram?.result?.message_id;
-          if (body.ok !== true || body?.telegram?.ok !== true || !messageId) process.exit(1);
-          console.log(`${group} intro sent via ${mode}: message_id=${messageId}`);
-          NODE
-              then
-                return 0
-              fi
-              echo "${group_label} ${label}: did not deliver"
-              return 1
-            }
-
-            if try_service "service-line" "$line_service_token"; then return 0; fi
-            if try_service "service-auth" "$auth_service_token"; then return 0; fi
-
-            if verify_generic_hype_bot; then
-              response="$RUNNER_TEMP/hype-intro-${group_label,,}-bot-generic.json"
-              code="$(curl -sS -o "$response" -w '%{http_code}'                 -X POST "https://api.telegram.org/bot${generic_bot_token}/sendMessage"                 -H 'Content-Type: application/json'                 --data-binary "@$bot_payload" || true)"
-              if [ "$code" = "200" ] && node - "$response" "$group_label" <<'NODE'
-          const fs = require("node:fs");
-          const [file, group] = process.argv.slice(2);
-          const body = JSON.parse(fs.readFileSync(file, "utf8"));
-          const messageId = body?.result?.message_id;
-          if (body.ok !== true || !messageId) process.exit(1);
-          console.log(`${group} intro sent via bot-generic: message_id=${messageId}`);
-          NODE
-              then
-                return 0
-              fi
-            fi
-
-            echo "${group_label}: no accepted HYPE delivery credential succeeded" >&2
-            return 1
+          const premium = body.sent.find((item) => item.group === "premium");
+          const standard = body.sent.find((item) => item.group === "standard");
+          if (!premium?.message_id || !standard?.message_id) {
+            throw new Error("HYPE intro message IDs missing");
           }
-
-          # Premium first because this group has been exercised less frequently.
-          send_intro "$PREMIUM_GROUP_ID" "PREMIUM"
-          send_intro "$STANDARD_GROUP_ID" "STANDARD"
+          console.log(`PREMIUM intro message_id=${premium.message_id}`);
+          console.log(`STANDARD intro message_id=${standard.message_id}`);
+          console.log(`bot=@${body.bot_username}`);
+          NODE
