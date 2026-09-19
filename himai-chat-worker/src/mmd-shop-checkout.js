@@ -1,5 +1,6 @@
 import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
-import { publicMmdShopReservation, releaseMmdShopReservation, reserveMmdShopStock, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
+import { publicMmdShopReservation, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
+import { releaseViaMmdShopCoordinator, reserveViaMmdShopCoordinator } from "./mmd-shop-stock-coordinator.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -98,7 +99,7 @@ export async function handleMmdShopCheckout(request, env) {
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "untracked");
 
-    reservation = await reserveMmdShopStock(env, {
+    reservation = await reserveViaMmdShopCoordinator(env, {
       order_id: orderId,
       items: pricedCart,
     });
@@ -130,7 +131,7 @@ export async function handleMmdShopCheckout(request, env) {
 
     const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email });
     if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
-      const released = await releaseMmdShopReservation(env, reservation, "payment_initialization_failed").catch(() => null);
+      const released = await releaseViaMmdShopCoordinator(env, reservation, "payment_initialization_failed").catch(() => null);
       if (released?.reservation) reservation = released.reservation;
       const currentNotes = clean(order?.fields?.[ORDER_FIELDS.notes], 14000);
       await patchRecord(env, table(env, "orders"), order.id, {
@@ -188,7 +189,7 @@ export async function handleMmdShopCheckout(request, env) {
     });
   } catch (error) {
     if (reservation?.state === "reserved") {
-      const released = await releaseMmdShopReservation(env, reservation, "checkout_failed").catch(() => null);
+      const released = await releaseViaMmdShopCoordinator(env, reservation, "checkout_failed").catch(() => null);
       if (released?.reservation) reservation = released.reservation;
     }
     if (order?.id) {
