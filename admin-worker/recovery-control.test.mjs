@@ -7,6 +7,7 @@ import { createCredentialBoundAdminSession } from "./src/credential-bound-admin-
 import {
   RECOVERY_CONTROL_API_PATH,
   RECOVERY_CONTROL_PAGE_PATH,
+  RECOVERY_QUEUE_ASSIGNMENT_VERSION,
   RECOVERY_QUEUE_SLA_VERSION,
   buildRecoveryControlTransition,
   handleRecoveryControl,
@@ -127,6 +128,9 @@ test("Recovery Control projection excludes private payload fields and exposes bo
   assert.equal(projected.customer.display_name, "คุณเชน");
   assert.equal(projected.domain, "booking");
   assert.equal(projected.state, "reviewing");
+  assert.equal(projected.assignment.policy_version, RECOVERY_QUEUE_ASSIGNMENT_VERSION);
+  assert.equal(projected.assignment.status, "unassigned");
+  assert.equal(projected.assignment.grants_authority, false);
   assert.equal(projected.correlation.booking_ref, "kenji_0123456789abcdef01234567");
   assert.equal(projected.correlation.session_id, "sess_exact_001");
   assert.equal(projected.correlation.job_id, "JOB-EXACT-001");
@@ -168,6 +172,19 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
   shopPayload.recovery_case.case_ref = shop.fields.pending_reference;
   shopPayload.recovery_case.domain = "mmd_shop";
   shopPayload.recovery_case.state = "acknowledged";
+  shopPayload.recovery_assignment = {
+    policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+    status: "assigned",
+    assignee_key: "credential:ops_2",
+    assignee_label: "Operator",
+    assignee_role: "admin",
+    assignee_lane: "operator",
+    claimed_at: "2026-09-19T20:55:00.000Z",
+    updated_at: "2026-09-19T20:55:00.000Z",
+    revision: 1,
+    coordination_only: true,
+    grants_authority: false,
+  };
   shopPayload.recovery_correlation = {
     domain: "mmd_shop",
     correlated: true,
@@ -192,6 +209,9 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     assert.equal(all.queue.open_count, 2);
     assert.equal(all.queue.attention_count, 1);
     assert.equal(all.queue.overdue_count, 1);
+    assert.equal(all.queue.assigned_count, 1);
+    assert.equal(all.queue.unassigned_count, 1);
+    assert.equal(all.queue.attention_unassigned_count, 1);
     assert.equal(all.cases[0].case_ref, CASE_REF);
     assert.equal(all.cases[0].sla.status, "overdue");
     assert.equal(all.queue.operational_only, true);
@@ -203,6 +223,11 @@ test("Recovery Queue filters domain/state and ranks overdue attention first", { 
     assert.equal(filtered.cases[0].state, "acknowledged");
     assert.equal(filtered.queue.by_domain.booking, 1);
     assert.equal(filtered.queue.by_domain.mmd_shop, 1);
+
+    const unassigned = await readRecoveryQueueIntelligence(env(), { limit: 12, domain: "all", state: "open", assignment: "unassigned" }, now);
+    assert.equal(unassigned.cases.length, 1);
+    assert.equal(unassigned.cases[0].case_ref, CASE_REF);
+    assert.equal(unassigned.filters.assignment, "unassigned");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -254,7 +279,9 @@ test("Recovery Control API list and exact read are bounded", { concurrency: fals
     assert.equal(listBody.cases.length, 1);
     assert.equal(listBody.cases[0].case_ref, CASE_REF);
     assert.equal(listBody.filters.state, "open");
+    assert.equal(listBody.filters.assignment, "all");
     assert.equal(listBody.sla_version, RECOVERY_QUEUE_SLA_VERSION);
+    assert.equal(listBody.assignment_version, RECOVERY_QUEUE_ASSIGNMENT_VERSION);
     assert.equal(listBody.queue.operational_only, true);
     assert.equal(listBody.queue.business_truth_inferred, false);
     assert.doesNotMatch(JSON.stringify(listBody), /private_note|payment_ref|must-not-leak/);
@@ -270,6 +297,168 @@ test("Recovery Control API list and exact read are bounded", { concurrency: fals
     assert.equal(exactBody.case.controls.can_resolve, true);
     assert.equal(exactBody.guardrails.payment_mutated, false);
     assert.equal(exactBody.guardrails.browser_service_binding_exposed, false);
+    assert.equal(exactBody.guardrails.assignment_coordination_metadata_only, true);
+    assert.equal(exactBody.guardrails.assignment_grants_authority, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Recovery assignment claim/release stays coordination-only and never resets SLA clock", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let stored = matrixRecord("reviewing");
+  const originalStateUpdatedAt = stored.fields.state_updated_at;
+  const originalPayload = JSON.parse(stored.fields.payload_json);
+  const originalWorkflowUpdatedAt = originalPayload.handoff_tracking.updated_at;
+  let patchCount = 0;
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    const method = String(init.method || "GET").toUpperCase();
+    if (url.hostname !== "api.airtable.com") throw new Error("unexpected_fetch:" + url.toString());
+    if (method === "GET") return Response.json({ records: [stored] });
+    if (method === "PATCH") {
+      patchCount += 1;
+      const body = JSON.parse(String(init.body || "{}"));
+      stored = { id: stored.id, fields: { ...stored.fields, ...body.records[0].fields } };
+      return Response.json({ records: [stored] });
+    }
+    throw new Error("unexpected_method:" + method);
+  };
+
+  try {
+    const claim = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "claim" }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(claim.status, 200);
+    const claimBody = await claim.json();
+    assert.equal(claimBody.case.assignment.status, "assigned");
+    assert.equal(claimBody.case.assignment.assignee_label, "Operator");
+    assert.equal(claimBody.case.assignment.coordination_only, true);
+    assert.equal(claimBody.case.assignment.grants_authority, false);
+    assert.equal(claimBody.guardrails.assignment_grants_authority, false);
+    assert.equal(claimBody.guardrails.assignment_resets_sla, false);
+    assert.equal(patchCount, 1);
+    assert.equal(stored.fields.state_updated_at, originalStateUpdatedAt);
+    const claimedPayload = JSON.parse(stored.fields.payload_json);
+    assert.equal(claimedPayload.handoff_tracking.updated_at, originalWorkflowUpdatedAt);
+    assert.equal(claimedPayload.recovery_case.state, "reviewing");
+    assert.equal(claimedPayload.business_truth_mutated, false);
+
+    const release = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "release" }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(release.status, 200);
+    const releaseBody = await release.json();
+    assert.equal(releaseBody.case.assignment.status, "unassigned");
+    assert.equal(patchCount, 2);
+    assert.equal(stored.fields.state_updated_at, originalStateUpdatedAt);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Recovery assignment conflicts fail closed and Owner may takeover/release without business mutation", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let stored = matrixRecord("reviewing");
+  const payload = JSON.parse(stored.fields.payload_json);
+  payload.recovery_assignment = {
+    policy_version: RECOVERY_QUEUE_ASSIGNMENT_VERSION,
+    status: "assigned",
+    assignee_key: "credential:ops_2",
+    assignee_label: "Operator",
+    assignee_role: "admin",
+    assignee_lane: "operator",
+    claimed_at: "2026-09-19T15:10:00.000Z",
+    updated_at: "2026-09-19T15:10:00.000Z",
+    revision: 1,
+    coordination_only: true,
+    grants_authority: false,
+  };
+  stored.fields.payload_json = JSON.stringify(payload);
+  let patchCount = 0;
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === "string" ? input : input.url);
+    const method = String(init.method || "GET").toUpperCase();
+    if (url.hostname !== "api.airtable.com") throw new Error("unexpected_fetch:" + url.toString());
+    if (method === "GET") return Response.json({ records: [stored] });
+    if (method === "PATCH") {
+      patchCount += 1;
+      const body = JSON.parse(String(init.body || "{}"));
+      stored = { id: stored.id, fields: { ...stored.fields, ...body.records[0].fields } };
+      return Response.json({ records: [stored] });
+    }
+    throw new Error("unexpected_method:" + method);
+  };
+
+  try {
+    const conflict = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "claim" }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json()).error, "recovery_assignment_conflict");
+    assert.equal(patchCount, 0);
+
+    const forbiddenRelease = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "release" }),
+      }),
+      env(),
+      actor("admin"),
+    );
+    assert.equal(forbiddenRelease.status, 403);
+    assert.equal((await forbiddenRelease.json()).error, "recovery_assignment_release_forbidden");
+    assert.equal(patchCount, 0);
+
+    const takeover = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "takeover" }),
+      }),
+      env(),
+      actor("owner"),
+    );
+    assert.equal(takeover.status, 200);
+    const takeoverBody = await takeover.json();
+    assert.equal(takeoverBody.case.assignment.assignee_label, "Per");
+    assert.equal(takeoverBody.case.assignment.assignee_lane, "owner");
+    assert.equal(patchCount, 1);
+
+    const ownerRelease = await handleRecoveryControl(
+      request(RECOVERY_CONTROL_API_PATH, {
+        method: "POST",
+        headers: { Origin: "https://mmdbkk.com", "Content-Type": "application/json" },
+        body: JSON.stringify({ case_ref: CASE_REF, action: "release" }),
+      }),
+      env(),
+      actor("owner"),
+    );
+    assert.equal(ownerRelease.status, 200);
+    assert.equal((await ownerRelease.json()).case.assignment.status, "unassigned");
+    assert.equal(patchCount, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
