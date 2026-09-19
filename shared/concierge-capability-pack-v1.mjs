@@ -74,10 +74,10 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     label: "Points + Coupon Inline Balance",
     primary_owner: "HYPE",
     henna_role: "bridge_to_hype_or_my_mmd",
-    authority: "points_ledger_plus_coupon_wallet",
+    authority: "member-pages-worker:hype_member_wallet_projection_v1",
     customer_routes: Object.freeze(["/my-mmd/points", "/my-mmd/coupons"]),
-    current_mode: "coupon_wallet_read_ready_points_route_only_until_bounded_projection",
-    never_claim: Object.freeze(["points balance guessed", "coupon validity guessed", "points granted"]),
+    current_mode: "hype_private_bounded_points_and_coupon_read_henna_route_only",
+    never_claim: Object.freeze(["points balance guessed", "coupon validity guessed", "points granted", "coupon activated", "coupon reissued"]),
   }),
 ]);
 
