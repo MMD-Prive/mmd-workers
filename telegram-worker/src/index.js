@@ -1184,7 +1184,7 @@ function parseHypeOwnerHandoffTransition(value) {
   return {
     command: match[1].toLowerCase(),
     state: stateByCommand[match[1].toLowerCase()],
-    handoffId: match[2].toUpperCase(),
+    handoffId: match[2],
   };
 }
 
