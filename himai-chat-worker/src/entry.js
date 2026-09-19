@@ -4,6 +4,7 @@ import { handleShopMovements } from "./shop-movements.js";
 import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
+import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -11,25 +12,19 @@ export default {
     if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
 
     try {
+      const checkoutResponse = await handleMmdShopCheckout(request, env);
+      if (checkoutResponse) return checkoutResponse;
+    } catch (error) {
+      console.error("MMD Shop checkout route error:", error);
+      return errorResponse("mmd_shop_checkout_failed", error);
+    }
+
+    try {
       const alertResponse = await handleShopAlert(request, env);
       if (alertResponse) return alertResponse;
     } catch (error) {
       console.error("Shop alert error:", error);
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "shop_alert_failed",
-          detail: error?.message || String(error)
-        }),
-        {
-          status: 500,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "no-store",
-            "access-control-allow-origin": "*"
-          }
-        }
-      );
+      return errorResponse("shop_alert_failed", error);
     }
 
     try {
@@ -37,21 +32,7 @@ export default {
       if (supplierPortalResponse) return supplierPortalResponse;
     } catch (error) {
       console.error("Supplier portal error:", error);
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "supplier_portal_failed",
-          detail: error?.message || String(error)
-        }),
-        {
-          status: 500,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "no-store",
-            "access-control-allow-origin": "*"
-          }
-        }
-      );
+      return errorResponse("supplier_portal_failed", error);
     }
 
     try {
@@ -59,21 +40,7 @@ export default {
       if (catalogResponse) return catalogResponse;
     } catch (error) {
       console.error("Shop catalog error:", error);
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "shop_catalog_failed",
-          detail: error?.message || String(error)
-        }),
-        {
-          status: 500,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "no-store",
-            "access-control-allow-origin": "*"
-          }
-        }
-      );
+      return errorResponse("shop_catalog_failed", error);
     }
 
     try {
@@ -81,23 +48,24 @@ export default {
       if (movementsResponse) return movementsResponse;
     } catch (error) {
       console.error("Shop movements error:", error);
-      return new Response(
-        JSON.stringify({
-          ok: false,
-          error: "shop_movements_failed",
-          detail: error?.message || String(error)
-        }),
-        {
-          status: 500,
-          headers: {
-            "content-type": "application/json; charset=utf-8",
-            "cache-control": "no-store",
-            "access-control-allow-origin": "*"
-          }
-        }
-      );
+      return errorResponse("shop_movements_failed", error);
     }
 
     return himaiChatWorker.fetch(request, env, ctx);
   }
 };
+
+function errorResponse(code, error) {
+  return new Response(JSON.stringify({
+    ok: false,
+    error: code,
+    detail: error?.message || String(error)
+  }), {
+    status: 500,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*"
+    }
+  });
+}
