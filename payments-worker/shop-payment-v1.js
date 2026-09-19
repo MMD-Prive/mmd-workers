@@ -281,13 +281,31 @@ async function findOrderItems(env, orderRecordId) {
   const baseId = text(env.AIRTABLE_BASE_ID, 100);
   const apiKey = airtableToken(env);
   const tableId = table(env, "orderItems");
-  const url = new URL(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}`);
-  url.searchParams.set("maxRecords", "100");
-  url.searchParams.set("filterByFormula", `FIND('${formulaValue(orderRecordId)}',ARRAYJOIN({Order}))>0`);
-  const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` } });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw httpError(502, "shop_order_items_lookup_failed");
-  return Array.isArray(data.records) ? data.records : [];
+  const matches = [];
+  let offset = "";
+  let pages = 0;
+
+  do {
+    const url = new URL(`${AIRTABLE_API}/${baseId}/${encodeURIComponent(tableId)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("returnFieldsByFieldId", "true");
+    url.searchParams.append("fields[]", ITEM_FIELDS.order);
+    if (offset) url.searchParams.set("offset", offset);
+
+    const response = await fetch(url.toString(), { headers: { authorization: `Bearer ${apiKey}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw httpError(502, "shop_order_items_lookup_failed");
+
+    for (const record of Array.isArray(data.records) ? data.records : []) {
+      const linked = Array.isArray(record.fields?.[ITEM_FIELDS.order]) ? record.fields[ITEM_FIELDS.order] : [];
+      if (linked.includes(orderRecordId)) matches.push(record);
+    }
+
+    offset = text(data.offset, 300);
+    pages += 1;
+  } while (offset && pages < 20);
+
+  return matches;
 }
 
 async function findFirst(env, tableId, formula) {
