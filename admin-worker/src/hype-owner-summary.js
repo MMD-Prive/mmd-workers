@@ -95,7 +95,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       count: reviewCounts.payment_review
         + reviewCounts.historical_recovery
         + reviewCounts.membership_review
-        + reviewCounts.jobs_need_confirm,
+        + reviewCounts.jobs_need_confirm
+        + reviewCounts.recovery_attention,
       payment: paymentItems,
       historical: historicalItems,
       membership: memberItems,
