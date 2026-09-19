@@ -23,7 +23,7 @@
   }
 
   if (path === "/sigil/pay/renew") {
-    target = membershipEntry("renew");
+    target = token ? signedPay(token) : membershipEntry("renew");
   } else if (path === "/sigil/pay/membership") {
     target = token ? signedPay(token) : membershipEntry("");
   } else if (path === "/sigil/pay/payment") {
