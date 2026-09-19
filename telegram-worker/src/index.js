@@ -2297,6 +2297,10 @@ function hypeHandoffButtons(env, target, result = {}) {
   const pickerReady = correlation.state === "ambiguous"
     && Array.isArray(correlation.options)
     && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef);
+  const pickerRevision = Number.isInteger(Number(correlation.picker_revision))
+    && Number(correlation.picker_revision) >= 1
+    ? Number(correlation.picker_revision)
+    : 1;
 
   if (pickerReady && domain === "mmd_shop") {
     for (const [index, option] of correlation.options.slice(0, 5).entries()) {
@@ -2311,7 +2315,7 @@ function hypeHandoffButtons(env, target, result = {}) {
         : "";
       rows.push([{
         text: (index + 1 + ". " + dateText + summary + amountText).slice(0, 64),
-        callback_data: "hrop|" + caseRef + "|" + index,
+        callback_data: "hrop|" + caseRef + "|" + pickerRevision + "|" + index,
       }]);
     }
   }
@@ -2323,7 +2327,7 @@ function hypeHandoffButtons(env, target, result = {}) {
       const state = clean(option.request_status);
       rows.push([{
         text: (index + 1 + ". " + (when ? when + " · " : "") + summary + (state ? " · " + state : "")).slice(0, 64),
-        callback_data: "hrbp|" + caseRef + "|" + index,
+        callback_data: "hrbp|" + caseRef + "|" + pickerRevision + "|" + index,
       }]);
     }
   }
@@ -2336,7 +2340,7 @@ function hypeHandoffButtons(env, target, result = {}) {
       const summary = [zone, skills].filter(Boolean).join(" · ") || "MMS Pre-booking";
       rows.push([{
         text: (index + 1 + ". " + (when ? when + " · " : "") + summary).slice(0, 64),
-        callback_data: "hrmp|" + caseRef + "|" + index,
+        callback_data: "hrmp|" + caseRef + "|" + pickerRevision + "|" + index,
       }]);
     }
   }
