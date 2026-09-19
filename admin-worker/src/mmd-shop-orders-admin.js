@@ -317,17 +317,43 @@ async function notifyShippingCustomer(env, input) {
   const lineUserId = clean(input?.line_user_id, 220);
   if (!lineUserId) return { ok: false, status: "skipped_no_line_identity" };
 
-  const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN, 5000);
-  if (!token) return { ok: false, status: "skipped_line_token_unavailable" };
+  const payload = {
+    line_user_id: lineUserId,
+    order_id: clean(input?.order_id, 180),
+    customer_name: clean(input?.customer_name, 180),
+    courier: clean(input?.courier, 180) || "Courier",
+    tracking_number: clean(input?.tracking_number, 220),
+  };
 
-  const courier = clean(input?.courier, 180) || "Courier";
-  const tracking = clean(input?.tracking_number, 220);
-  const customerName = clean(input?.customer_name, 180);
+  if (env.MEMBER_DASHBOARD_CHAT_WORKER?.fetch) {
+    try {
+      const response = await env.MEMBER_DASHBOARD_CHAT_WORKER.fetch(
+        "https://member-dashboard-chat-worker.local/__internal/line/shop-shipping-notify",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-mmd-internal-call": "true",
+            "x-mmd-service-binding": "admin-worker",
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.ok === true) return { ok: true, status: "sent", transport: "line_runtime_binding" };
+    } catch (_) {
+      // Fall through to the legacy direct LINE token only if it is configured.
+    }
+  }
+
+  const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN, 5000);
+  if (!token) return { ok: false, status: "skipped_line_runtime_unavailable" };
+
   const text = [
     "MMD SHOP · จัดส่งสินค้าแล้ว",
-    customerName ? `คุณ${customerName}` : "",
-    `Order: ${clean(input?.order_id, 180)}`,
-    `${courier}: ${tracking}`,
+    payload.customer_name ? `คุณ${payload.customer_name}` : "",
+    `Order: ${payload.order_id}`,
+    `${payload.courier}: ${payload.tracking_number}`,
     "",
     "ติดตามสถานะเพิ่มเติมได้ที่ MY MMD → Orders",
     "https://mmdbkk.com/my-mmd/orders",
@@ -349,7 +375,7 @@ async function notifyShippingCustomer(env, input) {
     const body = clean(await response.text().catch(() => ""), 500);
     return { ok: false, status: `failed_http_${response.status}`, error: body || null };
   }
-  return { ok: true, status: "sent" };
+  return { ok: true, status: "sent", transport: "admin_line_token_fallback" };
 }
 
 function isAllowedFulfillmentTransition(current, next, deliveryMethod, paymentStatus) {
