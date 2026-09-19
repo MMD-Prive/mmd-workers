@@ -17,7 +17,7 @@ function envFor(records) {
       async fetch(request) {
         const url = new URL(request.url);
         assert.equal(decodeURIComponent(url.pathname.split("/").pop()), "MMD — LINE OFC Client Import Staging");
-        assert.match(url.searchParams.get("filterByFormula") || "", /line_user_id/);
+        assert.equal(url.searchParams.get("filterByFormula"), `{LINE User ID}='${LINE_ID}'`);
         return Response.json({ records });
       },
     },
@@ -43,7 +43,7 @@ test("display name strips only the trusted terminal marker", () => {
 
 test("exact canonical LINE staging lookup resolves a trusted SVIP marker with trailing separators", async () => {
   const result = await resolveLineOaFastTrust(envFor([
-    { id: "recFastTrust01", fields: { line_user_id: LINE_ID, line_renamed_name: "สมาชิกทดสอบ - SVIP -" } },
+    { id: "recFastTrust01", fields: { "LINE User ID": LINE_ID, "Current LINE Rename": "สมาชิกทดสอบ - SVIP -" } },
   ]), LINE_ID);
   assert.equal(result.tier, "svip");
   assert.equal(result.label, "SVIP");
@@ -54,8 +54,8 @@ test("exact canonical LINE staging lookup resolves a trusted SVIP marker with tr
 
 test("strongest MMD-authored trusted marker wins across retained rename history", async () => {
   const result = await resolveLineOaFastTrust(envFor([
-    { id: "recFastTrust01", fields: { line_user_id: LINE_ID, line_renamed_name: "ลูกค้า VIP" } },
-    { id: "recFastTrust02", fields: { line_user_id: LINE_ID, line_renamed_name: "ลูกค้า Black Card" } },
+    { id: "recFastTrust01", fields: { "LINE User ID": LINE_ID, "Current LINE Rename": "ลูกค้า VIP" } },
+    { id: "recFastTrust02", fields: { "LINE User ID": LINE_ID, "Current LINE Rename": "ลูกค้า Black Card" } },
   ]), LINE_ID);
   assert.equal(result.tier, "black_card");
 });
