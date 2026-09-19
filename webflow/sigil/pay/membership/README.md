@@ -1,40 +1,54 @@
-# `/sigil/pay/membership` — canonical bridge
+# `/sigil/pay/membership` — canonical compatibility bridge
 
-As of 2026-09-13 this Webflow route is no longer a payment UI or payment authority. It is a compatibility bridge into the canonical membership/payment flow.
+Last reconciled with Webflow: **2026-09-19**
 
-## Routing
+Webflow page ID: `696b3174afaafbea2e92c4e9`
 
-- Signed request (`?t=<signed token>`) -> `/sigil/pay?t=<signed token>`.
+This route is **not** a membership checkout, payment UI, or payment authority. It exists only so legacy links continue to land safely in the current MMD membership/payment flow.
+
+## Canonical routing
+
+- Signed request (`?t=<token>`) -> `/sigil/pay?t=<token>`.
 - Unsigned request -> `/sigil/member/membership`.
-- Only non-authoritative membership-entry context may be forwarded on the unsigned path: `plan`, `package`, `tier`, `code`, `promo`, `src`, `campaign`, `from`.
-- Browser-supplied `amount`, `payment_ref`, `session_id`, payment destination fields, bank fields, and other money-authority parameters are not forwarded into the signed payment page.
+- The signed payment surface validates the token server-side and fails closed when the token is invalid.
 
-The shared Webflow source is `webflow/payment/legacy-payment-route-bridge-v1.js`.
+Only non-authoritative membership-entry context may be forwarded on the unsigned path:
 
-## Canonical payment owner
+`plan`, `package`, `tier`, `code`, `promo`, `src`, `campaign`, `from`.
 
-`payments-worker` remains the sole owner of amount due, payment destinations, dynamic PromptPay QR, payment references, verification, and Payment Instructions v1.
+Browser-supplied `amount`, `payment_ref`, `session_id`, payment destinations, bank fields, QR values, PayPal URLs, and other money-authority parameters must not cross the bridge.
 
-Canonical signed payment route:
+The shared runtime source is:
 
-```text
-/sigil/pay?t=<signed token>
-```
+`webflow/payment/legacy-payment-route-bridge-v1.js`
 
-Canonical payment-instructions endpoint:
+The exact Webflow page head/footer snapshot is stored beside this README.
 
-```text
-POST https://sigil.mmdbkk.com/v1/confirm/payment-instructions
-```
+## Canonical owners
 
-## Retired behavior
+- Membership selection / signup / renewal / upgrade entry: `/sigil/member/membership`
+- Signed payment surface: `/sigil/pay?t=<token>`
+- Payment authority: `payments-worker`
+- Payment Instructions: `POST /v1/confirm/payment-instructions`
 
-Do not restore a Webflow membership checkout on this route that:
+`payments-worker` remains the sole owner of amount due, payment references, payment destinations, dynamic PromptPay QR, PayPal/Card processing fee, verification, and official payment confirmation.
 
-- contains package-price tables as amount truth;
-- creates payment sessions or payment references in the browser;
-- sends browser-calculated amounts to `/v1/pay/verify`;
-- hard-codes PromptPay IDs, bank account details, card destinations, or QR URLs;
-- marks payment or membership state from browser state.
+## Webflow lock
 
-`payment-instructions-v1.js` remains in the repository as migration history/reference but is not the active page runtime after the bridge cutover.
+- No checkout UI on this route.
+- No package-price tables as payment truth.
+- No bank/PromptPay/PayPal destination hard-coding.
+- No browser-created payment sessions or payment references.
+- No browser-side membership activation.
+- No legacy payment HtmlEmbed or footer payment runtime.
+- Keep excluded from sitemap.
+- Keep `noindex,nofollow`.
+- Keep the route live only as a compatibility bridge.
+
+`payment-instructions-v1.js` in this directory is migration history/reference only and is not active runtime.
+
+## Related canon
+
+- `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md`
+- `webflow/payment/legacy-payment-route-bridge-v1.js`
+- Webflow rule: `rules/sigil-pay-membership-bridge.md`
