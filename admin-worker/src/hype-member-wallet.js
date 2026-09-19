@@ -118,7 +118,7 @@ function safeCoupon(value = {}) {
     status: ready && !code ? "unavailable" : status,
     code,
     approved_discount_percent: ready && Number.isInteger(discount) && discount > 0 && discount <= 10 ? discount : null,
-    expires_at: safeTimestamp(value.expires_at),
+    expires_at: ready ? safeTimestamp(value.expires_at) : null,
     single_use: value.single_use === true,
   };
 }
