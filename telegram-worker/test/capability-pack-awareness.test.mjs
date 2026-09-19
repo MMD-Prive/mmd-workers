@@ -40,24 +40,59 @@ function req(text, {
   });
 }
 
-test("HYPE capability pack routes Shop Orders without inventing inline order truth", { concurrency: false }, async () => {
+test("HYPE Shop Orders reads bounded member-owned Order Payment Fulfillment truth in private chat", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   let sent = null;
+  let serviceBody = null;
   globalThis.fetch = async (_url, init = {}) => {
     sent = JSON.parse(String(init.body || "{}"));
     return Response.json({ ok: true, result: { message_id: 3001 } });
   };
 
   try {
-    const response = await worker.fetch(req("GG Water ของผมถึงไหนแล้ว"), env());
+    const response = await worker.fetch(req("GG Water ของผมถึงไหนแล้ว"), env({
+      HYPE_OPERATIONS: {
+        async fetch(request) {
+          serviceBody = JSON.parse(await request.clone().text());
+          assert.equal(new URL(request.url).pathname, "/__internal/hype/shop-orders");
+          return Response.json({
+            ok: true,
+            state: "ready",
+            authority: "mmd.hype_shop_orders_projection.v1",
+            display_name: "ลูกค้า A",
+            orders: [{
+              order_id: "MMD-ORDER-001",
+              order_date: "2026-09-18T10:00:00.000Z",
+              order_status: "confirmed",
+              payment_status: "paid",
+              total_thb: 2500,
+              items: [{ item_name: "GG Water 25ml", quantity: 1, line_total_thb: 2500, status: "confirmed" }],
+              fulfillment: { state: "shipped", courier: "Example Express", tracking_number: "TRACK123" },
+            }],
+            correlation: {
+              auto_correlation_allowed: true,
+              candidate_count: 1,
+              candidate_order_id: "MMD-ORDER-001",
+              method: "single_recent_owned_order",
+            },
+          });
+        },
+      },
+    }));
     const body = await response.json();
 
-    assert.equal(body.flow, "hype_operating_orders_route");
+    assert.equal(body.flow, "hype_operating_orders_inline");
+    assert.equal(body.ok, true);
+    assert.equal(serviceBody.telegram_user_id, "111111");
     assert.match(sent.text, /MMD SHOP ORDERS/);
-    assert.match(sent.text, /ไม่เดาสถานะจาก Telegram/);
+    assert.match(sent.text, /MMD-ORDER-001/);
+    assert.match(sent.text, /Payment:<\/b> paid/);
+    assert.match(sent.text, /Fulfillment:<\/b> shipped/);
+    assert.match(sent.text, /TRACK123/);
+    assert.match(sent.text, /GG Water 25ml/);
+    assert.match(sent.text, /ไม่ mark paid \/ shipped \/ delivered \/ refunded/);
     const urls = sent.reply_markup.inline_keyboard.flat().map((item) => item.url);
     assert.equal(urls.some((url) => new URL(url).pathname === "/my-mmd/orders"), true);
-    assert.doesNotMatch(sent.text, /delivered|paid|จัดส่งแล้ว|ชำระแล้ว/i);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -164,6 +199,7 @@ test("HYPE service recovery creates a Per handoff with recovery reason and exist
     assert.equal(body.flow, "hype_supervised_handoff");
     assert.equal(body.target, "per");
     assert.equal(handoffBody.reason, "customer_service_recovery");
+    assert.equal(handoffBody.command, "recovery");
     assert.match(handoffBody.customer_message, /น้องยังไม่มา/);
     assert.equal(body.operator_notified, true);
     assert.equal(transitionBody.state, "sent");
@@ -180,6 +216,81 @@ test("HYPE service recovery creates a Per handoff with recovery reason and exist
   }
 });
 
+
+test("HYPE shop delivery problem opens recovery with one correlated Order Payment Fulfillment Case reference", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  let handoffBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    const payload = JSON.parse(String(init.body || "{}"));
+    sends.push(payload);
+    return Response.json({ ok: true, result: { message_id: 3200 + sends.length } });
+  };
+
+  try {
+    const response = await worker.fetch(req("GG Water ยังไม่ถึงเลย"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          const pathname = new URL(request.url).pathname;
+          const payload = JSON.parse(await request.clone().text());
+          if (pathname === "/__internal/hype/handoff") {
+            handoffBody = payload;
+            return Response.json({
+              ok: true,
+              state: "handoff_ready",
+              target: "per",
+              handoff_id: "HYPE-PER-20260919123000-cafefeed",
+              display_name: "ลูกค้า A",
+              line_continuity_ready: true,
+              recovery_correlation: {
+                domain: "mmd_shop",
+                state: "correlated",
+                correlated: true,
+                case_ref: "HYPE-PER-20260919123000-cafefeed",
+                order_id: "MMD-ORDER-001",
+                order_status: "confirmed",
+                payment_status: "paid",
+                fulfillment_state: "shipped",
+              },
+              operator_summary: "Shop Recovery: Order MMD-ORDER-001 · Payment paid · Fulfillment shipped · Case HYPE-PER-20260919123000-cafefeed",
+            });
+          }
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({
+              ok: true,
+              state: "sent",
+              handoff_id: "HYPE-PER-20260919123000-cafefeed",
+              target: "per",
+            });
+          }
+          return Response.json({ ok: false, error: "unexpected_path" }, { status: 404 });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_supervised_handoff");
+    assert.equal(body.target, "per");
+    assert.equal(body.handoff_id, "HYPE-PER-20260919123000-cafefeed");
+    assert.equal(handoffBody.command, "recovery");
+    assert.match(handoffBody.customer_message, /GG Water ยังไม่ถึง/);
+
+    const customer = sends.find((item) => String(item.chat_id) === "111111");
+    const ops = sends.find((item) => String(item.chat_id) === "-1003546439681");
+    assert.ok(customer);
+    assert.ok(ops);
+    assert.match(customer.text, /MMD-ORDER-001/);
+    assert.match(customer.text, /Payment: paid · Fulfillment: shipped/);
+    assert.match(customer.text, /HYPE-PER-20260919123000-cafefeed/);
+    assert.match(customer.text, /ไม่ต้องเล่าข้อมูลเดิมซ้ำ/);
+    assert.match(ops.text, /Shop recovery correlation/);
+    assert.match(ops.text, /MMD-ORDER-001/);
+    assert.doesNotMatch(customer.text, /refund approved|delivered ✅|คืนเงินแล้ว/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test("HYPE owner-only case command writes acknowledgement through the guarded handoff contract", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
