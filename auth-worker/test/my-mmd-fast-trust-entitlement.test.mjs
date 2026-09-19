@@ -10,18 +10,33 @@ function envWith({ entitlementRecords = [], stagingRecords = [] } = {}) {
     AIRTABLE_API_KEY: "test",
     AIRTABLE_BASE_ID: "appTest",
     AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "MMD — Member Entitlements",
-    AIRTABLE_TABLE_LINE_OFC_STAGING: "LINE OFC Client Import Staging",
+    AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE: "MMD — LINE OFC Client Import Staging",
     AIRTABLE_HTTP: {
       async fetch(request) {
         const url = new URL(request.url);
         const table = decodeURIComponent(url.pathname.split("/").pop());
         if (table === "MMD — Member Entitlements") return Response.json({ records: entitlementRecords });
-        if (table === "LINE OFC Client Import Staging") return Response.json({ records: stagingRecords });
+        if (table === "MMD — LINE OFC Client Import Staging") return Response.json({ records: stagingRecords });
         return Response.json({ records: [] });
       },
     },
   };
 }
+
+test("Fast Trust entitlement defaults to canonical MMD LINE OFC staging", async () => {
+  let tableName = "";
+  const entitlement = await buildFastTrustEntitlement(
+    {},
+    LINE_ID,
+    async (table) => {
+      tableName = table;
+      return [{ id: "recFast", fields: { line_user_id: LINE_ID, line_renamed_name: "สมาชิกทดสอบ - SVIP -" } }];
+    },
+    [],
+  );
+  assert.equal(tableName, "MMD — LINE OFC Client Import Staging");
+  assert.equal(entitlement.fields.capability, "svip");
+});
 
 test("Fast Trust SVIP becomes an active protected entitlement in my_mmd_entitlement_resolver_v1", async () => {
   const env = envWith({

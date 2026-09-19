@@ -12,9 +12,12 @@ This is intentionally different from generic legacy evidence. It is a narrow tru
 
 ## Trusted source
 
-Only the MMD-controlled LINE OA renamed name field is authoritative for this fast path:
+Only the MMD-controlled LINE OA renamed name field from the canonical contact staging projection is authoritative for this fast path:
 
-- `line_renamed_name`
+- canonical table: `MMD — LINE OFC Client Import Staging`
+- field: `line_renamed_name`
+
+The legacy `LINE OFC Client Import Staging` table may contain webhook/import history and is **not** the default Fast Trust authority. It remains available only to legacy identity-recovery paths that explicitly depend on its older review schema.
 
 The customer-editable LINE display name is never authoritative for this rule.
 

@@ -36,7 +36,9 @@ async function makeEnv(rename) {
     AIRTABLE_API_KEY: "test",
     AIRTABLE_BASE_ID: "appTest",
     AIRTABLE_HTTP: {
-      async fetch() {
+      async fetch(request) {
+        const url = new URL(request.url);
+        assert.equal(decodeURIComponent(url.pathname.split("/").pop()), "MMD — LINE OFC Client Import Staging");
         return Response.json({
           records: [{ id: "recFastTrust", fields: { line_user_id: LINE_ID, line_renamed_name: rename } }],
         });

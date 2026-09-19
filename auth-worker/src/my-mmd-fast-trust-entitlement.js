@@ -1,4 +1,4 @@
-const STAGING_TABLE = "LINE OFC Client Import Staging";
+const FAST_TRUST_STAGING_TABLE = "MMD — LINE OFC Client Import Staging";
 const SOURCE = "line_oa_renamed_name_fast_trust";
 const RANK = { vip: 1, svip: 2, black_card: 3 };
 const HARD_STOP = new Set(["blocked", "suspended", "revoked"]);
@@ -9,9 +9,8 @@ export async function buildFastTrustEntitlement(env = {}, lineUserId = "", listR
   if (hasExplicitHardStop(canonicalRecords)) return null;
 
   const table = String(
-    env.AIRTABLE_TABLE_LINE_OFC_STAGING
-      || env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID
-      || STAGING_TABLE,
+    env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE
+      || FAST_TRUST_STAGING_TABLE,
   ).trim();
   if (!table) return null;
 
