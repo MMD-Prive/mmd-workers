@@ -143,16 +143,26 @@ export async function reserveMmdShopStock(env, input) {
         [INVENTORY_FIELDS.status]: next <= 0 ? "depleted" : "active",
       });
 
-      await createMovement(env, {
-        batch_id: batch.id,
-        product_id: productId,
-        supplier_ids: supplierIds,
-        movement_type: "reserve",
-        quantity: take,
-        unit_cost: unitCost,
-        reference_id: reservationRef(orderId, "reserve", batch.id, productId),
-        note: `MMD Shop reservation; order=${orderId}; before=${current}; after=${next}`,
-      });
+      try {
+        await createMovement(env, {
+          batch_id: batch.id,
+          product_id: productId,
+          supplier_ids: supplierIds,
+          movement_type: "reserve",
+          quantity: take,
+          unit_cost: unitCost,
+          reference_id: reservationRef(orderId, "reserve", batch.id, productId),
+          note: `MMD Shop reservation; order=${orderId}; before=${current}; after=${next}`,
+        });
+      } catch (error) {
+        await patchRecord(env, table(env, "inventory"), batch.id, {
+          [INVENTORY_FIELDS.remaining]: current,
+          [INVENTORY_FIELDS.remainingValue]: roundMoney(current * unitCost),
+          [INVENTORY_FIELDS.low]: lowFlag(current),
+          [INVENTORY_FIELDS.status]: current <= 0 ? "depleted" : "active",
+        }).catch(() => null);
+        throw error;
+      }
 
       allocations.push({
         product_id: productId,
