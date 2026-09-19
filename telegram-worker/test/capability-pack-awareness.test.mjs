@@ -514,6 +514,340 @@ test("recovery Order picker callback selects by Case/index, clears buttons, and 
   }
 });
 
+
+test("ambiguous Booking recovery renders customer-safe picker and callback contains only Case/index", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  const caseRef = "HYPE-PER-20260919133000-b00cb00c";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/sendMessage")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 3265 + sends.length } });
+    }
+    throw new Error("unexpected fetch " + target);
+  };
+
+  try {
+    const response = await worker.fetch(req("/recovery booking มีปัญหา ช่วยตามให้หน่อย"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          const pathname = new URL(request.url).pathname;
+          if (pathname === "/__internal/hype/handoff") {
+            return Response.json({
+              ok: true,
+              state: "handoff_ready",
+              target: "per",
+              handoff_id: caseRef,
+              display_name: "ลูกค้า Booking",
+              line_continuity_ready: true,
+              recovery_case: {
+                case_ref: caseRef,
+                domain: "booking",
+                state: "prepared",
+                outcome_code: "intake_received",
+                outcome_label: "รับเคสแล้ว",
+              },
+              recovery_correlation: {
+                domain: "booking",
+                state: "ambiguous",
+                correlated: false,
+                case_ref: caseRef,
+                candidate_count: 2,
+                options: [
+                  {
+                    booking_ref: "kenji_aaaaaaaaaaaaaaaaaaaaaaaa",
+                    request_status: "pending",
+                    preferred_date: "2026-10-02",
+                    preferred_time: "19:00",
+                    selected_model_name: "Model A",
+                    summary: "Model A · private",
+                  },
+                  {
+                    booking_ref: "kenji_bbbbbbbbbbbbbbbbbbbbbbbb",
+                    request_status: "review_required",
+                    preferred_date: "2026-10-03",
+                    preferred_time: "20:30",
+                    selected_model_name: "Model B",
+                    summary: "Model B · private",
+                  },
+                ],
+              },
+              operator_summary: "Booking Recovery: ambiguous (2 owned candidates) · ask customer to choose Booking Request",
+            });
+          }
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({ ok: true, state: "sent", handoff_id: caseRef, target: "per" });
+          }
+          return Response.json({ ok: false }, { status: 404 });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_supervised_handoff");
+    const customer = sends.find((item) => String(item.chat_id) === "111111");
+    const ops = sends.find((item) => String(item.chat_id) === "-1003546439681");
+    assert.ok(customer);
+    assert.ok(ops);
+    assert.match(customer.text, /Booking/);
+    assert.match(customer.text, /2 รายการ/);
+    const callbacks = customer.reply_markup.inline_keyboard
+      .flat()
+      .map((item) => item.callback_data)
+      .filter(Boolean);
+    assert.deepEqual(callbacks, [
+      "hrbp|" + caseRef + "|0",
+      "hrbp|" + caseRef + "|1",
+    ]);
+    assert.doesNotMatch(callbacks.join("|"), /kenji_|Model A|Model B/);
+    assert.match(customer.reply_markup.inline_keyboard[0][0].text, /2026-10-02/);
+    assert.match(ops.text, /Booking recovery/);
+    assert.match(ops.text, /HYPE ไม่เลือก Booking\/Job แทนลูกค้า/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Booking recovery picker callback sends only Case/index to server, clears buttons, and preserves authority wording", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  let selection = null;
+  const caseRef = "HYPE-PER-20260919133000-b00cb00c";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3270 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrbp|" + caseRef + "|1"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          selection = JSON.parse(await request.clone().text());
+          return Response.json({
+            ok: true,
+            state: "correlated",
+            handoff_id: caseRef,
+            replayed: false,
+            recovery_correlation: {
+              domain: "booking",
+              state: "confirmed",
+              correlated: true,
+              case_ref: caseRef,
+              booking_ref: "kenji_bbbbbbbbbbbbbbbbbbbbbbbb",
+              session_id: "sess_booking_b",
+              job_id: "JOB-BOOKING-B",
+              session_state: "confirmed",
+              job_state: "confirmed",
+              selected_by: "customer",
+            },
+            recovery_case: {
+              case_ref: caseRef,
+              domain: "booking",
+              state: "reviewing",
+              outcome_code: "intake_received",
+            },
+          });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_recovery_booking_picker");
+    assert.equal(body.code_status, "booking_linked_to_existing_case");
+    assert.equal(selection.operation, "select_recovery_booking");
+    assert.equal(selection.telegram_user_id, "111111");
+    assert.equal(selection.handoff_id, caseRef);
+    assert.equal(selection.selection_index, 1);
+    assert.equal(Object.hasOwn(selection, "booking_ref"), false);
+    assert.equal(Object.hasOwn(selection, "job_id"), false);
+
+    const edit = telegramCalls.find((item) => item.target.includes("/editMessageReplyMarkup"));
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(edit);
+    assert.deepEqual(edit.payload.reply_markup, { inline_keyboard: [] });
+    assert.ok(customer);
+    assert.match(customer.payload.text, /BOOKING LINKED/);
+    assert.match(customer.payload.text, /kenji_bbbbbbbbbbbbbbbbbbbbbbbb/);
+    assert.match(customer.payload.text, /Case เดิม/);
+    assert.match(customer.payload.text, /ไม่ได้ confirm Job, Model, Payment หรือ Calendar/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ambiguous MMS recovery renders customer-safe picker and callback contains only Case/index", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const sends = [];
+  const caseRef = "HYPE-PER-20260919134500-acde7788";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes("/sendMessage")) {
+      const payload = JSON.parse(String(init.body || "{}"));
+      sends.push(payload);
+      return Response.json({ ok: true, result: { message_id: 3280 + sends.length } });
+    }
+    throw new Error("unexpected fetch " + target);
+  };
+
+  try {
+    const response = await worker.fetch(req("/recovery MMS Therapist มีปัญหา ช่วยตามให้หน่อย"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          const pathname = new URL(request.url).pathname;
+          if (pathname === "/__internal/hype/handoff") {
+            return Response.json({
+              ok: true,
+              state: "handoff_ready",
+              target: "per",
+              handoff_id: caseRef,
+              display_name: "ลูกค้า MMS",
+              line_continuity_ready: true,
+              recovery_case: {
+                case_ref: caseRef,
+                domain: "mms",
+                state: "prepared",
+                outcome_code: "intake_received",
+                outcome_label: "รับเคสแล้ว",
+              },
+              recovery_correlation: {
+                domain: "mms",
+                state: "ambiguous",
+                correlated: false,
+                case_ref: caseRef,
+                candidate_count: 2,
+                options: [
+                  {
+                    prebooking_id: "mmspre_111111111111111111111111",
+                    prebooking_status: "coordination_pending",
+                    service_date: "2026-10-02",
+                    service_time: "19:00",
+                    zone: "Sukhumvit",
+                    skills: ["Sport Massage"],
+                  },
+                  {
+                    prebooking_id: "mmspre_222222222222222222222222",
+                    prebooking_status: "matching",
+                    service_date: "2026-10-03",
+                    service_time: "20:30",
+                    zone: "Silom",
+                    skills: ["Aroma Oil", "Office Syndrome"],
+                  },
+                ],
+              },
+              operator_summary: "MMS Recovery: ambiguous (2 owned candidates) · ask customer to choose Pre-booking",
+            });
+          }
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({ ok: true, state: "sent", handoff_id: caseRef, target: "per" });
+          }
+          return Response.json({ ok: false }, { status: 404 });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_supervised_handoff");
+    const customer = sends.find((item) => String(item.chat_id) === "111111");
+    const ops = sends.find((item) => String(item.chat_id) === "-1003546439681");
+    assert.ok(customer);
+    assert.ok(ops);
+    assert.match(customer.text, /MMS Pre-booking/);
+    assert.match(customer.text, /2 รายการ/);
+    const callbacks = customer.reply_markup.inline_keyboard
+      .flat()
+      .map((item) => item.callback_data)
+      .filter(Boolean);
+    assert.deepEqual(callbacks, [
+      "hrmp|" + caseRef + "|0",
+      "hrmp|" + caseRef + "|1",
+    ]);
+    assert.doesNotMatch(callbacks.join("|"), /mmspre_|Sukhumvit|Silom/);
+    assert.match(customer.reply_markup.inline_keyboard[1][0].text, /Silom/);
+    assert.match(customer.reply_markup.inline_keyboard[1][0].text, /Aroma Oil/);
+    assert.match(ops.text, /MMS recovery/);
+    assert.match(ops.text, /HYPE ไม่เลือก MMS Pre-booking แทนลูกค้า/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("MMS recovery picker callback sends only Case/index to server and never claims Therapist or Payment confirmation", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const telegramCalls = [];
+  let selection = null;
+  const caseRef = "HYPE-PER-20260919134500-acde7788";
+
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const payload = JSON.parse(String(init.body || "{}"));
+    telegramCalls.push({ target, payload });
+    return Response.json({ ok: true, result: { message_id: 3290 + telegramCalls.length } });
+  };
+
+  try {
+    const response = await worker.fetch(callbackReq("hrmp|" + caseRef + "|1"), env({
+      HYPE_CONTEXT_WRITER: {
+        async fetch(request) {
+          selection = JSON.parse(await request.clone().text());
+          return Response.json({
+            ok: true,
+            state: "correlated",
+            handoff_id: caseRef,
+            replayed: false,
+            recovery_correlation: {
+              domain: "mms",
+              state: "matching",
+              correlated: true,
+              case_ref: caseRef,
+              prebooking_id: "mmspre_222222222222222222222222",
+              prebooking_status: "matching",
+              service_date: "2026-10-03",
+              service_time: "20:30",
+              zone: "Silom",
+              selected_by: "customer",
+            },
+            recovery_case: {
+              case_ref: caseRef,
+              domain: "mms",
+              state: "acknowledged",
+              outcome_code: "intake_received",
+            },
+          });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(body.flow, "hype_recovery_mms_picker");
+    assert.equal(body.code_status, "mms_linked_to_existing_case");
+    assert.equal(selection.operation, "select_recovery_mms");
+    assert.equal(selection.telegram_user_id, "111111");
+    assert.equal(selection.handoff_id, caseRef);
+    assert.equal(selection.selection_index, 1);
+    assert.equal(Object.hasOwn(selection, "prebooking_id"), false);
+    assert.equal(Object.hasOwn(selection, "therapist_id"), false);
+
+    const edit = telegramCalls.find((item) => item.target.includes("/editMessageReplyMarkup"));
+    const customer = telegramCalls.find((item) => item.target.includes("/sendMessage") && String(item.payload.chat_id) === "111111");
+    assert.ok(edit);
+    assert.deepEqual(edit.payload.reply_markup, { inline_keyboard: [] });
+    assert.ok(customer);
+    assert.match(customer.payload.text, /MMS PRE-BOOKING LINKED/);
+    assert.match(customer.payload.text, /mmspre_222222222222222222222222/);
+    assert.match(customer.payload.text, /Case เดิม/);
+    assert.match(customer.payload.text, /ไม่ได้ confirm Therapist, Booking หรือ Payment/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Owner can resolve a recovery Case only with an explicit taxonomy outcome", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const sends = [];
