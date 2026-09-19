@@ -87,13 +87,13 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "medium",
     source_path: "/sigil/member/membership",
     customer_answer:
-      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: MY MMD Home /member/dashboard สำหรับดูสถานะและทางเข้าหลัก, Membership /sigil/member/membership สำหรับเลือกแพ็กเกจ สมัคร ต่ออายุ อัปเกรด หรือไปต่อเรื่องการชำระเงิน, Renewal / Access Conditions /sigil/membership สำหรับอ่านเงื่อนไข, Payment status /member/payments สำหรับดูและไปต่อจากรายการชำระเงินเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบมี URL /sigil/pay ที่ลงนามสำหรับรายการปัจจุบัน ให้ใช้ URL นั้นโดยตรง การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระ สิทธิ์สมาชิก การจอง หรือ access และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
+      "ถ้าต้องการจัดการ MY MMD ผมพาไปหน้าที่ตรงกับเรื่องได้ครับ: Public Membership /pay/membership สำหรับ MMD Member, Elite และ Red Card, Private Membership /sigil/member/membership สำหรับ Standard / Premium และ private access, Payment status /member/payments สำหรับดูรายการเดิม, Booking Request /sigil/booking สำหรับส่งคำขอจองครับ ถ้าระบบสร้าง signed payment link ให้ ใช้ลิงก์นั้นโดยตรง: Public/TMIB จะไป /pay/checkout?t=... ส่วน Private/Service จะไป /sigil/pay?t=... การส่งหลักฐานอย่างเดียวไม่ถือว่ายืนยันการชำระหรือเปิดสิทธิ์ และถ้าส่งหลักฐานไว้แล้วไม่ต้องส่งซ้ำครับ",
     internal_instruction:
-      "Canonical MY MMD route map: /member/dashboard = MY MMD Home; /sigil/member/membership = package selection/start/renew/upgrade; /sigil/membership = renewal/access conditions, not checkout; /member/payments = generic payment list/status/navigation; exact signed /sigil/pay?t=... = canonical combined payment+proof surface only when current backend intent supplies it; /confirm/payment-proof = legacy/manual no-ref compatibility only; /sigil/booking = booking request gate; /sigil/onboarding = explicit onboarding only. /member/membership is legacy compatibility. Preserve applicable t, code, promo, session_id, package, payment_ref context. Never create a replacement payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
+      "Canonical route map: /pay/membership = Public Membership selection for mmd_member / elite / red_card; /sigil/member/membership = Private Membership selection/start/renew/upgrade; /member/payments = payment list/status/navigation; exact signed /pay/checkout?t=... = Public/TMIB payment+proof surface when the backend intent selects public presentation; exact signed /sigil/pay?t=... = Private/Service payment+proof surface when the backend intent selects SIGIL presentation; /sigil/pay/membership remains private legacy compatibility only; /confirm/payment-proof = legacy/manual no-ref compatibility only; /sigil/booking = booking request gate. Never infer the surface from browser amount. Preserve the exact backend-issued signed URL. Never create a replacement payment_ref, request duplicate proof, or confirm payment, membership, booking, availability, Black Card, VIP, SVIP, or access from chat alone.",
   },
   {
     id: "kenji_20_007_drop_690_guard",
-    title: "Kenji AI 2.0 — Drop 690 Main Route Guard",
+    title: "Kenji AI 2.0 — Public Membership 690 Safety Guard",
     category: "admin_policy",
     language: "th",
     status: "active",
@@ -101,9 +101,9 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     risk_level: "critical",
     source_path: "webflow/customer-facing-routing",
     customer_answer:
-      "ผมจะไม่พาไปเส้น Public Access 690 แบบ pay-to-view หรือ instant unlock แล้วครับ ถ้าเป็น request ใหม่ ผมจะพาไป Reviewed Access / Membership Intake ตามบริบท และถ้าต้องไปต่อเรื่องการชำระเงินจะใช้รายการเดิมผ่าน /member/payments หรือ URL /sigil/pay ที่ระบบสร้างให้สำหรับรายการนั้นเท่านั้น หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และ MMD จะตรวจความเหมาะสมก่อนเสมอ",
+      "MMD Member 690 เป็น Public Membership จริงครับ ไม่ใช่ pay-to-view หรือ instant unlock หากต้องการสมัครให้เริ่มที่ /pay/membership และให้ระบบสร้าง signed /pay/checkout?t=... เอง ส่วน Private Membership หรือค่าบริการจะใช้ signed /sigil/pay?t=... ตามรายการที่ backend สร้างให้ หลักฐานที่ส่งแล้วไม่ต้องส่งซ้ำ และสิทธิ์จะมีผลหลัง MMD Official Verify เท่านั้น",
     internal_instruction:
-      "Drop Public Access 690 as main route. Block pay-to-view, instant unlock, and old upstream wording. For payment continuation use the exact signed /sigil/pay?t=... only when supplied by the current backend intent; otherwise /member/payments. /confirm/payment-proof is legacy/manual no-ref compatibility only. Never create a replacement payment_ref or ask for proof resubmission when one is pending.",
+      "MMD Member 690 is an active Public Membership product, not pay-to-view and not instant unlock. Public membership starts at /pay/membership and uses the exact signed /pay/checkout?t=... only when backend intent returns it. TMIB single-episode purchases use the same public checkout. Private membership/service payments use exact signed /sigil/pay?t=.... Otherwise use /member/payments for existing payment status. Proof is evidence only until Official Verify. Never mint a replacement payment_ref or request proof resubmission when one is pending.",
   },
   {
     id: "kenji_20_006_payment_proof",
@@ -117,7 +117,7 @@ const STATIC_CANONICAL_CARDS = Object.freeze([
     customer_answer:
       "ถ้าต้องไปต่อเรื่องการชำระเงิน เปิดรายการชำระเงินที่ https://mmdbkk.com/member/payments ได้เลยครับ ระบบจะพาไปขั้นตอนของรายการเดิม ถ้ามี payment ref หรือส่งหลักฐานไว้แล้ว ไม่ต้องสร้างรายการหรือส่งซ้ำครับ หลักฐานยังเป็นเพียง evidence จนกว่า MMD จะตรวจและอัปเดตสถานะทางการ",
     internal_instruction:
-      "Use the exact signed /sigil/pay?t=... URL only when the current backend payment intent supplies it; otherwise use /member/payments for payment list/status/navigation. /confirm/payment-proof is legacy/manual no-ref compatibility only and must never be the default new-payment CTA or mint a replacement payment_ref. Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms. If proof/ref is already pending verification, do not ask for resubmission.",
+      "Use the exact signed payment URL returned by the current backend intent. Public Membership and TMIB use /pay/checkout?t=...; Private Membership and service payments use /sigil/pay?t=.... Do not convert one surface into the other in browser/chat. Otherwise use /member/payments for payment list/status/navigation. /confirm/payment-proof is legacy/manual no-ref compatibility only and must never mint a replacement payment_ref. Proof is evidence only. Never say paid, verified, approved, activated, successful, or confirmed before Money Truth confirms. If proof/ref is already pending verification, do not ask for resubmission.",
   },
   {
     id: "kenji_20_009_web_forbidden_terms",
