@@ -1950,18 +1950,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
         ? "HYPE Ops แจ้ง Per พร้อม context ล่าสุดแล้วครับ ถ้าต้องส่งข้อความเพิ่ม ใช้ LINE Official ได้โดยไม่ต้องเริ่มอธิบายสถานะระบบใหม่ครับ"
         : "Context ถูกเตรียมไว้แล้ว แต่ HYPE ยังยืนยันการส่ง Alert ถึง Per ไม่ได้ กรุณาเปิด LINE Official เพื่อให้ทีมรับช่วงต่อครับ",
     "",
-    ...(result.recovery_correlation?.correlated === true
-      ? [
-          `Order: ${clean(result.recovery_correlation.order_id)}`,
-          `Payment: ${clean(result.recovery_correlation.payment_status) || "unknown"} · Fulfillment: ${clean(result.recovery_correlation.fulfillment_state) || "unknown"}`,
-          "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
-        ]
-      : result.recovery_correlation?.state === "ambiguous"
-        ? [
-            "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
-            "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
-          ]
-        : []),
+    ...recoveryHandoffCustomerPlainLines(result.recovery_correlation),
     `Reference: ${clean(result.handoff_id)}`,
   ];
 
@@ -1985,6 +1974,68 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
     operator_notified: alert?.ok === true,
     telegram,
   };
+}
+
+function recoveryHandoffCustomerPlainLines(correlation = {}) {
+  if (!correlation || typeof correlation !== "object") return [];
+  const domain = clean(correlation.domain).toLowerCase();
+
+  if (domain === "mmd_shop") {
+    if (correlation.correlated === true) {
+      return [
+        "Order: " + clean(correlation.order_id),
+        "Payment: " + (clean(correlation.payment_status) || "unknown") + " · Fulfillment: " + (clean(correlation.fulfillment_state) || "unknown"),
+        "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน",
+        "เลือก Order ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  if (domain === "booking") {
+    if (correlation.correlated === true) {
+      return [
+        "Booking Ref: " + (clean(correlation.booking_ref) || "-"),
+        ...((clean(correlation.session_id) || clean(correlation.job_id))
+          ? ["Session: " + (clean(correlation.session_id) || "pending") + " · Job: " + (clean(correlation.job_id) || "pending")]
+          : []),
+        "Booking state: " + (clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown"),
+        "Booking / Job context ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบมากกว่า 1 Booking Request ที่เป็นของคุณครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Booking / Job ไหน",
+        "เลือก Booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  if (domain === "mms") {
+    if (correlation.correlated === true) {
+      return [
+        "MMS Pre-booking: " + (clean(correlation.prebooking_id) || "-"),
+        "MMS state: " + (clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+        ...((clean(correlation.service_date) || clean(correlation.service_time))
+          ? ["Schedule: " + (clean(correlation.service_date) || "-") + (clean(correlation.service_time) ? " · " + clean(correlation.service_time) : "")]
+          : []),
+        ...(clean(correlation.zone) ? ["Zone: " + clean(correlation.zone)] : []),
+        "MMS context ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+      ];
+    }
+    if (correlation.state === "ambiguous") {
+      return [
+        "พบมากกว่า 1 MMS Pre-booking ที่เป็นของคุณครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็นรายการไหน",
+        "เลือก Pre-booking ของเคสนี้จากปุ่มด้านล่างได้เลยครับ ระบบจะ re-check canonical ownership ก่อนผูกเข้ากับ Case เดิม",
+      ];
+    }
+  }
+
+  return [];
 }
 
 async function recordHypeContinuity({ binding, telegramUserId, command, customerMessage, projection }) {
