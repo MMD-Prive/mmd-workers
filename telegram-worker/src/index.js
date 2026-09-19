@@ -518,7 +518,7 @@ async function handleHypeOperatingCommand({ message, chatId, command }, env) {
   if (clean(message.chat?.type).toLowerCase() !== "private") {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: "ข้อมูลบัญชีและการส่งต่อเป็นเรื่องส่วนตัวครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
+      text: "ข้อมูลบัญชี การส่งต่อ และข้อมูลส่วนตัวจะแสดงเฉพาะใน private chat ครับ กรุณาเปิดแชตส่วนตัวกับ HYPE แล้วพิมพ์ /status, /next, /booking, /payment, /kenji หรือ /human\n\nในกลุ่มนี้พิมพ์ /commands เพื่อดูคู่มือคำสั่งได้ครับ",
       disable_web_page_preview: true,
       reply_markup: {
         inline_keyboard: [[{
