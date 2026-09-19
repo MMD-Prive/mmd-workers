@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readMemberHistoryRecoveryStatus } from "./src/member-history-recovery.js";
+import { readMemberHistoryRecoveryStatus, shouldAutoRunHistoryRecovery } from "./src/member-history-recovery.js";
 
 import {
   ensureMemberHistoryRecoveryOnAccess,
@@ -130,4 +130,13 @@ test("history recovery status reader preserves reconciled as authoritative termi
   assert.equal(status.current_points_total, 1250);
   assert.equal(status.pending_review_count, 0);
   assert.equal(status.reason, "note_first_recovery_complete");
+});
+
+
+test("reconciled and review_required stay terminal for automatic access triggers", () => {
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "reconciled" }, "member_app_access"), false);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "review_required" }, "login"), false);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "checking" }, "member_app_access"), true);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "blocked" }, "member_app_access"), true);
+  assert.equal(shouldAutoRunHistoryRecovery({ state: "reconciled" }, "manual_refresh"), true);
 });
