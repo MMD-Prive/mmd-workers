@@ -718,10 +718,63 @@ Owner Summary exposes only bounded assignment labels such as `Per`, `Owner` or `
 
 HYPE Owner Summary may recommend opening the unassigned Recovery queue. HYPE itself remains read-only and cannot claim, release or takeover a Case.
 
+## Booking / MMS Ambiguous Recovery Picker
+
+Recovery correlation now applies the same no-guess selection contract used by MMD Shop to Booking Requests and MMS Pre-bookings.
+
+When the customer supplies an exact canonical reference, the existing exact-reference path remains authoritative.
+
+When no exact reference is available:
+
+- Booking reads recent `SIGIL Booking Requests` candidates and keeps only rows whose `resolver_payload_json.canonical_client_id` exactly equals the resolved Canonical Client;
+- MMS reads the existing customer-safe `/internal/mms/member/prebookings?member_ref=<canonical client>` authority;
+- zero owned candidates remains unmatched;
+- exactly one owned candidate may auto-correlate;
+- more than one owned candidate becomes `ambiguous` and HYPE must not guess.
+
+Customer-safe picker options are bounded to five rows.
+
+Booking option projection may contain only:
+
+- preferred date/time;
+- selected Model display name;
+- request status;
+- a bounded summary.
+
+MMS option projection may contain only:
+
+- service date/time;
+- zone;
+- bounded selected skills;
+- pre-booking status.
+
+The option's canonical reference is retained server-side for selection but is never placed in Telegram callback data.
+
+Callback contracts:
+
+- Booking: `hrbp|<Case Ref>|<option index>`;
+- MMS: `hrmp|<Case Ref>|<option index>`.
+
+Before binding the selected option, admin-worker must:
+
+1. resolve the Telegram user to the Canonical Client again;
+2. verify that the existing Recovery Case is linked to that Client;
+3. verify the Case is not terminal;
+4. resolve the server-stored option by index;
+5. re-read the owning Booking or MMS authority;
+6. re-check exact ownership of the selected canonical reference;
+7. bind the refreshed correlation to the existing Case Ref only after those checks pass.
+
+Selection never creates a new Case and never moves the lifecycle backward. A Case already in `sent / acknowledged / reviewing` remains in that state. Selection changes only bounded Recovery correlation metadata.
+
+Booking selection does not confirm Job, Model, Calendar or Payment truth. MMS selection does not confirm Therapist, Booking or Payment truth.
+
+A stale option, changed ownership, foreign Telegram identity or terminal Case fails closed. HYPE clears the picker only after a successful server-side bind.
+
 ## Next implementation lanes
 
-1. customer-safe ambiguity handling for Booking/MMS only if their canonical authorities later expose multiple owned candidates;
-2. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model.
+1. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model;
+2. bounded picker refresh/reissue UX if a customer opens a stale Booking/MMS selection after the candidate set changes.
 
 All future lanes must preserve the same authority and privacy locks.
 
