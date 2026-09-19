@@ -1974,7 +1974,10 @@ function hypeHandoffButtons(env, target, result = {}) {
   ) {
     for (const [index, option] of correlation.options.slice(0, 5).entries()) {
       const summary = clean(option.item_summary || "MMD Shop Order").slice(0, 26);
-      const amount = Number(option.total_thb);
+      const rawAmount = option.total_thb;
+      const amount = rawAmount === null || rawAmount === undefined || rawAmount === ""
+        ? null
+        : Number(rawAmount);
       const amountText = Number.isFinite(amount) ? ` · ฿${amount.toLocaleString("en-US")}` : "";
       const dateText = clean(option.order_date) ? `${formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("")} · ` : "";
       rows.push([{
