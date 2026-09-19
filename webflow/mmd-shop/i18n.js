@@ -22,7 +22,7 @@ var LOCALES={th:"th-TH",en:"en-US",zh:"zh-CN"};
 
 var COPY={
  th:{
-  rules:"กติกา",orders:"Orders",backShop:"กลับไปเลือกของ",browse:"ดูของที่ผมเลือก",shortRules:"กติกาสั้น ๆ",
+  rules:"กติกา",products:"สินค้า",orders:"Orders",backShop:"กลับไปเลือกของ",backMmdShop:"กลับ MMD Shop",browse:"ดูของที่ผมเลือก",shortRules:"กติกาสั้น ๆ",
   rootHeroTitle:"ของที่ผมใช้เวลาเลือกให้แล้ว",rootHeroCopy:"ถ้าผมยังไม่มั่นใจว่าเหมาะกับลูกค้า MMD ผมไม่เอาขึ้นหน้านี้ครับ",
   rootL1a:"01 · เลือก",rootL1b:"เลือกเฉพาะชิ้นที่อยากได้",rootL2a:"02 · เช็ก",rootL2b:"MMD เช็กราคาและของจริง",
   rootL3a:"03 · จ่าย",rootL3b:"จ่ายตาม Order ที่เปิดให้",rootL4a:"04 · ตาม",rootL4b:"สถานะอยู่กับ Order เดิม",
@@ -73,6 +73,7 @@ var COPY={
   rulesP42:"สถานะคืนเงินจะแสดงเมื่อ MMD บันทึกการคืนเงินจริงแล้ว ไม่ใช้ข้อความหรือสลิปเป็นตัวเดาแทนครับ",
   rulesP51:"ถ้ายอดไม่ตรง เปิด Order ไม่ได้ หรือหน้าชำระมีปัญหา ส่ง Order ID มาให้ MMD ดูรายการเดิมได้เลยครับ ไม่ต้องสร้าง Payment ซ้ำ",
   lineMmd:"คุยกับ MMD ทาง LINE",rulesClose:"ถ้าโอเคแล้ว กลับไปเลือกของได้เลยครับ",goShop:"ไป MMD Shop",
+  orderBack:"กลับไปที่ร้าน",orderLoading:"กำลังตรวจรายการ…",orderTotalLabel:"ยอดรวม",orderPaymentLabel:"การชำระเงิน",orderPay:"ดำเนินการชำระเงิน",orderMore:"เลือกสินค้าเพิ่ม",
   orderEyebrow:"YOUR ORDER",orderTitle:"รายการนี้ของคุณ",orderLead:"ยอด สถานะ และการส่งของอยู่ตรงนี้ ไม่ต้องไล่ถามหลายที่ครับ",
   orderHelp:"ถ้าสงสัยตรงไหน",orderHelpCopy:"ส่ง Order ID มาให้ MMD ดูรายการเดิมได้เลยครับ",
   orderDraft:"รอชำระ / รอตรวจ",orderConfirmed:"กำลังเตรียมรายการ",orderDone:"สำเร็จ",orderCancelled:"ยกเลิก",orderChecking:"กำลังตรวจ",
@@ -87,7 +88,7 @@ var COPY={
   orderUnavailable:"ตอนนี้เปิด Order ไม่ได้ครับ กลับ MY MMD หรือติดต่อ MMD ได้เลย"
  },
  en:{
-  rules:"Rules",orders:"Orders",backShop:"Back to shop",browse:"See my picks",shortRules:"Quick rules",
+  rules:"Rules",products:"Products",orders:"Orders",backShop:"Back to products",backMmdShop:"Back to MMD Shop",browse:"See my picks",shortRules:"Quick rules",
   rootHeroTitle:"I’ve already done the choosing for you",rootHeroCopy:"If I’m not confident it belongs in MMD Shop, I don’t put it here.",
   rootL1a:"01 · PICK",rootL1b:"Choose only what you actually want",rootL2a:"02 · CHECK",rootL2b:"MMD checks price and real stock",
   rootL3a:"03 · PAY",rootL3b:"Pay only from the Order we open",rootL4a:"04 · TRACK",rootL4b:"Everything stays on the same Order",
@@ -138,6 +139,7 @@ var COPY={
   rulesP42:"Refunded status appears only after MMD records the actual refund. We don’t infer it from a message or a slip.",
   rulesP51:"If the amount is wrong, the Order won’t open, or payment has an issue, send MMD the Order ID. We’ll inspect the same Order instead of creating a duplicate payment.",
   lineMmd:"Chat with MMD on LINE",rulesClose:"All good? Go back and choose what you want.",goShop:"Go to MMD Shop",
+  orderBack:"Back to shop",orderLoading:"Checking your Order…",orderTotalLabel:"Order total",orderPaymentLabel:"Payment",orderPay:"Continue to payment",orderMore:"Choose more products",
   orderEyebrow:"YOUR ORDER",orderTitle:"This is your Order",orderLead:"Amount, status, and delivery all stay here — no need to chase updates in different places.",
   orderHelp:"Need help?",orderHelpCopy:"Send MMD the Order ID and we’ll check this exact Order.",
   orderDraft:"Awaiting payment / review",orderConfirmed:"Preparing order",orderDone:"Completed",orderCancelled:"Cancelled",orderChecking:"Checking",
@@ -152,7 +154,7 @@ var COPY={
   orderUnavailable:"This Order can’t be opened right now. Return to MY MMD or contact MMD."
  },
  zh:{
-  rules:"规则",orders:"订单",backShop:"返回选购",browse:"查看我的精选",shortRules:"快速规则",
+  rules:"规则",products:"商品",orders:"订单",backShop:"返回选购",backMmdShop:"返回 MMD Shop",browse:"查看我的精选",shortRules:"快速规则",
   rootHeroTitle:"我已经替你筛选好了",rootHeroCopy:"如果我不确定它适不适合 MMD 的客人，我不会把它放在这里。",
   rootL1a:"01 · 选择",rootL1b:"只选你真正想要的",rootL2a:"02 · 确认",rootL2b:"MMD 再确认价格与真实库存",
   rootL3a:"03 · 支付",rootL3b:"只按已开启的 Order 支付",rootL4a:"04 · 跟进",rootL4b:"所有状态都留在同一张 Order",
@@ -203,6 +205,7 @@ var COPY={
   rulesP42:"只有 MMD 记录实际退款后，状态才会显示已退款，不会根据聊天或凭证自行推断。",
   rulesP51:"如果金额不对、Order 打不开或支付有问题，把 Order ID 发给 MMD。我们会查同一张 Order，不会重复建立付款。",
   lineMmd:"在 LINE 联系 MMD",rulesClose:"都没问题的话，就回去选你想要的吧。",goShop:"前往 MMD Shop",
+  orderBack:"返回商店",orderLoading:"正在检查 Order…",orderTotalLabel:"订单合计",orderPaymentLabel:"付款",orderPay:"继续付款",orderMore:"继续选购",
   orderEyebrow:"你的 ORDER",orderTitle:"这是你的 Order",orderLead:"金额、状态和配送都留在这里，不需要到处追问。",
   orderHelp:"需要帮忙？",orderHelpCopy:"把 Order ID 发给 MMD，我们会直接检查这张 Order。",
   orderDraft:"等待付款 / 核对",orderConfirmed:"正在准备订单",orderDone:"已完成",orderCancelled:"已取消",orderChecking:"正在确认",
@@ -325,6 +328,7 @@ function setLanguage(next){
   var u=new URL(location.href);u.searchParams.set("lang",lang);
   try{history.replaceState(history.state,"",u.pathname+u.search+u.hash)}catch(_){}
   document.dispatchEvent(new CustomEvent("mmd:shop-language-change",{detail:{lang:lang}}));
+  if(document.querySelector(".shop-order"))setTimeout(function(){location.reload();},0);
 }
 var api={t:t,money:money,qty:qtyText,locale:locale,setLanguage:setLanguage,apply:apply,get lang(){return lang}};
 window.MMDShopI18n=api;
