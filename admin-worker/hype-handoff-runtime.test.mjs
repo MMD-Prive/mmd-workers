@@ -381,7 +381,10 @@ test("ambiguous Shop recovery offers safe options and customer selection binds o
     const method = String(init.method || "GET").toUpperCase();
     if (parsed.pathname.endsWith("/tblClients/recClientA1")) return Response.json(clients[0]);
     if (parsed.pathname.endsWith("/tblClients/recClientB2")) return Response.json(clients[1]);
-    if (parsed.pathname.endsWith("/tblClients")) return Response.json({ records: clients });
+    if (parsed.pathname.endsWith("/tblClients")) {
+      const rawUrl = decodeURIComponent(String(url));
+      return Response.json({ records: rawUrl.includes("222222") ? [clients[1]] : [clients[0]] });
+    }
     if (parsed.pathname.endsWith("/tblMatrix") && method === "GET") {
       return Response.json({ records: matrixRecord ? [matrixRecord] : [] });
     }
