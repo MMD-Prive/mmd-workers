@@ -1,5 +1,8 @@
 # Kenji AI — MY MMD Canonical Route Lock
 
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
 Effective: 2026-08-20  
 Payment routing amended: 2026-09-11  
 Owner: Boss Per  
@@ -14,7 +17,7 @@ Lock the member-facing MY MMD route map used by Kenji AI, LINE OFC, Webflow, and
 - `/member/dashboard` — MY MMD Home / member status hub.
 - `/sigil/member/membership` — canonical member-facing membership page for package selection, start, renew, upgrade, compare tiers, and continue-payment actions.
 - `/sigil/membership` — Renewal / Access Conditions only. This is not checkout.
-- `/sigil/pay/renewal` — renewal entry/bridge where applicable; canonical payment intents ultimately hand off to signed `/sigil/pay?t=...`.
+- `/sigil/pay/renewal` — redirect-only compatibility. Use `/sigil/member/membership?intent=renew` for renewal entry; a backend-issued signed payment intent uses `/sigil/pay?t=...`.
 - `/member/payments` — generic payment list/status/navigation handoff when a signed canonical pay URL is not available.
 - signed `/sigil/pay?t=...` — canonical combined payment + proof surface when supplied by the current backend payment intent.
 - `/confirm/payment-proof` — **legacy/manual no-ref evidence compatibility only; not the default CTA for new payment flows and must not mint a replacement payment reference.**
