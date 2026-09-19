@@ -2555,22 +2555,115 @@ async function buildBookingRecoveryCorrelation(env, input = {}) {
   const explicitRef = extractBookingRecoveryRef(input.customerMessage);
   const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "booking");
   const ref = explicitRef || storedRef;
-  if (!ref) {
-    return {
+  if (ref) {
+    return correlateOwnedBookingRecoveryRef(
+      env,
+      input.canonicalClientId,
+      ref,
+      explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
+    );
+  }
+
+  const candidates = await listOwnedBookingRecoveryCandidates(env, input.canonicalClientId);
+  if (!candidates.ok) {
+    return safeRecoveryCorrelation({
       domain: "booking",
-      state: "reference_required",
+      state: "authority_unavailable",
       correlated: false,
-      method: "exact_reference_required",
+      candidate_count: 0,
+      method: "owned_booking_candidates_unavailable",
       source_authority: "sigil-booking-worker",
       live_refresh_status: "unavailable",
-    };
+    });
   }
-  return correlateOwnedBookingRecoveryRef(
-    env,
-    input.canonicalClientId,
-    ref,
-    explicitRef ? "explicit_owned_booking_ref" : "stored_owned_booking_ref",
-  );
+  if (candidates.count === 0) {
+    return safeRecoveryCorrelation({
+      domain: "booking",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: 0,
+      method: "no_owned_booking_candidates",
+      source_authority: "sigil-booking-worker",
+      live_refresh_status: "fresh",
+    });
+  }
+  if (candidates.count === 1 && candidates.options[0]?.booking_ref) {
+    const exact = await correlateOwnedBookingRecoveryRef(
+      env,
+      input.canonicalClientId,
+      candidates.options[0].booking_ref,
+      "single_owned_booking_candidate",
+    );
+    return safeRecoveryCorrelation({
+      ...exact,
+      candidate_count: 1,
+      options: candidates.options,
+    });
+  }
+  return safeRecoveryCorrelation({
+    domain: "booking",
+    state: "ambiguous",
+    correlated: false,
+    candidate_count: candidates.count,
+    options: candidates.options,
+    method: "customer_select_owned_booking",
+    source_authority: "sigil-booking-worker",
+    live_refresh_status: "fresh",
+  });
+}
+
+async function listOwnedBookingRecoveryCandidates(env, canonicalClientId) {
+  const owner = recordId(canonicalClientId);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 120);
+  const tokenValue = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
+  const bookingTable = clean(env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID, 120) || "tblQa2OK4U69eOCRF";
+  if (!owner || !baseId || !tokenValue) return { ok: false, count: 0, options: [] };
+
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(bookingTable)}`);
+  url.searchParams.set("maxRecords", "20");
+  url.searchParams.set("pageSize", "20");
+  url.searchParams.set("filterByFormula", `FIND(${formulaText(owner)},{resolver_payload_json})`);
+  url.searchParams.set("sort[0][field]", "Created At");
+  url.searchParams.set("sort[0][direction]", "desc");
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: { authorization: `Bearer ${tokenValue}`, accept: "application/json" },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return { ok: false, count: 0, options: [] };
+
+    const owned = (Array.isArray(data.records) ? data.records : [])
+      .filter((record) => recordId(parseObject(record?.fields?.resolver_payload_json).canonical_client_id) === owner)
+      .map((record) => recoveryBookingOptionFromRecord(record))
+      .filter(Boolean);
+    return {
+      ok: true,
+      count: owned.length,
+      options: owned.slice(0, 5),
+    };
+  } catch {
+    return { ok: false, count: 0, options: [] };
+  }
+}
+
+function recoveryBookingOptionFromRecord(record = {}) {
+  const fields = record?.fields || {};
+  const bookingRef = clean(fields.booking_ref || fields["Request ID"], 180);
+  if (!bookingRef) return null;
+  const selectedModelName = clean(fields["Selected Model Name"], 120);
+  const lane = token(fields.lane);
+  return safeRecoveryBookingOption({
+    booking_ref: bookingRef,
+    request_status: token(fields["Request Status"] || fields.request_status) || "unknown",
+    preferred_date: clean(fields["Preferred Date"] || fields.preferred_date, 20),
+    preferred_time: clean(fields["Preferred Time"] || fields.preferred_time, 8),
+    selected_model_name: selectedModelName,
+    summary: selectedModelName
+      ? `${selectedModelName}${lane ? ` · ${lane}` : ""}`
+      : lane ? `Booking · ${lane}` : "Booking Request",
+    created_at: clean(fields["Created At"] || fields.created_at, 80),
+  });
 }
 
 async function correlateOwnedBookingRecoveryRef(env, canonicalClientId, bookingRef, method = "owned_booking_ref") {
@@ -2641,22 +2734,85 @@ async function buildMmsRecoveryCorrelation(env, input = {}) {
   const explicitRef = extractMmsRecoveryRef(input.customerMessage);
   const storedRef = exactRecoveryRefFromPayload(input.priorPayload, "mms");
   const ref = explicitRef || storedRef;
-  if (!ref) {
-    return {
-      domain: "mms",
-      state: "reference_required",
-      correlated: false,
-      method: "exact_reference_required",
-      source_authority: "mms-worker",
-      live_refresh_status: "unavailable",
-    };
+  if (ref) {
+    return correlateOwnedMmsRecoveryRef(
+      env,
+      input.canonicalClientId,
+      ref,
+      explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
+    );
   }
-  return correlateOwnedMmsRecoveryRef(
-    env,
-    input.canonicalClientId,
-    ref,
-    explicitRef ? "explicit_owned_mms_prebooking" : "stored_owned_mms_prebooking",
-  );
+
+  const candidates = await listOwnedMmsRecoveryCandidates(env, input.canonicalClientId);
+  if (!candidates.ok) {
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: "authority_unavailable",
+      correlated: false,
+      candidate_count: 0,
+      method: "owned_mms_candidates_unavailable",
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "unavailable",
+    });
+  }
+  if (candidates.count === 0) {
+    return safeRecoveryCorrelation({
+      domain: "mms",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: 0,
+      method: "no_owned_mms_candidates",
+      source_authority: "mms-worker/member-prebookings",
+      live_refresh_status: "fresh",
+    });
+  }
+  if (candidates.count === 1 && candidates.options[0]?.prebooking_id) {
+    const exact = await correlateOwnedMmsRecoveryRef(
+      env,
+      input.canonicalClientId,
+      candidates.options[0].prebooking_id,
+      "single_owned_mms_candidate",
+    );
+    return safeRecoveryCorrelation({
+      ...exact,
+      candidate_count: 1,
+      options: candidates.options,
+    });
+  }
+  return safeRecoveryCorrelation({
+    domain: "mms",
+    state: "ambiguous",
+    correlated: false,
+    candidate_count: candidates.count,
+    options: candidates.options,
+    method: "customer_select_owned_mms_prebooking",
+    source_authority: "mms-worker/member-prebookings",
+    live_refresh_status: "fresh",
+  });
+}
+
+async function listOwnedMmsRecoveryCandidates(env, canonicalClientId) {
+  const owner = recordId(canonicalClientId);
+  if (!owner || !env.MMS_WORKER?.fetch) return { ok: false, count: 0, options: [] };
+  try {
+    const url = new URL("https://mms.internal/internal/mms/member/prebookings");
+    url.searchParams.set("member_ref", owner);
+    const response = await env.MMS_WORKER.fetch(new Request(url.toString(), { method: "GET" }));
+    const data = await response.json().catch(() => null);
+    if (!response.ok || data?.ok !== true || !Array.isArray(data?.data?.requests)) {
+      return { ok: false, count: 0, options: [] };
+    }
+    const options = data.data.requests
+      .map((item) => safeRecoveryMmsOption(item))
+      .filter(Boolean);
+    return {
+      ok: true,
+      count: options.length,
+      options: options.slice(0, 5),
+    };
+  } catch {
+    return { ok: false, count: 0, options: [] };
+  }
 }
 
 async function correlateOwnedMmsRecoveryRef(env, canonicalClientId, prebookingId, method = "owned_mms_prebooking") {
