@@ -3,6 +3,7 @@ import {
   resolveLiveCanonicalClient,
 } from "./kenji-lv5-live-context.js";
 import { executeKenjiLv5SupervisedAction } from "./kenji-lv5-supervised-action.js";
+import { readBoundedShopOrdersForTelegram } from "./hype-shop-orders.js";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
@@ -138,7 +139,32 @@ export async function handleHypeHandoffRpc(request, env = {}) {
   const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
   const lineUserId = lineId(identity?.client?.line_user_id);
   const projection = buildCanonicalHandoffProjection(context);
-  const handoffId = await buildHandoffId(canonicalClientId, target);
+  let recoveryCorrelation = sourceCommand === "recovery"
+    ? await buildShopRecoveryCorrelation(env, telegramUserId, customerMessage)
+    : null;
+
+  let handoffId = "";
+  if (lineUserId && recoveryCorrelation?.correlated === true && clean(recoveryCorrelation.order_id, 180)) {
+    const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+    const existing = await findMatrix(env, hash);
+    if (existing.ok && existing.record) {
+      const priorPayload = parseObject(existing.record.fields?.[F.PAYLOAD]);
+      const priorRecovery = parseObject(priorPayload.recovery_correlation);
+      const tracking = handoffTrackingFromRecord(existing.record);
+      if (
+        (
+          clean(priorRecovery.order_id, 180) === clean(recoveryCorrelation.order_id, 180)
+          || (priorRecovery.domain === "mmd_shop" && priorRecovery.correlated !== true)
+        )
+        && tracking.id
+        && !["resolved", "customer_notified"].includes(token(tracking.state))
+      ) {
+        handoffId = tracking.id;
+      }
+    }
+  }
+  if (!handoffId) handoffId = await buildHandoffId(canonicalClientId, target);
+  if (recoveryCorrelation) recoveryCorrelation = { ...recoveryCorrelation, case_ref: handoffId };
 
   let matrix = { ok: false, error: "line_identity_not_linked" };
   if (lineUserId) {
@@ -149,6 +175,7 @@ export async function handleHypeHandoffRpc(request, env = {}) {
       command: sourceCommand,
       customerMessage,
       projection,
+      recoveryCorrelation,
       handoff: {
         id: handoffId,
         target,
@@ -169,12 +196,14 @@ export async function handleHypeHandoffRpc(request, env = {}) {
     matrix_record_id: matrix.record_id || null,
     continuity_version: matrix.version || null,
     context: projection,
+    recovery_correlation: recoveryCorrelation,
     operator_summary: buildOperatorSummary({
       target,
       displayName: context?.client_360?.display_name,
       customerMessage,
       projection,
       handoffId,
+      recoveryCorrelation,
     }),
     resume: {
       customer_does_not_need_to_repeat: true,
@@ -227,6 +256,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
 
     const tracking = handoffTrackingFromRecord(matrix.record);
     if (!tracking.id) return json({ ok: true, state: "none", tracking: false });
+    const recoveryCorrelation = safeRecoveryCorrelation(parseObject(parseObject(matrix.record.fields?.[F.PAYLOAD]).recovery_correlation));
 
     return json({
       ok: true,
@@ -237,6 +267,7 @@ export async function handleHypeHandoffStatusRpc(request, env = {}) {
       updated_at: tracking.updated_at || null,
       actor_role: tracking.actor_role || null,
       terminal: ["resolved", "customer_notified"].includes(tracking.state),
+      recovery_correlation: recoveryCorrelation,
       guardrails: handoffStatusGuardrails(),
     });
   }
@@ -1589,12 +1620,15 @@ async function upsertContinuityMatrix(env, input = {}) {
   const loops = unique([
     ...existingLoops,
     ...openLoopsFromProjection(input.projection),
+    ...(input.recoveryCorrelation ? ["service_recovery"] : []),
+    ...(input.recoveryCorrelation?.correlated === true ? ["shop_recovery"] : []),
     ...(handoff ? ["human_handoff"] : []),
   ]);
   const dontAsk = unique([
     ...existingDontAsk,
     "telegram_identity",
     ...(input.customerMessage ? ["latest_customer_request"] : []),
+    ...(input.recoveryCorrelation?.correlated === true ? ["shop_order_reference"] : []),
   ]);
   const stage = handoff ? "handoff" : deriveStage(input.projection);
   const targetLabel = handoff?.target === "kenji" ? "Kenji" : handoff?.target === "per" ? "Per" : "none";
@@ -1602,6 +1636,7 @@ async function upsertContinuityMatrix(env, input = {}) {
     command: input.command,
     projection: input.projection,
     handoff,
+    recoveryCorrelation: input.recoveryCorrelation,
   });
 
   const fields = {
@@ -1651,6 +1686,7 @@ async function upsertContinuityMatrix(env, input = {}) {
       handoff_tracking: Object.keys(tracking).length ? tracking : null,
       display_name: clean(input.displayName, 120),
       projection: input.projection,
+      recovery_correlation: input.recoveryCorrelation || priorPayload.recovery_correlation || null,
       live_truth_refresh_required: true,
       business_truth_mutated: false,
     }),
@@ -1747,7 +1783,8 @@ function openLoopsFromProjection(p = {}) {
 
 function truthDomainsFor(command, p = {}) {
   const domains = ["identity"];
-  if (["status", "next", "handoff", "kenji", "human"].includes(command)) domains.push("membership", "job", "payment");
+  if (["status", "next", "handoff", "kenji", "human", "recovery"].includes(command)) domains.push("membership", "job", "payment");
+  if (command === "recovery") domains.push("shop_order", "shop_payment", "shop_fulfillment");
   if (command === "booking") domains.push("job", "calendar");
   if (command === "payment") domains.push("payment");
   if (p.membership.level || p.membership.lifecycle) domains.push("membership");
@@ -1757,6 +1794,7 @@ function truthDomainsFor(command, p = {}) {
 }
 
 function topicForCommand(command) {
+  if (command === "recovery") return "service_recovery";
   if (command === "payment") return "payment";
   if (command === "booking") return "booking";
   if (command === "next") return "next_action";
@@ -1764,7 +1802,7 @@ function topicForCommand(command) {
   return "account_status";
 }
 
-function buildContinuitySummary({ command, projection, handoff }) {
+function buildContinuitySummary({ command, projection, handoff, recoveryCorrelation }) {
   const chunks = [
     `HYPE ${clean(command, 80) || "status"} context.`,
     projection.membership.level ? `Membership ${projection.membership.level}/${projection.membership.lifecycle || "unknown"}.` : "",
@@ -1777,12 +1815,17 @@ function buildContinuitySummary({ command, projection, handoff }) {
           ? `Payment state ${projection.payment.status}.`
           : "",
     projection.next_action.label ? `Next action: ${projection.next_action.label}.` : "",
+    recoveryCorrelation?.correlated === true
+      ? `Shop recovery linked to Order ${clean(recoveryCorrelation.order_id, 180)}; payment=${clean(recoveryCorrelation.payment_status, 80) || "unknown"}; fulfillment=${clean(recoveryCorrelation.fulfillment_state, 80) || "unknown"}; Case Ref ${clean(recoveryCorrelation.case_ref, 180)}.`
+      : recoveryCorrelation?.state === "ambiguous"
+        ? "Shop recovery detected but multiple owned Order candidates exist; do not guess the Order reference."
+        : "",
     handoff ? `Customer requested supervised handoff to ${handoff.target}; do not ask them to restart the story. Refresh live truth before acting.` : "",
   ].filter(Boolean);
   return chunks.join(" ").slice(0, 1200);
 }
 
-function buildOperatorSummary({ target, displayName, customerMessage, projection, handoffId }) {
+function buildOperatorSummary({ target, displayName, customerMessage, projection, handoffId, recoveryCorrelation }) {
   const lines = [
     `HYPE → ${target === "kenji" ? "Kenji" : "Per"} handoff`,
     `Ref: ${handoffId}`,
@@ -1792,9 +1835,113 @@ function buildOperatorSummary({ target, displayName, customerMessage, projection
     projection.job.active_count ? `Job: ${projection.job.active_count} active/pending · ${projection.job.model_name || "-"} · ${projection.job.next_status || "unknown"}` : "Job: no active job in current snapshot",
     `Payment: ${projection.payment.paid ? "paid" : projection.payment.review_required ? "review_required" : projection.payment.status || "unknown"}`,
     projection.next_action.label ? `Next: ${projection.next_action.label}` : "",
+    recoveryCorrelation?.correlated === true
+      ? `Shop Recovery: Order ${clean(recoveryCorrelation.order_id, 180)} · Payment ${clean(recoveryCorrelation.payment_status, 80) || "unknown"} · Fulfillment ${clean(recoveryCorrelation.fulfillment_state, 80) || "unknown"} · Case ${clean(recoveryCorrelation.case_ref, 180) || handoffId}`
+      : recoveryCorrelation?.state === "ambiguous"
+        ? `Shop Recovery: ambiguous (${Number(recoveryCorrelation.candidate_count) || 0} owned candidates) · ask customer to choose Order ID`
+        : "",
     "Context is continuity-only. Refresh canonical truth before any protected action.",
   ].filter(Boolean);
   return lines.join("\n").slice(0, 1800);
+}
+
+function safeRecoveryCorrelation(value = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.domain !== "mmd_shop") return null;
+  return {
+    domain: "mmd_shop",
+    state: token(value.state) || "unknown",
+    correlated: value.correlated === true,
+    case_ref: clean(value.case_ref, 180) || null,
+    order_id: clean(value.order_id, 180) || null,
+    order_status: token(value.order_status) || null,
+    payment_status: token(value.payment_status) || null,
+    fulfillment_state: token(value.fulfillment_state) || null,
+    delivery_method: token(value.delivery_method) || null,
+    courier: clean(value.courier, 180) || null,
+    tracking_number: clean(value.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(value.total_thb),
+    candidate_count: Number.isInteger(Number(value.candidate_count)) ? Math.max(0, Math.min(50, Number(value.candidate_count))) : 0,
+    method: token(value.method) || "none",
+  };
+}
+
+async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage) {
+  const message = clean(customerMessage, 500);
+  if (!isShopRecoveryMessage(message)) return null;
+
+  const requestedOrderId = extractShopOrderId(message);
+  const read = await readBoundedShopOrdersForTelegram(env, telegramUserId, requestedOrderId);
+  if (read.status !== 200 || read.body?.ok !== true) {
+    return {
+      domain: "mmd_shop",
+      state: read.body?.state === "review_required" ? "review_required" : "unavailable",
+      correlated: false,
+      candidate_count: 0,
+      method: "canonical_read_failed",
+    };
+  }
+
+  const correlation = read.body.correlation || {};
+  const candidateOrderId = clean(correlation.candidate_order_id, 180);
+  if (correlation.auto_correlation_allowed !== true || !candidateOrderId) {
+    return {
+      domain: "mmd_shop",
+      state: Number(correlation.candidate_count) > 1 ? "ambiguous" : "unmatched",
+      correlated: false,
+      candidate_count: Number(correlation.candidate_count) || 0,
+      method: clean(correlation.method, 120) || "none",
+    };
+  }
+
+  const order = (Array.isArray(read.body.orders) ? read.body.orders : [])
+    .find((item) => clean(item?.order_id, 180) === candidateOrderId);
+  if (!order) {
+    return {
+      domain: "mmd_shop",
+      state: "unmatched",
+      correlated: false,
+      candidate_count: Number(correlation.candidate_count) || 0,
+      method: "candidate_not_in_projection",
+    };
+  }
+
+  return {
+    domain: "mmd_shop",
+    state: "correlated",
+    correlated: true,
+    method: clean(correlation.method, 120),
+    order_id: candidateOrderId,
+    order_status: token(order.order_status),
+    payment_status: token(order.payment_status),
+    fulfillment_state: token(order.fulfillment?.state),
+    delivery_method: token(order.fulfillment?.delivery_method),
+    courier: clean(order.fulfillment?.courier, 180) || null,
+    tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
+    total_thb: nullableNonNegative(order.total_thb),
+    candidate_count: Number(correlation.candidate_count) || 1,
+    source_authority: clean(read.body.authority, 160) || "member-pages-worker",
+    live_truth_refresh_required: true,
+  };
+}
+
+function isShopRecoveryMessage(value) {
+  const text = clean(value, 500).toLowerCase();
+  const shop = /(?:mmd\s*shop|shop|order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ|gg\s*water|ของที่สั่ง|พัสดุ|tracking|จัดส่ง|ส่งของ)/i.test(text);
+  const problem = /(?:ปัญหา|ยังไม่|ไม่ถึง|ไม่ได้รับ|ผิด|หาย|ช้า|มาช้า|สถานะ|refund|คืนเงิน|complaint|ร้องเรียน|ติดตาม|ถึงไหน)/i.test(text);
+  return shop && problem;
+}
+
+function extractShopOrderId(value) {
+  const text = clean(value, 500);
+  const patterns = [
+    /(?:order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ)\s*(?:id|ref|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,79})/i,
+    /\b(MMD[-_][A-Za-z0-9_-]{3,76})\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1]) return clean(match[1], 180);
+  }
+  return "";
 }
 
 async function findMatrix(env, hash) {
@@ -1990,6 +2137,12 @@ function escapeFormula(value) {
 function nn(value) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}
+
+function nullableNonNegative(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function nonNegative(value) {
