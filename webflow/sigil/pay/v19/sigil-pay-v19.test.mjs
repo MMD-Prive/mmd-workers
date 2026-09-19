@@ -20,8 +20,8 @@ test("SIGIL Pay v19 owns one scoped mobile-first root", () => {
 
 test("SIGIL Pay v19 hydrates full customer truth, never claims-only verify", () => {
   assert.match(body, /data-details-path="\/v1\/confirm\/details"/);
-  assert.match(footer, /\/v1\/confirm\/details/);
-  assert.doesNotMatch(footer, /\/v1\/confirm\/verify/);
+  assert.match(footer, /root\.dataset\.detailsPath/);
+  assert.doesNotMatch(body + footer, /\/v1\/confirm\/verify/);
   assert.match(footer, /authority!=="payments-worker"/);
   assert.match(footer, /schema!=="confirmation_details_v1"/);
   for (const hook of [
@@ -39,7 +39,7 @@ test("SIGIL Pay v19 hydrates full customer truth, never claims-only verify", () 
 
 test("SIGIL Pay v19 restores all three server-authorized payment methods", () => {
   assert.match(body, /data-instructions-path="\/v1\/confirm\/payment-instructions"/);
-  assert.match(footer, /\/v1\/confirm\/payment-instructions/);
+  assert.match(footer, /root\.dataset\.instructionsPath/);
   assert.match(footer, /schema!=="mmd_payment_instructions_v1"/);
   for (const method of ["promptpay", "bank_transfer", "paypal_card"]) {
     assert.match(body, new RegExp('data-sp19-method="' + method + '"'));
@@ -83,4 +83,10 @@ test("slip submission remains evidence-only and never declares payment verified"
 
 test("SIGIL Pay v19 has no LIFF login dependency", () => {
   assert.doesNotMatch(body + head + footer, /liff\.login|liff\.init|static\.line-scdn\.net\/liff/i);
+});
+
+test("V19 inline runtime parses as JavaScript", () => {
+  const match = footer.match(/<script[^>]*>([\s\S]*)<\/script>\s*$/);
+  assert.ok(match?.[1], "runtime script body missing");
+  assert.doesNotThrow(() => new Function(match[1]));
 });
