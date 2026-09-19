@@ -74,6 +74,8 @@ test("real Shane SVIP wording accumulates EMs16 Gohan, 2 Oct 2026, Ever Green 19
   state = merge(state.draft, "s3", "Ever Green 19.00", "unknown");
   assert.equal(state.draft.location, "Ever Green");
   assert.equal(state.draft.time, "19:00");
+  assert.equal(state.draft.duration_hours, 1.5);
+  assert.equal(state.draft.duration_source, "mmd_standard_minimum_90m_default");
   assert.equal(state.draft.ready, false);
 
   state = merge(state.draft, "s4", "PN 25,000 (discount from 30,000)", "pricing_review");
@@ -94,16 +96,31 @@ test("rate is a required action field even though it may arrive before or after 
   assert.deepEqual(missingKenjiBookingFields(draft), ["amount_thb"]);
 });
 
-test("deposit-triggered draft also requires duration or end time before action", () => {
-  const draft = {
-    trigger: "deposit",
-    model_name: "EMs16",
-    date: "2026-09-20",
-    time: "20:00",
-    location: "สุขุมวิท",
-    amount_thb: 15000,
-  };
-  assert.deepEqual(missingKenjiBookingFields(draft), ["duration_or_end_time"]);
+test("deposit-triggered standard booking uses the canonical 90 minute minimum without asking duration again", () => {
+  const state = merge({}, "d1", "จอง EMs16 วันที่ 20 ก.ย. 20:00 ที่สุขุมวิท ราคา 15,000", "mmd_companion");
+  assert.equal(state.draft.duration_hours, 1.5);
+  assert.equal(state.draft.duration_source, "mmd_standard_minimum_90m_default");
+  assert.deepEqual(missingKenjiBookingFields({ ...state.draft, trigger: "deposit" }), []);
+});
+
+test("explicit duration below 90 minutes is floored to the canonical minimum", () => {
+  const state = mergeKenjiBookingDraftV1({
+    prior: {},
+    fragment: {
+      booking_signal: true,
+      model_name: "EMs16",
+      date: "2026-09-20",
+      time: "20:00",
+      duration_hours: 1,
+      location: "สุขุมวิท",
+      amount_thb: 15000,
+    },
+    conversationHash: "abcdef0123456789abcdef0123456789",
+    sourceEventId: "d2",
+    now: NOW,
+  });
+  assert.equal(state.draft.duration_hours, 1.5);
+  assert.equal(state.draft.duration_source, "mmd_standard_minimum_90m_floor");
 });
 
 test("an actioned Matrix draft is locked against duplicate action unless an explicit new booking materially changes it", () => {
