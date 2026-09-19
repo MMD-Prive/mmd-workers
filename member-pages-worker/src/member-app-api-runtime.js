@@ -143,27 +143,105 @@ async function hmacHex(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function readMemberAppSession(request, env = {}) {
+function canonicalMemberPaymentUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    const keys = [...url.searchParams.keys()];
+    if (url.protocol !== "https:" || url.hostname !== "mmdbkk.com" || url.port || url.username || url.password || url.hash) return "";
+    if (!["/pay/checkout", "/sigil/pay"].includes(url.pathname)) return "";
+    if (keys.length !== 1 || keys[0] !== "t" || !asString(url.searchParams.get("t"), 8192)) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function paymentSnapshotFromSession(session = {}) {
+  const selected = asObject(session.selected_package);
+  const renewal = asObject(session.renewal_offer);
+  const amountValue = session.payment_amount_thb ?? renewal.amount_thb ?? selected.amount_thb;
+  const amount = Number(amountValue);
+  const packageCode = asString(session.payment_package_code || renewal.package_code || selected.package_code, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "");
+  return {
+    paymentRef: asString(session.payment_ref, 220) || null,
+    sessionId: asString(session.payment_intent_session_id || session.session_id, 220) || null,
+    paymentStage: asString(session.payment_stage, 80) || null,
+    packageCode: packageCode || null,
+    amountThb: Number.isFinite(amount) && amount > 0 && amount <= 100000000 ? Math.round(amount * 100) / 100 : null,
+    bindingStatus: asString(session.payment_binding_status, 80) || null,
+    customerPaymentUrl: canonicalMemberPaymentUrl(session.customer_payment_url) || null,
+    createdAt: asString(session.payment_intent_created_at, 80) || null,
+  };
+}
+
+async function loadMemberAppSessionState(request, env = {}) {
   const store = env.LIFF_IDENTITY_KV;
   const secret = String(env.LIFF_SESSION_SECRET || "");
   const token = cookieValue(request, SESSION_COOKIE);
   if (!store?.get || secret.length < 32 || !token) return null;
   try {
     const hash = await hmacHex(secret, `session:${token}`);
-    const session = await store.get(`liff:session:${hash}`, "json");
+    const sessionKey = `liff:session:${hash}`;
+    const session = await store.get(sessionKey, "json");
     if (!session || Number(session.expires_at || 0) <= Date.now()) return null;
     const lineUserId = asString(session.line_user_id, 160);
     if (!/^U[a-f0-9]{32}$/i.test(lineUserId)) return null;
-    return {
-      lineUserId,
-      memberExists: session.member_exists === true,
-      memberId: asString(session.member_id, 160) || null,
-      memberProfile: asObject(session.member_profile),
-    };
+    return { store, sessionKey, session, lineUserId };
   } catch {
     return null;
   }
 }
+
+export async function readMemberAppSession(request, env = {}) {
+  const state = await loadMemberAppSessionState(request, env);
+  if (!state) return null;
+  return {
+    lineUserId: state.lineUserId,
+    memberExists: state.session.member_exists === true,
+    memberId: asString(state.session.member_id, 160) || null,
+    memberProfile: asObject(state.session.member_profile),
+    paymentSnapshot: paymentSnapshotFromSession(state.session),
+  };
+}
+
+export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}) {
+  const state = await loadMemberAppSessionState(request, env);
+  if (!state?.store?.put) return false;
+  const paymentUrl = canonicalMemberPaymentUrl(input.customerPaymentUrl || input.customer_payment_url);
+  const paymentRef = asString(input.paymentRef || input.payment_ref, 220);
+  const sessionId = asString(input.sessionId || input.session_id, 220);
+  const packageCode = asString(input.packageCode || input.package_code, 80).toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+  const stage = asString(input.paymentStage || input.payment_stage, 80).toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+  const amount = Number(input.amountThb ?? input.amount_thb);
+  if (!paymentUrl || !paymentRef || !sessionId || !packageCode || !stage || !Number.isFinite(amount) || amount <= 0 || amount > 100000000) return false;
+
+  state.session.payment_intent_session_id = sessionId;
+  state.session.payment_binding_status = "canonical_pending";
+  state.session.payment_ref = paymentRef;
+  state.session.payment_stage = stage;
+  state.session.payment_package_code = packageCode;
+  state.session.payment_amount_thb = Math.round(amount * 100) / 100;
+  state.session.customer_payment_url = paymentUrl;
+  state.session.payment_intent_created_at = new Date().toISOString();
+  state.session.route_after_liff = "/member/payments";
+
+  const remainingSeconds = Math.ceil((Number(state.session.expires_at || 0) - Date.now()) / 1000);
+  if (remainingSeconds <= 0) return false;
+  const ttl = Math.min(15 * 60, Math.max(60, remainingSeconds));
+  try {
+    await state.store.put(state.sessionKey, JSON.stringify(state.session), { expirationTtl: ttl });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const MEMBER_PAYMENT_SNAPSHOT_INTERNALS = Object.freeze({
+  canonicalMemberPaymentUrl,
+  paymentSnapshotFromSession,
+});
 
 function formulaString(value) {
   return `'${String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
