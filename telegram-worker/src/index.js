@@ -9,6 +9,7 @@ const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
+const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
 
 export default {
   async fetch(req, env) {
@@ -71,6 +72,20 @@ export default {
           }, 400);
         }
         const result = await smokeTelegramTopics(body, env);
+        return json(result, result.ok ? 200 : 502);
+      }
+
+      if (isHypePreviewIntroPath(path) && req.method === "POST") {
+        requireHypePreviewIntroToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (clean(body.confirm) !== HYPE_PREVIEW_INTRO_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "hype_preview_intro_confirmation_required",
+            required_confirmation: HYPE_PREVIEW_INTRO_CONFIRMATION,
+          }, 400);
+        }
+        const result = await introduceHypePreview(env);
         return json(result, result.ok ? 200 : 502);
       }
 
@@ -146,6 +161,127 @@ async function smokeTelegramTopics(body, env) {
     failed: results.filter((item) => !item.ok).length,
     results,
   };
+}
+
+async function introduceHypePreview(env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  const chatId = clean(env.TELEGRAM_PREVIEW_GROUP_ID || env.TELEGRAM_PREVIEW_CHANNEL_ID);
+  const expectedUsername = botUsername(env).replace(/^@/, "").toLowerCase();
+  if (!botToken) return { ok: false, error: "missing_telegram_bot_token" };
+  if (!chatId) return { ok: false, error: "missing_telegram_preview_group_id" };
+
+  const me = await callTelegramApiForPreviewIntro("getMe", null, env);
+  const actualUsername = clean(me?.result?.username).replace(/^@/, "").toLowerCase();
+  const botId = Number(me?.result?.id);
+  if (me?.ok !== true || !Number.isInteger(botId) || actualUsername !== expectedUsername) {
+    return {
+      ok: false,
+      error: "hype_bot_identity_mismatch",
+      expected_username: expectedUsername,
+      actual_username: actualUsername || null,
+    };
+  }
+
+  const chat = await callTelegramApiForPreviewIntro("getChat", { chat_id: chatId }, env);
+  if (chat?.ok !== true || clean(chat?.result?.id) !== chatId || !["group", "supergroup"].includes(clean(chat?.result?.type))) {
+    return {
+      ok: false,
+      error: "hype_preview_intro_preflight_failed",
+      stage: "getChat",
+      telegram: sanitizePreviewIntroFailure(chat),
+    };
+  }
+
+  const member = await callTelegramApiForPreviewIntro("getChatMember", { chat_id: chatId, user_id: botId }, env);
+  const membership = clean(member?.result?.status).toLowerCase();
+  if (member?.ok !== true || !["creator", "administrator", "member"].includes(membership)) {
+    return {
+      ok: false,
+      error: "hype_preview_intro_preflight_failed",
+      stage: "getChatMember",
+      membership: membership || null,
+      telegram: sanitizePreviewIntroFailure(member),
+    };
+  }
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: hypePreviewIntroText(),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: hypePreviewWelcomeButtons(env),
+  }, env);
+
+  if (telegram?.ok !== true || !telegram?.result?.message_id) {
+    return {
+      ok: false,
+      error: "hype_preview_intro_send_failed",
+      telegram: sanitizePreviewIntroFailure(telegram),
+    };
+  }
+
+  return {
+    ok: true,
+    mode: "hype_preview_intro_v1",
+    bot_username: actualUsername,
+    chat_id: chatId,
+    message_id: Number(telegram.result.message_id),
+  };
+}
+
+function hypePreviewIntroText() {
+  return [
+    "👋 <b>สวัสดีครับ ผม HYPE</b>",
+    "ผู้ช่วย Telegram ของ <b>MMD Privé</b> ประจำห้อง Preview ครับ",
+    "",
+    "ต่อจากนี้เรียกผมช่วยหาทางไปต่อได้เลย — พิมพ์ <b>/commands</b> เพื่อดูสิ่งที่ผมช่วยได้",
+    "",
+    "<b>ใน Preview</b>",
+    "<b>/careback</b> — ดู 6 YEARS CARE BACK · Phase 2",
+    "<b>/points</b> — ไป MY MMD · Points",
+    "<b>/coupons</b> — เปิด Coupon Wallet",
+    "",
+    "<b>เรื่องของบัญชีส่วนตัว</b>",
+    "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
+    "<b>/next</b> — ตอนนี้ต้องทำอะไรต่อ",
+    "<b>/booking</b> — progress งานและการจอง",
+    "",
+    "ข้อมูลส่วนตัวผมจะพาไปคุยใน private chat เท่านั้น และจะอ่านจากข้อมูล MMD ที่ยืนยันได้ ไม่เดาเองครับ 🔒",
+  ].join("\n");
+}
+
+async function callTelegramApiForPreviewIntro(method, payload, env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, payload
+    ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    : { method: "GET" });
+  const data = await response.json().catch(() => null);
+  if (!response.ok || data?.ok !== true) {
+    return { ok: false, status: response.status, error: data || null };
+  }
+  return { ok: true, result: data.result };
+}
+
+function sanitizePreviewIntroFailure(value) {
+  return {
+    ok: value?.ok === true,
+    status: Number(value?.status) || null,
+    description: clean(value?.error?.description || value?.reason || value?.error || "").slice(0, 180) || null,
+  };
+}
+
+function requireHypePreviewIntroToken(req, env) {
+  const expected = clean(env.HYPE_PREVIEW_INTRO_TOKEN);
+  if (!expected) throw new HttpError(503, { ok: false, error: "hype_preview_intro_disabled" });
+  const header = clean(req.headers.get("Authorization"));
+  const token = /^Bearer\s+(.+)$/i.exec(header)?.[1] || clean(req.headers.get("X-HYPE-Preview-Intro-Token"));
+  if (!token || !timingSafeEqual(token, expected)) {
+    throw new HttpError(401, { ok: false, error: "unauthorized" });
+  }
 }
 
 async function handleTelegramWebhook(update, env) {
@@ -1007,6 +1143,11 @@ function isInternalSendPath(path) {
 
 function isTopicSmokePath(path) {
   return path === "/telegram/internal/topics/smoke" || path === "/v1/internal/topics/smoke";
+}
+
+function isHypePreviewIntroPath(path) {
+  return path === "/telegram/internal/preview/introduce-hype"
+    || path === "/v1/internal/preview/introduce-hype";
 }
 
 function isComplaintInternalPath(path) {
