@@ -1,0 +1,90 @@
+name: LINE OFC note email coverage reconcile
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "31 2 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-email-coverage-reconcile.js
+      - .github/workflows/line-ofc-email-coverage-reconcile.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-email-coverage-reconcile-production
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate LINE OFC-only reconciler
+        run: |
+          node --check scripts/line-ofc-email-coverage-reconcile.js
+          node scripts/line-ofc-email-coverage-reconcile.js --self-test
+
+      - name: Dry run exact LINE-linked evidence
+        run: node scripts/line-ofc-email-coverage-reconcile.js --dry-run --report /tmp/email-coverage-dry-run.json
+
+      - name: Apply exact one-to-one LINE OFC email evidence
+        run: node scripts/line-ofc-email-coverage-reconcile.js --apply --report /tmp/email-coverage-apply.json
+
+      - name: Verify idempotency
+        run: node scripts/line-ofc-email-coverage-reconcile.js --dry-run --assert-idempotent --report /tmp/email-coverage-idempotency.json
+
+      - name: Publish redacted count summary
+        if: always()
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const files = [
+            ['Dry run', '/tmp/email-coverage-dry-run.json'],
+            ['Apply', '/tmp/email-coverage-apply.json'],
+            ['Idempotency', '/tmp/email-coverage-idempotency.json'],
+          ];
+          for (const [label, path] of files) {
+            if (!fs.existsSync(path)) continue;
+            const data = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const safe = {
+              mode: data.mode,
+              evidence_scope: data.evidence_scope,
+              line_clients: data.line_clients,
+              before_with_valid_email: data.before_with_valid_email,
+              selected_from_evidence: data.selected_from_evidence,
+              conflicts: data.conflicts,
+              still_missing: data.still_missing,
+              planned_client_updates: data.planned_client_updates,
+              planned_member_updates: data.planned_member_updates,
+              final_projected_coverage: data.final_projected_coverage,
+              source_hits: data.source_hits,
+              pending_mutations: data.pending_mutations,
+            };
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${label}\n\n\`\`\`json\n${JSON.stringify(safe, null, 2)}\n\`\`\`\n\n`);
+          }
+          NODE
+
+      - name: Upload redacted count reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-email-coverage-report-${{ github.run_id }}
+          path: |
+            /tmp/email-coverage-dry-run.json
+            /tmp/email-coverage-apply.json
+            /tmp/email-coverage-idempotency.json
+          if-no-files-found: warn
+          retention-days: 30

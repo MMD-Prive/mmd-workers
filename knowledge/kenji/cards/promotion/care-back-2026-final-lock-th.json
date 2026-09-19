@@ -1,0 +1,44 @@
+{
+  "id": "care-back-2026-final-lock-th",
+  "version": 1,
+  "status": "published",
+  "lane": "promotion",
+  "audience": ["public", "public_member", "member"],
+  "language": "th",
+  "title": "CARE BACK 2026 — Final policy และ Birthday Wish gate",
+  "questions": [
+    "CARE BACK ได้สิทธิ์อะไร",
+    "ยืนยันตัวตนแล้วได้คูปองเลยไหม",
+    "ส่ง Birthday Wish แล้วได้อะไร",
+    "สมาชิกเก่าและสมาชิกใหม่ได้ Points เท่าไร"
+  ],
+  "safe_answer": "CARE BACK เป็นสิทธิ์ดูแลกลับที่ MMD ตรวจจากสถานะและประวัติจริงครับ เริ่มจากยืนยันผ่าน LINE แล้วส่ง Birthday Wish ให้บันทึกสำเร็จก่อน คูปองส่วนตัว 10% จึงจะเปิดได้ 1 ครั้งและมีอายุ 30 วันหลัง activation ส่วน Membership และ Points จะมีผลหลัง MMD ตรวจข้อมูล การสมัคร หรือการชำระเงินที่เกี่ยวข้องเรียบร้อยแล้วเท่านั้นครับ",
+  "allowed_actions": [
+    "explain_campaign_window",
+    "explain_wish_saved_coupon_gate",
+    "explain_verified_status_benefits",
+    "route_to_care_back",
+    "escalate_verification_review"
+  ],
+  "forbidden_actions": [
+    "issue_coupon_before_wish_saved",
+    "auto_award_points",
+    "extend_membership_from_chat",
+    "confirm_payment_from_proof",
+    "grant_black_card",
+    "infer_svip"
+  ],
+  "escalate_when": [
+    "unclear_identity",
+    "account_mismatch",
+    "renewal_required",
+    "payment_confirmation",
+    "points_reconciliation",
+    "manual_review"
+  ],
+  "safe_routes": ["/promotion/6-years-care-back"],
+  "owner": "Boss Per",
+  "final_reviewer": "Boss Per",
+  "change_reason": "ปิดช่องว่างจาก PR #160 ให้ Git source of truth ตรงกับ CARE BACK 2026 runtime final lock",
+  "notes": "ใช้ policy เดียวกันถึง 30 กันยายน 2026 และห้ามสร้าง claim ใหม่หลังวันดังกล่าว Current active/grace: +180 วันจาก expiry จริง ไม่มี bonus อัตโนมัติ Former/expired: renewal/payment verified และกลับเป็น active/grace ก่อน +90 วันและ +150 Points New Standard: +150 Welcome Points New Premium: +250 Welcome Points Approved special selection: สูงสุด +350 Points เพื่อประกอบ Black Card review เท่านั้น Trial/Guest Pass ไม่มี Welcome Points อัตโนมัติ Points reconciliation ใช้ verified payment เท่านั้นที่ 100 THB = 1 Point หลักฐานการชำระเงินไม่ใช่ payment truth Browser/chat ห้ามเปลี่ยน claim, coupon, membership, Points, Black Card หรือ SVIP"
+}

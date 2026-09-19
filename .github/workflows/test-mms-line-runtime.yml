@@ -1,0 +1,35 @@
+name: Test MMS LINE Runtime
+
+on:
+  pull_request:
+    paths:
+      - "member-dashboard-chat-worker/src/mms-line-front-gate.js"
+      - "member-dashboard-chat-worker/src/mms-line-runtime.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-evidence-observer.mjs"
+      - "member-dashboard-chat-worker/test/mms-line-runtime.test.mjs"
+      - "member-dashboard-chat-worker/test/mms-line-evidence-observer.test.mjs"
+      - "member-dashboard-chat-worker/wrangler.toml"
+      - ".github/workflows/test-mms-line-runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax check MMS LINE entrypoints
+        run: |
+          node --check member-dashboard-chat-worker/src/mms-line-front-gate.js
+          node --check member-dashboard-chat-worker/src/mms-line-runtime.mjs
+          node --check member-dashboard-chat-worker/src/mms-line-evidence-observer.mjs
+      - name: Run MMS LINE regression tests
+        run: node --test member-dashboard-chat-worker/test/mms-line-runtime.test.mjs member-dashboard-chat-worker/test/mms-line-evidence-observer.test.mjs
+      - name: Validate Wrangler build
+        working-directory: member-dashboard-chat-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars

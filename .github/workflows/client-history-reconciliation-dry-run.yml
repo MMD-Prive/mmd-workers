@@ -1,0 +1,76 @@
+name: Client History Reconciliation Dry Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/client-history-reconciliation-dry-run.yml"
+      - "scripts/line-official-legacy/client-lifecycle-reconciliation-v2.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reconcile-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate Airtable secret
+        shell: bash
+        run: |
+          if [ -z "$AIRTABLE_API_KEY" ]; then
+            echo "AIRTABLE_API_KEY is not configured" >&2
+            exit 1
+          fi
+      - name: Run #client lifecycle reconciliation dry-run
+        run: node scripts/line-official-legacy/client-lifecycle-reconciliation-v2.js > /tmp/client-history-reconciliation.json
+      - name: Publish aggregate-only summary
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const data = JSON.parse(fs.readFileSync('/tmp/client-history-reconciliation.json','utf8'));
+          const s = data.summary || {};
+          const lines = [
+            '# Client History Reconciliation — Dry Run',
+            '',
+            `- #client source rows scanned: ${s.client_tag_rows_scanned || 0}`,
+            `- canonical clients in cohort: ${s.canonical_clients_in_cohort || 0}`,
+            `- unmatched/uncommitted source rows: ${s.unmatched_or_uncommitted_rows || 0}`,
+            `- committed notes not yet queued for history review: ${s.unqueued_history_notes || 0}`,
+            '',
+            '## Lifecycle',
+            '```json', JSON.stringify(s.lifecycle || {}, null, 2), '```',
+            '## Points state',
+            '```json', JSON.stringify(s.points_state || {}, null, 2), '```',
+            '## Action state',
+            '```json', JSON.stringify(s.action_status || {}, null, 2), '```',
+            '## Attention flags',
+            '```json', JSON.stringify(s.attention_flags || {}, null, 2), '```',
+            '',
+            '> Dry-run only. No Sessions, Payments, Points Ledger, Membership, Entitlement, or lifecycle projection records are written by this workflow.'
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          console.log(JSON.stringify({
+            ok: data.ok === true,
+            dry_run: data.dry_run === true,
+            client_tag_rows_scanned: s.client_tag_rows_scanned || 0,
+            canonical_clients_in_cohort: s.canonical_clients_in_cohort || 0,
+            unmatched_or_uncommitted_rows: s.unmatched_or_uncommitted_rows || 0,
+            unqueued_history_notes: s.unqueued_history_notes || 0,
+            lifecycle: s.lifecycle || {},
+            points_state: s.points_state || {},
+            action_status: s.action_status || {},
+            attention_flags: s.attention_flags || {}
+          }, null, 2));
+          NODE

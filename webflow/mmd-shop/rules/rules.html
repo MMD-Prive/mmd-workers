@@ -1,0 +1,82 @@
+<main id="mmdshop-rules-v1">
+  <header class="mmdr__topbar">
+    <a class="mmdr__brand" href="/mmd-shop" aria-label="กลับ MMD Shop">
+      <span>MMD</span><small>SHOP</small>
+    </a>
+    <a class="mmdr__back" href="/mmd-shop">กลับไปเลือกสินค้า</a>
+  </header>
+
+  <section class="mmdr__hero">
+    <span class="mmdr__eyebrow">MMD SHOP · ORDER RULES</span>
+    <h1>สั่งซื้อให้ชัด<br>ชำระเงินให้ตรงรายการ</h1>
+    <p>กติกาหน้านี้อธิบายสิ่งที่ระบบ MMD ใช้จริงในการสร้าง Order ตรวจราคา รับหลักฐานการชำระเงิน และอัปเดตสถานะรายการ</p>
+  </section>
+
+  <section class="mmdr__grid" aria-label="MMD Shop rules">
+    <details class="mmdr__rule" open id="price">
+      <summary><span>01</span><strong>ราคาและรายการสินค้า</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>ราคาที่เห็นบนหน้า MMD Shop เป็นราคาจาก MMD Shop catalog และระบบจะตรวจราคาอีกครั้งจากฝั่งเซิร์ฟเวอร์ก่อนสร้าง Order ทุกครั้ง</p>
+        <p>เฉพาะสินค้าที่สถานะพร้อมขายและเปิดสำหรับ MMD Shop เท่านั้นที่สามารถสร้าง Online Order ได้</p>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="payment">
+      <summary><span>02</span><strong>การชำระเงิน</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>Order จะพาไปยัง MMD Payment surface ที่ระบบสร้างให้กับรายการนั้นโดยตรง ยอดใน browser ไม่ใช่ authority ในการยืนยันเงิน</p>
+        <p>สลิปหรือหลักฐานที่อัปโหลดคือหลักฐานเพื่อรอตรวจเท่านั้น รายการจะเปลี่ยนเป็นชำระแล้วหลังผ่าน Official Verification ของ MMD</p>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="proof">
+      <summary><span>03</span><strong>ส่งหลักฐานครั้งเดียว</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>เมื่อส่งหลักฐานผ่านหน้าชำระเงินของ Order แล้ว ไม่จำเป็นต้องส่งหลักฐานเดิมซ้ำอีกครั้ง ระบบจะแสดงสถานะรอตรวจจนกว่าจะมีผลยืนยัน</p>
+        <p>หากไม่สามารถส่งผ่านเว็บได้ สามารถติดต่อ MMD เพื่อขอความช่วยเหลือได้ โดยการติดต่อไม่ทำให้รายการถูกถือว่าชำระแล้วอัตโนมัติ</p>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="stock">
+      <summary><span>04</span><strong>สต๊อกและการเตรียมสินค้า</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>สินค้าที่มีสต๊อกแบบติดตามจะถูกตรวจจำนวนก่อนสร้าง Order หากจำนวนไม่พอ ระบบจะไม่รับ Checkout สำหรับจำนวนนั้น</p>
+        <p>บางรายการอาจอยู่ในสถานะที่ต้องยืนยันสต๊อกก่อนจัดรายการ รายละเอียดการรับหรือจัดส่งจะยืนยันกับ Order นั้นตามข้อมูลที่ MMD แจ้ง</p>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="restricted">
+      <summary><span>05</span><strong>สินค้าที่ไม่เปิด Online Checkout</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>บางรายการอาจแสดงเพื่อให้ดูรายละเอียด แต่ไม่เปิดให้สร้าง Online Order ระบบจะซ่อนปุ่มซื้อและไม่รับ Checkout สำหรับสินค้ากลุ่มนั้น</p>
+        <p>ให้ยึดสถานะบนหน้าสินค้าและคำยืนยันจาก MMD เป็นหลัก</p>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="status">
+      <summary><span>06</span><strong>สถานะ Order</strong></summary>
+      <div class="mmdr__rule-body">
+        <div class="mmdr__status-list">
+          <div><b>รอชำระ / รอตรวจ</b><span>Order ถูกสร้างแล้ว แต่ payment truth ยังไม่ยืนยัน</span></div>
+          <div><b>ยืนยันยอดแล้ว</b><span>MMD ตรวจการชำระเงินผ่านแล้ว</span></div>
+          <div><b>กำลังเตรียมรายการ</b><span>Order พร้อมเข้าสู่ขั้นตอน fulfillment</span></div>
+          <div><b>สำเร็จ</b><span>รายการถูกปิดเป็น fulfilled แล้ว</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="mmdr__rule" id="support">
+      <summary><span>07</span><strong>ต้องการความช่วยเหลือ</strong></summary>
+      <div class="mmdr__rule-body">
+        <p>หากเปิด Order ไม่ได้ ยอดไม่ตรง หรือหน้าชำระเงินมีปัญหา ให้ติดต่อ MMD พร้อม Order ID เพื่อให้ตรวจรายการเดิม ไม่ควรสร้าง Payment ซ้ำเพื่อแก้ปัญหาเอง</p>
+        <a class="mmdr__button" href="https://lin.ee/xRqsALs" rel="noopener">คุยกับ MMD ทาง LINE</a>
+      </div>
+    </details>
+  </section>
+
+  <section class="mmdr__footer-card">
+    <span class="mmdr__eyebrow">READY TO SHOP</span>
+    <h2>กลับไปเลือกของที่เปอร์คัดไว้</h2>
+    <a class="mmdr__button mmdr__button--dark" href="/mmd-shop">ไป MMD Shop</a>
+  </section>
+</main>
