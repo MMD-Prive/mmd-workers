@@ -103,6 +103,15 @@ test("primary bootstrap is bypassed after the short-lived bootstrap cookie", () 
   assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
 });
 
+test("post-primary bootstrap cookie prevents a Mini App redirect loop", () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?lang=th",
+    { headers: { cookie: "mmd_model_liff_primary_v1=1" } },
+  );
+  assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
+  assert.equal(shouldHandoffToMiniApp(request), false);
+});
+
 test("primary bootstrap never intercepts assets, APIs, or non-navigation methods", () => {
   const asset = new Request(
     "https://mmdbkk.com/sigil/model/dashboard-assets/_build/app.js?access_token=opaque",
