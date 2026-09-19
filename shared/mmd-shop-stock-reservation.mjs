@@ -65,6 +65,7 @@ export function createReservationMetadata(orderId, allocations, ttlMinutes = 45)
     order_record_id: "",
     payment_review_started_at: "",
     payment_review_key: "",
+    payment_expiry_synced_at: "",
     allocations,
   });
 }
@@ -344,15 +345,28 @@ export async function expireMmdShopReservations(env) {
   const orders = await listRecords(env, table(env, "orders"), Object.values(ORDER_FIELDS));
   const now = Date.now();
   const results = [];
+  const paymentExpiryOrderIds = new Set();
 
   for (const order of orders) {
     const fields = order.fields || {};
     const paymentStatus = code(fields[ORDER_FIELDS.paymentStatus]);
     const orderStatus = code(fields[ORDER_FIELDS.orderStatus]);
-    if (paymentStatus === "paid" || orderStatus === "fulfilled" || orderStatus === "cancelled") continue;
-
     const reservation = readMmdShopReservation(fields[ORDER_FIELDS.notes]);
-    if (!reservation || reservation.state !== "reserved") continue;
+
+    if (paymentStatus === "paid" || orderStatus === "fulfilled") continue;
+    if (!reservation) continue;
+
+    if (reservation.state === "expired") {
+      if (!reservation.payment_expiry_synced_at) {
+        const id = clean(fields[ORDER_FIELDS.orderId], 180);
+        if (id) paymentExpiryOrderIds.add(id);
+      }
+      continue;
+    }
+
+    if (orderStatus === "cancelled") continue;
+    if (reservation.state !== "reserved") continue;
+
     const expires = Date.parse(reservation.expires_at || "");
     if (!Number.isFinite(expires) || expires > now) continue;
 
@@ -373,7 +387,9 @@ export async function expireMmdShopReservations(env) {
         patchRecord(env, table(env, "orderItems"), item.id, { [ITEM_FIELDS.status]: "cancelled" })
       ));
 
-      results.push({ order_id: clean(fields[ORDER_FIELDS.orderId], 180), released: true });
+      const orderId = clean(fields[ORDER_FIELDS.orderId], 180);
+      if (orderId) paymentExpiryOrderIds.add(orderId);
+      results.push({ order_id: orderId, released: true });
     } catch (error) {
       results.push({ order_id: clean(fields[ORDER_FIELDS.orderId], 180), released: false, error: clean(error?.message, 180) });
     }
@@ -384,6 +400,7 @@ export async function expireMmdShopReservations(env) {
     checked: orders.length,
     expired: results.filter((item) => item.released).length,
     expired_order_ids: results.filter((item) => item.released).map((item) => item.order_id).filter(Boolean),
+    payment_expiry_order_ids: [...paymentExpiryOrderIds],
     failures: results.filter((item) => item.released === false),
   };
 }
@@ -464,6 +481,7 @@ function sanitizeReservation(value) {
     order_record_id: validRecordId(value?.order_record_id),
     payment_review_started_at: clean(value?.payment_review_started_at, 80),
     payment_review_key: clean(value?.payment_review_key, 500),
+    payment_expiry_synced_at: clean(value?.payment_expiry_synced_at, 80),
     allocations: Array.isArray(value?.allocations)
       ? value.allocations.map((item) => ({
           product_id: validRecordId(item?.product_id),
