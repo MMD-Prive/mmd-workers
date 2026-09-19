@@ -169,7 +169,7 @@ function projectCouponWallet(wallet = {}) {
     status: state,
     code: code || null,
     approved_discount_percent: approvedDiscount,
-    expires_at: ready || state === "expired" ? safeTimestamp(wallet.expires_at) : null,
+    expires_at: ready ? safeTimestamp(wallet.expires_at) : null,
     single_use: wallet.single_use === true,
   };
 }
