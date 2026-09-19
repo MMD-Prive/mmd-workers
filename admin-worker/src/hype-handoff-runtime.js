@@ -479,7 +479,7 @@ async function executeP6Lane(env, input = {}) {
   };
 }
 
-export async export function executeP6Booking(env, input = {}) {
+export async function executeP6Booking(env, input = {}) {
   const f = input.draft.fields || {};
   if (!clean(f.model_preference, 120)) {
     return {
@@ -553,7 +553,7 @@ export async export function executeP6Booking(env, input = {}) {
   };
 }
 
-export async export function executeP6Mms(env, input = {}) {
+export async function executeP6Mms(env, input = {}) {
   if (!env.MMS_WORKER?.fetch) {
     return {
       status: "review_required",
