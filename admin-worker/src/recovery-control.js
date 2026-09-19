@@ -489,7 +489,7 @@ function recoveryCaseAge(caseRef, now) {
 }
 
 function caseRefOpenedAt(caseRef) {
-  const match = /^HYPE-(?:PER|KENJI)-(d{14})-[a-f0-9]{8}$/i.exec(clean(caseRef, 180));
+  const match = /^HYPE-(?:PER|KENJI)-(\\d{14})-[a-f0-9]{8}$/i.exec(clean(caseRef, 180));
   if (!match) return null;
   const s = match[1];
   const iso = s.slice(0,4) + "-" + s.slice(4,6) + "-" + s.slice(6,8)
