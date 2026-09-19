@@ -19,6 +19,7 @@ function upstream(input,init={}) {
   if(url.hostname==='api.cal.com') return dataResponse({status:'success',data:{id:7057823,description:'private upstream content must not be projected',owner:{email:'private@example.test'}}});
   if(url.hostname==='cal-sync-worker.malemodel-bkk.workers.dev') return dataResponse({ok:true,service:'cal-sync-worker',mode:'shadow',webhook_secret_configured:true,mapping_ledger_configured:true});
   if(url.hostname==='api.airtable.com') return dataResponse({records:[]});
+  if(url.hostname==='mmdprive.webflow.io') return new Response('<!doctype html><html><body><main class="mcal"></main><script>window.__MMD_CALENDAR_WEBFLOW_V2__=true;fetch("/v1/admin/calendar")</script></body></html>',{headers:{'content-type':'text/html; charset=utf-8'}});
   throw new Error('unexpected host');
 }
 async function withFetch(fn,callback){const old=globalThis.fetch;globalThis.fetch=fn;try{return await callback();}finally{globalThis.fetch=old;}}
@@ -71,12 +72,16 @@ for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/a
     assert.equal(r.status,path.startsWith('/internal')?302:401);
   });
 });
-test('real production entrypoint renders signed owner Calendar on both slash forms',async()=>{
+test('real production entrypoint renders authenticated Webflow Calendar presentation on both slash forms',async()=>{
   await withFetch(upstream,async()=>{
     for(const path of ['/internal/admin/calendar?date=2026-09-17','/internal/admin/calendar/?date=2026-09-17']){
       const r=await entry.fetch(await request(path),env,{});const html=await r.text();
-      assert.equal(r.status,200);assert.equal(r.headers.get('x-mmd-calendar-surface'),'admin-worker-v1.4');
-      assert.match(html,/calendar-connection-state/);assert.match(html,/id="calendar-date"/);assert.match(html,/new Date\('2026-09-17T12:00:00\+07:00'\)/);
+      assert.equal(r.status,200);
+      assert.equal(r.headers.get('x-mmd-calendar-surface'),'admin-worker-webflow-v2');
+      assert.equal(r.headers.get('x-mmd-calendar-presentation'),'webflow');
+      assert.match(html,/calendar-connection-state/);
+      assert.match(html,/__MMD_CALENDAR_WEBFLOW_V2__/);
+      assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
     }
   });
@@ -93,15 +98,29 @@ test('invalid date and unsupported writes do not reach data sources',async()=>{
     assert.equal((await entry.fetch(await request('/v1/admin/calendar','owner','POST'),env,{})).status,405);
   });
 });
-test('rendered scripts are syntactically valid and connection check is explicitly read-only',async()=>{
+test('rendered Webflow scripts are syntactically valid and connection check is explicitly read-only',async()=>{
   await withFetch(upstream,async()=>{
-    const page=await calendarPageResponse(env,'2026-09-17');const html=await page.text();
+    const req=await request('/internal/admin/calendar?date=2026-09-17');
+    const page=await calendarPageResponse(req,env,'2026-09-17');const html=await page.text();
     const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
     const connection=JSON.parse(html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)[1]);
-    assert.equal(connection.mutations_attempted,false);assert.equal(page.headers.get('x-robots-tag'),'noindex, nofollow');
+    assert.equal(connection.mutations_attempted,false);
+    assert.equal(page.headers.get('x-robots-tag'),'noindex, nofollow');
+    assert.equal(page.headers.get('x-mmd-route-owner'),'admin-worker');
     if(process.env.CALENDAR_RENDER_PATH)writeFileSync(process.env.CALENDAR_RENDER_PATH,html);
   });
+});
+
+test('GitHub Webflow Calendar runtime compiles and reads only the protected same-origin API',()=>{
+  const html=readFileSync(new URL('../../webflow/internal/admin/calendar/footer.html',import.meta.url),'utf8');
+  assert.match(html,/__MMD_CALENDAR_WEBFLOW_V2__/);
+  assert.match(html,/fetch\('\/v1\/admin\/calendar\?date='/);
+  assert.match(html,/credentials:'include'/);
+  assert.match(html,/\.webflow\\\.io/);
+  const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
+  for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
+  assert.doesNotMatch(html,/CAL_API_KEY|AIRTABLE_API_KEY|ADMIN_BEARER|ADMIN_SESSION_SECRET/);
 });
 test('calendar route manifest claims only four narrow production paths',()=>{
   const config=JSON.parse(readFileSync(new URL('../calendar-routes.json',import.meta.url)));
