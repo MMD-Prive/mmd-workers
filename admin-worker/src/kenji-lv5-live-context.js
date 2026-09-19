@@ -161,6 +161,23 @@ export async function resolveLiveCanonicalClient(env = {}, input = {}) {
     return { status: "resolved", client: canonicalClientProjection(record, input) };
   }
 
+  const stableTelegramUserId = telegramId(input.telegram_user_id);
+  if (stableTelegramUserId) {
+    const table = clean(env.AIRTABLE_TABLE_CLIENTS_ID || env.AIRTABLE_TABLE_CLIENTS, 120) || DEFAULT_CLIENTS_TABLE;
+    const records = await airtableList(env, table, {
+      formula: `AND({telegram_user_id}="${escapeFormula(stableTelegramUserId)}",LOWER({telegram_verification_status}&"")="verified")`,
+      maxRecords: 2,
+    });
+    if (records.length === 1) {
+      return {
+        status: "resolved",
+        client: canonicalClientProjection(records[0], { ...input, telegram_user_id: stableTelegramUserId }),
+      };
+    }
+    if (records.length > 1) return { status: "unresolved", reason: "telegram_identity_conflict" };
+    return { status: "unresolved", reason: "telegram_identity_not_linked" };
+  }
+
   const query = firstText(input.per_rename, input.client_query, input.display_name, input.line_user_id, input.line_display_name);
   if (!query) return { status: "unresolved", reason: "identity_input_required" };
 

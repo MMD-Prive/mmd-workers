@@ -578,3 +578,187 @@ test("/start preview requires verification and never issues a code or writes pre
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("HYPE /status reads customer-safe live context only in private chat", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramBody = null;
+  let operationsBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 501, chat: { id: 999 } } });
+  };
+
+  const hypeOperations = {
+    async fetch(request) {
+      operationsBody = await request.json();
+      return Response.json({
+        ok: true,
+        state: "ready",
+        readiness: "blocked",
+        display_name: "คุณเอ็ม",
+        membership: {
+          status: "active",
+          lifecycle: "active",
+          level: "private_premium",
+          expire_at: "2028-09-19T00:00:00.000Z",
+          blocked: false,
+        },
+        job: {
+          status: "active_or_pending",
+          active_count: 1,
+          next: {
+            status: "awaiting_payment",
+            model_name: "Book EI",
+            start_at: "2026-09-24T19:00:00+07:00",
+            payment_state: "pending_review",
+          },
+        },
+        payment: {
+          status: "pending_review",
+          paid: false,
+          review_required: true,
+          outstanding_amount_thb: 5000,
+          credit_balance_thb: 1500,
+        },
+        next_action: {
+          action: "review_payment",
+          label: "ตรวจหลักฐานการชำระเงิน",
+          href: "",
+        },
+      });
+    },
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9001,
+        message: {
+          message_id: 120,
+          text: "/status",
+          chat: { id: 999, type: "private" },
+          from: { id: 111111, username: "member" },
+        },
+      }),
+    }), env({ HYPE_OPERATIONS: hypeOperations }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "hype_operating_status");
+    assert.equal(body.ok, true);
+    assert.equal(operationsBody.telegram_user_id, "111111");
+    assert.equal(operationsBody.intent.trigger, "telegram_status");
+    assert.match(telegramBody.text, /HYPE · MMD STATUS/);
+    assert.match(telegramBody.text, /Premium/);
+    assert.match(telegramBody.text, /1 งานกำลังดำเนินการ/);
+    assert.match(telegramBody.text, /รอตรวจสอบหลักฐาน/);
+    assert.match(telegramBody.text, /ตรวจหลักฐานการชำระเงิน/);
+    assert.doesNotMatch(telegramBody.text, /canonical_client_id|payment_ref|airtable|internal\/admin/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE never exposes customer status in a Telegram group", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let operationsCalled = false;
+  let telegramBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 502, chat: { id: -1001 } } });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9002,
+        message: {
+          message_id: 121,
+          text: "สถานะ",
+          chat: { id: -1001, type: "supergroup" },
+          from: { id: 111111, username: "member" },
+        },
+      }),
+    }), env({
+      HYPE_OPERATIONS: {
+        async fetch() {
+          operationsCalled = true;
+          throw new Error("must not call");
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.flow, "hype_operating_private_required");
+    assert.equal(operationsCalled, false);
+    assert.match(telegramBody.text, /ข้อมูลส่วนตัว/);
+    assert.match(telegramBody.text, /\/status/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE /next fails closed to MY MMD when Telegram identity is not linked", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let telegramBody = null;
+
+  globalThis.fetch = async (_url, init = {}) => {
+    telegramBody = JSON.parse(String(init.body || "{}"));
+    return Response.json({ ok: true, result: { message_id: 503, chat: { id: 999 } } });
+  };
+
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "expected-secret",
+      },
+      body: JSON.stringify({
+        update_id: 9003,
+        message: {
+          message_id: 122,
+          text: "/next",
+          chat: { id: 999, type: "private" },
+          from: { id: 111111, username: "member" },
+        },
+      }),
+    }), env({
+      HYPE_OPERATIONS: {
+        async fetch() {
+          return Response.json({
+            ok: false,
+            state: "connect_required",
+            code: "telegram_identity_not_linked",
+          }, { status: 404 });
+        },
+      },
+    }));
+
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.handled, true);
+    assert.equal(body.code_status, "connect_required");
+    assert.match(telegramBody.text, /Connect Telegram/);
+    const urls = telegramBody.reply_markup.inline_keyboard.flat().map((item) => item.url);
+    assert.equal(urls.some((url) => /\/my-mmd\/$/.test(url)), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

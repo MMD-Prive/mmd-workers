@@ -49,6 +49,7 @@ import { activateMmsPartner, authenticateMmsPartner, recoverMmsPartner } from ".
 import { PAYMENT_ISSUER_DIAGNOSTIC_PATH, handlePaymentIssuerDiagnostic } from "./payment-issuer-diagnostic.js";
 import { MODEL_MEDIA_E2E_SMOKE_PATH, handleModelMediaE2ESmoke } from "./model-media-e2e-smoke.js";
 import { TELEGRAM_BIND_INTERNAL_PATH, handleTelegramBindAuthorityRpc } from "./telegram-identity-bind-authority.js";
+import { HYPE_OPERATIONAL_STATUS_PATH, handleHypeOperationalStatusRpc } from "./hype-operating-concierge.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -116,6 +117,12 @@ export default {
     // production route and the handler also requires admin-worker.internal.
     if (path === TELEGRAM_BIND_INTERNAL_PATH) {
       return handleTelegramBindAuthorityRpc(request, env);
+    }
+
+    // Service-binding-only HYPE operating concierge. Returns a customer-safe,
+    // read-only projection from the same live fan-in used by Kenji LV5.
+    if (path === HYPE_OPERATIONAL_STATUS_PATH) {
+      return handleHypeOperationalStatusRpc(request, env);
     }
 
     // Model Console V16 schema-patch routes live in the legacy core runtime,

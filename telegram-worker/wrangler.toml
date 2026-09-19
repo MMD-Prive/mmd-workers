@@ -70,3 +70,10 @@ AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
 [[services]]
 binding = "TELEGRAM_BIND_AUTHORITY"
 service = "admin-worker"
+
+# Read-only customer status fan-in for HYPE Telegram Operating Concierge.
+# The admin-worker endpoint is service-binding-only and exposes a bounded
+# customer-safe projection; HYPE never becomes business-truth authority.
+[[services]]
+binding = "HYPE_OPERATIONS"
+service = "admin-worker"
