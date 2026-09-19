@@ -52,9 +52,20 @@ export async function handleHistoricalSlipBackfillRequest(request, env = {}, ctx
 async function listBackfillProofs(request, env) {
   requireAirtable(env);
   const url = new URL(request.url);
+  const proofIdInput = url.searchParams.get("proof_id");
+  const proofId = safeText(proofIdInput, 120);
+  if (clean(proofIdInput) && !/^hist_[a-f0-9]{24}$/.test(proofId)) {
+    throw httpError(400, "proof_id_invalid");
+  }
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
-  const formula = `FIND('${formulaValue(`\"schema\":\"${SCHEMA}\"`)}',{note})>0`;
-  const records = await airtableList(env, paymentProofTable(env), { filterByFormula: formula, maxRecords: limit });
+  const schemaFormula = `FIND('${formulaValue(`\"schema\":\"${SCHEMA}\"`)}',{note})>0`;
+  const formula = proofId
+    ? `AND({proof_id}='${formulaValue(proofId)}',${schemaFormula})`
+    : schemaFormula;
+  const records = await airtableList(env, paymentProofTable(env), {
+    filterByFormula: formula,
+    maxRecords: proofId ? 1 : limit,
+  });
   const items = records
     .map(safeProofSummary)
     .filter(Boolean)

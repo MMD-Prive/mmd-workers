@@ -1,18 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { handleHistoricalSlipBackfillRequest } from "./src/historical-slip-backfill-runtime.js";
 
-const PROOF_ID = "hist_27e486711c103e44c03329f5";
-const PROOF_RECORD_ID = "recProofChampSimba";
-const SESSION_RECORD_ID = "recSessionChampSimba";
+const PROOF_ID = "hist_abcdef0123456789abcdef01";
+const PROOF_RECORD_ID = "recHistoricalProofFixture";
+const SESSION_RECORD_ID = "recHistoricalSessionFixture";
 const EVIDENCE_KEY = `line-ofc/payment-proofs/2026/09/${PROOF_ID}/original.png`;
 const EVIDENCE_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3, 4]);
 const EVIDENCE_SHA256 = createHash("sha256").update(EVIDENCE_BYTES).digest("hex");
 
 function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", reviewState = "pending", paymentRef = "" } = {}) {
-  const calls = { creates: 0, patches: [], extractor: 0, r2Gets: 0 };
+  const calls = { creates: 0, patches: [], extractor: 0, r2Gets: 0, proofLists: [] };
   const proof = {
     id: PROOF_RECORD_ID,
     fields: {
@@ -23,7 +24,7 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
       note: JSON.stringify({
         schema: "mmd_historical_slip_backfill_v1",
         source_type: "line_album",
-        source_ref: "LINE OFC · champ · Simba · 18 Sep 2026",
+        source_ref: "LINE OFC historical test fixture",
         evidence_sha256: evidenceSha256,
         r2_key: EVIDENCE_KEY,
         mime_type: "image/png",
@@ -33,7 +34,7 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
           extraction_error: "qr_private_extractor_failed_401,ocr_private_extractor_failed_401",
         },
         explicit_context: {
-          session_id: "session-champ-simba",
+          session_id: "session-historical-fixture",
           payment_stage: "final",
         },
         match: { session: SESSION_RECORD_ID, ambiguous: false },
@@ -41,7 +42,7 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
         review_state: reviewState,
         payments_worker_handoff: {
           proof_id: PROOF_ID,
-          session_id: "session-champ-simba",
+          session_id: "session-historical-fixture",
           payment_stage: "final",
           state: "pending",
         },
@@ -64,10 +65,11 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
         const table = parts[2];
         const recordId = parts[3] || "";
         if (request.method === "GET" && table === "Payment Proofs" && !recordId) {
+          calls.proofLists.push(url);
           return Response.json({ records: [proof] });
         }
         if (request.method === "GET" && table === "Sessions") {
-          return Response.json({ records: [{ id: SESSION_RECORD_ID, fields: { session_id: "session-champ-simba" } }] });
+          return Response.json({ records: [{ id: SESSION_RECORD_ID, fields: { session_id: "session-historical-fixture" } }] });
         }
         if (request.method === "GET" && ["Payments", "Members", "Clients"].includes(table)) {
           return Response.json({ records: [] });
@@ -108,10 +110,10 @@ function makeState({ evidenceSha256 = EVIDENCE_SHA256, status = "pending", revie
         assert.equal(request.headers.get("x-mmd-service-binding"), "admin-worker");
         return Response.json({
           result: {
-            payment_ref: "016261212049AOR09688",
+            payment_ref: "TEST-REFERENCE-0001",
             amount_thb: 10500,
             paid_at: "2026-09-18T21:20:00+07:00",
-            payer_name: "champ",
+            payer_name: "fixture",
             provider: "bank_qr",
             confidence_score: 0.99,
           },
@@ -129,7 +131,7 @@ function reprocessRequest({ withExpectedContext = false } = {}) {
     body: JSON.stringify({
       proof_id: PROOF_ID,
       ...(withExpectedContext ? {
-        expected_payment_ref: "016261212049AOR09688",
+        expected_payment_ref: "TEST-REFERENCE-0001",
         expected_amount_thb: 10500,
         expected_payment_stage: "final",
         context_reason: "authenticated pending-only recovery",
@@ -155,7 +157,7 @@ test("reprocess verifies original R2 evidence and patches the same pending proof
   assert.equal(payload.payment_stage, "final");
   assert.equal(payload.extraction_method, "qr");
   assert.equal(payload.extraction_error, "");
-  assert.equal(payload.payment_ref_masked, "0162…9688");
+  assert.equal(payload.payment_ref_masked, "TEST…0001");
   assert.equal(payload.evidence_sha256_verified, true);
   assert.equal(payload.money_truth_mutated, false);
   assert.equal(payload.guardrails?.may_mark_paid, false);
@@ -167,14 +169,14 @@ test("reprocess verifies original R2 evidence and patches the same pending proof
   assert.equal(state.calls.patches.length, 1);
   const patch = state.calls.patches[0];
   assert.equal(patch.status, "pending");
-  assert.equal(patch.payment_ref, "016261212049AOR09688");
+  assert.equal(patch.payment_ref, "TEST-REFERENCE-0001");
   assert.equal(patch.amount_thb, 10500);
   assert.deepEqual(patch.session, [SESSION_RECORD_ID]);
   const note = JSON.parse(patch.note);
   assert.equal(note.review_state, "pending");
   assert.equal(note.reprocess_count, 1);
   assert.equal(note.reprocess_previous_error, "qr_private_extractor_failed_401,ocr_private_extractor_failed_401");
-  assert.equal(note.extraction.payment_ref, "016261212049AOR09688");
+  assert.equal(note.extraction.payment_ref, "TEST-REFERENCE-0001");
   assert.equal(note.extraction.amount_thb, 10500);
   assert.equal(note.extraction.extraction_error, null);
   assert.equal(note.payments_worker_handoff.state, "pending");
@@ -213,7 +215,7 @@ test("reprocess can stage expected pending context when extraction stays empty a
   assert.equal(payload.pending_context_staged, true);
   assert.equal(payload.amount_thb, 10500);
   assert.equal(payload.payment_stage, "final");
-  assert.equal(payload.payment_ref_masked, "0162…9688");
+  assert.equal(payload.payment_ref_masked, "TEST…0001");
   assert.equal(payload.payment_ref_matches_expected, true);
   assert.equal(payload.extraction_error, "extractor_unavailable");
   assert.equal(payload.money_truth_mutated, false);
@@ -222,13 +224,13 @@ test("reprocess can stage expected pending context when extraction stays empty a
   assert.equal(state.calls.patches.length, 1);
   const patch = state.calls.patches[0];
   assert.equal(patch.status, "pending");
-  assert.equal(patch.payment_ref, "016261212049AOR09688");
+  assert.equal(patch.payment_ref, "TEST-REFERENCE-0001");
   assert.equal(patch.amount_thb, 10500);
   const note = JSON.parse(patch.note);
   assert.equal(note.review_state, "pending");
   assert.equal(note.review_required, true);
   assert.equal(note.reprocess_expected_context.amount_thb, 10500);
-  assert.equal(note.reprocess_expected_context.payment_ref_masked, "0162…9688");
+  assert.equal(note.reprocess_expected_context.payment_ref_masked, "TEST…0001");
   assert.equal(note.reprocess_expected_context.payment_stage, "final");
   assert.equal(note.reprocess_expected_context.pending_review_only, true);
   assert.equal(note.payments_worker_handoff.state, "pending");
@@ -248,4 +250,50 @@ test("reprocess rejects an expected payment reference that conflicts with stored
   assert.equal(payload.error, "expected_payment_ref_conflicts_with_stored_proof");
   assert.equal(state.calls.creates, 0);
   assert.equal(state.calls.patches.length, 0);
+});
+
+test("pending queue lookup targets the exact historical proof instead of the first 100 records", async () => {
+  const state = makeState({ paymentRef: "TEST-REFERENCE-0001" });
+  const response = await handleHistoricalSlipBackfillRequest(new Request(
+    `https://mmdbkk.com/v1/admin/payments/historical-backfill?proof_id=${PROOF_ID}&limit=100`,
+  ), state.env);
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.items.length, 1);
+  assert.equal(payload.items[0].proof_id, PROOF_ID);
+  assert.equal(payload.items[0].status, "pending");
+  assert.equal(payload.items[0].review_state, "pending");
+  assert.equal(payload.items[0].payment_ref_masked, "TEST…0001");
+
+  assert.equal(state.calls.proofLists.length, 1);
+  const lookup = state.calls.proofLists[0];
+  assert.equal(lookup.searchParams.get("maxRecords"), "1");
+  assert.match(lookup.searchParams.get("filterByFormula") || "", new RegExp(`\\{proof_id\\}='${PROOF_ID}'`));
+  assert.match(lookup.searchParams.get("filterByFormula") || "", /mmd_historical_slip_backfill_v1/);
+});
+
+test("pending queue lookup rejects malformed proof ids before querying Airtable", async () => {
+  const state = makeState();
+  const response = await handleHistoricalSlipBackfillRequest(new Request(
+    "https://mmdbkk.com/v1/admin/payments/historical-backfill?proof_id=not-a-historical-proof",
+  ), state.env);
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.ok, false);
+  assert.equal(payload.error, "proof_id_invalid");
+  assert.equal(state.calls.proofLists.length, 0);
+});
+
+test("reprocess workflow verifies the exact proof instead of a bounded queue page", () => {
+  const workflow = readFileSync(
+    new URL("../.github/workflows/historical-backfill-reprocess.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(workflow, /--data-urlencode "proof_id=\$PROOF_ID"/);
+  assert.match(workflow, /--data-urlencode "limit=1"/);
+  assert.doesNotMatch(workflow, /historical-backfill\?limit=100/);
 });

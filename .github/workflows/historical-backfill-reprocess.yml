@@ -127,7 +127,10 @@ jobs:
 
           queue_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
             -o "$body" -b "$cookie" -w "%{http_code}" \
-            "$ORIGIN/v1/admin/payments/historical-backfill?limit=100")"
+            --get \
+            --data-urlencode "proof_id=$PROOF_ID" \
+            --data-urlencode "limit=1" \
+            "$ORIGIN/v1/admin/payments/historical-backfill")"
           test "$queue_code" = "200"
           node -e '
             const fs = require("node:fs");
