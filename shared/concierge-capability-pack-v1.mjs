@@ -7,9 +7,9 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     label: "MMD Shop Order Assistant",
     primary_owner: "HYPE",
     henna_role: "bridge_to_hype_or_my_mmd",
-    authority: "member-pages-worker:my_mmd_shop_orders_v1",
+    authority: "member-pages-worker:hype_shop_orders_projection_v1",
     customer_routes: Object.freeze(["/my-mmd/orders"]),
-    current_mode: "route_or_bounded_status_when_authenticated",
+    current_mode: "hype_private_bounded_order_read_with_recovery_correlation_henna_route_only",
     never_claim: Object.freeze(["order delivered", "payment confirmed", "refund completed"]),
   }),
   Object.freeze({
@@ -41,9 +41,9 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     label: "Service Recovery / Complaint Concierge",
     primary_owner: "HYPE",
     henna_role: "mms_recovery_intake_and_handoff",
-    authority: "canonical_job_payment_mms_plus_human_review",
+    authority: "canonical_job_payment_mms_shop_plus_human_review",
     customer_routes: Object.freeze([]),
-    current_mode: "context_handoff_and_recovery_routing",
+    current_mode: "bounded_context_handoff_with_exact_or_unambiguous_shop_recovery_correlation",
     never_claim: Object.freeze(["case resolved", "refund approved", "staff fault confirmed"]),
   }),
   Object.freeze({
@@ -54,7 +54,7 @@ export const CONCIERGE_CAPABILITIES = Object.freeze([
     henna_role: "observe_mms_handoff_state",
     authority: "kenji_conversation_matrix_plus_target_authority_ack",
     customer_routes: Object.freeze([]),
-    current_mode: "aware_but_no_resolution_claim_without_ack",
+    current_mode: "explicit_authority_written_state_only",
     never_claim: Object.freeze(["human acknowledged", "review completed", "customer notified", "case resolved"]),
   }),
   Object.freeze({
