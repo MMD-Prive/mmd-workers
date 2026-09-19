@@ -38,7 +38,7 @@ function handoffResult(target = "kenji") {
   return {
     ok: true,
     state: "handoff_ready",
-    handoff_id: `HYPE-${target.toUpperCase()}-20260919-abc12345`,
+    handoff_id: `HYPE-${target.toUpperCase()}-20260919120000-abc12345`,
     target,
     display_name: "Client A",
     canonical_client_id: "recClientA1",
@@ -78,10 +78,21 @@ test("/kenji creates supervised handoff, notifies Ops, and tells customer they d
     const response = await worker.fetch(request("/kenji"), baseEnv({
       HYPE_CONTEXT_WRITER: {
         async fetch(req) {
+          const pathname = new URL(req.url).pathname;
+          const body = JSON.parse(await req.clone().text());
           serviceCalls.push({
+            pathname,
             caller: req?.headers?.get?.("x-mmd-service-binding") || "",
-            body: JSON.parse(await req.clone().text()),
+            body,
           });
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({
+              ok: true,
+              state: "sent",
+              handoff_id: "HYPE-KENJI-20260919120000-abc12345",
+              target: "kenji",
+            });
+          }
           return Response.json(handoffResult("kenji"));
         },
       },
@@ -92,10 +103,15 @@ test("/kenji creates supervised handoff, notifies Ops, and tells customer they d
     assert.equal(body.ok, true);
     assert.equal(body.code_status, "kenji_context_ready");
     assert.equal(body.line_continuity_ready, true);
-    assert.equal(serviceCalls.length, 1);
-    assert.equal(serviceCalls[0].caller, "telegram-worker");
-    assert.equal(serviceCalls[0].body.target, "kenji");
-    assert.equal(serviceCalls[0].body.telegram_user_id, "111111");
+    assert.equal(serviceCalls.length, 2);
+    const handoffCall = serviceCalls.find((x) => x.pathname === "/__internal/hype/handoff");
+    const sentCall = serviceCalls.find((x) => x.pathname === "/__internal/hype/handoff-status");
+    assert.equal(handoffCall.caller, "telegram-worker");
+    assert.equal(handoffCall.body.target, "kenji");
+    assert.equal(handoffCall.body.telegram_user_id, "111111");
+    assert.equal(sentCall.body.operation, "transition");
+    assert.equal(sentCall.body.state, "sent");
+    assert.equal(sentCall.body.actor_role, "hype");
 
     assert.equal(sends.length, 2);
     const ops = sends.find((x) => String(x.chat_id) === "-1003546439681");
@@ -127,7 +143,16 @@ test("/human targets Per and requires confirmed Ops notification for success", {
   try {
     const response = await worker.fetch(request("ขอคุยกับเปอร์"), baseEnv({
       HYPE_CONTEXT_WRITER: {
-        async fetch() {
+        async fetch(req) {
+          const pathname = new URL(req.url).pathname;
+          if (pathname === "/__internal/hype/handoff-status") {
+            return Response.json({
+              ok: true,
+              state: "sent",
+              handoff_id: "HYPE-PER-20260919120000-abc12345",
+              target: "per",
+            });
+          }
           return Response.json(handoffResult("per"));
         },
       },
