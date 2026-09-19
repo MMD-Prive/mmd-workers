@@ -2338,6 +2338,168 @@ function evolveRecoveryCase(prior, { caseRef, domain, state, outcomeCode, actorR
   });
 }
 
+async function selectRecoveryCandidateForCase(env, { telegramUserId, handoffId, selectionIndex, domain }) {
+  const normalizedDomain = normalizeRecoveryDomain(domain);
+  if (!["booking", "mms"].includes(normalizedDomain)) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_candidate_domain_invalid" }, 400);
+  }
+
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  const canonicalClientId = recordId(identity?.client?.canonical_client_id);
+  if (identity?.status !== "resolved" || !canonicalClientId) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return json({ ok: false, state: "storage_unavailable", error: matrix.error }, 503);
+  if (!matrix.record) return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+
+  const fields = matrix.record.fields || {};
+  const linkedClients = Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT].map((id) => clean(id, 80)) : [];
+  if (!linkedClients.includes(canonicalClientId)) {
+    return json({ ok: false, state: "not_found", error: "handoff_not_found" }, 404);
+  }
+
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  if (["resolved", "customer_notified"].includes(token(tracking.state))) {
+    return json({ ok: false, state: "selection_locked", error: "recovery_case_terminal" }, 409);
+  }
+
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  if (!priorCorrelation || priorCorrelation.domain !== normalizedDomain) {
+    return json({
+      ok: false,
+      state: "selection_unavailable",
+      error: normalizedDomain === "booking" ? "booking_recovery_not_active" : "mms_recovery_not_active",
+    }, 409);
+  }
+
+  const option = priorCorrelation.options?.[selectionIndex] || null;
+  const optionRef = normalizedDomain === "booking"
+    ? clean(option?.booking_ref, 180)
+    : clean(option?.prebooking_id, 180).toLowerCase();
+  if (!optionRef) {
+    return json({ ok: false, state: "selection_unavailable", error: "recovery_candidate_option_stale" }, 409);
+  }
+
+  const currentRef = normalizedDomain === "booking"
+    ? clean(priorCorrelation.booking_ref, 180)
+    : clean(priorCorrelation.prebooking_id, 180).toLowerCase();
+  if (priorCorrelation.correlated === true) {
+    if (currentRef === optionRef) {
+      return json({
+        ok: true,
+        state: "correlated",
+        replayed: true,
+        handoff_id: handoffId,
+        recovery_correlation: priorCorrelation,
+        recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+        guardrails: handoffStatusGuardrails(),
+      });
+    }
+    return json({ ok: false, state: "selection_locked", error: "recovery_candidate_already_bound" }, 409);
+  }
+
+  const exact = normalizedDomain === "booking"
+    ? await correlateOwnedBookingRecoveryRef(env, canonicalClientId, optionRef, "customer_selected_owned_booking")
+    : await correlateOwnedMmsRecoveryRef(env, canonicalClientId, optionRef, "customer_selected_owned_mms_prebooking");
+  const exactRef = normalizedDomain === "booking"
+    ? clean(exact?.booking_ref, 180)
+    : clean(exact?.prebooking_id, 180).toLowerCase();
+  if (exact?.correlated !== true || exactRef !== optionRef) {
+    return json({
+      ok: false,
+      state: "selection_unavailable",
+      error: normalizedDomain === "booking"
+        ? "selected_booking_not_owned_or_stale"
+        : "selected_mms_prebooking_not_owned_or_stale",
+    }, 409);
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = safeRecoveryCorrelation({
+    ...priorCorrelation,
+    ...exact,
+    case_ref: handoffId,
+    candidate_count: Math.max(1, priorCorrelation.candidate_count || 1),
+    options: priorCorrelation.options,
+    method: normalizedDomain === "booking"
+      ? "customer_selected_owned_booking"
+      : "customer_selected_owned_mms_prebooking",
+    selection_locked: true,
+    selected_by: "customer",
+    selected_at: stamp,
+    live_refresh_status: "fresh",
+    refreshed_at: stamp,
+  });
+
+  const priorRecoveryCase = safeRecoveryCase(priorPayload.recovery_case, tracking);
+  const recoveryCase = evolveRecoveryCase(
+    priorRecoveryCase || safeRecoveryCase({
+      case_ref: handoffId,
+      domain: normalizedDomain,
+      outcome_code: "intake_received",
+    }, tracking),
+    {
+      caseRef: handoffId,
+      domain: normalizedDomain,
+      state: token(tracking.state) || "prepared",
+      outcomeCode: priorRecoveryCase?.outcome_code || "intake_received",
+      actorRole: "customer",
+      stamp,
+    },
+  );
+
+  const version = Math.max(0, Number(fields[F.VERSION]) || 0) + 1;
+  const memoryKey = normalizedDomain === "booking" ? "booking_request_reference" : "mms_prebooking_reference";
+  const loops = unique([
+    ...parseList(fields[F.OPEN_LOOPS]),
+    "service_recovery",
+    normalizedDomain + "_recovery",
+    "human_handoff",
+  ]);
+  const patch = {
+    [F.LAST_CUSTOMER_ACTION]: normalizedDomain === "booking"
+      ? "selected_booking_request:" + optionRef
+      : "selected_mms_prebooking:" + optionRef,
+    [F.LAST_KENJI_ACTION]: normalizedDomain === "booking"
+      ? "recovery_booking_correlated"
+      : "recovery_mms_correlated",
+    [F.LAST_OUTCOME]: normalizedDomain + " candidate selected by customer and bound to existing Case Ref " + handoffId + "; handoff state unchanged",
+    [F.DONT_ASK]: JSON.stringify(unique([...parseList(fields[F.DONT_ASK]), memoryKey])),
+    [F.OPEN_LOOPS]: JSON.stringify(loops),
+    [F.LAST_EVENT]: "hype_recovery_" + normalizedDomain + "_selected:" + handoffId,
+    [F.LAST_INTERACTION]: stamp,
+    [F.UPDATED_AT]: stamp,
+    [F.EXPIRES_AT]: new Date(Date.parse(stamp) + MATRIX_TTL_MS).toISOString(),
+    [F.VERSION]: version,
+    [F.PAYLOAD]: JSON.stringify({
+      ...priorPayload,
+      recovery_correlation: updatedCorrelation,
+      recovery_case: recoveryCase,
+      live_truth_refresh_required: true,
+      business_truth_mutated: false,
+    }),
+  };
+
+  const write = await airtableWrite(env, "PATCH", {
+    records: [{ id: matrix.record.id, fields: patch }],
+    typecast: true,
+  });
+  if (!write.ok) return json({ ok: false, state: "storage_unavailable", error: write.error }, 503);
+
+  return json({
+    ok: true,
+    state: "correlated",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: updatedCorrelation,
+    recovery_case: recoveryCase,
+    guardrails: handoffStatusGuardrails(),
+  });
+}
+
 async function selectShopRecoveryOrderForCase(env, { telegramUserId, handoffId, selectionIndex }) {
   const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
   const canonicalClientId = recordId(identity?.client?.canonical_client_id);
