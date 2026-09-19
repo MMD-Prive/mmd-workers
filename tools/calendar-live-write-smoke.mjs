@@ -11,10 +11,8 @@ const CAL_API = "https://api.cal.com/v2";
 const clean = value => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
 const adminCredential = clean(process.env.ADMIN_LOGIN_CREDENTIAL);
 const airtableToken = clean(process.env.AIRTABLE_API_KEY);
-const calApiKey = clean(process.env.CAL_API_KEY);
 assert.ok(adminCredential, "ADMIN_LOGIN_CREDENTIAL missing");
 assert.ok(airtableToken, "AIRTABLE_API_KEY missing");
-assert.ok(calApiKey, "CAL_API_KEY missing");
 
 const stamp = Date.now().toString(36).toUpperCase();
 const sessionId = `CAL-SMOKE-${stamp}`;
@@ -66,27 +64,13 @@ async function findMappings() {
   const body=await airtable(`${LINKS_TABLE}?${query}`);
   return Array.isArray(body.records)?body.records:[];
 }
-async function cancelBooking(uid) {
-  if (!uid) return {attempted:false};
-  const response=await fetch(`${CAL_API}/bookings/${encodeURIComponent(uid)}`,{
-    method:"DELETE",
-    headers:{
-      authorization:`Bearer ${calApiKey}`,
-      "content-type":"application/json",
-      accept:"application/json",
-      "cal-api-version":"2024-08-13",
-    },
-    body:JSON.stringify({cancellationReason:"MMD Calendar live-write production smoke cleanup"}),
-    signal:AbortSignal.timeout(25000),
-  });
-  const text=await response.text();
-  if (!response.ok) return {attempted:true,ok:false,status:response.status,body:text.slice(0,500)};
-  return {attempted:true,ok:true,status:response.status};
-}
 async function cleanup() {
-  const result={cancel:null,session_deleted:false,mappings_deleted:0};
-  try { result.cancel=await cancelBooking(bookingUid); } catch(error) { result.cancel={attempted:true,ok:false,error:error.message}; }
-  if (bookingUid) await new Promise(r=>setTimeout(r,3000));
+  const result={
+    session_deleted:false,
+    mappings_deleted:0,
+    cal_booking_cancelled:false,
+    cal_cleanup_authority:"connected_cal_oauth",
+  };
   try {
     if(sessionRecordId){
       await airtable(`${SESSIONS_TABLE}/${sessionRecordId}`,{method:"DELETE"});
@@ -165,6 +149,7 @@ try {
     events,
     financial_mutations:false,
     customer_notifications_expected:false,
+    cal_cleanup_required:true,
   };
 } catch(error) {
   receipt={
@@ -188,5 +173,5 @@ try {
 
 assert.equal(receipt.status,"cal_live_write_verified");
 assert.equal(receipt.cleanup?.session_deleted,true,"smoke Session cleanup failed");
-assert.ok(receipt.cleanup?.cancel?.ok===true,"smoke Cal booking cancellation failed");
+assert.equal(receipt.cal_cleanup_required,true,"Cal OAuth cleanup handoff missing");
 assert.ok((receipt.cleanup?.mappings_deleted||0)>=1,"smoke mapping cleanup failed");
