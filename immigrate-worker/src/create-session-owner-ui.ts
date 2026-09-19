@@ -242,10 +242,10 @@ function transformOwnerHtml(source: string): string {
   html = html.replace(
     '<div class="mmd-cs-v14__outputActions">',
     `<div class="mmd-cs-v14__urlGrid">
-      <label>Customer confirmation<input readonly data-op-out-customer-url /></label>
-      <label>Model confirmation<input readonly data-op-out-model-url /></label>
-      <label>Member return<input readonly data-op-out-member-url /></label>
-      <label>Model return<input readonly data-op-out-model-return-url /></label>
+      <label>Customer payment<input readonly data-op-out-customer-url /></label>
+      <label>Model URL · after Payment Approve<input readonly data-op-out-model-url /></label>
+      <label>Member URL · after Payment Approve<input readonly data-op-out-member-url /></label>
+      <label>Model URL · after Payment Approve<input readonly data-op-out-model-return-url /></label>
     </div><div class="mmd-cs-v14__outputActions"><button type="button" class="mmd-cs-v14__btn" data-op-copy-customer-link>copy customer link</button><button type="button" class="mmd-cs-v14__btn" data-op-copy-model-link>copy model link</button>`
   );
   html = html.replace('send customer dm</button>', 'send customer LINE</button>');
