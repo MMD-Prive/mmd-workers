@@ -1,0 +1,53 @@
+name: LINE OFC Per-Rename Wide90 Audit
+
+on:
+  pull_request:
+    paths:
+      - scripts/line-ofc-console-fingerprint-export-v1-4-wide.js
+      - .github/workflows/line-ofc-per-rename-wide90-audit.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-console-fingerprint-export-v1-4-wide.js
+      - .github/workflows/line-ofc-per-rename-wide90-audit.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-per-rename-wide90-audit
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate audit wrapper
+        run: node --check scripts/line-ofc-console-fingerprint-export-v1-4-wide.js
+
+  production-fingerprint:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build privacy-safe wide90 fingerprint index
+        run: node scripts/line-ofc-console-fingerprint-export-v1-4-wide.js /tmp/line-ofc-console-fingerprint-index-v1-4-wide90.json
+      - name: Upload salted wide90 index
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-console-fingerprint-index-v1-4-wide90
+          path: /tmp/line-ofc-console-fingerprint-index-v1-4-wide90.json
+          retention-days: 1

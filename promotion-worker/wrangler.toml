@@ -1,0 +1,18 @@
+name = "promotion-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+workers_dev = false
+
+[vars]
+CAMPAIGN_ID = "mmd_6th_anniversary_2026"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+
+# Secrets (configure with wrangler secret put; never commit values):
+# INTERNAL_SERVICE_SECRET
+# AIRTABLE_TOKEN
+# AIRTABLE_BASE_ID
+#
+# Service binding required before production deploy:
+# [[services]]
+# binding = "PAYMENTS_WORKER"
+# service = "payments-worker"

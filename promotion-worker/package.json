@@ -1,0 +1,9 @@
+{
+  "name": "mmd-promotion-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.js",
+    "test": "node --test test/index.test.mjs"
+  }
+}
