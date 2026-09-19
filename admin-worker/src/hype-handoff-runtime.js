@@ -685,7 +685,7 @@ export function executeP6Renewal(input = {}) {
   };
 }
 
-async function buildExecutionId(draftId, mode) {
+export async function buildExecutionId(draftId, mode) {
   const digest = await sha256Hex(`${draftId}|${mode}|hype-p6-supervised-execution-v1`);
   return `HYPE-EXEC-${mode.toUpperCase()}-${digest.slice(0, 16)}`;
 }
