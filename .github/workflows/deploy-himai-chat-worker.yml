@@ -54,7 +54,7 @@ jobs:
           node --check src/mmd-shop-stock-coordinator.js
           node --check ../shared/mmd-shop-stock-reservation.mjs
           node --check ../shared/mmd-shop-fulfillment.mjs
-          grep -Fq 'binding = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
+          grep -Fq 'name = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
           grep -Fq 'binding = "PAYMENTS_WORKER"' wrangler.toml
           grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml
           node --check src/shop-movements.js
