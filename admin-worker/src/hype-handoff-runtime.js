@@ -2719,6 +2719,225 @@ async function readExactRecoveryPickerSelection(env, {
   };
 }
 
+export async function refreshRecoveryPickerForOwner(env, {
+  handoff_id,
+  expected_picker_revision,
+  actor_role = "owner",
+} = {}) {
+  const handoffId = clean(handoff_id, 180);
+  if (!/^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(handoffId)) {
+    return { ok: false, status: 400, error: "case_ref_invalid" };
+  }
+  if (token(actor_role) !== "owner") {
+    return { ok: false, status: 403, error: "recovery_picker_refresh_owner_required" };
+  }
+
+  const expectedRevision = normalizePickerRevision(expected_picker_revision);
+  if (!expectedRevision) {
+    return { ok: false, status: 400, error: "expected_picker_revision_required" };
+  }
+
+  const matrix = await findMatrixByPendingRef(env, handoffId);
+  if (!matrix.ok) return { ok: false, status: 503, error: matrix.error || "storage_unavailable" };
+  if (!matrix.record) return { ok: false, status: 404, error: "recovery_case_not_found" };
+
+  const fields = matrix.record.fields || {};
+  const tracking = handoffTrackingFromRecord(matrix.record);
+  if (["resolved", "customer_notified"].includes(token(tracking.state))) {
+    return { ok: false, status: 409, error: "recovery_case_terminal" };
+  }
+
+  const priorPayload = parseObject(fields[F.PAYLOAD]);
+  const priorCorrelation = safeRecoveryCorrelation(parseObject(priorPayload.recovery_correlation));
+  const domain = normalizeRecoveryDomain(priorCorrelation?.domain);
+  if (!priorCorrelation || !["mmd_shop", "booking", "mms"].includes(domain)) {
+    return { ok: false, status: 409, error: "recovery_picker_not_available" };
+  }
+  if (priorCorrelation.correlated === true || token(priorCorrelation.picker_status) === "selected") {
+    return { ok: false, status: 409, error: "recovery_picker_already_selected" };
+  }
+
+  const currentRevision = effectivePickerRevision(priorCorrelation);
+  if (!currentRevision) {
+    return { ok: false, status: 409, error: "recovery_picker_revision_missing" };
+  }
+  if (expectedRevision !== currentRevision) {
+    return {
+      ok: true,
+      state: recoveryPickerStateFromCorrelation(priorCorrelation),
+      replayed: true,
+      handoff_id: handoffId,
+      recovery_correlation: priorCorrelation,
+      recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+      guardrails: handoffStatusGuardrails(),
+    };
+  }
+
+  const canonicalClientId = (Array.isArray(fields[F.CLIENT]) ? fields[F.CLIENT] : [])
+    .map((value) => recordId(value))
+    .find(Boolean) || "";
+  if (!canonicalClientId) {
+    return { ok: false, status: 409, error: "canonical_client_unresolved" };
+  }
+
+  const identity = await resolveLiveCanonicalClient(env, {
+    canonical_client_id: canonicalClientId,
+  }).catch(() => null);
+  if (identity?.status !== "resolved" || recordId(identity?.client?.canonical_client_id) !== canonicalClientId) {
+    return { ok: false, status: 409, error: "canonical_client_unresolved" };
+  }
+  const telegramUserId = telegramId(identity?.client?.telegram_user_id);
+  if (domain === "mmd_shop" && !telegramUserId) {
+    return persistOwnerUnavailableRecoveryPicker(env, {
+      handoffId,
+      matrixRecord: matrix.record,
+      priorPayload,
+      priorCorrelation,
+      tracking,
+      expectedRevision,
+      reason: "shop_telegram_identity_unavailable",
+    });
+  }
+
+  const current = await listCurrentRecoveryPickerCandidates(env, {
+    telegramUserId,
+    canonicalClientId,
+    domain,
+  });
+  if (!current.ok) {
+    return persistOwnerUnavailableRecoveryPicker(env, {
+      handoffId,
+      matrixRecord: matrix.record,
+      priorPayload,
+      priorCorrelation,
+      tracking,
+      expectedRevision,
+      reason: current.error || "authority_unavailable",
+    });
+  }
+
+  const stamp = new Date().toISOString();
+  const nextRevision = currentRevision + 1;
+  const candidateCount = boundedCandidateCount(current.count);
+  const pickerStatus = candidateCount === 0 ? "no_current_candidates" : "reissued";
+  const source = "owner_r" + expectedRevision;
+
+  const updatedCorrelation = safeRecoveryCorrelation({
+    ...clearRecoveryCorrelationSelection(priorCorrelation, domain),
+    domain,
+    state: candidateCount === 0 ? "no_current_candidates" : "ambiguous",
+    correlated: false,
+    candidate_count: candidateCount,
+    options: current.options,
+    method: candidateCount === 0
+      ? "owner_refresh_no_current_candidates"
+      : "owner_manual_picker_refresh",
+    source_authority: current.authority || priorCorrelation.source_authority,
+    live_refresh_status: "fresh",
+    refreshed_at: stamp,
+    picker_revision: nextRevision,
+    picker_status: pickerStatus,
+    picker_issued_at: priorCorrelation.picker_issued_at || stamp,
+    picker_reissued_at: stamp,
+    picker_reissue_count: boundedPickerReissueCount(priorCorrelation.picker_reissue_count) + 1,
+    last_stale_reason: "owner_manual_refresh",
+    last_reissue_source: source,
+  });
+
+  const write = await persistRecoveryPickerCorrelation(env, {
+    matrixRecord: matrix.record,
+    priorPayload,
+    correlation: updatedCorrelation,
+    handoffId,
+    event: pickerStatus === "no_current_candidates"
+      ? "recovery_picker_owner_refresh_no_candidates"
+      : "recovery_picker_owner_reissued",
+    customerAction: clean(fields[F.LAST_CUSTOMER_ACTION], 180) || "recovery_case_active",
+    kenjiAction: pickerStatus === "no_current_candidates"
+      ? "owner_refreshed_picker_no_current_candidates"
+      : "owner_refreshed_picker_waiting_customer_reselection",
+    outcome: pickerStatus === "no_current_candidates"
+      ? "Owner refreshed picker authority; no current owned candidates; Case lifecycle unchanged"
+      : "Owner refreshed canonical picker choices; waiting customer reselection under same Case Ref",
+  });
+  if (!write.ok) return { ok: false, status: 503, error: write.error || "picker_write_failed" };
+
+  return {
+    ok: true,
+    state: pickerStatus === "no_current_candidates" ? "no_current_candidates" : "picker_reissued",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: updatedCorrelation,
+    recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+    guardrails: handoffStatusGuardrails(),
+  };
+}
+
+function recoveryPickerStateFromCorrelation(correlation = {}) {
+  if (correlation.correlated === true || token(correlation.picker_status) === "selected") return "correlated";
+  const status = token(correlation.picker_status);
+  if (status === "no_current_candidates") return "no_current_candidates";
+  if (status === "stale") return "authority_unavailable";
+  return "picker_reissued";
+}
+
+async function persistOwnerUnavailableRecoveryPicker(env, {
+  handoffId,
+  matrixRecord,
+  priorPayload,
+  priorCorrelation,
+  tracking,
+  expectedRevision,
+  reason,
+}) {
+  const source = "owner_r" + expectedRevision;
+  if (
+    token(priorCorrelation?.picker_status) === "stale"
+    && clean(priorCorrelation?.last_reissue_source, 40) === source
+  ) {
+    return {
+      ok: true,
+      state: "authority_unavailable",
+      replayed: true,
+      handoff_id: handoffId,
+      recovery_correlation: priorCorrelation,
+      recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+      guardrails: handoffStatusGuardrails(),
+    };
+  }
+
+  const stamp = new Date().toISOString();
+  const updatedCorrelation = safeRecoveryCorrelation({
+    ...priorCorrelation,
+    picker_status: "stale",
+    last_stale_reason: reason || "authority_unavailable",
+    last_reissue_source: source,
+    live_refresh_status: "unavailable",
+    refreshed_at: stamp,
+  });
+  const write = await persistRecoveryPickerCorrelation(env, {
+    matrixRecord,
+    priorPayload,
+    correlation: updatedCorrelation,
+    handoffId,
+    event: "recovery_picker_owner_refresh_unavailable",
+    customerAction: clean(matrixRecord?.fields?.[F.LAST_CUSTOMER_ACTION], 180) || "recovery_case_active",
+    kenjiAction: "owner_picker_refresh_waiting_authority",
+    outcome: "Owner requested picker refresh but canonical authority is unavailable; Case lifecycle unchanged",
+  });
+  if (!write.ok) return { ok: false, status: 503, error: write.error || "picker_write_failed" };
+
+  return {
+    ok: true,
+    state: "authority_unavailable",
+    replayed: false,
+    handoff_id: handoffId,
+    recovery_correlation: updatedCorrelation,
+    recovery_case: safeRecoveryCase(priorPayload.recovery_case, tracking),
+    guardrails: handoffStatusGuardrails(),
+  };
+}
+
 async function listCurrentRecoveryPickerCandidates(env, {
   telegramUserId,
   canonicalClientId,
