@@ -135,6 +135,59 @@ jobs:
               "$origin/internal/admin/login/session")"
             test "$login_code" = "303"
             grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+            tr -d '\r' < "$headers" | grep -qi '^location: /internal/ceo/models
+            page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -o "$body" -b "$cookie" -w "%{http_code}" \
+              "$origin/internal/ceo/models")"
+            test "$page_code" = "200"
+            grep -q 'model-supply-v3' "$body"
+            grep -q 'SUPPLY INTELLIGENCE' "$body"
+            grep -Fq '/v1/admin/models/list?limit=100' "$body"
+            grep -Fq '/v1/admin/models/resolve-source?q=' "$body"
+
+            list_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -o "$body" -b "$cookie" -w "%{http_code}" \
+              "$origin/v1/admin/models/list?limit=5")"
+            test "$list_code" = "200"
+
+            model_count="$(node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const list = Array.isArray(p.items) ? p.items : Array.isArray(p.models) ? p.models : Array.isArray(p.records) ? p.records : [];
+          if (!list.length) process.exit(1);
+          process.stdout.write(String(list.length));
+          NODE
+            )"
+
+            model_query="$(node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const list = Array.isArray(p.items) ? p.items : Array.isArray(p.models) ? p.models : Array.isArray(p.records) ? p.records : [];
+          const x = list[0] || {};
+          const f = x && typeof x.fields === 'object' && x.fields ? x.fields : {};
+          const values = [x.working_name, x.model_name, x.name, x.model_code, x.model_id, x.model_record_id, x.id, f.working_name, f.model_name, f.name, f.model_code, f.model_id, f.id];
+          const q = values.find((v) => typeof v === 'string' && v.trim());
+          if (!q) process.exit(1);
+          process.stdout.write(q.trim());
+          NODE
+            )"
+
+            resolve_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -o "$body" -b "$cookie" -w "%{http_code}" \
+              -G --data-urlencode "q=$model_query" \
+              "$origin/v1/admin/models/resolve-source")"
+            test "$resolve_code" = "200"
+            node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!p || typeof p !== 'object' || p.ok === false) process.exit(1);
+          if (p.authority !== 'backend') process.exit(1);
+          if (p.published !== false || p.can_publish !== false) process.exit(1);
+          NODE
+
+            echo "PASS: $origin authenticated CEO models page + model inventory ($model_count sampled) + readiness lookup"
+          done
+
 
             page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \
