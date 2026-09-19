@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildHypeCustomerStatusProjection } from "./src/hype-operating-concierge.js";
+import { buildHypeCustomerStatusProjection } from "./src/hype-operating-concierge.js";\nimport { resolveLiveCanonicalClient } from "./src/kenji-lv5-live-context.js";
 
 test("HYPE projects only customer-safe live status for a verified Telegram client", () => {
   const projection = buildHypeCustomerStatusProjection({
@@ -75,4 +75,44 @@ test("HYPE fails closed when Telegram identity is not a verified canonical clien
   assert.equal(projection.state, "connect_required");
   assert.equal(projection.code, "telegram_identity_not_linked");
   assert.equal(projection.next_action.href, "/my-mmd/");
+});
+
+
+test("live context resolves exactly one verified canonical Client from stable Telegram ID", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let requestedUrl = "";
+
+  globalThis.fetch = async (url) => {
+    requestedUrl = String(url);
+    return Response.json({
+      records: [{
+        id: "recClientTelegram123",
+        fields: {
+          "Client Name": "คุณเอ็ม",
+          line_user_id: "U0123456789abcdef0123456789abcdef",
+          telegram_user_id: "111111",
+          telegram_verification_status: "verified",
+        },
+      }],
+    });
+  };
+
+  try {
+    const resolved = await resolveLiveCanonicalClient({
+      AIRTABLE_API_KEY: "airtable-test",
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+      AIRTABLE_TABLE_CLIENTS_ID: "tblVv58TCbwh5j1fS",
+    }, {
+      telegram_user_id: "111111",
+    });
+
+    assert.equal(resolved.status, "resolved");
+    assert.equal(resolved.client.canonical_client_id, "recClientTelegram123");
+    assert.equal(resolved.client.display_name, "คุณเอ็ม");
+    assert.equal(resolved.client.telegram_user_id, "111111");
+    assert.match(decodeURIComponent(requestedUrl), /telegram_user_id/);
+    assert.match(decodeURIComponent(requestedUrl), /telegram_verification_status/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
