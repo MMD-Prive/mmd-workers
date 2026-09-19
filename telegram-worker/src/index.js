@@ -920,19 +920,11 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
   }
 
   if (command === "orders") {
-    const telegram = await sendTelegramMessage({
-      chat_id: chatId,
-      text: [
-        "<b>HYPE · MMD SHOP ORDERS</b>",
-        "",
-        "ผมรับรู้ lane ของ MMD Shop แล้วครับ สถานะ Order/Payment ต้องยึด member-owned order record ใน MY MMD",
-        "ตอนนี้ HYPE จะพาไป canonical Orders โดยไม่เดาสถานะจาก Telegram",
-      ].join("\n"),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[{ text: "MY MMD · Orders", url: publicUrl(env, "/my-mmd/orders") }]] },
+    return handleHypeShopOrdersCommand({
+      chatId,
+      telegramUserId,
+      message,
     }, env);
-    return { handled: true, flow: "hype_operating_orders_route", telegram };
   }
 
   if (command === "mms_options") {
@@ -1564,7 +1556,7 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
       body: JSON.stringify({
         telegram_user_id: telegramUserId,
         target,
-        command: target === "kenji" ? "kenji" : "human",
+        command: command === "recovery" ? "recovery" : target === "kenji" ? "kenji" : "human",
         reason: command === "recovery"
           ? "customer_service_recovery"
           : target === "kenji"
@@ -1632,6 +1624,15 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
         ? "HYPE Ops แจ้ง Per พร้อม context ล่าสุดแล้วครับ ถ้าต้องส่งข้อความเพิ่ม ใช้ LINE Official ได้โดยไม่ต้องเริ่มอธิบายสถานะระบบใหม่ครับ"
         : "Context ถูกเตรียมไว้แล้ว แต่ HYPE ยังยืนยันการส่ง Alert ถึง Per ไม่ได้ กรุณาเปิด LINE Official เพื่อให้ทีมรับช่วงต่อครับ",
     "",
+    ...(result.recovery_correlation?.correlated === true
+      ? [
+          `Order: ${clean(result.recovery_correlation.order_id)}`,
+          `Payment: ${clean(result.recovery_correlation.payment_status) || "unknown"} · Fulfillment: ${clean(result.recovery_correlation.fulfillment_state) || "unknown"}`,
+          "Order / Payment / Fulfillment ถูกผูกไว้กับ Case Reference นี้แล้วครับ ไม่ต้องเล่าข้อมูลเดิมซ้ำ",
+        ]
+      : result.recovery_correlation?.state === "ambiguous"
+        ? ["พบมากกว่า 1 Order ที่เป็นไปได้ครับ เคสถูกเปิดไว้แล้ว แต่ HYPE จะไม่เดาว่าเป็น Order ไหน"]
+        : []),
     `Reference: ${clean(result.handoff_id)}`,
   ];
 
@@ -1690,6 +1691,16 @@ function renderHypeHandoffOperatorAlert(result = {}) {
     `<b>Cross-channel continuity:</b> ${result.line_continuity_ready === true ? "READY" : "LINE LINK MISSING"}`,
     "",
     escapeHtml(summary),
+    ...(result.recovery_correlation?.correlated === true
+      ? [
+          "",
+          "<b>Shop recovery correlation</b>",
+          `Order: <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`,
+          `Payment: ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")}`,
+          `Fulfillment: ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`,
+          `Case: <code>${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
+        ]
+      : []),
     "",
     "<b>Owner controls:</b>",
     `<code>/case-ack ${escapeHtml(clean(result.handoff_id) || "-")}</code>`,
@@ -1717,6 +1728,10 @@ function renderHypeHandoffStatus(result = {}) {
   if (clean(result.handoff_id)) lines.push(`<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id))}</code>`);
   if (clean(result.target)) lines.push(`<b>Owner:</b> ${escapeHtml(result.target === "kenji" ? "Kenji" : "Per / MMD Ops")}`);
   lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || state || "unknown")}`);
+  if (result.recovery_correlation?.correlated === true) {
+    lines.push(`<b>Order:</b> <code>${escapeHtml(clean(result.recovery_correlation.order_id))}</code>`);
+    lines.push(`<b>Shop state:</b> payment ${escapeHtml(clean(result.recovery_correlation.payment_status) || "unknown")} · fulfillment ${escapeHtml(clean(result.recovery_correlation.fulfillment_state) || "unknown")}`);
+  }
   if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
   lines.push("");
   lines.push("HYPE แสดงเฉพาะ state ที่ถูกเขียนโดยระบบ/ผู้มีสิทธิ์จริง และจะไม่เดา acknowledgement หรือ resolution เองครับ");
@@ -1973,6 +1988,123 @@ function hypeOwnerSummaryButtons(env, result = {}) {
 
 function compactOwnerText(parts) {
   return parts.map((part) => clean(part)).filter(Boolean).join(" · ").slice(0, 360);
+}
+
+async function handleHypeShopOrdersCommand({ chatId, telegramUserId, message }, env) {
+  const binding = env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ตอนนี้ HYPE ยังอ่าน MMD Shop Orders จากระบบกลางไม่ได้ครับ กรุณาเปิด MY MMD · Orders เพื่อตรวจข้อมูลล่าสุด",
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "MY MMD · Orders", url: publicUrl(env, "/my-mmd/orders") }]] },
+    }, env);
+    return { handled: true, flow: "hype_operating_orders_inline", ok: false, code_status: "orders_unavailable", telegram };
+  }
+
+  const requestedOrderId = extractHypeShopOrderId(clean(message?.text || message?.caption || ""));
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/shop-orders", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        telegram_user_id: telegramUserId,
+        ...(requestedOrderId ? { order_id: requestedOrderId } : {}),
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (status === 404 && result?.state === "connect_required") {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: "ยังอ่าน Order ส่วนตัวไม่ได้ครับ กรุณาเชื่อม Telegram กับ MY MMD ก่อน",
+      disable_web_page_preview: true,
+      reply_markup: hypeConnectButtons(env),
+    }, env);
+    return { handled: true, flow: "hype_operating_orders_inline", ok: false, code_status: "connect_required", telegram };
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const telegram = await sendTelegramMessage({
+      chat_id: chatId,
+      text: result?.state === "review_required"
+        ? "Order record มีความกำกวมที่ต้องให้ MMD ตรวจครับ HYPE จะไม่เลือก Order แทน"
+        : "ตอนนี้ HYPE อ่าน Order จาก canonical Shop authority ไม่สำเร็จครับ กรุณาเปิด MY MMD · Orders",
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "MY MMD · Orders", url: publicUrl(env, "/my-mmd/orders") }]] },
+    }, env);
+    return { handled: true, flow: "hype_operating_orders_inline", ok: false, code_status: clean(result?.state || "orders_unavailable"), telegram };
+  }
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: renderHypeShopOrdersInline(result),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    reply_markup: { inline_keyboard: [[{ text: "MY MMD · Orders", url: publicUrl(env, "/my-mmd/orders") }]] },
+  }, env);
+
+  return {
+    handled: true,
+    flow: "hype_operating_orders_inline",
+    ok: telegram?.ok === true,
+    code_status: result.orders?.length ? "orders_ready" : "no_orders",
+    orders_count: Array.isArray(result.orders) ? result.orders.length : 0,
+    telegram,
+  };
+}
+
+function renderHypeShopOrdersInline(result = {}) {
+  const orders = Array.isArray(result.orders) ? result.orders.slice(0, 3) : [];
+  const lines = ["<b>HYPE · MMD SHOP ORDERS</b>"];
+  if (clean(result.display_name)) lines.push(escapeHtml(clean(result.display_name)));
+  lines.push("");
+
+  if (!orders.length) {
+    lines.push("ยังไม่พบ Order ที่ผูกกับบัญชี MMD นี้ครับ");
+  } else {
+    for (const order of orders) {
+      lines.push(`<b>Order:</b> <code>${escapeHtml(clean(order.order_id) || "-")}</code>`);
+      if (clean(order.order_date)) lines.push(`<b>Date:</b> ${escapeHtml(formatDateOnly(order.order_date))}`);
+      lines.push(`<b>Order status:</b> ${escapeHtml(clean(order.order_status) || "unknown")}`);
+      lines.push(`<b>Payment:</b> ${escapeHtml(clean(order.payment_status) || "unknown")}`);
+      lines.push(`<b>Fulfillment:</b> ${escapeHtml(clean(order.fulfillment?.state) || "unknown")}`);
+      if (clean(order.fulfillment?.courier)) lines.push(`<b>Courier:</b> ${escapeHtml(clean(order.fulfillment.courier))}`);
+      if (clean(order.fulfillment?.tracking_number)) lines.push(`<b>Tracking:</b> <code>${escapeHtml(clean(order.fulfillment.tracking_number))}</code>`);
+      if (Number.isFinite(Number(order.total_thb))) lines.push(`<b>Total:</b> ${escapeHtml(formatThb(order.total_thb))}`);
+      const itemNames = (Array.isArray(order.items) ? order.items : []).slice(0, 4)
+        .map((item) => clean(item.item_name))
+        .filter(Boolean);
+      if (itemNames.length) lines.push(`<b>Items:</b> ${escapeHtml(itemNames.join(", "))}`);
+      lines.push("");
+    }
+  }
+
+  lines.push("ข้อมูลนี้เป็น bounded read จาก member-owned Shop record เท่านั้น");
+  lines.push("HYPE ไม่ mark paid / shipped / delivered / refunded และไม่แก้ fulfillment เองครับ");
+  return lines.join("\n").slice(0, 3900);
+}
+
+function extractHypeShopOrderId(value) {
+  const text = clean(value, 500);
+  const patterns = [
+    /(?:order|ออเดอร์|ออร์เดอร์|คำสั่งซื้อ)\s*(?:id|ref|#|เลข)?\s*[:#-]?\s*([A-Za-z0-9][A-Za-z0-9_-]{3,79})/i,
+    /\b(MMD[-_][A-Za-z0-9_-]{3,76})\b/i,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match?.[1]) return clean(match[1], 180);
+  }
+  return "";
 }
 
 async function handleHypeMemberWalletCommand({ chatId, telegramUserId, command }, env) {
