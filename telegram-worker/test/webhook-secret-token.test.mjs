@@ -70,11 +70,11 @@ function bookingPayload() {
 function expectedCareBackKeyboard(baseUrl = "https://www.mmdbkk.com", previewChannelUrl = "https://t.me/MMDPriveTH") {
   return [
     [{
-      text: "🎁 เช็กสิทธิ์ 6 YEARS CARE BACK",
+      text: "🎁 CARE BACK Phase 2 · เช็กสิทธิ์",
       url: `${baseUrl}/promotion/6-years-care-back`,
     }],
     [{
-      text: "My Code / Status",
+      text: "MY MMD / Status",
       url: `${baseUrl}/member/dashboard`,
     }],
     [{
@@ -481,6 +481,12 @@ test("/telegram/preview/post remains protected by INTERNAL_API_TOKEN", async () 
   assert.equal(allowed.status, 200);
   assert.equal(allowedBody.ok, true);
   assert.equal(allowedBody.dry_run, true);
+  assert.match(allowedBody.text, /CARE BACK CONTINUES/);
+  assert.match(allowedBody.text, /30 กันยายน 2026/);
+  assert.match(allowedBody.text, /Birthday Wish/);
+  assert.match(allowedBody.text, /ส่วนลดสูงสุด 10%/);
+  assert.match(allowedBody.text, /ไม่สร้าง claim \/ coupon \/ points bonus ซ้ำ/);
+  assert.doesNotMatch(allowedBody.text, /โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้น/);
   assert.deepEqual(allowedBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
   const urls = flattenKeyboardUrls(allowedBody.reply_markup);
   assert.deepEqual(urls.filter((url) => url.includes("/sigil/")), ["https://www.mmdbkk.com/sigil/member/membership"]);
@@ -560,7 +566,12 @@ test("/start preview requires verification and never issues a code or writes pre
     assert.equal(body.flow, "preview_start");
     assert.equal(body.code_status, "verification_required");
     assert.deepEqual(kvCalls, []);
-    assert.match(telegramBody.text, /ตรวจสอบตัวตนและสิทธิ์ก่อน/);
+    assert.match(telegramBody.text, /PHASE 2/);
+    assert.match(telegramBody.text, /1–30 กันยายน 2026/);
+    assert.match(telegramBody.text, /Birthday Wish/);
+    assert.match(telegramBody.text, /ส่วนลดสูงสุด 10%/);
+    assert.match(telegramBody.text, /ไม่ได้สร้างสิทธิ์ซ้ำ/);
+    assert.doesNotMatch(telegramBody.text, /โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้น/);
     assert.doesNotMatch(telegramBody.text, /เข้าสู่ระบบเรียบร้อย|[A-Z2-9]{6}/);
     assert.deepEqual(telegramBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
   } finally {
