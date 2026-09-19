@@ -208,7 +208,7 @@
   }
 
   function isFormerMemberGapOver365(result) {
-    const found = Boolean(result?.found || result?.member_id || result?.memberstack_id || result?.current_tier || result?.membership_status);
+    const found = Boolean(result?.found || result?.member_id || result?.current_tier || result?.membership_status);
     const gapDays = daysSince(getLastServiceDate(result));
     return found && gapDays !== null && gapDays > GAP_DAYS_LIMIT;
   }

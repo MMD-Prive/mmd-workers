@@ -1,0 +1,108 @@
+name: Private Model work production smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/private-model-work-production-smoke.yml"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Verify Rossi VIP plus PN canonical search
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
+            headers="$(mktemp)"
+            body="$(mktemp)"
+
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/admin/jobs/create-job" \
+              "$origin/internal/admin/login/session")"
+            echo "Private model login HTTP $login_code"
+            test "$login_code" = "303"
+            grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+            for work in pn vip; do
+              search_url="$origin/v1/admin/models/search?booking_visibility=private&work_type=private&selected_access_folder=exclusive&folder=exclusive&selected_orientation=straight&customer_lane=straight&private_work=$work&job_type=$work&client_id=recAAAAAAAAAAAAAA&q=Rossi"
+              search_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+                -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+                -H "Origin: $origin" \
+                -H "Accept: application/json" \
+                "$search_url")"
+              echo "Rossi $work search HTTP $search_code"
+              test "$search_code" = "200"
+              grep -qi '^content-type:.*application/json' "$headers"
+              grep -Eqi '^x-mmd-private-work-policy:[[:space:]]*private-model-work-policy-v1' "$headers"
+
+              node - "$body" "$work" <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const requested = process.argv[3];
+          if (!payload || payload.ok !== true) throw new Error('private_model_search_not_ok');
+          const rows = Array.isArray(payload.items) ? payload.items : [];
+          const rossi = rows.find((row) => /rossi/i.test(String(row?.model_name || '')));
+          if (!rossi) throw new Error(`rossi_missing_for_${requested}`);
+          if (String(rossi.private_service_level || '').toLowerCase() !== 'vip') throw new Error('rossi_not_canonical_vip');
+          const caps = Array.isArray(rossi.private_work_capabilities) ? rossi.private_work_capabilities.map(String) : [];
+          if (!caps.includes('vip') || !caps.includes('pn')) throw new Error('rossi_capability_not_vip_plus_pn');
+          if (payload.private_work_policy_version !== 'private-model-work-policy-v1') throw new Error('policy_version_missing');
+          console.log(`PASS: Rossi ${requested.toUpperCase()} search -> canonical VIP with VIP+PN capability`);
+          NODE
+            done
+
+            ems16_url="$origin/v1/admin/models/search?booking_visibility=private&work_type=private&selected_access_folder=exclusive&folder=exclusive&selected_orientation=straight&customer_lane=straight&private_work=pn&job_type=pn&inventory_only=1&q=EMs16"
+            ems16_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+              -H "Origin: $origin" \
+              -H "Accept: application/json" \
+              "$ems16_url")"
+            echo "EMs16 PN search HTTP $ems16_code"
+            test "$ems16_code" = "200"
+            grep -qi '^content-type:.*application/json' "$headers"
+            grep -Eqi '^x-mmd-private-work-policy:[[:space:]]*private-model-work-policy-v1' "$headers"
+
+            node - "$body" <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!payload || payload.ok !== true) throw new Error('ems16_private_model_search_not_ok');
+          const rows = Array.isArray(payload.items) ? payload.items : [];
+          const ems16 = rows.find((row) => String(row?.model_name || '').trim().toLowerCase() === 'ems16');
+          if (!ems16) throw new Error(`ems16_missing_count_${rows.length}`);
+          if (String(ems16.private_service_level || '').toLowerCase() !== 'pn') {
+            throw new Error(`ems16_private_service_level_${ems16.private_service_level || 'missing'}`);
+          }
+          const caps = Array.isArray(ems16.private_work_capabilities) ? ems16.private_work_capabilities.map((v) => String(v).toLowerCase()) : [];
+          if (!caps.includes('pn') || caps.includes('vip')) throw new Error(`ems16_caps_${caps.join(',')}`);
+          if (payload.private_work_policy_version !== 'private-model-work-policy-v1') throw new Error('ems16_policy_version_missing');
+          console.log('PASS: EMs16 exact PN root is discoverable/materialized and nested Review folder is not selected');
+          NODE
+
+            rm -f "$cookie" "$headers" "$body"
+          done

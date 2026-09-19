@@ -1,0 +1,36 @@
+name: LIFF dashboard foundation CI
+
+on:
+  pull_request:
+    paths:
+      - "member-pages-worker/src/liff-dashboard-channel-compat.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/liff-dashboard-channel-compat.test.mjs"
+      - ".github/workflows/liff-dashboard-foundation-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "member-pages-worker/src/liff-dashboard-channel-compat.js"
+      - "member-pages-worker/src/runtime-index.js"
+      - "member-pages-worker/test/liff-dashboard-channel-compat.test.mjs"
+      - ".github/workflows/liff-dashboard-foundation-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax
+        run: |
+          node --check member-pages-worker/src/liff-dashboard-channel-compat.js
+          node --check member-pages-worker/src/runtime-index.js
+      - name: Regression tests
+        run: node --test member-pages-worker/test/liff-dashboard-channel-compat.test.mjs

@@ -1,0 +1,441 @@
+name = "member-dashboard-chat-worker"
+main = "src/my-mms-customer-front-gate-entry.js"
+compatibility_date = "2026-07-02"
+workers_dev = false
+
+# MMD Privé Rich Menu runtime. Cloudflare cron is UTC; the handler evaluates
+# Asia/Bangkok and keeps the menu hidden 16:00-23:00, visible otherwise.
+# Hourly reconciliation also self-heals assignments after deploys/state drift.
+[triggers]
+crons = ["0 * * * *"]
+
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
+[[services]]
+binding = "AI_WORKER"
+service = "ai-worker"
+
+[[services]]
+binding = "MMS_WORKER"
+service = "mms-worker"
+
+# Downstream-only notification path for pending LINE payment evidence. Telegram
+# never becomes payment or entitlement truth; it only alerts the operator after
+# a pending Payment Proof row has been persisted successfully.
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+# Cloudflare-only QR/OCR evidence extraction. The service has no public route in
+# production and cannot mark money paid, grant access, points, or membership.
+[[services]]
+binding = "SLIP_EXTRACTOR"
+service = "mmd-slip-extractor"
+
+# Exact LINE OFC membership slips are handed to payments-worker only after the
+# visual proof, canonical LINE identity, package, amount, and payment reference
+# all match. Service/job payments remain in Official Verify review.
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
+[[r2_buckets]]
+binding = "LINE_SLIP_EVIDENCE"
+bucket_name = "mmd-line-slip-evidence"
+
+# Canonical renewal page. These specific routes win before the generic front
+# gate and keep the full query string available to the local renderer.
+[[routes]]
+pattern = "mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/pay/renewal*"
+zone_name = "mmdbkk.com"
+
+# MY MMD Shop orders are same-origin and session-bound.
+[[routes]]
+pattern = "mmdbkk.com/member/api/shop/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/shop/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/liff/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/liff/*"
+zone_name = "mmdbkk.com"
+
+# Public Birthday Wish is intentionally outside the LIFF prefix. The public
+# front gate owns these routes and delegates to member-pages-worker through the
+# service binding. Benefits remain separately verified through LINE/LIFF.
+[[routes]]
+pattern = "mmdbkk.com/member/api/care-back/public-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/care-back/public-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/care-back/link-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/care-back/link-wish*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member/dashboard*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/dashboard*"
+zone_name = "mmdbkk.com"
+
+# Member-facing payment status/history BFF. The browser reaches only this
+# same-origin route; the front gate delegates to member-pages-worker and never
+# exposes admin payment review or takes over payments-worker money authority.
+[[routes]]
+pattern = "mmdbkk.com/v1/member/payments*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/member/payments*"
+zone_name = "mmdbkk.com"
+
+# My MMD behavior/data BFF. The Lovable app is presentation only; every live
+# member read remains same-origin and delegates through member-pages-worker so
+# points, membership, entitlement and coupon truth never move into the browser.
+[[routes]]
+pattern = "mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/app/*"
+zone_name = "mmdbkk.com"
+
+# MY MMS customer app. The exact /male-massage route becomes the authenticated
+# customer workspace sourced from MMD-Prive/my-mms-therapist. Public marketing
+# pages such as /male-massage/home and /male-massage/how-to-use remain Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/male-massage"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/bookings*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/bookings*"
+zone_name = "mmdbkk.com"
+
+# Exact Therapist directory app route only. Do not wildcard this route: the
+# nested /therapists/login, /me, /app and public service pages have separate owners.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/payment*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/payment*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/after-service*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/after-service*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/profile*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/profile*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/support*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/support*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage-assets/*"
+zone_name = "mmdbkk.com"
+
+# Same-origin BFF for MY MMS customer identity + booking reads. Unsupported
+# customer contracts fail closed until their backend authority is connected.
+[[routes]]
+pattern = "mmdbkk.com/api/mms/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/mms/app/*"
+zone_name = "mmdbkk.com"
+
+# MMS Therapist auth is a separate role-scoped identity surface. The public
+# same-origin route is owned by this front gate and delegated only to mms-worker.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/api/auth/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/api/auth/*"
+zone_name = "mmdbkk.com"
+
+# MY MMS Therapist work app. Browser session cookies never leave mmdbkk.com:
+# app APIs are delegated to mms-worker, while the app page is server-gated by
+# the canonical MY MMS entitlement before anonymous Lovable presentation bytes
+# are republished on the same origin.
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/api/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/male-massage/therapists/app*"
+zone_name = "mmdbkk.com"
+
+# Canonical My MMD customer application. Lovable owns presentation; this Worker
+# owns the custom-domain route, strips member credentials before fetching the
+# Lovable app, republishes its assets same-origin, and keeps all behavior on the
+# MMD Worker/API stack.
+[[routes]]
+pattern = "mmdbkk.com/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+# Legacy My MMD address remains Worker-owned only to provide a bounded 308
+# compatibility redirect into /my-mmd/. It is no longer a canonical app route.
+[[routes]]
+pattern = "mmdbkk.com/member/my-mmd*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/my-mmd*"
+zone_name = "mmdbkk.com"
+
+# Legacy asset prefix remains owned during the migration window so stale cached
+# bundles cannot fall through to Webflow. New app HTML never emits this prefix.
+[[routes]]
+pattern = "mmdbkk.com/member/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/my-mmd-assets/*"
+zone_name = "mmdbkk.com"
+
+# Cloudflare route matching includes the query string. The trailing wildcard
+# is required for CARE BACK URLs such as /member/liff?intent=promo.
+# Runtime routing still accepts only /member/liff and /member/liff/.
+[[routes]]
+pattern = "mmdbkk.com/member/liff*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/liff*"
+zone_name = "mmdbkk.com"
+
+[observability]
+enabled = true
+
+# The internal service-binding diagnostic is publicly routed only so GitHub
+# Actions can reach the Worker; the handler accepts POST and requires its own
+# dedicated smoke token before it invokes the read-only AI contract.
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/ai/service-binding-smoke"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/ai/service-binding-smoke"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/"
+zone_name = "mmdbkk.com"
+
+# MMS LINE OA is isolated from MMD Privé LINE credentials and transport.
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/webhooks/line/mms/"
+zone_name = "mmdbkk.com"
+
+# Cloudflare-only LINE runtime.
+# Bind LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET, INTERNAL_TOKEN,
+# AUTH_SERVICE_LINE_TO_TELEGRAM, MMS_LINE_CHANNEL_ACCESS_TOKEN, and
+# MMS_LINE_CHANNEL_SECRET as Cloudflare secrets only.
+# LINE_WEBHOOK_UPSTREAM_URL is retired and must remain unset.
+#
+# Production intake must stay available during ad campaigns. Keep these
+# non-secret switches in version control so deploys cannot preserve an old
+# muted/disabled runtime value by accident. An intentional emergency mute can
+# still be made by changing this config and redeploying.
+[vars]
+LINE_AUTO_REPLY_ENABLED = "true"
+LINE_KENJI_AI_ENABLED = "true"
+# Canonical Airtable Supplier registry used by the production LINE webhook.
+HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
+LINE_KENJI_KNOWLEDGE_ENABLED = "true"
+# Customer continuity is resolved from the canonical Conversation Matrix before
+# a LINE reply is selected. Post-turn write-back updates only bounded state;
+# Memory remains context and protected current truth still comes from its owner.
+KENJI_LINE_CONTINUITY_ENABLED = "true"
+AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID = "tblS6iRgPjYLBqZJh"
+AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
+# Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
+# ai-worker through a private Cloudflare service binding. It does not affect
+# the LINE reply path or create any domain truth.
+KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
+# Personal/crew LINE source IDs are never guessed. Populate this only when the
+# bot/OA is actually present in a Crew group/room and the source ID is reviewed.
+KENJI_LINE_CREW_SOURCE_IDS = ""
+# The reviewed MMD Privé Team group remains eligible for payment-image capture.
+# Direct customer images are additionally accepted only when recent payment /
+# renewal context exists, or when a bounded image candidate is immediately
+# followed by payment/access language from the same LINE user.
+LINE_PAYMENT_PROOF_GROUP_HASHES = "7cb8cf05c7e2ec9489d6ec9560de60fade231412f9dd82b89a7e51b58eba996f"
+LINE_SLIP_MAX_IMAGE_BYTES = "10485760"
+LINE_DIRECT_PAYMENT_CANDIDATE_TTL_MINUTES = "30"
+LINE_DIRECT_PAYMENT_CONTEXT_LOOKBACK_HOURS = "48"
+AIRTABLE_TABLE_PAYMENT_PROOFS_ID = "tblfJfM4Sqag9zrLi"
+# Pending proof alert destinations. These are notification-only and cannot activate
+# payment, membership, points, booking, or access.
+TELEGRAM_OPS_CHAT_ID = "-1003546439681"
+TELEGRAM_PAYMENT_THREAD_ID = "22"
+TELEGRAM_MEMBERSHIP_THREAD_ID = "20"
+TELEGRAM_ALERTS_THREAD_ID = "9"
+TG_THREAD_PAYMENTS_CONFIRM = "22"
+TG_THREAD_MEMBERSHIP = "20"
+TG_THREAD_ALERTS = "9"
+# Model generation is a separate, production-gated capability. Keep it off in
+# committed configuration until an explicitly approved deployment enables it.
+LINE_KENJI_MODEL_ENABLED = "false"
+# Deterministic membership-gated model code/name lookup. This rollout switch
+# is independent from LLM generation and must remain off until the V1 privacy
+# review, synthetic smoke, and explicit Production approval are complete.
+LINE_KENJI_MODEL_ACCESS_ENABLED = "false"
+OPENAI_MODEL = "gpt-5.6"
+# Safe defaults: model-on still reaches nobody until approved SHA-256 tester
+# hashes and approved grounding card IDs are supplied as production config.
+LINE_KENJI_MODEL_CANARY_HASHES = ""
+LINE_KENJI_MODEL_KNOWLEDGE_IDS = ""
+LINE_KENJI_MODEL_MAX_ATTEMPTS_PER_WINDOW = "3"
+LINE_KENJI_MODEL_QUOTA_WINDOW_SECONDS = "900"
+
+# MMS AI Knowledge Master V4 runtime. Static/clarification replies can run
+# without model generation; model replies remain read-only and never perform
+# MMS mutations. User-specific live truth must come from mms-worker contracts.
+MMS_LINE_AI_ENABLED = "true"
+MMS_LINE_AI_MODEL_ENABLED = "true"
+MMS_OPENAI_MODEL = "gpt-5.6"
+
+[[durable_objects.bindings]]
+name = "KENJI_MODEL_DEDUPE"
+class_name = "KenjiModelIdempotency"
+
+[[migrations]]
+tag = "v1-kenji-model-idempotency"
+new_sqlite_classes = ["KenjiModelIdempotency"]
+
+# Full CARE BACK staging front gate. No production routes are inherited into
+# named environments; this Worker is reachable only on its workers.dev URL.
+[env.staging]
+name = "member-dashboard-chat-worker-staging"
+workers_dev = true
+routes = []
+
+[[env.staging.services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker-staging"
+
+[env.staging.observability]
+enabled = true

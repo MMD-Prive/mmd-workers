@@ -1,0 +1,31 @@
+#sigil-pay-kj .spkpm{display:grid;gap:10px;margin-top:15px}
+#sigil-pay-kj .spkpm__tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+#sigil-pay-kj .spkpm__tab{min-height:46px;padding:8px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.035);color:var(--muted);font:700 10px/1.25 "LINE Seed Sans TH","Noto Sans Thai",sans-serif;cursor:pointer}
+#sigil-pay-kj .spkpm__tab.is-active{border-color:rgba(227,189,124,.34);background:rgba(227,189,124,.1);color:#f0d39d}
+#sigil-pay-kj .spkpm__panel{padding:15px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.025)}
+#sigil-pay-kj .spkpm__head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+#sigil-pay-kj .spkpm__head>div{display:grid;gap:3px}
+#sigil-pay-kj .spkpm__head small{color:var(--gold);font-size:8px;font-weight:800;letter-spacing:.1em}
+#sigil-pay-kj .spkpm__head strong{font-size:14px}
+#sigil-pay-kj .spkpm__head>span{padding:5px 8px;border:1px solid rgba(227,189,124,.3);border-radius:999px;color:#e3bd7c;font-size:8px;font-weight:800}
+#sigil-pay-kj .spkpm__qr{display:grid;place-items:center;gap:8px;margin-top:14px}
+#sigil-pay-kj .spkpm__qr img{width:min(72vw,230px);aspect-ratio:1;object-fit:contain;padding:9px;border-radius:18px;background:#fff}
+#sigil-pay-kj .spkpm__qr p,#sigil-pay-kj .spkpm__note,#sigil-pay-kj .spkpm__status{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.55}
+#sigil-pay-kj .spkpm__bank{margin-top:12px;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+#sigil-pay-kj .spkpm__bank summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;list-style:none;cursor:pointer}
+#sigil-pay-kj .spkpm__bank summary::-webkit-details-marker{display:none}
+#sigil-pay-kj .spkpm__bank summary span{font-size:12px;font-weight:700}
+#sigil-pay-kj .spkpm__bank summary i{color:var(--gold);font-style:normal;font-size:19px;transition:transform .18s}
+#sigil-pay-kj .spkpm__bank[open] summary i{transform:rotate(45deg)}
+#sigil-pay-kj .spkpm__bankbody{display:grid;gap:0;padding:0 13px 13px}
+#sigil-pay-kj .spkpm__bankbody>div{display:grid;grid-template-columns:92px 1fr;gap:8px;padding:10px 0;border-top:1px solid rgba(255,241,218,.08)}
+#sigil-pay-kj .spkpm__bankbody span{color:var(--muted);font-size:9px}
+#sigil-pay-kj .spkpm__bankbody strong{font-size:11px}
+#sigil-pay-kj .spkpm__fee{display:grid;gap:0;margin-top:12px;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+#sigil-pay-kj .spkpm__fee>div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-bottom:1px solid rgba(255,241,218,.08)}
+#sigil-pay-kj .spkpm__fee>div:last-child{border-bottom:0}
+#sigil-pay-kj .spkpm__fee span{color:var(--muted);font-size:10px}
+#sigil-pay-kj .spkpm__fee strong{font-size:12px}
+#sigil-pay-kj .spkpm__fee-total{background:rgba(227,189,124,.06)}
+#sigil-pay-kj .spkpm__fee-total strong{color:#f0d39d;font-size:17px}
+@media(max-width:560px){#sigil-pay-kj .spkpm__tabs{grid-template-columns:1fr}#sigil-pay-kj .spkpm__tab{text-align:left;padding-left:14px}#sigil-pay-kj .spkpm__bankbody>div{grid-template-columns:1fr}}

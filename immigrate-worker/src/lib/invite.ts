@@ -65,7 +65,7 @@ export interface InviteIdentityInput {
   folder_name?: string;
   line_user_id?: string;
   telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   email?: string;
   gmail?: string;
 }
@@ -93,7 +93,7 @@ export interface InviteTokenPayload {
   email?: string;
   line_user_id?: string;
   telegram_username?: string;
-  memberstack_id?: string;
+  member_id?: string;
   model_name?: string;
   model_record_id?: string;
   rules_url?: string;
@@ -155,8 +155,33 @@ async function signValue(value: string, secret: string): Promise<string> {
     .join("");
 }
 
-export function getConfirmSecret(env: { CONFIRM_KEY?: string; INTERNAL_TOKEN?: string }): string {
-  return toStr(env.CONFIRM_KEY) || toStr(env.INTERNAL_TOKEN);
+async function verifySignedValue(value: string, signature: string, secret: string): Promise<boolean> {
+  if (!/^[a-f0-9]{64}$/i.test(signature)) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    toArrayBuffer(utf8Bytes(secret)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const signatureBytes = Uint8Array.from(
+    signature.match(/.{2}/g) || [],
+    (byte) => Number.parseInt(byte, 16),
+  );
+  return crypto.subtle.verify(
+    "HMAC",
+    key,
+    toArrayBuffer(signatureBytes),
+    toArrayBuffer(utf8Bytes(value)),
+  );
+}
+
+export function getConfirmSecret(env: {
+  LINK_SIGNING_SECRET?: string;
+  CONFIRM_KEY?: string;
+  INTERNAL_TOKEN?: string;
+}): string {
+  return toStr(env.LINK_SIGNING_SECRET) || toStr(env.CONFIRM_KEY) || toStr(env.INTERNAL_TOKEN);
 }
 
 export function generateUsername(input: InviteIdentityInput): string {
@@ -170,7 +195,7 @@ export function generateUsername(input: InviteIdentityInput): string {
   const seed = [
     toStr(input.line_user_id),
     toStr(input.telegram_username),
-    toStr(input.memberstack_id),
+    toStr(input.member_id),
     toStr(input.email || input.gmail).toLowerCase(),
     toStr(input.folder_name),
     toStr(input.client_name),
@@ -193,7 +218,7 @@ export function parseInviteIdentity(input: InviteIdentityInput): InviteIdentity 
     [
       toStr(input.line_user_id),
       toStr(input.telegram_username),
-      toStr(input.memberstack_id),
+      toStr(input.member_id),
       toStr(input.email || input.gmail).toLowerCase(),
       toStr(input.folder_name),
       toStr(input.client_name),
@@ -235,8 +260,9 @@ export async function verifyInviteToken(token: string, secret: string): Promise<
   if (parts.length !== 2) throw new Error("invalid_token_format");
 
   const [encodedPayload, signature] = parts;
-  const expected = await signValue(encodedPayload, secret);
-  if (signature !== expected) throw new Error("invalid_token_signature");
+  if (!(await verifySignedValue(encodedPayload, signature, secret))) {
+    throw new Error("invalid_token_signature");
+  }
 
   const payload = JSON.parse(base64UrlDecodeUtf8(encodedPayload)) as InviteTokenPayload;
   const now = Math.floor(Date.now() / 1000);
@@ -259,14 +285,19 @@ export async function verifyInviteToken(token: string, secret: string): Promise<
 }
 
 export async function generateInviteLink(
-  env: { CONFIRM_KEY?: string; INTERNAL_TOKEN?: string; PUBLIC_WEB_BASE_URL?: string },
+  env: {
+    LINK_SIGNING_SECRET?: string;
+    CONFIRM_KEY?: string;
+    INTERNAL_TOKEN?: string;
+    PUBLIC_WEB_BASE_URL?: string;
+  },
   input: InviteIdentity & {
     invite_id: string;
     immigration_id?: string;
     email?: string;
     line_user_id?: string;
     telegram_username?: string;
-    memberstack_id?: string;
+    member_id?: string;
     invite_page?: string;
     expires_in_hours?: number;
     role?: InviteRole;
@@ -302,7 +333,7 @@ export async function generateInviteLink(
     email: toStr(input.email).toLowerCase(),
     line_user_id: toStr(input.line_user_id),
     telegram_username: toStr(input.telegram_username),
-    memberstack_id: toStr(input.memberstack_id),
+    member_id: toStr(input.member_id),
     model_name: toStr(input.model_name),
     model_record_id: toStr(input.model_record_id),
     rules_url: toStr(input.rules_url),

@@ -1,0 +1,24 @@
+name = "model-console-page-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-26"
+workers_dev = true
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/model/console*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/model/console*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/model/console*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/model/console*"
+zone_name = "mmdbkk.com"

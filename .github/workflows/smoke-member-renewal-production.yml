@@ -1,0 +1,80 @@
+name: Smoke member renewal production
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy member-pages-worker"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify production renewal surfaces without customer mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for host in mmdbkk.com www.mmdbkk.com; do
+            page_headers="$(mktemp)"
+            page_body="$(mktemp)"
+            page_status="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -L \
+              -D "$page_headers" -o "$page_body" -w "%{http_code}" \
+              "https://${host}/member/renewal")"
+            echo "${host} /member/renewal -> HTTP ${page_status}"
+            test "$page_status" = "200"
+
+            status_headers="$(mktemp)"
+            status_body="$(mktemp)"
+            status_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -D "$status_headers" -o "$status_body" -w "%{http_code}" \
+              "https://${host}/member/api/liff/status")"
+            echo "${host} /member/api/liff/status unauthenticated -> HTTP ${status_code}"
+            test "$status_code" = "401"
+            grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$status_headers"
+            grep -qi '^x-mmd-upstream-service: member-pages-worker' "$status_headers"
+            node - "$status_body" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload?.ok === true) throw new Error("Unauthenticated LIFF status unexpectedly resolved a member");
+          const code = String(payload?.error?.code || payload?.error || "");
+          if (!code) throw new Error("LIFF status did not return a bounded JSON error");
+          console.log(`bounded LIFF status rejection=${code}`);
+          NODE
+
+            pay_headers="$(mktemp)"
+            pay_body="$(mktemp)"
+            pay_status="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS \
+              -D "$pay_headers" -o "$pay_body" -w "%{http_code}" \
+              "https://${host}/sigil/pay?t=route-lock-placeholder" || true)"
+            echo "${host} /sigil/pay invalid-token boundary -> HTTP ${pay_status}"
+            case "$pay_status" in
+              2??|3??|4??) ;;
+              *) echo "signed payment surface returned unsafe status ${pay_status}" >&2; exit 1 ;;
+            esac
+            if grep -qiE '^location: .*(/member/payments|/confirm/payment-proof|/sigil/pay/renewal|/pay/renewal)' "$pay_headers"; then
+              echo "signed payment surface regressed to a legacy payment route" >&2
+              cat "$pay_headers" >&2
+              exit 1
+            fi
+          done
+
+          for url in \
+            https://mmdbkk.com/sigil/pay/renewal \
+            https://www.mmdbkk.com/sigil/pay/renewal \
+            https://mmdbkk.com/pay/renewal; do
+            legacy_status="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$url" || true)"
+            echo "${url} -> HTTP ${legacy_status}"
+            case "$legacy_status" in
+              2??|3??|4??) ;;
+              *) echo "legacy renewal compatibility surface returned unsafe status ${legacy_status}" >&2; exit 1 ;;
+            esac
+          done
+
+          echo "Renewal production boundary smoke passed without creating a payment intent, proof, entitlement, points entry, or customer session."

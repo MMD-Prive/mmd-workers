@@ -1,0 +1,296 @@
+/* CARE BACK · Per Voice v2 · mobile-first refinement
+ * Visual only. Wish remains public; member benefits remain verified separately.
+ */
+#mmd-careback-six-v6 {
+  --pv-gold: #f0cf72;
+  --pv-gold-2: #d5ad42;
+  --pv-ink: #181715;
+  --pv-off: #f2f0eb;
+  --pv-dark: #292826;
+  --pv-ease: cubic-bezier(.22,1,.36,1);
+  font-family: "LINE Seed Sans TH", "Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
+#mmd-careback-six-v6 h2,
+#mmd-careback-six-v6 h3,
+#mmd-careback-six-v6 p,
+#mmd-careback-six-v6 a,
+#mmd-careback-six-v6 button,
+#mmd-careback-six-v6 .mx-btn {
+  font-family: "LINE Seed Sans TH", "Noto Sans Thai", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Hero: artwork first, gold headline high in the frame. */
+#mmd-careback-six-v6 .mx-hero { align-items: flex-start !important; }
+#mmd-careback-six-v6 .mx-hero__content {
+  padding-top: clamp(150px, 18svh, 205px) !important;
+  padding-bottom: 108px !important;
+}
+#mmd-careback-six-v6 .mx-hero h1 {
+  max-width: 760px !important;
+  margin-top: 9px !important;
+  font-family: "Canela", "Times New Roman", Georgia, serif !important;
+  font-size: clamp(48px, 13.5vw, 78px) !important;
+  line-height: .88 !important;
+  font-weight: 500 !important;
+  letter-spacing: -.045em !important;
+  color: var(--pv-gold) !important;
+  text-shadow: 0 8px 32px rgba(0,0,0,.42) !important;
+}
+#mmd-careback-six-v6 .mx-hero h1 span,
+#mmd-careback-six-v6 .mx-hero h1 em {
+  color: var(--pv-gold) !important;
+  font-style: normal !important;
+}
+#mmd-careback-six-v6 .mx-hero__lead {
+  max-width: 560px !important;
+  margin-top: 20px !important;
+  font-size: 15px !important;
+  line-height: 1.7 !important;
+  color: rgba(244,242,237,.91) !important;
+  text-shadow: 0 2px 18px rgba(0,0,0,.35);
+}
+#mmd-careback-six-v6 .mx-hero .mx-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  margin-top: 21px !important;
+}
+#mmd-careback-six-v6 .mx-hero .mx-actions [data-wish-link] { display: none !important; }
+#mmd-careback-six-v6 .mx-hero [data-member-link] {
+  width: max-content !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  min-height: 50px !important;
+  padding: 0 22px !important;
+  border: 0 !important;
+  background: linear-gradient(135deg, #f5dd8d, var(--pv-gold-2)) !important;
+  color: #14110a !important;
+  box-shadow: 0 16px 42px rgba(0,0,0,.24) !important;
+  white-space: normal !important;
+}
+#mmd-careback-six-v6 .mx-hero__fine {
+  max-width: 480px !important;
+  margin-top: 12px !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  color: rgba(244,242,237,.82) !important;
+}
+
+/* Restore the quieter editorial display feeling. */
+#mmd-careback-six-v6 .mx-display {
+  font-family: "Canela", "Times New Roman", Georgia, serif !important;
+  font-weight: 500 !important;
+}
+#mmd-careback-six-v6 .mx-section-head h2,
+#mmd-careback-six-v6 .mx-letter h2,
+#mmd-careback-six-v6 .mx-kenji h2,
+#mmd-careback-six-v6 .mx-final h2,
+#mmd-careback-six-v6 .mx-wish h2 {
+  font-weight: 650 !important;
+  letter-spacing: -.035em !important;
+}
+
+/* Headline rule: black on light, soft off-white on dark. Hero is gold. */
+#mmd-careback-six-v6 .mx-intro h2,
+#mmd-careback-six-v6 .mx-letter h2,
+#mmd-careback-six-v6 .mx-benefits h2,
+#mmd-careback-six-v6 .mx-memory h2,
+#mmd-careback-six-v6 .mx-kenji h2,
+#mmd-careback-six-v6 .mx-intro h2 em,
+#mmd-careback-six-v6 .mx-letter h2 em,
+#mmd-careback-six-v6 .mx-benefits h2 em,
+#mmd-careback-six-v6 .mx-memory h2 em,
+#mmd-careback-six-v6 .mx-kenji h2 em { color: var(--pv-ink) !important; }
+#mmd-careback-six-v6 .mx-wish h2,
+#mmd-careback-six-v6 .mx-wish h2 em,
+#mmd-careback-six-v6 .mx-final h2,
+#mmd-careback-six-v6 .mx-final h2 em { color: var(--pv-off) !important; }
+
+/* Per letter: image left, letter right, compact on mobile. */
+#mmd-careback-six-v6 .mx-letter {
+  display: grid !important;
+  grid-template-columns: minmax(0, 40%) minmax(0, 60%) !important;
+  align-items: start !important;
+  background: #f4f0ea !important;
+}
+#mmd-careback-six-v6 .mx-letter__portrait {
+  min-width: 0 !important;
+  height: 100% !important;
+  background: #171614 !important;
+}
+#mmd-careback-six-v6 .mx-letter__portrait figure {
+  position: sticky !important;
+  top: 0 !important;
+  height: 70svh !important;
+  min-height: 480px !important;
+}
+#mmd-careback-six-v6 .mx-letter__paper {
+  min-width: 0 !important;
+  padding: 34px 14px 50px !important;
+}
+#mmd-careback-six-v6 .mx-letter h2 {
+  margin-top: 8px !important;
+  font-size: clamp(25px, 7vw, 34px) !important;
+  line-height: 1.08 !important;
+}
+#mmd-careback-six-v6 .mx-letter__hello {
+  margin-top: 17px !important;
+  font-size: 16px !important;
+  line-height: 1.45 !important;
+}
+#mmd-careback-six-v6 .mx-letter__body { margin-top: 15px !important; }
+#mmd-careback-six-v6 .mx-letter__body p {
+  margin-top: 13px !important;
+  font-size: 13px !important;
+  line-height: 1.72 !important;
+  color: #4d4843 !important;
+}
+#mmd-careback-six-v6 .mx-letter blockquote {
+  margin-top: 23px !important;
+  padding: 17px 0 !important;
+  font-size: 16px !important;
+  line-height: 1.5 !important;
+  color: var(--pv-ink) !important;
+}
+#mmd-careback-six-v6 .mx-signature {
+  margin-top: 19px !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+}
+#mmd-careback-six-v6 .mx-signature strong { font-size: 25px !important; }
+#mmd-careback-six-v6 .mx-readmore {
+  margin-top: 18px !important;
+  color: var(--pv-ink) !important;
+}
+
+/* Four CARE BACK blocks stay in the page, staggered rather than swiped. */
+#mmd-careback-six-v6 .mx-benefit-track {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin-top: 30px !important;
+  padding: 0 0 20px !important;
+  overflow: visible !important;
+  scroll-snap-type: none !important;
+}
+#mmd-careback-six-v6 .mx-benefit-card {
+  min-width: 0 !important;
+  min-height: 250px !important;
+  width: 100% !important;
+  padding: 18px !important;
+  border-radius: 20px !important;
+  background: rgba(255,255,255,.72) !important;
+  transition: transform .65s var(--pv-ease), box-shadow .65s var(--pv-ease) !important;
+}
+#mmd-careback-six-v6 .mx-benefit-track > :nth-child(even) { margin-top: 18px !important; }
+#mmd-careback-six-v6 .mx-benefit-card h3 { margin-top: 24px !important; font-size: 17px !important; }
+#mmd-careback-six-v6 .mx-benefit-card__value { font-size: 42px !important; }
+#mmd-careback-six-v6 .mx-benefit-card > p {
+  padding-top: 18px !important;
+  font-size: 11.5px !important;
+  line-height: 1.6 !important;
+}
+#mmd-careback-six-v6 .mx-benefit-track .mx-coupon {
+  margin: 0 !important;
+  min-height: 250px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 14px !important;
+  padding: 18px !important;
+  border-radius: 20px !important;
+  background: #262421 !important;
+  color: var(--pv-off) !important;
+}
+#mmd-careback-six-v6 .mx-benefit-track .mx-coupon > span {
+  flex: 0 0 auto !important;
+  background: var(--pv-gold) !important;
+  color: #17120a !important;
+}
+#mmd-careback-six-v6 .mx-benefit-track .mx-coupon small { color: rgba(242,240,235,.62) !important; }
+#mmd-careback-six-v6 .mx-benefit-track .mx-coupon strong { color: var(--pv-gold) !important; }
+#mmd-careback-six-v6 .mx-benefit-track .mx-coupon p {
+  color: rgba(242,240,235,.78) !important;
+  font-size: 11.5px !important;
+  line-height: 1.6 !important;
+}
+
+/* Wish becomes a quiet dark-gray penultimate section. */
+#mmd-careback-six-v6 .mx-wish {
+  background: #292826 !important;
+  color: var(--pv-off) !important;
+  padding: 78px 0 !important;
+}
+#mmd-careback-six-v6 .mx-wish__glow { display: none !important; }
+#mmd-careback-six-v6 .mx-wish .mx-eyebrow { color: rgba(242,240,235,.58) !important; }
+#mmd-careback-six-v6 .mx-wish__copy > p:not(.mx-eyebrow) { color: rgba(242,240,235,.77) !important; }
+#mmd-careback-six-v6 .mx-wish .mx-btn--paper {
+  width: max-content !important;
+  max-width: 100% !important;
+  background: var(--pv-gold) !important;
+  color: #17120a !important;
+  border: 0 !important;
+}
+
+/* Final: HYPE + thank-you only. */
+#mmd-careback-six-v6 .mx-final {
+  background: #171614 !important;
+  padding: 78px 0 96px !important;
+}
+#mmd-careback-six-v6 .mx-final .mx-wrap {
+  max-width: 1180px !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 30px !important;
+  align-items: center !important;
+}
+#mmd-careback-six-v6 .mx-final .mx-actions { display: none !important; }
+#mmd-careback-six-v6 .mx-final__copy { min-width: 0 !important; }
+#mmd-careback-six-v6 .mx-final__hype {
+  order: 2 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  border-radius: 22px !important;
+  background: #211f1c !important;
+}
+#mmd-careback-six-v6 .mx-final__hype img {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  object-fit: cover !important;
+}
+
+#mmd-careback-six-v6 .mx-section-head > p:last-child,
+#mmd-careback-six-v6 .mx-reading__lead,
+#mmd-careback-six-v6 .mx-kenji__copy > p { color: #55504a !important; }
+#mmd-careback-six-v6 .mx-years__labels p { color: rgba(242,240,235,.58) !important; }
+
+@media (max-width: 374px) {
+  #mmd-careback-six-v6 .mx-letter { grid-template-columns: minmax(0, 36%) minmax(0, 64%) !important; }
+  #mmd-careback-six-v6 .mx-letter__paper { padding-left: 12px !important; padding-right: 12px !important; }
+  #mmd-careback-six-v6 .mx-letter__body p { font-size: 12.5px !important; }
+}
+
+@media (min-width: 768px) {
+  #mmd-careback-six-v6 .mx-hero__content { padding-top: clamp(170px, 18vh, 230px) !important; padding-bottom: 9vh !important; }
+  #mmd-careback-six-v6 .mx-hero h1 { font-size: clamp(86px, 9vw, 138px) !important; max-width: 980px !important; }
+  #mmd-careback-six-v6 .mx-letter { grid-template-columns: minmax(0, 44%) minmax(0, 56%) !important; }
+  #mmd-careback-six-v6 .mx-letter__portrait figure { top: 61px !important; height: calc(100svh - 61px) !important; }
+  #mmd-careback-six-v6 .mx-letter__paper { padding: clamp(72px, 7vw, 110px) clamp(42px, 5vw, 76px) !important; }
+  #mmd-careback-six-v6 .mx-letter h2 { font-size: clamp(44px, 4vw, 60px) !important; }
+  #mmd-careback-six-v6 .mx-letter__body p { font-size: 15px !important; line-height: 1.78 !important; }
+  #mmd-careback-six-v6 .mx-benefit-track { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 14px !important; }
+  #mmd-careback-six-v6 .mx-benefit-track > :nth-child(even) { margin-top: 26px !important; }
+  #mmd-careback-six-v6 .mx-final .mx-wrap { grid-template-columns: minmax(0, .85fr) minmax(420px, 1.15fr) !important; gap: 60px !important; }
+}
+
+@media (hover:hover) {
+  #mmd-careback-six-v6 .mx-benefit-card:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(33,26,21,.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #mmd-careback-six-v6 .mx-benefit-card { transition: none !important; }
+  #mmd-careback-six-v6 .mx-benefit-track > :nth-child(even) { margin-top: 12px !important; }
+}

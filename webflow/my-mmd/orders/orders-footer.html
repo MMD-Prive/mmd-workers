@@ -1,0 +1,37 @@
+<script>
+(function(){
+"use strict";
+var state=document.getElementById("myOrdersState"),list=document.getElementById("myOrdersList"),empty=document.getElementById("myOrdersEmpty");
+if(!state||!list||!empty)return;
+var orders=[],active="all";
+var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})};
+var money=function(v){var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"—"};
+var fstate=function(o){return String(o.fulfillment&&o.fulfillment.state||"").toLowerCase()};
+var label=function(o){var s=fstate(o);if(s)return({awaiting_payment:"รอตรวจ / รอชำระ",confirmed:"ยืนยัน Order แล้ว",preparing:"กำลังเตรียม",ready:"พร้อมส่ง / พร้อมรับ",shipped:"จัดส่งแล้ว",completed:"สำเร็จ",cancelled:"ยกเลิก"})[s]||"กำลังตรวจ";if(o.order_status==="fulfilled")return"สำเร็จ";if(o.order_status==="cancelled")return"ยกเลิก";if(o.payment_status==="paid")return o.order_status==="confirmed"?"กำลังเตรียม":"ชำระแล้ว";return o.payment_status==="pending"?"รอตรวจ / รอชำระ":"กำลังตรวจ"};
+var bucket=function(o){var s=fstate(o);if(s==="completed"||o.order_status==="fulfilled")return"completed";if(o.payment_status==="paid")return"paid";return"pending"};
+function fulfillmentText(o){var f=o.fulfillment||{},parts=[];if(f.delivery_method==="pickup")parts.push("Pickup");else if(f.delivery_method==="delivery")parts.push("Delivery");if(f.courier)parts.push(f.courier);if(f.tracking_number)parts.push(f.tracking_number);return parts.join(" · ")}
+function render(){
+ var rows=orders.filter(function(o){return active==="all"||bucket(o)===active});
+ state.hidden=true;
+ if(!rows.length){list.hidden=true;empty.hidden=false;return}
+ empty.hidden=true;list.hidden=false;
+ list.innerHTML=rows.map(function(o){
+  var itemText=(Array.isArray(o.items)?o.items:[]).slice(0,3).map(function(x){return esc(x.item_name||"MMD Shop Item")+" × "+esc(x.quantity||0)}).join(" · ");
+  var more=(o.items&&o.items.length>3)?" +"+(o.items.length-3):"";
+  var href=o.status_url||"#",ft=fulfillmentText(o);
+  return "<article class=\"myorders-card\" data-bucket=\""+esc(bucket(o))+"\"><div class=\"myorders-card-top\"><div><div class=\"myorders-ref\">"+esc(o.order_id||"MMD Order")+"</div><small class=\"myorders-date\">"+esc(o.order_date||"")+"</small></div><span class=\"myorders-pill\">"+esc(label(o))+"</span></div><div class=\"myorders-items\">"+(itemText||"รายการสินค้า")+" "+esc(more)+"</div>"+(o.fulfillment?'<div class="myorders-fulfillment"><strong>'+esc(label(o))+'</strong>'+(ft?' · '+esc(ft):'')+'</div>':'')+"<div class=\"myorders-card-bottom\"><div><span class=\"myorders-total-label\">ยอดรวม</span><strong class=\"myorders-total\">"+esc(money(o.total_thb))+"</strong></div>"+(o.status_url?"<a class=\"myorders-view\" href=\""+esc(href)+"\">ดู Order →</a>":"<span class=\"myorders-view\">กำลังเชื่อมสถานะ</span>")+"</div></article>"
+ }).join("");
+}
+document.querySelectorAll("[data-order-filter]").forEach(function(btn){btn.addEventListener("click",function(){active=btn.getAttribute("data-order-filter")||"all";document.querySelectorAll("[data-order-filter]").forEach(function(b){b.classList.toggle("is-active",b===btn)});render()})});
+async function load(){
+ try{
+  var r=await fetch("/member/api/shop/orders",{method:"GET",credentials:"include",headers:{"accept":"application/json"},cache:"no-store"});
+  var d=await r.json().catch(function(){return{}});
+  if(r.status===401||r.status===403){state.innerHTML='ยืนยันบัญชี MY MMD ก่อนดูรายการสั่งซื้อ<br><a class="myorders-shop" style="margin-top:12px" href="/member/liff?intent=status">ยืนยันผ่าน LINE / MY MMD</a>';return}
+  if(!r.ok||d.ok!==true||d.schema!=="my_mmd_shop_orders_v1")throw new Error("orders_unavailable");
+  orders=Array.isArray(d.orders)?d.orders:[];render()
+ }catch(e){state.innerHTML='ยังโหลดรายการสั่งซื้อไม่ได้ กรุณาลองใหม่จาก MY MMD<br><a class="myorders-shop" style="margin-top:12px" href="/my-mmd/">กลับ MY MMD</a>'}
+}
+load();
+})();
+</script>

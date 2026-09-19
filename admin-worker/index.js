@@ -25,10 +25,12 @@
 // ==========================================================
 
 import { demoLinksCreate, demoLinksGet } from "./src/routes/demo-links.js";
+import { resolveMemberEntitlements } from "../auth-worker/src/member-entitlement-resolver.js";
 
 const LOCK = "admin-worker-v2026-03-11-full";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MODEL_SAFE_SEARCH_FIELDS = ["name", "nickname", "telegram_username", "telegram_id", "unique_key"];
+const MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS = ["working_name", "nickname", "unique_key", "drive_folder_id", "folder_scope_key"];
 const MODEL_SEARCH_FIELDS = [
   "name",
   "Name",
@@ -516,6 +518,22 @@ export default {
       }
 
       // ----------------------------------------------------
+      // Models search (create-session booking search)
+      // Entitlement-enforced + sanitized; /v1/admin/models/list
+      // stays the raw admin inventory endpoint.
+      // ----------------------------------------------------
+      if (method === "GET" && path === "/v1/admin/models/search") {
+        try {
+          return withCors(json(await searchCreateSessionModels(env, url)), cors);
+        } catch (e) {
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          return withCors(json({ ok: false, error: String(e?.message || e || "models_search_failed") }, 500), cors);
+        }
+      }
+
+      // ----------------------------------------------------
       // Models source resolver
       // ----------------------------------------------------
       if (method === "GET" && path === "/v1/admin/models/resolve-source") {
@@ -589,7 +607,11 @@ export default {
             cors
           );
         } catch (e) {
-          return withCors(json({ ok: false, error: String(e?.message || e || "job_create_failed") }, 500), cors);
+          if (e instanceof CreateSessionAccessError) {
+            return withCors(json({ ok: false, error: { code: e.code, message: e.message } }, e.status), cors);
+          }
+          const error = String(e?.message || e || "job_create_failed");
+          return withCors(json({ ok: false, error }, error.startsWith("private_") ? 403 : 500), cors);
         }
       }
 
@@ -1334,7 +1356,7 @@ async function airtableList(env, tableName, { q = "", limit = 50, matchFields = 
 
   if (q && matchFields.length) {
     const safe = q.replace(/"/g, '\\"');
-    const ors = matchFields.map((f) => `FIND("${safe}", {${f}})`).join(",");
+    const ors = matchFields.map((f) => `SEARCH("${safe}", {${f}}&"")`).join(",");
     params.set("filterByFormula", `OR(${ors})`);
   }
 
@@ -2130,26 +2152,765 @@ export {
 };
 
 /* =========================
+   Create Session Private Access
+   Authoritative membership + model gate. Frontend membership fields
+   (private_access.*, client_lineage.tier / membership_status,
+   allowed_private_folders) are advisory UX data only and never grant access.
+========================= */
+const PRIVATE_ACCESS_FOLDERS = {
+  standard: ["standard"],
+  premium: ["standard", "premium"],
+  vip: ["standard", "premium", "vip"],
+  black_card: ["standard", "premium", "vip", "exclusive"],
+};
+const PRIVATE_ACCESS_TIER_RANK = { standard: 1, premium: 2, vip: 3, black_card: 4 };
+const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
+const PUBLIC_MODEL_FOLDERS = new Set(["travel", "extreme"]);
+const MODEL_BLOCKED_STATUS_TOKENS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
+const MODEL_UNAVAILABLE_TOKENS = new Set(["unavailable", "not_available", "paused", "busy", "on_hold", "hold"]);
+
+class CreateSessionAccessError extends Error {
+  constructor(code, message, status = 403) {
+    super(message);
+    this.name = "CreateSessionAccessError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+function accessToken(value) {
+  return String(value == null ? "" : value).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function membershipTierFromText(value) {
+  const token = accessToken(value);
+  if (!token) return "";
+  // legacy SVIP normalizes to Black Card access; check before the "vip" substring
+  if (token.includes("black") || token.includes("svip")) return "black_card";
+  if (token.includes("vip")) return "vip";
+  if (token.includes("premium")) return "premium";
+  if (token.includes("standard") || token.includes("lite")) return "standard";
+  return "";
+}
+
+function normalizeCustomerLane(value) {
+  const token = accessToken(value);
+  if (token === "gay") return "gay";
+  if (token === "straight") return "straight";
+  if (token === "both" || token === "bi" || token === "all") return "both";
+  return "";
+}
+
+function formulaText(value) {
+  return `"${String(value == null ? "" : value).replace(/"/g, '\\"')}"`;
+}
+
+async function airtableListByFormula(env, tableName, filterByFormula, limit = 50) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return [];
+  const params = new URLSearchParams();
+  params.set("pageSize", String(Math.max(1, Math.min(100, limit))));
+  if (filterByFormula) params.set("filterByFormula", filterByFormula);
+  const r = await airtableFetch(env, `/${encodeURIComponent(tableName)}?${params.toString()}`);
+  if (!r.ok) return [];
+  return (r.data?.records || []).map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
+}
+
+async function resolveAuthoritativeMemberAccess(env, ids = {}) {
+  const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
+
+  // A Create Job client_id is the canonical Airtable Client record ID. Prefer
+  // its explicit Client -> Member Entitlements links before any legacy Member
+  // lookup. This is the same authority boundary used by My MMD and avoids
+  // requiring the browser to know an internal Member join key.
+  const directClientAccess = await resolveCanonicalClientLinkedPrivateAccess(env, ids.client_id);
+  if (directClientAccess.found) {
+    return {
+      resolved: true,
+      member_record_id: directClientAccess.member_record_id || "",
+      member_id: directClientAccess.member_id || "",
+      member_email: directClientAccess.member_email || "",
+      membership_status: directClientAccess.tier ? "active" : directClientAccess.membership_status,
+      tier: directClientAccess.tier,
+      package_code: directClientAccess.package_code,
+      expire_at: directClientAccess.expire_at,
+      allowed_folders: directClientAccess.tier ? PRIVATE_ACCESS_FOLDERS[directClientAccess.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: directClientAccess.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+      canonical_client_record_id: directClientAccess.client_record_id,
+    };
+  }
+
+  // Hydrate missing identity fields from the canonical Client record so the
+  // Member fallback can still resolve old rows that are linked by LINE/email.
+  if (directClientAccess.identity) {
+    ids = {
+      ...ids,
+      line_user_id: str(ids.line_user_id || directClientAccess.identity.line_user_id),
+      member_email: str(ids.member_email || directClientAccess.identity.member_email),
+      telegram_username: str(ids.telegram_username || directClientAccess.identity.telegram_username),
+    };
+  }
+  const lookups = [
+    ["client_id", ids.client_id, false],
+    ["member_id", ids.member_id, false],
+    ["Member ID", ids.member_id, false],
+    ["memberstack_id", ids.memberstack_id, false],
+    ["line_record_id", ids.line_record_id, false],
+    ["line_record", ids.line_record_id, false],
+    ["line_user_id", ids.line_user_id, false],
+    ["line_id", ids.line_user_id, false],
+    ["email", ids.member_email, true],
+    ["Contact Email", ids.member_email, true],
+    ["telegram_username", ids.telegram_username, true],
+  ];
+
+  let member = null;
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    member = await airtableFindOne(env, membersTable, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`);
+    if (member) break;
+  }
+  if (!member) return { resolved: false, allowed_folders: [] };
+
+  const memberFields = member.fields || {};
+  const memberEmail = str(memberFields["Contact Email"] || memberFields.member_email || memberFields.email || ids.member_email).toLowerCase();
+
+  // Canonical authority: My MMD entitlement resolver over MMD — Member Entitlements.
+  // If canonical entitlement rows exist, they decide access even when the legacy
+  // member_packages ledger disagrees. This prevents stale purchase rows from
+  // downgrading or widening current private access.
+  const canonical = await resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail);
+  if (canonical.found) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: canonical.member_id || str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: canonical.tier ? "active" : canonical.membership_status,
+      tier: canonical.tier,
+      package_code: canonical.package_code,
+      expire_at: canonical.expire_at,
+      allowed_folders: canonical.tier ? PRIVATE_ACCESS_FOLDERS[canonical.tier].slice() : [],
+      entitlement_authority: "my_mmd_entitlement_resolver_v1",
+      entitlement_schema_version: canonical.snapshot?.schema_version || "my_mmd_entitlement_resolver_v1",
+    };
+  }
+
+  // Legacy compatibility only for members that have no canonical entitlement
+  // rows yet. Once an entitlement exists, this ledger must never override it.
+  let best = null;
+  if (memberEmail) {
+    const ledgerTable = env.AIRTABLE_TABLE_MEMBER_PACKAGES || "member_packages";
+    const now = Date.now();
+    const records = await airtableListByFormula(env, ledgerTable, `LOWER({member_email})=${formulaText(memberEmail)}`, 20);
+    for (const record of records) {
+      const f = record.fields || {};
+      if (accessToken(f.status) !== "active") continue;
+      const endAt = Date.parse(str(f.end_date || f.end_at || f.expire_at || f.expires_at));
+      if (!endAt || endAt < now) continue;
+      const tier = membershipTierFromText(f.package_code || f.tier);
+      if (!tier) continue;
+      const rank = PRIVATE_ACCESS_TIER_RANK[tier] || 0;
+      if (!best || rank > best.rank || (rank === best.rank && endAt > best.endAt)) {
+        best = { tier, rank, endAt, package_code: str(f.package_code || f.tier), expire_at: str(f.end_date || f.end_at || f.expire_at || f.expires_at) };
+      }
+    }
+  }
+
+  if (!best) {
+    return {
+      resolved: true,
+      member_record_id: member.id,
+      member_id: str(memberFields.member_id || memberFields["Member ID"]),
+      member_email: memberEmail,
+      membership_status: memberEmail ? "no_active_membership" : "no_ledger_identity",
+      tier: "",
+      allowed_folders: [],
+      entitlement_authority: "legacy_member_packages_fallback",
+    };
+  }
+
+  return {
+    resolved: true,
+    member_record_id: member.id,
+    member_id: str(memberFields.member_id || memberFields["Member ID"]),
+    member_email: memberEmail,
+    membership_status: "active",
+    tier: best.tier,
+    package_code: best.package_code,
+    expire_at: best.expire_at,
+    allowed_folders: PRIVATE_ACCESS_FOLDERS[best.tier].slice(),
+    entitlement_authority: "legacy_member_packages_fallback",
+  };
+}
+
+async function resolveCanonicalClientLinkedPrivateAccess(env, clientRecordId) {
+  const id = str(clientRecordId);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    return { found: false, identity: null };
+  }
+
+  const clientsTable = env.AIRTABLE_TABLE_CLIENTS || "Clients";
+  const fetched = await airtableFetch(env, `/${encodeURIComponent(clientsTable)}/${encodeURIComponent(id)}`);
+  if (!fetched.ok || !fetched.data?.id) {
+    return { found: false, identity: null };
+  }
+
+  const fields = fetched.data.fields || {};
+  const identity = {
+    line_user_id: str(fields.line_user_id || fields.line_id),
+    member_email: str(fields.email || fields["Contact Email"]).toLowerCase(),
+    telegram_username: str(fields.telegram_username),
+  };
+
+  const entitlementIds = []
+    .concat(fields["MMD — Member Entitlements"] || [])
+    .concat(fields["MMD - Member Entitlements"] || [])
+    .map((value) => str(value && typeof value === "object" ? value.id : value))
+    .filter((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+
+  if (!entitlementIds.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = [];
+  for (const entitlementId of [...new Set(entitlementIds)]) {
+    const row = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(entitlementId)}`);
+    if (row.ok && row.data?.id) records.push(row.data);
+  }
+  if (!records.length) {
+    return { found: false, identity, client_record_id: id };
+  }
+
+  const access = canonicalPrivateAccessFromRows(records);
+  return {
+    ...access,
+    found: true,
+    identity,
+    client_record_id: id,
+    member_email: access.member_email || identity.member_email,
+  };
+}
+
+function canonicalPrivateAccessFromRows(rows) {
+  const snapshot = resolveMemberEntitlements(rows, { now: Date.now() });
+  const envelope = accessToken(snapshot?.access?.private_visibility_envelope);
+  const tier = envelope === "black_card" || envelope === "svip"
+    ? "black_card"
+    : envelope === "vip" || envelope === "premium" || envelope === "standard"
+      ? envelope
+      : "";
+
+  const currentRows = (snapshot?.entitlements || []).filter((row) =>
+    row && (row.lifecycle === "active" || row.lifecycle === "expiring_soon")
+  );
+  const expireAt = currentRows
+    .map((row) => str(row.expire_at))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || "";
+  const packageCode = currentRows
+    .map((row) => str(row.relationship_tier || row.package_code || row.capability))
+    .find(Boolean) || tier;
+
+  let memberRecordId = "";
+  let memberId = "";
+  let memberEmail = "";
+  for (const row of rows) {
+    const f = row?.fields || {};
+    const linked = Array.isArray(f.member) ? f.member : [];
+    const candidate = linked
+      .map((value) => str(value && typeof value === "object" ? value.id : value))
+      .find((value) => /^rec[A-Za-z0-9]{14,}$/.test(value));
+    if (!memberRecordId && candidate) memberRecordId = candidate;
+    if (!memberId) memberId = str(f.member_id);
+    if (!memberEmail) memberEmail = str(f.member_email).toLowerCase();
+  }
+
+  return {
+    tier,
+    package_code: packageCode,
+    expire_at: expireAt,
+    member_record_id: memberRecordId,
+    member_id: memberId,
+    member_email: memberEmail,
+    membership_status: snapshot?.member_blocked ? "blocked" : tier ? "active" : "no_active_private_entitlement",
+    snapshot,
+  };
+}
+
+async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, ids, memberEmail) {
+  const table = env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || "MMD — Member Entitlements";
+  const records = new Map();
+
+  const linked = []
+    .concat(memberFields["MMD — Member Entitlements"] || [])
+    .concat(memberFields["MMD - Member Entitlements"] || []);
+  for (const value of linked) {
+    const id = str(value && typeof value === "object" ? value.id : value);
+    if (!/^rec[A-Za-z0-9]{14,}$/.test(id) || records.has(id)) continue;
+    const fetched = await airtableFetch(env, `/${encodeURIComponent(table)}/${encodeURIComponent(id)}`);
+    if (fetched.ok && fetched.data?.id) records.set(fetched.data.id, fetched.data);
+  }
+
+  const memberIdCandidates = [
+    ids.member_id,
+    memberFields.member_id,
+    memberFields["Member ID"],
+    member?.id ? `mmd_rec_${member.id}` : "",
+  ].map(str).filter(Boolean);
+
+  const lookups = [
+    ...memberIdCandidates.map((value) => ["member_id", value, false]),
+    ["memberstack_id", ids.memberstack_id || memberFields.memberstack_id, false],
+    ["line_user_id", ids.line_user_id || memberFields.line_user_id || memberFields.line_id, false],
+    ["member_email", memberEmail, true],
+  ];
+
+  for (const [field, value, lower] of lookups) {
+    const raw = str(value);
+    if (!raw) continue;
+    const left = lower ? `LOWER({${field}})` : `{${field}}`;
+    const rows = await airtableListByFormula(env, table, `${left}=${formulaText(lower ? raw.toLowerCase() : raw)}`, 50);
+    for (const row of rows) if (row?.id) records.set(row.id, row);
+  }
+
+  const rows = [...records.values()];
+  if (!rows.length) return { found: false, tier: "", membership_status: "no_canonical_entitlement", snapshot: null };
+
+  const access = canonicalPrivateAccessFromRows(rows);
+  return {
+    ...access,
+    found: true,
+    member_id: access.member_id || memberIdCandidates[0] || "",
+  };
+}
+
+function modelAccessProfile(fields = {}) {
+  const rawTags = []
+    .concat(Array.isArray(fields.legacy_tags) ? fields.legacy_tags : String(fields.legacy_tags || "").split(/[,\n]/))
+    .concat(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || "").split(/[,\n]/));
+  const tags = new Set(rawTags.map(accessToken).filter(Boolean));
+
+  const visibilityToken = accessToken(fields.booking_visibility);
+  const salesLayer = accessToken(fields.sales_layer);
+  let bookingVisibility = "";
+  if (visibilityToken === "private" || salesLayer.includes("private")) bookingVisibility = "private";
+  else if (visibilityToken === "public" || salesLayer.includes("public")) bookingVisibility = "public";
+
+  let accessFolder = accessToken(fields.access_folder || fields.model_access_folder || fields.model_folder);
+  if (!CANONICAL_PRIVATE_FOLDERS.has(accessFolder)) {
+    accessFolder = "";
+    const tierSource = accessToken([fields.model_tier, fields.approved_client_visibility, fields.private_tier].filter(Boolean).join(" "));
+    if (tierSource.includes("exclusive") || tierSource.includes("black")) accessFolder = "exclusive";
+    else if (tierSource.includes("vip")) accessFolder = "vip";
+    else if (tierSource.includes("premium")) accessFolder = "premium";
+    else if (tierSource.includes("standard")) accessFolder = "standard";
+  }
+
+  const serviceSource = accessToken([fields.service_layer, fields.job_types, fields.private_tier].filter(Boolean).join(" "));
+  const publicFolders = [];
+  if (serviceSource.includes("travel") || tags.has("travel")) publicFolders.push("travel");
+  if (serviceSource.includes("extreme") || tags.has("extreme")) publicFolders.push("extreme");
+
+  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  const statusActive = !MODEL_BLOCKED_STATUS_TOKENS.has(accessToken(fields.status));
+  const availabilityToken = accessToken(fields.availability_status);
+  const availableNow =
+    fields.available_now === true ||
+    ["yes", "true", "1", "available"].includes(accessToken(fields.available_now)) ||
+    ["available", "active", "bookable"].includes(availabilityToken);
+  const explicitlyUnavailable =
+    fields.available_now === false ||
+    accessToken(fields.available_now) === "no" ||
+    MODEL_UNAVAILABLE_TOKENS.has(availabilityToken);
+
+  // burn / mk / live / pn are operational compatibility flags, never membership access folders
+  const ops = {
+    burn: accessToken(fields.burn_ability) === "yes" || tags.has("burn"),
+    mk: accessToken(fields.mk_ability) === "yes" || tags.has("mk"),
+    live: accessToken(fields.live_ability) === "yes" || tags.has("live"),
+    pn_compatible: accessToken(fields.pn_ability) === "yes" || tags.has("pn"),
+  };
+
+  return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
+}
+
+function isDriveLazyPrivateModel(fields = {}) {
+  const tag = accessToken(fields.raw_import_tag);
+  const scope = accessToken(fields.folder_scope_key);
+  return tag === "drive_lazy_materialized_v1" &&
+    (scope.startsWith("exclusive_drive_") || scope.startsWith("private_drive_"));
+}
+
+function effectivePrivateModelLane(profile, fields, selectedLane) {
+  if (profile?.lane) return profile.lane;
+  const lane = normalizeCustomerLane(selectedLane);
+  return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
+}
+
+function sanitizeCreateSessionModel(record, profile) {
+  const fields = record.fields || {};
+  const folders = profile.bookingVisibility === "private"
+    ? (profile.accessFolder ? [profile.accessFolder] : [])
+    : profile.publicFolders.slice();
+  return {
+    model_id: record.id,
+    model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
+    model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
+    telegram_username: str(fields.telegram_username),
+    telegram_status: str(fields.telegram_status) || (str(fields.telegram_username) ? "linked" : "missing"),
+    folders,
+    orientation: profile.lane,
+    status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
+    available: profile.availableNow && !profile.explicitlyUnavailable,
+    operational: { ...profile.ops },
+  };
+}
+
+async function resolveCreateSessionModel(env, { model_id = "", model_key = "" } = {}) {
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  const id = str(model_id);
+  if (/^rec[A-Za-z0-9]{14,}$/.test(id)) {
+    const r = await airtableFetch(env, `/${encodeURIComponent(modelsTable)}/${id}`);
+    if (r.ok && r.data?.id) return { id: r.data.id, fields: r.data.fields || {} };
+  }
+  const key = str(model_key || id);
+  if (!key) return null;
+  for (const field of ["model_lookup_key", "unique_key", "model_code"]) {
+    const found = await airtableFindOne(env, modelsTable, `{${field}}=${formulaText(key)}`);
+    if (found) return found;
+  }
+  return null;
+}
+
+
+const OWNER_PRIVATE_JOB_GRANT_ACTION = "owner_private_job_grant";
+const OWNER_PRIVATE_JOB_GRANT_PENDING_REASON = "owner_approved_single_job_unconsumed";
+const OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON = "owner_approved_single_job_reserved";
+const OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON = "owner_approved_single_job_consumed";
+
+function ownerGrantMoneyToken(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return "";
+  return String(Math.round((parsed + Number.EPSILON) * 100) / 100);
+}
+
+export function ownerPrivateJobGrantTarget(body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const lineage = body?.client_lineage || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+
+  const clientId = str(body.client_id || lineage.client_id);
+  const modelId = str(model.model_id || body.model_id);
+  const jobDate = str(body.job_date || jobDetails.job_date);
+  const startTime = str(body.start_time || jobDetails.start_time);
+  const endTime = str(body.end_time || jobDetails.end_time);
+  const folder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const orientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const privateWork = accessToken(work.job_type || work.private_work || body.job_type || jobDetails.private_work);
+  const amount = ownerGrantMoneyToken(body.service_amount_thb ?? body.amount_thb ?? payment.service_amount_thb ?? payment.amount_thb);
+  const payout = ownerGrantMoneyToken(body.pay_model_thb ?? body.model_payout_thb ?? body?.model_payout?.amount_thb);
+
+  if (!clientId || !modelId || !jobDate || !startTime || !endTime || !folder || !orientation || !privateWork || !amount || !payout) return "";
+  return ["jobgrant","v1",clientId,modelId,jobDate,startTime,endTime,folder,orientation,privateWork,amount,payout].join(":");
+}
+
+async function findOwnerPrivateJobGrant(env, body = {}) {
+  const target = ownerPrivateJobGrantTarget(body);
+  if (!target) return null;
+  const table = str(env.AIRTABLE_TABLE_ACCESS_LOG || "System — Access Log");
+  const formula = `AND({Action}=${formulaText(OWNER_PRIVATE_JOB_GRANT_ACTION)},{Target}=${formulaText(target)},{Result}=${formulaText("success")},{Reason}=${formulaText(OWNER_PRIVATE_JOB_GRANT_PENDING_REASON)})`;
+  const record = await airtableFindOne(env, table, formula);
+  return record ? { ...record, target, table } : null;
+}
+
+async function reserveOwnerPrivateJobGrant(env, grant) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_RESERVED_REASON,
+    "After JSON": JSON.stringify({ state: "reserved", target: grant.target, reserved_at: new Date().toISOString() }).slice(0, 4000),
+  });
+}
+
+async function consumeOwnerPrivateJobGrant(env, grant, result = {}) {
+  if (!grant?.id || !grant?.table) return { ok: false, error: "owner_job_grant_missing" };
+  return airtablePatchById(env, grant.table, grant.id, {
+    Reason: OWNER_PRIVATE_JOB_GRANT_CONSUMED_REASON,
+    "After JSON": JSON.stringify({
+      state: "consumed",
+      target: grant.target,
+      session_id: str(result.session_id),
+      payment_ref: str(result.payment_ref),
+      consumed_at: new Date().toISOString(),
+    }).slice(0, 4000),
+  });
+}
+
+async function enforcePrivateCreateAccess(env, body = {}) {
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  const lineage = body?.client_lineage || {};
+  const lineIdentity = body?.line_identity || {};
+
+  const selectedFolder = accessToken(privateAccess.selected_private_folder || work.model_folder || body.model_folder);
+  const selectedOrientation = normalizeCustomerLane(privateAccess.selected_orientation || model.selected_orientation || body.selected_orientation);
+  const customerTelegram = str(telegramGate.customer_telegram_status || body.customer_telegram_status);
+  const modelTelegram = str(telegramGate.model_telegram_status || body.model_telegram_status);
+  // Identity channels are completed after confirmation-link issuance. They are
+  // diagnostic context at Create Job time, never a prerequisite for minting the
+  // customer/model confirmation links. Membership + model eligibility remain
+  // authoritative and fail closed below.
+  const identityLinkState = {
+    customer_telegram_status: customerTelegram || "missing",
+    model_telegram_status: modelTelegram || "missing",
+    post_link_identity_required:
+      !["linked", "verified"].includes(customerTelegram) ||
+      !["linked", "verified"].includes(modelTelegram),
+  };
+
+  // Membership comes from the backend ledger; frontend tier/status fields never grant access.
+  // An exact owner one-job grant may bridge this Job only. It is stored in
+  // System — Access Log, matched on the complete Job fingerprint, and never
+  // materializes standing membership or Client entitlement.
+  if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+  if (selectedOrientation !== "straight" && selectedOrientation !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private work requires a straight or gay customer lane.");
+
+  const memberAccess = await resolveAuthoritativeMemberAccess(env, {
+    member_id: str(body.member_id || lineage.member_id),
+    client_id: str(body.client_id || lineage.client_id),
+    memberstack_id: str(body.memberstack_id || lineage.memberstack_id),
+    line_record_id: str(lineIdentity.line_record_id || body.line_record_id),
+    line_user_id: str(lineIdentity.line_user_id || body.line_user_id),
+    member_email: str(lineage.member_email || body.member_email || lineage.email),
+    telegram_username: str(telegramGate.customer_telegram_username || lineage.customer_telegram_username),
+  });
+  const standingAllowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+    ? memberAccess.allowed_folders
+    : [];
+  const standingAllowsSelectedFolder = memberAccess.resolved && standingAllowedFolders.includes(selectedFolder);
+  const ownerJobGrant = standingAllowsSelectedFolder ? null : await findOwnerPrivateJobGrant(env, body);
+
+  if (!memberAccess.resolved && !ownerJobGrant) {
+    throw new CreateSessionAccessError("AUTHORITATIVE_MEMBER_NOT_FOUND", "The client membership record could not be resolved.", 404);
+  }
+  if (memberAccess.resolved && !standingAllowedFolders.length && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_eligibility_blocked", "Client membership is not active for private work.");
+  }
+  if (memberAccess.resolved && standingAllowedFolders.length && !standingAllowsSelectedFolder && !ownerJobGrant) {
+    throw new CreateSessionAccessError("private_folder_not_allowed", "Selected private folder is above the client's membership access.");
+  }
+  const allowedFolders = ownerJobGrant ? [selectedFolder] : standingAllowedFolders;
+
+  // Never trust browser-submitted model metadata; re-resolve the model record.
+  const modelRecord = await resolveCreateSessionModel(env, {
+    model_id: str(model.model_id || body.model_id),
+    model_key: str(model.model_lookup_key || body.model_lookup_key || body.model_key),
+  });
+  if (!modelRecord) throw new CreateSessionAccessError("private_model_not_found", "The selected model could not be resolved.", 404);
+  const profile = modelAccessProfile(modelRecord.fields || {});
+  if (profile.bookingVisibility !== "private") throw new CreateSessionAccessError("private_model_not_private", "The selected model is not a private-work model.");
+  if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_invalid", "The selected model has no canonical private access folder.");
+  if (profile.accessFolder !== selectedFolder) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is outside the selected access folder.");
+  if (!allowedFolders.includes(profile.accessFolder)) throw new CreateSessionAccessError("private_model_folder_denied", "The selected model is above the client's membership access.");
+  const effectiveLane = effectivePrivateModelLane(profile, modelRecord.fields || {}, selectedOrientation);
+  if (effectiveLane !== selectedOrientation && effectiveLane !== "both") throw new CreateSessionAccessError("private_model_lane_mismatch", "The selected model does not serve the selected customer lane.");
+  if (!profile.statusActive) throw new CreateSessionAccessError("private_model_inactive", "The selected model is not active.");
+  if (profile.explicitlyUnavailable) throw new CreateSessionAccessError("private_model_unavailable", "The selected model is not currently bookable.");
+
+  return { memberAccess, modelRecord, profile, selectedFolder, selectedOrientation, identityLinkState, ownerJobGrant };
+}
+
+async function searchCreateSessionModels(env, url) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  const limit = clampInt(url.searchParams.get("limit"), 1, 100, 50);
+  const workType = accessToken(url.searchParams.get("work_type"));
+  const visibilityParam = accessToken(url.searchParams.get("booking_visibility"));
+  const bookingVisibility = visibilityParam === "private" || (!visibilityParam && workType === "private") ? "private" : "public";
+  const lane = normalizeCustomerLane(url.searchParams.get("customer_lane") || url.searchParams.get("orientation"));
+  const selectedFolder = accessToken(url.searchParams.get("selected_access_folder") || url.searchParams.get("folder"));
+  const flag = (name) => ["1", "true", "yes"].includes(accessToken(url.searchParams.get(name)));
+  const availableOnly = flag("available_only");
+  const wantBurn = flag("burn");
+  const wantMk = flag("mk");
+  const wantLive = flag("live");
+  const inventoryOnly = flag("inventory_only");
+
+  let allowedFolders = [];
+  let memberSummary = null;
+  if (bookingVisibility === "private") {
+    if (!CANONICAL_PRIVATE_FOLDERS.has(selectedFolder)) throw new CreateSessionAccessError("private_folder_invalid", "Selected private folder is not a canonical membership access folder.");
+    if (lane !== "straight" && lane !== "gay") throw new CreateSessionAccessError("private_orientation_required", "Private model search requires a straight or gay customer lane.");
+
+    if (inventoryOnly) {
+      memberSummary = {
+        eligibility_checked: false,
+        eligibility_result: "deferred_to_create",
+        private_access_level: "deferred",
+        allowed_private_folders: [],
+        inventory_preview_only: true,
+        entitlement_recheck_required: true,
+        inventory_fast_path: true,
+      };
+    } else {
+      const ids = {
+        member_id: str(url.searchParams.get("member_id")),
+        client_id: str(url.searchParams.get("client_id")),
+        memberstack_id: str(url.searchParams.get("memberstack_id")),
+        line_record_id: str(url.searchParams.get("line_record_id")),
+        line_user_id: str(url.searchParams.get("line_user_id")),
+        member_email: str(url.searchParams.get("member_email")),
+        telegram_username: str(url.searchParams.get("customer_telegram_username")),
+      };
+      const hasIdentity = Object.values(ids).some(Boolean);
+      const memberAccess = hasIdentity
+        ? await resolveAuthoritativeMemberAccess(env, ids)
+        : { resolved: false, allowed_folders: [], tier: "" };
+      allowedFolders = memberAccess.resolved && Array.isArray(memberAccess.allowed_folders)
+        ? memberAccess.allowed_folders
+        : [];
+      const canCreateSelectedFolder = memberAccess.resolved && allowedFolders.includes(selectedFolder);
+      memberSummary = {
+        eligibility_checked: memberAccess.resolved === true,
+        eligibility_result: memberAccess.resolved
+          ? (canCreateSelectedFolder ? "allowed" : "blocked")
+          : "unresolved",
+        private_access_level: memberAccess.resolved ? (memberAccess.tier || "blocked") : "unresolved",
+        allowed_private_folders: allowedFolders.slice(),
+        inventory_preview_only: !canCreateSelectedFolder,
+        entitlement_recheck_required: true,
+      };
+    }
+  } else if (selectedFolder && !PUBLIC_MODEL_FOLDERS.has(selectedFolder)) {
+    throw new CreateSessionAccessError("public_folder_invalid", "Public work uses the travel or extreme folder.", 400);
+  }
+
+  const modelsTable = env.AIRTABLE_TABLE_MODELS || "models";
+  let records = await airtableList(env, modelsTable, {
+    q,
+    limit: 100,
+    matchFields: q ? MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS : getModelSearchFields(env),
+    fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
+  });
+  if (q && records.length === 0) {
+    records = await airtableList(env, modelsTable, {
+      q,
+      limit: 100,
+      matchFields: getModelSearchFields(env),
+      fallbackMatchFields: MODEL_CANONICAL_CREATE_JOB_SEARCH_FIELDS,
+    });
+  }
+
+  const items = [];
+  const seenInventoryKeys = new Set();
+  for (const record of records) {
+    const profile = modelAccessProfile(record.fields || {});
+    if (!profile.statusActive) continue;
+    if (availableOnly && (!profile.availableNow || profile.explicitlyUnavailable)) continue;
+    if (wantBurn && !profile.ops.burn) continue;
+    if (wantMk && !profile.ops.mk) continue;
+    if (wantLive && !profile.ops.live) continue;
+    if (bookingVisibility === "private") {
+      if (profile.bookingVisibility !== "private") continue;
+      if (!CANONICAL_PRIVATE_FOLDERS.has(profile.accessFolder)) continue;
+      if (profile.accessFolder !== selectedFolder) continue;
+      const effectiveLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (effectiveLane !== lane && effectiveLane !== "both") continue;
+    } else {
+      if (profile.bookingVisibility === "private") continue;
+      if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) continue;
+      if (lane && profile.lane && profile.lane !== lane && profile.lane !== "both") continue;
+    }
+    const inventoryKey = str(record.fields?.drive_folder_id || record.fields?.folder_scope_key || "");
+    if (inventoryKey && seenInventoryKeys.has(inventoryKey)) continue;
+    if (inventoryKey) seenInventoryKeys.add(inventoryKey);
+    const item = sanitizeCreateSessionModel(record, profile);
+    if (bookingVisibility === "private" && !item.orientation) {
+      const fallbackLane = effectivePrivateModelLane(profile, record.fields || {}, lane);
+      if (fallbackLane) {
+        item.orientation = fallbackLane;
+        item.drive_lane_inferred_for_owner_job = true;
+      }
+    }
+    items.push(item);
+    if (items.length >= limit) break;
+  }
+
+  const out = { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items };
+  if (memberSummary) out.private_access = memberSummary;
+  return out;
+}
+
+export {
+  CreateSessionAccessError,
+  PRIVATE_ACCESS_FOLDERS,
+  membershipTierFromText,
+  normalizeCustomerLane,
+  modelAccessProfile,
+  sanitizeCreateSessionModel,
+  resolveAuthoritativeMemberAccess,
+  resolveCreateSessionModel,
+  enforcePrivateCreateAccess,
+  searchCreateSessionModels,
+};
+
+/* =========================
    Job create
 ========================= */
 async function createAdminJob(env, body) {
-  const client_name = strReq(body.client_name, "client_name");
-  const model_name = strReq(body.model_name, "model_name");
-  const job_type = strReq(body.job_type, "job_type");
-  const job_date = strReq(body.job_date, "job_date");
-  const start_time = strReq(body.start_time, "start_time");
-  const end_time = strReq(body.end_time, "end_time");
-  const location_name = strReq(body.location_name, "location_name");
+  const work = body?.work || {};
+  const model = body?.model || {};
+  const jobDetails = body?.job_details || {};
+  const payment = body?.payment || {};
+  const notes = body?.notes || {};
+  const privateAccess = body?.private_access || {};
+  const telegramGate = body?.telegram_gate || {};
+  const jobVisibility = str(work.job_visibility || body.job_visibility || body.booking_visibility || "");
 
-  const google_map_url = str(body.google_map_url || "");
-  const note = str(body.note || body.notes || "");
-  const payment_type = str(body.payment_type || "full");
-  const payment_method = str(body.payment_method || "promptpay");
-  const amount_thb = numReq(body.amount_thb, "amount_thb");
+  let privateGate = null;
+  if (jobVisibility === "private") {
+    privateGate = await enforcePrivateCreateAccess(env, body);
+    if (privateGate?.ownerJobGrant) {
+      const reserved = await reserveOwnerPrivateJobGrant(env, privateGate.ownerJobGrant);
+      if (!reserved?.ok) throw new CreateSessionAccessError("owner_job_grant_reservation_failed", "Owner one-job grant could not be reserved.", 503);
+    }
+  }
+
+  const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
+  const model_name = strReq(body.model_name || model.model_name, "model_name");
+  const job_type = strReq(body.job_type || work.job_lane || work.work_type, "job_type");
+  const job_date = strReq(body.job_date || jobDetails.job_date, "job_date");
+  const start_time = strReq(body.start_time || jobDetails.start_time, "start_time");
+  const end_time = strReq(body.end_time || jobDetails.end_time, "end_time");
+  const location_name = strReq(body.location_name || jobDetails.location_name, "location_name");
+
+  const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
+  const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const payment_type = str(body.payment_type || payment.payment_type || "full");
+  const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
+  const amount_thb = numReq(body.amount_thb || payment.amount_thb, "amount_thb");
+  const original_amount_raw = Number(
+    body.original_amount_thb ??
+    payment.original_amount_thb ??
+    payment.payment_original_amount_thb ??
+    amount_thb
+  );
+  const original_amount_thb = Number.isFinite(original_amount_raw) && original_amount_raw >= amount_thb
+    ? original_amount_raw
+    : amount_thb;
+  const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
+    .toLowerCase();
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
-  const confirm_page = absoluteUrl(body.confirm_page || "/confirm/job-confirmation", webBase);
-  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/confirm/job-model", webBase);
+  const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
+  const model_confirm_page = absoluteUrl(body.model_confirm_page || "/sigil/confirm/job-model", webBase);
 
   const payload = {
     client_name,
@@ -2161,6 +2922,8 @@ async function createAdminJob(env, body) {
     location_name,
     google_map_url,
     amount_thb,
+    original_amount_thb,
+    pricing_adjustment,
     payment_type,
     payment_method,
     note,
@@ -2187,6 +2950,12 @@ async function createAdminJob(env, body) {
   if (!customer_confirmation_url) throw new Error("missing_customer_confirmation_url");
   if (!model_confirmation_url) throw new Error("missing_model_confirmation_url");
 
+  let ownerJobGrantStatus = privateGate?.ownerJobGrant ? "reserved" : "not_used";
+  if (privateGate?.ownerJobGrant) {
+    const consumed = await consumeOwnerPrivateJobGrant(env, privateGate.ownerJobGrant, { session_id, payment_ref });
+    ownerJobGrantStatus = consumed?.ok ? "consumed" : "reserved_consume_failed";
+  }
+
   await notifyJobCreated(env, {
     session_id,
     payment_ref,
@@ -2208,6 +2977,7 @@ async function createAdminJob(env, body) {
     customer_confirmation_url,
     model_confirmation_url,
     raw: minted,
+    owner_job_grant_status: ownerJobGrantStatus,
   };
 }
 

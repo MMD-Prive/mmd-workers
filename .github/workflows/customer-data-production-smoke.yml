@@ -1,0 +1,95 @@
+name: Customer Data Production Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/customer-data-production-smoke.yml"
+  workflow_run:
+    workflows:
+      - Deploy immigrate-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Authenticated Customer 360 V7 page and queue smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            cookie="$(mktemp)"
+            headers="$(mktemp)"
+            body="$(mktemp)"
+
+            login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
+              -X POST \
+              -H "Origin: $origin" \
+              -H "Content-Type: application/x-www-form-urlencoded" \
+              --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
+              --data-urlencode "next=/internal/admin/customer-data" \
+              "$origin/internal/admin/login/session")"
+            test "$login_code" = "303"
+            grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+
+            page_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+              "$origin/internal/admin/customer-data")"
+            test "$page_code" = "200"
+            grep -qi '^content-type:.*text/html' "$headers"
+            grep -Eqi '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers"
+            grep -Eqi '^x-mmd-customer-ux:[[:space:]]*owner-readable-v7' "$headers"
+            grep -q 'Customer 360' "$body"
+            grep -q 'ลูกค้า → ตัวตน → ตรวจ → ทำต่อ' "$body"
+            grep -q 'ค้นลูกค้า ตรวจว่าตัวตนตรงกัน' "$body"
+            grep -q 'คิวที่ต้องดู' "$body"
+            grep -q 'ตัดสินใจเรื่องตัวตน' "$body"
+            grep -q 'href="/internal/admin/jobs/create-job"' "$body"
+            grep -q '>สร้างงาน ↗</a>' "$body"
+
+            queue_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -b "$cookie" -w "%{http_code}" \
+              "$origin/v1/admin/customer-data/queue?status=review_required")"
+
+            if [ "$queue_code" != "200" ]; then
+              echo "FAIL: $origin Customer Data queue HTTP $queue_code" >&2
+              node - "$body" <<'NODE'
+          const fs = require('fs');
+          let data = {};
+          try { data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')); } catch {}
+          const error = typeof data?.error === 'string' ? data.error : data?.error?.code || data?.error?.message || 'non_json_response';
+          console.error(`Customer Data queue error: ${String(error).slice(0,160)}`);
+          NODE
+              exit 1
+            fi
+
+            grep -qi '^content-type:.*application/json' "$headers"
+            node - "$body" <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (!p || p.ok !== true) process.exit(1);
+          if (!Array.isArray(p.records)) process.exit(1);
+          const count = Number(p.count ?? p.records.length);
+          if (!Number.isFinite(count) || count < 0) process.exit(1);
+          console.log(`Customer Data queue connected: ${count} review_required`);
+          NODE
+
+            echo "PASS: $origin authenticated Customer 360 V7 + live queue"
+            rm -f "$cookie" "$headers" "$body"
+          done
