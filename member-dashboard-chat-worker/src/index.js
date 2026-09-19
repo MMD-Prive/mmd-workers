@@ -25,6 +25,7 @@ const WORKER_NAME = "member-dashboard-chat-worker";
 const DEFAULT_HIMAI_SUPPLIERS_TABLE = "tbl81bnFyASeXCj9x";
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/", "/webhook/line", "/webhook/line/"]);
 const MEMBER_LIFF_PREFIX = "/member/api/liff/";
+const MEMBER_SHOP_API_PREFIX = "/member/api/shop/";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
 const MEMBER_DASHBOARD_API_PATHS = new Set(["/api/member/dashboard", "/api/member/dashboard/"]);
 const MEMBER_LIFF_ID = "2010862595-yT4DCEMc";
@@ -2044,7 +2045,7 @@ export default {
       return renderRenewalResponse(request, env);
     }
 
-    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname)) {
+    if (url.pathname.startsWith(MEMBER_LIFF_PREFIX) || url.pathname.startsWith(MEMBER_SHOP_API_PREFIX) || MEMBER_LIFF_SHELL_PATHS.has(url.pathname) || MEMBER_DASHBOARD_API_PATHS.has(url.pathname)) {
       return handleMemberLiffFrontGate(request, env);
     }
 
