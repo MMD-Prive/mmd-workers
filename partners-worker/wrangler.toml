@@ -1,5 +1,5 @@
 name = "partners-worker"
-main = "src/index.ts"
+main = "src/public-index.ts"
 compatibility_date = "2026-04-27"
 compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
