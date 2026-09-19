@@ -934,19 +934,72 @@ async function handleHypeOperatingCommand({ message, chatId, command, routing = 
   }
 
   if (command === "handoff_status") {
+    const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+    if (!binding?.fetch) {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ตอนนี้ HYPE ยังอ่านสถานะ handoff จากระบบกลางไม่ได้ครับ ผมจะไม่เดาว่าทีมรับเรื่องหรือเคสจบแล้ว",
+        disable_web_page_preview: true,
+        reply_markup: hypeHandoffButtons(env, "per"),
+      }, env);
+      return { handled: true, flow: "hype_operating_handoff_status", ok: false, code_status: "handoff_status_unavailable", telegram };
+    }
+
+    let result = null;
+    let status = 503;
+    try {
+      const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-mmd-service-binding": "telegram-worker",
+        },
+        body: JSON.stringify({
+          operation: "read",
+          telegram_user_id: telegramUserId,
+        }),
+      }));
+      status = response.status;
+      result = await response.json().catch(() => null);
+    } catch {
+      result = null;
+    }
+
+    if (status === 404 && result?.state === "connect_required") {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ยังตรวจสถานะเคสไม่ได้ครับ เพราะ Telegram นี้ยังไม่เชื่อมกับ Canonical Client ใน MY MMD",
+        disable_web_page_preview: true,
+        reply_markup: hypeConnectButtons(env),
+      }, env);
+      return { handled: true, flow: "hype_operating_handoff_status", ok: false, code_status: "connect_required", telegram };
+    }
+
+    if (!(status >= 200 && status < 300 && result?.ok === true)) {
+      const telegram = await sendTelegramMessage({
+        chat_id: chatId,
+        text: "ตอนนี้ HYPE อ่านสถานะ handoff ไม่สำเร็จครับ ผมจะไม่สรุปแทนด้วยข้อมูลที่ไม่ยืนยัน",
+        disable_web_page_preview: true,
+        reply_markup: hypeHandoffButtons(env, "per"),
+      }, env);
+      return { handled: true, flow: "hype_operating_handoff_status", ok: false, code_status: "handoff_status_unavailable", telegram };
+    }
+
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
-      text: [
-        "<b>HYPE · HANDOFF STATUS</b>",
-        "",
-        "ผมรับรู้ closed-loop lane แล้วครับ แต่ตอนนี้จะไม่อ้างว่า Per/Kenji รับเรื่องหรือเคสจบแล้ว ถ้ายังไม่มี acknowledgement/review state จาก authority ปลายทาง",
-        "ถ้าต้องการส่งต่อ/ย้ำเคสพร้อม context เดิม ใช้ /human หรือ /kenji ได้ครับ",
-      ].join("\n"),
+      text: renderHypeHandoffStatus(result),
       parse_mode: "HTML",
       disable_web_page_preview: true,
-      reply_markup: hypeHandoffButtons(env, "per"),
+      reply_markup: hypeHandoffButtons(env, result.target === "kenji" ? "kenji" : "per"),
     }, env);
-    return { handled: true, flow: "hype_operating_handoff_status_awareness", telegram };
+    return {
+      handled: true,
+      flow: "hype_operating_handoff_status",
+      ok: true,
+      code_status: clean(result.state || "none"),
+      handoff_id: clean(result.handoff_id),
+      telegram,
+    };
   }
 
   if (command === "handoff_kenji" || command === "handoff_per" || command === "recovery") {
@@ -1411,6 +1464,9 @@ async function handleHypeCustomerHandoff({ message, chatId, telegramUserId, targ
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }, env);
+    if (alert?.ok === true) {
+      await markHypeHandoffSent(binding, result.handoff_id);
+    }
   } catch {
     alert = { ok: false, error: "handoff_notify_failed" };
   }
@@ -1490,6 +1546,52 @@ function renderHypeHandoffOperatorAlert(result = {}) {
     "",
     "<b>Rule:</b> refresh canonical truth before protected action · customer should not be asked to restart the story",
   ].join("\n").slice(0, 3900);
+}
+
+
+function renderHypeHandoffStatus(result = {}) {
+  const state = clean(result.state || "none").toLowerCase();
+  const labels = {
+    prepared: "เตรียม context แล้ว",
+    sent: "ส่งต่อไปยังทีมแล้ว",
+    acknowledged: "ทีมรับทราบเคสแล้ว",
+    reviewing: "ทีมกำลังตรวจสอบ",
+    resolved: "ทีมบันทึกว่าแก้ไขแล้ว · ยังไม่ยืนยันว่าลูกค้าได้รับแจ้ง",
+    customer_notified: "แก้ไขแล้วและยืนยันว่าแจ้งลูกค้าแล้ว",
+    none: "ยังไม่มี handoff ที่กำลังติดตาม",
+  };
+  const lines = ["<b>HYPE · CASE STATUS</b>", ""];
+  if (clean(result.handoff_id)) lines.push(`<b>Reference:</b> <code>${escapeHtml(clean(result.handoff_id))}</code>`);
+  if (clean(result.target)) lines.push(`<b>Owner:</b> ${escapeHtml(result.target === "kenji" ? "Kenji" : "Per / MMD Ops")}`);
+  lines.push(`<b>Status:</b> ${escapeHtml(labels[state] || state || "unknown")}`);
+  if (clean(result.updated_at)) lines.push(`<b>Updated:</b> ${escapeHtml(formatBangkokDateTime(result.updated_at))}`);
+  lines.push("");
+  lines.push("HYPE แสดงเฉพาะ state ที่ถูกเขียนโดยระบบ/ผู้มีสิทธิ์จริง และจะไม่เดา acknowledgement หรือ resolution เองครับ");
+  return lines.join("\n");
+}
+
+async function markHypeHandoffSent(binding, handoffId) {
+  const ref = clean(handoffId);
+  if (!binding?.fetch || !ref) return { ok: false };
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: "transition",
+        handoff_id: ref,
+        state: "sent",
+        actor_role: "hype",
+      }),
+    }));
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok && body?.ok === true, state: clean(body?.state) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 function hypeHandoffButtons(env, target) {
