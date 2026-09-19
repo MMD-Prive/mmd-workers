@@ -19,6 +19,12 @@ const MODEL_LIFF_URL = `https://miniapp.line.me/${MODEL_LIFF_ID}`;
 const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
 
+function miniAppPermanentLink(liffId, params = new URLSearchParams()) {
+  const base = `https://miniapp.line.me/${liffId}`;
+  const query = params.toString();
+  return query ? `${base}/?${query}` : base;
+}
+
 const WISH_STATUS_JS = `(() => {
   "use strict";
   const ID = "mmd-wish-pending-v1";
@@ -169,16 +175,16 @@ export function shouldServeLiffPrimaryBootstrap(request) {
 function safeMiniAppUrlForBootstrap(request) {
   const source = new URL(request.url);
   const environment = resolveLiffEnvironmentFromRequest(request);
-  const target = new URL(`https://miniapp.line.me/${MODEL_LIFF_IDS[environment]}`);
-  if (environment !== "published") target.searchParams.set("liff_env", environment);
+  const params = new URLSearchParams();
+  if (environment !== "published") params.set("liff_env", environment);
 
   const lang = boundedParam(source, "lang");
-  if (lang === "th" || lang === "en" || lang === "zh") target.searchParams.set("lang", lang);
-  if (boundedParam(source, "flow") === "verify") target.searchParams.set("flow", "verify");
-  if (boundedParam(source, "handoff") === "job-confirmed") target.searchParams.set("handoff", "job-confirmed");
+  if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
+  if (boundedParam(source, "flow") === "verify") params.set("flow", "verify");
+  if (boundedParam(source, "handoff") === "job-confirmed") params.set("handoff", "job-confirmed");
   const activation = boundedParam(source, "activation");
-  if (activation && activation.length <= 4096) target.searchParams.set("activation", activation);
-  return target.toString();
+  if (activation && activation.length <= 4096) params.set("activation", activation);
+  return miniAppPermanentLink(MODEL_LIFF_IDS[environment], params);
 }
 
 export function liffPrimaryBootstrapHtml(request) {
@@ -210,12 +216,10 @@ a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:
   var status=document.getElementById("status");
   var fallback=document.getElementById("fallback");
   var detail=document.getElementById("detail");
-  var before=location.href;
   try{
     if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
     await window.liff.init({liffId:${safeId}});
-    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิด MMD MODEL…";
-    if(location.href===before) location.reload();
+    status.textContent="ยืนยัน LINE แล้ว · LINE กำลังเปิด MMD MODEL…";
   }catch(error){
     status.textContent="ยังเปิด MMD MODEL ผ่าน LINE ไม่สำเร็จ";
     fallback.style.display="inline-block";
@@ -245,23 +249,23 @@ function liffPrimaryBootstrapResponse(request) {
 
 export function modelMiniAppHandoffUrl(request) {
   const source = new URL(request.url);
-  const target = new URL(MODEL_LIFF_URL);
+  const params = new URLSearchParams();
 
   const env = source.searchParams.get("liff_env");
-  if (env === "developing" || env === "review") target.searchParams.set("liff_env", env);
+  if (env === "developing" || env === "review") params.set("liff_env", env);
 
   const lang = source.searchParams.get("lang");
-  if (lang === "th" || lang === "en" || lang === "zh") target.searchParams.set("lang", lang);
+  if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
 
-  if (source.searchParams.get("flow") === "verify") target.searchParams.set("flow", "verify");
+  if (source.searchParams.get("flow") === "verify") params.set("flow", "verify");
   if (source.searchParams.get("handoff") === "job-confirmed") {
-    target.searchParams.set("handoff", "job-confirmed");
+    params.set("handoff", "job-confirmed");
   }
 
   const activation = String(source.searchParams.get("activation") || "");
-  if (activation && activation.length <= 4096) target.searchParams.set("activation", activation);
+  if (activation && activation.length <= 4096) params.set("activation", activation);
 
-  return target.toString();
+  return miniAppPermanentLink(MODEL_LIFF_ID, params);
 }
 
 export function shouldHandoffToMiniApp(request) {
