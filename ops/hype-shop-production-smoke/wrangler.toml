@@ -7,3 +7,7 @@ preview_urls = false
 [[services]]
 binding = "ADMIN_WORKER"
 service = "admin-worker"
+
+[[services]]
+binding = "MEMBER_DASHBOARD_CHAT_WORKER"
+service = "member-dashboard-chat-worker"
