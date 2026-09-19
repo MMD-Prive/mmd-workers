@@ -82,15 +82,25 @@ export async function handleShopIntentExpiry(request, env) {
 
   try {
     const payment = await findPaymentByOrderId(env, orderId);
-    if (!payment?.id) return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "payment_not_found" }, 200, request, env);
+    if (!payment?.id) {
+      await markOrderPaymentExpirySynced(env, orderId);
+      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "payment_not_found" }, 200, request, env);
+    }
 
     const fields = payment.fields || {};
     const paymentStatus = code(fields[PAYMENT_FIELDS.status]);
     const intentStatus = code(fields[PAYMENT_FIELDS.intentStatus]);
     if (paymentStatus === "paid" || intentStatus === "confirmed") {
-      return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: false, reason: "already_paid" }, 200, request, env);
+      return json({
+        ok: false,
+        authority: "payments-worker",
+        order_id: orderId,
+        error: "payment_already_paid_expiry_conflict",
+        manual_review_required: true,
+      }, 409, request, env);
     }
     if (intentStatus === "cancelled") {
+      await markOrderPaymentExpirySynced(env, orderId);
       return json({ ok: true, authority: "payments-worker", order_id: orderId, expired: true, idempotent: true }, 200, request, env);
     }
 
@@ -102,6 +112,7 @@ export async function handleShopIntentExpiry(request, env) {
       [PAYMENT_FIELDS.intentStatus]: "Cancelled",
       [PAYMENT_FIELDS.notes]: notes,
     });
+    await markOrderPaymentExpirySynced(env, orderId);
 
     return json({
       ok: true,
@@ -483,6 +494,23 @@ async function createPaymentRecord(env, input) {
 
 async function findOrderByOrderId(env, orderId) {
   return findFirst(env, table(env, "orders"), `{Order ID}='${formulaValue(orderId)}'`);
+}
+
+async function markOrderPaymentExpirySynced(env, orderId) {
+  const order = await findOrderByOrderId(env, orderId);
+  if (!order?.id) return false;
+  const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+  if (!reservation || reservation.state !== "expired") return false;
+  if (reservation.payment_expiry_synced_at) return true;
+
+  const next = {
+    ...reservation,
+    payment_expiry_synced_at: new Date().toISOString(),
+  };
+  await patchRecord(env, table(env, "orders"), order.id, {
+    [ORDER_FIELDS.notes]: writeMmdShopReservation(order.fields?.[ORDER_FIELDS.notes], next),
+  });
+  return true;
 }
 
 async function findPaymentByOrderId(env, orderId) {
