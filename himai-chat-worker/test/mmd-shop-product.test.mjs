@@ -25,33 +25,83 @@ test("MMD Shop product API resolves SKU slug and returns server checkout eligibi
     const url = new URL(String(input));
     if (url.pathname.includes("tblzsmNLfP6J0kQ90")) {
       return Response.json({
-        records: [{
-          id: "recg8CLsPKT3So4uz",
-          fields: {
-            "Product Name": "Water GG Plus 10ml",
-            "SKU": "WGG-10",
-            "Brand Availability": ["MMD Shop"],
-            "Category": "Selected",
-            "Status": "active",
-            "Curation Label": "MMD Pick",
-            "Supplier": [],
-            "Product Note": "MMD curated item",
-            "MMD Shop Selling Price THB": 1000
+        records: [
+          {
+            id: "recg8CLsPKT3So4uz",
+            fields: {
+              "Product Name": "Water GG Plus 10ml",
+              "SKU": "WGG-10",
+              "Brand Availability": ["MMD Shop"],
+              "Category": "Selected",
+              "Status": "active",
+              "Curation Label": "MMD Pick",
+              "Supplier": [],
+              "Product Note": "MMD curated item",
+              "MMD Shop Selling Price THB": 1000
+            }
+          },
+          {
+            id: "recBTujDAFw2GolT5",
+            fields: {
+              "Product Name": "Water GG Plus 25ml",
+              "SKU": "WGG-25",
+              "Brand Availability": ["MMD Shop"],
+              "Category": "Selected",
+              "Status": "active",
+              "Curation Label": "MMD Pick",
+              "Supplier": [],
+              "Product Note": "MMD curated item",
+              "MMD Shop Selling Price THB": 2500
+            }
+          },
+          {
+            id: "recSod352ioZ17aMr",
+            fields: {
+              "Product Name": "Water GG Plus 50ml",
+              "SKU": "WGG-50",
+              "Brand Availability": ["MMD Shop"],
+              "Category": "Selected",
+              "Status": "active",
+              "Curation Label": "MMD Pick",
+              "Supplier": [],
+              "Product Note": "MMD curated item",
+              "MMD Shop Selling Price THB": 4500
+            }
           }
-        }]
+        ]
       });
     }
     if (url.pathname.includes("tblwFgl4et1TOgtNn")) {
       return Response.json({
-        records: [{
-          id: "recBatch123456789",
-          fields: {
-            "Product": ["recg8CLsPKT3So4uz"],
-            "Quantity Remaining": 5,
-            "Low Stock Flag": "OK",
-            "Batch Status": "active"
+        records: [
+          {
+            id: "recBatch123456789",
+            fields: {
+              "Product": ["recg8CLsPKT3So4uz"],
+              "Quantity Remaining": 5,
+              "Low Stock Flag": "OK",
+              "Batch Status": "active"
+            }
+          },
+          {
+            id: "recBatch250000000",
+            fields: {
+              "Product": ["recBTujDAFw2GolT5"],
+              "Quantity Remaining": 0,
+              "Low Stock Flag": "Low",
+              "Batch Status": "active"
+            }
+          },
+          {
+            id: "recBatch500000000",
+            fields: {
+              "Product": ["recSod352ioZ17aMr"],
+              "Quantity Remaining": 0,
+              "Low Stock Flag": "Low",
+              "Batch Status": "active"
+            }
           }
-        }]
+        ]
       });
     }
     if (url.pathname.includes("tbl81bnFyASeXCj9x")) {
@@ -77,6 +127,76 @@ test("MMD Shop product API resolves SKU slug and returns server checkout eligibi
     assert.equal(body.product.selling_price_thb, 1000);
     assert.equal(body.product.checkout_eligible, true);
     assert.equal(body.product.product_url, "/mmd-shop/product/wgg-10");
+    assert.equal(body.product.variant_group, "WGG");
+    assert.equal(body.product.variant_type, "size");
+    assert.equal(body.product.variant_value, "10ml");
+    assert.deepEqual(
+      body.variants.map((item) => [item.sku, item.variant_value, item.checkout_eligible]),
+      [
+        ["WGG-10", "10ml", true],
+        ["WGG-25", "25ml", false],
+        ["WGG-50", "50ml", false]
+      ]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("MMD Shop product API returns Pod flavour family without changing restricted checkout authority", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("tblzsmNLfP6J0kQ90")) {
+      return Response.json({
+        records: [
+          {
+            id: "recPodKyo",
+            fields: {
+              "Product Name": "Pod Premium Plus 2.5mg — KyoHo Grape",
+              "SKU": "PPP25-KYO",
+              "Brand Availability": ["MMD Shop"],
+              "Status": "active",
+              "Supplier": [],
+              "Product Note": "Pod flavour",
+              "MMD Shop Selling Price THB": 2500
+            }
+          },
+          {
+            id: "recPodMgo",
+            fields: {
+              "Product Name": "Pod Premium Plus 2.5mg — Mango",
+              "SKU": "PPP25-MGO",
+              "Brand Availability": ["MMD Shop"],
+              "Status": "active",
+              "Supplier": [],
+              "Product Note": "Pod flavour",
+              "MMD Shop Selling Price THB": 2500
+            }
+          }
+        ]
+      });
+    }
+    if (url.pathname.includes("tblwFgl4et1TOgtNn")) return Response.json({ records: [] });
+    if (url.pathname.includes("tbl81bnFyASeXCj9x")) return Response.json({ records: [] });
+    return new Response("not found", { status: 404 });
+  };
+
+  try {
+    const response = await handleShopCatalog(
+      new Request("https://www.mmdbkk.com/mmd-shop/api/product/ppp25-kyo"),
+      { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_TOKEN: "test-token" }
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.product.variant_group, "PPP25");
+    assert.equal(body.product.variant_type, "flavour");
+    assert.equal(body.product.variant_value, "KyoHo Grape");
+    assert.equal(body.product.checkout_eligible, false);
+    assert.equal(body.variants.length, 2);
+    assert.deepEqual(body.variants.map((item) => item.variant_value), ["KyoHo Grape", "Mango"]);
+    assert.equal(body.variants.every((item) => item.checkout_eligible === false), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
