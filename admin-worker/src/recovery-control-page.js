@@ -6,6 +6,7 @@ export function renderRecoveryControlPage(input = {}) {
   const initialDomain = escapeHtml(input.domain || "all");
   const initialState = escapeHtml(input.state || "open");
   const initialAssignment = escapeHtml(input.assignment || "all");
+  const ownerMode = input.owner_mode === true;
   return `<!doctype html>
 <html lang="th">
 <head>
@@ -57,6 +58,7 @@ var state=document.querySelector("[data-state]");
 var assignment=document.querySelector("[data-assignment]");
 var metrics=document.querySelector("[data-metrics]");
 var selected="";
+var ownerMode=${ownerMode ? "true" : "false"};
 domain.value="${initialDomain}";
 state.value="${initialState}";
 assignment.value="${initialAssignment}";
@@ -71,7 +73,7 @@ function renderCase(x){selected=x.case_ref;var ctl=x.controls||{},non=ctl.nonter
 '<div class="headline"><div><div class="eyebrow">'+esc(x.domain)+"</div><h2>"+esc(x.customer&&x.customer.display_name||"Canonical Client")+'</h2><div class="ref">'+esc(x.case_ref)+'</div></div><span class="status">'+esc(x.state)+"</span></div>"+
 '<div class="facts"><div class="fact"><span>Outcome</span><strong>'+esc(x.outcome_label||x.outcome_code||"—")+'</strong></div><div class="fact"><span>Updated</span><strong>'+fmt(x.updated_at)+'</strong></div><div class="fact"><span>Case age</span><strong>'+age(x.age&&x.age.minutes)+'</strong></div><div class="fact"><span>Operational SLA</span><strong>'+esc(x.sla&&x.sla.status||"unknown")+" · update "+age(x.sla&&x.sla.since_update_minutes)+'</strong></div><div class="fact"><span>Assigned to</span><strong>'+esc(assignee)+(m.assignee_lane?" · "+esc(m.assignee_lane):"")+'</strong></div><div class="fact"><span>Claimed</span><strong>'+(m.claimed_at?fmt(m.claimed_at):"—")+'</strong></div><div class="fact"><span>Canonical correlation</span><strong>'+correlation(x.correlation,x.domain)+'</strong></div><div class="fact"><span>Next attention</span><strong>'+esc(x.next_attention||"inspect_case")+"</strong></div></div>"+
 '<div class="rule">Assignment เป็น coordination metadata เท่านั้น ไม่เพิ่มสิทธิ์อนุมัติ และไม่ reset SLA. ก่อนทำ protected action ต้อง refresh Payment / Job / Fulfillment / MMS truth จาก authority ต้นทางเสมอ</div><div data-flash></div>'+
-'<div class="controls"><div class="actions"><button class="btn primary" data-action="claim" '+(!ctl.can_claim?"disabled":"")+'>Claim Case</button><button class="btn" data-action="release" '+(!ctl.can_release?"disabled":"")+'>Release</button><button class="btn warn" data-action="takeover" '+(!ctl.can_takeover?"disabled":"")+'>Owner Takeover</button></div><div class="actions"><button class="btn" data-action="acknowledge" '+(!ctl.can_acknowledge?"disabled":"")+'>Acknowledge</button><button class="btn warn" data-action="review" '+(!ctl.can_review?"disabled":"")+'>Start Review</button><button class="btn good" data-action="customer_notified" '+(!ctl.can_mark_customer_notified?"disabled":"")+'>Customer Notified</button></div>'+
+'<div class="controls"><div class="actions"><button class="btn primary" data-action="claim" '+(!ctl.can_claim?"disabled":"")+'>Claim Case</button><button class="btn" data-action="release" '+(!ctl.can_release?"disabled":"")+'>Release</button><button class="btn warn" data-action="takeover" '+((!ownerMode||!ctl.can_takeover)?"disabled":"")+'>Owner Takeover</button></div><div class="actions"><button class="btn" data-action="acknowledge" '+(!ctl.can_acknowledge?"disabled":"")+'>Acknowledge</button><button class="btn warn" data-action="review" '+(!ctl.can_review?"disabled":"")+'>Start Review</button><button class="btn good" data-action="customer_notified" '+(!ctl.can_mark_customer_notified?"disabled":"")+'>Customer Notified</button></div>'+
 '<div class="outcome"><select class="select" data-nonterminal><option value="">เลือกสถานะระหว่างดำเนินการ</option>'+opts(non,x.outcome_terminal?"":x.outcome_code)+'</select><button class="btn" data-action="set_outcome" '+(!ctl.can_set_outcome?"disabled":"")+'>บันทึก Outcome</button></div>'+
 '<div class="outcome"><select class="select" data-terminal><option value="">เลือกผลลัพธ์ก่อน Resolve</option>'+opts(term,x.outcome_terminal?x.outcome_code:"")+'</select><button class="btn bad" data-action="resolve" '+(!ctl.can_resolve?"disabled":"")+">Resolve Case</button></div></div>";
 detail.querySelectorAll("[data-action]").forEach(function(b){b.onclick=function(){act(b.getAttribute("data-action"))}})}
