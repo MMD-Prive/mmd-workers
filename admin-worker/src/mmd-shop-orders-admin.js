@@ -9,7 +9,6 @@ import {
 import {
   publicMmdShopReservation,
   readMmdShopReservation,
-  releaseMmdShopReservation,
   writeMmdShopReservation,
 } from "../../shared/mmd-shop-stock-reservation.mjs";
 
@@ -210,7 +209,7 @@ async function updateFulfillment(env, actor, body) {
         : orderStatus || "draft";
 
   if (state === "cancelled" && currentReservation?.state === "reserved") {
-    const released = await releaseMmdShopReservation(env, currentReservation, "admin_cancelled");
+    const released = await releaseReservationThroughShopWorker(env, currentReservation, "admin_cancelled");
     nextReservation = released.reservation;
   }
 
@@ -289,6 +288,26 @@ async function updateFulfillment(env, actor, body) {
     reservation: nextReservation ? publicMmdShopReservation(nextReservation) : null,
     shipping_notification: shippingNotification,
   };
+}
+
+async function releaseReservationThroughShopWorker(env, reservation, reason) {
+  if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
+  const token = clean(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+
+  const response = await env.MMD_SHOP_WORKER.fetch("https://himai-chat-worker.internal/mmd-shop/internal/reservation/release", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-internal-token": token,
+    },
+    body: JSON.stringify({ reservation, reason }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || !data.reservation) {
+    throw httpError(response.status || 502, data.error || "reservation_release_failed");
+  }
+  return data;
 }
 
 async function notifyShippingCustomer(env, input) {
