@@ -1,0 +1,212 @@
+<style>
+.mcal .mcal__empty.mcal__livefeed{padding:0;text-align:left;display:grid;gap:8px}
+.mcal .mcal__queueempty.mcal__livequeue{padding:0;text-align:left;display:grid;gap:8px}
+.mcal .mcal-live-card{display:grid;grid-template-columns:72px minmax(0,1fr) auto;gap:12px;padding:13px;border:1px solid rgba(255,255,255,.09);border-radius:14px;background:rgba(255,255,255,.018);text-align:left}
+.mcal .mcal-live-time b,.mcal .mcal-live-time span{display:block}.mcal .mcal-live-time span{opacity:.58;font-size:11px;margin-top:3px}
+.mcal .mcal-live-card h3{margin:0;font-size:13px;line-height:1.5}
+.mcal .mcal-live-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.mcal .mcal-live-tag{padding:4px 7px;border:1px solid rgba(255,255,255,.09);border-radius:999px;font-size:10px;line-height:1.25;opacity:.8}
+.mcal .mcal-live-tag.is-hold{color:#e7bd63}.mcal .mcal-live-tag.is-ok{color:#79d6a2}.mcal .mcal-live-tag.is-bad{color:#ed8f9a}
+.mcal .mcal-live-money{text-align:right;font-size:12px;white-space:nowrap}.mcal .mcal-live-money small{display:block;opacity:.58;margin-top:4px}
+.mcal .mcal-live-hold{padding:11px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.018)}
+.mcal .mcal-live-hold b{display:block;font-size:12px}.mcal .mcal-live-hold span{display:block;margin-top:4px;font-size:10px;opacity:.62}
+.mcal .mcal-live-empty{padding:22px 8px;text-align:center;font-size:11px;opacity:.62}
+.mcal .mcal-live-preview{display:grid;gap:8px}.mcal .mcal-live-preview a{color:#d7b872;text-decoration:none;font-weight:800}
+.mcal .mcal__people{align-items:stretch}
+.mcal .mcal-live-person{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:11px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.018)}
+.mcal .mcal-live-person b{display:block;font-size:12px}.mcal .mcal-live-person small{display:block;margin-top:3px;opacity:.58;font-size:10px}
+.mcal .mcal-live-state{font-size:10px;font-weight:900}.mcal .mcal-live-state.is-ok{color:#79d6a2}.mcal .mcal-live-state.is-limited{color:#e7bd63}.mcal .mcal-live-state.is-off{color:#ed8f9a}
+@media(max-width:767px){.mcal .mcal-live-card{grid-template-columns:54px minmax(0,1fr)}.mcal .mcal-live-money{grid-column:2;text-align:left}}
+</style>
+<script>
+window.__MMD_CALENDAR_WEBFLOW_V2__=true;
+(()=>{
+  const boot=()=>{
+    const root=document.querySelector('.mcal');
+    if(!root)return;
+
+    const qs=(s,p=root)=>p.querySelector(s);
+    const qsa=(s,p=root)=>[...p.querySelectorAll(s)];
+    const esc=(v)=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const validDate=(v)=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''));
+    const bangkokYmd=(d=new Date())=>{
+      const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(d);
+      const o=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+      return o.year+'-'+o.month+'-'+o.day;
+    };
+    const addDays=(dateText,days)=>bangkokYmd(new Date(new Date(dateText+'T12:00:00+07:00').getTime()+days*86400000));
+    const thDate=(dateText)=>new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',day:'numeric',month:'long',year:'numeric'}).format(new Date(dateText+'T12:00:00+07:00'));
+    const thWeekday=(dateText)=>new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',weekday:'long'}).format(new Date(dateText+'T12:00:00+07:00'));
+    const hm=(value)=>value?new Intl.DateTimeFormat('th-TH',{timeZone:'Asia/Bangkok',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(value)):'—';
+    const money=(value)=>value==null?'—':new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(Number(value)||0)+' ฿';
+    const stateClass=(value)=>{
+      const s=String(value||'').toLowerCase();
+      if(/available|active|ready|confirmed|verified/.test(s))return'is-ok';
+      if(/limited|hold|pending|review/.test(s))return'is-limited';
+      return'is-off';
+    };
+
+    const params=new URLSearchParams(location.search);
+    let selected=validDate(params.get('date'))?params.get('date'):bangkokYmd();
+    let view='today';
+    let payload=null;
+
+    const dateValue=qs('.mcal__datevalue');
+    const dateSmall=qs('.mcal__datesmall');
+    const dateBtns=qsa('.mcal__datebtn');
+    const prev=dateBtns[0],next=dateBtns[1];
+    const today=qs('.mcal__today');
+    const tabs=qsa('.mcal__tab');
+    const metrics=qsa('.mcal__metricvalue');
+    const panels=qsa('.mcal__panel');
+    const timelinePanel=panels[0]||null;
+    const holdsPanel=panels[1]||null;
+    const availabilityPanel=qsa('.mcal__availability')[0]||panels.find(p=>qs('.mcal__people',p));
+    const timelineMount=timelinePanel?qs('.mcal__empty',timelinePanel):null;
+    const holdMount=holdsPanel?qs('.mcal__queueempty',holdsPanel):null;
+    const peopleMount=availabilityPanel?qs('.mcal__people',availabilityPanel):null;
+    const statusValues=qsa('.mcal__statusvalue');
+
+    if(timelineMount)timelineMount.classList.add('mcal__livefeed');
+    if(holdMount)holdMount.classList.add('mcal__livequeue');
+
+    function renderDate(){
+      if(dateValue)dateValue.textContent=thDate(selected);
+      if(dateSmall)dateSmall.textContent=selected===bangkokYmd()?'วันนี้ · '+thWeekday(selected):thWeekday(selected);
+    }
+
+    function filteredItems(){
+      let rows=Array.isArray(payload?.items)?payload.items:[];
+      if(view==='holds')rows=rows.filter(x=>x.internal_hold);
+      if(view==='confirmed')rows=rows.filter(x=>x.deposit?.verified);
+      if(view==='models')rows=rows.filter(x=>x.model?.name);
+      if(view==='pricing')rows=rows.filter(x=>x.pricing?.review_required);
+      return rows;
+    }
+
+    function card(item){
+      const tags=[
+        '<span class="mcal-live-tag">JOB '+esc(item.job?.job_id||'—')+'</span>',
+        '<span class="mcal-live-tag">CAL '+esc(item.cal?.booking_uid||'UNLINKED')+'</span>',
+        item.internal_hold?'<span class="mcal-live-tag is-hold">INTERNAL HOLD</span>':'',
+        item.deposit?.verified?'<span class="mcal-live-tag is-ok">DEPOSIT VERIFIED</span>':'<span class="mcal-live-tag is-hold">DEPOSIT PENDING</span>',
+        item.conflict?'<span class="mcal-live-tag is-bad">CONFLICT</span>':'',
+        item.pricing?.review_required?'<span class="mcal-live-tag is-hold">QUOTE REVIEW</span>':''
+      ].join('');
+      return '<article class="mcal-live-card">'
+        +'<div class="mcal-live-time"><b>'+hm(item.start_at)+'</b><span>'+hm(item.end_at)+'</span></div>'
+        +'<div><h3>'+esc(item.model?.name||'Model pending')+' · '+esc(item.client?.name||'Client pending')+'</h3>'
+        +'<div class="mcal-live-meta">'+tags+'</div>'
+        +'<div class="mcal-live-meta"><span class="mcal-live-tag">'+esc(item.location||'Location pending')+'</span><span class="mcal-live-tag">'+esc(item.service_type||'Service pending')+'</span><span class="mcal-live-tag">'+esc(item.deposit?.verification_status||'payment pending')+'</span></div></div>'
+        +'<div class="mcal-live-money"><b>'+money(item.pricing?.final_quote_thb)+'</b><small>Deposit '+money(item.deposit?.amount_thb)+'</small></div>'
+        +'</article>';
+    }
+
+    function renderTimeline(){
+      if(!timelineMount)return;
+      const rows=filteredItems();
+      timelineMount.innerHTML=rows.length?rows.map(card).join(''):'<div class="mcal-live-empty">ไม่มีรายการในมุมมองนี้</div>';
+    }
+
+    function renderHolds(){
+      if(!holdMount)return;
+      const rows=(payload?.items||[]).filter(x=>x.internal_hold);
+      holdMount.innerHTML=rows.length?rows.map(x=>
+        '<div class="mcal-live-hold"><b>'+esc(x.model?.name||'Model')+' · '+hm(x.start_at)+'</b><span>'+esc(x.client?.name||'Client')+' · '+esc(x.deposit?.verification_status||'รอมัดจำ')+'</span></div>'
+      ).join(''):'<div class="mcal-live-empty">ไม่มี Internal Hold</div>';
+    }
+
+    function renderAvailability(){
+      if(!peopleMount)return;
+      const models=Array.isArray(payload?.availability?.models)?payload.availability.models:[];
+      const therapists=Array.isArray(payload?.availability?.therapists)?payload.availability.therapists:[];
+      const rows=[
+        ...models.slice(0,10).map(x=>({kind:'MODEL',name:x.name||x.model_id||'Model',id:x.model_id||'',status:x.availability_status||'Unknown'})),
+        ...therapists.slice(0,10).map(x=>({kind:'MMS',name:x.display_name||x.therapist_id||'Therapist',id:x.therapist_id||'',status:x.availability_status||'Unknown'}))
+      ];
+      peopleMount.innerHTML=rows.length?rows.map(x=>
+        '<article class="mcal-live-person"><div><b>'+esc(x.name)+'</b><small>'+esc(x.kind+(x.id?' · '+x.id:''))+'</small></div><strong class="mcal-live-state '+stateClass(x.status)+'">'+esc(x.status)+'</strong></article>'
+      ).join(''):'<div class="mcal-live-empty">ยังไม่มี Availability records ที่ระบบอ่านได้</div>';
+    }
+
+    function renderMetrics(){
+      const m=payload?.metrics||{};
+      const values=[m.sessions,m.holds,m.conflicts,m.pricing_review];
+      metrics.forEach((el,i)=>{el.textContent=Number.isFinite(Number(values[i]))?String(values[i]):'0'});
+    }
+
+    function renderStatus(apiOk){
+      let diag=null;
+      try{const el=document.getElementById('calendar-connection-state');if(el)diag=JSON.parse(el.textContent||'{}')}catch{}
+      if(statusValues[0])statusValues[0].textContent=diag?.inbound?.mode?String(diag.inbound.mode).toUpperCase():(apiOk?'LIVE READ':'CHECK');
+      if(statusValues[1])statusValues[1].textContent=payload?.timezone||'Asia/Bangkok';
+      if(statusValues[2]){
+        const ready=diag?.outbound?.api_verified===true&&diag?.inbound?.webhook_secret_configured===true&&diag?.inbound?.mapping_ledger_configured===true;
+        statusValues[2].textContent=diag?(ready?'READY':'CHECK'):(apiOk?'API 200':'CHECK');
+      }
+    }
+
+    function render(){
+      renderDate();
+      if(!payload)return;
+      renderMetrics();
+      renderTimeline();
+      renderHolds();
+      renderAvailability();
+      renderStatus(true);
+    }
+
+    async function load(){
+      renderDate();
+      if(/\.webflow\.io$/i.test(location.hostname)){
+        if(timelineMount)timelineMount.innerHTML='<div class="mcal-live-preview"><b>Webflow preview</b><span>ข้อมูล Admin จริงต้องอ่านผ่าน Owner session บน production domain</span><a href="https://www.mmdbkk.com/internal/admin/calendar?date='+encodeURIComponent(selected)+'">เปิด Calendar ใช้งานจริง →</a></div>';
+        if(holdMount)holdMount.innerHTML='<div class="mcal-live-empty">Protected data is not loaded in Webflow preview.</div>';
+        if(peopleMount)peopleMount.innerHTML='<div class="mcal-live-empty">Availability จะแสดงหลังผ่าน Admin session</div>';
+        renderStatus(false);
+        return;
+      }
+      try{
+        const response=await fetch('/v1/admin/calendar?date='+encodeURIComponent(selected),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}});
+        if(response.status===401||response.status===403){
+          location.href='/internal/admin/login?next='+encodeURIComponent('/internal/admin/calendar?date='+selected);
+          return;
+        }
+        const body=await response.json().catch(()=>null);
+        if(!response.ok||!body?.ok||body?.schema!=='mmd.admin.calendar.v1')throw new Error(body?.error||'calendar_unavailable');
+        payload=body;
+        const u=new URL(location.href);u.searchParams.set('date',selected);history.replaceState({},'',u.pathname+'?'+u.searchParams.toString());
+        render();
+      }catch(error){
+        payload=null;
+        if(timelineMount)timelineMount.innerHTML='<div class="mcal-live-empty" style="color:#ed8f9a">Calendar unavailable · '+esc(error?.message||'read_failed')+'</div>';
+        if(holdMount)holdMount.innerHTML='<div class="mcal-live-empty">ยังอ่าน Hold ไม่ได้</div>';
+        renderStatus(false);
+      }
+    }
+
+    if(prev)prev.addEventListener('click',e=>{e.preventDefault();selected=addDays(selected,-1);load()});
+    if(next)next.addEventListener('click',e=>{e.preventDefault();selected=addDays(selected,1);load()});
+    if(today)today.addEventListener('click',e=>{e.preventDefault();selected=bangkokYmd();load()});
+
+    const viewNames=['today','holds','confirmed','models','pricing'];
+    tabs.forEach((tab,index)=>tab.addEventListener('click',e=>{
+      e.preventDefault();
+      tabs.forEach(x=>x.classList.remove('is-active'));
+      tab.classList.add('is-active');
+      view=viewNames[index]||'today';
+      renderTimeline();
+    }));
+
+    const liveCta=qsa('.mcal__action').find(a=>/Calendar ใช้งานจริง/i.test(a.textContent||''));
+    if(liveCta&&!/\.webflow\.io$/i.test(location.hostname)){
+      liveCta.setAttribute('href','/internal/admin/calendar?date='+encodeURIComponent(selected));
+      liveCta.textContent='Refresh Live Data';
+      liveCta.addEventListener('click',e=>{e.preventDefault();load()});
+    }
+
+    renderDate();
+    load();
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+</script>

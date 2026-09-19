@@ -131,25 +131,75 @@ function overlap(items) {
   }
 }
 
+async function readMmsTherapistAvailability(env = {}) {
+  if (!env.MMS_WORKER || typeof env.MMS_WORKER.fetch !== "function") {
+    return { status: "service_binding_missing", therapists: [] };
+  }
+  try {
+    const response = await env.MMS_WORKER.fetch(new Request("https://mms.internal/internal/mms/admin/snapshot", {
+      method: "GET",
+      headers: { accept: "application/json" },
+    }));
+    const body = await response.json().catch(() => null);
+    if (!response.ok || body?.ok !== true || !Array.isArray(body.therapists)) {
+      return { status: "snapshot_unavailable", therapists: [] };
+    }
+    return {
+      status: "ok",
+      therapists: body.therapists
+        .map(item => ({
+          therapist_id: clean(item?.therapist_id, 80) || null,
+          display_name: clean(item?.display_name, 120) || null,
+          availability_status: clean(item?.availability_status, 40) || "Unknown",
+          status: clean(item?.status, 40) || null,
+          matching_enabled: item?.matching_enabled === true,
+        }))
+        .filter(item => item.therapist_id || item.display_name)
+        .slice(0, 150),
+    };
+  } catch {
+    return { status: "snapshot_unavailable", therapists: [] };
+  }
+}
+
+function modelAvailability(records = []) {
+  return records
+    .map(record => ({
+      record_id: record?.id || null,
+      model_id: clean(field(record, F.model.modelId), 120) || null,
+      name: clean(field(record, F.model.name), 160) || null,
+      availability_status: clean(field(record, F.model.availability), 100) || "Unknown",
+    }))
+    .filter(item => item.model_id || item.name)
+    .slice(0, 300);
+}
+
 export async function readAdminCalendar(env, dateText = "") {
   const day = range(dateText);
-  const allSessions = await list(env, TABLE.sessions, Object.values(F.session));
+  const [allSessions, allModels, mmsAvailability] = await Promise.all([
+    list(env, TABLE.sessions, Object.values(F.session)),
+    list(env, TABLE.models, Object.values(F.model), "", 300),
+    readMmsTherapistAvailability(env),
+  ]);
+  const availability = {
+    models: modelAvailability(allModels),
+    therapists: mmsAvailability.therapists,
+    therapist_source_status: mmsAvailability.status,
+  };
   const sessions = allSessions.filter(s => { const t = Date.parse(startOf(s) || ""); return Number.isFinite(t) && t >= day.start && t < day.end; });
-  if (!sessions.length) return emptyContract(day.date);
+  if (!sessions.length) return emptyContract(day.date, availability);
 
   const sessionIds = sessions.map(s => clean(field(s, F.session.id), 180)).filter(Boolean);
   const jobIds = sessions.map(s => clean(field(s, F.session.jobId), 180)).filter(Boolean);
   const clientIds = sessions.map(s => link(field(s, F.session.client))).filter(Boolean);
-  const modelIds = sessions.map(s => link(field(s, F.session.model))).filter(Boolean);
-  const [jobs, payments, calLinks, clients, models] = await Promise.all([
+  const [jobs, payments, calLinks, clients] = await Promise.all([
     jobIds.length ? list(env, TABLE.jobs, Object.values(F.job), valuesFormula("job_id", jobIds), 250) : [],
     sessionIds.length ? list(env, TABLE.payments, Object.values(F.payment), valuesFormula("session_id", sessionIds), 500) : [],
     list(env, TABLE.cal, Object.values(F.cal), `OR(${valuesFormula("Session ID", sessionIds)},${valuesFormula("Job ID", jobIds)})`, 400),
     clientIds.length ? list(env, TABLE.clients, Object.values(F.client), idsFormula(clientIds), 150) : [],
-    modelIds.length ? list(env, TABLE.models, Object.values(F.model), idsFormula(modelIds), 150) : [],
   ]);
   const byRecord = records => new Map(records.map(r => [r.id, r]));
-  const clientsById = byRecord(clients), modelsById = byRecord(models);
+  const clientsById = byRecord(clients), modelsById = byRecord(allModels);
   const jobsById = new Map(jobs.map(j => [clean(field(j, F.job.id), 180), j]));
   const paymentsBySession = new Map();
   for (const p of payments) { const key = clean(field(p, F.payment.sessionId), 180); if (!paymentsBySession.has(key)) paymentsBySession.set(key, []); paymentsBySession.get(key).push(p); }
@@ -186,12 +236,27 @@ export async function readAdminCalendar(env, dateText = "") {
     };
   }).sort((a,b)=>(Date.parse(a.start_at||0)||0)-(Date.parse(b.start_at||0)||0));
   overlap(items);
-  return contract(day.date, items);
+  return contract(day.date, items, availability);
 }
-function contract(date, items) {
-  return { ok:true, schema:"mmd.admin.calendar.v1", date, timezone:"Asia/Bangkok", authority:{session:"events-worker",payment:"payments-worker",backoffice:"airtable",scheduling:"cal.com",surface:"admin-worker"}, metrics:{sessions:items.length,holds:items.filter(x=>x.internal_hold).length,conflicts:items.filter(x=>x.conflict).length,pricing_review:items.filter(x=>x.pricing.review_required).length,cal_linked:items.filter(x=>x.cal.booking_uid).length}, items };
+function contract(date, items, availability = { models: [], therapists: [], therapist_source_status: "unavailable" }) {
+  return {
+    ok:true,
+    schema:"mmd.admin.calendar.v1",
+    date,
+    timezone:"Asia/Bangkok",
+    authority:{session:"events-worker",payment:"payments-worker",backoffice:"airtable",scheduling:"cal.com",surface:"admin-worker"},
+    metrics:{
+      sessions:items.length,
+      holds:items.filter(x=>x.internal_hold).length,
+      conflicts:items.filter(x=>x.conflict).length,
+      pricing_review:items.filter(x=>x.pricing.review_required).length,
+      cal_linked:items.filter(x=>x.cal.booking_uid).length,
+    },
+    availability,
+    items,
+  };
 }
-function emptyContract(date) { return contract(date, []); }
+function emptyContract(date, availability) { return contract(date, [], availability); }
 
 export function calendarJsonResponse(payload, status = 200) {
   return Response.json(payload, { status, headers:{"cache-control":"no-store, private","content-type":"application/json; charset=utf-8","x-mmd-calendar-contract":"v1"} });

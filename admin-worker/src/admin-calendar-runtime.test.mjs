@@ -9,7 +9,7 @@ const f = {
   sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
   jobId:'fldwreJwlz8sWd6GM', jobModel:'fldscPK15ejBw0BAH', jobClient:'fldlPdR0pmynCY6fW', jobBudget:'fldSspHLxJPQOg7wA',
   paySid:'fld2wdhBvc8xrV6y5', payRef:'fldOO6SY49iDw8VBZ', payAmount:'fldvCSwrUW8OMAooS', payVerify:'fldJ7a0Ube9F0bmRy', payStage:'fldrr9g8ZZjqAbdKQ', payStatus:'fldEJ1hmm7KwWuI6q',
-  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q',
+  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelAvailability:'fld6RuUDmGcGDc34i',
   calUid:'fld42rRY3ufGeXCcf', calSid:'fldd0STLRxOGIKXPn', calJid:'fldzvGB5u7t55kwUQ', calStatus:'fld449t1h6s7jbcnf', calTrigger:'fldNhk22zLTvR9Y4C', calEvent:'fldfC6D0RXyogXcMG'
 };
 
@@ -21,7 +21,7 @@ function fixture({ verified=false, duration=3, crossMidnight=false }={}) {
     [IDS.jobs]:[{id:'recJob',fields:{[f.jobId]:'JOB-17',[f.jobClient]:['recClient'],[f.jobModel]:['recModel'],[f.jobBudget]:20000}}],
     [IDS.payments]:[{id:'recPay',fields:{[f.paySid]:'SES-17',[f.payRef]:'PAY-17',[f.payAmount]:10000,[f.payVerify]:verified?'official_verified':'pending_review',[f.payStage]:'deposit',[f.payStatus]:verified?'paid':'pending'}}],
     [IDS.clients]:[{id:'recClient',fields:{[f.clientName]:'คุณเอ็ม'}}],
-    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17'}}],
+    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17',[f.modelAvailability]:'Available'}}],
     [IDS.cal]:[{id:'recCal',fields:{[f.calUid]:'cal-uid-real-17',[f.calSid]:'SES-17',[f.calJid]:'JOB-17',[f.calStatus]:'linked',[f.calTrigger]:'BOOKING_CREATED',[f.calEvent]:'2026-09-14T02:00:00Z'}}],
   };
 }
@@ -50,6 +50,40 @@ test('calendar joins client job model deposit and real Cal booking UID', async()
     assert.equal(row.deposit.authority,'payments-worker');
     assert.equal(row.cal.booking_uid,'cal-uid-real-17');
     assert.equal(row.internal_hold,true);
+  } finally { restore(); }
+});
+
+test('calendar returns live model and MMS therapist availability even on an empty day', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      MMS_WORKER:{
+        async fetch(request){
+          assert.equal(new URL(request.url).hostname,'mms.internal');
+          return Response.json({
+            ok:true,
+            therapists:[{
+              therapist_id:'mmst_test1234567890123456',
+              display_name:'Therapist A',
+              availability_status:'Limited',
+              status:'Active',
+              matching_enabled:true,
+              internal_notes:'must-not-project',
+            }],
+          });
+        },
+      },
+    },'2026-09-19');
+    assert.equal(out.items.length,0);
+    assert.equal(out.availability.models[0].name,'Model A');
+    assert.equal(out.availability.models[0].availability_status,'Available');
+    assert.equal(out.availability.therapists[0].display_name,'Therapist A');
+    assert.equal(out.availability.therapists[0].availability_status,'Limited');
+    assert.equal(out.availability.therapist_source_status,'ok');
+    assert.doesNotMatch(JSON.stringify(out.availability),/must-not-project/);
   } finally { restore(); }
 });
 
