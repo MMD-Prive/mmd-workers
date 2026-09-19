@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.MMS_TELEGRAM_BOT_TOKEN || secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       STANDARD_GROUP_ID: "-1002073919780"
       PREMIUM_GROUP_ID: "-1001668261779"
       HYPE_BOT_USERNAME: "mmdprivebot"
@@ -34,6 +34,64 @@ jobs:
 
           bot_token="${TELEGRAM_BOT_TOKEN:-}"
           test -n "$bot_token"
+
+          # Fail before any group post unless this is the canonical HYPE bot.
+          getme_response="$RUNNER_TEMP/hype-getme.json"
+          getme_code="$(curl -sS -o "$getme_response" -w '%{http_code}'             "https://api.telegram.org/bot${bot_token}/getMe")"
+          if [ "$getme_code" != "200" ]; then
+            node - "$getme_response" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          console.error(`Telegram getMe failed: ${body.description || "unknown error"}`);
+          NODE
+            exit 1
+          fi
+          HYPE_BOT_USERNAME="$HYPE_BOT_USERNAME" node - "$getme_response" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          const expected = String(process.env.HYPE_BOT_USERNAME || "").replace(/^@/, "").toLowerCase();
+          const actual = String(body?.result?.username || "").toLowerCase();
+          if (body.ok !== true || !actual || actual !== expected) {
+            throw new Error(`wrong Telegram bot: expected @${expected}, got @${actual || "unknown"}`);
+          }
+          console.log(`HYPE bot verified: @${actual}`);
+          NODE
+
+          check_chat() {
+            group_id="$1"
+            group_label="$2"
+            response="$RUNNER_TEMP/hype-getchat-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
+            payload="$RUNNER_TEMP/hype-getchat-payload-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
+            GROUP_ID="$group_id" node <<'NODE'
+          const fs = require("node:fs");
+          fs.writeFileSync(
+            process.env.RUNNER_TEMP + "/hype-getchat-payload-" + (process.env.GROUP_ID === "-1002073919780" ? "standard" : "premium") + ".json",
+            JSON.stringify({ chat_id: process.env.GROUP_ID }),
+          );
+          NODE
+            code="$(curl -sS -o "$response" -w '%{http_code}'               -X POST "https://api.telegram.org/bot${bot_token}/getChat"               -H 'Content-Type: application/json'               --data-binary "@$payload")"
+            if [ "$code" != "200" ]; then
+              node - "$response" "$group_label" <<'NODE'
+          const fs = require("node:fs");
+          const [file, label] = process.argv.slice(2);
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          console.error(`${label} getChat failed: ${body.description || "unknown error"}`);
+          NODE
+              exit 1
+            fi
+            node - "$response" "$group_label" <<'NODE'
+          const fs = require("node:fs");
+          const [file, label] = process.argv.slice(2);
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          if (body.ok !== true || !body.result?.id) throw new Error(`${label} getChat invalid`);
+          console.log(`${label} chat verified: ${body.result.id}`);
+          NODE
+          }
+
+          check_chat "$STANDARD_GROUP_ID" "STANDARD"
+          check_chat "$PREMIUM_GROUP_ID" "PREMIUM"
 
           send_intro() {
             group_id="$1"
@@ -97,7 +155,15 @@ jobs:
             response="$RUNNER_TEMP/hype-intro-response-$(printf '%s' "$group_label" | tr '[:upper:]' '[:lower:]').json"
             code="$(curl -sS -o "$response" -w '%{http_code}'               -X POST "https://api.telegram.org/bot${bot_token}/sendMessage"               -H 'Content-Type: application/json'               --data-binary "@$payload")"
 
-            test "$code" = "200"
+            if [ "$code" != "200" ]; then
+              node - "$response" "$group_label" <<'NODE'
+          const fs = require("node:fs");
+          const [file, label] = process.argv.slice(2);
+          const body = JSON.parse(fs.readFileSync(file, "utf8"));
+          console.error(`${label} sendMessage failed: ${body.description || "unknown error"}`);
+          NODE
+              exit 1
+            fi
             node - "$response" "$group_label" <<'NODE'
           const fs = require("node:fs");
           const [file, label] = process.argv.slice(2);
