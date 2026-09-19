@@ -140,7 +140,9 @@ async function notifyManualHandoff(env, event, intent) {
         `เหตุผล: ${intent}`,
         `Source: ${sourceType}`,
         `Message ref: ${messageId}`,
-        "เปิด LINE Official Account Manager เพื่อตอบลูกค้าครับ",
+        intent === "manual_recovery"
+          ? "Recovery นี้ให้คง context เดิมและใช้ HYPE/MMD Case lifecycle + canonical outcome taxonomy; ห้ามสรุป resolved/refund/rebooking จากข้อความอย่างเดียว"
+          : "เปิด LINE Official Account Manager เพื่อตอบลูกค้าครับ",
       ].join("\n"),
       disable_web_page_preview: true,
     }),
