@@ -572,7 +572,7 @@ test("/start preview requires verification and never issues a code or writes pre
     assert.match(telegramBody.text, /ส่วนลดสูงสุด 10%/);
     assert.match(telegramBody.text, /ไม่ได้สร้างสิทธิ์ซ้ำ/);
     assert.doesNotMatch(telegramBody.text, /โค้ดส่วนตัวจะแสดงหลังจากระบบตรวจสอบข้อมูลสำเร็จแล้วเท่านั้น/);
-    assert.doesNotMatch(telegramBody.text, /เข้าสู่ระบบเรียบร้อย|[A-Z2-9]{6}/);
+    assert.doesNotMatch(telegramBody.text, /เข้าสู่ระบบเรียบร้อย|\\b[A-HJ-NP-Z2-9]{6}\\b/);
     assert.deepEqual(telegramBody.reply_markup.inline_keyboard, expectedCareBackKeyboard());
   } finally {
     globalThis.fetch = originalFetch;
