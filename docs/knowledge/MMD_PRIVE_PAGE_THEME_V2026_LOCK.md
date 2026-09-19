@@ -2,7 +2,7 @@
 
 Status: Active memory lock
 Source: `mmd-prive-page-theme-migration-v2026.md`
-Updated: 2026-08-04
+Updated: 2026-09-19
 Scope: Webflow public pages, public acquisition pages, profiles, hall, public access, membership, trust pages, and customer-facing confirmation pages.
 
 ## 1. Core direction
@@ -235,6 +235,30 @@ components/webflow/sigil-trust-footer.html
 - no visible internal/SIGIL language
 
 The page may use the `HEro Sport.webp` asset for the hero when the older hero crop causes head cut-off.
+
+## 10A. Hall route lock — 2026-09-19
+
+Canonical public Hall page: `/hall` in Webflow.
+
+Current full-code root:
+
+```text
+#mmd-hall-v5
+```
+
+Hall follows the public white-world theme, not SIGIL. The page must keep:
+
+- primary UI font: `LINE Seed Sans TH`, then `Noto Sans Thai`
+- light cards: ink headings `#18171b`, body copy around `#514943`
+- light-card micro labels: restrained bronze `#8c6330`
+- dark/model/photo cards: headings and action text in warm ivory `#fffdfa`
+- dark-card body copy no weaker than approximately 90% warm ivory
+- wine panels: body copy no weaker than approximately 90% warm ivory
+- gold/bronze is an accent only; never use low-contrast gold for body copy
+- a final scoped contrast-safety layer after the page CSS
+- mobile horizontal cards remain readable without relying on inherited Webflow text colors
+
+Runtime note: Hall query-carry JS must target the live root `mmd-hall-v5` so campaign/token parameters are preserved across Hall links. Hall remains presentation/navigation only and is not membership, payment, booking, or entitlement authority.
 
 ## 11. Final rule
 
