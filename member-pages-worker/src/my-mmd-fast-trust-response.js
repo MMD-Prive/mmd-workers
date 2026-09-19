@@ -68,6 +68,11 @@ export async function resolveFastTrustEvidenceForLine(env = {}, lineUserId = "")
       : await fetch(url.toString(), init);
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || !Array.isArray(payload.records)) {
+      console.warn({
+        event: "fast_trust_lookup_error",
+        component: "member-pages-worker",
+        failure_class: `airtable_${response.status || "malformed"}`,
+      });
       return { state: "unavailable", reason: `fast_trust_airtable_${response.status || "malformed"}`, knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
     }
 
@@ -79,6 +84,20 @@ export async function resolveFastTrustEvidenceForLine(env = {}, lineUserId = "")
       return tier ? [{ tier, renamedName }] : [];
     });
     if (!candidates.length) {
+      if (knownCanonicalClient) {
+        console.info({
+          event: "protected_member_recovery",
+          component: "member-pages-worker",
+          recovery_reason: "known_canonical_client_history_pending",
+        });
+      } else {
+        console.info({
+          event: "guest_negative_lookup_confirmed",
+          component: "member-pages-worker",
+          canonical_client: false,
+          protected_marker: false,
+        });
+      }
       return {
         state: "resolved",
         reason: knownCanonicalClient ? "known_client_no_protected_marker" : "no_protected_marker",
@@ -105,7 +124,12 @@ export async function resolveFastTrustEvidenceForLine(env = {}, lineUserId = "")
         historyState: "recovery_pending",
       },
     };
-  } catch {
+  } catch (error) {
+    console.warn({
+      event: "fast_trust_lookup_error",
+      component: "member-pages-worker",
+      failure_class: String(error?.name || "lookup_unavailable").toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 80),
+    });
     return { state: "unavailable", reason: "fast_trust_lookup_unavailable", knownCanonicalClient: false, fastTrust: null, recordCount: 0 };
   } finally {
     clearTimeout(timeout);
@@ -140,10 +164,22 @@ export async function applyMyMmdFastTrustResponse(request, response, env = {}) {
   const evidence = await resolveFastTrustEvidenceForLine(env, session.lineUserId);
   const unproven = isUnprovenMemberPayload(path, payload);
   if (evidence.state === "unavailable" && unproven) {
+    console.info({
+      event: "protected_member_recovery",
+      component: "member-pages-worker",
+      recovery_reason: "fast_trust_source_unavailable",
+      route: path,
+    });
     return pendingResolutionResponse(response, path, payload, "fast_trust_source_unavailable");
   }
   if (!evidence.fastTrust?.tier) {
     if (evidence.knownCanonicalClient && unproven) {
+      console.info({
+        event: "protected_member_recovery",
+        component: "member-pages-worker",
+        recovery_reason: "known_client_resolution_pending",
+        route: path,
+      });
       return pendingResolutionResponse(response, path, payload, "known_client_resolution_pending");
     }
     return response;
