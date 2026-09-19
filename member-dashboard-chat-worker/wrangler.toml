@@ -119,6 +119,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/dashboard*"
 zone_name = "mmdbkk.com"
 
+# Member-facing payment status/history BFF. The browser reaches only this
+# same-origin route; the front gate delegates to member-pages-worker and never
+# exposes admin payment review or takes over payments-worker money authority.
+[[routes]]
+pattern = "mmdbkk.com/v1/member/payments*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/member/payments*"
+zone_name = "mmdbkk.com"
+
 # My MMD behavior/data BFF. The Lovable app is presentation only; every live
 # member read remains same-origin and delegates through member-pages-worker so
 # points, membership, entitlement and coupon truth never move into the browser.
