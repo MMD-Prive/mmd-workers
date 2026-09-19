@@ -12,7 +12,7 @@ import {
   recoveryOutcomeAllowed,
   recoveryOutcomeCodesForDomain,
   recoveryOutcomeLabel,
-} from "../shared/recovery-outcome-taxonomy-v1.mjs";
+} from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
