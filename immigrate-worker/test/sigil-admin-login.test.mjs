@@ -12,7 +12,7 @@ const outfile = join(tmp, "worker.mjs");
 const workerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 await build({
-  entryPoints: [join(workerRoot, "src/index.ts")],
+  entryPoints: [join(workerRoot, "src/canonical-admin-login-wrapper.ts")],
   outfile,
   bundle: true,
   format: "esm",
@@ -52,8 +52,8 @@ globalThis.fetch = async (input, init = {}) => {
   });
 };
 
-async function call(path, init) {
-  return worker.fetch(new Request(`https://mmdbkk.com${path}`, init), env);
+async function call(path, init, host = "mmdbkk.com") {
+  return worker.fetch(new Request(`https://${host}${path}`, init), env);
 }
 
 try {
@@ -79,14 +79,14 @@ try {
 
   {
     const response = await call("/member/login");
-    assert.notEqual(response.status, 302);
-    assert.notEqual(response.headers.get("location"), "/sigil/admin/login");
+    assert.notEqual(response.status, 308);
+    assert.notEqual(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login");
   }
 
   {
     const response = await call("/pay/membership");
-    assert.notEqual(response.status, 302);
-    assert.notEqual(response.headers.get("location"), "/sigil/admin/login");
+    assert.notEqual(response.status, 308);
+    assert.notEqual(response.headers.get("location"), "https://mmdbkk.com/internal/admin/login");
   }
 
   {
