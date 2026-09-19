@@ -9,7 +9,6 @@ const DEFAULT_BOT_USERNAME = "mmdprivebot";
 const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
-const HYPE_MEMBER_GROUP_INTRO_CONFIRMATION = "INTRODUCE_HYPE_MEMBER_GROUPS_V1";
 
 export default {
   async fetch(req, env) {
@@ -72,20 +71,6 @@ export default {
           }, 400);
         }
         const result = await smokeTelegramTopics(body, env);
-        return json(result, result.ok ? 200 : 502);
-      }
-
-      if (isHypeMemberGroupIntroPath(path) && req.method === "POST") {
-        requireHypeMemberGroupIntroToken(req, env);
-        const body = (await safeJson(req)) || {};
-        if (clean(body.confirm) !== HYPE_MEMBER_GROUP_INTRO_CONFIRMATION) {
-          return json({
-            ok: false,
-            error: "hype_member_group_intro_confirmation_required",
-            required_confirmation: HYPE_MEMBER_GROUP_INTRO_CONFIRMATION,
-          }, 400);
-        }
-        const result = await introduceHypeMemberGroups(env);
         return json(result, result.ok ? 200 : 502);
       }
 
@@ -161,209 +146,6 @@ async function smokeTelegramTopics(body, env) {
     failed: results.filter((item) => !item.ok).length,
     results,
   };
-}
-
-async function introduceHypeMemberGroups(env) {
-  const preflight = await preflightHypeMemberGroups(env);
-  if (!preflight.ok) return preflight;
-
-  const targets = [
-    { key: "premium", label: "PREMIUM", chat_id: preflight.groups.premium.chat_id },
-    { key: "standard", label: "STANDARD", chat_id: preflight.groups.standard.chat_id },
-  ];
-  const sent = [];
-
-  for (const target of targets) {
-    const telegram = await sendTelegramMessage({
-      chat_id: target.chat_id,
-      text: hypeMemberIntroText(target.label),
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-      reply_markup: hypeMemberIntroButtons(env),
-    }, env);
-
-    if (telegram?.ok !== true || !telegram?.result?.message_id) {
-      const rollback = [];
-      for (const prior of [...sent].reverse()) {
-        rollback.push({
-          group: prior.group,
-          ...(await deleteTelegramMessage({
-            chat_id: prior.chat_id,
-            message_id: prior.message_id,
-          }, env)),
-        });
-      }
-      return {
-        ok: false,
-        error: "hype_member_group_intro_send_failed",
-        failed_group: target.key,
-        telegram: sanitizeTelegramFailure(telegram),
-        sent,
-        rollback,
-        preflight: preflight.summary,
-      };
-    }
-
-    sent.push({
-      group: target.key,
-      chat_id: target.chat_id,
-      message_id: Number(telegram.result.message_id),
-    });
-  }
-
-  return {
-    ok: true,
-    mode: "hype_member_group_intro_v1",
-    bot_username: preflight.bot.username,
-    sent,
-    preflight: preflight.summary,
-  };
-}
-
-async function preflightHypeMemberGroups(env) {
-  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  const expectedUsername = botUsername(env).replace(/^@/, "").toLowerCase();
-  const standardId = clean(env.TELEGRAM_STANDARD_GROUP_ID);
-  const premiumId = clean(env.TELEGRAM_PREMIUM_GROUP_ID);
-  if (!botToken) return { ok: false, error: "missing_telegram_bot_token" };
-  if (!standardId || !premiumId) return { ok: false, error: "member_group_ids_not_configured" };
-
-  const getMe = await callTelegramBotApi("getMe", null, env);
-  const actualUsername = clean(getMe?.result?.username).replace(/^@/, "").toLowerCase();
-  const botId = Number(getMe?.result?.id);
-  if (getMe?.ok !== true || !Number.isInteger(botId) || actualUsername !== expectedUsername) {
-    return {
-      ok: false,
-      error: "hype_bot_identity_mismatch",
-      expected_username: expectedUsername,
-      actual_username: actualUsername || null,
-    };
-  }
-
-  const groups = {};
-  for (const [key, chatId] of [["premium", premiumId], ["standard", standardId]]) {
-    const chat = await callTelegramBotApi("getChat", { chat_id: chatId }, env);
-    if (chat?.ok !== true || clean(chat?.result?.id) !== chatId || !["group", "supergroup"].includes(clean(chat?.result?.type))) {
-      return {
-        ok: false,
-        error: "hype_member_group_preflight_failed",
-        failed_group: key,
-        stage: "getChat",
-        telegram: sanitizeTelegramFailure(chat),
-      };
-    }
-
-    const member = await callTelegramBotApi("getChatMember", { chat_id: chatId, user_id: botId }, env);
-    const membership = clean(member?.result?.status).toLowerCase();
-    if (member?.ok !== true || !["creator", "administrator", "member"].includes(membership)) {
-      return {
-        ok: false,
-        error: "hype_member_group_preflight_failed",
-        failed_group: key,
-        stage: "getChatMember",
-        membership: membership || null,
-        telegram: sanitizeTelegramFailure(member),
-      };
-    }
-
-    groups[key] = {
-      chat_id: chatId,
-      type: clean(chat.result.type),
-      membership,
-    };
-  }
-
-  return {
-    ok: true,
-    bot: { id: botId, username: actualUsername },
-    groups,
-    summary: {
-      bot_verified: true,
-      premium_ready: true,
-      standard_ready: true,
-    },
-  };
-}
-
-async function callTelegramBotApi(method, payload, env) {
-  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  if (!botToken) return { ok: false, error: { description: "missing_telegram_bot_token" } };
-
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, payload
-    ? {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }
-    : { method: "GET" });
-
-  const data = await response.json().catch(() => null);
-  if (!response.ok || data?.ok !== true) {
-    return {
-      ok: false,
-      status: response.status,
-      error: data || { description: "telegram_api_error" },
-    };
-  }
-  return { ok: true, result: data.result };
-}
-
-function sanitizeTelegramFailure(value) {
-  return {
-    ok: value?.ok === true,
-    status: Number(value?.status) || null,
-    description: clean(value?.error?.description || value?.reason || value?.error || "").slice(0, 180) || null,
-  };
-}
-
-function hypeMemberIntroText(groupLabel) {
-  return [
-    "👋 <b>สวัสดีครับ ผม HYPE</b>",
-    `ผู้ช่วย Telegram ของ MMD Privé ประจำห้อง <b>${escapeHtml(groupLabel)}</b>`,
-    "",
-    "ตั้งแต่วันนี้ ถ้าต้องการเช็กทางไป หรือให้ผมช่วยดูว่าต้องทำอะไรต่อ เรียกผมได้เลยครับ",
-    "",
-    "<b>ใช้ในกลุ่มนี้ได้</b>",
-    "<b>/commands</b> — ดูคำสั่งทั้งหมดที่ผมช่วยได้",
-    "<b>/points</b> — ไปที่ MY MMD · Points",
-    "<b>/coupons</b> — เปิด Coupon Wallet",
-    "<b>/careback</b> — ดู 6 YEARS CARE BACK · Phase 2",
-    "",
-    "<b>เรื่องส่วนตัว</b>",
-    "<b>/status</b> — สถานะสมาชิก / งาน / การชำระ",
-    "<b>/next</b> — ตอนนี้ต้องทำอะไรต่อ",
-    "<b>/booking</b> — progress งานและการจอง",
-    "",
-    "ถ้าพิมพ์คำสั่งส่วนตัวในกลุ่ม ผมจะไม่เปิดข้อมูลตรงนี้ครับ ผมจะพาไปคุยกันในแชตส่วนตัวแทน 🔒",
-    "",
-    "ผมอ่านจากระบบ MMD ที่ยืนยันได้เท่านั้น ไม่เดาสถานะ และไม่เปลี่ยนสิทธิ์หรือยืนยันงานแทน MMD/Per ครับ",
-    "",
-    "เริ่มเรียกผมได้เลยครับ → <b>/commands</b>",
-  ].join("\n");
-}
-
-function hypeMemberIntroButtons(env) {
-  return {
-    inline_keyboard: [
-      [{ text: "คุยกับ HYPE แบบส่วนตัว", url: `https://t.me/${encodeURIComponent(botUsername(env))}` }],
-      [
-        { text: "MY MMD", url: publicUrl(env, "/my-mmd/") },
-        { text: "Booking", url: publicUrl(env, "/booking") },
-      ],
-    ],
-  };
-}
-
-function requireHypeMemberGroupIntroToken(req, env) {
-  const expected = clean(env.HYPE_MEMBER_GROUP_INTRO_TOKEN);
-  if (!expected) {
-    throw new HttpError(503, { ok: false, error: "hype_member_group_intro_disabled" });
-  }
-  const header = clean(req.headers.get("Authorization"));
-  const token = /^Bearer\s+(.+)$/i.exec(header)?.[1] || clean(req.headers.get("X-HYPE-Intro-Token"));
-  if (!token || !timingSafeEqual(token, expected)) {
-    throw new HttpError(401, { ok: false, error: "unauthorized" });
-  }
 }
 
 async function handleTelegramWebhook(update, env) {
@@ -1182,11 +964,6 @@ function isInternalSendPath(path) {
 
 function isTopicSmokePath(path) {
   return path === "/telegram/internal/topics/smoke" || path === "/v1/internal/topics/smoke";
-}
-
-function isHypeMemberGroupIntroPath(path) {
-  return path === "/telegram/internal/member-groups/introduce-hype"
-    || path === "/v1/internal/member-groups/introduce-hype";
 }
 
 function isComplaintInternalPath(path) {
