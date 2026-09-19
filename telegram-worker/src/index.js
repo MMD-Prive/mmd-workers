@@ -2074,26 +2074,55 @@ async function markHypeHandoffSent(binding, handoffId) {
 function hypeHandoffButtons(env, target, result = {}) {
   const rows = [];
   const correlation = result?.recovery_correlation || {};
+  const domain = clean(correlation.domain).toLowerCase();
   const caseRef = clean(result?.handoff_id || correlation.case_ref);
-  if (
-    correlation.state === "ambiguous"
+  const pickerReady = correlation.state === "ambiguous"
     && Array.isArray(correlation.options)
-    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef)
-  ) {
+    && /^HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8}$/i.test(caseRef);
+
+  if (pickerReady && domain === "mmd_shop") {
     for (const [index, option] of correlation.options.slice(0, 5).entries()) {
       const summary = clean(option.item_summary || "MMD Shop Order").slice(0, 26);
       const rawAmount = option.total_thb;
       const amount = rawAmount === null || rawAmount === undefined || rawAmount === ""
         ? null
         : Number(rawAmount);
-      const amountText = Number.isFinite(amount) ? ` · ฿${amount.toLocaleString("en-US")}` : "";
-      const dateText = clean(option.order_date) ? `${formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("")} · ` : "";
+      const amountText = Number.isFinite(amount) ? " · ฿" + amount.toLocaleString("en-US") : "";
+      const dateText = clean(option.order_date)
+        ? formatBangkokDateTime(option.order_date).split(" ").slice(0, 1).join("") + " · "
+        : "";
       rows.push([{
-        text: `${index + 1}. ${dateText}${summary}${amountText}`.slice(0, 64),
-        callback_data: `hrop|${caseRef}|${index}`,
+        text: (index + 1 + ". " + dateText + summary + amountText).slice(0, 64),
+        callback_data: "hrop|" + caseRef + "|" + index,
       }]);
     }
   }
+
+  if (pickerReady && domain === "booking") {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const when = [clean(option.preferred_date), clean(option.preferred_time)].filter(Boolean).join(" ");
+      const summary = clean(option.summary || option.selected_model_name || "Booking Request").slice(0, 30);
+      const state = clean(option.request_status);
+      rows.push([{
+        text: (index + 1 + ". " + (when ? when + " · " : "") + summary + (state ? " · " + state : "")).slice(0, 64),
+        callback_data: "hrbp|" + caseRef + "|" + index,
+      }]);
+    }
+  }
+
+  if (pickerReady && domain === "mms") {
+    for (const [index, option] of correlation.options.slice(0, 5).entries()) {
+      const when = [clean(option.service_date), clean(option.service_time)].filter(Boolean).join(" ");
+      const zone = clean(option.zone);
+      const skills = Array.isArray(option.skills) ? option.skills.map(clean).filter(Boolean).slice(0, 2).join(", ") : "";
+      const summary = [zone, skills].filter(Boolean).join(" · ") || "MMS Pre-booking";
+      rows.push([{
+        text: (index + 1 + ". " + (when ? when + " · " : "") + summary).slice(0, 64),
+        callback_data: "hrmp|" + caseRef + "|" + index,
+      }]);
+    }
+  }
+
   rows.push([{ text: target === "kenji" ? "คุยต่อกับ Kenji ใน LINE" : "ติดต่อ MMD ทาง LINE", url: "https://lin.ee/xRqsALs" }]);
   rows.push([{ text: "MY MMD", url: publicUrl(env, "/my-mmd/") }]);
   return { inline_keyboard: rows };
