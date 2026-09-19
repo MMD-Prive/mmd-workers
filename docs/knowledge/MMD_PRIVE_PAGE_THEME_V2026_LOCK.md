@@ -240,10 +240,10 @@ The page may use the `HEro Sport.webp` asset for the hero when the older hero cr
 
 Canonical public Hall page: `/hall` in Webflow.
 
-Current full-code root:
+Current live Webflow root:
 
 ```text
-#mmd-hall-v5
+#mmd-hall-v6
 ```
 
 Hall follows the public white-world theme, not SIGIL. The page must keep:
@@ -258,7 +258,16 @@ Hall follows the public white-world theme, not SIGIL. The page must keep:
 - a final scoped contrast-safety layer after the page CSS
 - mobile horizontal cards remain readable without relying on inherited Webflow text colors
 
-Runtime note: Hall query-carry JS must target the live root `mmd-hall-v5` so campaign/token parameters are preserved across Hall links. Hall remains presentation/navigation only and is not membership, payment, booking, or entitlement authority.
+Runtime note: Hall query-carry JS must target the live root `mmd-hall-v6` so campaign/token parameters are preserved across Hall links. Hall remains presentation/navigation only and is not membership, payment, booking, or entitlement authority.
+
+Webflow V6 card roles that require explicit contrast protection:
+
+- `.mh6-card-title`: warm ivory `#fffdf8` plus explicit `-webkit-text-fill-color`
+- `.mh6-card-copy-light`: warm ivory at approximately 94%
+- `.mh6-small`: brighter restrained gold `#f0c77e`
+- `.mh6-cta`: warm ivory
+- `.mh6-card-sage` and `.mh6-card-member`: stronger lower image veil so photography never competes with copy
+- final V6 safety layer must neutralize inherited gradient/background text styles
 
 ## 11. Final rule
 
