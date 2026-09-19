@@ -102,4 +102,9 @@ jobs:
           console.log(`PREVIEW intro message_id=${body.message_id}`);
           console.log(`bot=@${body.bot_username}`);
           console.log(`chat_id=${body.chat_id}`);
+          console.log(`chat_type=${body.chat_type || "unknown"}`);
+          console.log(`linked_group_id=${body.linked_group_id || "none"}`);
+          console.log(`linked_group_ready=${body.linked_group_ready === true}`);
+          if (body.linked_group_type) console.log(`linked_group_type=${body.linked_group_type}`);
+          if (body.linked_group_membership) console.log(`linked_group_membership=${body.linked_group_membership}`);
           NODE
