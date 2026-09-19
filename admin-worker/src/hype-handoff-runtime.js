@@ -2081,6 +2081,17 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
 
   const correlation = read.body.correlation || {};
   const candidateOrderId = clean(correlation.candidate_order_id, 180);
+  const candidateIds = new Set(
+    (Array.isArray(correlation.candidate_order_ids) ? correlation.candidate_order_ids : [])
+      .map((item) => clean(item, 180))
+      .filter(Boolean),
+  );
+  const options = (Array.isArray(read.body.orders) ? read.body.orders : [])
+    .filter((order) => candidateIds.has(clean(order?.order_id, 180)))
+    .map(recoveryOrderOptionFromOrder)
+    .filter(Boolean)
+    .slice(0, 5);
+
   if (correlation.auto_correlation_allowed !== true || !candidateOrderId) {
     return {
       domain: "mmd_shop",
@@ -2088,6 +2099,9 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
       correlated: false,
       candidate_count: Number(correlation.candidate_count) || 0,
       method: clean(correlation.method, 120) || "none",
+      options,
+      source_authority: clean(read.body.authority, 160) || "member-pages-worker",
+      live_truth_refresh_required: true,
     };
   }
 
@@ -2117,6 +2131,7 @@ async function buildShopRecoveryCorrelation(env, telegramUserId, customerMessage
     tracking_number: clean(order.fulfillment?.tracking_number, 220) || null,
     total_thb: nullableNonNegative(order.total_thb),
     candidate_count: Number(correlation.candidate_count) || 1,
+    options,
     source_authority: clean(read.body.authority, 160) || "member-pages-worker",
     live_refresh_status: "fresh",
     refreshed_at: new Date().toISOString(),
