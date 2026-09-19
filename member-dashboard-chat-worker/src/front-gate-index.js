@@ -92,6 +92,7 @@ function injectStatusReturnBridge(html) {
 (() => {
   const target = "/member/my-mmd";
   const profileEndpoint = "/member/api/liff/profile";
+  const telegramBindEndpoint = "/member/api/liff/telegram-bind";
   const maxAttempts = 20;
   let attempts = 0;
   let finished = false;
@@ -136,6 +137,48 @@ function injectStatusReturnBridge(html) {
     actions.append(retry, back);
   }
 
+  async function offerTelegramThenContinue() {
+    setShellMessage("ยืนยัน LINE เรียบร้อยแล้วครับ · Telegram เป็นช่องทางติดต่อสำรอง (ไม่บังคับ)");
+    const actions = clearShellActions();
+    if (!actions) {
+      window.location.replace(target);
+      return;
+    }
+
+    let bind = null;
+    try {
+      const response = await fetch(telegramBindEndpoint, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "accept": "application/json", "content-type": "application/json" },
+        body: "{}"
+      });
+      bind = await response.json().catch(() => null);
+      if (response.ok && bind?.telegram_connected === true) {
+        window.location.replace(target);
+        return;
+      }
+    } catch (_) {}
+
+    if (bind?.connect_url) {
+      const connect = document.createElement("button");
+      connect.type = "button";
+      connect.textContent = "Connect Telegram";
+      connect.addEventListener("click", () => window.location.assign(bind.connect_url));
+      actions.append(connect);
+    }
+
+    const skip = document.createElement("button");
+    skip.type = "button";
+    skip.textContent = "เข้า MY MMD";
+    skip.addEventListener("click", () => window.location.replace(target));
+    actions.append(skip);
+
+    if (!bind?.connect_url) {
+      setShellMessage("ยืนยัน LINE เรียบร้อยแล้วครับ · เข้า MY MMD ได้เลย");
+    }
+  }
+
   async function verifyAndReturn() {
     if (finished) return;
     attempts += 1;
@@ -150,7 +193,7 @@ function injectStatusReturnBridge(html) {
       if (response.ok && payload && payload.ok === true) {
         finished = true;
         if (retryTimer) window.clearTimeout(retryTimer);
-        window.location.replace(target);
+        await offerTelegramThenContinue();
         return;
       }
     } catch (_) {}
@@ -180,7 +223,7 @@ async function maybeReturnStatusLiffToMyMmd(request, response) {
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("x-mmd-liff-return-bridge", "my-mmd-status-v1");
+  headers.set("x-mmd-liff-return-bridge", "my-mmd-status-telegram-v2");
   return new Response(rewritten, {
     status: response.status,
     statusText: response.statusText,
