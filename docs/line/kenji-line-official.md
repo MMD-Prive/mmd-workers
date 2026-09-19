@@ -9,6 +9,19 @@ Kenji LINE OA is the member-facing concierge entry for MMD Privé. It is not the
 - `/sigil/board`: internal system/admin/rules/control layer
 - LINE OA Kenji: member-facing conversational entry
 
+## MMD memory owner lock
+
+Kenji LINE is locked by current MMD memory to this runtime ownership:
+
+```text
+member-dashboard-chat-worker = current production LINE webhook owner / Kenji member-facing entry
+ai-worker = intelligence and answer support
+```
+
+`mmd-redirect-worker` may be used only as a route bridge/front gate when healthy. It is not the Kenji brain and must not be treated as the LINE answer owner.
+
+`immigrate-worker` is legacy/migration compatibility. Do not revive or retarget LINE OFC to `immigrate-worker` unless there is a separate, explicit migration decision.
+
 ## Production Webhook Route
 
 LINE Official uses the stable MMD domain route:
