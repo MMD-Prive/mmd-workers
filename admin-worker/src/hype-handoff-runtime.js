@@ -461,7 +461,7 @@ function normalizeTransactionMode(value) {
   return ["booking", "payment_proof", "renewal", "mms"].includes(mode) ? mode : "";
 }
 
-function normalizeTransactionFields(mode, value = {}) {
+export function normalizeTransactionFields(mode, value = {}) {
   const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   if (mode === "booking") {
     return compactFields({
@@ -502,7 +502,7 @@ function normalizeTransactionFields(mode, value = {}) {
   return {};
 }
 
-function mergeTransactionDraft(mode, previous = {}, incoming = {}) {
+export function mergeTransactionDraft(mode, previous = {}, incoming = {}) {
   const fields = normalizeTransactionFields(mode, { ...previous, ...incoming });
   const missing = transactionMissingFields(mode, fields);
   return { fields, missing_fields: missing, complete: missing.length === 0 };
@@ -533,7 +533,7 @@ function transactionMissingFields(mode, fields = {}) {
   return ["transaction_mode"];
 }
 
-function canonicalTransactionRoute(mode, context = {}) {
+export function canonicalTransactionRoute(mode, context = {}) {
   if (mode === "booking") return { href: "/booking", kind: "booking_entry" };
   if (mode === "renewal") {
     const level = token(context?.entitlement?.membership_level || context?.entitlement?.canonical_membership_level || context?.entitlement_live?.membership_level || context?.entitlement_live?.canonical_membership_level);
@@ -634,7 +634,7 @@ function buildTransactionContinuitySummary(mode, merged) {
   return parts.join(" ").slice(0, 1200);
 }
 
-function transactionGuardrails() {
+export function transactionGuardrails() {
   return {
     draft_only: true,
     business_truth_mutated: false,
