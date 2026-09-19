@@ -153,6 +153,8 @@ jobs:
           const token = clean(process.env.AIRTABLE_API_TOKEN);
           const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
           const telegramChatId = clean(process.env.MMS_TELEGRAM_CHAT_ID);
+          const lineChannelSecret = clean(process.env.LINE_CHANNEL_SECRET);
+          const lineChannelAccessToken = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN);
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
