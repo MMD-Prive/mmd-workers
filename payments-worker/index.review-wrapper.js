@@ -50,6 +50,7 @@ import {
 import {
   handleShopIntent,
   handleShopIntentExpiry,
+  handleShopRefundConfirm,
   enrichShopConfirmVerify,
   isShopIntentRequest,
   maybeHandleShopConfirmationDetails,
@@ -83,6 +84,9 @@ export default {
 
     const shopExpiryResponse = await handleShopIntentExpiry(request.clone(), env);
     if (shopExpiryResponse) return shopExpiryResponse;
+
+    const shopRefundResponse = await handleShopRefundConfirm(request.clone(), env);
+    if (shopRefundResponse) return shopRefundResponse;
 
     if (isShopIntentRequest(path, method)) {
       return handleShopIntent(request, env);
