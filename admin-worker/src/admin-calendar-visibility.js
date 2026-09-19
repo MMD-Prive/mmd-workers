@@ -8,6 +8,7 @@ const ROLES = new Set(['owner', 'admin', 'super_admin', 'superadmin']);
 const CAL_EVENT_TYPE_API_VERSION = '2024-06-14';
 const CAL_SYNC_HEALTH_URL = 'https://cal-sync.internal/health';
 const CAL_SYNC_PUBLIC_FALLBACK = 'https://cal-sync-worker.malemodel-bkk.workers.dev/health';
+const CALENDAR_PRESENTATION_URL = 'https://mmdprive.webflow.io/internal/admin/calendar';
 const clean = value => String(value ?? '').trim();
 const escapeHtml = value => clean(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -85,29 +86,71 @@ function serviceFetchTransport(env = {}) {
   return serviceBindingFetcher(env.CAL_SYNC_WORKER) ? 'service_binding' : 'public_fallback';
 }
 
-export async function calendarPageResponse(env = {}, selectedDate = '') {
-  const base = basePageResponse();
-  let html = await base.text();
+function calendarPresentationHeaders(request) {
+  const headers = new Headers();
+  if (request instanceof Request) {
+    for (const name of ['accept','accept-language','user-agent']) {
+      const value = request.headers.get(name);
+      if (value) headers.set(name, value);
+    }
+  }
+  return headers;
+}
+
+function injectCalendarConnectionState(html, connection) {
+  const state = `<script type="application/json" id="calendar-connection-state">${JSON.stringify(connection).replace(/</g,'\\u003c')}</script>`;
+  if (html.includes('id="calendar-connection-state"')) {
+    return html.replace(/<script type="application\/json" id="calendar-connection-state">[\\s\\S]*?<\\/script>/, state);
+  }
+  if (html.includes('</body>')) return html.replace('</body>', state + '</body>');
+  return html + state;
+}
+
+async function readCalendarPresentation(request) {
+  const response = await fetch(new Request(CALENDAR_PRESENTATION_URL, {
+    method:'GET',
+    headers:calendarPresentationHeaders(request),
+    redirect:'follow',
+  }));
+  if (!response.ok) throw new Error('calendar_presentation_unavailable');
+  const html = await response.text();
+  if (!html.includes('class="mcal') || !html.includes('__MMD_CALENDAR_WEBFLOW_V2__')) {
+    throw new Error('calendar_presentation_contract_changed');
+  }
+  return { html, headers:new Headers(response.headers) };
+}
+
+export async function calendarPageResponse(request, env = {}, selectedDate = '') {
   const connection = await inspectCalendarConnection(env);
-  const out = connection.outbound, incoming = connection.inbound;
-  const outboundText = out.api_verified ? 'Cal API: อ่าน MMD Internal Hold ได้แล้ว' : out.status === 'missing_cal_api_key'
-    ? 'ยังไม่มี CAL_API_KEY ใน admin-worker' : out.status === 'credential_rejected'
-      ? 'Cal ปฏิเสธ credential ของ admin-worker' : 'ยังยืนยันการอ่าน MMD Internal Hold จาก Cal API ไม่ได้';
-  const inboundText = !incoming.reachable ? 'ยังอ่านสถานะ cal-sync-worker ไม่ได้'
-    : !incoming.webhook_secret_configured ? 'Webhook ยังไม่มี secret สำหรับตรวจลายเซ็น'
-    : !incoming.mapping_ledger_configured ? 'Webhook พร้อมรับ แต่ Booking UID ledger ยังไม่พร้อม'
-    : 'Webhook และ Booking UID ledger พร้อม · ' + incoming.mode + ' · ' + incoming.transport;
-  const summary = out.api_verified && incoming.webhook_secret_configured && incoming.mapping_ledger_configured
-    ? 'Cal · การเชื่อมต่อพร้อมตรวจรายการ' : 'Cal · ยังมีการตั้งค่าที่ต้องตรวจ';
-  const panel = `<details class="panel cal-connection" open><summary>${escapeHtml(summary)}</summary><p>${escapeHtml(outboundText)}</p><p>${escapeHtml(inboundText)}</p><p class="muted">Internal Hold เกิดหลังนายแบบยืนยันคิว และรอมัดจำตามรายการจริง · การเชื่อม API ไม่เท่ากับมี Booking แล้ว และ Cal ไม่ยืนยันยอดชำระ</p><small>ตรวจเมื่อ ${escapeHtml(connection.checked_at)} · อ่านสถานะเท่านั้น</small></details><script type="application/json" id="calendar-connection-state">${JSON.stringify(connection).replace(/</g,'\\u003c')}</script>`;
-  if (!html.includes('<section class="metrics"') || !html.includes("let d=new Date(),view='today',data=null;")) throw new Error('calendar_shell_contract_changed');
-  html = html.replace('<section class="metrics"', panel + '<section class="metrics"');
-  html = html.replace('CAL BRIDGE <b>SHADOW</b>', 'CAL BRIDGE <b>' + escapeHtml(incoming.mode.toUpperCase()) + '</b>');
-  const date = calendarDate(selectedDate);
-  if (date) html = html.replace("let d=new Date(),view='today',data=null;", `let d=new Date('${date}T12:00:00+07:00'),view='today',data=null;`);
-  html = html.replace('</section><nav class="tabs">', `</section><form class="cal-date-form" action="/internal/admin/calendar" method="get"><label for="calendar-date">เลือกวันงาน</label><input id="calendar-date" name="date" type="date" value="${date}" required><button type="submit">แสดงงาน</button></form><nav class="tabs">`);
-  html = html.replace('</head>', `<style>.app .cal-connection{margin-top:12px}.app .cal-connection summary{cursor:pointer;font-weight:700;font-size:14px;line-height:1.6}.app .cal-connection p{font-size:12px;line-height:1.7;margin:8px 0}.app .cal-connection small{font-size:11px;color:var(--m)}.app .cal-date-form{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}.app .cal-date-form input,.app .cal-date-form button{font:inherit;min-height:44px;background:var(--p);color:var(--t);border:1px solid var(--l);border-radius:10px;padding:8px 12px}.app .cal-date-form label{font-size:12px}.app .chip,.app .metric span,.app .metric small,.app .tag,.app .muted,.app .empty,.app .time span{font-size:12px;line-height:1.6}.app .tab,.app .action a,.app .action button,.app .date button{min-height:44px;font-size:12px}.app .event h3{font-size:14px}.app .event{overflow-wrap:anywhere}.app .mobile{font-size:12px}.app .main{min-width:0}.app .grid>*{min-width:0}</style></head>`);
-  const headers = new Headers(base.headers);
-  headers.set('x-mmd-calendar-surface','admin-worker-v1.4');
+  let html = '';
+  let headers;
+  let presentation = 'webflow';
+
+  try {
+    const upstream = await readCalendarPresentation(request);
+    html = upstream.html;
+    headers = upstream.headers;
+  } catch {
+    const fallback = basePageResponse();
+    html = await fallback.text();
+    headers = new Headers(fallback.headers);
+    presentation = 'fallback';
+    const date = calendarDate(selectedDate);
+    if (date) {
+      html = html.replace(
+        "let d=new Date(),view='today',data=null;",
+        `let d=new Date('${date}T12:00:00+07:00'),view='today',data=null;`,
+      );
+    }
+  }
+
+  html = injectCalendarConnectionState(html, connection);
+  for (const name of ['content-length','set-cookie','content-encoding','etag','last-modified','report-to','nel']) headers.delete(name);
+  headers.set('content-type','text/html; charset=utf-8');
+  headers.set('cache-control','no-store, private');
+  headers.set('x-robots-tag','noindex, nofollow');
+  headers.set('x-mmd-route-owner','admin-worker');
+  headers.set('x-mmd-calendar-surface', presentation === 'webflow' ? 'admin-worker-webflow-v2' : 'admin-worker-fallback-v1');
+  headers.set('x-mmd-calendar-presentation', presentation);
   return new Response(html,{status:200,headers});
 }
