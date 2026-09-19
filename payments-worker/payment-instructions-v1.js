@@ -1,6 +1,7 @@
 export const PAYMENT_INSTRUCTIONS_PATH = "/v1/confirm/payment-instructions";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_TABLE = "tblTPC2yV1P3CwbgU";
+const DEFAULT_CARD_FEE_PERCENT = 4;
 
 export function isPaymentInstructionsRequest(path, method) {
   const normalized = String(path || "/").replace(/\/{2,}/g, "/").replace(/\/+$/g, "") || "/";
@@ -77,6 +78,12 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
   const promptPayRef = digits(config["PromptPay Ref"]);
   const accountNumber = text(config["Account Number"], 120);
   const paypalUrl = safeHttpsUrl(config["PayPal URL"]);
+  const configuredCardFeePercent = numberOrNull(config["Card Fee Percent"]);
+  const cardFeePercent = configuredCardFeePercent !== null && configuredCardFeePercent >= 0
+    ? configuredCardFeePercent
+    : DEFAULT_CARD_FEE_PERCENT;
+  const cardFeeThb = roundMoney(base.amount_due_thb * cardFeePercent / 100);
+  const cardAmountDueThb = roundMoney(base.amount_due_thb + cardFeeThb);
   const qrUrl = methods.has("promptpay") && promptPayRef && text(config["QR Strategy"], 80) === "dynamic_amount"
     ? dynamicPromptPayQr(promptPayRef, base.amount_due_thb)
     : null;
@@ -99,6 +106,11 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     paypal_card: methods.has("paypal_card") && paypalUrl ? {
       enabled: true,
       url: paypalUrl,
+      fee_percent: cardFeePercent,
+      fee_thb: cardFeeThb,
+      service_amount_thb: base.amount_due_thb,
+      amount_due_thb: cardAmountDueThb,
+      fee_scope: "processing_fee_only",
     } : { enabled: false },
   };
 
@@ -187,5 +199,9 @@ function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+function roundMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : null;
 }
 function text(value, max = 1000) { return String(value ?? "").trim().slice(0, max); }
