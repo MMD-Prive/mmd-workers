@@ -201,11 +201,12 @@ export async function handleHypeTransactionIntakeRpc(request, env = {}) {
   const telegramUserId = telegramId(body.telegram_user_id);
   if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
 
-  const mode = normalizeTransactionMode(body.mode || body.intent);
-  if (!mode) return json({ ok: false, error: "transaction_mode_invalid" }, 400);
+  const operation = token(body.operation || "update");
+  let mode = normalizeTransactionMode(body.mode || body.intent);
+  if (operation !== "read" && !mode) return json({ ok: false, error: "transaction_mode_invalid" }, 400);
+  if (!["read", "update"].includes(operation)) return json({ ok: false, error: "transaction_operation_invalid" }, 400);
 
   const customerMessage = clean(body.customer_message, 1000);
-  const incoming = normalizeTransactionFields(mode, body.fields || {});
   const context = await resolveKenjiLv5LiveContext(env, {
     telegram_user_id: telegramUserId,
     intent: {
@@ -227,6 +228,49 @@ export async function handleHypeTransactionIntakeRpc(request, env = {}) {
 
   const identity = await resolveLiveCanonicalClient(env, { canonical_client_id: canonicalClientId }).catch(() => null);
   const lineUserId = lineId(identity?.client?.line_user_id);
+
+  if (operation === "read") {
+    if (!lineUserId) {
+      return json({
+        ok: true,
+        state: "none",
+        active: false,
+        persisted: false,
+        reason: "line_identity_not_linked",
+        guardrails: transactionGuardrails(),
+      });
+    }
+    const current = await readTransactionDraftMatrix(env, lineUserId);
+    if (!current.ok) {
+      if (current.error === "transaction_draft_not_found") {
+        return json({ ok: true, state: "none", active: false, persisted: false, guardrails: transactionGuardrails() });
+      }
+      return json({ ok: false, state: "storage_unavailable", error: current.error, guardrails: transactionGuardrails() }, 503);
+    }
+    mode = current.mode;
+    const route = canonicalTransactionRoute(mode, context);
+    return json({
+      ok: true,
+      state: current.complete ? "draft_complete" : "collecting",
+      active: true,
+      mode,
+      draft_id: current.draft_id,
+      persisted: true,
+      fields: current.fields,
+      missing_fields: current.missing_fields,
+      complete: current.complete,
+      canonical_submit: {
+        ready: canonicalSubmitReady(mode, current, context, route),
+        href: route.href,
+        route_kind: route.kind,
+        requires_customer_action: true,
+        submitted_by_hype: false,
+      },
+      guardrails: transactionGuardrails(),
+    });
+  }
+
+  const incoming = normalizeTransactionFields(mode, body.fields || {});
   const route = canonicalTransactionRoute(mode, context);
   const preview = mergeTransactionDraft(mode, {}, incoming);
   let draft = {
@@ -289,6 +333,27 @@ export async function handleHypeTransactionIntakeRpc(request, env = {}) {
     },
     guardrails: transactionGuardrails(),
   });
+}
+
+async function readTransactionDraftMatrix(env, lineUserId) {
+  const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+  const existing = await findMatrix(env, hash);
+  if (!existing.ok) return { ok: false, error: existing.error || "matrix_read_failed" };
+  const prior = existing.record?.fields || {};
+  const payload = parseObject(prior[F.PAYLOAD]);
+  const draft = payload.transaction_intake;
+  const mode = normalizeTransactionMode(draft?.mode);
+  if (!mode || draft?.submitted === true) return { ok: false, error: "transaction_draft_not_found" };
+  const merged = mergeTransactionDraft(mode, {}, draft.fields || {});
+  return {
+    ok: true,
+    persisted: true,
+    draft_id: clean(draft.draft_id, 160) || clean(prior[F.PENDING_REF], 160),
+    mode,
+    fields: merged.fields,
+    missing_fields: merged.missing_fields,
+    complete: merged.complete,
+  };
 }
 
 async function upsertTransactionDraftMatrix(env, input = {}) {
