@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   displayNameFromRenamedName,
   overlayFastTrustProfile,
+  notifyImpossibleGuestAlert,
   resolveLineOaFastTrust,
   trustedTierFromRenamedName,
 } from "../src/my-mmd-line-identity-bridge.js";
@@ -83,4 +84,34 @@ test("Fast Trust preserves explicit restrictions and unresolved null Points", ()
   const unknown = overlayFastTrustProfile({ points: null, points_records_count: null }, { label: "VIP" });
   assert.equal(unknown.points, null);
   assert.equal(unknown.points_records_count, null);
+});
+
+
+test("impossible Guest alert uses the configured HYPE route without customer identity", async () => {
+  let captured = null;
+  const env = {
+    AUTH_SERVICE_AUTH_TO_TELEGRAM: "internal-secret",
+    MY_MMD_ALERT_CHAT_ID: "-1003546439681",
+    MY_MMD_ALERT_THREAD_ID: "21",
+    TELEGRAM_ACCESS_RECONCILER: {
+      async fetch(request) {
+        assert.equal(request.headers.get("authorization"), "Bearer internal-secret");
+        captured = await request.json();
+        return Response.json({ ok: true, telegram: { ok: true } });
+      },
+    },
+  };
+
+  const result = await notifyImpossibleGuestAlert(env, {
+    route: "/__internal/member-status/resolve",
+    tier: "svip",
+    reason: "trusted_line_oa_renamed_name",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(captured.flow, "my_mmd_resolution_alert");
+  assert.equal(captured.chat_id, "-1003546439681");
+  assert.equal(captured.message_thread_id, 21);
+  assert.match(captured.text, /impossible Guest state prevented/);
+  assert.doesNotMatch(captured.text, /U[a-f0-9]{32}/i);
 });
