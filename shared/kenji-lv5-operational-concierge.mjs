@@ -79,6 +79,8 @@ function normalizeIdentity(input = {}) {
     status,
     canonical_client_id: canonicalClientId,
     display_name: text(input.display_name || input.name, 120),
+    customer_gender: token(input.customer_gender || "unknown"),
+    customer_gender_source: token(input.customer_gender_source || "not_recorded"),
     relationship_context: token(input.relationship_context),
     resolved: Boolean(canonicalClientId && ["resolved", "canonical", "matched", "verified"].includes(status)),
   };
