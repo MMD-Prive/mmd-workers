@@ -315,3 +315,37 @@ test("acceptance evidence is HMAC-pseudonymous and stores no LINE id or session 
   assert.doesNotMatch(JSON.stringify(stored), new RegExp(TOKEN));
   assert.equal(stored.options.expirationTtl, 60 * 60 * 24 * 30);
 });
+
+
+test("canonical entitlement success also records production acceptance evidence", async () => {
+  const env = await makeEnv("คุณเชน SVIP", { canonicalClient: true });
+  let stored = null;
+  env.LIFF_IDENTITY_KV.put = async (key, value, options) => {
+    stored = { key, value: JSON.parse(value), options };
+  };
+  const response = Response.json({
+    state: "resolved",
+    membership: {
+      level: "svip",
+      levelVerified: true,
+      status: "active",
+      access: "granted",
+      lifecycle: "active",
+      nextAction: { kind: "care_back_wish", label: "อวยพร MMD · รับ CARE BACK", url: "/promotion/6-years-care-back/wish" },
+    },
+    lifecycle: "active",
+  }, {
+    headers: { "x-mmd-member-display-authority": "my_mmd_entitlement_resolver_v1" },
+  });
+
+  const out = await applyMyMmdFastTrustResponse(request("/api/member/app/dashboard"), response, env);
+  const body = await out.json();
+
+  assert.equal(body.membership.level, "svip");
+  assert.match(out.headers.get("x-mmd-acceptance-evidence") || "", /^mmdacc_[a-f0-9]{24}$/);
+  assert.equal(stored.value.tier, "svip");
+  assert.equal(stored.value.tier_source, "my_mmd_entitlement_resolver_v1");
+  assert.equal(stored.value.history_state, "canonical_resolved");
+  assert.doesNotMatch(JSON.stringify(stored), new RegExp(LINE_ID));
+  assert.doesNotMatch(JSON.stringify(stored), new RegExp(TOKEN));
+});
