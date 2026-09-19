@@ -11,6 +11,12 @@ import {
   transitionMmdShopFulfillment,
   writeMmdShopFulfillment,
 } from "../shared/mmd-shop-fulfillment.mjs";
+import {
+  commitMmdShopReservation,
+  publicMmdShopReservation,
+  readMmdShopReservation,
+  writeMmdShopReservation,
+} from "../shared/mmd-shop-stock-reservation.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const SHOP_INTENT_PATH = "/v1/pay/shop-intent";
@@ -73,6 +79,15 @@ export async function handleShopIntent(request, env) {
 
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
+    const orderPaymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    if (orderStatus === "cancelled") throw httpError(409, "shop_order_cancelled");
+    if (reservation && ["expired", "released"].includes(reservation.state)) throw httpError(409, "shop_order_reservation_expired");
+    if (reservation?.state === "reserved" && Date.parse(reservation.expires_at || "") <= Date.now() && orderPaymentStatus !== "paid") {
+      throw httpError(409, "shop_order_reservation_expired");
+    }
+
     const orderTotal = positive(order.fields?.[ORDER_FIELDS.total]);
     if (orderTotal == null || Math.abs(orderTotal - amount) > 0.009) throw httpError(409, "shop_order_amount_mismatch");
 
@@ -204,10 +219,53 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
           const value = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]);
           return value ? publicMmdShopFulfillment(value) : null;
         })(),
+        reservation: (() => {
+          const value = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+          return value ? publicMmdShopReservation(value) : null;
+        })(),
       },
     }, 200, request, env);
   } catch (error) {
     return json({ ok: false, authority: "payments-worker", error: text(error?.message || error, 300) }, Number(error?.status || 500), request, env);
+  }
+}
+
+export async function preflightReviewedShopPayment(request, env) {
+  const body = await request.clone().json().catch(() => null);
+  const stage = code(body?.payment_stage || body?.stage || body?.payment_type);
+  if (stage !== SHOP_STAGE) return null;
+
+  const orderId = text(body?.session_id || body?.order_id, 180);
+  if (!orderId) return json({ ok: false, authority: "payments-worker", error: "shop_order_id_required" }, 400, request, env);
+
+  try {
+    const order = await findOrderByOrderId(env, orderId);
+    if (!order?.id) throw httpError(404, "shop_order_not_found");
+
+    const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
+    const paymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
+    const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+
+    if (paymentStatus === "paid") return null;
+    if (orderStatus === "cancelled") throw httpError(409, "shop_order_cancelled");
+    if (reservation && ["expired", "released"].includes(reservation.state)) {
+      throw httpError(409, "shop_order_reservation_expired");
+    }
+    if (reservation?.state === "reserved") {
+      const expires = Date.parse(reservation.expires_at || "");
+      if (Number.isFinite(expires) && expires <= Date.now()) {
+        throw httpError(409, "shop_order_reservation_expired");
+      }
+    }
+
+    return null;
+  } catch (error) {
+    return json({
+      ok: false,
+      authority: "payments-worker",
+      error: text(error?.message || error || "shop_payment_preflight_failed", 300),
+      payment_committed: false,
+    }, Number(error?.status || 409), request, env);
   }
 }
 
@@ -227,13 +285,25 @@ export async function reconcileReviewedShopPayment(request, response, env) {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
 
+    const existingReservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
+    let committedReservation = existingReservation;
+    if (existingReservation?.state === "reserved") {
+      const committed = await commitMmdShopReservation(env, existingReservation);
+      committedReservation = committed.reservation;
+    } else if (existingReservation && existingReservation.state !== "committed") {
+      throw httpError(409, `shop_reservation_not_committable:${existingReservation.state}`);
+    }
+
     const paymentAuditNote = appendNote(
       order.fields?.[ORDER_FIELDS.notes],
       `payment_verified_at=${new Date().toISOString()}; payment_ref=${text(body?.payment_ref || body?.transaction_ref, 220)}; verified_by=payments-worker`,
     );
     const existingFulfillment = readMmdShopFulfillment(order.fields?.[ORDER_FIELDS.notes]) || createMmdShopFulfillment();
     const confirmedFulfillment = transitionMmdShopFulfillment(existingFulfillment, { state: "confirmed" });
-    const orderNotes = writeMmdShopFulfillment(paymentAuditNote, confirmedFulfillment);
+    const fulfillmentNotes = writeMmdShopFulfillment(paymentAuditNote, confirmedFulfillment);
+    const orderNotes = committedReservation
+      ? writeMmdShopReservation(fulfillmentNotes, committedReservation)
+      : fulfillmentNotes;
 
     await patchRecord(env, table(env, "orders"), order.id, {
       [ORDER_FIELDS.orderStatus]: "confirmed",
@@ -266,6 +336,8 @@ export async function reconcileReviewedShopPayment(request, response, env) {
         payment_status: "paid",
         items_confirmed: items.length,
         fulfillment: publicMmdShopFulfillment(confirmedFulfillment),
+        reservation: committedReservation ? publicMmdShopReservation(committedReservation) : null,
+        inventory_out_committed: committedReservation ? committedReservation.state === "committed" : null,
       },
     }), { status: response.status, headers });
   } catch (error) {
