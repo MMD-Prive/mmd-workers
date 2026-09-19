@@ -1,0 +1,167 @@
+name: Deploy Kenji admin assets
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "webflow/internal/admin/kenji/**"
+      - ".github/workflows/deploy-kenji-admin-assets.yml"
+
+concurrency:
+  group: deploy-kenji-admin-assets
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_R2_API_TOKEN }}
+      CLOUDFLARE_CACHE_PURGE_API_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
+      R2_BUCKET: mmd-models
+      ASSET_PREFIX: webflow/internal/admin/kenji
+      LIVE_BASE: https://models.mmdbkk.com/webflow/internal/admin/kenji
+      BOARD_1: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3e0f4263a60a49a93_Kenji%20AI%20Board%201.webp
+      BOARD_2: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d12b3919ed96761ee14e7_Kenji%20Ai%20Board%202.webp
+      GLASS_BOARD: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9d0eb52f159f58a1a1b469_Kenji%20Glass%20board.webp
+      SIGIL_WALL: https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a61b1d19a4570eb40235c4b_SigilWall.webp
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            webflow/internal/admin/kenji/kenji-admin-v1.js
+            webflow/internal/admin/kenji/kenji-admin-v1.css
+            webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+            webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
+            webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
+            webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
+            webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
+            webflow/internal/admin/kenji/kenji-admin-ai20-view-v1.js
+          )
+          for file in "${files[@]}"; do test -s "$file"; done
+          node --check webflow/internal/admin/kenji/kenji-admin-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-ux-overlay.js
+          node --check webflow/internal/admin/kenji/kenji-admin-friendly-v3.js
+          node --check webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-board-view-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js
+          node --check webflow/internal/admin/kenji/kenji-admin-ai20-view-v1.js
+          node --test webflow/internal/admin/kenji/kenji-admin-v1.test.mjs
+          node --test webflow/internal/admin/kenji/kenji-admin-board-view-v1.test.mjs
+          node --test webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.test.mjs
+          node --test webflow/internal/admin/kenji/kenji-admin-ai20-view-v1.test.mjs
+          cat webflow/internal/admin/kenji/kenji-admin-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-friendly-v3.js \
+              webflow/internal/admin/kenji/kenji-admin-model-line-link-entry-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-board-view-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-knowledge-view-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-ai20-view-v1.js \
+              webflow/internal/admin/kenji/kenji-admin-ux-overlay.js \
+              > /tmp/kenji-admin-v1.js
+          node --check /tmp/kenji-admin-v1.js
+          grep -q 'singleOwnerV4' /tmp/kenji-admin-v1.js
+          grep -q 'modelLineLinkEntryV1' /tmp/kenji-admin-v1.js
+          grep -q 'sigilBoardViewV1' /tmp/kenji-admin-v1.js
+          grep -q 'knowledgeViewV1' /tmp/kenji-admin-v1.js
+          grep -q 'ai20ViewV1' /tmp/kenji-admin-v1.js
+
+      - name: Verify board artwork sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_1"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$BOARD_2"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$GLASS_BOARD"
+          curl --retry 6 --retry-delay 2 --retry-all-errors -fsS -o /dev/null "$SIGIL_WALL"
+
+      - name: Verify dedicated R2 access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_API_TOKEN:-}"
+          npx --yes wrangler@4 r2 bucket list >/tmp/r2-buckets.txt
+          grep -q 'mmd-models' /tmp/r2-buckets.txt
+
+      - name: Upload Kenji admin JS and CSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" \
+            --file /tmp/kenji-admin-v1.js \
+            --content-type 'application/javascript; charset=utf-8' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
+            --remote --force
+          npx --yes wrangler@4 r2 object put "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" \
+            --file webflow/internal/admin/kenji/kenji-admin-v1.css \
+            --content-type 'text/css; charset=utf-8' \
+            --cache-control 'no-store, no-cache, max-age=0, must-revalidate' \
+            --remote --force
+
+      - name: Verify R2 readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.js" --file /tmp/kenji-admin-live.js --remote
+          npx --yes wrangler@4 r2 object get "$R2_BUCKET/$ASSET_PREFIX/kenji-admin-v1.css" --file /tmp/kenji-admin-live.css --remote
+          cmp /tmp/kenji-admin-v1.js /tmp/kenji-admin-live.js
+          cmp webflow/internal/admin/kenji/kenji-admin-v1.css /tmp/kenji-admin-live.css
+
+      - name: Purge stable Kenji admin CDN URLs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${CLOUDFLARE_CACHE_PURGE_API_TOKEN:-}"
+          body="$(mktemp)"
+          printf '{"files":["%s","%s"]}\n' \
+            "$LIVE_BASE/kenji-admin-v1.js" \
+            "$LIVE_BASE/kenji-admin-v1.css" > "$body"
+          result="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS \
+            -o "$result" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_CACHE_PURGE_API_TOKEN" \
+            -H 'Content-Type: application/json' \
+            --data-binary "@$body" \
+            "https://api.cloudflare.com/client/v4/zones/$CLOUDFLARE_ZONE_ID/purge_cache")"
+          test "$code" = "200"
+          node - "$result" <<'NODE'
+          const fs = require('node:fs');
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (payload.success !== true) process.exit(1);
+          NODE
+
+      - name: Verify public CDN asset markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          js_file="$(mktemp --suffix=.js)"
+          css_file="$(mktemp)"
+          found=0
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            curl -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/kenji-admin-v1.js?v=$GITHUB_SHA" -o "$js_file"
+            curl -fsS -H 'Cache-Control: no-cache' "$LIVE_BASE/kenji-admin-v1.css?v=$GITHUB_SHA" -o "$css_file"
+            if grep -q 'singleOwnerV4' "$js_file" \
+              && grep -q 'modelLineLinkEntryV1' "$js_file" \
+              && grep -q 'sigilBoardViewV1' "$js_file" \
+              && grep -q 'knowledgeViewV1' "$js_file" \
+              && grep -q 'ai20ViewV1' "$js_file" \
+              && grep -q -- '--font-ui' "$css_file"; then
+              found=1
+              break
+            fi
+            sleep 3
+          done
+          test "$found" = "1"
+          node --check "$js_file"
+          echo 'Kenji admin stable CDN assets deployed with dedicated R2 token'

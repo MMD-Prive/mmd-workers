@@ -1,0 +1,8 @@
+[build]
+command = "echo 'No build'"
+functions = "netlify/functions"
+
+[functions]
+node_bundler = "esbuild"
+external_node_modules = ["sharp", "tesseract.js"]
+included_files = ["node_modules/@tesseract.js-data/eng/4.0.0/**", "node_modules/@tesseract.js-data/tha/4.0.0/**"]

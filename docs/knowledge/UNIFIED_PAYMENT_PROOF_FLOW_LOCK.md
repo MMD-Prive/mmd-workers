@@ -1,0 +1,57 @@
+# Unified Payment + Proof Flow Lock
+
+> **2026-09-19 Public/Private lane override:** `/pay/membership` is the canonical Public Membership entry for Member / Elite / Red Card. `/sigil/member/membership` is the canonical Private Membership selection / renewal / upgrade entry. `/member/payments` is payment status/history navigation. `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes; they render no payment or renewal fallback UI. Signed Public checkout is `/pay/checkout?t=...`; signed Private/Service payment is `/sigil/pay?t=...`.
+
+
+> Canonical route override — 2026-09-19: Public Membership and TMIB purchases use signed `/pay/checkout?t=...`; Private Membership / Black Card / service payments use signed `/sigil/pay?t=...`. `/pay/membership` is now the canonical Public Membership entry, not a compatibility bridge. `/sigil/pay/membership` remains a private compatibility bridge. `payments-worker` remains the single money authority. See `docs/locks/MMD_PAYMENT_ROUTE_BRIDGE_LOCK_20260913.md` and `docs/architecture/MMD_PUBLIC_PAYMENT_SURFACE_V1.md`.
+
+## Canonical customer flow
+
+1. Create a payment intent once from a backend-owned membership/session decision.
+2. Reuse one `payment_ref` for the same `session_id` + payment stage.
+3. Use the exact server-issued signed presentation surface for payment details and proof upload: Public Membership/TMIB -> `/pay/checkout?t=...`; Private Membership/Black Card/Service -> `/sigil/pay?t=...`.
+4. After proof is received, show `pending verification` and do not prompt the customer to upload the same proof again.
+5. Official Verify remains authoritative for payment, membership, access, booking, points, and entitlement state.
+6. `/member/payments` is a list/status/navigation surface, not a second proof intake.
+7. `/confirm/payment-proof` is legacy/manual evidence compatibility only. When a `payment_ref` already exists, it must never mint a replacement reference.
+8. Public Membership selection uses `/pay/membership`; Private Membership signup/renewal/upgrade uses `/sigil/member/membership`. Either presentation may request a canonical backend payment intent but must not invent amount, destination, reference, lane or verified state in the browser.
+
+## Duplicate prevention
+
+- Payment intent uses the existing `payment_ref` when supplied.
+- Otherwise the worker derives a stable reference from `session_id` + payment stage.
+- Membership selection state is not payment truth. Browser/Webflow state may preserve non-authoritative display context only.
+- Proof intake checks `Payment Proofs` for the same `payment_ref` before writing.
+- An already received proof returns an idempotent response and leaves the existing review state intact.
+- Proof evidence is supporting evidence only; it never grants `paid`, `verified`, `approved`, or entitlement state by itself.
+
+## Membership term lock
+
+- Standard: base term 1 year.
+- Premium: base term 2 years.
+- Premium reviewed-payment entitlement writes must use `2_years_from_verified_payment`.
+- CARE BACK extensions are separate policy adjustments and must not be collapsed into the base membership term.
+
+## Surfaces
+
+- Public Membership selection: `/pay/membership`
+- Private Membership selection / signup / renewal / upgrade: `/sigil/member/membership`
+- Canonical Public exact payment + proof: signed `/pay/checkout?t=...`
+- Canonical Private / Black Card / Service exact payment + proof: signed `/sigil/pay?t=...`
+- Payment history/status/navigation: `/member/payments`
+- Public Membership entry: `/pay/membership` -> Member / Elite / Red Card selection UI only
+- Private legacy membership-payment alias: `/sigil/pay/membership` -> compatibility bridge only
+- Legacy renewal alias: `/sigil/pay/renew` -> `/sigil/member/membership?intent=renew`
+- Legacy generic payment alias: `/sigil/pay/payment` -> signed `/sigil/pay?t=...` when a valid token exists, otherwise `/member/payments`
+- Legacy/manual proof compatibility: `/confirm/payment-proof`
+- Admin truth/review: `/v1/admin/payments/review-queue` and `/v1/admin/payments/review`
+
+## Authority lock
+
+- `payments-worker` owns amount due, payment destination, PromptPay QR, canonical `payment_ref`, signed payment session and payment verification.
+- No Webflow page, membership selector, Telegram button, LIFF browser payload or legacy route may become a second payment authority.
+- A signed customer payment URL must contain only the signed `t` payment token on its server-selected presentation path: Public `/pay/checkout?t=...` or Private/Service `/sigil/pay?t=...`.
+
+## Safety
+
+Customer-facing copy after proof submission should say that MMD received the evidence and is reviewing it. Do not represent a proof upload, OCR result, or customer statement as final payment verification.
