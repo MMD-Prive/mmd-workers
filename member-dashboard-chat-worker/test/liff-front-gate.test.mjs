@@ -87,6 +87,50 @@ test("member dashboard API front gate forwards only to member-pages-worker", asy
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
 });
 
+test("member payments BFF front gate is same-origin and delegates only to member-pages-worker", async () => {
+  const calls = [];
+  const env = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({
+          url: request.url,
+          method: request.method,
+          cookie: request.headers.get("cookie"),
+        });
+        return Response.json({
+          ok: true,
+          authority: "member-pages-worker",
+          money_authority: "payments-worker",
+          records: [],
+        }, {
+          headers: {
+            "set-cookie": "__Host-mmd_liff_session=rotated; Secure; HttpOnly; Path=/; SameSite=Strict",
+            "x-mmd-member-payments-bff": "v1",
+          },
+        });
+      },
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/member/payments", {
+    headers: { cookie: "__Host-mmd_liff_session=current" },
+  }), env);
+  const payload = await response.json();
+
+  assert.deepEqual(calls, [{
+    url: "https://mmdbkk.com/v1/member/payments",
+    method: "GET",
+    cookie: "__Host-mmd_liff_session=current",
+  }]);
+  assert.equal(response.status, 200);
+  assert.equal(payload.money_authority, "payments-worker");
+  assert.equal(response.headers.get("x-mmd-worker"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+  assert.equal(response.headers.get("x-mmd-member-payments-bff"), "v1");
+  assert.match(response.headers.get("set-cookie") || "", /rotated/);
+});
+
 test("MMS member API uses the same trusted member-pages front gate", async () => {
   const calls = [];
   const env = {
@@ -153,6 +197,8 @@ test("wrangler claims query-capable LIFF shell routes on apex and www", async ()
     "www.mmdbkk.com/member/liff*",
     "mmdbkk.com/api/member/dashboard*",
     "www.mmdbkk.com/api/member/dashboard*",
+    "mmdbkk.com/v1/member/payments*",
+    "www.mmdbkk.com/v1/member/payments*",
   ];
 
   for (const route of routes) {
