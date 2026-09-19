@@ -27,9 +27,10 @@ Expected:
 
 - `/pay/membership` is the canonical Public Membership selection entry for MMD Member / Elite / Red Card; it is selection UI only and never payment authority.
 - `/sigil/member/membership` is the canonical Private Membership selection / signup / renewal / upgrade entry for Standard / Premium and private access.
-- `/sigil/pay/membership` and `/pay/membership` are compatibility aliases only and never payment authorities.
-- An unsigned membership alias may remain a `200` compatibility bridge or redirect only to `/sigil/member/membership`.
-- A signed membership alias may remain a `200` compatibility bridge or redirect only to `/sigil/pay?t=...`; if redirected, the payment URL must carry only the signed `t` authority token.
+- `/sigil/pay/membership` is a Private compatibility alias only and never payment authority. `/pay/membership` is the canonical Public Membership selection UI and is not an alias.
+- An unsigned `/sigil/pay/membership` compatibility request may bridge or redirect only to `/sigil/member/membership`.
+- A signed `/sigil/pay/membership?t=...` compatibility request may bridge or redirect only to `/sigil/pay?t=...`; the payment URL carries only the signed `t` authority token.
+- `/pay/membership` must render Public package selection and obtain its signed `/pay/checkout?t=...` handoff from backend-owned payment intent.
 - Membership aliases must never redirect to `/sigil/pay/renewal` and must never preserve browser-provided amount, account, PromptPay, or package values as payment authority.
 - `/sigil/pay/renewal` and `/pay/renewal` are redirect-only compatibility routes. They must not render Renewal Payment Review, bank/QR, proof upload, or other fallback UI.
 - `/sigil/pay/renew` should bridge signed `t` to `/sigil/pay?t=<same token>` and unsigned traffic to `/sigil/member/membership?intent=renew`.
@@ -56,7 +57,7 @@ Canonical LIFF payment setup is tested through the verified LIFF-session contrac
 
 - validate package and amount from the server-side LIFF session;
 - call the canonical payments authority;
-- return a backend-minted customer URL shaped as `https://mmdbkk.com/sigil/pay?t=...`;
+- return the exact backend-minted customer URL for the server-owned presentation lane: `https://mmdbkk.com/pay/checkout?t=...` for Public Membership/TMIB or `https://mmdbkk.com/sigil/pay?t=...` for Private/Service;
 - reject a customer payment URL that contains payment-authority query parameters other than `t`;
 - never infer verified payment or membership entitlement from browser input.
 
@@ -73,13 +74,13 @@ Expected current ownership constraints:
   - `www.mmdbkk.com/pay/renewal*`
   - `mmdbkk.com/sigil/pay/renewal*`
   - `www.mmdbkk.com/sigil/pay/renewal*`
-- `member-dashboard-chat-worker` must not absorb `/sigil/pay/membership` or `/pay/membership` into the renewal route family.
-- Membership compatibility aliases remain bounded bridges until an explicit live edge owner is approved; do not create a broad wildcard that collides with `/sigil/pay/renewal*`.
+- `member-dashboard-chat-worker` must not absorb `/sigil/pay/membership` into the renewal route family and must never intercept canonical Public `/pay/membership`.
+- Private membership compatibility aliases remain bounded bridges; canonical Public `/pay/membership` remains Webflow presentation with backend-owned intent. Do not create a broad wildcard that collides with Public payment or `/sigil/pay/renewal*`.
 
 ## Authority Check
 
 - Membership selection authority: canonical membership backend/member resolver.
 - Exact payment instruction and verification authority: `payments-worker`.
-- Customer payment + proof UI after a signed intent: `/sigil/pay?t=...`.
+- Customer payment + proof UI after a signed intent: Public Membership/TMIB -> `/pay/checkout?t=...`; Private Membership/Black Card/Service -> `/sigil/pay?t=...`.
 - Generic payment status/navigation: `/member/payments`.
 - Browser/Webflow/Telegram/LIFF route parameters never become amount, destination, account, PromptPay, or verification truth.
