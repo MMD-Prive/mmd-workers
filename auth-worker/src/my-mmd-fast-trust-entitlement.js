@@ -1,4 +1,9 @@
-const FAST_TRUST_STAGING_TABLE = "MMD — LINE OFC Client Import Staging";
+import {
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
+
 const SOURCE = "line_oa_renamed_name_fast_trust";
 const RANK = { vip: 1, svip: 2, black_card: 3 };
 const HARD_STOP = new Set(["blocked", "suspended", "revoked"]);
@@ -8,18 +13,16 @@ export async function buildFastTrustEntitlement(env = {}, lineUserId = "", listR
   if (!lineId || typeof listRecords !== "function") return null;
   if (hasExplicitHardStop(canonicalRecords)) return null;
 
-  const table = String(
-    env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE
-      || FAST_TRUST_STAGING_TABLE,
-  ).trim();
-  if (!table) return null;
+  const source = resolveFastTrustAirtableSource(env);
+  const filterByFormula = fastTrustLineFormula(lineId, source);
+  if (!source.table || !filterByFormula) return null;
 
-  const records = await listRecords(table, {
-    filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+  const records = await listRecords(source.table, {
+    filterByFormula,
     maxRecords: 20,
   });
   const candidates = (Array.isArray(records) ? records : []).flatMap((record) => {
-    const renamed = String(record?.fields?.line_renamed_name || "").replace(/\s+/g, " ").trim();
+    const renamed = fastTrustRenamedName(record, source);
     const tier = trustedTierFromRenamedName(renamed);
     return tier ? [{ tier, renamed }] : [];
   });
@@ -70,9 +73,6 @@ export function hasExplicitHardStop(records = []) {
 function canonicalLineId(value) {
   const id = String(value || "").trim();
   return /^U[0-9a-f]{32}$/i.test(id) ? id : "";
-}
-function formulaString(value) {
-  return `'${String(value || "").replace(/'/g, "\\'")}'`;
 }
 function token(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
