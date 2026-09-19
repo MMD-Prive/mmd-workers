@@ -28,6 +28,12 @@ test('calendar diagnostics use event-type Cal API version and private cal-sync s
           webhook_secret_configured:true,
           api_key_configured:true,
           mapping_ledger_configured:true,
+          internal_hold:{
+            write_enabled:true,
+            coordinator_configured:true,
+            event_type_id:7057823,
+            writer:'cal-sync-worker',
+          },
         });
       },
     },
@@ -44,6 +50,10 @@ test('calendar diagnostics use event-type Cal API version and private cal-sync s
   assert.equal(result.inbound.webhook_secret_configured, true);
   assert.equal(result.inbound.api_key_configured, true);
   assert.equal(result.inbound.mapping_ledger_configured, true);
+  assert.equal(result.inbound.internal_hold_write_enabled, true);
+  assert.equal(result.inbound.internal_hold_coordinator_configured, true);
+  assert.equal(result.inbound.internal_hold_event_type_id, 7057823);
+  assert.equal(result.inbound.internal_hold_writer, 'cal-sync-worker');
   assert.equal(result.mutations_attempted, false);
   assert.equal(calls.filter(x => x.kind === 'direct').length, 1);
   assert.equal(calls.filter(x => x.kind === 'binding').length, 1);
