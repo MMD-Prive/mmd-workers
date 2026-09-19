@@ -382,6 +382,9 @@ async function handleTelegramWebhook(update, env) {
   if (callback && /^hrop\|/i.test(clean(callback.data))) {
     return handleHypeRecoveryOrderCallback(callback, env);
   }
+  if (callback && /^(?:hrbp|hrmp)\|/i.test(clean(callback.data))) {
+    return handleHypeRecoveryCandidateCallback(callback, env);
+  }
 
   const message = update.message || update.edited_message || null;
   if (!message) return { handled: false, reason: "unsupported_update" };
@@ -512,6 +515,170 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handleHypeRecoveryCandidateCallback(callback, env) {
+  const data = clean(callback?.data);
+  const match = /^(hrbp|hrmp)\|(HYPE-(?:PER|KENJI)-\d{14}-[a-f0-9]{8})\|([0-4])$/i.exec(data);
+  const callbackId = clean(callback?.id);
+  const chatId = clean(callback?.message?.chat?.id);
+  const chatType = clean(callback?.message?.chat?.type).toLowerCase();
+  const telegramUserId = clean(callback?.from?.id);
+
+  if (!match || !callbackId || !chatId || chatType !== "private" || !/^\d{5,20}$/.test(telegramUserId)) {
+    if (callbackId) {
+      await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "เปิดตัวเลือกนี้ใน private chat ของ HYPE ครับ",
+        show_alert: true,
+      }, env).catch(() => null);
+    }
+    return { handled: true, flow: "hype_recovery_candidate_picker", ok: false, code_status: "picker_context_invalid" };
+  }
+
+  const domain = match[1].toLowerCase() === "hrbp" ? "booking" : "mms";
+  const handoffId = match[2];
+  const selectionIndex = Number(match[3]);
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: "ระบบเลือก Recovery candidate ยังไม่พร้อมครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return { handled: true, flow: "hype_recovery_candidate_picker", ok: false, code_status: "context_writer_unavailable" };
+  }
+
+  let result = null;
+  let status = 503;
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/handoff-status", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({
+        operation: domain === "booking" ? "select_recovery_booking" : "select_recovery_mms",
+        telegram_user_id: telegramUserId,
+        handoff_id: handoffId,
+        selection_index: selectionIndex,
+      }),
+    }));
+    status = response.status;
+    result = await response.json().catch(() => null);
+  } catch {
+    result = null;
+  }
+
+  if (!(status >= 200 && status < 300 && result?.ok === true)) {
+    const error = clean(result?.error);
+    const text = error === "recovery_candidate_already_bound"
+      ? "Case นี้ผูกรายการไปแล้วครับ"
+      : error === "recovery_candidate_option_stale"
+        || error === "selected_booking_not_owned_or_stale"
+        || error === "selected_mms_prebooking_not_owned_or_stale"
+        ? "ตัวเลือกนี้ไม่ใช่รายการปัจจุบันแล้วครับ พิมพ์ /case เพื่อตรวจใหม่"
+        : "ยังผูกรายการไม่สำเร็จครับ ระบบคง Case เดิมไว้";
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text,
+      show_alert: true,
+    }, env).catch(() => null);
+    return {
+      handled: true,
+      flow: domain === "booking" ? "hype_recovery_booking_picker" : "hype_recovery_mms_picker",
+      ok: false,
+      code_status: error || "recovery_candidate_selection_failed",
+    };
+  }
+
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id: callbackId,
+    text: domain === "booking"
+      ? "ผูก Booking กับ Case เดิมแล้วครับ"
+      : "ผูก MMS Pre-booking กับ Case เดิมแล้วครับ",
+    show_alert: false,
+  }, env).catch(() => null);
+
+  const messageId = Number(callback?.message?.message_id);
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    }, env).catch(() => null);
+  }
+
+  const correlation = result.recovery_correlation || {};
+  const customerLines = domain === "booking"
+    ? [
+        "<b>HYPE · BOOKING LINKED</b>",
+        "<b>Reference:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+        "<b>Booking Ref:</b> <code>" + escapeHtml(clean(correlation.booking_ref) || "-") + "</code>",
+        ...(clean(correlation.session_id) ? ["<b>Session:</b> <code>" + escapeHtml(clean(correlation.session_id)) + "</code>"] : []),
+        ...(clean(correlation.job_id) ? ["<b>Job:</b> <code>" + escapeHtml(clean(correlation.job_id)) + "</code>"] : []),
+        "<b>State:</b> " + escapeHtml(clean(correlation.job_state) || clean(correlation.session_state) || clean(correlation.state) || "unknown"),
+        "",
+        "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า Booking / Job context ซ้ำ",
+        "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้ confirm Job, Model, Payment หรือ Calendar",
+      ]
+    : [
+        "<b>HYPE · MMS PRE-BOOKING LINKED</b>",
+        "<b>Reference:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+        "<b>Pre-booking:</b> <code>" + escapeHtml(clean(correlation.prebooking_id) || "-") + "</code>",
+        "<b>MMS state:</b> " + escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+        ...(clean(correlation.service_date) ? ["<b>Schedule:</b> " + escapeHtml(clean(correlation.service_date)) + (clean(correlation.service_time) ? " · " + escapeHtml(clean(correlation.service_time)) : "")] : []),
+        ...(clean(correlation.zone) ? ["<b>Zone:</b> " + escapeHtml(clean(correlation.zone))] : []),
+        "",
+        "ผูกเข้ากับ Case เดิมแล้วครับ คุณไม่ต้องเล่า MMS context ซ้ำ",
+        "HYPE เปลี่ยนเฉพาะ recovery context และไม่ได้ confirm Therapist, Booking หรือ Payment",
+      ];
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: customerLines.join("\n"),
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  }, env);
+
+  try {
+    const opsLines = domain === "booking"
+      ? [
+          "🔗 <b>HYPE · BOOKING RECOVERY CORRELATION UPDATED</b>",
+          "<b>Case:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+          "<b>Booking Ref:</b> <code>" + escapeHtml(clean(correlation.booking_ref) || "-") + "</code>",
+          "<b>Job:</b> <code>" + escapeHtml(clean(correlation.job_id) || "pending") + "</code>",
+          "Customer selected this owned Booking Request; handoff lifecycle state was preserved.",
+        ]
+      : [
+          "🔗 <b>HYPE · MMS RECOVERY CORRELATION UPDATED</b>",
+          "<b>Case:</b> <code>" + escapeHtml(clean(result.handoff_id || handoffId)) + "</code>",
+          "<b>Pre-booking:</b> <code>" + escapeHtml(clean(correlation.prebooking_id) || "-") + "</code>",
+          "<b>MMS state:</b> " + escapeHtml(clean(correlation.prebooking_status) || clean(correlation.state) || "unknown"),
+          "Customer selected this owned MMS Pre-booking; handoff lifecycle state was preserved.",
+        ];
+    await telegramNotify({
+      flow: "human_handoff",
+      text: opsLines.join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }, env);
+  } catch {
+    // Case binding remains canonical in Conversation Matrix even if the follow-up alert fails.
+  }
+
+  return {
+    handled: true,
+    flow: domain === "booking" ? "hype_recovery_booking_picker" : "hype_recovery_mms_picker",
+    ok: telegram?.ok === true,
+    code_status: result.replayed === true
+      ? "recovery_candidate_selection_replayed"
+      : domain === "booking" ? "booking_linked_to_existing_case" : "mms_linked_to_existing_case",
+    handoff_id: clean(result.handoff_id || handoffId),
+    canonical_ref: domain === "booking" ? clean(correlation.booking_ref) : clean(correlation.prebooking_id),
+    telegram,
+  };
 }
 
 async function handleHypeRecoveryOrderCallback(callback, env) {
