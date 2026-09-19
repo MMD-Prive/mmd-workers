@@ -160,6 +160,27 @@ Preview is a HYPE-managed public-safe Telegram surface.
 - Preview welcome text never resolves Client 360, entitlement, gender, job, payment, Points balance, or coupon code
 - account-specific commands remain private-chat only
 
+## Preview audience gate
+
+HYPE must not infer customer gender or viewing preference from name, photo, LINE display name, Telegram username, or other indirect signals.
+
+For Model discovery in Telegram Preview, HYPE follows the existing LIFF Hall audience decision only:
+
+- `female_view -> show_female_profiles`
+- `lgbt_view -> show_lgbt_profiles`
+- `unknown -> hold_until_selected`
+- `manual_review -> manual_review_only`
+
+If no self-selected audience exists, HYPE must not fall back to all profiles. It routes the customer to `/hall` to choose first.
+
+For new human joins in Telegram Preview:
+
+- delete the Telegram join service message;
+- post a group-safe HYPE welcome;
+- explain that Model discovery is audience-gated;
+- offer Hall selection and private HYPE chat;
+- do not expose or infer account-specific gender/audience in the group.
+
 ## Existing HYPE operational capabilities retained
 
 - Telegram internal notification routing by canonical topic
