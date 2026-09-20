@@ -85,7 +85,7 @@ export default {
     if (method === "GET" && path === "/v1/pay/slip/evidence/health") {
       const airtableReady = Boolean(String(env.AIRTABLE_BASE_ID || "").trim() && String(env.AIRTABLE_API_KEY || "").trim() && String(env.AIRTABLE_TABLE_PAYMENT_PROOFS || "").trim());
       const r2Ready = Boolean(env.PAYMENT_SLIP_EVIDENCE && typeof env.PAYMENT_SLIP_EVIDENCE.put === "function");
-      const telegramReady = Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim());
+      const telegramReady = Boolean(env.TELEGRAM_WORKER && typeof env.TELEGRAM_WORKER.fetch === "function" && String(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM || "").trim());
       const tokenReady = Boolean(String(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || "").trim() && env.PAY_SESSIONS_KV);
       const telegramThreadId = Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22) || 22;
       return json({
