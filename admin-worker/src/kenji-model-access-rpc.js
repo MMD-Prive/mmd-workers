@@ -1,4 +1,5 @@
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveModelSalesOfferFromAirtable } from "../../shared/model-sales-airtable.mjs";
 
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
 export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
@@ -255,14 +256,41 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   const model = await resolveExactModel(env, query, fetchImpl);
   if (model.status !== "resolved") return { status: "silent" };
 
-  const authorized = model.records.flatMap((record) => {
+  const authorized = [];
+  for (const record of model.records) {
     const cls = modelAccessClass(record);
-    if (!cls.active) return [];
-    if (cls.visibility === "public" && !access.allowPublic) return [];
-    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) return [];
+    if (!cls.active) continue;
+    if (cls.visibility === "public" && !access.allowPublic) continue;
+    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) continue;
     const safeModel = projectKenjiSafeModel(record);
-    return safeModel ? [{ cls, safeModel }] : [];
-  });
+    if (!safeModel) continue;
+
+    const sales = await resolveModelSalesOfferFromAirtable(env, {
+      model_id: clean(record.id, 100),
+      model_key: safeModel.model_code,
+      requested_at: clean(input.requested_at, 100) || new Date().toISOString(),
+      work_lane: clean(input.work_lane, 80),
+      entitlement_snapshot: access.snapshot,
+    }, { fetchImpl });
+
+    if (sales.configured_rule_count > 0 && sales.sellable !== true) continue;
+    authorized.push({
+      cls,
+      safeModel: {
+        ...safeModel,
+        sales_offer: {
+          policy_version: sales.policy_version,
+          sellable: sales.sellable,
+          customer_rate_thb: sales.customer_rate_thb,
+          price_visible: sales.price_visible,
+          term_summary: sales.term_summary,
+          requires_per_approval: sales.requires_per_approval,
+          rule_version: sales.rule_version,
+          configured_rule_count: sales.configured_rule_count,
+        },
+      },
+    });
+  }
   if (authorized.length > 1) return { status: "clarification" };
   if (authorized.length === 1) return { status: "match", model: authorized[0].safeModel };
 
