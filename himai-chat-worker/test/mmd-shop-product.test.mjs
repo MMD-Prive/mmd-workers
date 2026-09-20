@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { handleShopCatalog } from "../src/shop-catalog.js";
-import { isMmdShopProductPageRequest } from "../src/mmd-shop-product-page.js";
+import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "../src/mmd-shop-product-page.js";\nimport { handleMmdShopOrderPage } from "../src/mmd-shop-order-page.js";
 
 test("MMD Shop product page wildcard owns only product detail paths", () => {
   assert.equal(
@@ -222,6 +222,33 @@ test("MMD Shop product API groups Pod flavours while preserving checkout restric
     assert.deepEqual(body.variants.map((item) => item.variant_value), ["Apple", "Grape"]);
     assert.equal(body.variants.every((item) => item.checkout_eligible === false), true);
     assert.equal(body.variants.every((item) => item.online_checkout_status === "restricted"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("MMD Shop fallback presentation follows requested EN ZH locale", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error("upstream unavailable"); };
+  try {
+    const product = await handleMmdShopProductPage(
+      new Request("https://www.mmdbkk.com/mmd-shop/product/wgg-10?lang=zh")
+    );
+    assert.equal(product.status, 502);
+    const productHtml = await product.text();
+    assert.match(productHtml, /lang="zh-CN"/);
+    assert.match(productHtml, /无法打开商品详情/);
+    assert.match(productHtml, /\/mmd-shop\?lang=zh/);
+
+    const order = await handleMmdShopOrderPage(
+      new Request("https://www.mmdbkk.com/mmd-shop/order?lang=en&t=example")
+    );
+    assert.equal(order.status, 502);
+    const orderHtml = await order.text();
+    assert.match(orderHtml, /lang="en"/);
+    assert.match(orderHtml, /Order unavailable/);
+    assert.match(orderHtml, /\/mmd-shop\?lang=en/);
   } finally {
     globalThis.fetch = originalFetch;
   }
