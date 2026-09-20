@@ -386,7 +386,7 @@ export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = 
   };
 }
 
-async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage }) {
+async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage, jobContext = {} }) {
   const service = env.TELEGRAM_WORKER;
   const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
@@ -406,9 +406,10 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     `Proof: <code>${proofId}</code>`,
     `Ref: <code>${paymentRef}</code>`,
     snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
-    snapshot.payment_stage ? `Stage: <b>${snapshot.payment_stage}</b>` : "",
-    inferenceLabel ? `Classified: <b>${inferenceLabel}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : "",
-    `Routing: <code>${route.reason}</code>`,
+    snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
+    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : "",
+    ...(route.topic === "membership" ? [] : webJobContextCaptionLines(jobContext)),
+    `Routing: <code>${tgHtml(route.reason)}</code>`,
     "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
@@ -483,6 +484,50 @@ async function patchProofAuditNote(env, recordId, currentNote, telegram) {
   }
 }
 
+function tgHtml(value, max = 180) {
+  return clean(value, max).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export function canonicalWebJobContext(session = null, snapshot = {}) {
+  const fields = paymentFields(session);
+  const context = {
+    session_id: clean(firstValue(fields, ["session_id", "Session ID"]) || snapshot.session_id, 180) || null,
+    job_id: clean(firstValue(fields, ["job_id", "Job ID"]), 180) || null,
+    client_name: clean(firstValue(fields, ["client_name", "Client Name"]), 180) || clean(snapshot.payer_name, 180) || null,
+    model_name: clean(firstValue(fields, ["model_name", "Assigned Model", "Model"]), 180) || null,
+    job_type: clean(firstValue(fields, ["job_type", "Session Type"]), 180) || null,
+    job_date: clean(firstValue(fields, ["job_date", "Session Date"]), 180) || null,
+    start_time: clean(firstValue(fields, ["start_time", "Start Time"]), 180) || null,
+    end_time: clean(firstValue(fields, ["end_time", "End Time"]), 180) || null,
+    location_name: clean(firstValue(fields, ["location_name", "Location", "Location (สถานที่)"]), 180) || null,
+  };
+  const exact = Boolean(context.job_id || context.session_id);
+  return {
+    status: exact ? "exact" : "unresolved",
+    reason: exact ? "signed_payment_session" : "canonical_session_context_missing",
+    ...context,
+  };
+}
+
+function webJobContextCaptionLines(jobContext = {}) {
+  if (jobContext.status !== "exact") return [
+    "Job Match: <b>UNRESOLVED</b>",
+    "Action: resolve the canonical Job before Official Verify.",
+  ];
+  const when = [
+    jobContext.job_date,
+    jobContext.start_time && jobContext.end_time ? `${jobContext.start_time} → ${jobContext.end_time}` : jobContext.start_time || jobContext.end_time,
+  ].filter(Boolean).join(" · ");
+  return [
+    "Job Match: <b>EXACT</b>",
+    jobContext.client_name ? `Customer: <b>${tgHtml(jobContext.client_name)}</b>` : "",
+    jobContext.job_id ? `Job: <code>${tgHtml(jobContext.job_id)}</code>` : jobContext.session_id ? `Session: <code>${tgHtml(jobContext.session_id)}</code>` : "",
+    jobContext.model_name ? `Model: <b>${tgHtml(jobContext.model_name)}</b>` : "",
+    when ? `When: ${tgHtml(when, 300)}` : "",
+    jobContext.location_name ? `Location: ${tgHtml(jobContext.location_name)}</b>` : "",
+  ].filter(Boolean);
+}
+
 export function canonicalProofRecordFields({ proofId, note, snapshot = {}, paymentRef, links = {} } = {}) {
   return compact({
     proof_id: proofId,
@@ -515,10 +560,12 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     storage.key ? `r2_key=${storage.key}` : "",
     storage.sha256 ? `evidence_sha256=${storage.sha256}` : "",
   ].filter(Boolean).join("; ");
+  const jobContext = canonicalWebJobContext(session, snapshot);
   return {
     proofId,
     storage,
     snapshot,
+    jobContext,
     fields: canonicalProofRecordFields({
       proofId,
       note,
@@ -620,6 +667,7 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       paymentRef,
       snapshot: proofBundle.snapshot,
       sourcePage: source,
+      jobContext: proofBundle.jobContext,
     }).catch((error) => ({ ok: false, error_description: clean(error?.message || error, 180) }));
     const telegramAudit = await patchProofAuditNote(env, created?.id, proofBundle.fields.note, telegram);
 
