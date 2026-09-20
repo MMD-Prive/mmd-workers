@@ -5,6 +5,7 @@ import worker from "../src/index.js";
 
 const WEBHOOK_URL = "https://telegram-worker.mmd.test/telegram/webhook";
 const INTERNAL_SEND_URL = "https://telegram-worker.mmd.test/telegram/internal/send";
+const PAYMENTS_PROOF_DOCUMENT_URL = "https://telegram-worker.mmd.test/telegram/internal/payments/proof-document";
 const COMPLAINT_URL = "https://telegram-worker.mmd.test/telegram/internal/complaint";
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
 const TOPIC_SMOKE_URL = "https://telegram-worker.mmd.test/telegram/internal/topics/smoke";
@@ -16,6 +17,10 @@ function env(overrides = {}) {
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
     AUTH_SERVICE_STUDIO_TO_TELEGRAM: "studio-service-secret",
+    AUTH_SERVICE_PAYMENTS_TO_TELEGRAM: "payments-service-secret",
+    TELEGRAM_CHAT_ID: "-1003546439681",
+    TG_THREAD_PAYMENTS_MEMBERSHIP: "20",
+    TG_THREAD_PAYMENTS_CONFIRM: "22",
     TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-100123",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
@@ -252,6 +257,73 @@ test("topic smoke sends one silent redacted check to every canonical topic", { c
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("payments proof document route requires dedicated service auth", async () => {
+  const form = new FormData();
+  form.append("chat_id", "-1003546439681");
+  form.append("message_thread_id", "22");
+  form.append("caption", "proof");
+  form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+
+  const missing = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, { method: "POST", body: form }), env());
+  assert.equal(missing.status, 403);
+
+  const wrong = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
+    method: "POST",
+    headers: { authorization: "Bearer wrong" },
+    body: form,
+  }), env());
+  assert.equal(wrong.status, 403);
+});
+
+test("payments proof document route uses canonical bot and Payments Confirm thread", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init = {}) => {
+    captured = { url: String(url), form: init.body };
+    return Response.json({ ok: true, result: { message_id: 9876, message_thread_id: 22 } });
+  };
+
+  try {
+    const form = new FormData();
+    form.append("chat_id", "-1003546439681");
+    form.append("message_thread_id", "22");
+    form.append("caption", "<b>PAYMENT PROOF · PENDING REVIEW</b>");
+    form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+
+    const response = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
+      method: "POST",
+      headers: { authorization: "Bearer payments-service-secret" },
+      body: form,
+    }), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.message_id, 9876);
+    assert.match(captured.url, /botelegram-token\/sendDocument$/);
+    assert.equal(captured.form.get("chat_id"), "-1003546439681");
+    assert.equal(captured.form.get("message_thread_id"), "22");
+    assert.equal(captured.form.get("document").name, "proof.jpg");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("payments proof document route rejects non-payment topic", async () => {
+  const form = new FormData();
+  form.append("chat_id", "-1003546439681");
+  form.append("message_thread_id", "21");
+  form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+
+  const response = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
+    method: "POST",
+    headers: { authorization: "Bearer payments-service-secret" },
+    body: form,
+  }), env());
+  assert.equal(response.status, 502);
+  assert.equal((await response.json()).error, "telegram_payment_thread_not_allowed");
 });
 
 test("/telegram/internal/send rejects an invalid internal token", async () => {
