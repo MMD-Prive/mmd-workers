@@ -457,6 +457,10 @@ test("Recovery assignment claim/release stays coordination-only and never resets
     assert.equal(release.status, 200);
     const releaseBody = await release.json();
     assert.equal(releaseBody.case.assignment.status, "unassigned");
+    assert.equal(releaseBody.case.assignment.history.length, 2);
+    assert.equal(releaseBody.case.assignment.history[0].action, "claim");
+    assert.equal(releaseBody.case.assignment.history[1].action, "release");
+    assert.equal(releaseBody.case.assignment.history[1].to_status, "unassigned");
     assert.equal(patchCount, 2);
     assert.equal(stored.fields.state_updated_at, originalStateUpdatedAt);
   } finally {
@@ -657,8 +661,14 @@ test("Owner manual picker refresh reissues canonical choices without resetting l
     assert.equal(body.case.picker.candidate_count, 1);
     assert.equal(body.case.picker.delivery_status, "pending_customer_delivery");
     assert.equal(body.case.picker.delivery_revision, 3);
+    assert.equal(body.case.picker.refresh_history.length, 1);
+    assert.equal(body.case.picker.refresh_history[0].trigger, "owner_manual");
+    assert.equal(body.case.picker.refresh_history[0].source_revision, 2);
+    assert.equal(body.case.picker.refresh_history[0].revision, 3);
     assert.equal(body.case.controls.can_refresh_picker, true);
     assert.equal(body.guardrails.picker_manual_refresh_grants_authority, false);
+    assert.equal(body.guardrails.assignment_history_bounded, true);
+    assert.equal(body.guardrails.picker_refresh_history_bounded, true);
     assert.equal(patchCount, 1);
 
     const after = JSON.parse(stored.fields.payload_json);
