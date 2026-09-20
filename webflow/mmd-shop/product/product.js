@@ -36,7 +36,7 @@ function t(key,vars){
   var fallback={
     ask_price:"สอบถามราคา",stockOnDemand:"สั่งแบบ On-Demand · MMD ยืนยันกับ Supplier หลังได้รับออเดอร์",
     stockOut:"สินค้าหมด",stockLow:"เหลือน้อย",stockReady:"พร้อมสั่ง · "+(vars&&vars.n||0)+" ชิ้น",
-    stockChecking:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",
+    stockChecking:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",variantBottle:"เลือกแบบขวด",
     stockUntrackedTitle:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",stockUntrackedCopy:"พอมีสต๊อกจริงที่ยืนยันแล้ว ปุ่มสั่งจะเปิดให้เองครับ",
     outStock:"รอรอบสต๊อกถัดไป",stockOutCopy:"รอบรับ Order ถัดไปจะเปิดเมื่อสินค้าพร้อมครับ",priceClosed:"กำลังเตรียมราคา Online Checkout",
     priceClosedCopy:"ดูรายละเอียดได้ก่อน ถ้าอยากถามเพิ่มคุยกับ MMD ได้ครับ",productRestricted:"ชิ้นนี้จะเปิดสั่งออนไลน์ทันทีเมื่อสถานะพร้อมครับ",
@@ -125,7 +125,7 @@ function renderVariantControl(){
     return;
   }
   variantWrap.hidden=false;
-  var label=product.variant_type==="flavour"?t("variantFlavour"):t("variantSize");
+  var label=product.variant_type==="flavour"?t("variantFlavour"):product.variant_type==="bottle"?t("variantBottle"):t("variantSize");
   if(variantLabel)variantLabel.textContent=label;
   variantSelect.setAttribute("aria-label",label);
   variantSelect.innerHTML=available.map(function(item){

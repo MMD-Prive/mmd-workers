@@ -28,6 +28,19 @@ test("MMD Shop Webflow cart is gated by canonical checkout_eligible", async () =
   assert.match(checkoutBlock, /p\.checkout_eligible!==true/);
 });
 
+test("MMD Shop root presents exactly the three Per product families", async () => {
+  const source = await readFile(sourceUrl, "utf8");
+  assert.match(source, /return "pod"/);
+  assert.match(source, /return "gg"/);
+  assert.match(source, /return "glen"/);
+  assert.match(source, /type:"pod_group"/);
+  assert.match(source, /type:"gg_group"/);
+  assert.match(source, /type:"glen_group"/);
+  assert.match(source, /function renderGlenGroup\(card,item\)/);
+  assert.match(source, /Glenburgies Pop Plus/);
+  assert.match(source, /Black Bottle \/ White Bottle/);
+});
+
 test("MMD Shop presentation runtime supports TH EN ZH across shop routes", async () => {
   const source = await readFile(sourceUrl, "utf8");
   const order = await readFile(orderFooterUrl, "utf8");
@@ -49,6 +62,7 @@ test("MMD Shop product detail switches canonical variants without bypassing back
   assert.match(html, /data-variant-select/);
   assert.match(js, /variant_group/);
   assert.match(js, /variant_type/);
+  assert.match(js, /variantBottle/);
   assert.match(js, /variant_value/);
   assert.match(js, /renderVariantControl\(\)/);
   assert.match(js, /updateVariantUrl\(selected\)/);
