@@ -36,6 +36,7 @@ function config(fields = {}) {
     records: [{
       id: "rec_payment_instruction",
       fields: {
+        "Instruction ID": "mmd_payment_primary_v1",
         Status: "active",
         Version: 1,
         "PromptPay Ref": "0899999999",
@@ -189,6 +190,93 @@ test("defaults PayPal card processing fee to 4% when config omits it", async () 
   assert.equal(payload.instructions.paypal_card.amount_due_thb, 10400);
 });
 
+
+test("shop payment reads only the HIMAI Shop payment-instruction profile", async () => {
+  let formula = "";
+  const env = envWith({
+    records: [
+      {
+        id: "rec_primary",
+        fields: {
+          "Instruction ID": "mmd_payment_primary_v1",
+          Status: "active",
+          Version: 9,
+          "Bank Provider": "primary_bank",
+          "Bank Name TH": "Primary Bank",
+          "Account Name TH": "Primary Receiver",
+          "Account Number": "9999999999",
+          Methods: ["bank_transfer"],
+          "Effective From": "2026-01-01T00:00:00.000Z",
+        },
+      },
+      {
+        id: "rec_shop",
+        fields: {
+          "Instruction ID": "mmd_shop_himai_v1",
+          Status: "active",
+          Version: 0,
+          "Bank Provider": "shop_bank",
+          "Bank Name TH": "Shop Bank",
+          "Account Name TH": "Shop Receiver",
+          "Account Number": "1234500000",
+          Methods: ["bank_transfer"],
+          "Effective From": "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ],
+  });
+  env.AIRTABLE_HTTP.fetch = async (input) => {
+    formula = new URL(String(input)).searchParams.get("filterByFormula") || "";
+    return Response.json({
+      records: [{
+        id: "rec_shop",
+        fields: {
+          "Instruction ID": "mmd_shop_himai_v1",
+          Status: "active",
+          Version: 0,
+          "Bank Provider": "shop_bank",
+          "Bank Name TH": "Shop Bank",
+          "Account Name TH": "Shop Receiver",
+          "Account Number": "1234500000",
+          Methods: ["bank_transfer"],
+          "Effective From": "2026-01-01T00:00:00.000Z",
+        },
+      }],
+    });
+  };
+
+  const response = await handlePaymentInstructions(
+    request(),
+    env,
+    detailsFetcher({
+      ...details({ stage: "shop", amount_due_thb: 1500 }),
+      payment_type: "shop",
+      shop_order: { order_id: "ORDER-1" },
+    }),
+  );
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.instruction_profile, "mmd_shop_himai_v1");
+  assert.equal(payload.instructions.bank_transfer.enabled, true);
+  assert.equal(payload.instructions.bank_transfer.account_number, "1234500000");
+  assert.equal(payload.instructions.promptpay.enabled, false);
+  assert.equal(payload.instructions.paypal_card.enabled, false);
+  assert.match(formula, /mmd_shop_himai_v1/);
+  assert.doesNotMatch(JSON.stringify(payload), /9999999999|Primary Receiver/);
+});
+
+test("service payment stays isolated on the primary instruction profile", async () => {
+  let formula = "";
+  const env = envWith();
+  env.AIRTABLE_HTTP.fetch = async (input) => {
+    formula = new URL(String(input)).searchParams.get("filterByFormula") || "";
+    return Response.json(config());
+  };
+  const response = await handlePaymentInstructions(request(), env, detailsFetcher(details()));
+  const payload = await response.json();
+  assert.equal(payload.instruction_profile, "mmd_payment_primary_v1");
+  assert.match(formula, /mmd_payment_primary_v1/);
+});
 
 test("does not expose payment methods when shop reservation is no longer accepting payment", async () => {
   let airtableCalled = false;
