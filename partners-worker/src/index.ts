@@ -1748,7 +1748,7 @@ function randomBase64Url(byteLength: number): string {
 
 async function sendTelegramMessage(env: RuntimeEnv, text: string, flow = "partner_review"): Promise<void> {
   const token = String(env.AUTH_SERVICE_PARTNERS_TO_TELEGRAM || "").trim();
-  const service = (env as RuntimeEnv & { TELEGRAM_WORKER?: Fetcher }).TELEGRAM_WORKER;
+  const service = (env as RuntimeEnv & { TELEGRAM_WORKER?: { fetch(input: Request): Promise<Response> } }).TELEGRAM_WORKER;
   if (!token || !service || typeof service.fetch !== "function") {
     console.warn("Telegram notification skipped: canonical telegram-worker transport is unavailable.");
     return;
