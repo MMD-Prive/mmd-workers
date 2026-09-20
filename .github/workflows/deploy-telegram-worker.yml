@@ -160,17 +160,16 @@ jobs:
           printf '%s' "$body" | grep -Fq 'mmd-concierge-capability-pack-v1-20260919'
           printf '%s' "$body" | grep -Fq 'mmd-recovery-outcome-taxonomy-v1-20260919'
 
-      - name: Ensure Telegram webhook canonical using runtime secrets
+      - name: Repair Telegram webhook to canonical route
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$TELEGRAM_WEBHOOK_LOCK_DEPLOY_NONCE"
           body_file="$(mktemp)"
           code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
             -o "$body_file" \
             -w "%{http_code}" \
             -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/webhook/ensure-canonical' \
-            -H "X-MMD-Deploy-Nonce: $TELEGRAM_WEBHOOK_LOCK_DEPLOY_NONCE" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -H 'Content-Type: application/json' \
             --data '{"confirm":"ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1"}')"
           cat "$body_file"
@@ -178,11 +177,33 @@ jobs:
           node - "$body_file" <<'NODE'
           const fs = require("node:fs");
           const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          if (payload?.ok !== true) throw new Error("runtime webhook lock failed");
+          if (payload?.ok !== true) throw new Error("runtime webhook repair failed");
           if (payload?.canonical_url !== "https://mmdbkk.com/telegram/webhook") throw new Error("canonical webhook URL mismatch");
-          if (payload?.observed_url !== payload?.canonical_url) throw new Error("Telegram webhook did not lock to canonical URL");
-          if (payload?.secret_token_enforced !== true) throw new Error("Telegram webhook secret enforcement is not confirmed");
-          console.log("Telegram webhook locked by telegram-worker runtime authority");
+          if (payload?.observed_url !== payload?.canonical_url) throw new Error("Telegram webhook did not repair to canonical URL");
+          if (payload?.secret_token_enforced !== true) throw new Error("Telegram webhook secret enforcement was not applied");
+          console.log("Telegram webhook repaired by verified Cloudflare deploy authority");
+          NODE
+
+      - name: Verify Telegram webhook canonical state
+        shell: bash
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
+            -o "$body_file" \
+            -w "%{http_code}" \
+            'https://telegram-worker.malemodel-bkk.workers.dev/telegram/webhook/status')"
+          cat "$body_file"
+          test "$code" = "200"
+          node - "$body_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload?.ok !== true) throw new Error("runtime webhook status failed");
+          if (payload?.canonical !== true) throw new Error("Telegram webhook is not canonical");
+          if (payload?.canonical_url !== "https://mmdbkk.com/telegram/webhook") throw new Error("canonical webhook URL mismatch");
+          if (payload?.observed_url !== payload?.canonical_url) throw new Error("Telegram webhook observed URL mismatch");
+          if (payload?.webhook_secret_configured !== true) throw new Error("Telegram webhook runtime secret is not configured");
+          console.log("Telegram webhook canonical state verified read-only");
           NODE
 
       - name: Smoke canonical Telegram auth boundaries
@@ -198,12 +219,12 @@ jobs:
             send_body="$(mktemp)"
             send_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$send_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/telegram/internal/send")"
             cat "$send_body"
-            test "$send_code" = "401"
+            test "$send_code" = "403"
 
             alias_body="$(mktemp)"
             alias_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$alias_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/v1/send")"
             cat "$alias_body"
-            test "$alias_code" = "401"
+            test "$alias_code" = "403"
 
             webhook_body="$(mktemp)"
             webhook_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$webhook_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' -H 'X-Telegram-Bot-Api-Secret-Token: invalid-smoke-secret' --data '{"update_id":0}' "$origin/telegram/webhook")"
