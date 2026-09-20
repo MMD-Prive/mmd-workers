@@ -2,11 +2,12 @@ import {
   handleKenjiModelWorkflowRequest,
   isKenjiModelWorkflowRequest,
 } from "./kenji-model-workflow.js";
-import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { normalizeModelSalesRule, resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
 export const KENJI_MODEL_ADMIN_BASE_PATH = "/v1/admin/kenji/models";
 export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draft`;
 export const KENJI_MODEL_SALES_RESOLVE_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/resolve`;
+export const KENJI_MODEL_SALES_RULE_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/rule`;
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MAX_LIST_SCAN = 500;
