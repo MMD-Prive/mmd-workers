@@ -621,6 +621,147 @@ async function createDraft(request, env, options, fetchImpl) {
   }, 201);
 }
 
+
+const SALES_AUDIENCE_CHOICES = new Set(["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review","Exact Client"]);
+const SALES_VISIBILITY_CHOICES = new Set(["on","off"]);
+const SALES_SCHEDULE_CHOICES = new Set(["Always","Date range","Date + time range","Weekly recurring"]);
+const SALES_PRICE_VISIBILITY_CHOICES = new Set(["Never automatic","Eligible scope only","Per approval only"]);
+const SALES_STATUS_CHOICES = new Set(["Draft","Active","Paused"]);
+const SALES_OFFER_TYPE_CHOICES = new Set(["PN","VIP","MK","Burn"]);
+const SALES_DAY_CHOICES = new Set(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]);
+
+function exactChoice(value, choices, fallback = "") {
+  const text = clean(value, 120);
+  if (!text) return fallback;
+  return choices.has(text) ? text : "";
+}
+
+function exactChoiceList(value, choices, max = 12) {
+  const raw = Array.isArray(value) ? value : [];
+  const out = [];
+  for (const item of raw) {
+    const text = clean(item?.name || item, 120);
+    if (!choices.has(text)) continue;
+    if (!out.includes(text)) out.push(text);
+  }
+  return out.slice(0, max);
+}
+
+function numericOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+async function upsertSalesRule(request, env, options, fetchImpl) {
+  let body;
+  try { body = await request.json(); }
+  catch (_) { return json({ ok: false, error: "invalid_json" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_body" }, 400);
+
+  const modelId = clean(body.model_id, 80);
+  const modelKey = clean(body.model_key, 160);
+  if (!modelId && !modelKey) return json({ ok: false, error: "model_identity_required" }, 400);
+  if (modelId && !/^rec[A-Za-z0-9]{14,}$/.test(modelId)) return json({ ok: false, error: "invalid_model_id" }, 400);
+
+  const salesVisibility = exactChoice(body.sales_visibility, SALES_VISIBILITY_CHOICES, "off");
+  if (!salesVisibility) return json({ ok: false, error: "invalid_sales_visibility" }, 400);
+  const scheduleType = exactChoice(body.schedule_type, SALES_SCHEDULE_CHOICES, "Always");
+  if (!scheduleType) return json({ ok: false, error: "invalid_schedule_type" }, 400);
+  const priceVisibility = exactChoice(body.price_visibility, SALES_PRICE_VISIBILITY_CHOICES, "Per approval only");
+  if (!priceVisibility) return json({ ok: false, error: "invalid_price_visibility" }, 400);
+  const status = exactChoice(body.status, SALES_STATUS_CHOICES, "Active");
+  if (!status) return json({ ok: false, error: "invalid_sales_status" }, 400);
+  const offerType = body.offer_type ? exactChoice(body.offer_type, SALES_OFFER_TYPE_CHOICES) : "";
+  if (body.offer_type && !offerType) return json({ ok: false, error: "invalid_offer_type" }, 400);
+
+  const audienceScope = exactChoiceList(body.audience_scope, SALES_AUDIENCE_CHOICES, 9);
+  if (Array.isArray(body.audience_scope) && audienceScope.length !== body.audience_scope.length) {
+    return json({ ok: false, error: "invalid_audience_scope" }, 400);
+  }
+  const daysOfWeek = exactChoiceList(body.days_of_week, SALES_DAY_CHOICES, 7);
+  if (Array.isArray(body.days_of_week) && daysOfWeek.length !== body.days_of_week.length) {
+    return json({ ok: false, error: "invalid_days_of_week" }, 400);
+  }
+
+  const customerRate = numericOrNull(body.customer_sell_rate_thb);
+  const partnerSourceRate = numericOrNull(body.partner_source_rate_thb);
+  if (salesVisibility === "on" && customerRate == null) return json({ ok: false, error: "customer_sell_rate_required" }, 400);
+
+  const priorityRaw = Number(body.priority ?? 100);
+  if (!Number.isFinite(priorityRaw)) return json({ ok: false, error: "invalid_priority" }, 400);
+  const priority = Math.max(-1000, Math.min(1000, Math.trunc(priorityRaw)));
+  const changeReason = clean(body.change_reason, 1000);
+  if (changeReason.length < 3) return json({ ok: false, error: "change_reason_required" }, 400);
+
+  const actorId = clean(options?.actor?.id || options?.actor || request.headers.get("x-mmd-admin-actor") || "admin", 100) || "admin";
+  const actorRole = normalizeToken(options?.actor?.role || request.headers.get("x-mmd-admin-role") || "admin");
+  const sourceActorType = actorRole === "owner" || actorId === "per" || actorId === "boss-per" ? "owner" : "admin";
+  const stableIdentity = normalizeToken(modelKey || modelId).slice(0, 80);
+  const offerRuleKey = clean(body.offer_rule_key, 180) || `mmd-sales-${stableIdentity}-owner-v1`;
+  const config = airtableConfig(env);
+
+  const params = new URLSearchParams();
+  params.set("pageSize", "2");
+  params.set("filterByFormula", `{offer_rule_key}="${escapeFormulaValue(offerRuleKey)}"`);
+  const existingResult = await airtableFetch(env, config.offerRulesTable, { method: "GET" }, params, fetchImpl);
+  if (!existingResult.ok) return json({ ok: false, error: "model_offer_rules_unavailable" }, 503);
+  const existingRecords = Array.isArray(existingResult.data?.records) ? existingResult.data.records : [];
+  if (existingRecords.length > 1) return json({ ok: false, error: "model_sales_rule_ambiguous" }, 409);
+  const existing = existingRecords[0] || null;
+  const existingVersion = Math.max(0, Number(existing?.fields?.version || 0) || 0);
+  const now = new Date().toISOString();
+
+  const fields = {
+    offer_rule_key: offerRuleKey,
+    ...(modelId ? { Model: [modelId] } : {}),
+    ...(modelKey ? { model_key: modelKey } : {}),
+    ...(offerType ? { offer_type: offerType } : {}),
+    audience_scope: audienceScope,
+    customer_sell_rate_thb: customerRate,
+    partner_source_rate_thb: partnerSourceRate,
+    price_visibility: priceVisibility,
+    sales_visibility: salesVisibility,
+    schedule_type: scheduleType,
+    effective_from_at: clean(body.effective_from_at, 100) || null,
+    effective_until_at: clean(body.effective_until_at, 100) || null,
+    days_of_week: daysOfWeek,
+    start_time_local: clean(body.start_time_local, 20),
+    end_time_local: clean(body.end_time_local, 20),
+    priority,
+    status,
+    requires_per_approval: body.requires_per_approval === false ? "No" : "Yes",
+    source_actor_type: sourceActorType,
+    change_reason: changeReason,
+    updated_by: actorId,
+    updated_at: now,
+    notify_status: "pending",
+    reviewed_by: actorId,
+    reviewed_at: now,
+    version: existingVersion + 1,
+  };
+
+  const payload = existing
+    ? { records: [{ id: existing.id, fields }], typecast: true }
+    : { records: [{ fields }], typecast: true };
+  const write = await airtableFetch(env, config.offerRulesTable, {
+    method: existing ? "PATCH" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }, null, fetchImpl);
+  if (!write.ok) {
+    return json({ ok: false, error: "model_sales_rule_write_failed", detail: write.detail || null }, write.status === 422 ? 400 : 502);
+  }
+  const record = write.data?.records?.[0] || {};
+  return json({
+    ok: true,
+    status: existing ? "updated" : "created",
+    authority: "model_sales_control_v1",
+    production_mutated: true,
+    record: modelSalesRuleSummary(record),
+  }, existing ? 200 : 201);
+}
+
 async function resolveSalesOffer(request, env, fetchImpl) {
   let body;
   try { body = await request.json(); }
@@ -658,7 +799,8 @@ export function isKenjiModelAdminRequest(path, method = "GET") {
   return (
     (normalized === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
     (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST") ||
-    (normalized === KENJI_MODEL_SALES_RESOLVE_PATH && verb === "POST")
+    (normalized === KENJI_MODEL_SALES_RESOLVE_PATH && verb === "POST") ||
+    (normalized === KENJI_MODEL_SALES_RULE_PATH && verb === "POST")
   );
 }
 
@@ -670,5 +812,6 @@ export async function handleKenjiModelAdminRequest(request, env = {}, options = 
   const fetchImpl = options.fetchImpl || fetch;
   if (path === KENJI_MODEL_ADMIN_BASE_PATH) return listModels(request, env, fetchImpl);
   if (path === KENJI_MODEL_SALES_RESOLVE_PATH) return resolveSalesOffer(request, env, fetchImpl);
+  if (path === KENJI_MODEL_SALES_RULE_PATH) return upsertSalesRule(request, env, options, fetchImpl);
   return createDraft(request, env, options, fetchImpl);
 }
