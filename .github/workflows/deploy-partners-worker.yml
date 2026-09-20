@@ -64,7 +64,7 @@ jobs:
               -H "Authorization: Bearer $AIRTABLE_API_KEY" \
               "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
           )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$record")"
+          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields["Notes Internal"] // .fields[$f] // ""' <<<"$record")"
           dashboard_url="$(printf '%s\n' "$notes" | sed -n 's/^Dashboard: //p' | tail -n 1)"
           test -n "$dashboard_url"
           token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["t"][0])' "$dashboard_url")"
@@ -223,7 +223,7 @@ jobs:
               -H "Authorization: Bearer $AIRTABLE_API_KEY" \
               "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
           )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$record")"
+          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields["Notes Internal"] // .fields[$f] // ""' <<<"$record")"
           cleaned="$(NOTES="$notes" node <<'NODE'
           const notes = process.env.NOTES || "";
           const without = notes
