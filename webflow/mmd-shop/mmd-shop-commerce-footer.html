@@ -362,7 +362,7 @@ var panel=document.querySelector("#mmdCartDrawer .mmd-panel>div");
 var products=[];
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
 function money(v){var i=window.MMDShopI18n;if(i&&typeof i.money==="function")return i.money(v);var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"สอบถามราคา"}
-function restricted(p){return /^PPP25-/i.test(p.sku||"")||/\bpod\b/i.test(p.product_name||"")}
+function restricted(p){var t=[p&&p.sku,p&&p.product_name,p&&p.description,p&&p.curator_note].join(" ").toLowerCase();return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(t)}
 function familyType(p){
  var s=String(p&&p.sku||"").toUpperCase(),n=String(p&&p.product_name||"").toLowerCase();
  if(s.indexOf("PPP25-")===0||n.indexOf("pod premium plus 2.5mg")>=0)return "pod";
@@ -401,9 +401,10 @@ function eligibleAction(p){
 }
 function renderPodGroup(card,item){
  var first=item.variants[0];
- card.innerHTML='<div class="mmd-card-media"><img src="'+img(first)+'" alt="Pod Premium Plus 2.5mg" loading="lazy"><span class="mmd-badge">FLAVOUR SELECT</span></div><div class="mmd-card-body"><h3>Pod Premium Plus 2.5mg</h3><p>เลือก Flavour จากรายการเดียว</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span><strong data-pod-price>'+money(first&&first.selling_price_thb)+'</strong></div><div class="mmd-variant"><div class="mmd-variant-label">เลือก Flavour</div><select class="mmd-select" data-pod-select>'+item.variants.map(function(v,i){return '<option value="'+i+'">'+esc(podFlavour(v))+' — '+esc(money(v.selling_price_thb))+'</option>'}).join("")+'</select><div class="mmd-variant-meta"><span>SKU</span><strong data-pod-sku>'+esc(first&&first.sku)+'</strong></div></div><a class="mmd-shop-detail" data-pod-detail href="'+esc(detailUrl(first))+'">ดูรายละเอียด Flavour นี้</a><div class="mmd-shop-restricted">สินค้ากลุ่มนี้สั่งผ่าน MMD ได้โดยตรง</div></div></div>';
- var s=card.querySelector("[data-pod-select]"),sku=card.querySelector("[data-pod-sku]"),price=card.querySelector("[data-pod-price]"),detail=card.querySelector("[data-pod-detail]");
- s.addEventListener("change",function(){var p=item.variants[Number(s.value)]||first;sku.textContent=p.sku||"—";price.textContent=money(p.selling_price_thb);detail.href=detailUrl(p)});
+ card.innerHTML='<div class="mmd-card-media"><img src="'+img(first)+'" alt="Pod Premium Plus 2.5mg" loading="lazy"><span class="mmd-badge">FLAVOUR SELECT</span></div><div class="mmd-card-body"><h3>Pod Premium Plus 2.5mg</h3><p>เลือก Flavour จากรายการเดียว</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span><strong data-pod-price>'+money(first&&first.selling_price_thb)+'</strong></div><div class="mmd-variant"><div class="mmd-variant-label">เลือก Flavour</div><select class="mmd-select" data-pod-select>'+item.variants.map(function(v,i){return '<option value="'+i+'">'+esc(podFlavour(v))+' — '+esc(money(v.selling_price_thb))+'</option>'}).join("")+'</select><div class="mmd-variant-meta"><span>SKU</span><strong data-pod-sku>'+esc(first&&first.sku)+'</strong></div><div class="mmd-variant-state" data-pod-state></div></div><a class="mmd-shop-detail" data-pod-detail href="'+esc(detailUrl(first))+'">ดูรายละเอียด Flavour นี้</a><div data-pod-action>'+eligibleAction(first)+'</div></div></div>';
+ var s=card.querySelector("[data-pod-select]"),sku=card.querySelector("[data-pod-sku]"),price=card.querySelector("[data-pod-price]"),detail=card.querySelector("[data-pod-detail]"),state=card.querySelector("[data-pod-state]"),action=card.querySelector("[data-pod-action]");
+ function update(){var p=item.variants[Number(s.value)]||first;sku.textContent=p.sku||"—";price.textContent=money(p.selling_price_thb);detail.href=detailUrl(p);state.textContent=p.checkout_eligible===true?"พร้อมสั่งซื้อ":checkoutStatusText(p);action.innerHTML=eligibleAction(p)}
+ s.addEventListener("change",update);update();
 }
 function renderGGGroup(card,item){
  var first=item.variants[0];
