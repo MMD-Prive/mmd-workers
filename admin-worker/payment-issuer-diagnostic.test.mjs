@@ -5,7 +5,7 @@ import worker from './src/admin-login-hero-worker.js';
 import paymentsWorker from '../payments-worker/index.review-wrapper.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { callPaymentsCreateLink } from './src/index.js';
-import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH, ISSUE_EXISTING_SESSION_MODE } from './src/payment-issuer-diagnostic.js';
+import { PAYMENT_ISSUER_DIAGNOSTIC_PATH as PATH, ISSUE_EXISTING_SESSION_MODE, REISSUE_EXISTING_SESSION_MODE } from './src/payment-issuer-diagnostic.js';
 
 function setup({ upstreamSecret = 'service-test', binding } = {}) {
   const calls = [];
@@ -179,6 +179,101 @@ test('owner existing-session issuance builds deposit pricing server-side and nev
   assert.match(payload.note, /\[SIGIL Pricing v1\]/);
   assert.match(payload.note, /"deposit_due_thb":8500/);
   assert.match(payload.note, /"balance_thb":19000/);
+});
+
+
+test('owner can reissue an existing session as full payment from the latest server-owned session amount', async () => {
+  const minted = {
+    ok: true,
+    session_id: 'sess_fixture',
+    payment_ref: 'pay_full_reissue',
+    customer_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=customer-full-secret',
+    model_confirmation_url: 'https://mmdbkk.com/sigil/confirm/job-model?t=model-full-secret',
+  };
+  const h = setup({ binding: () => Response.json(minted) });
+  installAdminAirtable(h.env, validSessionFields({
+    fldhwC79ndbnEXSZz: 30000,
+    fldvJowquu8RrsOMc: 30000,
+    fldojgjSQLaO0uQLX: 'pay_old_deposit',
+    fldi9ZdoiUXzSv1rI: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=old-customer',
+    fld0mFma9J9yfEaKb: 'https://mmdbkk.com/sigil/confirm/job-model?t=old-model',
+  }), { paymentRecords: [{ id: 'recOld', fields: {
+    fldrr9g8ZZjqAbdKQ: 'deposit',
+    fldydUWHhqVLMkNSC: 'deposit',
+    fld04fr3bRJTohO6y: 'Pending Confirmation',
+  } }] });
+
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: REISSUE_EXISTING_SESSION_MODE,
+    session_id: 'sess_fixture',
+    payment_type: 'full',
+  } }), h.env, {});
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.stage, 'issued');
+  assert.equal(body.payment_ref, 'pay_full_reissue');
+  assert.equal(body.payment_type, 'full');
+  assert.equal(body.customer_confirmation_url, undefined);
+  assert.equal(h.calls.length, 1);
+  const payload = h.calls[0].body;
+  assert.equal(payload.amount_thb, 30000);
+  assert.equal(payload.payment_type, 'full');
+  assert.equal(payload.payment_stage, 'full');
+  assert.equal(payload.deposit_percent, undefined);
+  assert.equal(payload.deposit_amount_thb, undefined);
+  assert.equal(payload.balance_amount_thb, undefined);
+});
+
+test('full-payment reissue is idempotent when the current signed links already point at a live full intent', async () => {
+  const h = setup({ binding: () => { throw new Error('must_not_mint'); } });
+  installAdminAirtable(h.env, validSessionFields({
+    fldhwC79ndbnEXSZz: 30000,
+    fldvJowquu8RrsOMc: 30000,
+    fldojgjSQLaO0uQLX: 'pay_current_full',
+    fldi9ZdoiUXzSv1rI: 'https://mmdbkk.com/sigil/confirm/job-confirmation?t=current-customer',
+    fld0mFma9J9yfEaKb: 'https://mmdbkk.com/sigil/confirm/job-model?t=current-model',
+  }), { paymentRecords: [{ id: 'recCurrent', fields: {
+    fldrr9g8ZZjqAbdKQ: 'full',
+    fldydUWHhqVLMkNSC: 'full',
+    fld04fr3bRJTohO6y: 'Pending Confirmation',
+  } }] });
+
+  const response = await worker.fetch(await request(h.env, { body: {
+    mode: REISSUE_EXISTING_SESSION_MODE,
+    session_id: 'sess_fixture',
+    payment_type: 'full',
+  } }), h.env, {});
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.stage, 'existing_full_links');
+  assert.equal(body.issued, false);
+  assert.equal(body.payment_ref, 'pay_current_full');
+  assert.equal(h.calls.length, 0);
+});
+
+test('full-payment reissue rejects browser-selected amounts and non-full payment types', async () => {
+  const h = setup({ binding: () => { throw new Error('must_not_mint'); } });
+  installAdminAirtable(h.env, validSessionFields());
+
+  let response = await worker.fetch(await request(h.env, { body: {
+    mode: REISSUE_EXISTING_SESSION_MODE,
+    session_id: 'sess_fixture',
+    payment_type: 'deposit',
+  } }), h.env, {});
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, 'reissue_payment_type_must_be_full');
+
+  response = await worker.fetch(await request(h.env, { body: {
+    mode: REISSUE_EXISTING_SESSION_MODE,
+    session_id: 'sess_fixture',
+    payment_type: 'full',
+    amount_thb: 1,
+  } }), h.env, {});
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, 'unsupported_issue_field');
+  assert.equal(h.calls.length, 0);
 });
 
 test('existing-session deposit uses the job total when an outstanding balance is recorded', async () => {

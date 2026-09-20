@@ -3,8 +3,16 @@ import { paymentIssuerTransport, requestPaymentsConfirmLink } from "./payments-i
 
 export const PAYMENT_ISSUER_DIAGNOSTIC_PATH = "/v1/admin/payment-issuer-diagnostic";
 export const ISSUE_EXISTING_SESSION_MODE = "issue_existing_session";
+export const REISSUE_EXISTING_SESSION_MODE = "reissue_existing_session";
 const ADMIN_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
+
+const PAYMENT_FIELDS = Object.freeze({
+  paymentRef: "fldOO6SY49iDw8VBZ",
+  paymentIntentStatus: "fld04fr3bRJTohO6y",
+  paymentStage: "fldrr9g8ZZjqAbdKQ",
+  paymentType: "fldydUWHhqVLMkNSC",
+});
 
 const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
@@ -45,7 +53,9 @@ export async function handlePaymentIssuerDiagnostic(request, env = {}) {
   }
 
   if (Object.keys(body).length === 0) return handleEmptyDiagnostic(env);
-  if (body.mode === ISSUE_EXISTING_SESSION_MODE) return handleIssueExistingSession(env, body);
+  if (body.mode === ISSUE_EXISTING_SESSION_MODE || body.mode === REISSUE_EXISTING_SESSION_MODE) {
+    return handleIssueExistingSession(env, body);
+  }
   return json({ ok: false, error: "diagnostic_empty_object_required" }, 400);
 }
 
@@ -75,14 +85,19 @@ async function handleEmptyDiagnostic(env) {
 }
 
 async function handleIssueExistingSession(env, body) {
-  const allowedKeys = new Set(["mode", "session_id"]);
-  if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
+  const reissue = body.mode === REISSUE_EXISTING_SESSION_MODE;
+  const allowedKeys = new Set(["mode", "session_id", "payment_type"]);
+  if (Object.keys(body).some((key) => !allowedKeys.has(key)) || (!reissue && Object.prototype.hasOwnProperty.call(body, "payment_type"))) {
     return json({ ok: false, error: "unsupported_issue_field" }, 400);
   }
 
   const sessionId = clean(body.session_id, 200);
   if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
-  const paymentType = "deposit";
+  const requestedType = clean(body.payment_type, 40).toLowerCase();
+  const paymentType = reissue ? requestedType : "deposit";
+  if (reissue && paymentType !== "full") {
+    return json({ ok: false, error: "reissue_payment_type_must_be_full" }, 400);
+  }
   const depositPercent = 30;
 
   let session;
@@ -97,7 +112,7 @@ async function handleIssueExistingSession(env, body) {
   const existingPaymentRef = text(fields[SESSION_FIELDS.paymentRef], 200);
   const existingCustomerUrl = safeConfirmationUrl(fields[SESSION_FIELDS.customerUrl], "/sigil/confirm/job-confirmation");
   const existingModelUrl = safeConfirmationUrl(fields[SESSION_FIELDS.modelUrl], "/sigil/confirm/job-model");
-  if (existingPaymentRef && existingCustomerUrl && existingModelUrl) {
+  if (!reissue && existingPaymentRef && existingCustomerUrl && existingModelUrl) {
     return json({
       ok: true,
       stage: "existing_links",
@@ -108,21 +123,46 @@ async function handleIssueExistingSession(env, body) {
       model_confirmation_url_present: true,
     });
   }
-  if (existingPaymentRef || fields[SESSION_FIELDS.customerUrl] || fields[SESSION_FIELDS.modelUrl]) {
+  if (!reissue && (existingPaymentRef || fields[SESSION_FIELDS.customerUrl] || fields[SESSION_FIELDS.modelUrl])) {
     return json({ ok: false, stage: "preflight", error: "partial_confirmation_state" }, 409);
+  }
+  if (reissue && existingPaymentRef && existingCustomerUrl && existingModelUrl) {
+    let currentPayment;
+    try {
+      currentPayment = await findPaymentByRef(env, existingPaymentRef);
+    } catch (error) {
+      return json({ ok: false, stage: "reissue_preflight", error: safeError(error, "payment_lookup_failed") }, error?.status || 503);
+    }
+    const paymentFields = currentPayment?.fields || {};
+    const currentStage = clean(paymentFields[PAYMENT_FIELDS.paymentStage] || paymentFields[PAYMENT_FIELDS.paymentType], 80).toLowerCase();
+    const currentIntent = clean(paymentFields[PAYMENT_FIELDS.paymentIntentStatus], 80).toLowerCase();
+    if (currentStage === "full" && currentIntent !== "cancelled") {
+      return json({
+        ok: true,
+        stage: "existing_full_links",
+        issued: false,
+        session_id: sessionId,
+        payment_ref: existingPaymentRef,
+        payment_type: "full",
+        customer_confirmation_url_present: true,
+        model_confirmation_url_present: true,
+      });
+    }
   }
 
   const linkedClient = Array.isArray(fields[SESSION_FIELDS.clientLink]) ? fields[SESSION_FIELDS.clientLink] : [];
   if (!linkedClient.length) return json({ ok: false, stage: "preflight", error: "canonical_client_link_required" }, 409);
 
-  let paymentCollision;
-  try {
-    paymentCollision = await findPaymentForSession(env, sessionId);
-  } catch (error) {
-    return json({ ok: false, stage: "payment_preflight", error: safeError(error, "payment_lookup_failed") }, error?.status || 503);
-  }
-  if (paymentCollision) {
-    return json({ ok: false, stage: "payment_preflight", error: "existing_payment_without_session_links" }, 409);
+  if (!reissue) {
+    let paymentCollision;
+    try {
+      paymentCollision = await findPaymentForSession(env, sessionId);
+    } catch (error) {
+      return json({ ok: false, stage: "payment_preflight", error: safeError(error, "payment_lookup_failed") }, error?.status || 503);
+    }
+    if (paymentCollision) {
+      return json({ ok: false, stage: "payment_preflight", error: "existing_payment_without_session_links" }, 409);
+    }
   }
 
   let clientName, modelName, jobType, jobDate, startTime, endTime, locationName, amountThb;
@@ -159,11 +199,13 @@ async function handleIssueExistingSession(env, body) {
     google_map_url: googleMapUrl,
     amount_thb: amountThb,
     ...(payModelThb === null ? {} : { pay_model_thb: payModelThb }),
-    payment_type: "deposit",
-    payment_stage: "deposit",
-    deposit_percent: 30,
-    deposit_amount_thb: Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500),
-    balance_amount_thb: Math.max(0, amountThb - Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500)),
+    payment_type: paymentType,
+    payment_stage: paymentType,
+    ...(paymentType === "deposit" ? {
+      deposit_percent: 30,
+      deposit_amount_thb: Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500),
+      balance_amount_thb: Math.max(0, amountThb - Math.min(amountThb, Math.ceil(((amountThb * 30) / 100) / 500) * 500)),
+    } : {}),
     payment_method: "promptpay",
     note,
     confirm_page: "https://mmdbkk.com/sigil/confirm/job-confirmation",
@@ -230,6 +272,10 @@ async function findSession(env, sessionId) {
 
 async function findPaymentForSession(env, sessionId) {
   return findSingle(env, env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", `{session_id}='${formulaValue(sessionId)}'`, "payment_session_ambiguous");
+}
+
+async function findPaymentByRef(env, paymentRef) {
+  return findSingle(env, env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ", `{Payment Reference}='${formulaValue(paymentRef)}'`, "payment_ref_ambiguous");
 }
 
 async function findSingle(env, tableId, formula, ambiguousError) {
@@ -299,7 +345,7 @@ function httpError(status, message) {
 
 function safeError(error, fallback) {
   const allowed = new Set([
-    "airtable_not_ready", "airtable_request_failed", "session_id_ambiguous", "payment_session_ambiguous",
+    "airtable_not_ready", "airtable_request_failed", "session_id_ambiguous", "payment_session_ambiguous", "payment_ref_ambiguous",
     "client_name_missing", "model_name_missing", "job_type_missing", "job_date_missing", "start_time_missing",
     "end_time_missing", "location_name_missing", "amount_thb_missing",
   ]);
