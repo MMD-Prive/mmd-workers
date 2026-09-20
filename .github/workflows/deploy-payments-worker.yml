@@ -76,7 +76,17 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'PAYMENTS_TELEGRAM_SHARED_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config telegram-worker/wrangler.toml
+          router_secret_ready=0
+          for attempt in $(seq 1 24); do
+            if printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config telegram-worker/wrangler.toml; then
+              router_secret_ready=1
+              echo "telegram-worker service secret ready on attempt $attempt"
+              break
+            fi
+            echo "telegram-worker latest version not deployable yet; retrying secret rotation (attempt $attempt)"
+            sleep 5
+          done
+          test "$router_secret_ready" = "1"
           printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config payments-worker/wrangler.merged.toml
 
       - name: Smoke canonical Payments Confirm service transport
