@@ -1,0 +1,223 @@
+<main id="mmdshop-final" class="mmdshop-next">
+<style>
+#mmdshop-final,#mmdshop-final *{box-sizing:border-box}
+#mmdshop-final{
+ --ink:#111416;--paper:#f4f5f2;--white:#fff;--muted:#697176;--line:rgba(17,20,22,.12);
+ --dark:#111416;--signal:#c8e4e8;--signal-ink:#315c66;--warm:#ece8df;
+ margin:0;background:var(--paper);color:var(--ink);overflow:hidden;
+ font-family:"IBM Plex Sans Thai","Noto Sans Thai","LINE Seed Sans TH",Tahoma,sans-serif;
+ font-weight:400;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility
+}
+#mmdshop-final a{color:inherit;text-decoration:none}
+#mmdshop-final button,#mmdshop-final input,#mmdshop-final select,#mmdshop-final textarea{font:inherit}
+#mmdshop-final .mmd-shell{width:min(1160px,calc(100% - 28px));margin:auto}
+#mmdshop-final .mmd-top{
+ position:absolute;z-index:5;top:14px;left:14px;right:14px;display:flex;align-items:center;justify-content:space-between;
+ color:#fff
+}
+#mmdshop-final .mmd-brand{font-family:"Inter",Arial,sans-serif;font-size:16px;font-weight:600;letter-spacing:-.02em}
+#mmdshop-final .mmd-toplinks{display:flex;gap:6px}
+#mmdshop-final .mmd-toplinks a{padding:8px 10px;border:1px solid rgba(255,255,255,.22);border-radius:10px;background:rgba(17,20,22,.20);backdrop-filter:blur(12px);font-size:11px;font-weight:500}
+#mmdshop-final .mmd-hero{
+ position:relative;min-height:min(68svh,650px);display:grid;align-items:end;color:#fff;background:#111416
+}
+#mmdshop-final .mmd-hero img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center}
+#mmdshop-final .mmd-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(9,11,12,.88) 0,rgba(9,11,12,.34) 52%,rgba(9,11,12,.08) 100%),linear-gradient(90deg,rgba(9,11,12,.38),transparent 72%)}
+#mmdshop-final .mmd-hero-copy{position:relative;z-index:2;padding:100px 0 28px}
+#mmdshop-final .mmd-kicker{font-family:"Inter",Arial,sans-serif;font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--signal)}
+#mmdshop-final .mmd-hero h1{max-width:750px;margin:10px 0 10px;font-size:clamp(39px,8.5vw,78px);line-height:.98;letter-spacing:-.045em;font-weight:600;text-wrap:balance}
+#mmdshop-final .mmd-hero p{max-width:630px;margin:0;color:rgba(255,255,255,.78);font-size:15px;line-height:1.65}
+#mmdshop-final .mmd-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}
+#mmdshop-final .mmd-btn{min-height:44px;padding:0 14px;border:1px solid transparent;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;background:#fff;color:#111416;font-size:12px;font-weight:600}
+#mmdshop-final .mmd-btn.ghost{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);color:#fff;backdrop-filter:blur(12px)}
+#mmdshop-final .mmd-layers{background:#fff;border-bottom:1px solid var(--line)}
+#mmdshop-final .mmd-layers-track{display:flex;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;padding:0 14px}
+#mmdshop-final .mmd-layers-track::-webkit-scrollbar{display:none}
+#mmdshop-final .mmd-layer{flex:0 0 auto;min-width:165px;padding:14px 18px 13px 0;margin-right:20px;scroll-snap-align:start}
+#mmdshop-final .mmd-layer small{display:block;font-family:"Inter",Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:.12em;color:var(--signal-ink)}
+#mmdshop-final .mmd-layer strong{display:block;margin-top:3px;font-size:13px;line-height:1.35;font-weight:500}
+#mmdshop-final .mmd-bridge{height:108px;position:relative;overflow:hidden;background:#111416 url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf17338eee70c306965b79_MMD%20Shop%20-%2007.webp") center/cover no-repeat}
+#mmdshop-final .mmd-bridge:after{content:"";position:absolute;inset:-1px;background:linear-gradient(180deg,#fff 0,transparent 34%,transparent 70%,var(--paper) 100%);mix-blend-mode:screen;opacity:.18}
+#mmdshop-final .mmd-section{padding:34px 0}
+#mmdshop-final .mmd-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:16px}
+#mmdshop-final .mmd-head-copy{max-width:650px}
+#mmdshop-final .mmd-label{font-family:"Inter",Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--signal-ink)}
+#mmdshop-final .mmd-head h2{margin:6px 0 5px;font-size:clamp(28px,6vw,46px);line-height:1.06;letter-spacing:-.03em;font-weight:600}
+#mmdshop-final .mmd-copy{margin:0;color:var(--muted);font-size:13px;line-height:1.65}
+#mmdshop-final .mmd-grid{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:2px 14px 8px;margin:0 -14px}
+#mmdshop-final .mmd-grid::-webkit-scrollbar{display:none}
+#mmdshop-final .mmd-card{
+ flex:0 0 min(84vw,350px);scroll-snap-align:start;overflow:hidden;display:flex;flex-direction:column;
+ border:1px solid var(--line);border-radius:16px;background:#fff
+}
+#mmdshop-final .mmd-card-media{position:relative;aspect-ratio:16/10;background:#e8ebe8;overflow:hidden}
+#mmdshop-final .mmd-card-media img{width:100%;height:100%;object-fit:cover;display:block}
+#mmdshop-final .mmd-badge{position:absolute;left:10px;top:10px;padding:6px 8px;border-radius:8px;background:rgba(255,255,255,.90);color:var(--signal-ink);font-family:"Inter",Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+#mmdshop-final .mmd-card-body{padding:14px;display:flex;flex:1;flex-direction:column;gap:8px}
+#mmdshop-final .mmd-card h3{margin:0;font-size:20px;line-height:1.18;font-weight:600}
+#mmdshop-final .mmd-card p{margin:0;color:var(--muted);font-size:12px;line-height:1.55}
+#mmdshop-final .mmd-card-bottom{margin-top:auto;padding-top:4px}
+#mmdshop-final .mmd-price{margin-bottom:9px;font-family:"Inter",Arial,sans-serif;font-size:18px;font-weight:600}
+#mmdshop-final .mmd-price span{display:block;margin-bottom:2px;color:var(--muted);font-size:8px;font-weight:500;letter-spacing:.12em;text-transform:uppercase}
+#mmdshop-final .mmd-shop-detail,#mmdshop-final .mmd-shop-buy{
+ width:100%;min-height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:8px 12px;font-size:12px;font-weight:600
+}
+#mmdshop-final .mmd-shop-detail{margin-bottom:7px;border:1px solid var(--line);background:#f7f8f6}
+#mmdshop-final .mmd-shop-buy{border:1px solid var(--dark);background:var(--dark);color:#fff;cursor:pointer}
+#mmdshop-final .mmd-shop-buy[disabled]{opacity:.4;cursor:not-allowed}
+#mmdshop-final .mmd-shop-restricted{padding:9px 0 2px;color:#805b3e;font-size:11px;line-height:1.5}
+#mmdshop-final .mmd-variant{margin:8px 0;padding:9px;border:1px solid var(--line);border-radius:10px;background:#f7f8f6}
+#mmdshop-final .mmd-variant-label{margin-bottom:5px;color:var(--muted);font-size:10px;font-weight:500}
+#mmdshop-final .mmd-select{width:100%;min-height:40px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);padding:0 9px}
+#mmdshop-final .mmd-variant-meta{display:flex;justify-content:space-between;gap:10px;margin-top:5px;color:var(--muted);font-size:9px}
+#mmdshop-final .mmd-variant-meta strong{color:var(--ink);font-weight:500}
+#mmdshop-final .mmd-variant-state{margin-top:5px;color:var(--muted);font-size:10px}
+#mmdshop-final .mmd-fold{margin-top:14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#mmdshop-final details{border-top:1px solid var(--line)}
+#mmdshop-final details:first-child{border-top:0}
+#mmdshop-final summary{min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:18px;list-style:none;cursor:pointer;font-size:14px;font-weight:500}
+#mmdshop-final summary::-webkit-details-marker{display:none}
+#mmdshop-final summary:after{content:"+";font-family:"Inter",Arial,sans-serif;font-size:22px;font-weight:400;line-height:1;transition:transform .28s ease}
+#mmdshop-final details[open] summary:after{transform:rotate(45deg)}
+#mmdshop-final .mmd-fold-body{padding:0 0 15px;color:var(--muted);font-size:12px;line-height:1.7}
+#mmdshop-final .mmd-closecard{
+ position:relative;overflow:hidden;min-height:210px;margin-top:34px;display:flex;align-items:end;color:#fff;background:#111416 url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf1733fe8668919b770776_MMD%20Shop%20-%2010.webp") center/cover no-repeat
+}
+#mmdshop-final .mmd-closecard:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(9,11,12,.78),rgba(9,11,12,.08))}
+#mmdshop-final .mmd-closecopy{position:relative;z-index:2;padding:26px 0}
+#mmdshop-final .mmd-closecopy h2{max-width:600px;margin:6px 0;font-size:clamp(26px,6vw,42px);line-height:1.06;font-weight:600;letter-spacing:-.03em}
+#mmdshop-final .mmd-closecopy p{margin:0;color:rgba(255,255,255,.7);font-size:12px}
+#mmdshop-final .mmd-cartbubble{
+ position:fixed;z-index:9998;right:12px;bottom:12px;display:flex;align-items:center;gap:8px;min-height:44px;padding:7px 10px;
+ border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#111416;color:#fff;box-shadow:0 14px 34px rgba(0,0,0,.22);cursor:pointer
+}
+#mmdshop-final .mmd-count{min-width:24px;height:24px;border-radius:8px;display:grid;place-items:center;background:#fff;color:#111416;font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:600}
+#mmdshop-final .mmd-toast{position:fixed;z-index:10001;left:50%;bottom:68px;transform:translate(-50%,12px);opacity:0;pointer-events:none;padding:10px 12px;border-radius:10px;background:#111416;color:#fff;font-size:11px;transition:.2s}
+#mmdshop-final .mmd-toast.show{opacity:1;transform:translate(-50%,0)}
+#mmdshop-final .mmd-drawer{position:fixed;inset:0;z-index:10000;display:none}
+#mmdshop-final .mmd-drawer.is-open{display:block}
+#mmdshop-final .mmd-shade{position:absolute;inset:0;background:rgba(0,0,0,.46);backdrop-filter:blur(8px)}
+#mmdshop-final .mmd-panel{position:absolute;left:0;right:0;bottom:0;max-height:88svh;overflow:auto;padding:12px 14px 22px;border-radius:20px 20px 0 0;background:#fff;box-shadow:0 -18px 54px rgba(0,0,0,.18)}
+#mmdshop-final .mmd-close{position:sticky;z-index:2;top:0;margin-left:auto;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:22px;cursor:pointer}
+#mmdshop-final .mmd-panel h3{margin:6px 0 4px;font-size:26px;line-height:1.08;font-weight:600}
+#mmdshop-final .mmd-dtext{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+#mmdshop-final .mmd-cartlist{display:grid;gap:7px;margin-top:12px}
+#mmdshop-final .mmd-cartitem{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fafbf9}
+#mmdshop-final .mmd-cartitem strong{font-size:12px;font-weight:600}
+#mmdshop-final .mmd-cartitem small{display:block;margin-top:2px;color:var(--muted);font-size:10px}
+#mmdshop-final .mmd-cartitem button{border:0;background:transparent;color:#8b4b4f;font-size:10px}
+#mmdshop-final .mmd-total{display:flex;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:13px;font-weight:600}
+#mmdshop-final .mmd-cartactions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+#mmdshop-final .mmd-cartactions .mmd-btn{flex:1;background:#111416;color:#fff}
+#mmdshop-final .mmd-cartactions .mmd-btn.soft{background:#f3f5f2;color:#111416;border-color:var(--line)}
+#mmdshop-final .mmd-checkoutbox{display:grid;gap:8px;margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:#f7f8f6}
+#mmdshop-final .mmd-checkoutbox h4{margin:0;font-size:16px;font-weight:600}
+#mmdshop-final .mmd-checkoutbox p{margin:0;color:var(--muted);font-size:10px;line-height:1.5}
+#mmdshop-final .mmd-checkoutbox input,#mmdshop-final .mmd-checkoutbox select,#mmdshop-final .mmd-checkoutbox textarea{width:100%;min-height:40px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 10px;color:var(--ink)}
+#mmdshop-final .mmd-checkoutbox textarea{padding-top:9px;padding-bottom:9px;resize:vertical}
+#mmdshop-final .mmd-checkoutbox label{display:grid;gap:4px}
+#mmdshop-final .mmd-checkoutbox label>span{color:var(--muted);font-size:9px;font-weight:500}
+#mmdshop-final .mmd-shipping-grid{display:grid;gap:7px}
+#mmdshop-final .mmd-shipping-grid[hidden]{display:none!important}
+#mmdshop-final .mmd-shipping-two{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#mmdshop-final .mmd-checkout-status{color:#805b3e;font-size:10px;line-height:1.5}
+#mmdshop-final [data-reveal]{opacity:0;transform:translateY(18px);transition:opacity .62s cubic-bezier(.2,.7,.2,1),transform .62s cubic-bezier(.2,.7,.2,1)}
+#mmdshop-final [data-reveal].is-in{opacity:1;transform:none}
+@media(min-width:768px){
+ #mmdshop-final .mmd-shell{width:min(1160px,calc(100% - 44px))}
+ #mmdshop-final .mmd-top{top:22px;left:22px;right:22px}
+ #mmdshop-final .mmd-hero-copy{padding-bottom:48px}
+ #mmdshop-final .mmd-layers-track{justify-content:center}
+ #mmdshop-final .mmd-layer{min-width:190px}
+ #mmdshop-final .mmd-bridge{height:140px}
+ #mmdshop-final .mmd-section{padding:50px 0}
+ #mmdshop-final .mmd-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;padding:0;margin:0}
+ #mmdshop-final .mmd-card{min-width:0}
+ #mmdshop-final .mmd-panel{left:auto;top:0;bottom:0;right:0;width:min(520px,100%);max-height:none;border-radius:0;padding:18px 20px 30px}
+}
+@media(prefers-reduced-motion:reduce){#mmdshop-final [data-reveal]{opacity:1;transform:none;transition:none}}
+</style>
+
+<header class="mmd-top">
+ <a class="mmd-brand" href="/mmd-shop">MMD SHOP</a>
+ <nav class="mmd-toplinks" aria-label="MMD Shop"><a href="/mmd-shop/rules">กติกา</a><a href="/my-mmd/orders">Orders</a></nav>
+</header>
+
+<section class="mmd-hero">
+ <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf1733332cb149ee4fe9e7_MMD%20Shop%20-%2005.webp" alt="MMD Shop — Per curated selection" loading="eager" fetchpriority="high">
+ <div class="mmd-shell mmd-hero-copy" data-reveal>
+  <span class="mmd-kicker">PER'S PICKS</span>
+  <h1>ของที่ผมใช้เวลาเลือกให้แล้ว</h1>
+  <p>ถ้าผมยังไม่มั่นใจว่าเหมาะกับลูกค้า MMD ผมไม่เอาขึ้นหน้านี้ครับ</p>
+  <div class="mmd-actions"><a class="mmd-btn" href="#mmd-catalog">ดูของที่ผมเลือก</a><a class="mmd-btn ghost" href="/mmd-shop/rules">กติกาสั้น ๆ</a></div>
+ </div>
+</section>
+
+<section class="mmd-layers" aria-label="วิธีสั่งซื้อ">
+ <div class="mmd-layers-track">
+  <div class="mmd-layer"><small>01 · เลือก</small><strong>เลือกเฉพาะชิ้นที่อยากได้</strong></div>
+  <div class="mmd-layer"><small>02 · เช็ก</small><strong>MMD เช็กราคาและของจริง</strong></div>
+  <div class="mmd-layer"><small>03 · จ่าย</small><strong>จ่ายตาม Order ที่เปิดให้</strong></div>
+  <div class="mmd-layer"><small>04 · ตาม</small><strong>สถานะอยู่กับ Order เดิม</strong></div>
+ </div>
+</section>
+
+<div class="mmd-bridge" aria-hidden="true"></div>
+
+<section class="mmd-section" id="mmd-catalog">
+ <div class="mmd-shell" data-reveal>
+  <div class="mmd-head"><div class="mmd-head-copy"><span class="mmd-label">SELECTED NOW</span><h2>มีเท่านี้ก่อน</h2><p class="mmd-copy">ผมไม่อยากให้ร้านนี้มีของเยอะจนเลือกไม่ถูก เลยเก็บเฉพาะตัวที่อยากแนะนำจริง ๆ</p></div></div>
+  <div class="mmd-grid" id="mmdGrid" aria-label="MMD Shop products"></div>
+  <div class="mmd-fold">
+   <details>
+    <summary>ผมเลือกของขึ้นหน้านี้จากอะไร</summary>
+    <div class="mmd-fold-body">ดูทั้งคุณภาพ ความเหมาะสมกับลูกค้า และประสบการณ์หลังซื้อ ถ้าเป็นของที่ต้องเดาเยอะ ผมขอไม่เอาขึ้นดีกว่าครับ</div>
+   </details>
+   <details>
+    <summary>ราคาและสต๊อกยึดจากไหน</summary>
+    <div class="mmd-fold-body">ตอนเปิด Order MMD จะเช็กราคาและสต๊อกจริงอีกครั้ง ถ้ายังไม่พร้อมรับรายการ ปุ่มซื้อจะไม่เปิดให้กดครับ</div>
+   </details>
+  </div>
+ </div>
+</section>
+
+<section class="mmd-closecard">
+ <div class="mmd-shell mmd-closecopy" data-reveal>
+  <span class="mmd-kicker">READY WHEN YOU ARE</span>
+  <h2>ชอบชิ้นไหนค่อยใส่ Cart ไว้ก่อนครับ</h2>
+  <p>ยังไม่ต้องรีบตัดสินใจ พอพร้อมค่อยเปิด Order แล้วไปต่อทีเดียว</p>
+ </div>
+</section>
+
+<button class="mmd-cartbubble" id="mmdCartBubble" type="button" aria-label="เปิด Cart"><span>Cart</span><span class="mmd-count" id="mmdCartCount">0</span></button>
+<div class="mmd-toast" id="mmdToast" role="status" aria-live="polite">เพิ่มลง Cart แล้ว</div>
+
+<aside class="mmd-drawer" id="mmdCartDrawer" aria-label="MMD Shop Cart">
+ <div class="mmd-shade" data-cart-close></div>
+ <div class="mmd-panel">
+  <button class="mmd-close" type="button" data-cart-close aria-label="ปิด Cart">×</button>
+  <div>
+   <span class="mmd-label">YOUR CART</span>
+   <h3>ของที่เลือกไว้</h3>
+   <p class="mmd-dtext">พอพร้อมสั่ง ผมให้ MMD เช็กราคาและสต๊อกจริงอีกครั้งก่อนเปิด Order ครับ</p>
+   <div class="mmd-cartlist" id="mmdCartList"></div>
+   <div class="mmd-total"><span>รวม</span><strong id="mmdCartTotal">—</strong></div>
+   <div class="mmd-cartactions">
+    <a class="mmd-btn" href="https://lin.ee/xRqsALs" target="_blank" rel="noopener">ถาม MMD</a>
+    <button class="mmd-btn soft" id="mmdCopyCart" type="button">คัดลอก</button>
+    <button class="mmd-btn soft" id="mmdClearCart" type="button">ล้าง Cart</button>
+   </div>
+  </div>
+ </div>
+</aside>
+
+<script>
+(function(){
+ var root=document.getElementById("mmdshop-final");if(!root)return;
+ var nodes=root.querySelectorAll("[data-reveal]");
+ if(!("IntersectionObserver" in window)){nodes.forEach(function(x){x.classList.add("is-in")});return}
+ var io=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("is-in");io.unobserve(e.target)}})},{threshold:.12});
+ nodes.forEach(function(x){io.observe(x)});
+})();
+</script>
+</main>
