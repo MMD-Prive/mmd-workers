@@ -237,10 +237,11 @@ async function findSession(env, sessionId) {
 
 async function getRecord(env, tableId, recordId) {
   requireAirtable(env);
-  const response = await fetch(
-    `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`,
-    { headers:{ Authorization:`Bearer ${clean(env.AIRTABLE_API_KEY)}` } }
+  const url = new URL(
+    `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableId)}/${encodeURIComponent(recordId)}`
   );
+  url.searchParams.set("returnFieldsByFieldId", "true");
+  const response = await fetch(url, { headers:{ Authorization:`Bearer ${clean(env.AIRTABLE_API_KEY)}` } });
   if (!response.ok) return null;
   return response.json();
 }
@@ -250,6 +251,7 @@ async function listRecords(env, tableId, filterByFormula, maxRecords=2) {
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(tableId)}`);
   url.searchParams.set("maxRecords", String(maxRecords));
   url.searchParams.set("filterByFormula", filterByFormula);
+  url.searchParams.set("returnFieldsByFieldId", "true");
   const response = await fetch(url, { headers:{ Authorization:`Bearer ${clean(env.AIRTABLE_API_KEY)}` } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`airtable_${response.status}`);
