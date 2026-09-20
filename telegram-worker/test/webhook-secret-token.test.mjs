@@ -279,6 +279,49 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
   }
 });
 
+test("runtime webhook lock accepts only a Cloudflare token proven against the production telegram-worker script", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/accounts/b176eda1172b741fd2e58904cc9d77c5/workers/scripts/telegram-worker/settings")) {
+      assert.equal(init.headers.Authorization, "Bearer cloudflare-deploy-token");
+      return Response.json({ success: true, result: { compatibility_date: "2026-01-20" } });
+    }
+    if (href.endsWith("/setWebhook")) {
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.url, CANONICAL_WEBHOOK_URL);
+      assert.equal(body.secret_token, "expected-secret");
+      return Response.json({ ok: true, result: true });
+    }
+    if (href.endsWith("/getWebhookInfo")) {
+      return Response.json({ ok: true, result: { url: CANONICAL_WEBHOOK_URL } });
+    }
+    throw new Error("unexpected request");
+  };
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer cloudflare-deploy-token",
+      },
+      body: JSON.stringify({ confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
+    }), env({
+      INTERNAL_API_TOKEN: "",
+      TELEGRAM_DEPLOY_CONTROL_TOKEN: "",
+    }));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.observed_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(calls.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("runtime webhook lock fails closed when Worker runtime secrets are missing", async () => {
   const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
     method: "POST",
