@@ -302,7 +302,7 @@ test("payments proof document route uses canonical bot and Payments Confirm thre
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.message_id, 9876);
-    assert.match(captured.url, /botelegram-token\/sendDocument$/);
+    assert.equal(captured.url, "https://api.telegram.org/bottelegram-token/sendDocument");
     assert.equal(captured.form.get("chat_id"), "-1003546439681");
     assert.equal(captured.form.get("message_thread_id"), "22");
     assert.equal(captured.form.get("document").name, "proof.jpg");
