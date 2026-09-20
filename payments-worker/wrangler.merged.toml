@@ -117,3 +117,7 @@ TG_THREAD_PAYMENT = "22"
 [[services]]
 binding = "MMD_SHOP_WORKER"
 service = "himai-chat-worker"
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"

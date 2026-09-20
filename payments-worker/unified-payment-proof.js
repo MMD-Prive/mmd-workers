@@ -387,9 +387,12 @@ export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = 
 }
 
 async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, sourcePage }) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN, 5000);
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
   const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120);
-  if (!token || !file) return { ok: false, skipped: true };
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, error_description: "telegram_service_binding_missing" };
+  if (!token || !file) return { ok: false, skipped: true, error_description: !token ? "telegram_service_auth_missing" : "telegram_file_missing" };
+
   const route = paymentProofTelegramRoute(env, snapshot, sourcePage);
   const inferenceLabel = membershipInferenceLabel(route.inference);
   const form = new FormData();
@@ -409,15 +412,24 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form });
+
+  const response = await service.fetch(new Request("https://telegram-worker/telegram/internal/payments/proof-document", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}` },
+    body: form,
+  }));
   const responseData = await response.clone().json().catch(() => ({}));
 
   let alertSent = false;
   if (route.should_alert === true) {
-    const alert = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const alert = await service.fetch(new Request("https://telegram-worker/telegram/internal/send", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
       body: JSON.stringify({
+        flow: "alert",
         chat_id: chatId,
         message_thread_id: route.alerts_thread_id,
         text: [
@@ -428,17 +440,18 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
           "Action: keep proof in Payment review; do not activate membership automatically.",
         ].join("\n"),
       }),
-    }).catch(() => null);
+    })).catch(() => null);
     alertSent = alert?.ok === true;
   }
+
   return {
-    ok: response.ok,
+    ok: response.ok && responseData?.ok === true,
     status: response.status,
     topic: route.topic,
     thread_id: route.thread_id,
-    message_id: Number(responseData?.result?.message_id || 0) || null,
+    message_id: Number(responseData?.message_id || 0) || null,
     error_code: Number(responseData?.error_code || 0) || null,
-    error_description: clean(responseData?.description, 300) || null,
+    error_description: clean(responseData?.error || responseData?.description, 300) || null,
     alert_sent: alertSent,
   };
 }
