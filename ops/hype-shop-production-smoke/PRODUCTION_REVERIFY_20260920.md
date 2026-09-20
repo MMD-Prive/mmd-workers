@@ -9,3 +9,4 @@ FINAL paired acceptance trigger after PR #1448 switched Telegram webhook accepta
 FINAL paired acceptance trigger after PR #1450 added verified Cloudflare deploy authority for fixed canonical webhook repair. Marker-only; no business truth mutation.
 FINAL paired acceptance after canonical webhook repair succeeded and internal-send smoke was aligned to the existing 403 fail-closed contract. Marker-only; no business truth mutation.
 Fully unified Telegram Router final acceptance trigger after Payments service-auth propagation gate fix PR #1474. Runtime Router Health is already verified configured by Deploy payments-worker; this marker re-runs the read-only HYPE closed-loop smoke against the current deployed chain. No business truth mutation.
+2026-09-21 paired closure reverify: trigger HYPE smoke on the same production source SHA as telegram-worker deploy so the FINAL HYPE receipt can prove the pair atomically. Marker-only; no business truth mutation.
