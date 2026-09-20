@@ -96,19 +96,24 @@ function outboxBucket(env = {}) {
   return bucket;
 }
 
-async function readRecord(bucket, key) {
+async function readRecordEnvelope(bucket, key) {
   const object = await bucket.get(key);
   if (!object) return null;
   try {
     const parsed = JSON.parse(await object.text());
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return { record: parsed, etag: text(object.etag, 160) };
   } catch (_) {
     return null;
   }
 }
 
-async function writeRecord(bucket, record) {
-  await bucket.put(opsOutboxKey(record.id), JSON.stringify(record), {
+async function readRecord(bucket, key) {
+  return (await readRecordEnvelope(bucket, key))?.record || null;
+}
+
+async function writeRecord(bucket, record, onlyIf = null) {
+  const options = {
     httpMetadata: { contentType: "application/json" },
     // Bounded, non-identifying metadata only. Never the message body, never a
     // LINE identity, never an amount.
@@ -118,8 +123,10 @@ async function writeRecord(bucket, record) {
       purpose: safeCode(record.purpose, 80),
       attempts: String(Number(record.attempts) || 0),
     },
-  });
-  return record;
+  };
+  if (onlyIf) options.onlyIf = onlyIf;
+  const stored = await bucket.put(opsOutboxKey(record.id), JSON.stringify(record), options);
+  return { record, stored, etag: text(stored?.etag, 160) };
 }
 
 function newRecord({ id, eventKey, purpose, destination, message, nowMs }) {
@@ -181,7 +188,7 @@ export async function sendThroughTelegramWorker(env = {}, record = {}) {
   }
 }
 
-async function attemptDelivery(env, bucket, record, { transport, nowMs }) {
+async function attemptDelivery(env, bucket, record, { transport, nowMs, expectedEtag = "" }) {
   const attempts = (Number(record.attempts) || 0) + 1;
   const leased = {
     ...record,
@@ -190,7 +197,16 @@ async function attemptDelivery(env, bucket, record, { transport, nowMs }) {
     updated_at_ms: nowMs,
     delivering_until_ms: nowMs + opsOutboxLeaseMs(env),
   };
-  if (bucket) await writeRecord(bucket, leased);
+
+  let leaseEtag = expectedEtag;
+  if (bucket) {
+    const claim = await writeRecord(bucket, leased, expectedEtag ? { etagMatches: expectedEtag } : null);
+    if (expectedEtag && claim.stored === null) {
+      const winner = await readRecord(bucket, opsOutboxKey(record.id));
+      return { record: winner || record, delivered: winner?.status === OPS_NOTIFICATION_STATUS.DELIVERED, attempts: Number(winner?.attempts) || Number(record.attempts) || 0, claimed: false, duplicate: true };
+    }
+    leaseEtag = claim.etag || expectedEtag;
+  }
 
   const outcome = await transport(env, leased);
   if (outcome?.ok === true) {
@@ -203,8 +219,14 @@ async function attemptDelivery(env, bucket, record, { transport, nowMs }) {
       next_attempt_at_ms: null,
       last_error: null,
     };
-    if (bucket) await writeRecord(bucket, delivered);
-    return { record: delivered, delivered: true, attempts };
+    if (bucket) {
+      const finalWrite = await writeRecord(bucket, delivered, leaseEtag ? { etagMatches: leaseEtag } : null);
+      if (leaseEtag && finalWrite.stored === null) {
+        const latest = await readRecord(bucket, opsOutboxKey(record.id));
+        return { record: latest || delivered, delivered: latest?.status === OPS_NOTIFICATION_STATUS.DELIVERED, attempts, claimed: true, state_write_conflict: true };
+      }
+    }
+    return { record: delivered, delivered: true, attempts, claimed: true };
   }
 
   const maxAttempts = opsOutboxMaxAttempts(env);
@@ -217,8 +239,14 @@ async function attemptDelivery(env, bucket, record, { transport, nowMs }) {
     next_attempt_at_ms: exhausted ? null : nowMs + opsOutboxBackoffMs(attempts, env),
     last_error: safeCode(outcome?.error || "telegram_send_failed"),
   };
-  if (bucket) await writeRecord(bucket, failed);
-  return { record: failed, delivered: false, attempts, terminal: exhausted };
+  if (bucket) {
+    const finalWrite = await writeRecord(bucket, failed, leaseEtag ? { etagMatches: leaseEtag } : null);
+    if (leaseEtag && finalWrite.stored === null) {
+      const latest = await readRecord(bucket, opsOutboxKey(record.id));
+      return { record: latest || failed, delivered: latest?.status === OPS_NOTIFICATION_STATUS.DELIVERED, attempts, terminal: latest?.status === OPS_NOTIFICATION_STATUS.FAILED_TERMINAL, claimed: true, state_write_conflict: true };
+    }
+  }
+  return { record: failed, delivered: false, attempts, terminal: exhausted, claimed: true };
 }
 /**
  * Durable enqueue + immediate best-effort delivery.
@@ -255,29 +283,42 @@ export async function dispatchOpsNotification(env = {}, input = {}, options = {}
     };
   }
 
-  const existing = await readRecord(bucket, opsOutboxKey(id));
+  let envelope = await readRecordEnvelope(bucket, opsOutboxKey(id));
+  let existing = envelope?.record || null;
   if (existing && TERMINAL_STATUSES.has(existing.status)) {
-    // Exactly-once semantics for one semantic operator event.
     return { id, durable: true, duplicate: true, delivered: existing.status === OPS_NOTIFICATION_STATUS.DELIVERED, status: existing.status, attempts: Number(existing.attempts) || 0 };
   }
   if (existing && existing.status === OPS_NOTIFICATION_STATUS.DELIVERING && Number(existing.delivering_until_ms) > nowMs) {
     return { id, durable: true, duplicate: true, delivered: false, status: existing.status, attempts: Number(existing.attempts) || 0, reason: "delivery_in_flight" };
   }
 
-  const base = existing
+  let base = existing
     ? { ...existing, message: text(input.message, 3500) || existing.message, updated_at_ms: nowMs }
     : newRecord({ id, eventKey: input.eventKey, purpose: input.purpose, destination, message: input.message, nowMs });
-  if (!existing) await writeRecord(bucket, base);
 
-  const result = await attemptDelivery(env, bucket, base, { transport, nowMs });
+  if (!existing) {
+    const created = await writeRecord(bucket, base, { etagDoesNotMatch: "*" });
+    if (created.stored === null) {
+      envelope = await readRecordEnvelope(bucket, opsOutboxKey(id));
+      existing = envelope?.record || null;
+      if (!existing) return { id, durable: true, duplicate: true, delivered: false, status: OPS_NOTIFICATION_STATUS.PENDING, attempts: 0, reason: "concurrent_create_unresolved" };
+      if (TERMINAL_STATUSES.has(existing.status)) return { id, durable: true, duplicate: true, delivered: existing.status === OPS_NOTIFICATION_STATUS.DELIVERED, status: existing.status, attempts: Number(existing.attempts) || 0 };
+      if (existing.status === OPS_NOTIFICATION_STATUS.DELIVERING && Number(existing.delivering_until_ms) > nowMs) return { id, durable: true, duplicate: true, delivered: false, status: existing.status, attempts: Number(existing.attempts) || 0, reason: "delivery_in_flight" };
+      base = existing;
+    } else {
+      envelope = { record: base, etag: created.etag };
+    }
+  }
+
+  const result = await attemptDelivery(env, bucket, base, { transport, nowMs, expectedEtag: envelope?.etag || "" });
   return {
     id,
     durable: true,
-    duplicate: Boolean(existing),
+    duplicate: Boolean(existing) || result.duplicate === true,
     delivered: result.delivered,
     status: result.record.status,
     attempts: result.attempts,
-    reason: result.record.last_error || null,
+    reason: result.claimed === false ? "delivery_in_flight" : result.record.last_error || null,
   };
 }
 
@@ -303,7 +344,8 @@ export async function drainOpsNotificationOutbox(env = {}, options = {}) {
     if (summary.retried >= limit) break;
     const key = text(entry?.key, 300);
     if (!key.startsWith(OUTBOX_PREFIX)) continue;
-    const record = await readRecord(bucket, key);
+    const envelope = await readRecordEnvelope(bucket, key);
+    const record = envelope?.record || null;
     summary.scanned += 1;
     if (!record?.id) continue;
 
@@ -318,7 +360,8 @@ export async function drainOpsNotificationOutbox(env = {}, options = {}) {
     if (record.status === OPS_NOTIFICATION_STATUS.DELIVERING && Number(record.delivering_until_ms) > nowMs) continue;
     if (Number(record.next_attempt_at_ms) > nowMs) continue;
 
-    const result = await attemptDelivery(env, bucket, record, { transport, nowMs });
+    const result = await attemptDelivery(env, bucket, record, { transport, nowMs, expectedEtag: envelope?.etag || "" });
+    if (result.claimed === false) continue;
     summary.retried += 1;
     if (result.delivered) summary.delivered += 1;
     if (result.terminal) summary.terminal += 1;
@@ -332,5 +375,7 @@ export const LINE_OPS_OUTBOX_INTERNALS = Object.freeze({
   SCHEMA,
   newRecord,
   readRecord,
+  readRecordEnvelope,
+  writeRecord,
 });
 
