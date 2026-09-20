@@ -160,9 +160,10 @@ function buildAirtableFields(env, payload, lookupInfo = null, minimal = false) {
   putField(fields, atField(env, "AT_PAYMENTS__NOTES", "Notes"), note);
 
   if (!minimal) {
-    putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_STATUS", "Payment Status"), "pending");
-    putField(fields, atField(env, "AT_PAYMENTS__VERIFICATION_STATUS", "Verification Status"), "pending");
-    putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_INTENT_STATUS", "Payment Intent Status (AI)"), "manual_slip_evidence_received");
+    // Use only schema-valid select values on the legacy compatibility writer.
+    // Canonical proof receipt lives in MMD — Payment Proofs; do not invent a select option here.
+    putField(fields, atField(env, "AT_PAYMENTS__PAYMENT_STATUS", "Payment Status"), "Pending");
+    putField(fields, atField(env, "AT_PAYMENTS__VERIFICATION_STATUS", "Verification Status"), "pending_review");
   }
 
   return compact(fields);
