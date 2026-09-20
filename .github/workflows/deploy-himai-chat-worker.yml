@@ -216,7 +216,7 @@ jobs:
           set -euo pipefail
           catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/products)"
           echo "$catalog"
-          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || !Array.isArray(b.products)) process.exit(1)' "$catalog"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || !Array.isArray(b.products)) process.exit(1); const active=b.products.filter(p=>String(p.status||"").toLowerCase()==="active"); const sku=active.map(p=>String(p.sku||"")); const families={wgg:sku.some(s=>/^WGG-/.test(s)),glen:sku.some(s=>/^GLEN-POP/.test(s)),pod:sku.some(s=>/^PPP25-/.test(s))}; if (!families.wgg || !families.glen || !families.pod) throw new Error("mmd_shop_three_family_catalog_missing");' "$catalog"
 
           product="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/wgg-10)"
           echo "$product"
@@ -224,4 +224,4 @@ jobs:
 
           on_demand="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/glen-pop15-blk)"
           echo "$on_demand"
-          node -e 'const b=JSON.parse(process.argv[1]); const p=b.product||{}; if (b.ok !== true || p.sku !== "GLEN-POP15-BLK") process.exit(1); if (p.stock_status !== "on_demand" || p.online_checkout_status !== "on_demand" || p.checkout_eligible !== true) throw new Error("glenburgies_on_demand_contract_failed");' "$on_demand"
+          node -e 'const b=JSON.parse(process.argv[1]); const p=b.product||{}; if (b.ok !== true || p.sku !== "GLEN-POP15-BLK") process.exit(1); if (p.stock_status !== "on_demand" || p.online_checkout_status !== "on_demand" || p.checkout_eligible !== true) throw new Error("glenburgies_on_demand_contract_failed"); if (p.variant_group !== "GLEN" || p.variant_type !== "bottle" || !Array.isArray(b.variants) || b.variants.length < 2) throw new Error("glenburgies_variant_family_contract_failed");' "$on_demand"
