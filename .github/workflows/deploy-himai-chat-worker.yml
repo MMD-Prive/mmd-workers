@@ -83,7 +83,8 @@ jobs:
             sleep 5
           done
           test "$router_secret_ready" = "1"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_HIMAI_TO_TELEGRAM --config himai-chat-worker/wrangler.toml
+          printf 'AUTH_SERVICE_HIMAI_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/himai-chat-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/himai-chat-worker-router.env"
 
       - name: Validate version upload
         run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
@@ -97,6 +98,7 @@ jobs:
           tag="gha-${GITHUB_SHA:0:12}"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
+            --secrets-file "$RUNNER_TEMP/himai-chat-worker-router.env" \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-upload.log"
@@ -126,7 +128,7 @@ jobs:
           fs.writeFileSync(".wrangler-migration-no-routes.toml", output.join("\n")+"\n");
           NODE
           trap 'rm -f "$migration_config"' EXIT
-          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" 2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-migration.log"
+          npx --yes wrangler@4 deploy --keep-vars --secrets-file "$RUNNER_TEMP/himai-chat-worker-router.env" --config "$migration_config" 2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-migration.log"
           echo "HIMAI_CHAT_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
 
       - name: Resolve uploaded version ID
