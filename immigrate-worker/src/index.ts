@@ -3055,6 +3055,14 @@ function renderAdminLoginPage(request: Request): Response {
 
         const lookupInput=document.getElementById("client_lookup_query"),lookupButton=document.getElementById("client_lookup_search"),lookupResults=document.getElementById("client_lookup_results"),selectedClientBox=document.getElementById("selected_client");let selectedClient=null;const escLookup=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));function clientLabel(c){const r=String(c.remembered_name||"").trim(),n=String(c.canonical_name||"").trim();return r&&n&&r.toLowerCase()!==n.toLowerCase()?r+" · "+n:r||n||c.client_name||"Unknown client"}function selectClient(c){selectedClient=c;document.getElementById("display_name").value=c.client_name||c.remembered_name||c.canonical_name||"";document.getElementById("nickname").value=c.username||c.line_display_name||"";document.getElementById("line_user_id").value=c.line_user_id||"";document.getElementById("line_id").value=c.line_display_name||"";document.getElementById("email").value=c.member_email||"";document.getElementById("phone").value=c.phone||"";document.getElementById("current_tier").value=c.tier||c.package_code||"";selectedClientBox.innerHTML="<strong>เลือกแล้ว: "+escLookup(clientLabel(c))+"</strong><small>"+escLookup([c.matched_on?"matched by "+c.matched_on:"",c.membership_status||"",c.package_code||""].filter(Boolean).join(" · ")||"Canonical client lineage selected")+"</small>";selectedClientBox.classList.add("is-visible")}function renderLookup(xs){if(!xs.length){lookupResults.innerHTML='<p class="lookup-empty">ไม่พบลูกค้าที่ตรงกัน — ให้ไปสร้าง/จับคู่ที่ Client Intake ก่อน ไม่ควรสร้าง Job ด้วยชื่อใหม่ลอย ๆ</p>';return}lookupResults.innerHTML=xs.map((c,i)=>{const m=[c.matched_on,c.membership_status,c.package_code,c.confidence?c.confidence+"% confidence":""].filter(Boolean).map(x=>"<span>"+escLookup(x)+"</span>").join(""),d=[c.member_email,c.phone,c.line_display_name,c.customer_telegram_username].filter(Boolean).join(" · ");return '<button type="button" class="lookup-card" data-client-index="'+i+'"><strong>'+escLookup(clientLabel(c))+'</strong><small>'+escLookup(d||"Canonical record")+'</small><div class="lookup-meta">'+m+"</div></button>"}).join("");lookupResults.querySelectorAll("[data-client-index]").forEach(b=>b.addEventListener("click",()=>selectClient(xs[Number(b.dataset.clientIndex)])))}async function lookupClient(){const q=lookupInput.value.trim();if(!q){lookupResults.innerHTML='<p class="lookup-empty">พิมพ์ข้อมูลที่มีของลูกค้าก่อนครับ</p>';return}lookupButton.disabled=true;lookupButton.textContent="Searching…";lookupResults.innerHTML='<p class="lookup-empty">กำลังค้นจาก canonical client lineage…</p>';try{const h=window.__MMD_ADMIN_GATE__?window.__MMD_ADMIN_GATE__.buildHeaders({"Content-Type":"application/json"}):new Headers({"Content-Type":"application/json"}),r=await fetch("/v1/admin/clients/lineage-lookup",{method:"POST",credentials:"same-origin",headers:h,body:JSON.stringify({query:q})}),d=await r.json().catch(()=>null);if(!r.ok||!d||d.ok===false)throw Error((d&&(d.error||d.message))||"ค้นหาลูกค้าไม่สำเร็จ");renderLookup(Array.isArray(d.records)?d.records:[])}catch(e){lookupResults.innerHTML='<p class="lookup-empty">ค้นหาไม่ได้ตอนนี้: '+escLookup(e&&e.message?e.message:e)+"</p>"}finally{lookupButton.disabled=false;lookupButton.textContent="Search"}}lookupButton.addEventListener("click",lookupClient);lookupInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();lookupClient()}});
 
+        var requestedAtInput = document.getElementById("requested_at");
+        if (requestedAtInput && !requestedAtInput.value) {
+          var now = new Date();
+          now.setMinutes(Math.ceil(now.getMinutes()/30)*30,0,0);
+          var local = new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+          requestedAtInput.value = local;
+        }
+
         form.addEventListener("submit", async (event) => {
           if(!selectedClient||!selectedClient.client_id){event.preventDefault();setStatus("เลือก canonical client จากผลค้นหาก่อนสร้าง Job","error");lookupInput.focus();return;}
           event.preventDefault();
@@ -3878,6 +3886,24 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
                 <input id="model_record_id" name="model_record_id" type="text" />
               </label>
               <label>
+                Sales Work Lane
+                <select id="work_lane" name="work_lane">
+                  <option value="">General</option>
+                  <option value="PN">PN</option>
+                  <option value="VIP">VIP</option>
+                  <option value="MK">MK</option>
+                  <option value="Burn">Burn</option>
+                </select>
+              </label>
+              <label>
+                Requested At
+                <input id="requested_at" name="requested_at" type="datetime-local" step="1800" />
+              </label>
+              <label>
+                Quoted Rate THB
+                <input id="quoted_rate_thb" name="quoted_rate_thb" type="number" min="0" step="1" placeholder="canonical customer rate" />
+              </label>
+              <label>
                 Current Tier
                 <input id="current_tier" name="current_tier" type="text" placeholder="standard" />
               </label>
@@ -4060,6 +4086,9 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
             phone: document.getElementById("phone").value.trim(),
             model_name: document.getElementById("model_name").value.trim(),
             model_record_id: document.getElementById("model_record_id").value.trim(),
+            work_lane: document.getElementById("work_lane").value.trim(),
+            requested_at: document.getElementById("requested_at").value ? new Date(document.getElementById("requested_at").value).toISOString() : new Date().toISOString(),
+            quoted_rate_thb: document.getElementById("quoted_rate_thb").value.trim() ? Number(document.getElementById("quoted_rate_thb").value) : undefined,
             current_tier: document.getElementById("current_tier").value.trim(),
             target_tier: document.getElementById("target_tier").value.trim(),
             manual_note_raw: document.getElementById("manual_note_raw").value.trim(),
