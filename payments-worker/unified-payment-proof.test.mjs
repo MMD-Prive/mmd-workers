@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
+import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
+import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
@@ -48,6 +49,58 @@ test("web proof record uses only fields present in MMD — Payment Proofs", () =
   assert.equal("session_id" in fields, false);
   assert.equal("member_email" in fields, false);
   assert.equal("payment_stage" in fields, false);
+  assert.equal(fields.status, "pending");
+});
+
+test("SIGIL V22 proof upload requires the signed customer token before any write", async () => {
+  const form = new FormData();
+  form.append("payment_ref", "pay_test");
+  form.append("session_id", "sess_test");
+  form.append("payment_stage", "deposit");
+  form.append("source_page", "sigil_pay_v22");
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", { method: "POST", body: form });
+  const response = await handleUnifiedSlipEvidence(request, {}, async () => {
+    throw new Error("downstream_must_not_run");
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "confirmation_token_required");
+});
+
+test("SIGIL V22 proof upload rejects a payment_ref that does not match the signed token", async () => {
+  const state = new Map();
+  const env = {
+    PAYMENT_CONFIRMATION_SIGNING_SECRET: "proof-upload-test-secret",
+    PAY_TOKEN_TTL_SECONDS: "3600",
+    PAY_SESSIONS_KV: {
+      async put(key, value) { state.set(key, value); },
+      async get(key) { return state.get(key) || null; },
+    },
+  };
+  const iat = Math.floor(Date.now() / 1000);
+  const claims = {
+    kind: "customer_confirm",
+    role: "customer",
+    session_id: "sess_expected",
+    payment_ref: "pay_expected",
+    payment_type: "deposit",
+    iat,
+    exp: iat + 3600,
+  };
+  const token = await signConfirmToken(claims, env.PAYMENT_CONFIRMATION_SIGNING_SECRET);
+  await createConfirmTokenRecord(env, token, claims);
+
+  const form = new FormData();
+  form.append("payment_ref", "pay_other");
+  form.append("session_id", "sess_expected");
+  form.append("payment_stage", "deposit");
+  form.append("source_page", "sigil_pay_v22");
+  form.append("t", token);
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", { method: "POST", body: form });
+  const response = await handleUnifiedSlipEvidence(request, env, async () => {
+    throw new Error("downstream_must_not_run");
+  });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error, "confirmation_payment_ref_mismatch");
 });
 
 test("service proof V22 source routes to canonical Payments Confirm topic 22", () => {
