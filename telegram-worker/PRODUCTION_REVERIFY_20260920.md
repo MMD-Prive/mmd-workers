@@ -1,3 +1,3 @@
 # Telegram production re-verification marker
 
-Diagnostic final receipt rerun. No runtime logic changes; retriggers canonical Telegram production deploy and emits a visible failure receipt if the production pair does not pass.
+Runtime-secret webhook-lock acceptance rerun. The deploy now asks telegram-worker to enforce the hard-coded canonical webhook using Worker runtime secrets; GitHub no longer needs Telegram Bot/Webhook secrets.

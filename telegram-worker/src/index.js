@@ -18,6 +18,8 @@ const DEFAULT_PUBLIC_BASE_URL = "https://www.mmdbkk.com";
 const DEFAULT_PREVIEW_CHANNEL_URL = "https://t.me/MMDPriveTH";
 const TOPIC_SMOKE_CONFIRMATION = "SEND_REDACTED_TOPIC_SMOKE";
 const HYPE_PREVIEW_INTRO_CONFIRMATION = "INTRODUCE_HYPE_PREVIEW_V1";
+const TELEGRAM_CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
+const TELEGRAM_WEBHOOK_LOCK_CONFIRMATION = "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1";
 
 export default {
   async fetch(req, env) {
@@ -41,6 +43,7 @@ export default {
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
             topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
+            webhook_lock: ["/telegram/internal/webhook/ensure-canonical"],
           },
           telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
@@ -52,6 +55,20 @@ export default {
         if (!update) return json({ ok: false, error: "invalid_json" }, 400);
         const result = await handleTelegramWebhook(update, env);
         return json({ ok: true, received: true, ...result }, 200);
+      }
+
+      if (isWebhookLockPath(path) && req.method === "POST") {
+        requireInternalToken(req, env);
+        const body = (await safeJson(req)) || {};
+        if (clean(body.confirm) !== TELEGRAM_WEBHOOK_LOCK_CONFIRMATION) {
+          return json({
+            ok: false,
+            error: "telegram_webhook_lock_confirmation_required",
+            required_confirmation: TELEGRAM_WEBHOOK_LOCK_CONFIRMATION,
+          }, 400);
+        }
+        const result = await ensureCanonicalTelegramWebhook(env);
+        return json(result, result.ok ? 200 : 503);
       }
 
       if (isInternalSendPath(path) && req.method === "POST") {
@@ -133,6 +150,72 @@ export default {
     }
   },
 };
+
+async function ensureCanonicalTelegramWebhook(env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  const secret = clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN);
+  if (!botToken || !secret) {
+    return {
+      ok: false,
+      error: "telegram_runtime_webhook_credentials_missing",
+      bot_token_configured: Boolean(botToken),
+      webhook_secret_configured: Boolean(secret),
+    };
+  }
+
+  const call = async (method, body) => {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+      method: body ? "POST" : "GET",
+      headers: body ? { "content-type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok !== true) {
+      return { ok: false, status: response.status };
+    }
+    return { ok: true, status: response.status, result: payload.result };
+  };
+
+  const setResult = await call("setWebhook", {
+    url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+    secret_token: secret,
+    drop_pending_updates: false,
+  });
+  if (!setResult.ok) {
+    return {
+      ok: false,
+      error: "telegram_set_webhook_failed",
+      status: setResult.status || null,
+    };
+  }
+
+  const infoResult = await call("getWebhookInfo");
+  if (!infoResult.ok) {
+    return {
+      ok: false,
+      error: "telegram_get_webhook_info_failed",
+      status: infoResult.status || null,
+    };
+  }
+
+  const observedUrl = clean(infoResult.result?.url);
+  if (observedUrl !== TELEGRAM_CANONICAL_WEBHOOK_URL) {
+    return {
+      ok: false,
+      error: "canonical_webhook_mismatch",
+      canonical_url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+      observed_url: observedUrl || null,
+    };
+  }
+
+  return {
+    ok: true,
+    canonical_url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+    observed_url: observedUrl,
+    pending_update_count: Math.max(0, Number(infoResult.result?.pending_update_count) || 0),
+    secret_token_enforced: true,
+  };
+}
 
 async function sendPaymentsProofDocument(req, env) {
   const botToken = clean(env.TELEGRAM_BOT_TOKEN);
@@ -3985,6 +4068,10 @@ function timingSafeEqual(left, right) {
 
 function isTelegramWebhookPath(path) {
   return path === "/telegram/webhook" || path === "/v1/webhook";
+}
+
+function isWebhookLockPath(path) {
+  return path === "/telegram/internal/webhook/ensure-canonical";
 }
 
 function isInternalSendPath(path) {
