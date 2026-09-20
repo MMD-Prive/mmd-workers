@@ -44,6 +44,7 @@ export default {
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
             topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
             webhook_lock: ["/telegram/internal/webhook/ensure-canonical"],
+            webhook_status: ["/telegram/webhook/status"],
           },
           telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
@@ -55,6 +56,11 @@ export default {
         if (!update) return json({ ok: false, error: "invalid_json" }, 400);
         const result = await handleTelegramWebhook(update, env);
         return json({ ok: true, received: true, ...result }, 200);
+      }
+
+      if (path === "/telegram/webhook/status" && req.method === "GET") {
+        const result = await readCanonicalTelegramWebhookStatus(env);
+        return json(result, result.ok ? 200 : 503);
       }
 
       if (isWebhookLockPath(path) && req.method === "POST") {
@@ -156,6 +162,40 @@ function requireWebhookLockToken(req, env) {
   const direct = req.headers.get("X-Deploy-Control-Token") || "";
   if (deployToken && direct && direct === deployToken) return;
   requireInternalToken(req, env);
+}
+
+async function readCanonicalTelegramWebhookStatus(env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  const secretConfigured = Boolean(clean(env.TELEGRAM_WEBHOOK_SECRET_TOKEN));
+  if (!botToken) {
+    return {
+      ok: false,
+      error: "telegram_runtime_bot_token_missing",
+      canonical_url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+      canonical: false,
+      webhook_secret_configured: secretConfigured,
+    };
+  }
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/getWebhookInfo`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.ok !== true) {
+    return {
+      ok: false,
+      error: "telegram_get_webhook_info_failed",
+      status: response.status,
+      canonical_url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+      canonical: false,
+      webhook_secret_configured: secretConfigured,
+    };
+  }
+  const observedUrl = clean(payload.result?.url);
+  return {
+    ok: observedUrl === TELEGRAM_CANONICAL_WEBHOOK_URL && secretConfigured,
+    canonical_url: TELEGRAM_CANONICAL_WEBHOOK_URL,
+    observed_url: observedUrl || null,
+    canonical: observedUrl === TELEGRAM_CANONICAL_WEBHOOK_URL,
+    webhook_secret_configured: secretConfigured,
+  };
 }
 
 async function ensureCanonicalTelegramWebhook(env) {
