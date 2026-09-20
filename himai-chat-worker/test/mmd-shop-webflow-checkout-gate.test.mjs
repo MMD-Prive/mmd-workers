@@ -52,7 +52,8 @@ test("MMD Shop product detail switches canonical variants without bypassing back
   assert.match(js, /variant_value/);
   assert.match(js, /renderVariantControl\(\)/);
   assert.match(js, /updateVariantUrl\(selected\)/);
-  assert.match(js, /product\.checkout_eligible!==true/);
+  assert.match(js, /function canCheckout\(item\)/);
+  assert.match(js, /item\.checkout_eligible!==true/);
   assert.match(js, /product\.stock_status==="tracked"/);
 });
 
