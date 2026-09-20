@@ -562,7 +562,9 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session);
     }
 
-    const downstreamResponse = await downstream(request);
+    const downstreamHeaders = new Headers(request.headers);
+    downstreamHeaders.set("x-mmd-unified-slip-evidence", "1");
+    const downstreamResponse = await downstream(new Request(request, { headers: downstreamHeaders }));
     if (!downstreamResponse.ok) return downstreamResponse;
     const downstreamData = await downstreamResponse.clone().json().catch(() => null);
     if (!downstreamData || downstreamData.ok !== true) return downstreamResponse;
