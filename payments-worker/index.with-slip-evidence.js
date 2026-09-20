@@ -357,10 +357,13 @@ async function handleSlipEvidence(req, env) {
       error: String(err?.message || err),
     }));
 
-    const telegram_notify = await notifySlipEvidence(env, payload, airtable_write).catch((err) => ({
-      ok: false,
-      error: String(err?.message || err),
-    }));
+    const unifiedWrapped = req.headers.get("x-mmd-unified-slip-evidence") === "1";
+    const telegram_notify = unifiedWrapped
+      ? { ok: true, skipped: true, reason: "unified_wrapper_handles_telegram" }
+      : await notifySlipEvidence(env, payload, airtable_write).catch((err) => ({
+          ok: false,
+          error: String(err?.message || err),
+        }));
 
     return withCors(
       req,
