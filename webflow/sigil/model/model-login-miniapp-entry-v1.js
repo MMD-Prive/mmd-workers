@@ -18,7 +18,7 @@
   }
 
   function target() {
-    const url = new URL(MODEL_LIFF_URL);
+    const url = new URL(`${MODEL_LIFF_URL}/`);
     url.searchParams.set("lang", language());
     url.searchParams.set("source", "model_login");
     return url.toString();
