@@ -377,6 +377,15 @@ export interface CreateJobResponse {
       client_record_id: string | null;
       inbox_record_id: string | null;
     };
+    sales_control?: {
+      authority: string;
+      configured_rule_count: number;
+      sellable: boolean;
+      customer_rate_thb: number | null;
+      price_visible: boolean;
+      reason_code: string;
+      matched_rule_key?: string | null;
+    } | null;
     artifacts: {
       member_id: string;
       customer_url: string;
