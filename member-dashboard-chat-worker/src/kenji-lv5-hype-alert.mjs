@@ -28,7 +28,10 @@ function routeForDecision(env = {}, decision = {}) {
       action: "Resolve Canonical Client / Per Rename before operational continuation.",
     };
   }
-  if (primary === "handoff_per" || ["renewal", "verification_required", "silent"].includes(modelStatus) || /membership|entitlement|model_access/i.test(reason)) {
+  const silentOnly = modelStatus === "silent" && /^model_access:silent$/i.test(reason);
+  if (silentOnly && primary !== "handoff_per") return null;
+
+  if (primary === "handoff_per" || ["renewal", "verification_required"].includes(modelStatus) || /membership|entitlement/i.test(reason) || (/model_access/i.test(reason) && !silentOnly)) {
     return {
       event: "membership_review_required",
       flow: "membership",
