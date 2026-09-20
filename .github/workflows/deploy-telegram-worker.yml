@@ -60,6 +60,7 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
+
       - name: Verify Cloudflare token
         run: npx --yes wrangler@4 whoami
 
