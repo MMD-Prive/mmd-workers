@@ -37,10 +37,10 @@ jobs:
             {
               echo "## ❌ FINAL HYPE production receipt blocked"
               echo
-              echo "- source_sha: `$SOURCE_SHA`"
+              echo "- source_sha: $SOURCE_SHA"
               echo "- workflow: **$workflow_name**"
               echo "- state: **$state**"
-              echo "- run_id: `$run_id`"
+              echo "- run_id: $run_id"
               if [ -n "$run_url" ]; then echo "- run: $run_url"; fi
               echo
               echo "FINAL VERIFIED was not emitted. Resolve this production workflow and rerun the paired acceptance."
