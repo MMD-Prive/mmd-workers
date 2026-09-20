@@ -48,6 +48,7 @@ test("web proof record uses only fields present in MMD — Payment Proofs", () =
   assert.equal("session_id" in fields, false);
   assert.equal("member_email" in fields, false);
   assert.equal("payment_stage" in fields, false);
+  assert.equal(fields.status, "pending");
 });
 
 test("service proof V22 source routes to canonical Payments Confirm topic 22", () => {
