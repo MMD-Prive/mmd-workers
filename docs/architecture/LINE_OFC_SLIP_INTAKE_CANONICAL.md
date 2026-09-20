@@ -2,144 +2,272 @@
 
 ## Authority and current state
 
-The production LINE route remains owned by the Cloudflare `member-dashboard-chat-worker` at `/webhooks/line`. `LINE_WEBHOOK_UPSTREAM_URL` is retired and must remain unset. Netlify functions and configuration in older commits are historical only and are not deployment targets.
+The production LINE route is owned by Cloudflare `member-dashboard-chat-worker` at `/webhooks/line`. `LINE_WEBHOOK_UPSTREAM_URL` is retired and must remain unset. Older Netlify ingress and the Queue-backed staging intake are not production webhook owners.
 
-`payments-worker` remains Money Truth. A slip is supporting evidence only. QR/OCR extraction cannot mark paid or verified, award points, extend membership, confirm sessions, or grant entitlements.
+`payments-worker` remains Money Truth.
 
-Current approval state:
+A LINE image, extracted QR payload, OCR result, Payment Proof row, Telegram/HYPE message, or Recovery record is evidence/operational context only. None of those artifacts can independently create payment truth.
 
-- Technical privacy review: PASS
-- Privacy/DPA for Cloudflare preview: PASS
-- Cloudflare processor/DPA acceptance for the locked preview scope: APPROVED
-- Preview source implementation authorization: PASS
-- Production LINE evidence observer: LIVE under the existing signed `member-dashboard-chat-worker` webhook
-- Production Money Truth authority: unchanged; `payments-worker` only
+Current production state:
 
-### 2026-09-20 production path lock
+- production LINE webhook owner: `member-dashboard-chat-worker`
+- production evidence observer: `member-dashboard-chat-worker/src/line-group-ingress-front-gate.js`
+- production extractor binding: `SLIP_EXTRACTOR -> mmd-slip-extractor`
+- production private evidence bucket: `LINE_SLIP_EVIDENCE -> mmd-line-slip-evidence`
+- production Payment Proof store: canonical `MMD — Payment Proofs`
+- production Telegram/HYPE delivery: `telegram-worker`
+- production Money Truth authority: `payments-worker`
 
-The production path is already integrated without creating a second webhook owner or promoting the staging Queue. After the canonical LINE handler accepts a signed webhook, `line-group-ingress-front-gate.js` re-verifies the LINE signature and observes eligible direct/group payment images. Accepted evidence is written to the private production `LINE_SLIP_EVIDENCE` R2 bucket, classified/extracted, persisted as pending Payment Proof evidence, and surfaced to HYPE/Telegram for operator review. Service/job proof remains review-gated; evidence alone never becomes Money Truth.
+## 2026-09-20 production path lock
 
-The Queue-backed service described below remains an isolated synthetic staging harness. Any older section that describes a future production Queue producer is historical planning and is superseded by this direct post-signature production observer.
+The production path is already live. It does not use the Queue-backed staging worker as transport.
 
-## Preview topology
-
-The Cloudflare preview is split into two isolated services.
-
-### Extraction service
-
-```text
-synthetic/redacted image
-  -> authenticated mmd-slip-extractor-staging Worker
-  -> private Container binding
-  -> local QR or OCR
-  -> normalized extraction evidence only
-```
-
-The extractor source lives under `services/mmd-slip-extractor/cloudflare`. It is workers.dev-only with no custom production route. It authenticates the caller, enforces staging scope, removes the bearer token before Container forwarding, and runs the existing provider-neutral extraction library with `sharp`, `jsQR`, Tesseract.js, and packaged Thai/English language data. Container outbound internet access is disabled.
-
-Do not infer deployment readiness from source presence. Actual Cloudflare deployment, secret readiness, Container health, and remote smoke must be proven separately.
-
-### Queue-backed intake service
-
-```text
-synthetic/redacted image
-  -> authenticated mmd-line-slip-intake-staging Worker
-  -> private dev R2
-  -> mmd-line-slip-intake-staging Queue
-  -> sequential Queue consumer
-  -> mmd-slip-extractor-staging service binding
-  -> MMD — Payment Proofs Staging = pending
-  -> redacted HYPE payment alert
-```
-
-The Queue intake source lives under `services/mmd-line-slip-intake/cloudflare`.
-
-Its preview boundary is locked to:
-
-- synthetic or redacted images only;
-- workers.dev only, no custom route;
-- private staging R2 only;
-- `MMD — Payment Proofs Staging` only;
-- staging `source=synthetic_isolated` and `status=pending` only;
-- deterministic SHA-256 proof IDs and duplicate-safe replay checks;
-- R2 byte-size and SHA-256 verification before extraction;
-- QR first, OCR fallback when QR does not provide a transaction reference;
-- redacted HYPE alert only;
-- no production LINE channel token;
-- no payment, membership, points, entitlement, booking, or session mutation.
-
-## Public preview contracts
-
-### Extractor
-
-- `GET /health` checks service state only.
-- `POST /v1/extract/qr` requires the staging extractor bearer secret and accepts JPEG, PNG, or WebP.
-- `POST /v1/extract/ocr` requires the staging extractor bearer secret and accepts JPEG, PNG, or WebP.
-- Binary input is capped at four MiB.
-- Responses include normalized evidence fields and no payment decision field.
-- Errors use stable codes and `cache-control: no-store`.
-
-### Queue intake
-
-- `GET /health` returns staging service state only.
-- `POST /v1/staging/intake` requires its own staging bearer secret.
-- JPEG, PNG, or WebP only, maximum four MiB.
-- Success returns `202 queued` with a synthetic proof ID and run ID only.
-- The response must never expose the private R2 key, OCR text, decoded QR payload, Airtable record ID, or payment decision.
-- The Queue consumer rechecks evidence integrity before it calls extraction.
-- Invalid/corrupt evidence retries and cannot create a pending proof.
-
-## Isolation and data handling
-
-- Raw images are persisted only in the designated private staging R2 bucket by the Queue intake layer.
-- The extractor itself has no R2, LINE, Airtable, Telegram, payment, membership, points, session, or entitlement binding.
-- Raw images, OCR text, decoded QR payloads, tokens, and normalized payment fields are not logged.
-- The staging Airtable row stores evidence metadata and redacted extraction-state metadata only.
-- HYPE/Telegram remains downstream notification and receives a masked payment reference at most.
-- Queue delivery is at-least-once; the staging proof ID is deterministic from evidence SHA-256 and the consumer checks existing staging evidence before extracting/writing/alerting again.
-
-## Production integration boundary
-
-The Queue-backed staging worker is **not** the production LINE webhook owner and must not be pointed to by LINE Developers.
-
-The production integration is a later, separate gate. It must preserve `member-dashboard-chat-worker` as `/webhooks/line` owner and enqueue only after the existing LINE signature-verification path accepts the request. The webhook must not wait for OCR.
-
-The later production design is:
+### Canonical production sequence
 
 ```text
 real LINE image event
-  -> member-dashboard-chat-worker verifies LINE signature
-  -> payment-context detector
-  -> Queue producer (minimal internal identifiers only)
-  -> Queue consumer
-  -> private production R2 evidence
-  -> QR/OCR evidence extraction
-  -> MMD — Payment Proofs = pending/review
-  -> HYPE payment alert
-  -> official verification / payments-worker
-  -> Payment verified alert
-  -> canonical downstream entitlement/points paths only after official verification
+  -> member-dashboard-chat-worker canonical /webhooks/line handler
+  -> canonical LINE signature verification
+  -> canonical handler returns a successful response
+  -> payment observer runs asynchronously
+  -> observer re-verifies x-line-signature
+  -> identify eligible direct-user or allowlisted-group image
+  -> download image bytes from LINE Content API
+  -> QR extraction first
+  -> OCR fallback when QR has no usable transaction reference
+  -> classifyPaymentImageEvidence()
+  -> reject / hold when transaction evidence is insufficient
+  -> accepted payment evidence only:
+       correlate Canonical Client / Member / Renewal / Session / Job
+       persist original to private LINE_SLIP_EVIDENCE R2
+       create canonical Payment Proof with status=pending
+       split into Service/Job or eligible Membership settlement lane
 ```
 
-Production integration must never:
+The order above is authoritative. Production classification/extraction happens before the accepted image is persisted as canonical payment evidence in R2.
 
-- re-enable Netlify;
-- set `LINE_WEBHOOK_UPSTREAM_URL`;
-- create a second LINE webhook owner;
-- acknowledge `paid` or `verified` from a slip, QR, OCR, Telegram message, or Queue state;
-- let image evidence directly mutate entitlement, points, membership, booking, or session truth.
+## Payment image gate
 
-## Gates before production integration
+The production observer downloads the LINE image and uses `mmd-slip-extractor` through the `SLIP_EXTRACTOR` service binding.
 
-1. Provision the staging Queue, DLQ, and private dev R2 with the names in the Queue intake config.
-2. Configure staging-only secrets without reusing browser/customer credentials.
-3. Prove extractor health + QR/OCR synthetic smoke.
-4. Prove synthetic intake -> dev R2 -> Queue -> extractor -> pending staging proof.
-5. Prove replay idempotency and corrupt-evidence retry behavior.
-6. Prove redacted HYPE payment-topic notification.
-7. Record safe request/run IDs only; do not put raw slips or payment references in GitHub.
-8. Obtain explicit production integration approval.
-9. Implement the production Queue producer only after step 8.
-10. Run a real LINE E2E only after the production path is deployed and separately approved.
+Extraction order:
 
-No synthetic staging run counts as proof that real production LINE slip intake has passed.
+1. QR extraction.
+2. If QR has no usable transaction reference, OCR fallback.
+3. Normalize amount/reference/time/payer/bank/provider signals.
+4. Classify the image.
+
+Examples of current classification behavior:
+
+- payment reference + amount -> accepted bank transfer evidence;
+- payment reference + transfer signal -> accepted bank transfer evidence;
+- amount + time + bank/payer signal -> accepted bank transfer evidence;
+- payment-request QR without completed-transfer evidence -> rejected;
+- ordinary image with no transaction evidence -> rejected;
+- extractor unavailable or insufficient evidence -> held/uncertain.
+
+A rejected or held image is not promoted into canonical Payment Proof truth.
+
+## Direct chat and group behavior
+
+### LINE OA direct chat
+
+A direct-user image may be visually checked immediately. The customer does not always have to send the text "สลิป" first.
+
+The observer may also use recent bounded payment context, and a later payment-related follow-up may promote a recent direct-image candidate through the same evidence gate.
+
+### LINE payment group
+
+Group image intake is allowed only for configured allowlisted payment groups. Group IDs are compared through configured hashes rather than being treated as unrestricted group intake.
+
+## Canonical correlation
+
+After extraction/classification accepts the image, production intelligence attempts to correlate only canonical records belonging to the LINE identity/context:
+
+- Member;
+- Client;
+- LIFF Renewal Session;
+- Session / Job.
+
+Service-payment intelligence may classify a supported payment as:
+
+- `deposit`;
+- `final`;
+- `full`;
+- `tips`;
+- unresolved/ambiguous.
+
+If multiple Jobs match closely, the result is ambiguous. The system must not guess a Job.
+
+Membership intelligence remains separate from service-payment matching. Matching a price alone cannot turn an unrelated service/MMS slip into Membership truth.
+
+## R2 evidence persistence
+
+Only accepted payment evidence is written to the production private bucket through `LINE_SLIP_EVIDENCE`.
+
+Canonical object shape:
+
+```text
+line-ofc/payment-proofs/YYYY/MM/<proof-id>/original.<ext>
+```
+
+The R2 object carries bounded integrity metadata such as evidence SHA-256, proof ID, MIME type/source metadata. Private R2 storage is evidence storage, not payment authority.
+
+## Payment Proof creation
+
+Accepted evidence creates or reuses a canonical Payment Proof.
+
+The first canonical write is:
+
+```text
+status = pending
+channel = line_ofc
+```
+
+The proof may include bounded extracted/correlated data such as:
+
+- amount;
+- payment reference;
+- paid date;
+- payer display;
+- linked Member / Client;
+- linked Session when exact;
+- linked Renewal;
+- extraction/classification metadata;
+- Job correlation;
+- R2 evidence key.
+
+The implementation is duplicate-safe by proof ID.
+
+## Settlement lanes
+
+### A. Service / Job payments
+
+Examples:
+
+- booking deposit;
+- final balance;
+- full service payment;
+- tips;
+- ambiguous/unresolved service payment.
+
+These remain review-gated.
+
+```text
+Payment Proof pending
+  -> HYPE/Ops Payment Confirm
+  -> exact/ambiguous/unresolved Job context shown
+  -> operator resolves canonical Job when needed
+  -> Official Verify
+  -> payments-worker
+  -> Money Truth
+```
+
+HYPE/Ops must not infer paid status from the slip, message text, Job state, or extracted QR/OCR result.
+
+### B. Eligible Membership renewal settlement
+
+Production has an explicit Membership exception governed by owner policy `membership_slip_simple_accept_v1`.
+
+The Payment Proof is still created as `pending` first.
+
+If the Membership evidence has the required canonical context, the observer may call:
+
+```text
+payments-worker
+POST /v1/internal/payments/reviewed-proof
+source = line_ofc_payment_ingress
+payment_stage = membership
+```
+
+The call is service-authenticated and restricted by `payments-worker` to the LINE OFC Membership settlement lane.
+
+The current gate requires the bounded Membership context needed by the implementation, including positive amount and non-conflicting Membership classification plus resolvable canonical identity/package context. `payments-worker` revalidates the proof reference, amount, proof record, package and applicable canonical Member/Client/Renewal/LINE relationships before accepting Money Truth.
+
+If canonical Membership materialization succeeds:
+
+```text
+payments-worker verifies canonical payment
+  -> materialize/update entitlement as applicable
+  -> update canonical renewal/member state
+  -> Payment Proof status = verified
+  -> HYPE/Ops receives verified/materialized status
+```
+
+If the required canonical context is incomplete or settlement fails closed:
+
+```text
+Payment Proof -> review_required
+```
+
+This exception does not give HYPE, OCR, R2, or the LINE observer independent Money Truth authority. The final authoritative write still occurs in `payments-worker`.
+
+## HYPE / Telegram role
+
+HYPE is operational notification and review assistance, not payment authority.
+
+Current production routing uses `telegram-worker` and separates bounded topics, including:
+
+- Membership payment activity -> Membership topic;
+- ordinary service payment proof -> Payment Confirm topic;
+- classification conflict -> Alerts topic.
+
+The notification may include bounded canonical Job context and may distinguish exact vs ambiguous matching. It must not convert evidence into paid status.
+
+## Privacy and fail-closed rules
+
+Production must preserve all of the following:
+
+- raw LINE identity is not copied into customer-facing HYPE messages;
+- payment classification ambiguity stays ambiguous;
+- foreign or unresolved canonical records are not guessed;
+- a Payment Proof cannot become verified before the authoritative payment write succeeds;
+- service/job evidence stays review-gated;
+- Membership auto-settlement is restricted to the explicit owner-policy + payments-worker validation path;
+- Points, Booking/Session truth, Model assignment and unrelated entitlement truth are not mutated by image extraction itself.
+
+## Synthetic Queue staging harness
+
+The Queue-backed intake under `services/mmd-line-slip-intake/cloudflare` remains an isolated synthetic/redacted staging harness.
+
+Its flow is intentionally different from production:
+
+```text
+synthetic/redacted image
+  -> mmd-line-slip-intake-staging
+  -> private staging R2
+  -> staging Queue
+  -> sequential consumer
+  -> mmd-slip-extractor-staging
+  -> MMD — Payment Proofs Staging = pending
+  -> redacted HYPE staging alert
+```
+
+Staging remains limited to:
+
+- synthetic/redacted images;
+- workers.dev-only staging endpoints;
+- staging R2/Queue/DLQ;
+- `MMD — Payment Proofs Staging`;
+- `source=synthetic_isolated`;
+- no production LINE webhook ownership;
+- no production Money Truth mutation.
+
+A synthetic staging PASS never substitutes for real production LINE acceptance.
+
+## Production verification
+
+Production verification must cover at minimum:
+
+- canonical webhook owner/signature boundary;
+- observer signature re-verification;
+- QR-first / OCR-fallback extraction contract;
+- payment image classification;
+- private R2 evidence persistence after acceptance;
+- pending-first Payment Proof behavior;
+- Service/Job review gate;
+- Membership settlement through `payments-worker` only;
+- bounded HYPE/Telegram notification;
+- no direct business-truth mutation by smoke tests.
+
+The HYPE closed-loop production receipt may report the LINE slip lane as accepted only when the production owner path and regression contracts pass.

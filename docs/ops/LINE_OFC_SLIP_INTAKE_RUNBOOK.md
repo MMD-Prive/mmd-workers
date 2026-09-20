@@ -2,31 +2,158 @@
 
 ## Deployment status
 
-Cloudflare staging source is now split into:
+Production LINE evidence intake is LIVE under the existing `member-dashboard-chat-worker` webhook at `/webhooks/line`.
 
-- extractor: `services/mmd-slip-extractor/cloudflare`
-- Queue-backed intake: `services/mmd-line-slip-intake/cloudflare`
+Production owners:
 
-Production LINE evidence intake is LIVE under the existing `member-dashboard-chat-worker` webhook at `/webhooks/line`. The signed production handler remains the only LINE webhook owner. After a successful signed webhook response, the production observer in `line-group-ingress-front-gate.js` re-verifies the signature, captures eligible payment images to private production R2, classifies/extracts evidence, creates pending Payment Proof evidence, and sends the bounded HYPE operator alert.
+- LINE webhook / evidence observer: `member-dashboard-chat-worker`;
+- extractor: `mmd-slip-extractor` through `SLIP_EXTRACTOR`;
+- private evidence storage: `LINE_SLIP_EVIDENCE -> mmd-line-slip-evidence`;
+- HYPE/Ops notification: `telegram-worker`;
+- Money Truth: `payments-worker`.
 
-The Queue-backed intake in this runbook remains a synthetic/redacted staging harness only; it is not the production transport. Do not set `LINE_WEBHOOK_UPSTREAM_URL`, do not create a second production webhook, and do not point LINE at either staging workers.dev service. `payments-worker` remains Money Truth.
+The Queue-backed `mmd-line-slip-intake-staging` path is synthetic staging only and is not the production transport.
 
-## Preview scope
+## Current production flow
 
-- Synthetic or redacted images only.
-- No production LINE traffic or customer slips.
-- No custom production routes.
-- Private staging R2 only.
-- Queue delivery only inside the isolated staging intake.
-- Extractor remains a separate staging service/Container.
-- `MMD — Payment Proofs Staging` only.
-- `status=pending`, `source=synthetic_isolated` only.
-- Redacted HYPE notification only.
-- No paid/verified, points, membership, entitlement, booking, or session mutation.
+Use this as the operational reference:
 
-## Required Cloudflare resources
+```text
+LINE image
+  -> /webhooks/line
+  -> canonical LINE signature verification
+  -> successful canonical webhook handling
+  -> async payment observer
+  -> observer re-verifies x-line-signature
+  -> download image from LINE
+  -> QR extraction first
+  -> OCR fallback when needed
+  -> classify payment evidence
+  -> reject / hold if insufficient
+  -> accepted:
+       correlate canonical Client/Member/Renewal/Session/Job
+       write original to private production R2
+       create Payment Proof status=pending
+       route to settlement lane
+```
 
-Provision before Queue intake deploy:
+### Settlement lane: Service / Job
+
+```text
+pending Payment Proof
+  -> HYPE/Ops Payment Confirm
+  -> exact / ambiguous / unresolved Job context
+  -> Official Verify
+  -> payments-worker
+  -> Money Truth
+```
+
+Service/Job proof remains review-gated.
+
+### Settlement lane: eligible Membership renewal
+
+```text
+pending Payment Proof
+  -> membership_slip_simple_accept_v1 gate
+  -> payments-worker /v1/internal/payments/reviewed-proof
+  -> payments-worker revalidates canonical proof/amount/identity/package context
+  -> success: entitlement/renewal materialized + Payment Proof verified
+  -> fail-closed: Payment Proof review_required
+```
+
+The observer never becomes Money Truth. The authoritative verified write remains in `payments-worker`.
+
+## Production behavior checks
+
+When reviewing a regression, verify these in order:
+
+1. `member-dashboard-chat-worker` still owns `/webhooks/line`.
+2. The webhook rejects invalid LINE signatures.
+3. The payment observer re-verifies the signature before processing events.
+4. Direct-user images can be visually checked immediately.
+5. Group images are accepted only from configured payment-group allowlist hashes.
+6. LINE image download enforces supported MIME/size boundaries.
+7. Extraction runs QR first, then OCR fallback.
+8. Payment-request QR without completed-transfer evidence is rejected.
+9. Ordinary non-payment images are rejected.
+10. Uncertain extraction/classification is held rather than promoted.
+11. Accepted evidence is written to private production R2.
+12. The first Payment Proof write is `pending`.
+13. Exact Service/Job correlation may be shown to Ops; ambiguous correlation remains ambiguous.
+14. Service/Job payment cannot become Money Truth without Official Verify / `payments-worker`.
+15. Eligible Membership settlement may call `payments-worker` only through the explicit LINE OFC Membership contract.
+16. Payment Proof becomes `verified` only after authoritative settlement succeeds.
+17. HYPE/Telegram is notification/operations only.
+18. Duplicate evidence is idempotent by proof ID.
+
+## Focused regression tests
+
+From repository root:
+
+```sh
+node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
+node --test payments-worker/reviewed-proof-line-recovery.test.mjs
+node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
+node --test admin-worker/payment-approved-job-link-dispatch.test.mjs
+```
+
+The HYPE production smoke also runs the LINE payment-proof ingress regression as part of the closed-loop acceptance contract.
+
+## HYPE/Ops routing
+
+Production notifications are sent through `telegram-worker`.
+
+Expected bounded routing:
+
+- Membership proof -> Membership topic;
+- generic Service/Job payment -> Payment Confirm topic;
+- classification conflict -> Alerts topic.
+
+The Ops message may show:
+
+- Proof ID;
+- customer display when canonically resolved;
+- amount;
+- payment purpose/tracking kind;
+- exact Job context when uniquely matched;
+- bounded candidate list when ambiguous;
+- required next action.
+
+Do not treat a Telegram delivery receipt as payment verification.
+
+## Production data handling
+
+Production evidence handling must retain these boundaries:
+
+- originals only in the designated private evidence bucket;
+- no raw slips or OCR/QR payloads in GitHub issues;
+- no secret/token values in logs;
+- no guessing between multiple Jobs;
+- no payment truth from message wording;
+- no service payment truth from extraction alone;
+- Membership auto-settlement only through the explicit owner policy and `payments-worker` validation;
+- no direct Points/Booking/Model-assignment mutation from the slip observer.
+
+## Synthetic staging harness
+
+Cloudflare staging remains split into:
+
+- extractor: `services/mmd-slip-extractor/cloudflare`;
+- Queue-backed intake: `services/mmd-line-slip-intake/cloudflare`.
+
+Staging scope:
+
+- synthetic or redacted images only;
+- no production LINE traffic/customer slips;
+- workers.dev-only staging surfaces;
+- private staging R2 only;
+- staging Queue/DLQ only;
+- `MMD — Payment Proofs Staging` only;
+- `status=pending`, `source=synthetic_isolated`;
+- redacted HYPE staging notification only;
+- no production Money Truth mutation.
+
+### Required staging resources
 
 ```sh
 npx wrangler queues create mmd-line-slip-intake-staging
@@ -34,26 +161,24 @@ npx wrangler queues create mmd-line-slip-intake-staging-dlq
 npx wrangler r2 bucket create mmd-line-slip-evidence-staging
 ```
 
-These commands create staging resources only. Do not reuse a production R2 evidence bucket for preview.
+### Required staging secrets
 
-## Required staging secrets
-
-### Extractor
+Extractor:
 
 - `MMD_SLIP_EXTRACTOR_TOKEN`
 
-### Queue intake
+Queue intake:
 
 - `MMD_SLIP_INTAKE_STAGING_TOKEN`
 - `MMD_SLIP_EXTRACTOR_TOKEN`
 - `AIRTABLE_API_KEY`
-- `AUTH_SERVICE_LINE_TO_TELEGRAM` for the optional redacted HYPE validation path
+- `AUTH_SERVICE_LINE_TO_TELEGRAM` for optional redacted HYPE validation
 
-Do not place secret values in Git, shell command arguments, CI output, screenshots, or GitHub issues.
+Do not put secret values in Git, command-line arguments, CI output, screenshots, or GitHub issues.
 
-No production LINE channel token is required by the isolated staging Queue intake.
+### Local staging validation
 
-## Local validation — extractor
+Extractor:
 
 ```sh
 cd services/mmd-slip-extractor/cloudflare
@@ -62,15 +187,10 @@ node --test test/*.test.mjs
 node --check worker.mjs
 node --check worker-core.mjs
 node --check container-server.mjs
-npx wrangler types --config wrangler.jsonc
 npx wrangler deploy --dry-run --config wrangler.jsonc
 ```
 
-The existing extraction-library tests under `services/mmd-slip-extractor` must remain green.
-
-## Local validation — Queue intake
-
-From repository root:
+Queue intake from repository root:
 
 ```sh
 node --check services/mmd-line-slip-intake/cloudflare/worker.mjs
@@ -78,107 +198,17 @@ node --experimental-global-webcrypto --test services/mmd-line-slip-intake/cloudf
 npx wrangler@4 deploy --dry-run --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
 ```
 
-The focused tests cover bearer enforcement, private R2 metadata, SHA-256 integrity, Queue replay idempotency, pending-only Airtable writes, redacted HYPE alerts, and corrupt-evidence retry.
+Synthetic staging proves staging only. It never substitutes for the real LINE production gate.
 
-## Configure extractor staging secret
+## Production incident / rollback guidance
 
-```sh
-cd services/mmd-slip-extractor/cloudflare
-npx wrangler whoami
-npx wrangler secret put MMD_SLIP_EXTRACTOR_TOKEN --config wrangler.jsonc
-```
+If the production evidence observer is unhealthy:
 
-Wrangler prompts for the value. Do not put it on the command line.
+1. preserve the canonical `/webhooks/line` owner;
+2. keep Money Truth in `payments-worker`;
+3. fail closed on evidence processing rather than bypassing verification;
+4. do not promote raw/uncertain evidence directly into paid/verified state;
+5. keep HYPE notification secondary to canonical payment truth;
+6. investigate extractor/R2/Airtable/service-binding health without creating a second LINE webhook owner.
 
-## Deploy extractor staging
-
-```sh
-cd services/mmd-slip-extractor/cloudflare
-npx wrangler deploy --config wrangler.jsonc
-npx wrangler containers list
-npx wrangler containers images list
-```
-
-Wait for Container readiness before the Queue intake smoke.
-
-## Configure Queue intake staging secrets
-
-From repository root:
-
-```sh
-npx wrangler secret put MMD_SLIP_INTAKE_STAGING_TOKEN --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
-npx wrangler secret put MMD_SLIP_EXTRACTOR_TOKEN --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
-npx wrangler secret put AIRTABLE_API_KEY --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
-npx wrangler secret put AUTH_SERVICE_LINE_TO_TELEGRAM --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
-```
-
-Each command must use the interactive prompt.
-
-## Deploy Queue intake staging
-
-Only after the Queue, DLQ, private R2, extractor service, and secrets exist:
-
-```sh
-npx wrangler deploy --config services/mmd-line-slip-intake/cloudflare/wrangler.jsonc
-```
-
-Confirm the worker remains workers.dev-only with no custom route.
-
-## Synthetic extractor smoke
-
-1. `GET /health` returns 200 from the extractor staging hostname.
-2. A generated PromptPay/EMV QR image to `POST /v1/extract/qr` returns evidence only.
-3. A synthetic Thai/English slip to `POST /v1/extract/ocr` returns evidence only.
-4. Missing bearer returns 401.
-5. Oversized request returns 413.
-6. Response contains no `paid`, `verified`, membership, points, session, or entitlement field.
-7. Logs contain no raw image, OCR text, QR payload, token, or payment data.
-
-## Synthetic Queue intake smoke
-
-Use only a generated or redacted fixture.
-
-1. `GET /health` on `mmd-line-slip-intake-staging` reports `staging`.
-2. Unauthenticated `POST /v1/staging/intake` returns 401.
-3. Authenticated JPEG/PNG/WebP <= 4 MiB returns 202 with `state=queued`.
-4. Response includes only the synthetic `proof_id` and safe `run_id`; it must not expose the private R2 key.
-5. Confirm the object is stored in `mmd-line-slip-evidence-staging` with evidence SHA metadata.
-6. Confirm Queue consumer verifies object size + SHA before extraction.
-7. Confirm extractor receives QR first and OCR fallback when needed.
-8. Confirm `MMD — Payment Proofs Staging` receives exactly one row with `status=pending` and `source=synthetic_isolated`.
-9. Confirm HYPE payment topic 21 receives only redacted status; payment reference is masked.
-10. Replay the same fixture and confirm no second staging proof and no second alert.
-11. Corrupt the expected SHA in a synthetic Queue job and confirm retry with no Airtable proof creation.
-12. Confirm no payment, membership, points, entitlement, booking, or session mutation occurred.
-
-Record only safe `run_id`, synthetic `proof_id`, workflow/run IDs, and PASS/FAIL outcomes in GitHub. Never paste raw slips, OCR text, tokens, full payment references, LINE user IDs, or private R2 keys.
-
-## Production integration gate
-
-Passing synthetic staging does **not** mean production LINE slip intake is PASS.
-
-A later separate PR may connect `member-dashboard-chat-worker` to a Cloudflare Queue producer only after explicit production approval. That integration must:
-
-- preserve `/webhooks/line` ownership in `member-dashboard-chat-worker`;
-- enqueue only after the existing LINE signature verification accepts the request;
-- acknowledge LINE promptly without waiting for OCR;
-- store originals only in a designated private production R2 bucket;
-- create `MMD — Payment Proofs` in pending/review state only;
-- keep `payments-worker` as Money Truth;
-- keep Telegram/HYPE downstream notification only;
-- keep Netlify and `LINE_WEBHOOK_UPSTREAM_URL` retired.
-
-Real LINE E2E must be proven separately after that production path is deployed. Synthetic staging must never be counted as the real-LINE PASS gate.
-
-## Rollback
-
-If Queue staging is unhealthy:
-
-1. Stop sending synthetic intake traffic.
-2. Disable or roll back `mmd-line-slip-intake-staging`.
-3. Rotate staging bearer secrets if exposure is suspected.
-4. Preserve only synthetic evidence needed for debugging.
-5. Do not change the production LINE webhook route.
-6. Do not mutate production Payments, Membership, Points, Entitlements, Bookings, or Sessions as part of preview rollback.
-
-If the extractor is unhealthy, stop the Queue intake smoke until the extractor staging service is healthy again. Do not bypass extraction by promoting staging evidence into payment truth.
+If staging is unhealthy, stop staging traffic or roll back the staging workers only. Do not mutate the production LINE route as part of staging rollback.
