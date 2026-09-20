@@ -128,7 +128,12 @@ jobs:
               break
             fi
 
-            if [ "$code" = "403" ] && grep -Fq '"error":"internal_token_required"' "$response_file"; then
+            if [ "$code" = "403" ] && node -e '
+              const fs=require("node:fs");
+              let body={};
+              try { body=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); } catch {}
+              process.exit(body?.error === "internal_token_required" ? 0 : 1);
+            ' "$response_file"; then
               echo "Payments Telegram auth not propagated yet (attempt $attempt); retrying..."
               sleep 5
               continue
