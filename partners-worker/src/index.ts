@@ -1345,6 +1345,9 @@ async function getAirtableRecord(env: RuntimeEnv, tableId: string, recordId: str
 async function airtableFetch(env: RuntimeEnv, path: string, init: RequestInit): Promise<Response> {
   const apiKey = requireSecret(env, "AIRTABLE_API_KEY");
   const url = new URL(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${path}`);
+  if ((init.method || "GET").toUpperCase() === "GET") {
+    url.searchParams.set("returnFieldsByFieldId", "true");
+  }
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${apiKey}`);
   headers.set("Content-Type", "application/json");
