@@ -332,7 +332,9 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
     const verificationStatus = code(paymentFields[PAYMENT_FIELDS.verification]);
     const intentStatus = code(paymentFields[PAYMENT_FIELDS.intentStatus]);
     const verified = ["paid", "full_payment", "verified", "completed"].includes(paymentStatus) || verificationStatus === "verified";
-    const proofReceived = ["manual_slip_evidence_received", "pending_review", "submitted", "reviewing"].includes(intentStatus) || verificationStatus === "pending_review";
+    // Verification Status starts at pending_review before any customer payment.
+    // Only an explicit evidence-receipt intent may mark proof as received.
+    const proofReceived = ["manual_slip_evidence_received", "pending_review", "submitted", "reviewing"].includes(intentStatus);
 
     return json({
       ok: true,
