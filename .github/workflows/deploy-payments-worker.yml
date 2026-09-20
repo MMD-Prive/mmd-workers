@@ -149,6 +149,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          proof_health_body="$(mktemp)"
+          proof_health_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -o "$proof_health_body" -w "%{http_code}" \
+            'https://sigil.mmdbkk.com/v1/pay/slip/evidence/health')"
+          cat "$proof_health_body"
+          test "$proof_health_code" = "200"
+          grep -F '"version":"sigil_pay_proof_intake_v3"' "$proof_health_body"
+          grep -F '"signed_token_required":true' "$proof_health_body"
+          grep -F '"canonical_proof_status":"pending"' "$proof_health_body"
+          grep -F '"telegram_thread_id":22' "$proof_health_body"
+          grep -F '"ready":true' "$proof_health_body"
+
           for path in /v1/confirm/verify /v1/confirm/details /v1/confirm/ack /v1/confirm/payment-instructions; do
             body_file="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \

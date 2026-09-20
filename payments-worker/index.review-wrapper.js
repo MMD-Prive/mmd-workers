@@ -82,6 +82,30 @@ export default {
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
 
+    if (method === "GET" && path === "/v1/pay/slip/evidence/health") {
+      const airtableReady = Boolean(String(env.AIRTABLE_BASE_ID || "").trim() && String(env.AIRTABLE_API_KEY || "").trim() && String(env.AIRTABLE_TABLE_PAYMENT_PROOFS || "").trim());
+      const r2Ready = Boolean(env.PAYMENT_SLIP_EVIDENCE && typeof env.PAYMENT_SLIP_EVIDENCE.put === "function");
+      const telegramReady = Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim());
+      const tokenReady = Boolean(String(env.PAYMENT_CONFIRMATION_SIGNING_SECRET || env.CONFIRM_KEY || "").trim() && env.PAY_SESSIONS_KV);
+      const telegramThreadId = Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22) || 22;
+      return json({
+        ok: true,
+        authority: "payments-worker",
+        schema: "mmd_web_payment_proof_v1",
+        version: "sigil_pay_proof_intake_v3",
+        signed_token_required: true,
+        canonical_proof_status: "pending",
+        telegram_thread_id: telegramThreadId,
+        bindings: {
+          airtable: airtableReady,
+          r2: r2Ready,
+          telegram: telegramReady,
+          confirmation_token: tokenReady,
+        },
+        ready: airtableReady && r2Ready && telegramReady && tokenReady && telegramThreadId === 22,
+      }, 200);
+    }
+
     const shopExpiryResponse = await handleShopIntentExpiry(request.clone(), env);
     if (shopExpiryResponse) return shopExpiryResponse;
 
