@@ -345,7 +345,11 @@ function extensionFor(file) {
   return "bin";
 }
 
-async function storeEvidence(env, file, proofId, paymentRef) {
+function paymentProofLane(snapshot = {}) {
+  return code(snapshot.payment_stage) === "shop" ? "mmd_shop" : "mmd";
+}
+
+async function storeEvidence(env, file, proofId, paymentRef, snapshot = {}) {
   if (!file) return { stored: false, reason: "file_missing" };
   if (Number(file.size || 0) > MAX_FILE_BYTES) {
     const error = new Error("slip_file_too_large");
@@ -355,12 +359,14 @@ async function storeEvidence(env, file, proofId, paymentRef) {
   const bytes = await file.arrayBuffer();
   const sha256 = bytesToHex(await crypto.subtle.digest("SHA-256", bytes));
   const date = new Date();
-  const key = `web-payment-proofs/${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${extensionFor(file)}`;
+  const lane = paymentProofLane(snapshot);
+  const prefix = lane === "mmd_shop" ? "mmd-shop-payment-proofs" : "web-payment-proofs";
+  const key = `${prefix}/${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${extensionFor(file)}`;
   const bucket = env.PAYMENT_SLIP_EVIDENCE;
   if (!bucket || typeof bucket.put !== "function") return { stored: false, reason: "r2_not_bound", key, sha256 };
   await bucket.put(key, bytes, {
     httpMetadata: { contentType: clean(file.type, 120) || "application/octet-stream" },
-    customMetadata: { proof_id: proofId, payment_ref: paymentRef, sha256 },
+    customMetadata: { proof_id: proofId, payment_ref: paymentRef, payment_lane: lane, sha256 },
   });
   return { stored: true, provider: "cloudflare_r2", key, sha256 };
 }
@@ -371,6 +377,16 @@ function threadId(value, fallback) {
 }
 
 export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = "") {
+  if (paymentProofLane(snapshot) === "mmd_shop") {
+    return {
+      topic: "mmd_shop",
+      reason: "mmd_shop_payment",
+      should_alert: false,
+      inference: null,
+      thread_id: threadId(env.TG_THREAD_MMD_SHOP_PAYMENTS, 161),
+      alerts_thread_id: threadId(env.TG_THREAD_MMD_SHOP_ALERTS, 162),
+    };
+  }
   const route = classifyPaymentOpsRoute({
     payment_stage: snapshot.payment_stage_explicit === false ? "" : snapshot.payment_stage,
     amount_thb: snapshot.amount_thb,
@@ -402,13 +418,17 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   form.append("caption", [
     route.topic === "membership"
       ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
-      : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
+      : route.topic === "mmd_shop"
+        ? "<b>MMD SHOP PAYMENT PROOF · PENDING REVIEW</b>"
+        : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
     `Proof: <code>${proofId}</code>`,
     `Ref: <code>${paymentRef}</code>`,
     snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
     snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : "",
-    ...(route.topic === "membership" ? [] : webJobContextCaptionLines(jobContext)),
+    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? "Classified: <b>MMD Shop Order</b>" : "",
+    ...(route.topic === "membership" || route.topic === "mmd_shop"
+      ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
+      : webJobContextCaptionLines(jobContext)),
     `Routing: <code>${tgHtml(route.reason)}</code>`,
     "Evidence only · Official Verify required",
   ].filter(Boolean).join("\n"));
@@ -552,9 +572,11 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     throw error;
   }
   const proofId = `webproof_${(await sha256Hex(paymentRef)).slice(0, 24)}`;
-  const storage = await storeEvidence(env, file, proofId, paymentRef);
+  const lane = paymentProofLane(snapshot);
+  const storage = await storeEvidence(env, file, proofId, paymentRef, snapshot);
   const note = [
-    "schema=mmd_web_payment_proof_v1",
+    lane === "mmd_shop" ? "schema=mmd_shop_payment_proof_v1" : "schema=mmd_web_payment_proof_v1",
+    `payment_lane=${lane}`,
     "evidence_only=true",
     "official_verification_required=true",
     storage.key ? `r2_key=${storage.key}` : "",
