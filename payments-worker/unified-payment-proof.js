@@ -443,7 +443,7 @@ export function canonicalProofRecordFields({ proofId, note, snapshot = {}, payme
     proof_id: proofId,
     channel: "web_pay",
     note,
-    status: "submitted",
+    status: "pending",
     payer_name: snapshot.payer_name,
     amount_thb: snapshot.amount_thb,
     payment_ref: paymentRef,
