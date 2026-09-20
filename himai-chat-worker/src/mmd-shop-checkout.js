@@ -289,7 +289,7 @@ export function validateAndPriceCart(cart, products, stock) {
     const price = positiveNumber(fields[PRODUCT_FIELDS.mmdPrice]);
     const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
     const productName = clean(fields[PRODUCT_FIELDS.name], 220);
-    if (isRestrictedCheckoutProduct(sku, productName)) throw httpError(403, "product_not_eligible_for_online_checkout");
+    if (isRestrictedCheckoutProduct(sku, productName, fields[PRODUCT_FIELDS.note])) throw httpError(403, "product_not_eligible_for_online_checkout");
     if (status !== "active") throw httpError(409, "product_not_active");
     if (!isMmd) throw httpError(409, "product_not_available_in_mmd_shop");
     if (price === null) throw httpError(409, "product_price_unavailable");
@@ -588,10 +588,12 @@ function isOnDemandProduct(note) {
   return /\bon[-\s]*demand\b/i.test(clean(note, 500));
 }
 
-function isRestrictedCheckoutProduct(sku, name) {
-  const code = String(sku || "").toUpperCase();
-  const label = String(name || "").toLowerCase();
-  return /^PPP25-/.test(code) || /\bpod\b/.test(label);
+function isRestrictedCheckoutProduct(sku, name, productNote) {
+  const text = [sku, name, productNote]
+    .map((value) => String(value || ""))
+    .join(" ")
+    .toLowerCase();
+  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function selectName(value) {
