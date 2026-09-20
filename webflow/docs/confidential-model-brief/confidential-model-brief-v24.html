@@ -116,9 +116,17 @@ Presentation only. Route access / token / revocation authority remains Worker-ow
     .cmb24__transition-copy strong{color:#f8f0e1!important;font-size:13px;letter-spacing:-.01em}
     .cmb24__transition-copy span{color:var(--gold)!important;font-size:8px;letter-spacing:.12em}
     .cmb24__details{padding:24px 16px 30px;background:var(--paper);color:var(--ink)!important}
-    .cmb24__details-head{margin-bottom:12px}
+    .cmb24__details-head{margin-bottom:14px}
     .cmb24__details-head .cmb24__kicker{color:#9a783d!important}
-    .cmb24__details-head h2{margin:4px 0 5px;color:#1a1712!important;font-size:27px;letter-spacing:-.045em;line-height:1.05}
+    .cmb24__details-head h2{margin:4px 0 12px;color:#1a1712!important;font-size:27px;letter-spacing:-.045em;line-height:1.05}
+    .cmb24__who-grid{display:grid;gap:12px;align-items:stretch}
+    .cmb24__per-media{margin:0;position:relative;overflow:hidden;border-radius:18px;background:#181613;aspect-ratio:4/3;min-height:0}
+    .cmb24__per-media img{width:100%;height:100%;object-fit:cover;object-position:center 28%;filter:saturate(.92) contrast(1.03)}
+    .cmb24__per-media:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(12,10,8,.78))}
+    .cmb24__per-media figcaption{position:absolute;left:12px;right:12px;bottom:10px;z-index:1;display:flex;justify-content:space-between;gap:10px;align-items:end}
+    .cmb24__per-media figcaption b{color:#fff5e5!important;font-size:11px;letter-spacing:.03em}
+    .cmb24__per-media figcaption span{color:#d9bc7c!important;font-size:7.5px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+    .cmb24__who-copy{padding:2px 0}
     .cmb24__details-head p{margin:0;color:#6f685e!important;font-size:11.5px;line-height:1.62}.cmb24__details-head p+p{margin-top:8px}
     .cmb24__accordion{border-top:1px solid rgba(31,26,20,.14)}
     .cmb24__accordion details{border-bottom:1px solid rgba(31,26,20,.14)}
@@ -188,6 +196,9 @@ Presentation only. Route access / token / revocation authority remains Worker-ow
       .cmb24__details{padding:36px 24px 44px}
       .cmb24__details-inner{max-width:900px;margin:0 auto}
       .cmb24__details-head h2{font-size:36px}
+      .cmb24__who-grid{grid-template-columns:minmax(250px,.72fr) minmax(0,1.28fr);gap:20px;align-items:center}
+      .cmb24__per-media{aspect-ratio:4/3}
+      .cmb24__who-copy{padding-right:10px}
       .cmb24__accordion summary{padding:19px 0}
       .cmb24__accordion summary b{font-size:15px}
       .cmb24__accordion-body{padding-left:43px;font-size:12px}
@@ -281,7 +292,17 @@ Presentation only. Route access / token / revocation authority remains Worker-ow
         <header class="cmb24__details-head" data-reveal>
           <p class="cmb24__kicker">THE DETAILS · OPEN ONLY WHAT YOU NEED</p>
           <h2 id="cmb24-details-title" data-i18n="detailsTitle"></h2>
-          <p data-i18n="detailsLead"></p><p data-i18n="detailsPer"></p><p data-i18n="detailsLead2"></p>
+          <div class="cmb24__who-grid">
+            <figure class="cmb24__per-media">
+              <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside.webp" alt="Boss Per" loading="lazy">
+              <figcaption><b>Boss Per</b><span>Founder · MMD Privé</span></figcaption>
+            </figure>
+            <div class="cmb24__who-copy">
+              <p data-i18n="detailsLead"></p>
+              <p data-i18n="detailsPer"></p>
+              <p data-i18n="detailsLead2"></p>
+            </div>
+          </div>
         </header>
 
         <div class="cmb24__accordion">
