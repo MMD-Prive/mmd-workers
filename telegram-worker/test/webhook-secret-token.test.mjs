@@ -21,6 +21,7 @@ function env(overrides = {}) {
     TELEGRAM_CHAT_ID: "-1003546439681",
     TG_THREAD_PAYMENTS_MEMBERSHIP: "20",
     TG_THREAD_PAYMENTS_CONFIRM: "22",
+    TG_THREAD_MMD_SHOP_PAYMENTS: "161",
     TELEGRAM_BOT_TOKEN: "telegram-token",
     TELEGRAM_PREVIEW_CHANNEL_ID: "-100123",
     TELEGRAM_BOT_USERNAME: "mmdprivebot",
@@ -306,6 +307,38 @@ test("payments proof document route uses canonical bot and Payments Confirm thre
     assert.equal(captured.form.get("chat_id"), "-1003546439681");
     assert.equal(captured.form.get("message_thread_id"), "22");
     assert.equal(captured.form.get("document").name, "proof.jpg");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("payments proof document route accepts MMD Shop Payments topic 161", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, init = {}) => {
+    captured = { url: String(url), form: init.body };
+    return Response.json({ ok: true, result: { message_id: 99161, message_thread_id: 161 } });
+  };
+
+  try {
+    const form = new FormData();
+    form.append("chat_id", "-1003546439681");
+    form.append("message_thread_id", "161");
+    form.append("caption", "<b>MMD SHOP PAYMENT PROOF · PENDING REVIEW</b>");
+    form.append("document", new Blob(["proof"], { type: "image/jpeg" }), "shop-proof.jpg");
+
+    const response = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
+      method: "POST",
+      headers: { authorization: "Bearer payments-service-secret" },
+      body: form,
+    }), env());
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.message_id, 99161);
+    assert.equal(captured.form.get("message_thread_id"), "161");
+    assert.equal(captured.form.get("document").name, "shop-proof.jpg");
   } finally {
     globalThis.fetch = originalFetch;
   }

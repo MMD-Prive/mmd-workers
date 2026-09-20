@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalProofLinks, canonicalProofRecordFields, canonicalWebJobContext, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef, telegramDeliveryAuditNote } from "./unified-payment-proof.js";
+import { canonicalProofLinks, canonicalProofRecordFields, canonicalWebJobContext, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofStoragePrefix, paymentProofTelegramRoute, stablePaymentRef, telegramDeliveryAuditNote } from "./unified-payment-proof.js";
 import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
 import legacySlipWorker from "./index.with-slip-evidence.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
@@ -176,6 +176,30 @@ test("unified-wrapped legacy slip path suppresses duplicate Telegram notificatio
   assert.equal(data.ok, true);
   assert.equal(data.telegram_notify?.skipped, true);
   assert.equal(data.telegram_notify?.reason, "unified_wrapper_handles_telegram");
+});
+
+test("MMD Shop proof uses its own storage prefix and Telegram Payments topic 161", () => {
+  const snapshot = {
+    amount_thb: 1500,
+    package_code: "",
+    payment_stage: "shop",
+    payment_stage_explicit: true,
+    session_id: "MMD-SHOP-ORDER-001",
+  };
+  assert.equal(paymentProofStoragePrefix(snapshot), "mmd-shop-payment-proofs");
+  const route = paymentProofTelegramRoute({
+    TG_THREAD_MMD_SHOP_PAYMENTS: "161",
+    TG_THREAD_MMD_SHOP_ALERTS: "162",
+  }, snapshot, "public_pay");
+  assert.equal(route.topic, "mmd_shop");
+  assert.equal(route.thread_id, 161);
+  assert.equal(route.alerts_thread_id, 162);
+  assert.equal(route.reason, "mmd_shop_payment");
+  assert.equal(route.should_alert, false);
+});
+
+test("service proof storage remains separate from MMD Shop storage", () => {
+  assert.equal(paymentProofStoragePrefix({ payment_stage: "deposit" }), "web-payment-proofs");
 });
 
 test("service proof V22 source routes to canonical Payments Confirm topic 22", () => {
