@@ -394,9 +394,6 @@ HYPE_OBSERVER_HELD_NEW_1H_WARNING = "5"
 HYPE_OBSERVER_HELD_OPEN_WARNING = "10"
 HYPE_OBSERVER_EXTRACTOR_FAILURES_1H_CRITICAL = "5"
 HYPE_OBSERVER_EXTRACTOR_CONSECUTIVE_CRITICAL = "3"
-# Health-only source label for the deployment that evaluates observer health.
-# This value never grants payment/membership/access authority.
-HYPE_OBSERVER_SOURCE_SHA = "pending-pr-merge"
 # Pending proof alert destinations. These are notification-only and cannot activate
 # payment, membership, points, booking, or access.
 TELEGRAM_OPS_CHAT_ID = "-1003546439681"
