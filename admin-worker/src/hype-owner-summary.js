@@ -82,8 +82,6 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   const nextActions = [];
   if (incidentDigest.status === "critical" || incidentDigest.status === "warning") {
     nextActions.push(action(1, incidentDigest.primary?.owner_action?.title || "เช็ก Incident Digest", incidentDigest.primary?.owner_action?.href || "/internal/admin/control-room", incidentDigest.primary?.owner_action?.authority || "diagnostic_read_only"));
-  } else if (telegramRouter.status === "partial") {
-    nextActions.push(action(1, "ดู Telegram Router migration lanes", "/internal/admin/control-room", "telegram_router_governance_read_only"));
   } else if (observer.alert_required === true) {
     nextActions.push(action(1, "เช็ก Payment Observer Health", "/internal/admin/control-room", "observer_health_read_only"));
   }
