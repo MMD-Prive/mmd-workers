@@ -42,6 +42,7 @@ function syntheticData({ capability = "private_standard", lifecycle = "active", 
         customer_safe_summary: "โปรไฟล์ที่อนุมัติสำหรับลูกค้า",
       },
     }] : [],
+    offers: [],
   };
 }
 
