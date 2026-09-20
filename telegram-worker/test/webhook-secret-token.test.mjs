@@ -302,7 +302,7 @@ test("topic smoke is owner-internal only and requires explicit confirmation", as
 
   const missingConfirmation = await worker.fetch(new Request(TOPIC_SMOKE_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-MMD-Deploy-Nonce": "deploy-nonce" },
+    headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
     body: "{}",
   }), env());
   assert.equal(missingConfirmation.status, 400);
