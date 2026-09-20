@@ -91,6 +91,7 @@ function installSyntheticNetwork(data, { sourceFailure = false } = {}) {
     if (url.hostname === "api.airtable.com") {
       if (sourceFailure) return new Response("synthetic source failure", { status: 503 });
       const table = decodeURIComponent(url.pathname.split("/").pop());
+      if (table === "offers") return new Response(JSON.stringify({ records: data.offers || [] }), { status: 200, headers: { "content-type": "application/json" } });
       const formula = url.searchParams.get("filterByFormula") || "";
       const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
       if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
