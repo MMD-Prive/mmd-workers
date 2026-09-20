@@ -1,3 +1,3 @@
 # Telegram production re-verification marker
 
-This marker intentionally retriggers the canonical `Deploy telegram-worker` production acceptance after the HYPE closed-loop route lock.
+Final owner-requested re-verification on 2026-09-20. This marker changes no runtime logic; it retriggers canonical `Deploy telegram-worker` production acceptance after the route-owner lock and verified Customer/Model Telegram Auto-DM integration.
