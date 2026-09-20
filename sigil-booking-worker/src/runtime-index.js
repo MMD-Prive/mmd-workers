@@ -96,7 +96,7 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   return context?.private_allowed === true;
 }
 
-async function applyModelSalesPolicyToSearchResponse(response, env, request, url, bookingContext) {
+export async function applyModelSalesPolicyToSearchResponse(response, env, request, url, bookingContext, options = {}) {
   if (!response?.ok) return response;
   const payload = await response.clone().json().catch(() => null);
   if (!payload || payload.ok !== true) return response;
@@ -120,7 +120,7 @@ async function applyModelSalesPolicyToSearchResponse(response, env, request, url
       requested_at: requestedAt,
       work_lane: workLane,
       entitlement_snapshot: context.entitlement_snapshot || {},
-    });
+    }, { fetchImpl: options.fetchImpl || fetch });
     if (sales.configured_rule_count > 0 && sales.sellable !== true) continue;
     allowed.push({
       ...model,
