@@ -2504,27 +2504,27 @@
     },
     {
       "namespace": "Telegram endpoints",
-      "canonical_owner": null,
+      "canonical_owner": "telegram-worker",
       "implementation_owner": "telegram-worker",
       "candidate_owner": "telegram-worker",
-      "production_route_owner": "UNRESOLVED",
+      "production_route_owner": "telegram-worker for webhook/internal_send core; complaint_and_preview UNRESOLVED",
       "visibility": "webhook/internal",
       "auth_requirement": "Telegram secret token or internal auth",
-      "source_of_truth": "Telegram Bot API and internal message contract after production route binding is proven",
+      "source_of_truth": "Telegram Bot API and internal message contract; webhook/internal-send core production routes are exact-path locked",
       "temporary_proxy": null,
       "known_overlap": [
         "/v1/webhook",
         "/v1/send",
-        "workers.dev/internal consumer evidence is not canonical production ownership"
+        "complaint/preview aliases remain separately unresolved"
       ],
-      "target_direct_route": "custom-host route or service binding TBD",
-      "custom_host_attachment": "missing/unverified",
+      "target_direct_route": "exact apex/www custom-host routes for webhook/internal_send core; complaint/preview TBD",
+      "custom_host_attachment": "configured for webhook/internal_send core",
       "service_binding": "missing/unverified",
-      "workers_dev": "development/internal endpoint evidence only",
-      "status": "PARTIAL_INTEGRATION",
-      "owner_decision": "UNRESOLVED",
-      "evidence": "telegram-worker/src/index.js implements webhook/send/complaint/preview aliases; telegram-worker/wrangler.toml has no custom-host [[routes]] or service binding evidence in this artifact; internal consumers reference telegram-worker.malemodel-bkk.workers.dev.",
-      "notes": "Telegram implementation is repo-proven, but production route ownership remains unresolved until exact custom-host route or service binding is proven.",
+      "workers_dev": "compatibility/internal transport only; not canonical ingress",
+      "status": "LOCKED_WITH_EXCEPTIONS",
+      "owner_decision": "LOCKED_WITH_EXCEPTIONS",
+      "evidence": "telegram-worker/src/index.js implements aliases; telegram-worker/wrangler.toml declares exact apex/www webhook/internal-send routes; deploy-telegram-worker.yml syncs/validates route ownership, locks Bot webhook URL and smokes auth boundaries.",
+      "notes": "Webhook and internal-send core are canonical under telegram-worker. Complaint/preview aliases remain unresolved until separately attached and accepted.",
       "route_partitions": [
         {
           "partition": "webhook",
@@ -2534,9 +2534,9 @@
           ],
           "implementation_owner": "telegram-worker",
           "implementation_status": "implemented in repository",
-          "production_route_owner": "UNRESOLVED",
-          "owner_decision": "UNRESOLVED",
-          "acceptance_requirement": "Prove exact webhook production route or service binding, Telegram secret-token behavior, alias behavior, and production smoke."
+          "production_route_owner": "telegram-worker",
+          "owner_decision": "LOCKED",
+          "acceptance_requirement": "Deploy workflow must pass exact route sync and production auth/secret smoke."
         },
         {
           "partition": "internal_send",
@@ -2547,9 +2547,9 @@
           ],
           "implementation_owner": "telegram-worker",
           "implementation_status": "implemented in repository",
-          "production_route_owner": "UNRESOLVED",
-          "owner_decision": "UNRESOLVED",
-          "acceptance_requirement": "Prove exact send production route or service binding, internal auth, alias behavior, and production smoke."
+          "production_route_owner": "telegram-worker",
+          "owner_decision": "LOCKED",
+          "acceptance_requirement": "Deploy workflow must pass exact route sync and production auth/secret smoke."
         },
         {
           "partition": "complaint_and_preview",
@@ -2898,13 +2898,13 @@
       "decision": "Do not lock Kenji public routes without evidence."
     },
     "telegram-worker": {
-      "classification": "messaging implementation owner",
+      "classification": "canonical messaging owner for webhook/internal-send core; other aliases endpoint-specific",
       "implementation_owner": true,
-      "production_route_owner": "UNRESOLVED",
-      "custom_host_attachment": "missing/unverified",
+      "production_route_owner": "telegram-worker for webhook/internal_send core",
+      "custom_host_attachment": "exact apex/www routes configured for webhook/internal_send core",
       "service_binding": "missing/unverified",
-      "workers_dev": "development/internal endpoint evidence only",
-      "decision": "Implements Telegram webhook/internal send/complaint/preview aliases, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
+      "workers_dev": "compatibility/internal transport only",
+      "decision": "Owns canonical production webhook/internal-send core aliases. Complaint/preview aliases remain endpoint-specific and unresolved until exact production attachment is accepted."
     },
     "events-worker": {
       "classification": "active but migration pending",
@@ -2998,13 +2998,13 @@
       "acceptance_requirement": "Prove custom-host route or service binding, auth, room open/websocket paths, aliases if any, and production smoke."
     },
     {
-      "route_or_namespace_key": "Telegram endpoints",
-      "implementation_status": "telegram-worker implements webhook/send/complaint/preview aliases",
+      "route_or_namespace_key": "Telegram complaint/preview aliases",
+      "implementation_status": "telegram-worker implements complaint/preview aliases; webhook/internal-send core is locked separately",
       "production_ownership_status": "UNRESOLVED",
-      "blocker": "No exact custom-host route or service binding proof; workers.dev/internal consumer URLs are not canonical.",
+      "blocker": "Complaint/preview aliases do not yet have exact custom-host production attachment.",
       "candidate_owner": "telegram-worker implementation owner",
-      "required_next_phase": "Telegram route binding acceptance",
-      "acceptance_requirement": "Prove exact route/binding, webhook path, send path, auth, aliases, and production smoke."
+      "required_next_phase": "Telegram optional alias route acceptance",
+      "acceptance_requirement": "Attach and smoke complaint/preview aliases only if they are promoted to canonical public production routes."
     },
     {
       "route_or_namespace_key": "/internal/admin/liff-renewal-queue and /v1/admin/line/liff-renewal-queue",
