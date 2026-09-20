@@ -437,6 +437,9 @@ function requireHypePreviewIntroToken(req, env) {
 
 async function handleTelegramWebhook(update, env) {
   const callback = update.callback_query || null;
+  if (callback && /^pjc\|/i.test(clean(callback.data))) {
+    return handlePartnerJobConfirmCallback(callback, env);
+  }
   if (callback && /^hrop\|/i.test(clean(callback.data))) {
     return handleHypeRecoveryOrderCallback(callback, env);
   }
@@ -573,6 +576,97 @@ async function handleTelegramWebhook(update, env) {
   }
 
   return { handled: false, reason: "no_matching_command" };
+}
+
+async function handlePartnerJobConfirmCallback(callback, env) {
+  const data = clean(callback?.data);
+  const match = /^pjc\|(rec[A-Za-z0-9]{14,24})\|(c|x|d)$/i.exec(data);
+  const callbackId = clean(callback?.id);
+  const chatId = clean(callback?.message?.chat?.id);
+  const chatType = clean(callback?.message?.chat?.type).toLowerCase();
+  const telegramUserId = clean(callback?.from?.id);
+  if (!match || !callbackId || !chatId || chatType !== "private" || !/^\d{5,20}$/.test(telegramUserId)) {
+    if (callbackId) {
+      await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+        callback_query_id: callbackId,
+        text: "ลิงก์ยืนยันงานนี้ใช้ไม่ได้ครับ",
+        show_alert: true,
+      }, env).catch(() => null);
+    }
+    return { handled:true, flow:"partner_job_confirm", ok:false, code_status:"invalid_partner_callback" };
+  }
+
+  const partnerWorker = env.PARTNERS_WORKER;
+  if (!partnerWorker?.fetch) {
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: "ระบบยืนยันงานกำลังอัปเดต กรุณาลองอีกครั้งครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return { handled:true, flow:"partner_job_confirm", ok:false, code_status:"partner_worker_unavailable" };
+  }
+
+  const action = match[2].toLowerCase() === "c" ? "confirm" : match[2].toLowerCase() === "x" ? "changes" : "decline";
+  let response;
+  let payload = null;
+  try {
+    response = await partnerWorker.fetch(new Request("https://partners-worker.internal/__internal/partner-job-confirm", {
+      method:"POST",
+      headers:{
+        "content-type":"application/json",
+        "x-mmd-service-binding":"telegram-worker",
+      },
+      body:JSON.stringify({
+        session_record_id:match[1],
+        telegram_user_id:telegramUserId,
+        telegram_username:clean(callback?.from?.username),
+        action,
+      }),
+    }));
+    payload = await response.json().catch(() => null);
+  } catch {
+    response = null;
+  }
+
+  if (!response?.ok || payload?.ok !== true) {
+    const alreadyFinal = clean(payload?.error) === "partner_confirmation_already_final";
+    await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+      callback_query_id: callbackId,
+      text: alreadyFinal ? "งานนี้มีคำตอบล่าสุดแล้วครับ" : "ยืนยันรายการนี้ไม่ได้ กรุณาติดต่อ MMD ครับ",
+      show_alert: true,
+    }, env).catch(() => null);
+    return {
+      handled:true,
+      flow:"partner_job_confirm",
+      ok:false,
+      code_status:clean(payload?.error || "partner_confirm_failed"),
+    };
+  }
+
+  const label = action === "confirm" ? "ยืนยันงานเรียบร้อยครับ" : action === "changes" ? "ส่งคำขอแก้ไขให้ MMD แล้วครับ" : "แจ้ง MMD ว่ารับงานไม่ได้แล้วครับ";
+  await callTelegramApiForPreviewIntro("answerCallbackQuery", {
+    callback_query_id:callbackId,
+    text:label,
+    show_alert:false,
+  }, env).catch(() => null);
+
+  const messageId = Number(callback?.message?.message_id);
+  if (Number.isInteger(messageId)) {
+    await callTelegramApiForPreviewIntro("editMessageReplyMarkup", {
+      chat_id:chatId,
+      message_id:messageId,
+      reply_markup:{ inline_keyboard:[] },
+    }, env).catch(() => null);
+  }
+
+  return {
+    handled:true,
+    flow:"partner_job_confirm",
+    ok:true,
+    code_status:clean(payload.partner_confirmation_status || "recorded"),
+    session_id:clean(payload.session_id),
+    revision:Number(payload.partner_confirmation_revision) || null,
+  };
 }
 
 async function handleHypeRecoveryPickerRefreshResult({
