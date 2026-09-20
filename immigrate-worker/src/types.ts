@@ -196,6 +196,18 @@ export interface ImmigrationIntakeResponse {
 export interface LineClientIntakeRequest {
   immigration_id?: string;
   member_id?: string;
+  client_id?: string;
+  client_lineage?: {
+    client_id?: string;
+    member_id?: string;
+    member_email?: string;
+    client_name?: string;
+    matched_on?: string;
+    line_user_id?: string;
+  };
+  work_lane?: string;
+  requested_at?: string;
+  quoted_rate_thb?: number;
   source_channel?: string;
   intake_source?: string;
   display_name?: string;
@@ -380,6 +392,15 @@ export interface CreateJobResponse {
         ok: boolean;
         status?: number;
         error?: string;
+      } | null;
+      sales_control?: {
+        authority: string;
+        configured_rule_count: number;
+        sellable: boolean;
+        customer_rate_thb: number | null;
+        price_visible: boolean;
+        reason_code: string;
+        matched_rule_key?: string | null;
       } | null;
     };
   };
