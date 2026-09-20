@@ -77,3 +77,16 @@ test("Apple-like reveal respects reduced motion", () => {
   assert.match(html, /prefers-reduced-motion:reduce/);
   assert.match(html, /filter:blur\(8px\)/);
 });
+
+
+test("MMD identity copy stays human and multilingual", () => {
+  assert.match(html, /MMD Privé เป็นใคร\?/);
+  assert.match(html, /AI Worker หลัก 7 ตัว/);
+  assert.match(html, /นกฮูก 1 ตัว/);
+  assert.match(html, /AI อีกกว่า 30 ตัว/);
+  assert.match(html, /Who is MMD Privé\?/);
+  assert.match(html, /7 primary AI Workers/);
+  assert.match(html, /MMD Privé 是什么？/);
+  assert.match(html, /7 个主要 AI Worker/);
+  assert.match(html, /data-i18n="detailsLead2"/);
+});
