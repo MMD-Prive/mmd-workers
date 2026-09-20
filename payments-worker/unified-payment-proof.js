@@ -524,7 +524,7 @@ function webJobContextCaptionLines(jobContext = {}) {
     jobContext.job_id ? `Job: <code>${tgHtml(jobContext.job_id)}</code>` : jobContext.session_id ? `Session: <code>${tgHtml(jobContext.session_id)}</code>` : "",
     jobContext.model_name ? `Model: <b>${tgHtml(jobContext.model_name)}</b>` : "",
     when ? `When: ${tgHtml(when, 300)}` : "",
-    jobContext.location_name ? `Location: ${tgHtml(jobContext.location_name)}</b>` : "",
+    jobContext.location_name ? `Location: ${tgHtml(jobContext.location_name)}` : "",
   ].filter(Boolean);
 }
 
