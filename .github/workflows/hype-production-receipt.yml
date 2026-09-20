@@ -7,12 +7,6 @@ on:
     paths:
       - "ops/hype-shop-production-smoke/PRODUCTION_REVERIFY_20260920.md"
       - "telegram-worker/PRODUCTION_REVERIFY_20260920.md"
-  workflow_run:
-    workflows:
-      - "Deploy telegram-worker"
-      - "HYPE closed-loop production smoke"
-    types:
-      - completed
 
 permissions:
   contents: read
@@ -20,34 +14,7 @@ permissions:
   issues: write
 
 jobs:
-  record-workflow:
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'main' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Record component production receipt
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_NAME: ${{ github.event.workflow_run.name }}
-          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "### HYPE production acceptance receipt
-
-- workflow: `$RUN_NAME`
-- source_sha: `$RUN_SHA`
-- run_id: `$RUN_ID`
-- conclusion: `$RUN_CONCLUSION`
-- run: $RUN_URL
-
-This receipt is generated from the completed production workflow, not inferred from source presence."
-          test "$RUN_CONCLUSION" = "success"
-
   record-final-pair:
-    if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -64,8 +31,8 @@ This receipt is generated from the completed production workflow, not inferred f
           for workflow_name in "${names[@]}"; do
             completed=0
             for attempt in $(seq 1 180); do
-              rows="$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$SOURCE_SHA" --limit 100 --json name,workflowName,status,conclusion,databaseId,url,headSha)"
-              found="$(node -e 'const wanted=process.argv[1]; const rows=JSON.parse(process.argv[2]||"[]"); const row=rows.find((x)=>x.headSha===process.env.SOURCE_SHA && (x.workflowName===wanted || x.name===wanted)); if(row) process.stdout.write(JSON.stringify(row));' "$workflow_name" "$rows")"
+              rows="$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$SOURCE_SHA" --limit 100 --json name,status,conclusion,databaseId,url,headSha)"
+              found="$(node -e 'const wanted=process.argv[1]; const rows=JSON.parse(process.argv[2]||"[]"); const row=rows.find((x)=>x.headSha===process.env.SOURCE_SHA && x.name===wanted); if(row) process.stdout.write(JSON.stringify(row));' "$workflow_name" "$rows")"
 
               if [ -z "$found" ]; then
                 sleep 5
@@ -103,16 +70,16 @@ This receipt is generated from the completed production workflow, not inferred f
           const fs = require("node:fs");
           const [input, output] = process.argv.slice(2);
           const rows = fs.readFileSync(input, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
-          const by = new Map(rows.map((row) => [row.workflowName || row.name, row]));
+          const by = new Map(rows.map((row) => [row.name, row]));
           const telegram = by.get("Deploy telegram-worker");
           const smoke = by.get("HYPE closed-loop production smoke");
           if (!telegram || !smoke) throw new Error("both production receipts are required");
           if (telegram.conclusion !== "success" || smoke.conclusion !== "success") throw new Error("production acceptance requires success");
-          const sourceSha = process.env.SOURCE_SHA;
+
           const body = [
             "## ✅ FINAL HYPE closed-loop production receipt",
             "",
-            `- source_sha: \`${sourceSha}\``,
+            `- source_sha: \`${process.env.SOURCE_SHA}\``,
             `- Deploy telegram-worker: **success** · run ${telegram.databaseId} · ${telegram.url}`,
             `- HYPE closed-loop production smoke: **success** · run ${smoke.databaseId} · ${smoke.url}`,
             "- Recovery domains: **Shop + Booking + MMS accepted**",
@@ -127,5 +94,6 @@ This receipt is generated from the completed production workflow, not inferred f
           ].join("\n");
           fs.writeFileSync(output, body + "\n");
           NODE
+
           cat "$RUNNER_TEMP/hype-final-receipt.md"
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/hype-final-receipt.md"
