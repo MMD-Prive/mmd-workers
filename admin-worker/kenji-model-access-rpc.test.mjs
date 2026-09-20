@@ -20,6 +20,7 @@ const ENV = {
   AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
+  AIRTABLE_TABLE_MODEL_OFFER_RULES_ID: "offers",
 };
 
 function record(id, fields) { return { id, fields }; }
@@ -70,8 +71,8 @@ function approval(cohort, folders, overrides = {}) {
   });
 }
 
-function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = []) {
-  return { entitlements, models, approvals };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], offers = []) {
+  return { entitlements, models, approvals, offers };
 }
 
 const SCHEMAS = {
@@ -85,6 +86,9 @@ function airtableFetch(data, { failTables = [] } = {}) {
     const url = new URL(String(input));
     const table = decodeURIComponent(url.pathname.split("/").pop());
     if (failTables.includes(table)) return new Response("source private error", { status: 503 });
+    if (table === "offers") {
+      return new Response(JSON.stringify({ records: data.offers || [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const formula = url.searchParams.get("filterByFormula") || "";
     const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
     if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
@@ -229,4 +233,53 @@ test("RPC match returns only safe model projection and policy version", async ()
   assert.equal(payload.policy_version, KENJI_MODEL_ACCESS_POLICY_VERSION);
   assert.equal(payload.model.model_code, "MX17");
   assert.doesNotMatch(JSON.stringify(payload), /0800000000|private_contact|availability|admin_note/i);
+});
+
+
+test("configured Model Sales rule gates Kenji and exposes only customer-safe sales offer", async () => {
+  const offers = [{
+    id: "rec-offer-active",
+    fields: {
+      model_key: "MX17",
+      status: "Active",
+      sales_visibility: "on",
+      audience_scope: ["Standard"],
+      customer_sell_rate_thb: 25000,
+      partner_source_rate_thb: 18000,
+      price_visibility: "Eligible scope only",
+      schedule_type: "Always",
+      priority: 100,
+      version: 2,
+    },
+  }];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [privateModel()], [], offers)) }
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales_offer.customer_rate_thb, 25000);
+  assert.equal(result.model.sales_offer.price_visible, true);
+  assert.equal(JSON.stringify(result).includes("18000"), false);
+  assert.equal(JSON.stringify(result).includes("partner_source"), false);
+});
+
+test("configured Draft-only Model Sales rule makes Kenji fail closed for that model", async () => {
+  const offers = [{
+    id: "rec-offer-draft",
+    fields: {
+      model_key: "MX17",
+      status: "Draft",
+      sales_visibility: "on",
+      customer_sell_rate_thb: 25000,
+      price_visibility: "Eligible scope only",
+      version: 1,
+    },
+  }];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [privateModel()], [], offers)) }
+  );
+  assert.equal(result.status, "silent");
 });
