@@ -157,6 +157,7 @@ async function createPendingProof(env = {}, evidence = {}) {
     client_match: analysis.customer || null,
     links,
     payment_intelligence: analysis.payment_intelligence || null,
+    job_correlation: analysis.job_correlation || null,
     review_summary: analysis.review_summary || null,
     payment_ops_route: { topic: opsRoute.topic, classification: opsRoute.classification, confidence: opsRoute.confidence, reason: opsRoute.reason, should_alert: opsRoute.should_alert === true },
     payment_truth: ownerPolicyVerified ? "verified_by_owner_membership_policy" : "unverified",
@@ -276,7 +277,7 @@ async function markSettlementReview(env = {}, proof = {}, reason = "membership_s
 }
 
 function paymentOpsChatId(env = {}) { return asString(env.TELEGRAM_OPS_CHAT_ID || env.TELEGRAM_CHAT_ID); }
-function paymentOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_PAYMENT_THREAD_ID || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 21; }
+function paymentOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_PAYMENT_THREAD_ID || env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 22; }
 function membershipOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_MEMBERSHIP_THREAD_ID || env.TG_THREAD_MEMBERSHIP); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 20; }
 function alertsOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 9; }
 
@@ -285,6 +286,56 @@ async function sendOpsMessage(env, { chatId, threadId, flow, text }) {
   if (!token || !chatId) return { skipped: true, reason: "telegram_config_missing" };
   const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ flow, chat_id: chatId, message_thread_id: threadId, text }) }));
   return { ok: response.ok, status: response.status };
+}
+
+function compactOpsWhen(summary = {}) {
+  const date = asString(summary.job_date);
+  const start = asString(summary.start_time);
+  const end = asString(summary.end_time);
+  if (date && start && end) return `${date} · ${start} → ${end}`;
+  if (date && start) return `${date} · ${start}`;
+  return date || start || end || "";
+}
+
+function jobCandidateLine(candidate = {}, index = 0) {
+  const ref = asString(candidate.job_id || candidate.session_id) || "ไม่ทราบรหัสงาน";
+  const details = [
+    asString(candidate.model_name) ? `Model ${asString(candidate.model_name)}` : "",
+    compactOpsWhen(candidate),
+    asString(candidate.location_name),
+  ].filter(Boolean);
+  return `${index + 1}. ${ref}${details.length ? ` · ${details.join(" · ")}` : ""}`;
+}
+
+function paymentJobCorrelationLines(analysis = {}) {
+  const correlation = analysis.job_correlation || {};
+  const status = asString(correlation.status).toLowerCase();
+  const selected = correlation.selected || null;
+  if (status === "not_applicable") return [];
+  if (status === "exact" && selected) {
+    const ref = asString(selected.job_id || selected.session_id) || "matched";
+    return [
+      "Job Match: ✅ exact canonical match",
+      `Job: ${ref}`,
+      asString(selected.model_name) ? `Model: ${asString(selected.model_name)}` : "",
+      compactOpsWhen(selected) ? `When: ${compactOpsWhen(selected)}` : "",
+      asString(selected.location_name) ? `Location: ${asString(selected.location_name)}` : "",
+      asString(correlation.reason) ? `Match basis: ${asString(correlation.reason)}` : "",
+    ].filter(Boolean);
+  }
+  if (status === "ambiguous") {
+    const candidates = Array.isArray(correlation.candidates) ? correlation.candidates.slice(0, 5) : [];
+    return [
+      `Job Match: ⚠️ ambiguous · ${Number(correlation.candidate_count || candidates.length) || candidates.length} candidates`,
+      ...candidates.map((candidate, index) => jobCandidateLine(candidate, index)),
+      "Action: choose the canonical Job before Official Verify. Do not guess.",
+    ];
+  }
+  return [
+    "Job Match: ⚠️ ยังระบุงานไม่ได้",
+    asString(correlation.reason) ? `Reason: ${asString(correlation.reason)}` : "",
+    "Action: resolve/bind the canonical Job before Official Verify. Do not guess.",
+  ].filter(Boolean);
 }
 
 async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
@@ -318,12 +369,15 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     `Tracking: ${trackingKind}`,
     customer ? `Customer: ${customer}` : "Customer: pending match",
     extraction.amount_thb != null ? `Amount: ${Number(extraction.amount_thb).toLocaleString("en-US")} THB` : "Amount: pending extraction",
+    ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
     `Routing: ${route.reason}`,
     settlement?.status === "materialized"
       ? `Action: membership materialized${settlement.membership_expire_at ? ` through ${settlement.membership_expire_at}` : ""}.`
       : policyVerified
         ? "Action: payment accepted; membership settlement requires exact canonical identity/package."
-        : "Action: Official Verify in Payment Inbox before any money/access change.",
+        : analysis.job_correlation?.status === "exact" || isMembership
+          ? "Action: Official Verify in Payment Inbox before any money/access change."
+          : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
   ].filter(Boolean).join("\n");
   const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text });
   if (!main.ok) throw new Error(`telegram_payment_alert_${main.status || "failed"}`);
