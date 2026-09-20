@@ -77,3 +77,33 @@ test("Apple-like reveal respects reduced motion", () => {
   assert.match(html, /prefers-reduced-motion:reduce/);
   assert.match(html, /filter:blur\(8px\)/);
 });
+
+
+test("MMD identity copy stays human and multilingual", () => {
+  assert.match(html, /MMD Privé เป็นใคร\?/);
+  assert.match(html, /AI Worker หลัก 7 ตัว/);
+  assert.match(html, /นกฮูก 1 ตัว/);
+  assert.match(html, /AI อีกกว่า 30 ตัว/);
+  assert.match(html, /ประสบการณ์ทำงานรวมกว่า 20 ปี/);
+  assert.match(html, /วงการบันเทิงประมาณ 8 ปี/);
+  assert.match(html, /ฟรีแลนซ์โปรดิวเซอร์/);
+  assert.match(html, /ผู้กำกับ/);
+  assert.match(html, /ฝ่ายสื่อสารการตลาด/);
+  assert.match(html, /ถ่ายภาพฟิล์ม/);
+  assert.match(html, /กราฟิกดีไซน์/);
+  assert.match(html, /Who is MMD Privé\?/);
+  assert.match(html, /more than 20 years of professional experience/);
+  assert.match(html, /8 years working behind the scenes in the entertainment industry/);
+  assert.match(html, /MMD Privé 是什么？/);
+  assert.match(html, /超过 20 年的工作经验/);
+  assert.match(html, /data-i18n="detailsPer"/);
+  assert.match(html, /data-i18n="detailsLead2"/);
+});
+
+
+test("Boss Per portrait asset stays attached to the identity block", () => {
+  assert.match(html, /6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside\.webp/);
+  assert.match(html, /cmb24__who-grid/);
+  assert.match(html, /cmb24__per-media/);
+  assert.match(html, /Founder · MMD Privé/);
+});
