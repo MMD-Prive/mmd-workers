@@ -235,7 +235,7 @@ function renderSystemActions(page: string, tokenQuery: string, reviewHref: strin
 function renderDashboardPanel(page: string, token: string): string {
   if (page !== "dashboard") return "";
   const state = token ? "Loading partner dashboard..." : "Missing private token. Open the dashboard from your recognized partner link.";
-  return "<section class=\"mmdp-dashboard\" data-partner-dashboard><h2>Partner Summary</h2><p data-dashboard-status>" + escapeHtml(state) + "</p><div class=\"mmdp-metrics\" data-dashboard-metrics></div><div data-dashboard-lists></div></section>";
+  return "<section class=\"mmdp-dashboard\" data-partner-dashboard><h2>Partner Summary</h2><p data-dashboard-status>" + escapeHtml(state) + "</p><div class=\"mmdp-metrics\" data-dashboard-metrics></div><div class=\"mmdp-telegram\" data-dashboard-telegram></div><div data-dashboard-lists></div></section>";
 }
 
 function renderDashboardScript(page: string): string {
@@ -256,7 +256,8 @@ const DASHBOARD_JS = String.raw`
   var status = document.querySelector("[data-dashboard-status]");
   var metrics = document.querySelector("[data-dashboard-metrics]");
   var lists = document.querySelector("[data-dashboard-lists]");
-  if (!token || !status || !metrics || !lists) return;
+  var telegram = document.querySelector("[data-dashboard-telegram]");
+  if (!token || !status || !metrics || !lists || !telegram) return;
 
   function money(value) {
     var number = Number(value || 0);
@@ -279,7 +280,35 @@ const DASHBOARD_JS = String.raw`
         metric("Pending", money(summary.pendingAmount)),
         metric("Paid", money(summary.paidAmount))
       ].join("");
+      var partner = result.payload.partner || {};
+      telegram.innerHTML = partner.telegram_connected
+        ? "<p><b>Telegram connected</b>" + (partner.telegram_username ? " · @" + partner.telegram_username : "") + "</p>"
+        : "<p><b>Telegram Job Confirm</b> · เชื่อม Telegram เพื่อรับงานและกดยืนยันจาก MMD ได้ทันที</p><button class=\"mmdp-btn\" type=\"button\" data-connect-telegram>Connect Telegram</button><p data-telegram-status></p>";
       lists.innerHTML = "<p>Referrals: " + ((result.payload.referrals || []).length) + " / Commissions: " + ((result.payload.commissions || []).length) + "</p>";
+      var connect = telegram.querySelector("[data-connect-telegram]");
+      if (connect) connect.addEventListener("click", function () {
+        connect.disabled = true;
+        var tgStatus = telegram.querySelector("[data-telegram-status]");
+        if (tgStatus) tgStatus.textContent = "กำลังเตรียม Telegram link…";
+        fetch("/v1/partner/telegram/connect?t=" + encodeURIComponent(token), {
+          method:"POST",
+          headers:{ "accept":"application/json", "content-type":"application/json" },
+          body:"{}"
+        }).then(function (response) {
+          return response.json().then(function (payload) { return { ok:response.ok, payload:payload }; });
+        }).then(function (bind) {
+          if (!bind.ok || !bind.payload || !bind.payload.ok) throw new Error("Unable to connect Telegram.");
+          if (bind.payload.telegram_connected) {
+            window.location.reload();
+            return;
+          }
+          if (!bind.payload.connect_url) throw new Error("Telegram link unavailable.");
+          window.location.href = bind.payload.connect_url;
+        }).catch(function (error) {
+          connect.disabled = false;
+          if (tgStatus) tgStatus.textContent = error && error.message ? error.message : "Telegram connection unavailable.";
+        });
+      });
     })
     .catch(function (error) {
       status.textContent = error && error.message ? error.message : "Dashboard unavailable.";
