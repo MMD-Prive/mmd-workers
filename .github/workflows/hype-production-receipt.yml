@@ -1,0 +1,40 @@
+name: HYPE production receipts
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy telegram-worker"
+      - "HYPE closed-loop production smoke"
+    types:
+      - completed
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  record:
+    if: ${{ github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record production acceptance receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "### HYPE production acceptance receipt
+
+- workflow: \`$RUN_NAME\`
+- source_sha: \`$RUN_SHA\`
+- run_id: \`$RUN_ID\`
+- conclusion: \`$RUN_CONCLUSION\`
+- run: $RUN_URL
+
+This receipt is generated from the completed production workflow, not inferred from source presence."
+          test "$RUN_CONCLUSION" = "success"
