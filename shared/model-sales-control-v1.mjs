@@ -254,8 +254,10 @@ function compareCandidates(left, right) {
   if (right.specificity !== left.specificity) return right.specificity - left.specificity;
   if (right.rule.priority !== left.rule.priority) return right.rule.priority - left.rule.priority;
   if (right.rule.version !== left.rule.version) return right.rule.version - left.rule.version;
-  return String(right.rule.updated_at || "").localeCompare(String(left.rule.updated_at || ""));
-    || String(left.rule.record_id || "").localeCompare(String(right.rule.record_id || ""));
+  return (
+    String(right.rule.updated_at || "").localeCompare(String(left.rule.updated_at || "")) ||
+    String(left.rule.record_id || "").localeCompare(String(right.rule.record_id || ""))
+  );
 }
 
 function specificityName(value) {
