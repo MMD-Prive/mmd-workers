@@ -263,11 +263,11 @@ render bounded Ops message
 Rules:
 
 - the record is persisted **before** the first send attempt, so a Telegram outage leaves a recoverable delivery instead of a log line;
-- identity is `sha256(proof/event id + destination chat/thread + notification purpose)`. A duplicate LINE webhook, a redelivery, or a repeated observer pass resolves to the same record, so Ops cannot be spammed;
+- identity is `sha256(proof/event id + destination chat/thread + notification purpose)`. R2 conditional writes provide a CAS delivery lease, suppressing concurrent duplicate observers and ordinary redelivery/replay of the same semantic event;
 - the outbox stores the already-rendered message. A retry can therefore only re-send an operator notice. It can never re-run settlement, re-create a Payment Proof, call `payments-worker`, or mutate canonical truth;
 - successful settlement is never rolled back because notification failed, and a failed notification never blocks the canonical pending Payment Proof;
 - `telegram-worker` remains the Telegram route owner. The outbox only requests a send through the trusted service binding;
-- the Service/Job review alert and the Membership settlement outcome are distinct notification purposes, so each remains exactly once semantically;
+- the Service/Job review alert and the Membership settlement outcome are distinct notification purposes. Transport is intentionally **at-least-once**: the CAS lease suppresses concurrent duplicate sends, but a worker crash after Telegram accepts a message and before the delivered receipt is persisted can still produce a retry duplicate. This ambiguity never re-runs payment settlement;
 - the retry sweep runs on live LINE traffic and on the existing hourly cron, so recovery still happens when LINE is quiet;
 - delivery receipts carry bounded metadata only (`schema`, `status`, `purpose`, `attempts`). A delivery receipt is never payment verification.
 
