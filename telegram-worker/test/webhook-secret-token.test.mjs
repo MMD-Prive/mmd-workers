@@ -15,6 +15,7 @@ const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 function env(overrides = {}) {
   return {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
+    TELEGRAM_WEBHOOK_LOCK_DEPLOY_NONCE: "deploy-nonce",
     INTERNAL_API_TOKEN: "internal-secret",
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
@@ -163,7 +164,7 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
 
   const missingConfirm = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+    headers: { "content-type": "application/json", "X-MMD-Deploy-Nonce": "deploy-nonce" },
     body: "{}",
   }), env());
   assert.equal(missingConfirm.status, 400);
@@ -189,7 +190,7 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
   try {
     const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
       method: "POST",
-      headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+      headers: { "content-type": "application/json", "X-MMD-Deploy-Nonce": "deploy-nonce" },
       body: JSON.stringify({
         confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1",
         url: "https://evil.example/webhook",
@@ -210,10 +211,20 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
   }
 });
 
-test("runtime webhook lock fails closed when Worker runtime secrets are missing", async () => {
+test("runtime webhook lock rejects INTERNAL_API_TOKEN without the per-deploy nonce", async () => {
   const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+    body: JSON.stringify({ confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
+  }), env());
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error, "webhook_lock_deploy_nonce_required");
+});
+
+test("runtime webhook lock fails closed when Worker runtime secrets are missing", async () => {
+  const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-MMD-Deploy-Nonce": "deploy-nonce" },
     body: JSON.stringify({ confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
   }), env({ TELEGRAM_BOT_TOKEN: "", TELEGRAM_WEBHOOK_SECRET_TOKEN: "" }));
   const body = await response.json();
@@ -291,7 +302,7 @@ test("topic smoke is owner-internal only and requires explicit confirmation", as
 
   const missingConfirmation = await worker.fetch(new Request(TOPIC_SMOKE_URL, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
+    headers: { "content-type": "application/json", "X-MMD-Deploy-Nonce": "deploy-nonce" },
     body: "{}",
   }), env());
   assert.equal(missingConfirmation.status, 400);
