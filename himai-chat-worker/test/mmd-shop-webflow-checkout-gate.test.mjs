@@ -10,7 +10,7 @@ test("MMD Shop Webflow cart is gated by canonical checkout_eligible", async () =
   assert.match(source, /p\.checkout_eligible===true/);
   assert.match(source, /online_checkout_status/);
   assert.match(source, /function reconcileCart\(\)/);
-  assert.match(source, /Cart ถูกอัปเดตตามสต๊อกล่าสุดแล้ว/);
+  assert.match(source, /อัปเดต Cart ตามสต๊อกล่าสุดแล้ว/);
   assert.match(source, /สต๊อกที่พร้อมสั่งมี/);
 
   const addStart = source.indexOf("function add(id)");
