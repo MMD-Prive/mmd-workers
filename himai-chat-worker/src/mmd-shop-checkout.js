@@ -495,15 +495,19 @@ async function createPaymentIntent(env, { orderId, total, email }) {
 }
 
 async function notifyOrder(env, input) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN, 5000);
-  if (!token) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_HIMAI_TO_TELEGRAM, 5000);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
   const lines = input.items.map((item) => `• ${escapeHtml(item.product_name)} x${item.quantity} = ${money(item.line_total_thb)} THB`);
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 100),
-      message_thread_id: Number(env.TG_THREAD_MMD_SHOP_ORDERS || 160),
+      flow: "mmd_shop_orders",
       parse_mode: "HTML",
       disable_web_page_preview: true,
       text: [
@@ -517,8 +521,9 @@ async function notifyOrder(env, input) {
         "Payment: pending · official verification required",
       ].join("\n"),
     }),
-  });
-  return { ok: response.ok, status: response.status };
+  }));
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok && data?.ok === true && data?.telegram?.ok === true, status: response.status, flow: "mmd_shop_orders" };
 }
 
 async function appendOrderNote(env, order, extra) {
