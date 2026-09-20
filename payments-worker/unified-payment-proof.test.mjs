@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
+import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef, telegramDeliveryAuditNote } from "./unified-payment-proof.js";
 import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
 import legacySlipWorker from "./index.with-slip-evidence.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
@@ -51,6 +51,32 @@ test("web proof record uses only fields present in MMD — Payment Proofs", () =
   assert.equal("member_email" in fields, false);
   assert.equal("payment_stage" in fields, false);
   assert.equal(fields.status, "pending");
+});
+
+test("Telegram delivery audit note records message id and thread without exposing bot token", () => {
+  const note = telegramDeliveryAuditNote({
+    ok: true,
+    status: 200,
+    thread_id: 22,
+    message_id: 4567,
+  });
+  assert.match(note, /telegram_delivered=true/);
+  assert.match(note, /telegram_thread_id=22/);
+  assert.match(note, /telegram_message_id=4567/);
+  assert.match(note, /telegram_http_status=200/);
+  assert.doesNotMatch(note, /token/i);
+});
+
+test("Telegram delivery audit note records bounded failure metadata", () => {
+  const note = telegramDeliveryAuditNote({
+    ok: false,
+    status: 400,
+    error_code: 400,
+    error_description: "Bad Request: message thread not found",
+  });
+  assert.match(note, /telegram_delivered=false/);
+  assert.match(note, /telegram_error_code=400/);
+  assert.match(note, /message thread not found/);
 });
 
 test("SIGIL V22 proof upload requires the signed customer token before any write", async () => {
