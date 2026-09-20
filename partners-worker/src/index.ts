@@ -1,3 +1,6 @@
+// @ts-ignore -- shared JavaScript authority is consumed by this TypeScript worker.
+import { loadModelSalesRules } from "../../shared/model-sales-airtable.mjs";
+import { normalizeModelSalesRule } from "../../shared/model-sales-control-v1.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
@@ -252,6 +255,36 @@ const PARTNER_COMMISSIONS = {
   jobId: "fldUcVyYC37ijCHz8"
 } as const;
 
+const MODEL_OFFER_RULES = {
+  offerRuleKey: "fld0GTefOf9VSdTpU",
+  model: "fldrvoIfq0sMWR70V",
+  modelKey: "fldHlkHRqPr5e8pkn",
+  offerType: "fldt5djzxVFQz43za",
+  audienceScope: "fldVfrqaEkgI2uf5w",
+  partnerSourceRateThb: "fldbgFiaSm4pWY9qU",
+  customerSellRateThb: "fldSL0hGadzsxxvRu",
+  priceVisibility: "fldiLyM0oyHVR6e2j",
+  salesVisibility: "fldgc3dV6wWVTcu7c",
+  scheduleType: "fldugUjwgRWbJGkpV",
+  effectiveFromAt: "fldeJNUOSiHlEjUSh",
+  effectiveUntilAt: "fldA4RxTfDNGlvgoe",
+  daysOfWeek: "fldAFAhdX7YiiDDbg",
+  startTimeLocal: "fldq1INJTObcAWVJl",
+  endTimeLocal: "fldLed5vuLGmew0g4",
+  priority: "flddWP3oD26iyic5d",
+  status: "fldBpmlW8aO9AhDhX",
+  requiresPerApproval: "fldlqnCByGm0rRypA",
+  sourceActorType: "fldlSuF1vNPbZzqXW",
+  sourcePartnerRef: "fldddYtvJbLgGSp8k",
+  changeReason: "fldfcGGnnfgneFXCi",
+  updatedBy: "fldElUophZssF3426",
+  updatedAt: "fldexo1B74IGqbppn",
+  notifyStatus: "fldpO3fYqBuM4rXY9",
+  reviewedBy: "fldMNxut21hZCdFlR",
+  reviewedAt: "fldzskaZcXGPhr8YT",
+  version: "fldCMjmjsPImiCUDY"
+} as const;
+
 const MODELS = {
   workingName: "fldShiT60bmCxFxRu",
   nickname: "fld0maFkh4NHpsPxA",
@@ -324,6 +357,10 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/telegram/connect") {
         return await handlePartnerTelegramConnect(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/models/sales-control") {
+        return await handlePartnerSalesControl(request, runtimeEnv, ctx);
       }
 
       if (request.method === "POST" && url.pathname === "/__internal/partner-job-confirm") {
@@ -969,6 +1006,48 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const modelMap = await fetchRecordMap(env, env.AIRTABLE_TABLE_MODELS, [...modelIds]);
   const normalizedReferrals = referrals.map((record) => normalizeReferral(record, modelMap));
   const normalizedCommissions = commissions.map((record) => normalizeCommission(record, modelMap));
+  const partnerId = fieldText(partnerRecord, MODEL_PARTNERS.partnerId);
+  let salesRules: AirtableRecord[] = [];
+  try {
+    salesRules = await loadModelSalesRules(env) as AirtableRecord[];
+  } catch (error) {
+    console.warn("partner sales rules unavailable", getErrorMessage(error));
+  }
+  const salesModels = [...modelIds].map((modelId) => {
+    const modelRecord = modelMap.get(modelId);
+    const partnerRules = salesRules
+      .filter((record) => {
+        const fields = record.fields || {};
+        const linked = Array.isArray(fields.Model) ? fields.Model.map((item) => cleanText(isRecord(item) ? item.id : item)) : [];
+        return linked.includes(modelId) && cleanText(fields.source_partner_ref) === partnerId;
+      })
+      .map((record, index) => {
+        const normalized = normalizeModelSalesRule(record, index);
+        const fields = record.fields || {};
+        return normalized ? {
+          rule_key: normalized.offer_rule_key,
+          source_rate_thb: fieldNumber(record, "partner_source_rate_thb"),
+          sales_visibility: normalized.sales_visibility,
+          audience_scope: normalized.audience_scope,
+          schedule_type: normalized.schedule_type,
+          effective_from: normalized.effective_from,
+          effective_until: normalized.effective_until,
+          days_of_week: normalized.days_of_week,
+          start_time_local: normalized.start_time_local,
+          end_time_local: normalized.end_time_local,
+          status: cleanText(isRecord(fields.status) ? fields.status.name : fields.status) || normalized.status,
+          version: normalized.version,
+          change_reason: cleanText(fields.change_reason)
+        } : null;
+      })
+      .filter(Boolean);
+    return {
+      model_id: modelId,
+      model_name: modelRecord ? modelName(modelRecord) : modelId,
+      model_status: modelRecord ? fieldText(modelRecord, MODELS.status) : "",
+      proposal: partnerRules[0] || null
+    };
+  });
 
   const activeModels = new Set(
     referrals
@@ -999,10 +1078,109 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
       paidAmount
     },
     referrals: normalizedReferrals,
-    commissions: normalizedCommissions
+    commissions: normalizedCommissions,
+    models: salesModels,
+    sales_control: {
+      authority: "model_sales_control_v1",
+      partner_mode: "proposal_only",
+      requires_per_approval: true
+    }
   });
 }
 
+
+const PARTNER_SALES_AUDIENCE = new Set(["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"]);
+const PARTNER_SALES_SCHEDULE = new Set(["Always","Date range","Date + time range","Weekly recurring"]);
+const PARTNER_SALES_DAYS = new Set(["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]);
+
+async function handlePartnerSalesControl(request: Request, env: RuntimeEnv, ctx: ExecutionContext): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return json(request, env, { ok:false, error:"invalid_json" }, 400);
+
+  const modelId = readString(body.value, "model_id");
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelId)) return json(request, env, { ok:false, error:"model_id_invalid" }, 400);
+  const referrals = await listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, verified.value.partnerRecord.id);
+  const ownsModel = referrals.some((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelId));
+  if (!ownsModel) return json(request, env, { ok:false, error:"partner_model_scope_forbidden" }, 403);
+
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId);
+  if (!partnerId) return json(request, env, { ok:false, error:"partner_identity_missing" }, 409);
+  const modelRecord = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODELS, modelId);
+  const sourceRate = Number(body.value.partner_source_rate_thb);
+  if (!Number.isFinite(sourceRate) || sourceRate < 0) return json(request, env, { ok:false, error:"partner_source_rate_invalid" }, 400);
+
+  const visibilityRaw = normalizeStatus(readString(body.value, "sales_visibility") || "off");
+  if (!["on","off"].includes(visibilityRaw)) return json(request, env, { ok:false, error:"sales_visibility_invalid" }, 400);
+  const scheduleRaw = readString(body.value, "schedule_type") || "Always";
+  if (!PARTNER_SALES_SCHEDULE.has(scheduleRaw)) return json(request, env, { ok:false, error:"schedule_type_invalid" }, 400);
+  const audienceRaw = Array.isArray(body.value.audience_scope) ? body.value.audience_scope.map((item) => cleanText(item)) : [];
+  if (audienceRaw.some((item) => !PARTNER_SALES_AUDIENCE.has(item))) return json(request, env, { ok:false, error:"audience_scope_invalid" }, 400);
+  const daysRaw = Array.isArray(body.value.days_of_week) ? body.value.days_of_week.map((item) => cleanText(item)) : [];
+  if (daysRaw.some((item) => !PARTNER_SALES_DAYS.has(item))) return json(request, env, { ok:false, error:"days_of_week_invalid" }, 400);
+  const reason = readString(body.value, "change_reason").slice(0, 600);
+  if (reason.length < 3) return json(request, env, { ok:false, error:"change_reason_required" }, 400);
+
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_MODEL_OFFER_RULES?: string }).AIRTABLE_TABLE_MODEL_OFFER_RULES || "tblSbxUGTFqd2CgPy");
+  const stableKey = `partner-sales-${normalizeStatus(partnerId)}-${modelId.toLowerCase()}-v1`;
+  const existingRows = await listAirtableRecords(env, tableId, { maxRecords: 500 });
+  const existing = existingRows.find((record) => fieldText(record, MODEL_OFFER_RULES.offerRuleKey) === stableKey) || null;
+  const version = Math.max(0, Number(existing ? fieldNumber(existing, MODEL_OFFER_RULES.version) : 0) || 0) + 1;
+  const now = new Date().toISOString();
+
+  const fields: AirtableFields = {
+    [MODEL_OFFER_RULES.offerRuleKey]: stableKey,
+    [MODEL_OFFER_RULES.model]: [modelId],
+    [MODEL_OFFER_RULES.modelKey]: fieldText(modelRecord, "fldYvAbkENGQ4NaaI") || fieldText(modelRecord, MODELS.workingName),
+    [MODEL_OFFER_RULES.audienceScope]: audienceRaw,
+    [MODEL_OFFER_RULES.partnerSourceRateThb]: sourceRate,
+    [MODEL_OFFER_RULES.priceVisibility]: "Per approval only",
+    [MODEL_OFFER_RULES.salesVisibility]: visibilityRaw,
+    [MODEL_OFFER_RULES.scheduleType]: scheduleRaw,
+    [MODEL_OFFER_RULES.effectiveFromAt]: readString(body.value, "effective_from_at") || null,
+    [MODEL_OFFER_RULES.effectiveUntilAt]: readString(body.value, "effective_until_at") || null,
+    [MODEL_OFFER_RULES.daysOfWeek]: daysRaw,
+    [MODEL_OFFER_RULES.startTimeLocal]: readString(body.value, "start_time_local"),
+    [MODEL_OFFER_RULES.endTimeLocal]: readString(body.value, "end_time_local"),
+    [MODEL_OFFER_RULES.priority]: 0,
+    [MODEL_OFFER_RULES.status]: "Draft",
+    [MODEL_OFFER_RULES.requiresPerApproval]: "Yes",
+    [MODEL_OFFER_RULES.sourceActorType]: "partner",
+    [MODEL_OFFER_RULES.sourcePartnerRef]: partnerId,
+    [MODEL_OFFER_RULES.changeReason]: reason,
+    [MODEL_OFFER_RULES.updatedBy]: partnerId,
+    [MODEL_OFFER_RULES.updatedAt]: now,
+    [MODEL_OFFER_RULES.notifyStatus]: "pending",
+    [MODEL_OFFER_RULES.version]: version
+  };
+  const saved = existing
+    ? await updateAirtableRecord(env, tableId, existing.id, fields, true)
+    : await createAirtableRecord(env, tableId, fields, true);
+
+  ctx.waitUntil(sendTelegramMessage(env, [
+    "MODEL SALES CONTROL · PARTNER PROPOSAL",
+    "",
+    `Partner: ${fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || partnerId}`,
+    `Model: ${modelName(modelRecord)}`,
+    `Source rate: ${sourceRate.toLocaleString("th-TH")} THB`,
+    `Visibility proposal: ${visibilityRaw}`,
+    `Audience: ${audienceRaw.join(", ") || "Per review"}`,
+    `Schedule: ${scheduleRaw}`,
+    `Version: ${version}`,
+    "Status: Draft · requires Per approval"
+  ].join("\n"), "partner_confirm").catch((error) => console.error("telegram partner sales proposal failed", error)));
+
+  return json(request, env, {
+    ok:true,
+    authority:"model_sales_control_v1",
+    state:"pending_per_approval",
+    production_sales_changed:false,
+    rule_id:saved.id,
+    rule_key:stableKey,
+    version
+  });
+}
 
 async function handlePartnerTelegramConnect(request: Request, env: RuntimeEnv): Promise<Response> {
   const verified = await verifyPartnerTokenFromRequest(request, env);
