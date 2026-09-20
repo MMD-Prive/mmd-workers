@@ -292,6 +292,10 @@ export async function resolveAutomaticRecoveryEmail(env = {}, { lineUserId } = {
     if (canonicalLineId(fields.line_user_id) !== lineId) continue;
     if (!hasHistoricalClientTag(fields.line_tags_raw)) continue;
     if (fields.dry_run_only === true) continue;
+    const reviewStatus = String(fields.review_status || "").trim();
+    const decision = String(fields.decision || "").trim();
+    if (["blocked", "ignored", "error"].includes(reviewStatus)) continue;
+    if (["ignore", "do_not_import", "reject_materialization"].includes(decision)) continue;
 
     const linkedClients = linkedRecordIds(fields.matched_client);
     if (linkedClients.length > 1) return automaticConflict("line_ofc_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds]);
