@@ -10,6 +10,7 @@ import {
   recoveryOutcomeLabel,
 } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 import { detectHypeTransactionStart, extractHypeTransactionFields, transactionMissingQuestion, transactionModeLabel } from "./hype-transaction-assistant.js";
+import { buildTelegramRouterHealth, HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA } from "./hype-telegram-router-health.js";
 
 const LOCK = "telegram-preview-hype-v20260621a-v1-alias";
 const PREVIEW_START = "preview";
@@ -36,6 +37,7 @@ export default {
           preview_bot_username: botUsername(env),
           capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
           recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+          telegram_router_health: HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA,
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
@@ -45,6 +47,7 @@ export default {
             topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
             webhook_lock: ["/telegram/internal/webhook/ensure-canonical"],
             webhook_status: ["/telegram/webhook/status"],
+            router_health: ["/telegram/internal/router/health", "/v1/internal/router/health"],
           },
           telegram_topics: telegramTopics(env).map(({ key, label, thread_id }) => ({ key, label, thread_id })),
         }, 200);
@@ -61,6 +64,21 @@ export default {
       if (path === "/telegram/webhook/status" && req.method === "GET") {
         const result = await readCanonicalTelegramWebhookStatus(env);
         return json(result, result.ok ? 200 : 503);
+      }
+
+      if (isRouterHealthPath(path) && req.method === "GET") {
+        requireInternalToken(req, env, {
+          allowServiceSecrets: [
+            "AUTH_SERVICE_BOOKING_TO_TELEGRAM",
+            "AUTH_SERVICE_EVENTS_TO_TELEGRAM",
+            "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
+            "AUTH_SERVICE_AUTH_TO_TELEGRAM",
+            "AUTH_SERVICE_LINE_TO_TELEGRAM",
+            "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
+          ],
+        });
+        const result = await buildTelegramRouterHealth(env, { probe: url.searchParams.get("probe") === "1" });
+        return json(result, result.status === "degraded" ? 503 : 200);
       }
 
       if (isWebhookLockPath(path) && req.method === "POST") {
@@ -4168,6 +4186,10 @@ function isWebhookLockPath(path) {
 
 function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isRouterHealthPath(path) {
+  return path === "/telegram/internal/router/health" || path === "/v1/internal/router/health";
 }
 
 function isPaymentsProofDocumentPath(path) {
