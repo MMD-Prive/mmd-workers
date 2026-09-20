@@ -438,6 +438,21 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   };
 }
 
+export function canonicalProofRecordFields({ proofId, note, snapshot = {}, paymentRef, links = {} } = {}) {
+  return compact({
+    proof_id: proofId,
+    channel: "web_pay",
+    note,
+    status: "submitted",
+    payer_name: snapshot.payer_name,
+    amount_thb: snapshot.amount_thb,
+    payment_ref: paymentRef,
+    payment: links.payment,
+    session: links.session,
+    Client: links.client,
+  });
+}
+
 async function buildProofFields(env, form, payment, paymentRef, file, session = null) {
   const snapshot = paymentSnapshot(payment, form);
   const links = canonicalProofLinks(payment, session);
@@ -459,18 +474,12 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     proofId,
     storage,
     snapshot,
-    fields: compact({
-      proof_id: proofId,
-      channel: "web_pay",
+    fields: canonicalProofRecordFields({
+      proofId,
       note,
-      status: "submitted",
-      payer_name: snapshot.payer_name,
-      amount_thb: snapshot.amount_thb,
-      payment_ref: paymentRef,
-      payment: links.payment,
-      session: links.session,
-      Client: links.client,
-      created_at: new Date().toISOString(),
+      snapshot,
+      paymentRef,
+      links,
     }),
   };
 }
