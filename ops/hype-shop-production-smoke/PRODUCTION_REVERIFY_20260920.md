@@ -1,3 +1,3 @@
 # HYPE closed-loop production re-verification marker
 
-Runtime-secret webhook-lock acceptance rerun. No business logic changes; retriggers the read-only closed-loop smoke after moving Telegram webhook control into telegram-worker runtime authority.
+Per-deploy nonce acceptance rerun. No business logic changes; retriggers the read-only closed-loop smoke after removing all GitHub-stored Telegram/internal credentials from the canonical webhook-lock gate.
