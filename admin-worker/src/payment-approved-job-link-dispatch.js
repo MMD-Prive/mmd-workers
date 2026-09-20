@@ -21,10 +21,14 @@ const SESSION_FIELDS = Object.freeze({
 
 const CLIENT_FIELDS = Object.freeze({
   lineUserId: "fld5HfSGChKFbd4uh",
+  telegramUserId: "fldAmysO51nIneg0C",
+  telegramVerificationStatus: "fldlPum9VYKboCofh",
 });
 
 const MODEL_FIELDS = Object.freeze({
   lineUserId: "fld2ywTFI6MZhX6PV",
+  telegramUserId: "fldLogasesRw5zwyB",
+  telegramVerificationStatus: "fldlSR082K0O0wLqY",
 });
 
 const INITIAL_JOB_PAYMENT_STAGES = new Set(["deposit", "full"]);
@@ -46,27 +50,52 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
     return { status: "links_not_ready", dispatched: false };
   }
 
-  const lineTargets = await resolveLineTargets(env, f);
-  const identityCollision = Boolean(
-    lineTargets.customer_line_user_id &&
-    lineTargets.model_line_user_id &&
-    lineTargets.customer_line_user_id === lineTargets.model_line_user_id
+  const targets = await resolveNotificationTargets(env, f);
+  const lineIdentityCollision = Boolean(
+    targets.customer_line_user_id &&
+    targets.model_line_user_id &&
+    targets.customer_line_user_id === targets.model_line_user_id
+  );
+  const telegramIdentityCollision = Boolean(
+    targets.customer_telegram_user_id &&
+    targets.model_telegram_user_id &&
+    targets.customer_telegram_user_id === targets.model_telegram_user_id
   );
 
-  const [customerLine, modelLine] = identityCollision
+  const [customerLine, modelLine] = lineIdentityCollision
     ? [
         { ok: false, status: "identity_collision" },
         { ok: false, status: "identity_collision" },
       ]
     : await Promise.all([
         pushLineConfirmation(env, {
-          lineUserId: lineTargets.customer_line_user_id,
+          lineUserId: targets.customer_line_user_id,
           role: "customer",
           name: f[SESSION_FIELDS.clientName],
           url: memberUrl,
         }),
         pushLineConfirmation(env, {
-          lineUserId: lineTargets.model_line_user_id,
+          lineUserId: targets.model_line_user_id,
+          role: "model",
+          name: f[SESSION_FIELDS.modelName],
+          url: modelUrl,
+        }),
+      ]);
+
+  const [customerTelegram, modelTelegram] = telegramIdentityCollision
+    ? [
+        { ok: false, status: "identity_collision" },
+        { ok: false, status: "identity_collision" },
+      ]
+    : await Promise.all([
+        pushTelegramConfirmation(env, {
+          telegramUserId: targets.customer_telegram_user_id,
+          role: "customer",
+          name: f[SESSION_FIELDS.clientName],
+          url: memberUrl,
+        }),
+        pushTelegramConfirmation(env, {
+          telegramUserId: targets.model_telegram_user_id,
           role: "model",
           name: f[SESSION_FIELDS.modelName],
           url: modelUrl,
@@ -93,7 +122,10 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
       "<b>Manual confirm fallback:</b> MEMBER URL → ลูกค้า · MODEL URL → โมเดล",
       `Customer LINE: <b>${escapeHtml(customerLine.ok ? "sent" : customerLine.status || "not_sent")}</b>`,
       `Model LINE: <b>${escapeHtml(modelLine.ok ? "sent" : modelLine.status || "not_sent")}</b>`,
-      identityCollision ? "<b>LINE dispatch held: customer/model identity collision</b>" : "",
+      `Customer Telegram: <b>${escapeHtml(customerTelegram.ok ? "sent" : customerTelegram.status || "not_sent")}</b>`,
+      `Model Telegram: <b>${escapeHtml(modelTelegram.ok ? "sent" : modelTelegram.status || "not_sent")}</b>`,
+      lineIdentityCollision ? "<b>LINE dispatch held: customer/model identity collision</b>" : "",
+      telegramIdentityCollision ? "<b>Telegram dispatch held: customer/model identity collision</b>" : "",
     ].filter(Boolean).join("\n"),
   });
 
@@ -107,29 +139,46 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
     model_line_sent: modelLine.ok === true,
     customer_line_status: customerLine.status || null,
     model_line_status: modelLine.status || null,
-    line_identity_collision: identityCollision,
+    customer_telegram_sent: customerTelegram.ok === true,
+    model_telegram_sent: modelTelegram.ok === true,
+    customer_telegram_status: customerTelegram.status || null,
+    model_telegram_status: modelTelegram.status || null,
+    line_identity_collision: lineIdentityCollision,
+    telegram_identity_collision: telegramIdentityCollision,
   };
 }
 
-async function resolveLineTargets(env, sessionFields = {}) {
+async function resolveNotificationTargets(env, sessionFields = {}) {
   let customerLine = canonicalLineUserId(sessionFields[SESSION_FIELDS.customerLineUserId]);
   let modelLine = "";
+  let customerTelegram = "";
+  let modelTelegram = "";
 
   const clientId = linkedRecordId(sessionFields[SESSION_FIELDS.clientLink]);
-  if (!customerLine && clientId) {
+  if (clientId) {
     const client = await getRecord(env, clientsTable(env), clientId).catch(() => null);
-    customerLine = canonicalLineUserId(client?.fields?.[CLIENT_FIELDS.lineUserId]);
+    customerLine = customerLine || canonicalLineUserId(client?.fields?.[CLIENT_FIELDS.lineUserId]);
+    customerTelegram = verifiedTelegramUserId(
+      client?.fields?.[CLIENT_FIELDS.telegramUserId],
+      client?.fields?.[CLIENT_FIELDS.telegramVerificationStatus],
+    );
   }
 
   const modelId = linkedRecordId(sessionFields[SESSION_FIELDS.canonicalModel]);
   if (modelId) {
     const model = await getRecord(env, modelsTable(env), modelId).catch(() => null);
     modelLine = canonicalLineUserId(model?.fields?.[MODEL_FIELDS.lineUserId]);
+    modelTelegram = verifiedTelegramUserId(
+      model?.fields?.[MODEL_FIELDS.telegramUserId],
+      model?.fields?.[MODEL_FIELDS.telegramVerificationStatus],
+    );
   }
 
   return {
     customer_line_user_id: customerLine,
     model_line_user_id: modelLine,
+    customer_telegram_user_id: customerTelegram,
+    model_telegram_user_id: modelTelegram,
   };
 }
 
@@ -176,6 +225,38 @@ async function pushLineConfirmation(env, { lineUserId, role, name, url } = {}) {
   };
 }
 
+async function pushTelegramConfirmation(env, { telegramUserId, role, name, url } = {}) {
+  const chatId = canonicalTelegramUserId(telegramUserId);
+  if (!chatId) return { ok: false, status: "telegram_identity_missing_or_unverified" };
+  const displayName = clean(name, 180);
+  const isModel = role === "model";
+  const text = isModel
+    ? [
+        "MMD MODEL · ยืนยันงาน",
+        displayName ? `${displayName} รายละเอียดงานพร้อมแล้วครับ` : "รายละเอียดงานพร้อมแล้วครับ",
+        "เปิดลิงก์นี้เพื่อตรวจและยืนยันงาน",
+        url,
+        "",
+        "ลิงก์นี้เป็นลิงก์เฉพาะสำหรับบัญชีของคุณครับ",
+      ].join("\n")
+    : [
+        "MMD · ยืนยันงาน",
+        displayName ? `${displayName} รายละเอียดงานพร้อมแล้วครับ` : "รายละเอียดงานพร้อมแล้วครับ",
+        "เปิดลิงก์นี้เพื่อยืนยันรายละเอียดงาน",
+        url,
+        "",
+        "ลิงก์นี้เป็นลิงก์เฉพาะสำหรับบัญชีของคุณครับ",
+      ].join("\n");
+  const result = await sendTelegram(env, {
+    chat_id: chatId,
+    text,
+  });
+  return {
+    ok: result.ok === true,
+    status: result.ok === true ? "sent" : (result.status || "telegram_send_failed"),
+  };
+}
+
 async function getRecord(env, table, recordId) {
   const base = clean(env.AIRTABLE_BASE_ID, 120);
   const key = clean(env.AIRTABLE_API_KEY, 5000);
@@ -205,6 +286,15 @@ function linkedRecordId(value) {
 function canonicalLineUserId(value) {
   const candidate = clean(value, 100);
   return /^U[A-Za-z0-9_-]{20,80}$/.test(candidate) ? candidate : "";
+}
+
+function canonicalTelegramUserId(value) {
+  const candidate = clean(value, 40);
+  return /^\d{5,20}$/.test(candidate) ? candidate : "";
+}
+
+function verifiedTelegramUserId(value, status) {
+  return code(status) === "verified" ? canonicalTelegramUserId(value) : "";
 }
 
 async function findSession(env, sessionId) {
