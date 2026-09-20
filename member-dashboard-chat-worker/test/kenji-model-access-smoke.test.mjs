@@ -113,6 +113,7 @@ function environments(data, rpcCalls) {
     AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
     AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
     AIRTABLE_TABLE_MODELS: "models",
+    AIRTABLE_TABLE_MODEL_OFFER_RULES_ID: "offers",
   };
   const lineEnv = {
     INTERNAL_TOKEN,
