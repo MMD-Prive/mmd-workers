@@ -86,6 +86,12 @@ service = "admin-worker"
 binding = "HYPE_CONTEXT_WRITER"
 service = "admin-worker"
 
+# Partner job confirmation authority. Telegram only transports the verified
+# Partner response; partners-worker re-validates Partner binding + Session snapshot.
+[[services]]
+binding = "PARTNERS_WORKER"
+service = "partners-worker"
+
 
 # Canonical production Telegram ingress / internal-send ownership.
 # Exact paths only; workers.dev remains compatibility transport for existing internal callers.
