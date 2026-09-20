@@ -157,6 +157,7 @@ async function sendPaymentsProofDocument(req, env) {
   payload.append("message_thread_id", String(threadId));
   payload.append("parse_mode", clean(form.get("parse_mode")) || "HTML");
   payload.append("caption", clean(form.get("caption")).slice(0, 900));
+  if (/^(?:1|true|yes)$/i.test(clean(form.get("disable_notification")))) payload.append("disable_notification", "true");
   payload.append("document", file, clean(file.name) || "payment-proof");
 
   const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
