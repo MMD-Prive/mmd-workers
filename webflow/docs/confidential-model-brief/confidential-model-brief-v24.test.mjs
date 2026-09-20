@@ -99,3 +99,11 @@ test("MMD identity copy stays human and multilingual", () => {
   assert.match(html, /data-i18n="detailsPer"/);
   assert.match(html, /data-i18n="detailsLead2"/);
 });
+
+
+test("Boss Per portrait asset stays attached to the identity block", () => {
+  assert.match(html, /6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside\.webp/);
+  assert.match(html, /cmb24__who-grid/);
+  assert.match(html, /cmb24__per-media/);
+  assert.match(html, /Founder · MMD Privé/);
+});
