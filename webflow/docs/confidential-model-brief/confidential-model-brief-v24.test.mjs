@@ -55,7 +55,7 @@ test("core confidential brief information remains present", () => {
     "40–44",
     "Client</div><span>→</span><div>MMD</div><span>→</span><div>Model",
     "/rules/private-model-work",
-    "https://t.me/mmdapply",
+    "/sigil/apply",
     "Direct Work",
     "Consent Required",
   ];
