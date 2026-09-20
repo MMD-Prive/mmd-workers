@@ -952,7 +952,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const partnerRecord = verified.value.partnerRecord;
   const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
   const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
-  const telegramConnected = telegramStatus === "verified" && /^\\d{5,20}$/.test(telegramId);
+  const telegramConnected = telegramStatus === "verified" && /^\\d{5,20}$/.test(String(telegramId || ""));
   const [referrals, commissions] = await Promise.all([
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id),
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id)
@@ -1024,7 +1024,14 @@ async function handlePartnerTelegramConnect(request: Request, env: RuntimeEnv): 
       partner_record_id: verified.value.partnerRecord.id
     })
   }));
-  const payload = await response.json().catch(() => null);
+  const payload = await response.json().catch(() => null) as {
+    ok?: boolean;
+    error?: string;
+    telegram_connected?: boolean;
+    state?: string;
+    connect_url?: string | null;
+    expires_at?: string | null;
+  } | null;
   if (!response.ok || !payload?.ok) {
     return errorResponse(
       request,
