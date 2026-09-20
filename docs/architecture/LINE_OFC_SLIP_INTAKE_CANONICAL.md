@@ -12,7 +12,14 @@ Current approval state:
 - Privacy/DPA for Cloudflare preview: PASS
 - Cloudflare processor/DPA acceptance for the locked preview scope: APPROVED
 - Preview source implementation authorization: PASS
-- Production LINE integration approval: PENDING
+- Production LINE evidence observer: LIVE under the existing signed `member-dashboard-chat-worker` webhook
+- Production Money Truth authority: unchanged; `payments-worker` only
+
+### 2026-09-20 production path lock
+
+The production path is already integrated without creating a second webhook owner or promoting the staging Queue. After the canonical LINE handler accepts a signed webhook, `line-group-ingress-front-gate.js` re-verifies the LINE signature and observes eligible direct/group payment images. Accepted evidence is written to the private production `LINE_SLIP_EVIDENCE` R2 bucket, classified/extracted, persisted as pending Payment Proof evidence, and surfaced to HYPE/Telegram for operator review. Service/job proof remains review-gated; evidence alone never becomes Money Truth.
+
+The Queue-backed service described below remains an isolated synthetic staging harness. Any older section that describes a future production Queue producer is historical planning and is superseded by this direct post-signature production observer.
 
 ## Preview topology
 
