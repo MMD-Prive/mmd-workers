@@ -158,7 +158,7 @@ export default {
 };
 
 function requireWebhookLockToken(req, env) {
-  const deployToken = clean(env.TELEGRAM_DEPLOY_CONTROL_TOKEN, 5000);
+  const deployToken = clean(env.TELEGRAM_DEPLOY_REPAIR_SECRET || env.TELEGRAM_DEPLOY_CONTROL_TOKEN, 5000);
   const direct = req.headers.get("X-Deploy-Control-Token") || "";
   if (deployToken && direct && direct === deployToken) return;
   requireInternalToken(req, env);
