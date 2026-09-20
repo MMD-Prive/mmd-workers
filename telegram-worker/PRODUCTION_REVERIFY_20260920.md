@@ -1,3 +1,3 @@
 # Telegram production re-verification marker
 
-Runtime-secret webhook-lock acceptance rerun. The deploy now asks telegram-worker to enforce the hard-coded canonical webhook using Worker runtime secrets; GitHub no longer needs Telegram Bot/Webhook secrets.
+Per-deploy nonce acceptance rerun. The deploy generates a masked random nonce, injects it only into the deployed telegram-worker version, and uses it solely to invoke the hard-coded canonical webhook lock. Bot/Webhook secrets remain runtime-owned.
