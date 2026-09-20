@@ -4,7 +4,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
 const SLIP_EVIDENCE_PATH = "/v1/pay/slip/evidence";
 const CONFIRM_VERIFY_PATH = "/v1/confirm/verify";
-const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "public_pay", "job_confirmation", "pay_membership", "member_payments"]);
+const CANONICAL_WEB_SOURCES = new Set(["sigil_pay", "sigil_pay_v22", "public_pay", "job_confirmation", "pay_membership", "member_payments"]);
 const PAID_STATES = new Set(["paid", "verified", "success", "completed"]);
 const PROOF_STATES = new Set(["submitted", "pending", "pending_review", "review", "review_required", "needs_review", "under_review", "matched", "verified", "approved"]);
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -379,8 +379,8 @@ export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = 
   return {
     ...route,
     thread_id: route.topic === "membership"
-      ? threadId(env.TG_THREAD_MEMBERSHIP, 20)
-      : threadId(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM, 21),
+      ? threadId(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP, 20)
+      : threadId(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM, 22),
     alerts_thread_id: threadId(env.TG_THREAD_ALERTS, 9),
   };
 }
@@ -438,6 +438,21 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   };
 }
 
+export function canonicalProofRecordFields({ proofId, note, snapshot = {}, paymentRef, links = {} } = {}) {
+  return compact({
+    proof_id: proofId,
+    channel: "web_pay",
+    note,
+    status: "submitted",
+    payer_name: snapshot.payer_name,
+    amount_thb: snapshot.amount_thb,
+    payment_ref: paymentRef,
+    payment: links.payment,
+    session: links.session,
+    Client: links.client,
+  });
+}
+
 async function buildProofFields(env, form, payment, paymentRef, file, session = null) {
   const snapshot = paymentSnapshot(payment, form);
   const links = canonicalProofLinks(payment, session);
@@ -459,21 +474,12 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
     proofId,
     storage,
     snapshot,
-    fields: compact({
-      proof_id: proofId,
-      channel: "web_pay",
+    fields: canonicalProofRecordFields({
+      proofId,
       note,
-      status: "submitted",
-      payer_name: snapshot.payer_name,
-      amount_thb: snapshot.amount_thb,
-      payment_ref: paymentRef,
-      session_id: snapshot.session_id,
-      member_email: snapshot.member_email,
-      payment_stage: snapshot.payment_stage,
-      payment: links.payment,
-      session: links.session,
-      Client: links.client,
-      created_at: new Date().toISOString(),
+      snapshot,
+      paymentRef,
+      links,
     }),
   };
 }
