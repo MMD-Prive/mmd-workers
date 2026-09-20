@@ -1,7 +1,7 @@
 import { TG_THREADS } from "../lib/telegram.js";
 
 export const HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA = "mmd.hype_telegram_router_health.v1";
-export const HYPE_TELEGRAM_ROUTER_REGISTRY_VERSION = "2026-09-21.1";
+export const HYPE_TELEGRAM_ROUTER_REGISTRY_VERSION = "2026-09-21.2";
 
 const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 
@@ -55,11 +55,11 @@ const ROUTER_LANES = Object.freeze([
     key: "public_model",
     label: "Public Model applications",
     topic: "public_model",
-    sources: ["sigil-worker"],
+    sources: ["sigil-worker", "partners-worker"],
     flows: ["public_model", "public_model_application", "applications"],
     fallback: "alerts",
-    authority: "sigil-worker application truth",
-    migration_state: "legacy_direct_sender",
+    authority: "sigil-worker / partners-worker application truth",
+    required_auth: ["AUTH_SERVICE_SIGIL_TO_TELEGRAM", "AUTH_SERVICE_PARTNERS_TO_TELEGRAM"],
   },
   {
     key: "mms_applications",
@@ -69,7 +69,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["mms_application", "mms_therapist_application"],
     fallback: "alerts",
     authority: "mms-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_MMS_TO_TELEGRAM"],
     shared_destination: "public_model",
   },
   {
@@ -80,7 +80,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["mms_alert", "mms_manual_handoff", "mms_job"],
     fallback: null,
     authority: "mms-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_MMS_TO_TELEGRAM"],
   },
   {
     key: "partner_ops",
@@ -90,7 +90,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["partner_confirm", "partner_review"],
     fallback: "alerts",
     authority: "partners-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_PARTNERS_TO_TELEGRAM"],
   },
   {
     key: "care_back",
@@ -109,7 +109,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["himai_orders", "himai_order"],
     fallback: "himai_alerts",
     authority: "himai-chat-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM"],
   },
   {
     key: "himai_payments",
@@ -119,7 +119,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["himai_payments", "himai_payment"],
     fallback: "himai_alerts",
     authority: "payments-worker where payment truth applies",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM", "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM"],
   },
   {
     key: "himai_alerts",
@@ -129,7 +129,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["himai_alerts", "himai_alert"],
     fallback: "alerts",
     authority: "notification only",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM"],
   },
   {
     key: "mmd_shop_orders",
@@ -139,7 +139,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["mmd_shop_orders", "mmd_shop_order"],
     fallback: "mmd_shop_alerts",
     authority: "himai-chat-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM"],
   },
   {
     key: "mmd_shop_payments",
@@ -149,7 +149,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["mmd_shop_payments", "mmd_shop_payment"],
     fallback: "mmd_shop_alerts",
     authority: "payments-worker",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM", "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM"],
   },
   {
     key: "mmd_shop_alerts",
@@ -159,7 +159,7 @@ const ROUTER_LANES = Object.freeze([
     flows: ["mmd_shop_alerts", "mmd_shop_alert"],
     fallback: "alerts",
     authority: "notification only",
-    migration_state: "legacy_direct_sender",
+    required_auth: ["AUTH_SERVICE_HIMAI_TO_TELEGRAM"],
   },
   {
     key: "rules_model",
@@ -190,12 +190,7 @@ const ROUTER_LANES = Object.freeze([
   },
 ]);
 
-const LEGACY_DIRECT_SENDERS = Object.freeze([
-  { worker: "mms-worker", reason: "direct Telegram Bot API sender still exists for MMS application/manual handoff" },
-  { worker: "sigil-worker", reason: "Public Model notification has a direct Telegram sender" },
-  { worker: "himai-chat-worker", reason: "Shop/HIMAI notification helpers still send directly" },
-  { worker: "payments-worker", reason: "legacy direct Telegram helpers remain alongside canonical internal-send usage" },
-]);
+const LEGACY_DIRECT_SENDERS = Object.freeze([]);
 
 function clean(value, max = 300) {
   return String(value ?? "").trim().slice(0, max);
@@ -236,14 +231,16 @@ function topicMap(env = {}) {
     rules_model: positiveInt(threads.rules_model),
     rules_customer: positiveInt(threads.rules_customer),
     legacy_archive: positiveInt(threads.legacy_archive),
-    partner: partnerThread(env),
+    partner: positiveInt(threads.partner) || partnerThread(env),
   };
 }
 
-function laneProjection(spec, topics, transportReady) {
+function laneProjection(spec, topics, transportReady, env = {}) {
   const threadReady = positiveInt(topics[spec.topic]) > 0;
   const migrationState = clean(spec.migration_state) || "canonical_internal_send";
-  let status = transportReady && threadReady ? "configured" : "unavailable";
+  const requiredAuth = Array.isArray(spec.required_auth) ? spec.required_auth : [];
+  const serviceAuthReady = requiredAuth.every((name) => bool(env?.[name]));
+  let status = transportReady && threadReady && serviceAuthReady ? "configured" : "unavailable";
   if (status === "configured" && migrationState === "legacy_direct_sender") status = "partial";
   return {
     key: spec.key,
@@ -251,6 +248,7 @@ function laneProjection(spec, topics, transportReady) {
     status,
     topic: spec.topic,
     destination_configured: threadReady,
+    service_auth_configured: serviceAuthReady,
     source_workers: spec.sources,
     flows: spec.flows,
     fallback: spec.fallback,
@@ -318,10 +316,14 @@ export async function buildTelegramRouterHealth(env = {}, { probe = false } = {}
     env.AUTH_SERVICE_AUTH_TO_TELEGRAM,
     env.AUTH_SERVICE_LINE_TO_TELEGRAM,
     env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM,
+    env.AUTH_SERVICE_MMS_TO_TELEGRAM,
+    env.AUTH_SERVICE_SIGIL_TO_TELEGRAM,
+    env.AUTH_SERVICE_HIMAI_TO_TELEGRAM,
+    env.AUTH_SERVICE_PARTNERS_TO_TELEGRAM,
   ].some(bool);
   const transportReady = botConfigured && chatConfigured;
   const topics = topicMap(env);
-  const lanes = ROUTER_LANES.map((spec) => laneProjection(spec, topics, transportReady));
+  const lanes = ROUTER_LANES.map((spec) => laneProjection(spec, topics, transportReady, env));
   const live = probe ? await telegramApiProbe(env) : { attempted: false, ok: null };
 
   const unavailable = lanes.filter((lane) => lane.status === "unavailable");
