@@ -11,7 +11,7 @@ function configuredEnv() {
     TELEGRAM_BOT_TOKEN: "test-bot-token",
     TELEGRAM_CHAT_ID: "-1003546439681",
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret",
-    INTERNAL_API_TOKEN: "internal",
+    INTERNAL_API_TOKEN: "svc-secret-router-health-test",
     TG_THREAD_BOOKING_DRAFT: "1399",
     TG_THREAD_PAYMENTS_MEMBERSHIP: "20",
     TG_THREAD_POINTS: "17",
@@ -74,7 +74,7 @@ test("router health never exposes raw chat ids or thread ids", async () => {
     assert.equal(new RegExp('\"thread_id\"\\s*:\\s*' + thread).test(serialized), false);
   }
   assert.equal(serialized.includes("test-bot-token"), false);
-  assert.equal(serialized.includes("internal"), false);
+  assert.equal(serialized.includes("svc-secret-router-health-test"), false);
 });
 
 test("live probe failure degrades otherwise-configured router without sending a message", async () => {
