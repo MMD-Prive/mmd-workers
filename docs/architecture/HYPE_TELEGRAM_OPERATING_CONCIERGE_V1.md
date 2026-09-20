@@ -22,6 +22,22 @@ HYPE is not only a Preview bot or notification sender. Its role is to:
 
 HYPE is **not** a source of business truth.
 
+
+## Production Core Contract — ACTIVE / RESTORED
+
+The final production workflow receipt on 2026-09-20 established the following HYPE production lanes as active contracts. They are operational capability, not historical documentation, and must remain present unless Per explicitly approves a replacement contract:
+
+- **Shop + Booking + MMS Recovery** — closed-loop recovery coverage accepted across all three domains, preserving the same Case Reference and no-guess / canonical-refresh rules.
+- **LINE slip live intake** — production owner path accepted. Slip/evidence intake may enter the protected payment-review flow, but evidence alone never becomes `paid`.
+- **Customer / Model Telegram Auto-DM** — verified notification contract accepted for customer/model delivery through the canonical Telegram path.
+- **Telegram core route owner** — `telegram-worker` is the locked core Telegram route owner; parallel workers must not silently take over the same production route family.
+- **Closed-loop production verification** — the paired deploy + production-smoke receipt must remain the acceptance gate for this contract.
+
+Original accepted receipt source SHA: `d93187809c3a18e776190297ad07413db9a8ca49`.
+
+This production-core contract does not move business authority into HYPE. Payment, Job, Membership, Order/Fulfillment, MMS booking/Therapist assignment, Points, Coupon and protected Owner decisions remain with their canonical authorities.
+
+
 ## Authority boundary
 
 Canonical authority stays with:
