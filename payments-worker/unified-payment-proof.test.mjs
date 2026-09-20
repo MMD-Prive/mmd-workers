@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef, telegramDeliveryAuditNote } from "./unified-payment-proof.js";
+import { canonicalProofLinks, canonicalProofRecordFields, canonicalWebJobContext, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef, telegramDeliveryAuditNote } from "./unified-payment-proof.js";
 import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
 import legacySlipWorker from "./index.with-slip-evidence.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
@@ -51,6 +51,35 @@ test("web proof record uses only fields present in MMD — Payment Proofs", () =
   assert.equal("member_email" in fields, false);
   assert.equal("payment_stage" in fields, false);
   assert.equal(fields.status, "pending");
+});
+
+test("web proof job context projects canonical session details", () => {
+  const context = canonicalWebJobContext({
+    id: "recSession",
+    fields: {
+      session_id: "sess-001",
+      job_id: "JOB-001",
+      client_name: "แม่ไก่",
+      model_name: "Gohan",
+      job_type: "Private",
+      job_date: "2026-09-22",
+      start_time: "19:00",
+      end_time: "20:30",
+      location_name: "Ever Green",
+    },
+  }, { session_id: "sess-001", payer_name: "fallback" });
+  assert.equal(context.status, "exact");
+  assert.equal(context.job_id, "JOB-001");
+  assert.equal(context.client_name, "แม่ไก่");
+  assert.equal(context.model_name, "Gohan");
+  assert.equal(context.job_date, "2026-09-22");
+  assert.equal(context.location_name, "Ever Green");
+});
+
+test("web proof job context fails closed when canonical session is missing", () => {
+  const context = canonicalWebJobContext(null, {});
+  assert.equal(context.status, "unresolved");
+  assert.equal(context.reason, "canonical_session_context_missing");
 });
 
 test("Telegram delivery audit note records message id and thread without exposing bot token", () => {
