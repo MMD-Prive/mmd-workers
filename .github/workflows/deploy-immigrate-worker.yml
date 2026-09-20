@@ -210,7 +210,7 @@ jobs:
               "https://mmdbkk.com/internal/admin/customer-data?mock=1&deploy=${GITHUB_SHA}&attempt=${attempt}")"
 
             if [ "$code" = "200" ] \
-              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v2' "$headers" \
+              && grep -Eiq '^x-mmd-customer-data-ui:[[:space:]]*readable-v3' "$headers" \
               && grep -Eiq '^x-mmd-customer-data-authority:[[:space:]]*identity-context-staging-only' "$headers" \
               && grep -q 'นำเข้าจาก Console Inbox' "$body" \
               && grep -q 'คิวที่ต้องดู' "$body" \
