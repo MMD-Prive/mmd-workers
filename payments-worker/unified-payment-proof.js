@@ -410,6 +410,7 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
   ].filter(Boolean).join("\n"));
   form.append("document", file, clean(file.name, 180) || "payment-proof");
   const response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form });
+  const responseData = await response.clone().json().catch(() => ({}));
 
   let alertSent = false;
   if (route.should_alert === true) {
@@ -435,8 +436,38 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     status: response.status,
     topic: route.topic,
     thread_id: route.thread_id,
+    message_id: Number(responseData?.result?.message_id || 0) || null,
+    error_code: Number(responseData?.error_code || 0) || null,
+    error_description: clean(responseData?.description, 300) || null,
     alert_sent: alertSent,
   };
+}
+
+export function telegramDeliveryAuditNote(telegram = {}) {
+  return [
+    `telegram_delivered=${telegram?.ok === true ? "true" : "false"}`,
+    telegram?.thread_id ? `telegram_thread_id=${telegram.thread_id}` : "",
+    telegram?.message_id ? `telegram_message_id=${telegram.message_id}` : "",
+    telegram?.status ? `telegram_http_status=${telegram.status}` : "",
+    telegram?.error_code ? `telegram_error_code=${telegram.error_code}` : "",
+    telegram?.error_description ? `telegram_error=${clean(telegram.error_description, 180)}` : "",
+  ].filter(Boolean).join("; ");
+}
+
+async function patchProofAuditNote(env, recordId, currentNote, telegram) {
+  if (!recordId || !airtableReady(env)) return { ok: false, skipped: true };
+  const url = `${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(airtableTable(env, "proofs"))}/${encodeURIComponent(recordId)}`;
+  const audit = telegramDeliveryAuditNote(telegram);
+  const note = [clean(currentNote, 5000), audit].filter(Boolean).join("; ");
+  try {
+    await airtableFetch(env, url, {
+      method: "PATCH",
+      body: JSON.stringify({ fields: { note } }),
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: clean(error?.message || error, 180) };
+  }
 }
 
 export function canonicalProofRecordFields({ proofId, note, snapshot = {}, paymentRef, links = {} } = {}) {
@@ -576,7 +607,8 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       paymentRef,
       snapshot: proofBundle.snapshot,
       sourcePage: source,
-    }).catch(() => ({ ok: false }));
+    }).catch((error) => ({ ok: false, error_description: clean(error?.message || error, 180) }));
+    const telegramAudit = await patchProofAuditNote(env, created?.id, proofBundle.fields.note, telegram);
 
     return rebuildJson(downstreamResponse, {
       ...downstreamData,
@@ -591,7 +623,9 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       telegram_file_received: telegram.ok === true,
       telegram_topic: telegram.topic || null,
       telegram_thread_id: telegram.thread_id || null,
+      telegram_message_id: telegram.message_id || null,
       telegram_alert_sent: telegram.alert_sent === true,
+      telegram_audit_persisted: telegramAudit.ok === true,
       unified_payment_flow: "v1",
       message: "Payment proof received. MMD is reviewing it; no need to submit again.",
     });
