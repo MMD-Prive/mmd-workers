@@ -10,7 +10,7 @@ on:
       - ".github/workflows/deploy-sigil-worker.yml"
 
 concurrency:
-  group: deploy-sigil-worker-production
+  group: telegram-router-secret-rotation-production
   cancel-in-progress: false
 
 permissions:
@@ -160,17 +160,19 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'SIGIL_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          router_secret_ready=0
-          for attempt in $(seq 1 24); do
-            if printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_SIGIL_TO_TELEGRAM --config telegram-worker/wrangler.toml; then
-              router_secret_ready=1
-              echo "telegram-worker service secret ready on attempt $attempt"
-              break
-            fi
-            echo "telegram-worker latest version not deployable yet; retrying secret rotation (attempt $attempt)"
-            sleep 5
-          done
-          test "$router_secret_ready" = "1"
+          router_secret_log="$RUNNER_TEMP/telegram-worker-sigil-secret-version.log"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_SIGIL_TO_TELEGRAM \
+            --config telegram-worker/wrangler.toml \
+            --tag "router-sigil-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
+            --message "Rotate AUTH_SERVICE_SIGIL_TO_TELEGRAM from ${GITHUB_SHA}" \
+            2>&1 | tee "$router_secret_log"
+          router_version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          if [ -z "$router_version_id" ]; then
+            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_SIGIL_TO_TELEGRAM" >&2
+            cat "$router_secret_log" >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
 
       - name: Prepare production secrets
         id: runtime-secrets
