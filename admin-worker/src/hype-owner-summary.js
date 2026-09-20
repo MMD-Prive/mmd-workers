@@ -171,6 +171,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_picker_interaction_metadata_only: true,
       recovery_picker_manual_refresh_owner_only: true,
       recovery_picker_grants_authority: false,
+      recovery_assignment_history_bounded: true,
+      recovery_picker_refresh_history_bounded: true,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
@@ -248,6 +250,7 @@ function projectRecoveryWatchItem(item = {}) {
     picker_candidate_count: nullableNonNegative(item.picker_candidate_count),
     picker_reissue_count: nullableNonNegative(item.picker_reissue_count),
     picker_last_stale_reason: clean(item.picker_last_stale_reason, 80) || null,
+    picker_refresh_history: (Array.isArray(item.picker_refresh_history) ? item.picker_refresh_history : []).slice(-5).map(projectPickerRefreshHistoryItem),
     picker_next_attention: clean(item.picker_next_attention, 80) || null,
     href: safeInternalHref(item.href) || "/internal/admin/recovery",
   };
@@ -263,6 +266,18 @@ function mergeRecoveryWatchItems(primary = [], secondary = []) {
     out.push(item);
   }
   return out;
+}
+
+function projectPickerRefreshHistoryItem(item = {}) {
+  return {
+    trigger: clean(item.trigger, 40) || null,
+    result: clean(item.result, 40) || null,
+    source_revision: nullablePositive(item.source_revision),
+    revision: nullablePositive(item.revision),
+    candidate_count: nullableNonNegative(item.candidate_count),
+    reason: clean(item.reason, 80) || null,
+    at: clean(item.at, 80) || null,
+  };
 }
 
 function nullablePositive(value) {
