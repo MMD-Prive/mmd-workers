@@ -10,7 +10,7 @@ on:
       - ".github/workflows/deploy-sigil-worker.yml"
 
 concurrency:
-  group: deploy-sigil-worker-production
+  group: telegram-router-domain-deploy-production
   cancel-in-progress: false
 
 permissions:
@@ -160,7 +160,17 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'SIGIL_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_SIGIL_TO_TELEGRAM --config telegram-worker/wrangler.toml
+          telegram_secret_ready=0
+          for attempt in $(seq 1 36); do
+            if printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_SIGIL_TO_TELEGRAM --config telegram-worker/wrangler.toml; then
+              telegram_secret_ready=1
+              echo "telegram-worker accepted AUTH_SERVICE_SIGIL_TO_TELEGRAM on attempt $attempt"
+              break
+            fi
+            echo "telegram-worker version not deployable for secret rotation yet (attempt $attempt); retrying..."
+            sleep 5
+          done
+          test "$telegram_secret_ready" = "1"
 
       - name: Prepare production secrets
         id: runtime-secrets
