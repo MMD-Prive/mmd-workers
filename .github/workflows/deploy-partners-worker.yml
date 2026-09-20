@@ -55,7 +55,7 @@ jobs:
           echo "::add-mask::$CLOUDFLARE_ROUTES_API_TOKEN"
           echo "::add-mask::$AIRTABLE_API_KEY"
 
-      - name: Load existing Kendo reissue token
+      - name: Load optional Kendo smoke token
         shell: bash
         run: |
           set -euo pipefail
@@ -66,13 +66,21 @@ jobs:
           )"
           notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields["Notes Internal"] // .fields[$f] // ""' <<<"$record")"
           dashboard_url="$(printf '%s\n' "$notes" | sed -n 's/^Dashboard: //p' | tail -n 1)"
-          test -n "$dashboard_url"
-          token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["t"][0])' "$dashboard_url")"
-          test -n "$token"
+          token=""
+          if [ -n "$dashboard_url" ]; then
+            token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query).get("t",[""])[0])' "$dashboard_url")"
+          fi
 
-          echo "::add-mask::$token"
-          echo "::add-mask::$dashboard_url"
-          echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
+          if [ -n "$token" ]; then
+            echo "::add-mask::$token"
+            echo "::add-mask::$dashboard_url"
+            echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
+            echo "KENDO_TOKEN_AVAILABLE=true" >> "$GITHUB_ENV"
+          else
+            echo "KENDO_TOKEN=" >> "$GITHUB_ENV"
+            echo "KENDO_TOKEN_AVAILABLE=false" >> "$GITHUB_ENV"
+            echo "Kendo raw token is intentionally absent; continuing with deploy and unauthenticated route checks."
+          fi
 
       - name: Install
         working-directory: partners-worker
@@ -188,6 +196,7 @@ jobs:
           NODE
 
       - name: Smoke Kendo on bound partner API
+        if: env.KENDO_TOKEN_AVAILABLE == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -215,6 +224,7 @@ jobs:
           done
 
       - name: Clean raw Kendo token from Airtable notes
+        if: env.KENDO_TOKEN_AVAILABLE == 'true'
         shell: bash
         run: |
           set -euo pipefail
