@@ -37,6 +37,7 @@ export default {
           routes: {
             webhook: ["/telegram/webhook", "/v1/webhook"],
             internal_send: ["/telegram/internal/send", "/v1/internal/send", "/v1/send"],
+            payments_proof_document: ["/telegram/internal/payments/proof-document"],
             complaint_notify: ["/telegram/internal/complaint", "/v1/internal/complaint"],
             preview_post: ["/telegram/preview/post", "/v1/preview/post"],
             topic_smoke: ["/telegram/internal/topics/smoke", "/v1/internal/topics/smoke"],
@@ -69,6 +70,14 @@ export default {
         if (!body) return json({ ok: false, error: "invalid_json" }, 400);
         const tg = await telegramNotify(body, env);
         return json({ ok: true, telegram: tg }, 200);
+      }
+
+      if (isPaymentsProofDocumentPath(path) && req.method === "POST") {
+        requireInternalToken(req, env, {
+          allowServiceSecrets: ["AUTH_SERVICE_PAYMENTS_TO_TELEGRAM"],
+        });
+        const result = await sendPaymentsProofDocument(req, env);
+        return json(result, result.ok ? 200 : 502);
       }
 
       if (isTopicSmokePath(path) && req.method === "POST") {
@@ -123,6 +132,52 @@ export default {
     }
   },
 };
+
+async function sendPaymentsProofDocument(req, env) {
+  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
+  if (!botToken) return { ok: false, error: "telegram_bot_not_configured" };
+
+  const form = await req.formData().catch(() => null);
+  if (!form) return { ok: false, error: "invalid_multipart" };
+
+  const chatId = clean(form.get("chat_id") || env.TELEGRAM_CHAT_ID);
+  const threadId = Number(form.get("message_thread_id") || form.get("thread_id") || 0);
+  const allowedThreads = new Set([
+    Number(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP || 20),
+    Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22),
+  ]);
+  const file = form.get("document") || form.get("file");
+  if (!chatId || chatId !== clean(env.TELEGRAM_CHAT_ID)) return { ok: false, error: "telegram_chat_not_allowed" };
+  if (!Number.isInteger(threadId) || !allowedThreads.has(threadId)) return { ok: false, error: "telegram_payment_thread_not_allowed" };
+  if (!file || typeof file.arrayBuffer !== "function") return { ok: false, error: "telegram_document_required" };
+
+  const payload = new FormData();
+  payload.append("chat_id", chatId);
+  payload.append("message_thread_id", String(threadId));
+  payload.append("parse_mode", clean(form.get("parse_mode")) || "HTML");
+  payload.append("caption", clean(form.get("caption")).slice(0, 900));
+  payload.append("document", file, clean(file.name) || "payment-proof");
+
+  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+    method: "POST",
+    body: payload,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true) {
+    return {
+      ok: false,
+      status: response.status,
+      error_code: Number(data?.error_code || 0) || null,
+      error: clean(data?.description || "telegram_send_document_failed").slice(0, 180),
+    };
+  }
+  return {
+    ok: true,
+    status: response.status,
+    message_id: Number(data?.result?.message_id || 0) || null,
+    message_thread_id: Number(data?.result?.message_thread_id || threadId) || threadId,
+  };
+}
 
 async function smokeTelegramTopics(body, env) {
   const chatId = clean(body.chat_id || env.TELEGRAM_CHAT_ID);
@@ -3837,6 +3892,10 @@ function isTelegramWebhookPath(path) {
 
 function isInternalSendPath(path) {
   return path === "/telegram/internal/send" || path === "/v1/internal/send" || path === "/v1/send";
+}
+
+function isPaymentsProofDocumentPath(path) {
+  return path === "/telegram/internal/payments/proof-document";
 }
 
 function isTopicSmokePath(path) {
