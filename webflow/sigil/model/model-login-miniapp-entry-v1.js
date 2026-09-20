@@ -18,17 +18,10 @@
   }
 
   function target() {
-    const url = new URL(`${MODEL_LIFF_URL}/`);
+    const url = new URL(MODEL_LIFF_URL);
     url.searchParams.set("lang", language());
     url.searchParams.set("source", "model_login");
     return url.toString();
-  }
-
-  function telegramHint() {
-    const lang = language();
-    if (lang === "en") return "NEXT: Connect Telegram in Model Dashboard for job confirmation links";
-    if (lang === "zh") return "下一步：进入 Model Dashboard 后连接 Telegram，接收工作确认链接";
-    return "ขั้นตอนถัดไป · เชื่อม Telegram ใน Model Dashboard เพื่อรับลิงก์ยืนยันงาน";
   }
 
   function patch() {
@@ -37,14 +30,6 @@
       if (!href.includes("flow=verify")) return;
       link.href = target();
       link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
-    });
-
-    document.querySelectorAll(".mmdl-meta").forEach((meta) => {
-      if (meta.querySelector("[data-mmd-telegram-next]")) return;
-      const hint = document.createElement("span");
-      hint.setAttribute("data-mmd-telegram-next", "1");
-      hint.textContent = telegramHint();
-      meta.appendChild(hint);
     });
   }
 
