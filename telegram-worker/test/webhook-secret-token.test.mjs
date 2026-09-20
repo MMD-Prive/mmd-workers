@@ -10,6 +10,7 @@ const COMPLAINT_URL = "https://telegram-worker.mmd.test/telegram/internal/compla
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
 const TOPIC_SMOKE_URL = "https://telegram-worker.mmd.test/telegram/internal/topics/smoke";
 const WEBHOOK_LOCK_URL = "https://telegram-worker.mmd.test/telegram/internal/webhook/ensure-canonical";
+const WEBHOOK_STATUS_URL = "https://telegram-worker.mmd.test/telegram/webhook/status";
 const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 
 function env(overrides = {}) {
@@ -152,6 +153,51 @@ test("/telegram/webhook remains open when secret token is not configured", async
 
   assert.equal(response.status, 200);
   assert.equal(body.reason, "no_matching_command");
+});
+
+test("webhook status is read-only and verifies canonical Telegram runtime state", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    assert.match(String(url), /getWebhookInfo$/);
+    assert.equal(init.method, undefined);
+    return Response.json({ ok: true, result: { url: CANONICAL_WEBHOOK_URL, pending_update_count: 1 } });
+  };
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env());
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.canonical, true);
+    assert.equal(body.canonical_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(body.observed_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(body.webhook_secret_configured, true);
+    assert.equal(calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(body), /expected-secret|telegram-token/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("webhook status fails closed when observed webhook drifts or runtime secret is absent", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ ok: true, result: { url: "https://example.invalid/webhook" } });
+  try {
+    const drift = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env());
+    const driftBody = await drift.json();
+    assert.equal(drift.status, 503);
+    assert.equal(driftBody.ok, false);
+    assert.equal(driftBody.canonical, false);
+
+    const secretMissing = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env({ TELEGRAM_WEBHOOK_SECRET_TOKEN: "" }));
+    const secretBody = await secretMissing.json();
+    assert.equal(secretMissing.status, 503);
+    assert.equal(secretBody.ok, false);
+    assert.equal(secretBody.webhook_secret_configured, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("runtime webhook lock is internal-only, requires confirmation, and never accepts a caller URL", { concurrency: false }, async () => {
