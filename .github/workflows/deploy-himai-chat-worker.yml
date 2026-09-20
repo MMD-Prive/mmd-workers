@@ -75,7 +75,7 @@ jobs:
           printf 'HIMAI_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
           router_secret_log="$RUNNER_TEMP/telegram-worker-himai-secret-version.log"
           printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_HIMAI_TO_TELEGRAM \
-            --config telegram-worker/wrangler.toml \
+            --config ../telegram-worker/wrangler.toml \
             --tag "router-himai-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
             --message "Rotate AUTH_SERVICE_HIMAI_TO_TELEGRAM from ${GITHUB_SHA}" \
             2>&1 | tee "$router_secret_log"
@@ -85,7 +85,7 @@ jobs:
             cat "$router_secret_log" >&2
             exit 1
           fi
-          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config ../telegram-worker/wrangler.toml
           printf 'AUTH_SERVICE_HIMAI_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/himai-chat-worker-router.env"
           chmod 600 "$RUNNER_TEMP/himai-chat-worker-router.env"
 
