@@ -596,8 +596,10 @@ export async function runLineSlipEvidenceMaintenance(env = {}, options = {}) {
     }),
     notifyReviewRequired: ({ env: scopedEnv, audit }) => notifyHeldEvidenceReview(scopedEnv, audit),
   }).catch((error) => ({ error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80) }));
-  const health = await runPaymentObserverHealth(env, { now })
-    .catch((error) => ({ error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80) }));
+  const health = options.health === false
+    ? { skipped: true, reason: "health_cron_only" }
+    : await runPaymentObserverHealth(env, { now })
+        .catch((error) => ({ error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80) }));
   return { notification, held, health };
 }
 
@@ -681,7 +683,7 @@ async function observeSignedLineEvents(request, env = {}) {
   // Opportunistic recovery on live traffic. The hourly cron remains the floor
   // so recovery still happens when LINE is quiet. Bounded per invocation.
   try {
-    const maintenance = await runLineSlipEvidenceMaintenance(env, { notificationLimit: 5, heldLimit: 3 });
+    const maintenance = await runLineSlipEvidenceMaintenance(env, { notificationLimit: 5, heldLimit: 3, health: false });
     const retried = Number(maintenance?.notification?.retried) || 0;
     const heldProcessed = Number(maintenance?.held?.processed) || 0;
     if (retried || heldProcessed) console.log(JSON.stringify({ line_payment_maintenance: "ran", notifications_retried: retried, notifications_delivered: Number(maintenance?.notification?.delivered) || 0, held_processed: heldProcessed, held_promoted: Number(maintenance?.held?.promoted) || 0, held_review_required: Number(maintenance?.held?.review_required) || 0 }));
