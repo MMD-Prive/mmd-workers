@@ -20,6 +20,7 @@ const TOPIC_SPECS = Object.freeze([
   { key: "payment", label: "MMD • Payments (Confirm)", envs: ["TG_THREAD_PAYMENTS_CONFIRM", "TG_THREAD_PAYMENT", "TG_THREAD_CONFIRM"], fallback: 22 },
   { key: "alerts", label: "MMD • Alerts", envs: ["TG_THREAD_ALERTS"], fallback: 9 },
   { key: "public_model", label: "MMD • Applications", envs: ["TG_THREAD_PUBLIC_MODEL"], fallback: 155 },
+  { key: "partner", label: "MMD • Partner Ops", envs: ["TG_THREAD_PARTNER_CONFIRM", "TG_THREAD_PRICING_REVIEW"], fallback: 61 },
   { key: "himai_orders", label: "HIMAI • Orders", envs: ["TG_THREAD_HIMAI_ORDERS"], fallback: 157 },
   { key: "himai_payments", label: "HIMAI • Payments", envs: ["TG_THREAD_HIMAI_PAYMENTS"], fallback: 158 },
   { key: "himai_alerts", label: "HIMAI • Alerts", envs: ["TG_THREAD_HIMAI_ALERTS"], fallback: 159 },
@@ -52,6 +53,9 @@ export const TG_THREADS = (env = {}) => {
 
     membership: topics.membership,
     payments_membership: topics.membership,
+    care_back: topics.membership,
+    coupon_review: topics.membership,
+    membership_ops: topics.membership,
     confirm: topics.payment,
     payment: topics.payment,
     payments_confirm: topics.payment,
@@ -66,6 +70,9 @@ export const TG_THREADS = (env = {}) => {
     exception: topics.alerts,
     recovery: topics.alerts,
     studio_alert: topics.alerts,
+    mms_alert: topics.alerts,
+    mms_manual_handoff: topics.alerts,
+    mms_job: topics.alerts,
 
     applications: topics.public_model,
     application: topics.public_model,
@@ -74,6 +81,10 @@ export const TG_THREADS = (env = {}) => {
     public_model_application: topics.public_model,
     mms_application: topics.public_model,
     mms_therapist_application: topics.public_model,
+
+    partner: topics.partner,
+    partner_confirm: topics.partner,
+    partner_review: topics.partner,
 
     himai_orders: topics.himai_orders,
     himai_order: topics.himai_orders,
@@ -208,8 +219,10 @@ export async function telegramNotify(payload, env) {
     chat_id: env.TELEGRAM_CHAT_ID,
     message_thread_id: threadId,
     text,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
+    parse_mode: payload.parse_mode || "HTML",
+    disable_web_page_preview: payload.disable_web_page_preview !== false,
+    disable_notification: payload.disable_notification === true,
+    reply_markup: payload.reply_markup,
   }, env);
 }
 
