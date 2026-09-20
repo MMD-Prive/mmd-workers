@@ -264,7 +264,7 @@ test("payments proof document route requires dedicated service auth", async () =
   form.append("chat_id", "-1003546439681");
   form.append("message_thread_id", "22");
   form.append("caption", "proof");
-  form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+  form.append("document", new Blob(["proof"], { type: "image/jpeg" }), "proof.jpg");
 
   const missing = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, { method: "POST", body: form }), env());
   assert.equal(missing.status, 403);
@@ -290,7 +290,7 @@ test("payments proof document route uses canonical bot and Payments Confirm thre
     form.append("chat_id", "-1003546439681");
     form.append("message_thread_id", "22");
     form.append("caption", "<b>PAYMENT PROOF · PENDING REVIEW</b>");
-    form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+    form.append("document", new Blob(["proof"], { type: "image/jpeg" }), "proof.jpg");
 
     const response = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
       method: "POST",
@@ -315,7 +315,7 @@ test("payments proof document route rejects non-payment topic", async () => {
   const form = new FormData();
   form.append("chat_id", "-1003546439681");
   form.append("message_thread_id", "21");
-  form.append("document", new File(["proof"], "proof.jpg", { type: "image/jpeg" }));
+  form.append("document", new Blob(["proof"], { type: "image/jpeg" }), "proof.jpg");
 
   const response = await worker.fetch(new Request(PAYMENTS_PROOF_DOCUMENT_URL, {
     method: "POST",
