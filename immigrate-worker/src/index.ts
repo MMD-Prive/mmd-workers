@@ -1523,6 +1523,50 @@ async function handleLineIntake(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function resolveCanonicalSalesModel(env: Env, payload: CreateJobRequest): Promise<{ id: string; key: string; name: string } | null> {
+  const providedId = toStr(payload.model_record_id);
+  const query = toStr(payload.model_name);
+  if (!providedId && !query) return null;
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw new Error("model_sales_model_source_unavailable");
+  const table = toStr((env as unknown as Record<string, unknown>).AIRTABLE_TABLE_MODELS) || "tblI4B0bI446vp9GX";
+  const base = `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`;
+  const headers = { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" };
+
+  if (providedId) {
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(providedId)) throw new Error("canonical_model_id_invalid");
+    const response = await fetch(`${base}/${encodeURIComponent(providedId)}`, { headers });
+    if (response.status === 404) throw new Error("canonical_model_not_found");
+    if (!response.ok) throw new Error("model_sales_model_source_unavailable");
+    const record = await response.json().catch(() => null) as { id?: string; fields?: Record<string, unknown> } | null;
+    if (!record?.id) throw new Error("canonical_model_not_found");
+    const fields = record.fields || {};
+    return {
+      id: record.id,
+      key: toStr(fields.unique_key || fields.model_key || fields.model_record_id || record.id),
+      name: toStr(fields.working_name || fields.nickname || query),
+    };
+  }
+
+  const escaped = query.toLowerCase().replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const url = new URL(base);
+  url.searchParams.set("pageSize", "3");
+  url.searchParams.set("maxRecords", "3");
+  url.searchParams.set("filterByFormula", `OR(LOWER({working_name}&"")="${escaped}",LOWER({nickname}&"")="${escaped}",LOWER({unique_key}&"")="${escaped}")`);
+  const response = await fetch(url.toString(), { headers });
+  if (!response.ok) throw new Error("model_sales_model_source_unavailable");
+  const data = await response.json().catch(() => ({})) as { records?: Array<{ id: string; fields?: Record<string, unknown> }> };
+  const records = Array.isArray(data.records) ? data.records : [];
+  if (records.length > 1) throw new Error("canonical_model_ambiguous");
+  if (!records.length) return null;
+  const record = records[0];
+  const fields = record.fields || {};
+  return {
+    id: record.id,
+    key: toStr(fields.unique_key || fields.model_key || fields.model_record_id || record.id),
+    name: toStr(fields.working_name || fields.nickname || query),
+  };
+}
+
 async function handleCreateJob(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
   const payload = (await request.json().catch(() => null)) as CreateJobRequest | null;
@@ -1540,6 +1584,11 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
   };
 
   try {
+    const canonicalModel = await resolveCanonicalSalesModel(env, payload);
+    if (canonicalModel) {
+      normalizedPayload.model_record_id = canonicalModel.id;
+      normalizedPayload.model_name = canonicalModel.name || normalizedPayload.model_name;
+    }
     const canonicalLineUserId = toStr(payload.line_user_id) || toStr(payload.client_lineage?.line_user_id);
     const canonicalMemberId = toStr(payload.member_id) || toStr(payload.client_lineage?.member_id);
     const entitlementSnapshot = await resolveCanonicalEntitlementSnapshot(env, {
@@ -1547,8 +1596,8 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
       member_id: canonicalMemberId,
     });
     const sales = await resolveModelSalesOfferFromAirtable(env, {
-      model_id: toStr(payload.model_record_id),
-      model_key: toStr(payload.model_name),
+      model_id: canonicalModel?.id || toStr(payload.model_record_id),
+      model_key: canonicalModel?.key || toStr(payload.model_name),
       client_id: toStr(payload.client_id) || toStr(payload.client_lineage?.client_id),
       requested_at: toStr(payload.requested_at) || new Date().toISOString(),
       work_lane: toStr(payload.work_lane),
