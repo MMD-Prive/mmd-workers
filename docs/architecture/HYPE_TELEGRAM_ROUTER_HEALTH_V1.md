@@ -191,6 +191,16 @@ The following are outside this business-notification registry and do not change 
 
 If one of those paths is promoted into a canonical business-notification lane later, it must first be added to this registry and migrated to `telegram-worker`.
 
+## Production secret rotation
+
+The migrated domain deploy workflows share the repository-wide concurrency group:
+
+`telegram-router-domain-deploy-production`
+
+This serializes cross-worker Telegram credential rotation. Each domain rotation retries the `telegram-worker` secret update within a bounded window so a simultaneous Telegram Worker version rollout cannot create a version/secret race. Sender deployment does not proceed unless the matching router credential has been accepted.
+
+The final health assertion is intentionally **not** owned by any individual domain such as Payments. A dedicated workflow, `.github/workflows/telegram-router-production-closure.yml`, waits for all five migrated domain deploy workflows to complete successfully and only then executes the authenticated live Router Health probe. This prevents a domain that happens to deploy first from blocking domains that still need to rotate their credentials.
+
 ## Production closure gate
 
 A fully unified release is accepted only when:
@@ -198,8 +208,9 @@ A fully unified release is accepted only when:
 1. all declared active sender files pass the no-direct-Bot-API guard;
 2. every migrated worker has a `TELEGRAM_WORKER` binding;
 3. every domain service credential is provisioned on both sender and `telegram-worker`;
-4. Router Health reports `status=configured`, `partial=0`, `unavailable=0`, and `legacy_direct_senders=0`;
-5. `?probe=1` confirms Telegram Bot API reachability and canonical webhook state;
-6. HYPE closed-loop production smoke still reports business-truth mutation `NONE`.
+4. the dedicated production closure workflow has observed successful MMS, SIGIL, HIMAI, Partner, and Payments production deploys for the same source SHA;
+5. Router Health reports `status=configured`, `partial=0`, `unavailable=0`, and `legacy_direct_senders=0`;
+6. `?probe=1` confirms Telegram Bot API reachability and canonical webhook state;
+7. HYPE closed-loop production smoke still reports business-truth mutation `NONE`.
 
 The router registry remains an observability/governance contract; it is never permission to change business authority.
