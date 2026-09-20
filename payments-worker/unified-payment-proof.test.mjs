@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, handleUnifiedSlipEvidence, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
 import { createConfirmTokenRecord, signConfirmToken } from "./index.js";
+import legacySlipWorker from "./index.with-slip-evidence.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
@@ -101,6 +102,25 @@ test("SIGIL V22 proof upload rejects a payment_ref that does not match the signe
   });
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error, "confirmation_payment_ref_mismatch");
+});
+
+test("unified-wrapped legacy slip path suppresses duplicate Telegram notification", async () => {
+  const form = new FormData();
+  form.append("payment_ref", "pay_compat_test");
+  form.append("session_id", "sess_compat_test");
+  form.append("payment_stage", "deposit");
+  form.append("source_page", "sigil_pay_v22");
+  const request = new Request("https://sigil.mmdbkk.com/v1/pay/slip/evidence", {
+    method: "POST",
+    headers: { "x-mmd-unified-slip-evidence": "1" },
+    body: form,
+  });
+  const response = await legacySlipWorker.fetch(request, {}, {});
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.ok, true);
+  assert.equal(data.telegram_notify?.skipped, true);
+  assert.equal(data.telegram_notify?.reason, "unified_wrapper_handles_telegram");
 });
 
 test("service proof V22 source routes to canonical Payments Confirm topic 22", () => {
