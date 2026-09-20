@@ -1,16 +1,49 @@
 import worker from "./index.js";
 
 const PATH = "/telegram/internal/access/reconcile";
+const WEBHOOK_LOCK_PATH = "/telegram/internal/webhook/lock";
+const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 const KNOWN_ROOMS = ["black", "svip", "vip"];
 
 export default {
   async fetch(request, env, ctx) {
     let url;
     try { url = new URL(request.url); } catch { return worker.fetch(request, env, ctx); }
+    if (request.method === "POST" && url.pathname === WEBHOOK_LOCK_PATH) return handleWebhookLock(request, env);
     if (request.method !== "POST" || url.pathname !== PATH) return worker.fetch(request, env, ctx);
     return handleReconcile(request, env);
   },
 };
+
+async function handleWebhookLock(request, env) {
+  if (!authorized(request, env)) return json({ ok: false, error: "unauthorized" }, 401);
+  const botToken = String(env.TELEGRAM_BOT_TOKEN || "").trim();
+  const webhookSecret = String(env.TELEGRAM_WEBHOOK_SECRET_TOKEN || "").trim();
+  if (!botToken) return json({ ok: false, error: "telegram_bot_not_configured" }, 503);
+  if (!webhookSecret) return json({ ok: false, error: "telegram_webhook_secret_not_configured" }, 503);
+
+  const setResult = await telegram(env, "setWebhook", {
+    url: CANONICAL_WEBHOOK_URL,
+    secret_token: webhookSecret,
+    drop_pending_updates: false,
+  });
+  if (setResult.ok !== true) {
+    return json({ ok: false, error: "telegram_set_webhook_failed", telegram_status: setResult.http_status || null }, 502);
+  }
+
+  const info = await telegram(env, "getWebhookInfo", {});
+  if (info.ok !== true || String(info?.result?.url || "") !== CANONICAL_WEBHOOK_URL) {
+    return json({ ok: false, error: "telegram_webhook_verification_failed", telegram_status: info.http_status || null }, 502);
+  }
+
+  return json({
+    ok: true,
+    authority: "telegram-worker-runtime-secrets",
+    webhook_url: CANONICAL_WEBHOOK_URL,
+    pending_update_count: Number(info?.result?.pending_update_count || 0),
+    last_error_date: Number(info?.result?.last_error_date || 0) || null,
+  });
+}
 
 async function handleReconcile(request, env) {
   if (!authorized(request, env)) return json({ ok: false, error: "unauthorized" }, 401);
