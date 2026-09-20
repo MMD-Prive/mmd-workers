@@ -2,6 +2,8 @@ import currentWorker from "./front-gate-index.js";
 export { KenjiModelIdempotency } from "./front-gate-index.js";
 import { classifyPaymentOpsRoute, membershipInferenceLabel } from "../../shared/payment-intelligence.mjs";
 import { analyzeProductionPaymentProof } from "./payment-proof-intelligence.mjs";
+import { dispatchOpsNotification, drainOpsNotificationOutbox } from "./line-ops-notification-outbox.mjs";
+import { heldEvidenceAuditRecord, holdUncertainEvidence, reprocessHeldEvidence } from "./line-held-evidence-lane.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
@@ -281,11 +283,27 @@ function paymentOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_PAYMEN
 function membershipOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_MEMBERSHIP_THREAD_ID || env.TG_THREAD_MEMBERSHIP); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 20; }
 function alertsOpsThreadId(env = {}) { const value = Number(env.TELEGRAM_ALERTS_THREAD_ID || env.TG_THREAD_ALERTS); return Number.isFinite(value) && value > 0 ? Math.floor(value) : 9; }
 
-async function sendOpsMessage(env, { chatId, threadId, flow, text }) {
-  const token = asString(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.INTERNAL_TOKEN);
-  if (!token || !chatId) return { skipped: true, reason: "telegram_config_missing" };
-  const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ flow, chat_id: chatId, message_thread_id: threadId, text }) }));
-  return { ok: response.ok, status: response.status };
+// Durable Ops delivery. The message is persisted before the first send attempt
+// and retried from the outbox, so a Telegram outage can never lose an operator
+// notification and can never re-run payment settlement.
+async function sendOpsMessage(env, { chatId, threadId, flow, text, eventKey, purpose }) {
+  if (!asString(chatId)) return { delivered: false, durable: false, skipped: true, reason: "telegram_config_missing" };
+  return dispatchOpsNotification(env, {
+    eventKey: asString(eventKey),
+    purpose: asString(purpose) || flow,
+    destination: { chat_id: chatId, message_thread_id: threadId, flow },
+    message: text,
+  });
+}
+
+function paymentNotificationPurpose({ isMembership = false, settlementStatus = "" } = {}) {
+  // Service/Job evidence always stays one review-lane event. Only the
+  // Membership lane distinguishes a settlement outcome.
+  if (!isMembership) return "service_payment_review";
+  const status = asString(settlementStatus);
+  if (status === "materialized") return "membership_settlement_materialized";
+  if (status === "review_required") return "membership_settlement_review_required";
+  return "membership_payment_review";
 }
 
 function compactOpsWhen(summary = {}) {
@@ -340,9 +358,10 @@ function paymentJobCorrelationLines(analysis = {}) {
 
 async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   if (result?.deduped === true) return { skipped: true, reason: "deduped" };
-  if (!env.TELEGRAM_WORKER || typeof env.TELEGRAM_WORKER.fetch !== "function") return { skipped: true, reason: "telegram_binding_missing" };
   const chatId = paymentOpsChatId(env);
-  if (!asString(env.AUTH_SERVICE_LINE_TO_TELEGRAM || env.INTERNAL_TOKEN) || !chatId) return { skipped: true, reason: "telegram_config_missing" };
+  // Without a configured Ops destination there is nothing to address. A missing
+  // binding/secret is not skipped here: it is recorded durably and retried.
+  if (!chatId) return { skipped: true, reason: "telegram_config_missing" };
   const analysis = evidence.analysis || {};
   const route = analysis.ops_route || evidence.paymentOpsRoute || classifyPaymentOpsRoute({ source_context: evidence.sourceContext, context_text: evidence.paymentContextText });
   const extraction = analysis.extraction || {};
@@ -379,14 +398,55 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
           ? "Action: Official Verify in Payment Inbox before any money/access change."
           : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
   ].filter(Boolean).join("\n");
-  const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text });
-  if (!main.ok) throw new Error(`telegram_payment_alert_${main.status || "failed"}`);
+  const notificationPurpose = paymentNotificationPurpose({ isMembership, settlementStatus: settlement?.status });
+  const main = await sendOpsMessage(env, { chatId, threadId, flow: isMembership ? "membership" : "payment_proof", text, eventKey: evidence.proofId, purpose: notificationPurpose });
   let alertSent = false;
+  let alertDelivery = null;
   if (route.should_alert === true) {
-    const alert = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: `🚨 MMD Payment Classification Conflict\nProof: ${evidence.proofId}\nReason: ${route.reason}\nAction: keep pending; do not activate automatically.` });
-    alertSent = alert.ok === true;
+    alertDelivery = await sendOpsMessage(env, { chatId, threadId: alertsOpsThreadId(env), flow: "alert", text: `🚨 MMD Payment Classification Conflict\nProof: ${evidence.proofId}\nReason: ${route.reason}\nAction: keep pending; do not activate automatically.`, eventKey: evidence.proofId, purpose: "payment_classification_conflict" });
+    alertSent = alertDelivery.delivered === true;
   }
-  return { sent: true, topic: isMembership ? "membership" : route.topic, thread_id: threadId, alert_sent: alertSent, verified: policyVerified };
+  // A failed Telegram send never rolls back settlement and never blocks the
+  // canonical Payment Proof. It stays recoverable in the durable outbox.
+  return {
+    sent: main.delivered === true,
+    queued: main.durable === true && main.delivered !== true,
+    duplicate: main.duplicate === true,
+    delivery_status: asString(main.status) || null,
+    delivery_attempts: Number(main.attempts) || 0,
+    delivery_durable: main.durable === true,
+    delivery_reason: asString(main.reason) || null,
+    notification_id: asString(main.id) || null,
+    alert_notification_id: asString(alertDelivery?.id) || null,
+    topic: isMembership ? "membership" : route.topic,
+    thread_id: threadId,
+    alert_sent: alertSent,
+    verified: policyVerified,
+  };
+}
+
+// Bounded, hash-only operator notice raised when held evidence reaches terminal
+// review_required. It carries no image, no LINE identity and no amount.
+async function notifyHeldEvidenceReview(env = {}, audit = {}) {
+  const chatId = paymentOpsChatId(env);
+  if (!chatId) return { delivered: false, skipped: true, reason: "telegram_config_missing" };
+  const text = [
+    "🟠 MMD Held Payment Evidence — review required",
+    `Proof candidate: ${asString(audit.proof_id)}`,
+    `Hold reason: ${asString(audit.hold_reason) || "uncertain_payment_image"}`,
+    `Reprocess attempts: ${Number(audit.attempts) || 0}`,
+    `Source: ${audit.source_type === "user" ? "LINE OA direct" : "LINE payment group"}`,
+    "This image was never promoted to a Payment Proof and holds no payment truth.",
+    "Action: inspect the private evidence candidate in Ops. Do not mark paid from here; Official Verify / payments-worker remains the only settlement path.",
+  ].join("\n");
+  return sendOpsMessage(env, {
+    chatId,
+    threadId: alertsOpsThreadId(env),
+    flow: "alert",
+    text,
+    eventKey: asString(audit.proof_id),
+    purpose: "held_evidence_review_required",
+  });
 }
 
 async function persistCapturedImage(env = {}, event = {}, options = {}) {
@@ -401,32 +461,86 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
 
   const image = await downloadLineImage(env, messageId);
   const userId = asString(event?.source?.userId);
-  const analysis = await analyzeProductionPaymentProof({ env, image, lineUserId: userId, contextText: asString(options.paymentContextText) });
-  if (!analysis.accepted) {
-    return {
-      captured: false,
-      ignored: analysis.classification?.gate === "reject",
-      held: analysis.classification?.gate === "hold",
-      proofId,
-      reason: analysis.classification?.reason || "not_payment_evidence",
-      imageClass: analysis.classification?.image_class || "uncertain",
-    };
-  }
-
-  const now = new Date();
-  const r2Key = `line-ofc/payment-proofs/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${image.extension}`;
-  if (!(await env.LINE_SLIP_EVIDENCE.head?.(r2Key))) await env.LINE_SLIP_EVIDENCE.put(r2Key, image.body, { httpMetadata: { contentType: image.mimeType }, customMetadata: { evidence_sha256: image.sha256, proof_id: proofId, source: source === "user" ? "line_direct_user" : "line_group" } });
+  const contextText = asString(options.paymentContextText);
+  const analysis = await analyzeProductionPaymentProof({ env, image, lineUserId: userId, contextText });
   const groupId = asString(event?.source?.groupId);
   const webhookEventId = asString(options.webhookEventId || event?.webhookEventId);
-  const evidence = {
-    proofId,
-    sourceType: source,
-    sourceContext: asString(options.sourceContext),
-    paymentContextText: asString(options.paymentContextText),
+  const identity = {
     groupHash: groupId ? await sha256Hex(groupId) : "",
     userHash: userId ? await sha256Hex(userId) : asString(options.userHash),
     messageIdHash,
     webhookEventIdHash: webhookEventId ? await sha256Hex(webhookEventId) : "",
+  };
+  if (!analysis.accepted) {
+    const gate = analysis.classification?.gate;
+    if (gate !== "hold") {
+      return {
+        captured: false,
+        ignored: gate === "reject",
+        held: false,
+        proofId,
+        reason: analysis.classification?.reason || "not_payment_evidence",
+        imageClass: analysis.classification?.image_class || "uncertain",
+      };
+    }
+    // Uncertain evidence stays an evidence candidate only. It is never a
+    // Payment Proof and never reaches payments-worker from here.
+    const hold = await holdUncertainEvidence(env, {
+      proofId,
+      image,
+      lineUserId: userId,
+      messageId,
+      paymentContextText: contextText,
+      sourceType: source,
+      sourceContext: asString(options.sourceContext),
+      holdReason: analysis.classification?.reason,
+      imageClass: analysis.classification?.image_class,
+      ...identity,
+    });
+    return {
+      captured: false,
+      ignored: false,
+      held: true,
+      heldStored: hold.held === true,
+      heldDeduped: hold.deduped === true,
+      proofId,
+      reason: analysis.classification?.reason || "uncertain_payment_image",
+      imageClass: analysis.classification?.image_class || "uncertain",
+    };
+  }
+
+  return persistAcceptedEvidence(env, {
+    proofId,
+    image,
+    analysis,
+    lineUserId: userId,
+    contextText,
+    sourceType: source,
+    sourceContext: asString(options.sourceContext),
+    ...identity,
+  });
+}
+
+// The single canonical accepted-evidence gate. Live LINE intake and held
+// evidence reprocess both land here, so a promoted held item passes exactly the
+// same correlation, pending-first Payment Proof and settlement contract.
+async function persistAcceptedEvidence(env = {}, input = {}) {
+  if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw new Error("line_slip_r2_binding_missing");
+  const { proofId, image, analysis } = input;
+  const source = asString(input.sourceType);
+  const userId = asString(input.lineUserId);
+  const now = new Date();
+  const r2Key = `line-ofc/payment-proofs/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${image.extension}`;
+  if (!(await env.LINE_SLIP_EVIDENCE.head?.(r2Key))) await env.LINE_SLIP_EVIDENCE.put(r2Key, image.body, { httpMetadata: { contentType: image.mimeType }, customMetadata: { evidence_sha256: image.sha256, proof_id: proofId, source: source === "user" ? "line_direct_user" : "line_group" } });
+  const evidence = {
+    proofId,
+    sourceType: source,
+    sourceContext: asString(input.sourceContext),
+    paymentContextText: asString(input.contextText),
+    groupHash: asString(input.groupHash),
+    userHash: asString(input.userHash),
+    messageIdHash: asString(input.messageIdHash),
+    webhookEventIdHash: asString(input.webhookEventIdHash),
     r2Key,
     sha256: image.sha256,
     mimeType: image.mimeType,
@@ -444,13 +558,44 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
   const proof = await createPendingProof(env, evidence);
   const settlement = proof.deduped ? { status: "deduped" } : await settleTrackedMembership(env, evidence, proof, userId);
   const result = { ...proof, settlement };
-  try { await notifyPaymentProofOps(env, evidence, result); } catch (error) { console.log(JSON.stringify({ line_payment_alert: "failed", proof_id: proofId, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
+  let delivery = null;
+  try { delivery = await notifyPaymentProofOps(env, evidence, result); } catch (error) { console.log(JSON.stringify({ line_payment_alert: "failed", proof_id: proofId, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
   const verified = settlement.status === "materialized"
     ? true
     : settlement.status === "review_required"
       ? false
       : proof.verified === true;
-  return { captured: true, deduped: proof.deduped, verified, proofId, recordId: proof.id, imageClass: analysis.classification?.image_class, paymentStage: analysis.payment_intelligence?.inferred_stage, trackingKind: analysis.payment_intelligence?.tracking_kind, settlementStatus: settlement.status, customerMatch: analysis.customer?.status };
+  return { captured: true, deduped: proof.deduped, verified, proofId, recordId: proof.id, imageClass: analysis.classification?.image_class, paymentStage: analysis.payment_intelligence?.inferred_stage, trackingKind: analysis.payment_intelligence?.tracking_kind, settlementStatus: settlement.status, customerMatch: analysis.customer?.status, opsDelivery: delivery ? { delivered: delivery.sent === true, queued: delivery.queued === true, status: asString(delivery.delivery_status) || null } : null };
+}
+
+// Bounded recovery sweep: retry undelivered Ops notifications and reprocess
+// held evidence candidates. It performs no settlement of its own — promotion
+// re-enters the canonical accepted-evidence gate, and notification retry only
+// re-sends an already-rendered message.
+export async function runLineSlipEvidenceMaintenance(env = {}, options = {}) {
+  const now = Number(options.now) || Date.now();
+  const notification = await drainOpsNotificationOutbox(env, { now, limit: options.notificationLimit })
+    .catch((error) => ({ error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80) }));
+  const held = await reprocessHeldEvidence(env, {
+    now,
+    limit: options.heldLimit,
+    analyze: ({ env: scopedEnv, image, lineUserId, contextText }) => analyzeProductionPaymentProof({ env: scopedEnv, image, lineUserId, contextText }),
+    promote: ({ env: scopedEnv, state, image, analysis, lineUserId, contextText }) => persistAcceptedEvidence(scopedEnv, {
+      proofId: state.proof_id,
+      image,
+      analysis,
+      lineUserId,
+      contextText,
+      sourceType: state.source_type,
+      sourceContext: `${asString(state.source_context) || "held_evidence"}_held_reprocess`,
+      groupHash: state.group_hash,
+      userHash: state.user_hash,
+      messageIdHash: state.message_id_hash,
+      webhookEventIdHash: state.webhook_event_id_hash,
+    }),
+    notifyReviewRequired: ({ env: scopedEnv, audit }) => notifyHeldEvidenceReview(scopedEnv, audit),
+  }).catch((error) => ({ error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 80) }));
+  return { notification, held };
 }
 
 async function captureGroupImageEvidence(env = {}, event = {}) {
@@ -530,6 +675,14 @@ async function observeSignedLineEvents(request, env = {}) {
       if (result && (type === "image" || result.captured || result.ignored || result.held)) console.log(JSON.stringify({ line_payment_ingress: result.captured ? "captured" : result.ignored ? "ignored_non_payment" : result.held ? "held_uncertain" : result.candidate ? "candidate" : "skipped", source_type: source, message_type: type, deduped: result.deduped === true, verified: result.verified === true, reason: asString(result.reason) || null, image_class: asString(result.imageClass) || null, payment_stage: asString(result.paymentStage) || null }));
     } catch (error) { console.log(JSON.stringify({ line_payment_ingress: "capture_failed", source_type: source, message_type: type, error: asString(error?.message || error).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 100) })); }
   }
+  // Opportunistic recovery on live traffic. The hourly cron remains the floor
+  // so recovery still happens when LINE is quiet. Bounded per invocation.
+  try {
+    const maintenance = await runLineSlipEvidenceMaintenance(env, { notificationLimit: 5, heldLimit: 3 });
+    const retried = Number(maintenance?.notification?.retried) || 0;
+    const heldProcessed = Number(maintenance?.held?.processed) || 0;
+    if (retried || heldProcessed) console.log(JSON.stringify({ line_payment_maintenance: "ran", notifications_retried: retried, notifications_delivered: Number(maintenance?.notification?.delivered) || 0, held_processed: heldProcessed, held_promoted: Number(maintenance?.held?.promoted) || 0, held_review_required: Number(maintenance?.held?.review_required) || 0 }));
+  } catch (_) { console.log(JSON.stringify({ line_payment_maintenance: "failed" })); }
 }
 
 export default {
@@ -558,7 +711,11 @@ export const LINE_GROUP_INGRESS_INTERNALS = Object.freeze({
   membershipOpsThreadId,
   messageText,
   messageType,
+  notifyHeldEvidenceReview,
   notifyPaymentProofOps,
+  paymentNotificationPurpose,
+  persistAcceptedEvidence,
+  runLineSlipEvidenceMaintenance,
   settleTrackedMembership,
   paymentOpsThreadId,
   promoteDirectUserCandidate,
