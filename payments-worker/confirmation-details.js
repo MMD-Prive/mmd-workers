@@ -189,7 +189,10 @@ function customerPaymentDisplay({ paymentRecord, pricing, customerAmountDue, cla
     fields[PAYMENT_FIELDS.paymentStatus],
     sessionPaymentStatus,
   );
-  const proofReceived = isProofReceived(fields[PAYMENT_FIELDS.intentStatus], fields[PAYMENT_FIELDS.verificationStatus]);
+  // "pending_review" is also the default verification state for a newly-created
+  // unpaid intent, so Verification Status alone must never imply that proof exists.
+  // Payment Intent Status is the evidence-receipt signal.
+  const proofReceived = isProofReceived(fields[PAYMENT_FIELDS.intentStatus]);
 
   return {
     schema: "customer_payment_display_v1",

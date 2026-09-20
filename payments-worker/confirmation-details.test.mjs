@@ -230,6 +230,20 @@ test("customer payment display recognizes evidence metadata without treating it 
   assert.equal(data.payment.verified, false);
 });
 
+test("new unpaid intent does not report proof received just because verification is pending_review", async () => {
+  const unpaidIntent = paymentRecord({
+    [P.intentStatus]: "Pending Confirmation",
+    [P.verificationStatus]: "pending_review",
+    [P.paymentStatus]: "Pending",
+  });
+  const { env, customerToken } = await envAndTokens({ payment: unpaidIntent });
+  const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.payment.proof_received, false);
+  assert.equal(data.payment.verified, false);
+});
+
 test("original signed customer link resolves the separate final intent after arrival", async () => {
   const finalRef = await stablePaymentRef("sess_confirm_details_test", "final");
   const finalPayment = paymentRecord({
