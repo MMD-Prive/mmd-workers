@@ -58,7 +58,7 @@ export default {
       }
 
       if (isWebhookLockPath(path) && req.method === "POST") {
-        requireInternalToken(req, env);
+        requireWebhookLockToken(req, env);
         const body = (await safeJson(req)) || {};
         if (clean(body.confirm) !== TELEGRAM_WEBHOOK_LOCK_CONFIRMATION) {
           return json({
@@ -150,6 +150,13 @@ export default {
     }
   },
 };
+
+function requireWebhookLockToken(req, env) {
+  const deployToken = clean(env.TELEGRAM_DEPLOY_CONTROL_TOKEN, 5000);
+  const direct = req.headers.get("X-Deploy-Control-Token") || "";
+  if (deployToken && direct && direct === deployToken) return;
+  requireInternalToken(req, env);
+}
 
 async function ensureCanonicalTelegramWebhook(env) {
   const botToken = clean(env.TELEGRAM_BOT_TOKEN);
