@@ -1,4 +1,5 @@
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
+import { resolveTrustedBootstrapEmail } from "./drive-member-bootstrap.js";
 
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const SESSION_TTL_SECONDS = 15 * 60;
@@ -37,6 +38,7 @@ const TABLES = {
   clients: "Clients",
   preSession: "MMD — Pre-Session Client Index",
   accessEvidence: "Client Access Evidence",
+  emailStaging: "Email Identity Staging",
   lineOfc: "LINE OFC Client Import Staging",
   mergeRequests: "MMD — Identity Merge Requests",
 };
@@ -63,9 +65,6 @@ export async function handleMemberEmailRecovery(request, env = {}) {
 
   const email = normalizeEmail(parsed.body.email);
   const memberIdCandidate = normalizeMemberId(parsed.body.member_id_candidate);
-  if (!email && !memberIdCandidate) {
-    return json({ ok: false, error: { code: "RECOVERY_IDENTITY_REQUIRED", message: "กรอกอีเมลเดิมหรือ Member ID เพื่อให้ MMD ช่วยค้นข้อมูลเดิมครับ" } }, 400);
-  }
   if (parsed.body.email && !email) {
     return json({ ok: false, error: { code: "RECOVERY_EMAIL_INVALID", message: "อีเมลไม่ถูกต้องครับ" } }, 400);
   }
@@ -91,7 +90,75 @@ export async function handleMemberEmailRecovery(request, env = {}) {
   if (!lineUserId) return commitError(env, auth, "RECOVERY_LINE_IDENTITY_MISSING", "เปิดหน้านี้ใหม่ผ่าน LINE ของ MMD เพื่อยืนยันตัวตนครับ", 409);
 
   try {
+    let recoveryMode = email || memberIdCandidate ? "manual_claim" : "automatic_verified_line";
+    let automaticEvidence = null;
+
+    if (!email && !memberIdCandidate) {
+      automaticEvidence = await resolveAutomaticRecoveryEmail(env, { lineUserId });
+
+      if (automaticEvidence.state === "resolved") {
+        email = automaticEvidence.email;
+        recoveryMode = "automatic_historical_email";
+      } else if (automaticEvidence.state === "review_required") {
+        const result = {
+          state: "review_required",
+          match_type: automaticEvidence.match_type || "ambiguous",
+          confidence: 0,
+          candidateMemberIds: [],
+          candidateClientIds: automaticEvidence.candidateClientIds || [],
+          preSessionIds: automaticEvidence.preSessionIds || [],
+          evidenceSources: automaticEvidence.evidenceSources || [],
+        };
+        const merge = await persistMergeRequest(env, {
+          lineUserId,
+          email: "",
+          memberIdCandidate: "",
+          result,
+          sessionRecordId: safeRecordId(auth.session.gateway_record_id || auth.session.renewal_session_record_id),
+        });
+        auth.session.identity_recovery_state = result.state;
+        auth.session.identity_recovery_request_id = merge.merge_request_id;
+        auth.session.identity_recovery_checked_at = new Date().toISOString();
+        auth.session.next_screen_key = "manual_review";
+        return commitJson(env, auth, {
+          ok: true,
+          data: {
+            state: "review_required",
+            merge_request_id: merge.merge_request_id,
+            automatic_recovery_attempted: true,
+            manual_input_required: false,
+            verification_required: false,
+            verification_channel: null,
+            verification_available: false,
+            next_action: "manual_review",
+            grants: noGrants(),
+          },
+        }, 200);
+      } else {
+        auth.session.identity_recovery_state = "manual_recovery_required";
+        auth.session.identity_recovery_checked_at = new Date().toISOString();
+        auth.session.next_screen_key = "identity_recovery";
+        return commitJson(env, auth, {
+          ok: true,
+          data: {
+            state: "manual_recovery_required",
+            automatic_recovery_attempted: true,
+            manual_input_required: true,
+            accepted_inputs: ["email", "member_id_candidate"],
+            verification_required: false,
+            verification_channel: null,
+            verification_available: false,
+            next_action: "manual_recovery",
+            grants: noGrants(),
+          },
+        }, 200);
+      }
+    }
+
     const result = await inspectRecoveryEvidence(env, { lineUserId, email, memberIdCandidate });
+    if (automaticEvidence?.evidenceSources?.length) {
+      result.evidenceSources = [...new Set([...(automaticEvidence.evidenceSources || []), ...(result.evidenceSources || [])])];
+    }
     const merge = await persistMergeRequest(env, {
       lineUserId,
       email,
@@ -111,6 +178,9 @@ export async function handleMemberEmailRecovery(request, env = {}) {
       data: {
         state: result.state,
         merge_request_id: merge.merge_request_id,
+        recovery_mode: recoveryMode,
+        automatic_recovery_attempted: recoveryMode !== "manual_claim",
+        manual_input_required: false,
         verification_required: result.state === "known_identity",
         verification_channel: result.state === "known_identity" && email ? "email" : null,
         verification_available: false,
@@ -126,6 +196,183 @@ export async function handleMemberEmailRecovery(request, env = {}) {
     console.warn({ event: "member_email_recovery_failed", failure_class: safeFailure(error) });
     return commitError(env, auth, "IDENTITY_RECOVERY_UNAVAILABLE", "ตอนนี้ MMD ยังตรวจข้อมูลเดิมไม่สำเร็จครับ กรุณาลองใหม่อีกครั้ง", 503);
   }
+}
+
+export async function resolveAutomaticRecoveryEmail(env = {}, { lineUserId } = {}) {
+  const lineId = canonicalLineId(lineUserId);
+  if (!lineId) throw new Error("invalid_line_identity");
+
+  const trusted = await resolveTrustedBootstrapEmail(lineId, env);
+  if (trusted?.ok === true) {
+    const trustedEmail = normalizeEmail(trusted.email);
+    if (trustedEmail) {
+      return {
+        state: "resolved",
+        email: trustedEmail,
+        match_type: "trusted_line_email",
+        confidence: 100,
+        candidateClientIds: [],
+        preSessionIds: [],
+        evidenceSources: ["trusted_line_email"],
+      };
+    }
+  }
+  if (trusted?.reason === "trusted_email_ambiguous") {
+    return {
+      state: "review_required",
+      match_type: "ambiguous",
+      confidence: 0,
+      candidateClientIds: [],
+      preSessionIds: [],
+      evidenceSources: ["trusted_line_email_conflict"],
+    };
+  }
+
+  const clientTable = tableName(env.AIRTABLE_TABLE_CLIENTS, TABLES.clients);
+  const preSessionTable = tableName(env.AIRTABLE_TABLE_PRE_SESSION_CLIENT_INDEX, TABLES.preSession);
+  const lineOfcTable = tableName(env.AIRTABLE_TABLE_LINE_OFC_CLIENT_IMPORT_STAGING, TABLES.lineOfc);
+  const emailStagingTable = tableName(env.AIRTABLE_TABLE_EMAIL_IDENTITY_STAGING, TABLES.emailStaging);
+  const clientLineField = String(env.AIRTABLE_CLIENTS_LINE_USER_ID_FIELD || "line_user_id").trim();
+  const clientEmailFields = csvFields(env.AIRTABLE_CLIENTS_EMAIL_FIELDS || "Contact Email,email");
+
+  const [clients, preSession, lineOfc, emailStaging] = await Promise.all([
+    airtableList(env, clientTable, {
+      filterByFormula: `{${clientLineField}}=${formulaString(lineId)}`,
+      maxRecords: 3,
+    }),
+    airtableList(env, preSessionTable, {
+      filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+      maxRecords: 12,
+    }),
+    airtableList(env, lineOfcTable, {
+      filterByFormula: `{line_user_id}=${formulaString(lineId)}`,
+      maxRecords: 20,
+    }),
+    airtableList(env, emailStagingTable, {
+      filterByFormula: `{line_id_candidate}=${formulaString(lineId)}`,
+      maxRecords: 12,
+    }),
+  ]);
+
+  if (clients.length > 1) {
+    return automaticConflict("canonical_client_conflict", recordIds(clients), recordIds(preSession));
+  }
+
+  const directClientId = safeRecordId(clients[0]?.id);
+  const emails = new Map();
+  const candidateClientIds = new Set(directClientId ? [directClientId] : []);
+  const preSessionIds = new Set();
+
+  if (clients.length === 1) {
+    for (const field of clientEmailFields) {
+      addAutomaticEmail(emails, clients[0]?.fields?.[field], "clients_line_email");
+    }
+  }
+
+  for (const record of preSession) {
+    const fields = record?.fields || {};
+    if (canonicalLineId(fields.line_user_id) !== lineId) continue;
+    const resolutionStatus = String(fields.resolution_status || "").trim();
+    if (resolutionStatus === "blocked" || resolutionStatus === "review_required") continue;
+    const linkedClients = linkedRecordIds(fields.linked_client);
+    if (linkedClients.length > 1) return automaticConflict("pre_session_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds, record.id]);
+    if (directClientId && linkedClients.length === 1 && linkedClients[0] !== directClientId) {
+      return automaticConflict("pre_session_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds, record.id]);
+    }
+    linkedClients.forEach((id) => candidateClientIds.add(id));
+    const email = normalizeEmail(fields.identity_email);
+    if (email) {
+      addAutomaticEmail(emails, email, "pre_session_verified_line");
+      if (safeRecordId(record.id)) preSessionIds.add(record.id);
+    }
+  }
+
+  for (const record of lineOfc) {
+    const fields = record?.fields || {};
+    if (canonicalLineId(fields.line_user_id) !== lineId) continue;
+    if (!hasHistoricalClientTag(fields.line_tags_raw)) continue;
+    if (fields.dry_run_only === true) continue;
+
+    const linkedClients = linkedRecordIds(fields.matched_client);
+    if (linkedClients.length > 1) return automaticConflict("line_ofc_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds]);
+    if (directClientId && linkedClients.length === 1 && linkedClients[0] !== directClientId) {
+      return automaticConflict("line_ofc_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds]);
+    }
+    linkedClients.forEach((id) => candidateClientIds.add(id));
+
+    addAutomaticEmail(emails, fields.email_candidate, "line_ofc_client_email");
+  }
+
+  for (const record of emailStaging) {
+    const fields = record?.fields || {};
+    if (canonicalLineId(fields.line_id_candidate) !== lineId) continue;
+    if (String(fields.review_status || "").trim() !== "committed") continue;
+    const linkedClients = linkedRecordIds(fields.matched_client);
+    if (linkedClients.length !== 1) continue;
+    if (directClientId && linkedClients[0] !== directClientId) {
+      return automaticConflict("email_staging_client_conflict", [...candidateClientIds, ...linkedClients], [...preSessionIds]);
+    }
+    linkedClients.forEach((id) => candidateClientIds.add(id));
+    addAutomaticEmail(emails, fields.sender_email, "committed_email_identity_staging");
+  }
+
+  if (candidateClientIds.size > 1) {
+    return automaticConflict("canonical_client_conflict", [...candidateClientIds], [...preSessionIds]);
+  }
+  if (emails.size > 1) {
+    return {
+      state: "review_required",
+      match_type: "ambiguous",
+      confidence: 0,
+      candidateClientIds: [...candidateClientIds].slice(0, 2),
+      preSessionIds: [...preSessionIds].slice(0, 2),
+      evidenceSources: [...new Set([...emails.values()].flatMap((entry) => entry.sources))],
+    };
+  }
+  if (emails.size === 1) {
+    const [email, entry] = emails.entries().next().value;
+    return {
+      state: "resolved",
+      email,
+      match_type: "verified_line_historical_email",
+      confidence: entry.sources.has("clients_line_email") ? 100 : 95,
+      candidateClientIds: [...candidateClientIds].slice(0, 1),
+      preSessionIds: [...preSessionIds].slice(0, 2),
+      evidenceSources: [...entry.sources],
+    };
+  }
+
+  return {
+    state: "unresolved",
+    match_type: "not_found",
+    confidence: 0,
+    candidateClientIds: [...candidateClientIds].slice(0, 1),
+    preSessionIds: [...preSessionIds].slice(0, 2),
+    evidenceSources: [],
+  };
+}
+
+function addAutomaticEmail(map, value, source) {
+  const email = normalizeEmail(value);
+  if (!email) return;
+  const current = map.get(email) || { sources: new Set() };
+  current.sources.add(source);
+  map.set(email, current);
+}
+
+function automaticConflict(source, candidateClientIds = [], preSessionIds = []) {
+  return {
+    state: "review_required",
+    match_type: "ambiguous",
+    confidence: 0,
+    candidateClientIds: uniqueRecordIds(candidateClientIds).slice(0, 2),
+    preSessionIds: uniqueRecordIds(preSessionIds).slice(0, 2),
+    evidenceSources: [source],
+  };
+}
+
+function hasHistoricalClientTag(value) {
+  return /(^|[\\s,;|])#client(?=$|[\\s,;|])/i.test(String(value || ""));
 }
 
 export async function inspectRecoveryEvidence(env = {}, { lineUserId, email = "", memberIdCandidate = "" } = {}) {
