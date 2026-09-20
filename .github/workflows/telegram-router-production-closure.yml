@@ -1,0 +1,135 @@
+name: Telegram Router Production Closure
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "mms-worker/**"
+      - "sigil-worker/**"
+      - "himai-chat-worker/**"
+      - "partners-worker/**"
+      - "payments-worker/**"
+      - "telegram-worker/**"
+      - ".github/workflows/deploy-mms-worker.yml"
+      - ".github/workflows/deploy-sigil-worker.yml"
+      - ".github/workflows/deploy-himai-chat-worker.yml"
+      - ".github/workflows/deploy-partners-worker.yml"
+      - ".github/workflows/deploy-payments-worker.yml"
+      - ".github/workflows/deploy-telegram-worker.yml"
+      - ".github/workflows/telegram-router-production-closure.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: telegram-router-production-closure
+  cancel-in-progress: false
+
+jobs:
+  close-router:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TELEGRAM_INTERNAL_TOKEN: ${{ secrets.INTERNAL_API_TOKEN || secrets.TELEGRAM_INTERNAL_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Wait for migrated domain production deploys
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          expected=(
+            "Deploy mms-worker"
+            "Deploy sigil-worker"
+            "Deploy himai-chat-worker"
+            "Deploy partners-worker"
+            "Deploy payments-worker"
+          )
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&event=push&per_page=100"
+          all_ready=0
+          for attempt in $(seq 1 180); do
+            body="$(mktemp)"
+            curl --fail --silent --show-error               -H "Authorization: Bearer ${GH_TOKEN}"               -H "Accept: application/vnd.github+json"               "$api" > "$body"
+
+            all_ready=1
+            for name in "${expected[@]}"; do
+              row="$(jq -c --arg n "$name" '[.workflow_runs[] | select(.name==$n)] | sort_by(.created_at) | last // empty' "$body")"
+              if [ -z "$row" ]; then
+                echo "$name run not visible yet"
+                all_ready=0
+                continue
+              fi
+              status="$(jq -r '.status' <<<"$row")"
+              conclusion="$(jq -r '.conclusion // ""' <<<"$row")"
+              run_id="$(jq -r '.id' <<<"$row")"
+              echo "$name run=$run_id status=$status conclusion=$conclusion"
+              if [ "$status" != "completed" ]; then
+                all_ready=0
+              elif [ "$conclusion" != "success" ]; then
+                echo "$name did not deploy successfully" >&2
+                exit 1
+              fi
+            done
+            rm -f "$body"
+            if [ "$all_ready" = "1" ]; then
+              echo "All migrated domain production deploys passed"
+              break
+            fi
+            sleep 5
+          done
+          test "$all_ready" = "1"
+
+      - name: Verify live fully configured Telegram Router Health
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${TELEGRAM_INTERNAL_TOKEN:-}"
+          body="$(mktemp)"
+          passed=0
+          for attempt in $(seq 1 36); do
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS               -o "$body" -w '%{http_code}'               -H "Authorization: Bearer ${TELEGRAM_INTERNAL_TOKEN}"               'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/router/health?probe=1')"
+            cat "$body"
+            if [ "$code" = "200" ] && node -e '
+              const fs=require("node:fs");
+              const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+              const c=p?.counts||{};
+              if (p?.schema!=="mmd.hype_telegram_router_health.v1") process.exit(1);
+              if (p?.registry_version!=="2026-09-21.2") process.exit(1);
+              if (p?.status!=="configured" || p?.ok!==true) process.exit(1);
+              if (Number(c.partial||0)!==0) process.exit(1);
+              if (Number(c.unavailable||0)!==0) process.exit(1);
+              if (Number(c.legacy_direct_senders||0)!==0) process.exit(1);
+              if (p?.transport?.live_probe?.attempted!==true || p?.transport?.live_probe?.ok!==true) process.exit(1);
+              if (!(Array.isArray(p?.lanes) && p.lanes.length>0 && p.lanes.every((lane)=>lane.status==="configured"))) process.exit(1);
+              if (!(p.lanes.every((lane)=>lane.destination_configured===true && lane.service_auth_configured===true))) process.exit(1);
+            ' "$body"; then
+              passed=1
+              echo "Telegram Router Health is fully configured on attempt $attempt"
+              break
+            fi
+            echo "Telegram Router Health not closed yet (attempt $attempt, HTTP $code)"
+            sleep 5
+          done
+          test "$passed" = "1"
+
+      - name: Record closure receipt
+        shell: bash
+        run: |
+          {
+            echo "### Telegram Router Production Closure"
+            echo "- source SHA: \`${GITHUB_SHA}\`"
+            echo "- registry: \`2026-09-21.2\`"
+            echo "- status: **configured**"
+            echo "- partial lanes: **0**"
+            echo "- unavailable lanes: **0**"
+            echo "- declared active legacy direct senders: **0**"
+            echo "- live Telegram probe: **PASS**"
+            echo "- business-truth authority moved: **NO**"
+          } >> "$GITHUB_STEP_SUMMARY"
