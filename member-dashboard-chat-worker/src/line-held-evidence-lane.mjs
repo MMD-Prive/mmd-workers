@@ -28,6 +28,7 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_BASE_BACKOFF_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_BACKOFF_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_REPROCESS_LIMIT = 10;
+const DEFAULT_LEASE_MS = 2 * 60 * 1000;
 
 export const HELD_EVIDENCE_OUTCOME = Object.freeze({
   PROMOTED: "promoted_to_payment_proof",
@@ -64,6 +65,10 @@ export function heldMaxAttempts(env = {}) {
   return positiveInt(env.LINE_HELD_EVIDENCE_MAX_ATTEMPTS, DEFAULT_MAX_ATTEMPTS, 20);
 }
 
+export function heldLeaseMs(env = {}) {
+  return positiveInt(env.LINE_HELD_EVIDENCE_LEASE_SECONDS, DEFAULT_LEASE_MS / 1000, 900) * 1000;
+}
+
 export function heldBackoffMs(attempts = 1, env = {}) {
   const base = positiveInt(env.LINE_HELD_EVIDENCE_BASE_BACKOFF_MINUTES, DEFAULT_BASE_BACKOFF_MS / 60000, 720) * 60000;
   const exponent = Math.max(0, Math.min(Number(attempts) || 1, 12) - 1);
@@ -88,15 +93,20 @@ function bucketOf(env = {}) {
   return bucket;
 }
 
-async function readJson(bucket, key) {
+async function readJsonEnvelope(bucket, key) {
   const object = await bucket.get(key);
   if (!object) return null;
   try {
     const parsed = JSON.parse(await object.text());
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return { value: parsed, etag: text(object.etag, 160) };
   } catch (_) {
     return null;
   }
+}
+
+async function readJson(bucket, key) {
+  return (await readJsonEnvelope(bucket, key))?.value || null;
 }
 
 /**
@@ -126,8 +136,8 @@ export function heldEvidenceAuditRecord(state = {}) {
   };
 }
 
-async function writeState(bucket, state) {
-  await bucket.put(heldStateKey(state.proof_id), JSON.stringify(state), {
+async function writeState(bucket, state, onlyIf = null) {
+  const options = {
     httpMetadata: { contentType: "application/json" },
     customMetadata: {
       schema: SCHEMA,
@@ -136,8 +146,10 @@ async function writeState(bucket, state) {
       hold_reason: safeCode(state.hold_reason, 80),
       attempts: String(Number(state.attempts) || 0),
     },
-  });
-  return state;
+  };
+  if (onlyIf) options.onlyIf = onlyIf;
+  const stored = await bucket.put(heldStateKey(state.proof_id), JSON.stringify(state), options);
+  return { state, stored, etag: text(stored?.etag, 160) };
 }
 
 async function closeHeld(bucket, state, outcome, reason, nowMs) {
@@ -178,14 +190,26 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
   if (!proofId) return { held: false, reason: "held_evidence_proof_id_invalid" };
   if (!input?.image?.body) return { held: false, reason: "held_evidence_image_missing", proof_id: proofId };
 
-  const existing = await readJson(bucket, heldStateKey(proofId));
+  const terminal = await readJson(bucket, heldTerminalKey(proofId));
+  if (terminal?.proof_id) {
+    return { held: false, deduped: true, terminal: true, outcome: terminal.outcome, proof_id: proofId };
+  }
+
+  const existingEnvelope = await readJsonEnvelope(bucket, heldStateKey(proofId));
+  const existing = existingEnvelope?.value || null;
   if (existing?.proof_id) {
+    if (Number(existing.processing_until_ms) > nowMs) {
+      return { held: true, deduped: true, proof_id: proofId, attempts: Number(existing.attempts) || 0, processing: true };
+    }
     const updated = {
       ...existing,
       observed_count: (Number(existing.observed_count) || 1) + 1,
       updated_at_ms: nowMs,
     };
-    await writeState(bucket, updated);
+    const written = await writeState(bucket, updated, existingEnvelope?.etag ? { etagMatches: existingEnvelope.etag } : null);
+    if (existingEnvelope?.etag && written.stored === null) {
+      return { held: true, deduped: true, proof_id: proofId, attempts: Number(existing.attempts) || 0, concurrent: true };
+    }
     return { held: true, deduped: true, proof_id: proofId, attempts: Number(updated.attempts) || 0 };
   }
 
@@ -197,6 +221,7 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
     next_attempt_at_ms: nowMs + heldBackoffMs(1, env),
     attempts: 0,
     observed_count: 1,
+    processing_until_ms: 0,
     hold_reason: safeCode(input.holdReason || input.reason, 80) || "uncertain_payment_image",
     image_class: safeCode(input.imageClass, 60) || "uncertain",
     source_type: safeCode(input.sourceType, 20),
@@ -230,7 +255,10 @@ export async function holdUncertainEvidence(env = {}, input = {}, options = {}) 
       hold_reason: state.hold_reason,
     },
   });
-  await writeState(bucket, state);
+  const created = await writeState(bucket, state, { etagDoesNotMatch: "*" });
+  if (created.stored === null) {
+    return { held: true, deduped: true, proof_id: proofId, attempts: 0, concurrent: true };
+  }
   return { held: true, deduped: false, proof_id: proofId, attempts: 0 };
 }
 
@@ -279,9 +307,18 @@ export async function reprocessHeldEvidence(env = {}, options = {}) {
     if (summary.processed >= limit) break;
     const key = text(entry?.key, 300);
     if (!key.startsWith(HELD_PREFIX) || !key.endsWith("/state.json")) continue;
-    const state = await readJson(bucket, key);
+    const envelope = await readJsonEnvelope(bucket, key);
+    let state = envelope?.value || null;
     summary.scanned += 1;
     if (!state?.proof_id) continue;
+    if (Number(state.processing_until_ms) > nowMs) continue;
+    if (Number(state.next_attempt_at_ms) > nowMs) continue;
+
+    const claimed = { ...state, processing_until_ms: nowMs + heldLeaseMs(env), updated_at_ms: nowMs };
+    const claim = await writeState(bucket, claimed, envelope?.etag ? { etagMatches: envelope.etag } : null);
+    if (envelope?.etag && claim.stored === null) continue;
+    state = claimed;
+    const claimEtag = claim.etag || envelope?.etag || "";
 
     if (nowMs - (Number(state.created_at_ms) || nowMs) > retentionMs) {
       await closeHeld(bucket, state, HELD_EVIDENCE_OUTCOME.EXPIRED, "retention_window_elapsed", nowMs);
@@ -289,7 +326,6 @@ export async function reprocessHeldEvidence(env = {}, options = {}) {
       summary.processed += 1;
       continue;
     }
-    if (Number(state.next_attempt_at_ms) > nowMs) continue;
 
     const image = await loadHeldImage(bucket, state);
     if (!image) {
@@ -334,13 +370,15 @@ export async function reprocessHeldEvidence(env = {}, options = {}) {
       }
       // Promotion failed downstream (Airtable/binding). Keep the candidate and
       // retry later. No Payment Proof and no money truth were created.
-      await writeState(bucket, {
+      const retryState = {
         ...state,
         attempts: (Number(state.attempts) || 0) + 1,
         updated_at_ms: nowMs,
+        processing_until_ms: 0,
         next_attempt_at_ms: nowMs + heldBackoffMs((Number(state.attempts) || 0) + 1, env),
         last_error: "held_promotion_incomplete",
-      });
+      };
+      await writeState(bucket, retryState, claimEtag ? { etagMatches: claimEtag } : null);
       summary.still_held += 1;
       continue;
     }
@@ -362,13 +400,15 @@ export async function reprocessHeldEvidence(env = {}, options = {}) {
       continue;
     }
 
-    await writeState(bucket, {
+    const retryState = {
       ...state,
       attempts,
       updated_at_ms: nowMs,
+      processing_until_ms: 0,
       next_attempt_at_ms: nowMs + heldBackoffMs(attempts, env),
       last_error: safeCode(analysis?.classification?.reason || "extractor_unavailable_or_failed", 120),
-    });
+    };
+    await writeState(bucket, retryState, claimEtag ? { etagMatches: claimEtag } : null);
     summary.still_held += 1;
   }
 
@@ -395,5 +435,6 @@ export const LINE_HELD_EVIDENCE_INTERNALS = Object.freeze({
   closeHeld,
   loadHeldImage,
   readJson,
+  readJsonEnvelope,
   writeState,
 });
