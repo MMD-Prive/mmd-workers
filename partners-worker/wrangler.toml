@@ -10,8 +10,8 @@ workers_dev = true
 routes = [
   { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/v1/partner/upload*", zone_name = "mmdbkk.com" }
+  { pattern = "mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" }
 ]
 
 [[r2_buckets]]
