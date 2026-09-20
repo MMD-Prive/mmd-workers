@@ -143,6 +143,15 @@ jobs:
           ensure_secret MMS_THERAPIST_IDENTITY_PEPPER
           printf 'configured=true\n' >> "$GITHUB_OUTPUT"
 
+      - name: Rotate MMS-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'MMS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_MMS_TO_TELEGRAM --config telegram-worker/wrangler.toml
+
       - name: Prepare optional runtime secrets
         id: runtime-secrets
         shell: bash
@@ -151,17 +160,15 @@ jobs:
           const fs = require("node:fs");
           const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const token = clean(process.env.AIRTABLE_API_TOKEN);
-          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
-          const telegramChatId = clean(process.env.MMS_TELEGRAM_CHAT_ID);
+          const routerSecret = clean(process.env.MMS_TELEGRAM_ROUTER_SECRET);
           const lineChannelSecret = clean(process.env.LINE_CHANNEL_SECRET);
           const lineChannelAccessToken = clean(process.env.LINE_CHANNEL_ACCESS_TOKEN);
           const path = process.env.RUNNER_TEMP + "/mms-worker.env";
           const lines = [];
           if (token) { console.log(`::add-mask::${token}`); lines.push(`AIRTABLE_API_TOKEN=${token}`); }
-          if (telegramToken && telegramChatId) {
-            console.log(`::add-mask::${telegramToken}`);
-            console.log(`::add-mask::${telegramChatId}`);
-            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`, `MMS_TELEGRAM_CHAT_ID=${telegramChatId}`);
+          if (routerSecret) {
+            console.log(`::add-mask::${routerSecret}`);
+            lines.push(`AUTH_SERVICE_MMS_TO_TELEGRAM=${routerSecret}`);
           }
           if (lineChannelSecret && lineChannelAccessToken) {
             console.log(`::add-mask::${lineChannelSecret}`);
