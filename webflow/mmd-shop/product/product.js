@@ -96,7 +96,7 @@ function stockText(item){
   }
   return {label:t("stockChecking"),className:""};
 }
-function setQty(next){
+function canCheckout(item){\n  if(!item||item.checkout_eligible!==true)return false;\n  if(!(Number(item.selling_price_thb)>0))return false;\n  if(item.stock_status==="tracked"&&Number(item.available)<=0)return false;\n  return true;\n}\nfunction setQty(next){
   var max=20;
   if(product&&product.stock_status==="tracked"&&Number.isFinite(Number(product.available))){
     max=Math.max(1,Math.min(20,Number(product.available)));
@@ -119,7 +119,7 @@ function renderVariantControl(){
     return;
   }
   variantWrap.hidden=false;
-  if(variantLabel)variantLabel.textContent=product.variant_type==="flavour"?t("variantFlavour"):t("variantSize");
+  var label=product.variant_type==="flavour"?t("variantFlavour"):t("variantSize");\n  if(variantLabel)variantLabel.textContent=label;\n  variantSelect.setAttribute("aria-label",label);
   variantSelect.innerHTML=available.map(function(item){
     return '<option value="'+String(item.id).replace(/"/g,"&quot;")+'">'+variantOptionLabel(item)+'</option>';
   }).join("");
@@ -198,7 +198,7 @@ function saveCart(items){
   try{localStorage.setItem(cartKey,JSON.stringify(items));return true;}catch(e){return false;}
 }
 function addToCart(){
-  if(!product||product.checkout_eligible!==true)return false;
+  if(!canCheckout(product))return false;
   var items=readCart();
   var found=items.find(function(x){return x.product_id===product.id;});
   var max=20;
