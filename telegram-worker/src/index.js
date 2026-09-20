@@ -2980,6 +2980,7 @@ function renderHypeOwnerSummary(result = {}) {
   const recovery = result.recovery_queue || {};
   const watchNow = Array.isArray(result.what_to_watch_now) ? result.what_to_watch_now : [];
   const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
+  const observer = result.observer_health && typeof result.observer_health === "object" ? result.observer_health : {};
   const lines = [
     "<b>HYPE · PER OWNER SUMMARY</b>",
     escapeHtml(clean(result.bangkok_date) || "วันนี้"),
@@ -2995,6 +2996,21 @@ function renderHypeOwnerSummary(result = {}) {
   lines.push(`• Membership: ${Number(counts.membership_review || 0)}`);
   lines.push(`• Jobs / Confirm: ${Number(counts.jobs_need_confirm || 0)}`);
   lines.push(`• Recovery attention: ${Number(counts.recovery_attention || 0)} · overdue: ${Number(counts.recovery_overdue || 0)}`);
+
+  lines.push("");
+  lines.push("<b>PAYMENT OBSERVER HEALTH</b>");
+  if (observer.available === true) {
+    const statusLabel = clean(observer.status).toUpperCase() || "UNKNOWN";
+    lines.push(`• Status: ${escapeHtml(statusLabel)}`);
+    if (observer.silence_hours !== null && observer.silence_hours !== undefined) lines.push(`• Silence: ${Number(observer.silence_hours || 0).toFixed(1)}h · accepted 24h: ${Number(observer.accepted_last_24h || 0)}`);
+    if (observer.held_open !== null && observer.held_open !== undefined) lines.push(`• Held: open ${Number(observer.held_open || 0)} · new 1h ${Number(observer.held_new_1h || 0)}`);
+    if (observer.extractor_failures_1h !== null && observer.extractor_failures_1h !== undefined) lines.push(`• Extractor: fail 1h ${Number(observer.extractor_failures_1h || 0)} · consecutive ${Number(observer.extractor_consecutive_failures || 0)}`);
+    if (observer.outbox_failed_terminal !== null && observer.outbox_failed_terminal !== undefined) lines.push(`• Outbox: retryable ${Number(observer.outbox_retryable || 0)} · failed_terminal ${Number(observer.outbox_failed_terminal || 0)}`);
+    lines.push(`• Membership v4 heartbeat: ${observer.membership_v4_seen_after_deploy === true ? "READY" : "ABSENT"} · real v4 event: ${observer.membership_v4_last_seen_at ? "SEEN" : "WAITING REAL EVENT"}`);
+    if (clean(observer.summary)) lines.push("• " + escapeHtml(observer.summary));
+  } else {
+    lines.push("• Health source unavailable · HYPE จะไม่เดาสถานะ");
+  }
 
   if (recovery.available === true) {
     lines.push("");
