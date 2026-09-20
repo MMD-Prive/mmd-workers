@@ -144,7 +144,7 @@ test("MMD Shop product API resolves SKU slug and returns server checkout eligibi
 });
 
 
-test("MMD Shop product API returns Pod flavour family without changing restricted checkout authority", async () => {
+test("MMD Shop product API returns perfume-decant Pod flavour family with stock-backed checkout", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -178,7 +178,30 @@ test("MMD Shop product API returns Pod flavour family without changing restricte
         ]
       });
     }
-    if (url.pathname.includes("tblwFgl4et1TOgtNn")) return Response.json({ records: [] });
+    if (url.pathname.includes("tblwFgl4et1TOgtNn")) {
+      return Response.json({
+        records: [
+          {
+            id: "recPodBatchKyo",
+            fields: {
+              "Product": ["recPodKyo"],
+              "Quantity Remaining": 4,
+              "Low Stock Flag": "Low",
+              "Batch Status": "active"
+            }
+          },
+          {
+            id: "recPodBatchMgo",
+            fields: {
+              "Product": ["recPodMgo"],
+              "Quantity Remaining": 5,
+              "Low Stock Flag": "Low",
+              "Batch Status": "active"
+            }
+          }
+        ]
+      });
+    }
     if (url.pathname.includes("tbl81bnFyASeXCj9x")) return Response.json({ records: [] });
     return new Response("not found", { status: 404 });
   };
@@ -193,10 +216,10 @@ test("MMD Shop product API returns Pod flavour family without changing restricte
     assert.equal(body.product.variant_group, "PPP25");
     assert.equal(body.product.variant_type, "flavour");
     assert.equal(body.product.variant_value, "KyoHo Grape");
-    assert.equal(body.product.checkout_eligible, false);
+    assert.equal(body.product.checkout_eligible, true);
     assert.equal(body.variants.length, 2);
     assert.deepEqual(body.variants.map((item) => item.variant_value), ["KyoHo Grape", "Mango"]);
-    assert.equal(body.variants.every((item) => item.checkout_eligible === false), true);
+    assert.equal(body.variants.every((item) => item.checkout_eligible === true), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
