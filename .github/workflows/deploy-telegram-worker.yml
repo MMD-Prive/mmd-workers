@@ -163,7 +163,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$TELEGRAM_DEPLOY_CONTROL_TOKEN"
-          printf '%s' "$TELEGRAM_DEPLOY_CONTROL_TOKEN" | npx --yes wrangler@4 secret put TELEGRAM_DEPLOY_CONTROL_TOKEN
+          printf '%s' "$TELEGRAM_DEPLOY_CONTROL_TOKEN" | npx --yes wrangler@4 secret put TELEGRAM_DEPLOY_REPAIR_SECRET
 
       - name: Repair Telegram webhook to canonical route
         shell: bash
