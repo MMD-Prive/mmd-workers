@@ -1,3 +1,3 @@
 # Telegram production re-verification marker
 
-Final aggregate receipt rerun after fixing receipt-shell quoting. No runtime logic changes; retriggers canonical Telegram production deploy for the final receipt SHA.
+Diagnostic final receipt rerun. No runtime logic changes; retriggers canonical Telegram production deploy and emits a visible failure receipt if the production pair does not pass.
