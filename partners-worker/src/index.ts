@@ -1018,7 +1018,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
     const partnerRules = salesRules
       .filter((record) => {
         const fields = record.fields || {};
-        const linked = Array.isArray(fields.Model) ? fields.Model.map((item) => cleanText(isRecord(item) ? item.id : item)) : [];
+        const linked = Array.isArray(fields.Model) ? fields.Model.map((item) => cleanText(item)) : [];
         return linked.includes(modelId) && cleanText(fields.source_partner_ref) === partnerId;
       })
       .map((record, index) => {
@@ -1035,7 +1035,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
           days_of_week: normalized.days_of_week,
           start_time_local: normalized.start_time_local,
           end_time_local: normalized.end_time_local,
-          status: cleanText(isRecord(fields.status) ? fields.status.name : fields.status) || normalized.status,
+          status: cleanText(fields.status) || normalized.status,
           version: normalized.version,
           change_reason: cleanText(fields.change_reason)
         } : null;
@@ -2088,6 +2088,11 @@ function normalizeCommission(record: AirtableRecord, modelMap: Map<string, Airta
 
 function modelName(record: AirtableRecord): string {
   return fieldText(record, MODELS.workingName) || fieldText(record, MODELS.nickname) || record.id;
+}
+
+function cleanText(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  return "";
 }
 
 function compactFields(fields: AirtableFields): AirtableFields {
