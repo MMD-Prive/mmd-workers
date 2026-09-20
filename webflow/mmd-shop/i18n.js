@@ -151,7 +151,7 @@ var COPY={
   reservationFold:"Reserved for this Order",fulfillmentFold:"Delivery / pickup",pickupLabel:"Pickup",deliveryLabel:"Delivery",
   newOrderAfterExpiry:"You can start a new Order from MMD Shop",reservedUntil:"Stock reserved until {time}",reviewHold:"Stock remains reserved while MMD reviews payment",
   qtyUnit:"{n} pcs",refundAmount:"Refund {amount}",orderLinkHint:"Open this from the Order link in MMD Shop or MY MMD.",
-  orderUnavailable:"Return to MY MMD or contact MMD to continue opening this Order."
+  orderUnavailable:"Return to MY MMD or contact MMD to continue opening this Order.",recoveryKicker:"AFTERCARE",recoveryTitle:"We’re continuing to look after this Order",recoveryCopy:"Return, refund, and delivery updates will stay on this same Order."
  },
  zh:{
   rules:"规则",products:"商品",orders:"订单",backShop:"返回选购",backMmdShop:"返回 MMD Shop",browse:"查看我的精选",shortRules:"快速规则",
@@ -217,7 +217,7 @@ var COPY={
   reservationFold:"为这张 Order 预留的商品",fulfillmentFold:"配送 / 自取",pickupLabel:"自取 / Pickup",deliveryLabel:"配送",
   newOrderAfterExpiry:"可以从 MMD Shop 重新开启 Order",reservedUntil:"库存预留至 {time}",reviewHold:"MMD 核对付款期间，库存会继续保留",
   qtyUnit:"{n} 件",refundAmount:"退款 {amount}",orderLinkHint:"请从 MMD Shop 或 MY MMD 的 Order 链接打开。",
-  orderUnavailable:"请返回 MY MMD 或联系 MMD，继续开启这张 Order。"
+  orderUnavailable:"请返回 MY MMD 或联系 MMD，继续开启这张 Order。",recoveryKicker:"售后跟进",recoveryTitle:"这张 Order 正在继续处理",recoveryCopy:"退货、退款与配送后续都会继续更新在同一张 Order 上。"
  }
 };
 
