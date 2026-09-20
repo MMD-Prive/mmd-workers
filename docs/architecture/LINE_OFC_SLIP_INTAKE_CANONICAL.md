@@ -68,6 +68,37 @@ Examples of current classification behavior:
 
 A rejected or held image is not promoted into canonical Payment Proof truth.
 
+## Held / uncertain evidence lane
+
+A held image is an evidence candidate only. Being held never makes it a Payment Proof and never gives it payment authority.
+
+Implementation: `member-dashboard-chat-worker/src/line-held-evidence-lane.mjs`.
+
+```text
+classify -> hold
+  -> private held prefix in LINE_SLIP_EVIDENCE
+       line-ofc/held-evidence/<proof-id>/original.<ext>
+       line-ofc/held-evidence/<proof-id>/state.json
+  -> bounded reprocess sweep (LINE traffic + hourly cron)
+  -> re-run the SAME extractor / classifier / correlation gates
+  -> accepted        -> canonical accepted-evidence gate -> exactly one Payment Proof (pending)
+  -> rejected        -> discarded as non-payment evidence
+  -> still uncertain -> retry with backoff until the bounded attempt limit
+  -> attempts exhausted -> terminal review_required + bounded Ops notice
+  -> retention elapsed  -> terminal expired, bytes deleted
+```
+
+Rules:
+
+- promotion re-enters `persistAcceptedEvidence()`, the same gate live intake uses. There is no second, weaker classifier;
+- there is deliberately no operator "force paid" or manual-promote entry point into this lane;
+- promotion is idempotent by proof ID, so a replayed candidate cannot duplicate a canonical Payment Proof;
+- held bytes live only in the private evidence bucket under the held prefix. There is no browser-public URL;
+- reprocess inputs that identify a customer (LINE user id, the original message id, bounded payment context text) live only inside the private `state.json` body. The audit projection used for logs, receipts and Ops notices carries hashes and bounded codes only;
+- retention is bounded: default 72 hours (`LINE_HELD_EVIDENCE_RETENTION_HOURS`, max 168). Terminal markers carry no image and are collected on the same window;
+- reprocess attempts are bounded: default 5 (`LINE_HELD_EVIDENCE_MAX_ATTEMPTS`) with exponential backoff;
+- a held item can reach `review_required`. It can never reach paid, verified, entitled or Money Truth.
+
 ## Direct chat and group behavior
 
 ### LINE OA direct chat
@@ -214,6 +245,32 @@ Current production routing uses `telegram-worker` and separates bounded topics, 
 
 The notification may include bounded canonical Job context and may distinguish exact vs ambiguous matching. It must not convert evidence into paid status.
 
+### Durable Ops delivery
+
+Implementation: `member-dashboard-chat-worker/src/line-ops-notification-outbox.mjs`.
+
+Operator notification is durable, not best-effort logging:
+
+```text
+render bounded Ops message
+  -> persist outbox record (pending_delivery) in the private evidence bucket
+  -> attempt delivery through telegram-worker
+  -> delivered
+     or retryable -> exponential backoff -> retry sweep -> delivered
+     or failed_terminal after the bounded attempt limit
+```
+
+Rules:
+
+- the record is persisted **before** the first send attempt, so a Telegram outage leaves a recoverable delivery instead of a log line;
+- identity is `sha256(proof/event id + destination chat/thread + notification purpose)`. A duplicate LINE webhook, a redelivery, or a repeated observer pass resolves to the same record, so Ops cannot be spammed;
+- the outbox stores the already-rendered message. A retry can therefore only re-send an operator notice. It can never re-run settlement, re-create a Payment Proof, call `payments-worker`, or mutate canonical truth;
+- successful settlement is never rolled back because notification failed, and a failed notification never blocks the canonical pending Payment Proof;
+- `telegram-worker` remains the Telegram route owner. The outbox only requests a send through the trusted service binding;
+- the Service/Job review alert and the Membership settlement outcome are distinct notification purposes, so each remains exactly once semantically;
+- the retry sweep runs on live LINE traffic and on the existing hourly cron, so recovery still happens when LINE is quiet;
+- delivery receipts carry bounded metadata only (`schema`, `status`, `purpose`, `attempts`). A delivery receipt is never payment verification.
+
 ## Privacy and fail-closed rules
 
 Production must preserve all of the following:
@@ -268,6 +325,8 @@ Production verification must cover at minimum:
 - Service/Job review gate;
 - Membership settlement through `payments-worker` only;
 - bounded HYPE/Telegram notification;
+- durable Ops notification delivery, idempotent by proof/destination/purpose, with retry that never re-runs settlement;
+- held/uncertain evidence stays an evidence candidate, is privately retained under a bounded window, and can only leave the lane through the canonical accepted-evidence gate, rejection, or terminal review_required;
 - no direct business-truth mutation by smoke tests.
 
 The HYPE closed-loop production receipt may report the LINE slip lane as accepted only when the production owner path and regression contracts pass.
