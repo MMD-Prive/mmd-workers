@@ -276,6 +276,60 @@ function rankModel(model, query) {
   return 5;
 }
 
+function selectText(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return clean(value.name || value.value, 120);
+  return clean(value, 120);
+}
+
+function modelSalesRuleSummary(record = {}, index = 0) {
+  const normalized = normalizeModelSalesRule(record, index);
+  if (!normalized) return null;
+  const fields = record.fields || {};
+  return {
+    record_id: normalized.record_id,
+    offer_rule_key: normalized.offer_rule_key,
+    model_ids: normalized.model_ids,
+    model_key: normalized.model_key,
+    offer_type: normalized.offer_type,
+    audience_scope: normalized.audience_scope,
+    customer_sell_rate_thb: normalized.customer_sell_rate_thb,
+    partner_source_rate_thb: Number.isFinite(Number(fields.partner_source_rate_thb)) ? Number(fields.partner_source_rate_thb) : null,
+    price_visibility: selectText(fields.price_visibility),
+    sales_visibility: normalized.sales_visibility,
+    schedule_type: normalized.schedule_type,
+    effective_from: normalized.effective_from,
+    effective_until: normalized.effective_until,
+    days_of_week: normalized.days_of_week,
+    start_time_local: normalized.start_time_local,
+    end_time_local: normalized.end_time_local,
+    priority: normalized.priority,
+    status: selectText(fields.status) || normalized.status,
+    requires_per_approval: normalized.requires_per_approval,
+    version: normalized.version,
+    source_actor_type: selectText(fields.source_actor_type),
+    source_partner_ref: clean(fields.source_partner_ref, 120),
+    change_reason: clean(fields.change_reason, 500),
+    updated_by: clean(fields.updated_by, 120),
+    updated_at: clean(fields.updated_at || fields.reviewed_at, 100),
+  };
+}
+
+function salesControlForModel(model = {}, ruleRecords = []) {
+  const modelId = clean(model.model_id, 100);
+  const modelKey = clean(model.model_key, 160).toLowerCase();
+  const rules = ruleRecords
+    .map(modelSalesRuleSummary)
+    .filter(Boolean)
+    .filter((rule) => (modelId && rule.model_ids.includes(modelId)) || (modelKey && rule.model_key === modelKey))
+    .sort((a, b) => (b.priority || 0) - (a.priority || 0) || (b.version || 0) - (a.version || 0));
+  return {
+    configured_rule_count: rules.length,
+    active_rule_count: rules.filter((rule) => normalizeToken(rule.status) === "active").length,
+    primary_rule: rules.find((rule) => normalizeToken(rule.status) === "active") || rules[0] || null,
+    rules,
+  };
+}
+
 function primaryImageContentType(key, object) {
   const metadataType = clean(object?.httpMetadata?.contentType, 100).toLowerCase();
   if (/^image\/(?:jpeg|png|webp|gif|avif)$/.test(metadataType)) return metadataType;
@@ -331,6 +385,8 @@ async function listModels(request, env, fetchImpl) {
   if (!modelsResult.ok) return json({ ok: false, error: "model_source_unavailable" }, modelsResult.status === 401 || modelsResult.status === 403 ? 502 : 503);
   const profilesResult = await fetchAllRecords(env, config.keywordProfilesTable, fetchImpl);
   if (!profilesResult.ok) return json({ ok: false, error: "keyword_profile_source_unavailable" }, profilesResult.status === 401 || profilesResult.status === 403 ? 502 : 503);
+  const offerRulesResult = await fetchAllRecords(env, config.offerRulesTable, fetchImpl);
+  if (!offerRulesResult.ok) return json({ ok: false, error: "model_offer_rules_unavailable" }, offerRulesResult.status === 401 || offerRulesResult.status === 403 ? 502 : 503);
 
   const identities = modelsResult.records.map(projectKenjiAdminModelRecord).filter((item) => item.model_id && (item.model_key || item.working_name));
   const profiles = profilesResult.records.map(projectKenjiKeywordProfileRecord).filter((item) => item.keyword_profile_id && (item.model_key || item.working_name || item.linked_model_ids.length));
@@ -355,10 +411,11 @@ async function listModels(request, env, fetchImpl) {
   const items = rows
     .filter((item) => !q || searchableText(item).includes(q))
     .sort((left, right) => rankModel(left, q) - rankModel(right, q) || left.working_name.localeCompare(right.working_name))
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((item) => ({ ...item, sales_control: salesControlForModel(item, offerRulesResult.records) }));
   return json({
     ok: true,
-    source: { identity: "airtable_models", keyword_content: "airtable_model_keyword_profiles" },
+    source: { identity: "airtable_models", keyword_content: "airtable_model_keyword_profiles", sales_control: "airtable_model_offer_rules" },
     policy_version: "KENJI_MODEL_ACCESS_V1",
     legacy_source: "/kenji-model-keyword-copy",
     canonical_surface: "/internal/admin/kenji#models",
