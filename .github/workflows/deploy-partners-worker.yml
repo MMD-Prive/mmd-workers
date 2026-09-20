@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - "partners-worker/**"
-      - ".ops/reissue-kendo-partner-20260920"
       - ".github/workflows/deploy-partners-worker.yml"
   workflow_dispatch:
 
@@ -22,78 +21,58 @@ jobs:
     timeout-minutes: 15
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
       AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
       KENDO_RECORD_ID: "recjegeHuesDmm7QP"
       KENDO_NOTES_FIELD_ID: "fldiPJbsdnuxYQAl5"
-      PARTNER_WORKER_URL: "https://partners-worker.malemodel-bkk.workers.dev"
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Re-issue Kendo partner token before hardening
-        if: ${{ hashFiles('.ops/reissue-kendo-partner-20260920') != '' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          response="$(
-            curl --fail-with-body --silent --show-error \
-              -X POST "$PARTNER_WORKER_URL/v1/partner/approve" \
-              -H "Content-Type: application/json" \
-              --data '{"partner_record_id":"'"$KENDO_RECORD_ID"'","action":"recognized","note":"Owner re-issue 2026-09-20: restore Kendo Modeling Dashboard access and bind canonical partner API."}'
-          )"
-
-          ok="$(jq -r '.ok // false' <<<"$response")"
-          dashboard_path="$(jq -r '.dashboard_url // empty' <<<"$response")"
-          terms_path="$(jq -r '.terms_url // empty' <<<"$response")"
-          test "$ok" = "true"
-          test -n "$dashboard_path"
-          test -n "$terms_path"
-
-          dashboard_url="https://www.mmdbkk.com$dashboard_path"
-          terms_url="https://www.mmdbkk.com$terms_path"
-          token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["t"][0])' "$dashboard_url")"
-
-          echo "::add-mask::$token"
-          echo "::add-mask::$dashboard_url"
-          echo "::add-mask::$terms_url"
-
-          current="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          current_notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-
-          printf -v marker '%s\n%s\n%s\n%s' \
-            '[TEMP_KENDO_REISSUE 2026-09-20]' \
-            "Dashboard: $dashboard_url" \
-            "Terms: $terms_url" \
-            'Smoke: pending'
-          new_notes="$current_notes"
-          if [ -n "$new_notes" ]; then
-            printf -v new_notes '%s\n\n%s' "$new_notes" "$marker"
-          else
-            new_notes="$marker"
-          fi
-
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-
-          echo "KENDO_REISSUED=1" >> "$GITHUB_ENV"
-          echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: partners-worker/package-lock.json
+
+      - name: Normalize required credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          for (const key of ["CLOUDFLARE_API_TOKEN","CLOUDFLARE_ROUTES_API_TOKEN","AIRTABLE_API_KEY"]) {
+            const value = clean(process.env[key]);
+            if (!value) throw new Error(`Missing required secret: ${key}`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);
+          }
+          NODE
+          echo "::add-mask::$CLOUDFLARE_API_TOKEN"
+          echo "::add-mask::$CLOUDFLARE_ROUTES_API_TOKEN"
+          echo "::add-mask::$AIRTABLE_API_KEY"
+
+      - name: Load existing Kendo reissue token
+        shell: bash
+        run: |
+          set -euo pipefail
+          record="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
+          )"
+          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$record")"
+          dashboard_url="$(printf '%s\n' "$notes" | sed -n 's/^Dashboard: //p' | tail -n 1)"
+          test -n "$dashboard_url"
+          token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["t"][0])' "$dashboard_url")"
+          test -n "$token"
+
+          echo "::add-mask::$token"
+          echo "::add-mask::$dashboard_url"
+          echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
 
       - name: Install
         working-directory: partners-worker
@@ -103,37 +82,166 @@ jobs:
         working-directory: partners-worker
         run: npm run typecheck
 
-      - name: Deploy production
+      - name: Build route-free deploy config
         working-directory: partners-worker
-        run: npx wrangler deploy
-
-      - name: Verify bound partner API and Kendo token
-        if: env.KENDO_REISSUED == '1'
         shell: bash
         run: |
           set -euo pipefail
-          sleep 8
+          node <<'NODE'
+          const fs = require("node:fs");
+          const input = fs.readFileSync("wrangler.toml","utf8").split(/\r?\n/);
+          const output = [];
+          let skipRoutes = false;
+          for (const line of input) {
+            if (!skipRoutes && /^\s*routes\s*=\s*\[\s*$/.test(line)) {
+              skipRoutes = true;
+              continue;
+            }
+            if (skipRoutes) {
+              if (/^\s*\]\s*$/.test(line)) skipRoutes = false;
+              continue;
+            }
+            output.push(line);
+          }
+          if (skipRoutes) throw new Error("Unclosed routes array in wrangler.toml");
+          const result = output.join("\n")+"\n";
+          if (/^\s*routes\s*=/m.test(result)) throw new Error("Route-free config still contains routes");
+          fs.writeFileSync(".wrangler-no-routes.toml", result);
+          NODE
+
+      - name: Deploy worker code without route mutation
+        working-directory: partners-worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --keep-vars --config .wrangler-no-routes.toml
+
+      - name: Verify Cloudflare routes token
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 3 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            -H "Authorization: Bearer $CLOUDFLARE_ROUTES_API_TOKEN" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify)"
+          test "$code" = "200"
+          jq -e '.success == true and .result.status == "active"' "$body" >/dev/null
+
+      - name: Bind canonical partner API routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const worker = "partners-worker";
+          const desired = [
+            "mmdbkk.com/v1/partner/*",
+            "www.mmdbkk.com/v1/partner/*",
+          ];
+
+          async function cf(path, options = {}) {
+            const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+              ...options,
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+              },
+            });
+            const payload = await response.json();
+            if (!response.ok || payload.success !== true) {
+              const detail = (payload.errors || [])
+                .map((e) => `${e.code || "unknown"}: ${e.message || "unknown error"}`)
+                .join("; ");
+              throw new Error(`Cloudflare route request failed (${response.status}): ${detail}`);
+            }
+            return payload.result;
+          }
+
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          const conflicts = desired.flatMap((pattern) =>
+            existing.filter((route) => route.pattern === pattern && route.script !== worker)
+          );
+          if (conflicts.length) {
+            throw new Error(`Refusing partner route takeover: ${conflicts.map((r) => `${r.pattern} -> ${r.script || "none"}`).join(", ")}`);
+          }
+
+          const missing = desired.filter(
+            (pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          for (const pattern of missing) {
+            await cf(routePath, {
+              method: "POST",
+              body: JSON.stringify({ pattern, script: worker }),
+            });
+            console.log(`Created ${pattern} -> ${worker}`);
+          }
+
+          const verified = await cf(routePath);
+          const unresolved = desired.filter(
+            (pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker)
+          );
+          if (unresolved.length) throw new Error(`Unresolved routes: ${unresolved.join(", ")}`);
+          console.log(`Verified ${desired.length}/${desired.length}; created ${missing.length}`);
+          NODE
+
+      - name: Smoke Kendo on bound partner API
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 6
           encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
 
-          verify="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/verify?t=$encoded")"
-          dashboard="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/dashboard?t=$encoded")"
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            verify="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/v1/partner/verify?t=$encoded")"
+            dashboard="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/v1/partner/dashboard?t=$encoded")"
 
-          test "$(jq -r '.ok // false' <<<"$verify")" = "true"
-          test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
-          test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
-          test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
+            test "$(jq -r '.ok // false' <<<"$verify")" = "true"
+            test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
+            test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
+            test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
 
-          current="$(
+            approval_body="$(mktemp)"
+            approval_code="$(curl --silent --show-error -o "$approval_body" -w "%{http_code}" \
+              -X POST -H "Content-Type: application/json" \
+              --data '{"partner_record_id":"'"$KENDO_RECORD_ID"'","action":"recognized"}' \
+              "$origin/v1/partner/approve")"
+            case "$approval_code" in
+              401|403|503) ;;
+              *) cat "$approval_body"; echo "Approval endpoint did not fail closed: HTTP $approval_code" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Clean raw Kendo token from Airtable notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          record="$(
             curl --fail --silent --show-error \
               -H "Authorization: Bearer $AIRTABLE_API_KEY" \
               "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
           )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-          notes="$(printf '%s' "$notes" | sed 's/Smoke: pending/Smoke: PASS - custom-domain verify + dashboard/')"
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
+          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$record")"
+          cleaned="$(NOTES="$notes" node <<'NODE'
+          const notes = process.env.NOTES || "";
+          const without = notes
+            .replace(/\n?\[TEMP_KENDO_REISSUE 2026-09-20\][\s\S]*?(?:Smoke: pending|Smoke: PASS[^\n]*)/, "")
+            .trim();
+          const audit = "[2026-09-20] Kendo partner access reissued; custom-domain verify/dashboard smoke PASS. Raw token not retained.";
+          process.stdout.write(without ? without+"\n\n"+audit : audit);
+          NODE
+          )"
+          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$cleaned" '{fields:{($f):$v}}')"
           curl --fail --silent --show-error \
             -X PATCH \
             -H "Authorization: Bearer $AIRTABLE_API_KEY" \
             -H "Content-Type: application/json" \
             --data "$payload" \
             "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
+
+      - name: Clean temporary config
+        if: always()
+        working-directory: partners-worker
+        run: rm -f .wrangler-no-routes.toml
