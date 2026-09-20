@@ -66,10 +66,17 @@ jobs:
           )"
           current_notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
 
-          marker="[TEMP_KENDO_REISSUE 2026-09-20]"
+          printf -v marker '%s\n%s\n%s\n%s' \
+            '[TEMP_KENDO_REISSUE 2026-09-20]' \
+            "Dashboard: $dashboard_url" \
+            "Terms: $terms_url" \
+            'Smoke: pending'
           new_notes="$current_notes"
-          if [ -n "$new_notes" ]; then new_notes="$new_notes"$'\n\n'; fi
-          new_notes="$new_notes$marker"
+          if [ -n "$new_notes" ]; then
+            printf -v new_notes '%s\n\n%s' "$new_notes" "$marker"
+          else
+            new_notes="$marker"
+          fi
 
           payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
           curl --fail --silent --show-error \
@@ -79,10 +86,8 @@ jobs:
             --data "$payload" \
             "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
 
-          {
-            echo "KENDO_REISSUED=1"
-            echo "KENDO_TOKEN=$token"
-          } >> "$GITHUB_ENV"
+          echo "KENDO_REISSUED=1" >> "$GITHUB_ENV"
+          echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
 
       - uses: actions/setup-node@v4
         with:
@@ -124,205 +129,7 @@ jobs:
               "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
           )"
           notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-          notes="${notes/Smoke: pending/Smoke: PASS — custom-domain verify + dashboard}"
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-\n'"Dashboard: $dashboard_url"
-          new_notes="$current_notes"
-          if [ -n "$new_notes" ]; then new_notes="$new_notes"$'\n\n'; fi
-          new_notes="$new_notes$marker"
-
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-
-          {
-            echo "KENDO_REISSUED=1"
-            echo "KENDO_TOKEN=$token"
-          } >> "$GITHUB_ENV"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: partners-worker/package-lock.json
-
-      - name: Install
-        working-directory: partners-worker
-        run: npm ci
-
-      - name: Typecheck
-        working-directory: partners-worker
-        run: npm run typecheck
-
-      - name: Deploy production
-        working-directory: partners-worker
-        run: npx wrangler deploy
-
-      - name: Verify bound partner API and Kendo token
-        if: env.KENDO_REISSUED == '1'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sleep 8
-          encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
-
-          verify="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/verify?t=$encoded")"
-          dashboard="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/dashboard?t=$encoded")"
-
-          test "$(jq -r '.ok // false' <<<"$verify")" = "true"
-          test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
-          test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
-          test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
-
-          current="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-          notes="${notes/Smoke: pending/Smoke: PASS — custom-domain verify + dashboard}"
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-\n'"Terms: $terms_url"
-          new_notes="$current_notes"
-          if [ -n "$new_notes" ]; then new_notes="$new_notes"$'\n\n'; fi
-          new_notes="$new_notes$marker"
-
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-
-          {
-            echo "KENDO_REISSUED=1"
-            echo "KENDO_TOKEN=$token"
-          } >> "$GITHUB_ENV"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: partners-worker/package-lock.json
-
-      - name: Install
-        working-directory: partners-worker
-        run: npm ci
-
-      - name: Typecheck
-        working-directory: partners-worker
-        run: npm run typecheck
-
-      - name: Deploy production
-        working-directory: partners-worker
-        run: npx wrangler deploy
-
-      - name: Verify bound partner API and Kendo token
-        if: env.KENDO_REISSUED == '1'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sleep 8
-          encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
-
-          verify="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/verify?t=$encoded")"
-          dashboard="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/dashboard?t=$encoded")"
-
-          test "$(jq -r '.ok // false' <<<"$verify")" = "true"
-          test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
-          test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
-          test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
-
-          current="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-          notes="${notes/Smoke: pending/Smoke: PASS — custom-domain verify + dashboard}"
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-\n'"Smoke: pending"
-          new_notes="$current_notes"
-          if [ -n "$new_notes" ]; then new_notes="$new_notes"$'\n\n'; fi
-          new_notes="$new_notes$marker"
-
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
-
-          {
-            echo "KENDO_REISSUED=1"
-            echo "KENDO_TOKEN=$token"
-          } >> "$GITHUB_ENV"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: partners-worker/package-lock.json
-
-      - name: Install
-        working-directory: partners-worker
-        run: npm ci
-
-      - name: Typecheck
-        working-directory: partners-worker
-        run: npm run typecheck
-
-      - name: Deploy production
-        working-directory: partners-worker
-        run: npx wrangler deploy
-
-      - name: Verify bound partner API and Kendo token
-        if: env.KENDO_REISSUED == '1'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sleep 8
-          encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
-
-          verify="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/verify?t=$encoded")"
-          dashboard="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/dashboard?t=$encoded")"
-
-          test "$(jq -r '.ok // false' <<<"$verify")" = "true"
-          test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
-          test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
-          test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
-
-          current="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
-          notes="${notes/Smoke: pending/Smoke: PASS — custom-domain verify + dashboard}"
+          notes="$(printf '%s' "$notes" | sed 's/Smoke: pending/Smoke: PASS - custom-domain verify + dashboard/')"
           payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
           curl --fail --silent --show-error \
             -X PATCH \
