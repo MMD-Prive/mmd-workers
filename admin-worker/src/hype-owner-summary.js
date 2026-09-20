@@ -1,5 +1,6 @@
 import { buildAdminDashboard } from "./dashboard-worker.js";
 import { RECOVERY_PICKER_INTELLIGENCE_VERSION, RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
+import { readHypeObserverHealth } from "./hype-observer-health-read.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -16,12 +17,13 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
 
   try {
     const now = new Date();
-    const [dashboard, recoveryQueue] = await Promise.all([
+    const [dashboard, recoveryQueue, observerHealth] = await Promise.all([
       buildAdminDashboard(env),
       readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now)
         .catch(() => ({ ok: false, error: "recovery_queue_unavailable" })),
+      readHypeObserverHealth(env).catch(() => ({ available: false, reason: "health_source_unavailable" })),
     ]);
-    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue), 200);
+    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue, observerHealth), 200);
   } catch {
     return json({
       ok: false,
@@ -32,7 +34,7 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
   }
 }
 
-export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null) {
+export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null, observerHealth = null) {
   const counts = dashboard?.counts || {};
   const paymentItems = safeItems(dashboard?.money, 4, projectPayment);
   const historicalItems = safeItems(dashboard?.historical_recovery, 3, projectHistorical);
@@ -44,6 +46,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   const today = bangkokDate(now, 0);
   const tomorrow = bangkokDate(now, 1);
   const recovery = projectRecoveryQueueSummary(recoveryQueue);
+  const observer = projectObserverHealthSummary(observerHealth);
 
   const todayJobs = jobItems.filter((item) => item.job_date === today).slice(0, 4);
   const tomorrowJobs = jobItems.filter((item) => item.job_date === tomorrow).slice(0, 4);
@@ -72,7 +75,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   ]).slice(0, 8);
 
   const nextActions = [];
-  if (reviewCounts.payment_review > 0) nextActions.push(action(1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
+  if (observer.alert_required === true) nextActions.push(action(1, "เช็ก Payment Observer Health", "/internal/admin/control-room", "observer_health_read_only"));
+  if (reviewCounts.payment_review > 0) nextActions.push(action(observer.alert_required === true ? 2 : 1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
   if (reviewCounts.recovery_picker_authority_unavailable > 0) {
     nextActions.push(action(2, "ดู Picker ที่ refresh ไม่ได้", "/internal/admin/recovery?picker=authority_unavailable", "recovery_picker_interaction_metadata"));
   } else if (reviewCounts.recovery_picker_no_candidates > 0) {
@@ -147,7 +151,12 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       display_names: affectedClients,
       detail_mode: "open_client_360_on_demand",
     },
-    alerts: dedupeObjects([...bossItems, ...todoItems], (item) => item.title + "|" + item.text).slice(0, 6),
+    alerts: dedupeObjects([
+      ...(observer.alert_required === true ? [{ title: "Payment Observer Health", text: observer.summary, href: "/internal/admin/control-room" }] : []),
+      ...bossItems,
+      ...todoItems,
+    ], (item) => item.title + "|" + item.text).slice(0, 6),
+    observer_health: observer,
     system: {
       admin: token(dashboard?.status?.admin),
       payments: token(dashboard?.status?.payments),
@@ -176,6 +185,44 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
+  };
+}
+
+function projectObserverHealthSummary(value = null) {
+  if (!value || value.available !== true) {
+    return {
+      available: false,
+      status: "unknown",
+      checked_at: null,
+      alert_required: false,
+      alert_codes: [],
+      summary: "Payment Observer health source unavailable",
+      operational_only: true,
+      business_truth_inferred: false,
+    };
+  }
+  return {
+    available: true,
+    status: clean(value.status, 40) || "unknown",
+    checked_at: clean(value.checked_at, 80) || null,
+    last_accepted_slip_at: clean(value.last_accepted_slip_at, 80) || null,
+    accepted_last_24h: nullableNonNegative(value.accepted_last_24h),
+    silence_hours: value.silence_hours === null || value.silence_hours === undefined ? null : Math.max(0, Number(value.silence_hours) || 0),
+    held_open: nullableNonNegative(value.held_open),
+    held_new_1h: nullableNonNegative(value.held_new_1h),
+    extractor_failures_1h: nullableNonNegative(value.extractor_failures_1h),
+    extractor_consecutive_failures: nullableNonNegative(value.extractor_consecutive_failures),
+    outbox_retryable: nullableNonNegative(value.outbox_retryable),
+    outbox_failed_terminal: nullableNonNegative(value.outbox_failed_terminal),
+    membership_v4_last_seen_at: clean(value.membership_v4_last_seen_at, 80) || null,
+    membership_v4_heartbeat_at: clean(value.membership_v4_heartbeat_at, 80) || null,
+    membership_v4_seen_after_deploy: value.membership_v4_seen_after_deploy === true,
+    alert_required: value.alert_required === true,
+    alert_codes: (Array.isArray(value.alert_codes) ? value.alert_codes : []).slice(0, 10).map((x) => clean(x, 80)).filter(Boolean),
+    recovery_state: clean(value.recovery_state, 40) || "none",
+    summary: clean(value.summary, 1000),
+    operational_only: true,
+    business_truth_inferred: false,
   };
 }
 
