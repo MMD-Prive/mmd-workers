@@ -16,6 +16,7 @@ function env(overrides = {}) {
   return {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
+    TELEGRAM_DEPLOY_CONTROL_TOKEN: "deploy-control-secret",
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
     AUTH_SERVICE_STUDIO_TO_TELEGRAM: "studio-service-secret",
@@ -161,6 +162,14 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
   }), env());
   assert.equal(missingAuth.status, 403);
 
+  const deployControlMissingConfirm = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Deploy-Control-Token": "deploy-control-secret" },
+    body: "{}",
+  }), env());
+  assert.equal(deployControlMissingConfirm.status, 400);
+  assert.equal((await deployControlMissingConfirm.json()).error, "telegram_webhook_lock_confirmation_required");
+
   const missingConfirm = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Internal-Token": "internal-secret" },
@@ -168,6 +177,12 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
   }), env());
   assert.equal(missingConfirm.status, 400);
   assert.equal((await missingConfirm.json()).error, "telegram_webhook_lock_confirmation_required");
+
+  const deployControlResponsePromise = async () => worker.fetch(new Request(WEBHOOK_LOCK_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Deploy-Control-Token": "deploy-control-secret" },
+    body: JSON.stringify({ confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
+  }), env());
 
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -205,6 +220,14 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
     assert.equal(body.secret_token_enforced, true);
     assert.equal(calls.length, 2);
     assert.doesNotMatch(JSON.stringify(body), /expected-secret|telegram-token|evil\.example/i);
+
+    calls.length = 0;
+    const deployResponse = await deployControlResponsePromise();
+    const deployBody = await deployResponse.json();
+    assert.equal(deployResponse.status, 200);
+    assert.equal(deployBody.ok, true);
+    assert.equal(deployBody.canonical_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(calls.length, 2);
   } finally {
     globalThis.fetch = originalFetch;
   }
