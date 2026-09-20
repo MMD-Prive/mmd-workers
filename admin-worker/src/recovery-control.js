@@ -527,6 +527,8 @@ function recoveryControlGuardrails() {
     picker_manual_refresh_grants_authority: false,
     picker_manual_refresh_selects_candidate: false,
     picker_manual_refresh_resets_sla: false,
+    assignment_history_bounded: true,
+    picker_refresh_history_bounded: true,
     sla_operational_metadata_only: true,
     sla_business_truth_inferred: false,
   };
@@ -671,6 +673,7 @@ function projectPickerAttentionItem(item) {
     picker_candidate_count: item.picker.candidate_count,
     picker_reissue_count: item.picker.reissue_count,
     picker_last_stale_reason: item.picker.last_stale_reason,
+    picker_refresh_history: item.picker.refresh_history,
     picker_next_attention: pickerNextAttention(item.picker.queue_state),
     assignment_status: item.assignment.status,
     assigned_to: item.assignment.assignee_label,
@@ -802,12 +805,69 @@ function projectRecoveryPicker(value, domain) {
     reissued_at: clean(raw.picker_reissued_at, 80) || null,
     live_refresh_status: liveRefresh || null,
     last_stale_reason: token(raw.last_stale_reason) || null,
+    refresh_history: projectRecoveryPickerRefreshHistory(raw.picker_refresh_history),
     manual_refresh_eligible: raw.correlated !== true
       && revision !== null
       && ["active", "reissued", "stale", "no_current_candidates"].includes(status),
     interaction_only: true,
     business_truth_inferred: false,
   };
+}
+
+function projectRecoveryPickerRefreshHistory(value) {
+  const rows = Array.isArray(value) ? value : [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+    const trigger = token(row.trigger);
+    const result = token(row.result);
+    if (!["customer_stale", "owner_manual"].includes(trigger)) return null;
+    if (!["reissued", "no_candidates", "authority_unavailable"].includes(result)) return null;
+    return {
+      trigger,
+      result,
+      source_revision: nullablePickerRevision(row.source_revision),
+      revision: nullablePickerRevision(row.revision),
+      candidate_count: nullableBoundedCount(row.candidate_count, 50),
+      reason: token(row.reason) || null,
+      at: clean(row.at, 80) || null,
+    };
+  }).filter(Boolean).slice(-12);
+}
+
+function nullablePickerRevision(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 && n <= 999999 ? n : null;
+}
+
+function nullableBoundedCount(value, max) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 ? Math.min(max, n) : null;
+}
+
+function projectRecoveryAssignmentHistory(value) {
+  const rows = Array.isArray(value) ? value : [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+    const action = token(row.action);
+    if (!["claim", "release", "takeover"].includes(action)) return null;
+    return {
+      action,
+      at: clean(row.at, 80) || null,
+      revision: Math.max(0, Number(row.revision) || 0),
+      actor_label: clean(row.actor_label, 120) || "Operator",
+      actor_role: token(row.actor_role) || null,
+      actor_lane: token(row.actor_lane) || null,
+      from_status: token(row.from_status) || "unassigned",
+      from_assignee_label: clean(row.from_assignee_label, 120) || null,
+      to_status: token(row.to_status) || "unassigned",
+      to_assignee_label: clean(row.to_assignee_label, 120) || null,
+    };
+  }).filter(Boolean).slice(-12);
+}
+
+function appendRecoveryAssignmentHistory(raw, entry) {
+  return [...projectRecoveryAssignmentHistory(raw?.history), entry].slice(-12);
 }
 
 function projectRecoveryAssignment(value) {
@@ -822,6 +882,7 @@ function projectRecoveryAssignment(value) {
     claimed_at: status === "assigned" ? clean(raw.claimed_at, 80) || null : null,
     updated_at: clean(raw.updated_at, 80) || null,
     revision: Math.max(0, Number(raw.revision) || 0),
+    history: projectRecoveryAssignmentHistory(raw.history),
     coordination_only: true,
     grants_authority: false,
   };
@@ -871,6 +932,18 @@ async function mutateRecoveryAssignment(env, current, actor, action) {
       claimed_at: stamp,
       updated_at: stamp,
       revision,
+      history: appendRecoveryAssignmentHistory(currentRaw, {
+        action: "claim",
+        at: stamp,
+        revision,
+        actor_label: actorIdentity.label,
+        actor_role: actorIdentity.role,
+        actor_lane: actorIdentity.lane,
+        from_status: currentAssignment.status,
+        from_assignee_label: currentAssignment.assignee_label,
+        to_status: "assigned",
+        to_assignee_label: actorIdentity.label,
+      }),
       coordination_only: true,
       grants_authority: false,
     });
@@ -894,6 +967,18 @@ async function mutateRecoveryAssignment(env, current, actor, action) {
       claimed_at: stamp,
       updated_at: stamp,
       revision,
+      history: appendRecoveryAssignmentHistory(currentRaw, {
+        action: "takeover",
+        at: stamp,
+        revision,
+        actor_label: actorIdentity.label,
+        actor_role: actorIdentity.role,
+        actor_lane: actorIdentity.lane,
+        from_status: currentAssignment.status,
+        from_assignee_label: currentAssignment.assignee_label,
+        to_status: "assigned",
+        to_assignee_label: actorIdentity.label,
+      }),
       coordination_only: true,
       grants_authority: false,
     });
@@ -913,6 +998,18 @@ async function mutateRecoveryAssignment(env, current, actor, action) {
       released_by_role: actorIdentity.role,
       updated_at: stamp,
       revision,
+      history: appendRecoveryAssignmentHistory(currentRaw, {
+        action: "release",
+        at: stamp,
+        revision,
+        actor_label: actorIdentity.label,
+        actor_role: actorIdentity.role,
+        actor_lane: actorIdentity.lane,
+        from_status: currentAssignment.status,
+        from_assignee_label: currentAssignment.assignee_label,
+        to_status: "unassigned",
+        to_assignee_label: null,
+      }),
       coordination_only: true,
       grants_authority: false,
     });
