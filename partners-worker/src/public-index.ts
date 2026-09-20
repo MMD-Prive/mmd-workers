@@ -287,6 +287,15 @@ const DASHBOARD_JS = String.raw`
     return "<label class='mmdp-check'><input type='checkbox' name='"+html(name)+"' value='"+html(value)+"'"+checked+"><span>"+html(value)+"</span></label>";
   }
 
+  function bangkokInput(value) {
+    if(!value)return"";
+    var date=new Date(value);
+    if(!Number.isFinite(date.getTime()))return"";
+    var parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date);
+    var get=function(type){var part=parts.find(function(p){return p.type===type;});return part?part.value:"";};
+    return get("year")+"-"+get("month")+"-"+get("day")+"T"+get("hour")+":"+get("minute");
+  }
+
   function renderSalesModel(model) {
     var p=model.proposal||{};
     var audiences=(p.audience_scope||[]).map(canonicalAudience);
@@ -299,8 +308,8 @@ const DASHBOARD_JS = String.raw`
         "<label>Partner / Source Rate THB<input data-sales-field='partner_source_rate_thb' type='number' min='0' step='1' value='"+html(p.source_rate_thb==null?"":p.source_rate_thb)+"'></label>"+
         "<label>Visibility<select data-sales-field='sales_visibility'><option value='on'"+(p.sales_visibility==="on"?" selected":"")+">On</option><option value='off'"+(p.sales_visibility!=="on"?" selected":"")+">Off</option></select></label>"+
         "<label>Schedule<select data-sales-field='schedule_type'>"+["Always","Date range","Date + time range","Weekly recurring"].map(function(v){return"<option value='"+v+"'"+(scheduleLabel(p.schedule_type)===v?" selected":"")+">"+v+"</option>";}).join("")+"</select></label>"+
-        "<label>Effective From<input data-sales-field='effective_from_at' type='datetime-local' value=''></label>"+
-        "<label>Effective Until<input data-sales-field='effective_until_at' type='datetime-local' value=''></label>"+
+        "<label>Effective From<input data-sales-field='effective_from_at' type='datetime-local' value='"+html(bangkokInput(p.effective_from))+"'></label>"+
+        "<label>Effective Until<input data-sales-field='effective_until_at' type='datetime-local' value='"+html(bangkokInput(p.effective_until))+"'></label>"+
         "<label>Start Bangkok<input data-sales-field='start_time_local' type='time' value='"+html(p.start_time_local||"")+"'></label>"+
         "<label>End Bangkok<input data-sales-field='end_time_local' type='time' value='"+html(p.end_time_local||"")+"'></label>"+
       "</div>"+
