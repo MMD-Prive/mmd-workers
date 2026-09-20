@@ -21,6 +21,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   validate-and-deploy:
@@ -221,3 +222,23 @@ jobs:
             --data '{"confirm":"SEND_REDACTED_TOPIC_SMOKE","disable_notification":true}')"
           echo "$body"
           node -e 'const d=JSON.parse(process.argv[1]); if (!d.ok || d.failed !== 0 || Number(d.tested) < 7) process.exit(1);' "$body"
+
+
+      - name: Record Telegram production deployment receipt
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "### Telegram production route receipt
+
+- source_sha: \`${GITHUB_SHA}\`
+- job_status: \`${{ job.status }}\`
+- canonical webhook: \`https://mmdbkk.com/telegram/webhook\`
+- canonical internal send: \`https://mmdbkk.com/telegram/internal/send\`
+- route owner: \`telegram-worker\`
+- workers.dev: compatibility transport only
+- acceptance: exact apex/www route sync + webhook URL lock + invalid-secret fail-closed + unauthenticated internal-send fail-closed
+
+If job_status is success, Telegram core route ownership is live-verified for this source SHA."
