@@ -18,6 +18,7 @@ function env(overrides = {}) {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
     TELEGRAM_DEPLOY_CONTROL_TOKEN: "deploy-control-secret",
+    TELEGRAM_DEPLOY_REPAIR_SECRET: "deploy-control-secret",
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
     AUTH_SERVICE_STUDIO_TO_TELEGRAM: "studio-service-secret",
