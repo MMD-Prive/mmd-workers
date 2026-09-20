@@ -367,6 +367,7 @@ function familyType(p){
  var s=String(p&&p.sku||"").toUpperCase(),n=String(p&&p.product_name||"").toLowerCase();
  if(s.indexOf("PPP25-")===0||n.indexOf("pod premium plus 2.5mg")>=0)return "pod";
  if(s.indexOf("WGG-")===0||n.indexOf("water gg plus")>=0||n.indexOf("gg water")>=0)return "gg";
+ if(s.indexOf("GLEN-POP")===0||n.indexOf("glenburgies pop plus")>=0)return "glen";
  return "";
 }
 function podFlavour(p){
