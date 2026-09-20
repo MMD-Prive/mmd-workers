@@ -1,3 +1,3 @@
 # HYPE closed-loop production re-verification marker
 
-Final aggregate receipt rerun after fixing receipt-shell quoting. No business logic changes; retriggers the read-only closed-loop smoke for the final receipt SHA.
+Diagnostic final receipt rerun. No business logic changes; retriggers the read-only closed-loop smoke and emits a visible failure receipt if the production pair does not pass.
