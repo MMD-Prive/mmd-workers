@@ -64,7 +64,7 @@ export default {
       }
 
       if (isWebhookLockPath(path) && req.method === "POST") {
-        requireWebhookLockToken(req, env);
+        await requireWebhookLockToken(req, env);
         const body = (await safeJson(req)) || {};
         if (clean(body.confirm) !== TELEGRAM_WEBHOOK_LOCK_CONFIRMATION) {
           return json({
@@ -157,11 +157,40 @@ export default {
   },
 };
 
-function requireWebhookLockToken(req, env) {
+async function requireWebhookLockToken(req, env) {
   const deployToken = clean(env.TELEGRAM_DEPLOY_CONTROL_TOKEN, 5000);
   const direct = req.headers.get("X-Deploy-Control-Token") || "";
   if (deployToken && direct && direct === deployToken) return;
-  requireInternalToken(req, env);
+
+  let internalError = null;
+  try {
+    requireInternalToken(req, env);
+    return;
+  } catch (error) {
+    internalError = error;
+  }
+
+  const auth = clean(req.headers.get("Authorization"), 6000);
+  const cloudflareToken = /^Bearer\s+(.+)$/i.exec(auth)?.[1] || "";
+  if (cloudflareToken && await verifyTelegramWorkerDeployToken(cloudflareToken)) return;
+
+  throw internalError;
+}
+
+async function verifyTelegramWorkerDeployToken(token) {
+  const candidate = clean(token, 5000);
+  if (!candidate) return false;
+  const response = await fetch(
+    "https://api.cloudflare.com/client/v4/accounts/b176eda1172b741fd2e58904cc9d77c5/workers/scripts/telegram-worker/settings",
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${candidate}`,
+        Accept: "application/json",
+      },
+    },
+  ).catch(() => null);
+  return Boolean(response?.ok);
 }
 
 async function readCanonicalTelegramWebhookStatus(env) {
