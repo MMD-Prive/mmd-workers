@@ -201,3 +201,68 @@ test("MMD Shop product API returns Pod flavour family without changing restricte
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("MMD Shop product API returns Glenburgies as one bottle-variant family", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("tblzsmNLfP6J0kQ90")) {
+      return Response.json({
+        records: [
+          {
+            id: "recGlenBlk",
+            fields: {
+              "Product Name": "Glenburgies Pop Plus — Black Bottle",
+              "SKU": "GLEN-POP15-BLK",
+              "Brand Availability": ["MMD Shop"],
+              "Status": "active",
+              "Supplier": ["recSupplierGlen"],
+              "Product Note": "on-demand",
+              "MMD Shop Selling Price THB": 1500
+            }
+          },
+          {
+            id: "recGlenWht",
+            fields: {
+              "Product Name": "Glenburgies Pop Plus — White Bottle",
+              "SKU": "GLEN-POP15-WHT",
+              "Brand Availability": ["MMD Shop"],
+              "Status": "active",
+              "Supplier": ["recSupplierGlen"],
+              "Product Note": "on-demand",
+              "MMD Shop Selling Price THB": 1500
+            }
+          }
+        ]
+      });
+    }
+    if (url.pathname.includes("tblwFgl4et1TOgtNn")) return Response.json({ records: [] });
+    if (url.pathname.includes("tbl81bnFyASeXCj9x")) {
+      return Response.json({ records: [{ id: "recSupplierGlen", fields: { "Supplier Name": "SUP — Glenburgies Pop Plus" } }] });
+    }
+    return new Response("not found", { status: 404 });
+  };
+
+  try {
+    const response = await handleShopCatalog(
+      new Request("https://www.mmdbkk.com/mmd-shop/api/product/glen-pop15-blk"),
+      { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_TOKEN: "test-token" }
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.product.variant_group, "GLEN");
+    assert.equal(body.product.variant_type, "bottle");
+    assert.equal(body.product.variant_value, "Black Bottle");
+    assert.equal(body.product.checkout_eligible, true);
+    assert.deepEqual(
+      body.variants.map((item) => [item.sku, item.variant_value, item.checkout_eligible]),
+      [
+        ["GLEN-POP15-BLK", "Black Bottle", true],
+        ["GLEN-POP15-WHT", "White Bottle", true]
+      ]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
