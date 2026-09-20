@@ -1,6 +1,8 @@
 import { buildAdminDashboard } from "./dashboard-worker.js";
 import { RECOVERY_PICKER_INTELLIGENCE_VERSION, RECOVERY_QUEUE_ASSIGNMENT_VERSION, RECOVERY_QUEUE_SLA_VERSION, readRecoveryQueueIntelligence } from "./recovery-control.js";
 import { readHypeObserverHealth } from "./hype-observer-health-read.js";
+import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
+import { buildIncidentRootCauseDigest } from "./hype-incident-root-cause.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -17,13 +19,14 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
 
   try {
     const now = new Date();
-    const [dashboard, recoveryQueue, observerHealth] = await Promise.all([
+    const [dashboard, recoveryQueue, observerHealth, telegramRouterHealth] = await Promise.all([
       buildAdminDashboard(env),
       readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now)
         .catch(() => ({ ok: false, error: "recovery_queue_unavailable" })),
       readHypeObserverHealth(env).catch(() => ({ available: false, reason: "health_source_unavailable" })),
+      readHypeTelegramRouterHealth(env).catch(() => ({ available: false, status: "unknown", summary: "Telegram Router health source unavailable" })),
     ]);
-    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue, observerHealth), 200);
+    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue, observerHealth, telegramRouterHealth), 200);
   } catch {
     return json({
       ok: false,
@@ -34,7 +37,7 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
   }
 }
 
-export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null, observerHealth = null) {
+export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null, observerHealth = null, telegramRouterHealth = null) {
   const counts = dashboard?.counts || {};
   const paymentItems = safeItems(dashboard?.money, 4, projectPayment);
   const historicalItems = safeItems(dashboard?.historical_recovery, 3, projectHistorical);
@@ -47,6 +50,8 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   const tomorrow = bangkokDate(now, 1);
   const recovery = projectRecoveryQueueSummary(recoveryQueue);
   const observer = projectObserverHealthSummary(observerHealth);
+  const telegramRouter = projectTelegramRouterSummary(telegramRouterHealth);
+  const incidentDigest = buildIncidentRootCauseDigest({ observer, router: telegramRouter, recovery });
 
   const todayJobs = jobItems.filter((item) => item.job_date === today).slice(0, 4);
   const tomorrowJobs = jobItems.filter((item) => item.job_date === tomorrow).slice(0, 4);
@@ -75,8 +80,12 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   ]).slice(0, 8);
 
   const nextActions = [];
-  if (observer.alert_required === true) nextActions.push(action(1, "เช็ก Payment Observer Health", "/internal/admin/control-room", "observer_health_read_only"));
-  if (reviewCounts.payment_review > 0) nextActions.push(action(observer.alert_required === true ? 2 : 1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
+  if (incidentDigest.status === "critical") {
+    nextActions.push(action(1, incidentDigest.primary?.owner_action?.title || "เช็ก Incident Digest", incidentDigest.primary?.owner_action?.href || "/internal/admin/control-room", incidentDigest.primary?.owner_action?.authority || "diagnostic_read_only"));
+  } else if (observer.alert_required === true) {
+    nextActions.push(action(1, "เช็ก Payment Observer Health", "/internal/admin/control-room", "observer_health_read_only"));
+  }
+  if (reviewCounts.payment_review > 0) nextActions.push(action(nextActions.length ? 2 : 1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
   if (reviewCounts.recovery_picker_authority_unavailable > 0) {
     nextActions.push(action(2, "ดู Picker ที่ refresh ไม่ได้", "/internal/admin/recovery?picker=authority_unavailable", "recovery_picker_interaction_metadata"));
   } else if (reviewCounts.recovery_picker_no_candidates > 0) {
@@ -152,16 +161,30 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       detail_mode: "open_client_360_on_demand",
     },
     alerts: dedupeObjects([
+      ...((incidentDigest.status === "critical" || incidentDigest.status === "warning") ? [{
+        title: "HYPE Incident Digest",
+        text: clean(incidentDigest.primary?.title, 160) + " · " + clean(incidentDigest.primary?.explanation, 260),
+        href: incidentDigest.primary?.owner_action?.href || "/internal/admin/control-room",
+      }] : []),
+      ...(telegramRouter.status === "degraded" ? [{ title: "Telegram Router Health", text: telegramRouter.summary, href: "/internal/admin/control-room" }] : []),
       ...(observer.alert_required === true ? [{ title: "Payment Observer Health", text: observer.summary, href: "/internal/admin/control-room" }] : []),
       ...bossItems,
       ...todoItems,
     ], (item) => item.title + "|" + item.text).slice(0, 6),
     observer_health: observer,
+    telegram_router_health: telegramRouter,
+    incident_digest: incidentDigest,
     system: {
       admin: token(dashboard?.status?.admin),
       payments: token(dashboard?.status?.payments),
       historical_recovery: token(dashboard?.status?.historical_recovery),
-      telegram: token(dashboard?.status?.telegram),
+      telegram: telegramRouter.status === "configured"
+        ? "ready"
+        : telegramRouter.status === "partial"
+          ? "degraded"
+          : telegramRouter.status === "degraded"
+            ? "unavailable"
+            : token(dashboard?.status?.telegram),
       data: token(dashboard?.status?.data),
       reconfirm: token(dashboard?.status?.reconfirm),
     },
@@ -182,9 +205,77 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_picker_grants_authority: false,
       recovery_assignment_history_bounded: true,
       recovery_picker_refresh_history_bounded: true,
+      telegram_router_health: "telegram-worker:internal-router-health-v1",
+      telegram_router_health_operational_only: true,
+      incident_digest_diagnostic_only: true,
+      incident_digest_may_mutate_business_truth: false,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
+  };
+}
+
+function projectTelegramRouterSummary(value = null) {
+  if (!value || value.available !== true) {
+    return {
+      available: false,
+      status: "unknown",
+      checked_at: null,
+      summary: "Telegram Router health source unavailable",
+      causes: [],
+      lanes: [],
+      legacy_direct_senders: [],
+      counts: { lanes_total: 0, configured: 0, partial: 0, unavailable: 0, legacy_direct_senders: 0 },
+      transport: {},
+      operational_only: true,
+      business_truth_inferred: false,
+    };
+  }
+  const counts = value.counts && typeof value.counts === "object" ? value.counts : {};
+  return {
+    available: true,
+    status: clean(value.status, 40) || "unknown",
+    checked_at: clean(value.checked_at, 80) || null,
+    summary: clean(value.summary, 500) || "Telegram Router health available",
+    canonical_owner: clean(value.canonical_owner, 80) || "telegram-worker",
+    registry_version: clean(value.registry_version, 120) || null,
+    causes: (Array.isArray(value.causes) ? value.causes : []).slice(0, 12).map((x) => clean(x, 120)).filter(Boolean),
+    lanes: (Array.isArray(value.lanes) ? value.lanes : []).slice(0, 30).map((lane) => ({
+      key: clean(lane?.key, 80),
+      label: clean(lane?.label, 140),
+      status: clean(lane?.status, 40) || "unknown",
+      topic: clean(lane?.topic, 80),
+      fallback: clean(lane?.fallback, 80) || null,
+      migration_state: clean(lane?.migration_state, 80) || "unknown",
+      shared_destination: clean(lane?.shared_destination, 80) || null,
+      source_workers: (Array.isArray(lane?.source_workers) ? lane.source_workers : []).slice(0, 8).map((x) => clean(x, 80)).filter(Boolean),
+      authority: clean(lane?.authority, 180),
+    })),
+    legacy_direct_senders: (Array.isArray(value.legacy_direct_senders) ? value.legacy_direct_senders : []).slice(0, 20).map((item) => ({
+      worker: clean(item?.worker, 80),
+      reason: clean(item?.reason, 240),
+      migration_required: item?.migration_required === true,
+    })),
+    counts: {
+      lanes_total: nn(counts.lanes_total),
+      configured: nn(counts.configured),
+      partial: nn(counts.partial),
+      unavailable: nn(counts.unavailable),
+      legacy_direct_senders: nn(counts.legacy_direct_senders),
+    },
+    transport: value.transport && typeof value.transport === "object" ? {
+      bot_configured: value.transport.bot_configured === true,
+      ops_chat_configured: value.transport.ops_chat_configured === true,
+      webhook_secret_configured: value.transport.webhook_secret_configured === true,
+      internal_auth_configured: value.transport.internal_auth_configured === true,
+      live_probe_attempted: value.transport.live_probe_attempted === true,
+      live_probe_ok: value.transport.live_probe_ok === true,
+      webhook_canonical: value.transport.webhook_canonical === true,
+      pending_update_count: nullableNonNegative(value.transport.pending_update_count),
+      live_probe_reason: clean(value.transport.live_probe_reason, 120) || null,
+    } : {},
+    operational_only: true,
+    business_truth_inferred: false,
   };
 }
 

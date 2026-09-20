@@ -1003,3 +1003,9 @@ service = "himai-chat-worker"
 [[services]]
 binding = "MEMBER_DASHBOARD_CHAT_WORKER"
 service = "member-dashboard-chat-worker"
+
+# Read-only HYPE Telegram router health fan-in. This binding exposes bounded
+# notification health only; telegram-worker remains the route owner.
+[[services]]
+binding = "TELEGRAM_ROUTER"
+service = "telegram-worker"

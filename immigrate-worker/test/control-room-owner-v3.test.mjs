@@ -32,7 +32,7 @@ try {
   assert.equal(response.headers.get("x-mmd-control-room-slip-backfill-route"), "/internal/admin/payments/historical-backfill");
   assert.equal(response.headers.get("x-mmd-control-room-customer-data-route"), "/internal/admin/customer-data");
   assert.equal(response.headers.get("x-mmd-control-room-cta-audit"), "operator-triggered-head-check");
-  assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "partial-worker-alerts-no-unified-router");
+  assert.equal(response.headers.get("x-mmd-control-room-telegram-status"), "unified-router-health-v1-read-only");
   assert.equal(response.headers.get("x-mmd-control-room-typography"), "sf-first-local");
   assert.equal(response.headers.get("x-mmd-control-room-operator-object"), "job");
   assert.equal(response.headers.get("x-mmd-control-room-create-route"), "/internal/admin/jobs/create-job");
@@ -105,8 +105,8 @@ try {
   assert.doesNotMatch(body, /href="\/male-massage\/therapists\/me"/);
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
-  assert.match(body, /Telegram alerts · Partial \/ Drive observed/);
-  assert.match(body, /Partial Alerts/);
+  assert.match(body, /Telegram alerts · Unified Router Health V1 \/ Drive observed/);
+  assert.match(body, /Telegram \/ Google Drive · Router Health Read-only/);
   assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
 
