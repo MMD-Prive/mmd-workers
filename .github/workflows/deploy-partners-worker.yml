@@ -1,0 +1,140 @@
+name: Deploy partners-worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "partners-worker/**"
+      - ".ops/reissue-kendo-partner-20260920"
+      - ".github/workflows/deploy-partners-worker.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-partners-worker-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
+      KENDO_RECORD_ID: "recjegeHuesDmm7QP"
+      KENDO_NOTES_FIELD_ID: "fldiPJbsdnuxYQAl5"
+      PARTNER_WORKER_URL: "https://partners-worker.malemodel-bkk.workers.dev"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Re-issue Kendo partner token before hardening
+        if: ${{ hashFiles('.ops/reissue-kendo-partner-20260920') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(
+            curl --fail-with-body --silent --show-error \
+              -X POST "$PARTNER_WORKER_URL/v1/partner/approve" \
+              -H "Content-Type: application/json" \
+              --data '{"partner_record_id":"'"$KENDO_RECORD_ID"'","action":"recognized","note":"Owner re-issue 2026-09-20: restore Kendo Modeling Dashboard access and bind canonical partner API."}'
+          )"
+
+          ok="$(jq -r '.ok // false' <<<"$response")"
+          dashboard_path="$(jq -r '.dashboard_url // empty' <<<"$response")"
+          terms_path="$(jq -r '.terms_url // empty' <<<"$response")"
+          test "$ok" = "true"
+          test -n "$dashboard_path"
+          test -n "$terms_path"
+
+          dashboard_url="https://www.mmdbkk.com$dashboard_path"
+          terms_url="https://www.mmdbkk.com$terms_path"
+          token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query)["t"][0])' "$dashboard_url")"
+
+          echo "::add-mask::$token"
+          echo "::add-mask::$dashboard_url"
+          echo "::add-mask::$terms_url"
+
+          current="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
+          )"
+          current_notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
+
+          marker="$(cat <<EOF
+[TEMP_KENDO_REISSUE 2026-09-20]
+Dashboard: $dashboard_url
+Terms: $terms_url
+Smoke: pending
+EOF
+)"
+          new_notes="$current_notes"
+          if [ -n "$new_notes" ]; then new_notes="$new_notes"$'\n\n'; fi
+          new_notes="$new_notes$marker"
+
+          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$new_notes" '{fields:{($f):$v}}')"
+          curl --fail --silent --show-error \
+            -X PATCH \
+            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
+
+          {
+            echo "KENDO_REISSUED=1"
+            echo "KENDO_TOKEN=$token"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: partners-worker/package-lock.json
+
+      - name: Install
+        working-directory: partners-worker
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: partners-worker
+        run: npm run typecheck
+
+      - name: Deploy production
+        working-directory: partners-worker
+        run: npx wrangler deploy
+
+      - name: Verify bound partner API and Kendo token
+        if: env.KENDO_REISSUED == '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 8
+          encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
+
+          verify="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/verify?t=$encoded")"
+          dashboard="$(curl --fail --silent --show-error "https://mmdbkk.com/v1/partner/dashboard?t=$encoded")"
+
+          test "$(jq -r '.ok // false' <<<"$verify")" = "true"
+          test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
+          test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
+          test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
+
+          current="$(
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
+          )"
+          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields[$f] // ""' <<<"$current")"
+          notes="${notes/Smoke: pending/Smoke: PASS — custom-domain verify + dashboard}"
+          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$notes" '{fields:{($f):$v}}')"
+          curl --fail --silent --show-error \
+            -X PATCH \
+            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null

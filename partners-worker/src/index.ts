@@ -1,4 +1,4 @@
-type SecretName = "AIRTABLE_API_KEY" | "TELEGRAM_BOT_TOKEN" | "TOKEN_SECRET";
+type SecretName = "AIRTABLE_API_KEY" | "TELEGRAM_BOT_TOKEN" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
   | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
@@ -769,6 +769,22 @@ async function handlePublicModelApplication(
 }
 
 async function handlePartnerApprove(request: Request, env: RuntimeEnv, ctx: ExecutionContext): Promise<Response> {
+  const expectedAdminSecret = String(env.ADMIN_APPROVE_SECRET || env.TOKEN_SECRET || "").trim();
+  const explicitAdminSecret = String(request.headers.get("x-mmd-admin-secret") || "").trim();
+  const authorization = String(request.headers.get("authorization") || "").trim();
+  const bearerMatch = authorization.match(/^Bearer\s+(.+)$/i);
+  const suppliedAdminSecret = explicitAdminSecret || String(bearerMatch?.[1] || "").trim();
+
+  if (!expectedAdminSecret) {
+    return errorResponse(request, env, "admin_auth_unavailable", "Partner approval authority is not configured.", 503, false);
+  }
+  if (!suppliedAdminSecret) {
+    return errorResponse(request, env, "admin_auth_required", "Partner approval requires admin authorization.", 401, false);
+  }
+  if (!constantTimeStringEqual(suppliedAdminSecret, expectedAdminSecret)) {
+    return errorResponse(request, env, "admin_auth_invalid", "Partner approval authorization is invalid.", 403, false);
+  }
+
   const body = await readJsonObject(request);
   if (!body.ok) {
     return errorResponse(request, env, "invalid_json", body.error, 400, false);
