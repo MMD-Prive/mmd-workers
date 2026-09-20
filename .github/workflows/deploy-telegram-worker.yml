@@ -34,7 +34,7 @@ jobs:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
-      INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
+      INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN || secrets.TELEGRAM_INTERNAL_TOKEN }}
 
     steps:
       - name: Check out repository
