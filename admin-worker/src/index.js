@@ -914,7 +914,27 @@ export async function isAdminGateSessionAuthed(req, env) {
   const now = Date.now();
   if (session.iat > now || session.exp <= now || session.exp - session.iat > ADMIN_GATE_TTL_MS) return false;
   if (!session.nonce || typeof session.nonce !== "string") return false;
-  return true;
+  return session;
+}
+
+async function adminGateSessionContext(req, env) {
+  const session = await readValidatedAdminGateSession(req, env);
+  if (!session) return null;
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`${session.host}:${session.iat}:${session.nonce}`),
+  );
+  const opaqueId = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 24);
+  return {
+    id: `adm_${opaqueId}`,
+    actor: { id: str(env.ADMIN_ACTOR_ID || "per") || "per" },
+    issued_at: new Date(session.iat).toISOString(),
+    expires_at: new Date(session.exp).toISOString(),
+  };
 }
 
 async function readAdminGateSession(req, env) {
@@ -1290,12 +1310,15 @@ async function handleKenjiKnowledgeReadinessRoute(req, env, path, method) {
   }
 
   if (path === KENJI_KNOWLEDGE_AUTH_ME_PATH) {
+    const session = await adminGateSessionContext(req, env);
     return jsonForMethod(req, {
       ok: true,
       authenticated: true,
       worker: "admin-worker",
       scope: "internal_admin",
       source: "admin-worker",
+      session,
+      actor: session?.actor || null,
     });
   }
 

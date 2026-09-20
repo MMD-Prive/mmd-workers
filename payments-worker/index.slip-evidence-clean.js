@@ -260,6 +260,8 @@ async function handle(req, env) {
 
 export default {
   async fetch(req, env, ctx) {
+    const campaignResponse = await handleCampaignInternalRoute(req, env);
+    if (campaignResponse) return campaignResponse;
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/g, "") || "/";
     const method = req.method.toUpperCase();
