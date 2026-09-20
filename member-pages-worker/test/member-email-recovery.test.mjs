@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectRecoveryEvidence } from "../src/member-email-recovery.js";
+import { inspectRecoveryEvidence, resolveAutomaticRecoveryEmail } from "../src/member-email-recovery.js";
 
 const LINE_ID = `U${"a".repeat(32)}`;
 
@@ -154,4 +154,125 @@ test("a claimed old account with no exact evidence is review_required, never aut
   assert.equal(result.match_type, "not_found");
   assert.deepEqual(result.candidateMemberIds, []);
   assert.deepEqual(result.candidateClientIds, []);
+});
+
+
+test("verified LINE auto-resolves a unique historical #client email without customer re-entry", async () => {
+  const env = envWith({
+    "LINE OFC Client Import Staging": [
+      {
+        id: "recLineClientABC12",
+        fields: {
+          line_user_id: LINE_ID,
+          line_tags_raw: "#client #svip",
+          email_candidate: "history@example.com",
+          dry_run_only: false,
+        },
+      },
+    ],
+  });
+
+  const result = await resolveAutomaticRecoveryEmail(env, { lineUserId: LINE_ID });
+
+  assert.equal(result.state, "resolved");
+  assert.equal(result.email, "history@example.com");
+  assert.equal(result.match_type, "verified_line_historical_email");
+  assert.ok(result.evidenceSources.includes("line_ofc_client_email"));
+});
+
+test("verified LINE auto-resolves Pre-Session / Identity Seed email before manual recovery", async () => {
+  const env = envWith({
+    "MMD — Pre-Session Client Index": [
+      {
+        id: "recSeedLineABC123",
+        fields: {
+          line_user_id: LINE_ID,
+          identity_email: "seed@example.com",
+          resolution_status: "candidate",
+          candidate_only: true,
+        },
+      },
+    ],
+  });
+
+  const result = await resolveAutomaticRecoveryEmail(env, { lineUserId: LINE_ID });
+
+  assert.equal(result.state, "resolved");
+  assert.equal(result.email, "seed@example.com");
+  assert.ok(result.evidenceSources.includes("pre_session_verified_line"));
+});
+
+test("conflicting historical #client emails fail closed before any manual claim", async () => {
+  const env = envWith({
+    "LINE OFC Client Import Staging": [
+      {
+        id: "recLineClientAAA12",
+        fields: {
+          line_user_id: LINE_ID,
+          line_tags_raw: "#client",
+          email_candidate: "one@example.com",
+          dry_run_only: false,
+        },
+      },
+      {
+        id: "recLineClientBBB12",
+        fields: {
+          line_user_id: LINE_ID,
+          line_tags_raw: "#client",
+          email_candidate: "two@example.com",
+          dry_run_only: false,
+        },
+      },
+    ],
+  });
+
+  const result = await resolveAutomaticRecoveryEmail(env, { lineUserId: LINE_ID });
+
+  assert.equal(result.state, "review_required");
+  assert.equal(result.match_type, "ambiguous");
+  assert.equal(result.email, undefined);
+});
+
+test("LINE rows without #client are not promoted into automatic historical email recovery", async () => {
+  const env = envWith({
+    "LINE OFC Client Import Staging": [
+      {
+        id: "recLineOtherABC12",
+        fields: {
+          line_user_id: LINE_ID,
+          line_tags_raw: "#model",
+          email_candidate: "not-client@example.com",
+          dry_run_only: false,
+        },
+      },
+    ],
+  });
+
+  const result = await resolveAutomaticRecoveryEmail(env, { lineUserId: LINE_ID });
+
+  assert.equal(result.state, "unresolved");
+  assert.equal(result.match_type, "not_found");
+});
+
+test("committed Email Identity Staging can support automatic recovery only when linked to one Client", async () => {
+  const env = envWith({
+    "Email Identity Staging": [
+      {
+        id: "recEmailStageABC1",
+        fields: {
+          line_id_candidate: LINE_ID,
+          sender_email: "committed@example.com",
+          review_status: "committed",
+          matched_client: ["recClientABC12345"],
+        },
+      },
+    ],
+  });
+
+  const result = await resolveAutomaticRecoveryEmail(env, { lineUserId: LINE_ID });
+
+  assert.equal(result.state, "resolved");
+  assert.equal(result.email, "committed@example.com");
+  assert.deepEqual(result.candidateClientIds, ["recClientABC12345"]);
+  assert.ok(result.evidenceSources.includes("committed_email_identity_staging"));
 });
