@@ -139,7 +139,31 @@ const MODEL_PARTNERS = {
   defaultFlatAmountThb: "fldsIsiskggF0CO86",
   partnerScore: "Partner Score",
   approvalStatus: "fldwRzdtIoPbHKr7n",
-  accessTokenHash: "fldoaCF4k4YqyuQ7Q"
+  accessTokenHash: "fldoaCF4k4YqyuQ7Q",
+  telegramVerificationStatus: "fldOPxUvKgAVW5a2M",
+  telegramVerifiedAt: "fldDrOnCgqnnnQgA9"
+} as const;
+
+const SESSION_FIELDS = {
+  sessionId: "fldLTq2kZbyRv22IA",
+  clientName: "fldMvnQ0BzDfHUYjT",
+  modelName: "flddVz6eoWRHrzIQr",
+  jobDate: "fldpnqoIsUMfN7y3c",
+  startTime: "fldBeG0FkWwa8kgnp",
+  endTime: "fldiDSz0wW9Ct9I3P",
+  locationName: "fldIiRpaxoafjTkFt",
+  workLane: "fldzYGziqLqTQaoaK",
+  workType: "fldZiv3GeiafJTuRv",
+  partnerIdSnapshot: "fld0jkscGAtyX7i2J",
+  partnerSnapshotJson: "fldxyZ7S3tjF8chGR",
+  partnerConfirmationStatus: "fldrAQxUX4pRqz6qr",
+  partnerConfirmedAt: "fldLonXanVTSybnpv",
+  partnerConfirmationNote: "fldjAwRLqxhJ7GjJL",
+  partnerConfirmationRevision: "fldhO72ZSYcyjbLzi",
+  partnerNotificationStatus: "fldv1X9HIfgUjwpJw",
+  partnerNotificationMessageId: "fldyG4XzAlMQz4gfG",
+  partnerNotificationSentAt: "fldG2sWou0Zh18PHS",
+  partnerNotificationError: "fldGLKYcQVPZelwue"
 } as const;
 
 const PARTNER_ASSETS = {
@@ -296,6 +320,14 @@ export default {
 
       if (request.method === "GET" && url.pathname === "/v1/partner/dashboard") {
         return await handlePartnerDashboard(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/telegram/connect") {
+        return await handlePartnerTelegramConnect(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/__internal/partner-job-confirm") {
+        return await handlePartnerJobConfirmInternal(request, runtimeEnv);
       }
 
       if (request.method === "POST" && url.pathname === "/v1/partner/accept-terms") {
@@ -918,6 +950,9 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   if (!verified.ok) return verified.response;
 
   const partnerRecord = verified.value.partnerRecord;
+  const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
+  const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
+  const telegramConnected = telegramStatus === "verified" && /^\\d{5,20}$/.test(telegramId);
   const [referrals, commissions] = await Promise.all([
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id),
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id)
@@ -953,7 +988,9 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
     control_layer: ROLE_LAYERS.partner_control,
     partner: {
       id: partnerRecord.id,
-      name: fieldText(partnerRecord, MODEL_PARTNERS.partnerName) || fieldText(partnerRecord, MODEL_PARTNERS.displayName) || "SĪGIL Partner"
+      name: fieldText(partnerRecord, MODEL_PARTNERS.partnerName) || fieldText(partnerRecord, MODEL_PARTNERS.displayName) || "SĪGIL Partner",
+      telegram_connected: telegramConnected,
+      telegram_username: telegramConnected ? fieldText(partnerRecord, MODEL_PARTNERS.telegramUsername) || null : null
     },
     summary: {
       tier: fieldText(partnerRecord, MODEL_PARTNERS.tier) || "Trusted",
@@ -963,6 +1000,152 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
     },
     referrals: normalizedReferrals,
     commissions: normalizedCommissions
+  });
+}
+
+
+async function handlePartnerTelegramConnect(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+
+  const authority = (env as RuntimeEnv & { TELEGRAM_BIND_AUTHORITY?: Fetcher }).TELEGRAM_BIND_AUTHORITY;
+  if (!authority?.fetch) {
+    return errorResponse(request, env, "telegram_bind_authority_unavailable", "Telegram connection is temporarily unavailable.", 503, true);
+  }
+
+  const response = await authority.fetch(new Request("https://admin-worker.internal/__internal/telegram-identity-bind", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mmd-service-binding": "partners-worker"
+    },
+    body: JSON.stringify({
+      operation: "issue_partner",
+      partner_record_id: verified.value.partnerRecord.id
+    })
+  }));
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.ok) {
+    return errorResponse(
+      request,
+      env,
+      String(payload?.error || "telegram_bind_issue_failed"),
+      "Unable to prepare Telegram connection.",
+      response.status || 503,
+      response.status >= 500
+    );
+  }
+  return json(request, env, {
+    ok: true,
+    telegram_connected: payload.telegram_connected === true,
+    state: payload.state || "connect_required",
+    connect_url: payload.connect_url || null,
+    expires_at: payload.expires_at || null
+  });
+}
+
+async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv): Promise<Response> {
+  if (new URL(request.url).hostname !== "partners-worker.internal") {
+    return json(request, env, { ok: false, error: "internal_only" }, 403);
+  }
+  if (String(request.headers.get("x-mmd-service-binding") || "").trim() !== "telegram-worker") {
+    return json(request, env, { ok: false, error: "internal_caller_invalid" }, 403);
+  }
+  const body = await readJsonObject(request);
+  if (!body.ok) return json(request, env, { ok: false, error: "invalid_json" }, 400);
+
+  const sessionRecordId = readString(body.value, "session_record_id");
+  const telegramUserId = readString(body.value, "telegram_user_id");
+  const action = normalizeStatus(readString(body.value, "action"));
+  const note = readString(body.value, "note").slice(0, 600);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return json(request, env, { ok:false, error:"session_record_id_invalid" }, 400);
+  if (!/^\\d{5,20}$/.test(telegramUserId)) return json(request, env, { ok:false, error:"telegram_identity_invalid" }, 400);
+  const statusByAction: Record<string,string> = {
+    confirm: "confirmed",
+    changes: "changes_requested",
+    decline: "declined"
+  };
+  const nextStatus = statusByAction[action];
+  if (!nextStatus) return json(request, env, { ok:false, error:"partner_confirmation_action_invalid" }, 400);
+
+  const sessionsTable = String((env as RuntimeEnv & { AIRTABLE_TABLE_SESSIONS?: string }).AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  const session = await getAirtableRecord(env, sessionsTable, sessionRecordId);
+  const sf = session.fields || {};
+  const partnerId = String(sf[SESSION_FIELDS.partnerIdSnapshot] || sf.partner_id_snapshot || "").trim();
+  let partnerSnapshot: Record<string, unknown> = {};
+  try {
+    const raw = String(sf[SESSION_FIELDS.partnerSnapshotJson] || sf.partner_snapshot_json || "{}");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) partnerSnapshot = parsed as Record<string,unknown>;
+  } catch {}
+  const partnerRecordId = String(partnerSnapshot.partner_record_id || "").trim();
+  if (!partnerId || !/^rec[A-Za-z0-9]{14,24}$/.test(partnerRecordId)) {
+    return json(request, env, { ok:false, error:"partner_snapshot_required" }, 409);
+  }
+
+  const partner = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partnerRecordId);
+  if (fieldText(partner, MODEL_PARTNERS.partnerId) !== partnerId) {
+    return json(request, env, { ok:false, error:"partner_snapshot_mismatch" }, 409);
+  }
+  const approval = normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus));
+  const partnerStatus = normalizeStatus(fieldText(partner, MODEL_PARTNERS.status));
+  const bindStatus = normalizeStatus(fieldText(partner, MODEL_PARTNERS.telegramVerificationStatus));
+  const boundTelegramId = fieldText(partner, MODEL_PARTNERS.telegramId);
+  if (approval !== "recognized" || partnerStatus !== "active") {
+    return json(request, env, { ok:false, error:"partner_not_active" }, 403);
+  }
+  if (bindStatus !== "verified" || boundTelegramId !== telegramUserId) {
+    return json(request, env, { ok:false, error:"partner_telegram_identity_mismatch" }, 403);
+  }
+
+  const currentStatus = normalizeStatus(String(sf[SESSION_FIELDS.partnerConfirmationStatus] || sf.partner_confirmation_status || ""));
+  const currentRevision = Number(sf[SESSION_FIELDS.partnerConfirmationRevision] || sf.partner_confirmation_revision || 0) || 0;
+  if (currentStatus === nextStatus) {
+    return json(request, env, {
+      ok:true,
+      idempotent:true,
+      session_id:String(sf[SESSION_FIELDS.sessionId] || sf.session_id || ""),
+      partner_confirmation_status:nextStatus,
+      partner_confirmation_revision:currentRevision
+    });
+  }
+  if (["confirmed","declined"].includes(currentStatus)) {
+    return json(request, env, { ok:false, error:"partner_confirmation_already_final", current_status:currentStatus }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const nextRevision = currentRevision + 1;
+  await updateAirtableRecord(env, sessionsTable, sessionRecordId, {
+    [SESSION_FIELDS.partnerConfirmationStatus]: nextStatus,
+    [SESSION_FIELDS.partnerConfirmedAt]: now,
+    [SESSION_FIELDS.partnerConfirmationRevision]: nextRevision,
+    [SESSION_FIELDS.partnerConfirmationNote]: note || (nextStatus === "confirmed" ? "Confirmed via verified Partner Telegram." : nextStatus === "declined" ? "Declined via verified Partner Telegram." : "Partner requested changes via verified Telegram.")
+  }, true);
+
+  const safeSession = fieldText(session, SESSION_FIELDS.sessionId) || sessionRecordId;
+  const safeModel = fieldText(session, SESSION_FIELDS.modelName) || "Model";
+  const safeClient = fieldText(session, SESSION_FIELDS.clientName) || "Client";
+  try {
+    await sendTelegramMessage(env, [
+      "PARTNER JOB RESPONSE",
+      "",
+      `Partner: ${fieldText(partner, MODEL_PARTNERS.partnerName) || partnerId}`,
+      `Session: ${safeSession}`,
+      `Client: ${safeClient}`,
+      `Model: ${safeModel}`,
+      `Response: ${nextStatus}`,
+      `Revision: ${nextRevision}`
+    ].join("\n"));
+  } catch (error) {
+    console.error("partner response telegram alert failed", error);
+  }
+
+  return json(request, env, {
+    ok:true,
+    session_id:safeSession,
+    partner_confirmation_status:nextStatus,
+    partner_confirmation_revision:nextRevision,
+    confirmed_at:now
   });
 }
 

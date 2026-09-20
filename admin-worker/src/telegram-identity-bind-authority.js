@@ -3,10 +3,11 @@ export const TELEGRAM_BIND_INTERNAL_PATH = "/__internal/telegram-identity-bind";
 const BINDS_TABLE_DEFAULT = "tblnoEmhS3EpdtV6E";
 const CLIENTS_TABLE_DEFAULT = "tblVv58TCbwh5j1fS";
 const MODELS_TABLE_DEFAULT = "tblI4B0bI446vp9GX";
+const PARTNERS_TABLE_DEFAULT = "tbl1ksDlsTiiGEHWe";
 const MEMBER_ENTITLEMENTS_TABLE_DEFAULT = "tblNImdF9PKAxhXGi";
 const BOT_USERNAME_DEFAULT = "mmdprivebot";
 const BIND_TTL_MS = 15 * 60 * 1000;
-const ALLOWED_INTERNAL_CALLERS = new Set(["member-pages-worker", "telegram-worker"]);
+const ALLOWED_INTERNAL_CALLERS = new Set(["member-pages-worker", "partners-worker", "telegram-worker"]);
 
 export async function handleTelegramBindAuthorityRpc(request, env = {}) {
   let url;
@@ -21,6 +22,10 @@ export async function handleTelegramBindAuthorityRpc(request, env = {}) {
 
   if (body.operation === "issue_client" && caller === "member-pages-worker") {
     return json(await issueClientTelegramBind(env, { line_user_id: body.line_user_id }), 200);
+  }
+  if (body.operation === "issue_partner" && caller === "partners-worker") {
+    const result = await issuePartnerTelegramBind(env, { partner_record_id: body.partner_record_id });
+    return json(result, result.ok ? 200 : result.status || 400);
   }
   if (body.operation === "consume" && caller === "telegram-worker") {
     const result = await consumeTelegramBind(env, {
@@ -52,16 +57,28 @@ export async function issueModelTelegramBind(env, { model_record_id } = {}) {
   return issueForRecord(env, "model", model.record);
 }
 
+export async function issuePartnerTelegramBind(env, { partner_record_id } = {}) {
+  const recordId = clean(partner_record_id, 40);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(recordId)) return { ok:false, status:400, error:"partner_record_id_invalid" };
+  const partner = await airtableGet(env, partnersTable(env), recordId);
+  if (!partner.ok) return { ok:false, status:partner.status === 404 ? 404 : 503, error:partner.status === 404 ? "partner_not_found" : "partner_lookup_unavailable" };
+  const fields = partner.record?.fields || {};
+  if (normalizeStatus(fields["Approval Status"]) !== "recognized" && normalizeStatus(fields.approval_status) !== "recognized") {
+    return { ok:false, status:403, error:"partner_not_recognized" };
+  }
+  return issueForRecord(env, "partner", partner.record);
+}
+
 async function issueForRecord(env, role, record) {
   const fields = record?.fields || {};
   const status = normalizeStatus(fields.telegram_verification_status);
-  const existingId = clean(fields.telegram_user_id, 40);
+  const existingId = clean(role === "partner" ? fields["Telegram ID"] : fields.telegram_user_id, 40);
   if (status === "verified" && /^\d{5,20}$/.test(existingId)) {
     return {
       ok:true,
       state:"connected",
       telegram_connected:true,
-      telegram_username: safeUsername(fields.telegram_username),
+      telegram_username: safeUsername(role === "partner" ? fields["Telegram Username"] : fields.telegram_username),
       connect_url:null,
       expires_at:null,
     };
@@ -78,7 +95,7 @@ async function issueForRecord(env, role, record) {
     bind_id: bindId,
     token_hash: tokenHash,
     role,
-    ...(role === "client" ? { Client: [record.id] } : { Model: [record.id] }),
+    ...(role === "client" ? { Client: [record.id] } : role === "model" ? { Model: [record.id] } : { Partner: [record.id] }),
     status: "pending",
     created_at: now.toISOString(),
     expires_at: expires.toISOString(),
@@ -124,18 +141,18 @@ export async function consumeTelegramBind(env, { start_arg, telegram_user_id, te
   }
 
   const role = normalizeRole(bf.role);
-  const linked = role === "client" ? linkedIds(bf.Client) : linkedIds(bf.Model);
+  const linked = role === "client" ? linkedIds(bf.Client) : role === "model" ? linkedIds(bf.Model) : linkedIds(bf.Partner);
   if (!role || linked.length !== 1) {
     await airtableUpdate(env, bindsTable(env), bind.id, { status:"conflict" }).catch(() => null);
     return { ok:false, status:409, error:"telegram_bind_subject_invalid" };
   }
 
-  const table = role === "client" ? clientsTable(env) : modelsTable(env);
+  const table = role === "client" ? clientsTable(env) : role === "model" ? modelsTable(env) : partnersTable(env);
   const subject = await airtableGet(env, table, linked[0]);
   if (!subject.ok) return { ok:false, status:503, error:"telegram_bind_subject_unavailable" };
   const sf = subject.record.fields || {};
   const priorStatus = normalizeStatus(sf.telegram_verification_status);
-  const priorId = clean(sf.telegram_user_id,40);
+  const priorId = clean(role === "partner" ? sf["Telegram ID"] : sf.telegram_user_id,40);
 
   if (priorStatus === "verified" && /^\d{5,20}$/.test(priorId) && priorId !== telegramUserId) {
     await airtableUpdate(env, bindsTable(env), bind.id, {
@@ -147,12 +164,20 @@ export async function consumeTelegramBind(env, { start_arg, telegram_user_id, te
   }
 
   const nowIso = new Date().toISOString();
-  const updated = await airtableUpdate(env, table, subject.record.id, {
-    telegram_user_id:telegramUserId,
-    telegram_username:username || "",
-    telegram_verified_at:nowIso,
-    telegram_verification_status:"verified",
-  }, true);
+  const updatedFields = role === "partner"
+    ? {
+        "Telegram ID": telegramUserId,
+        "Telegram Username": username || "",
+        telegram_verified_at: nowIso,
+        telegram_verification_status: "verified",
+      }
+    : {
+        telegram_user_id:telegramUserId,
+        telegram_username:username || "",
+        telegram_verified_at:nowIso,
+        telegram_verification_status:"verified",
+      };
+  const updated = await airtableUpdate(env, table, subject.record.id, updatedFields, true);
   if (!updated.ok) return { ok:false, status:503, error:"telegram_identity_write_failed" };
 
   if (role === "client") {
@@ -222,9 +247,10 @@ function airtableConfig(env){const key=clean(env.AIRTABLE_API_KEY,2000);const ba
 function bindsTable(env){return clean(env.AIRTABLE_TABLE_TELEGRAM_IDENTITY_BINDS||BINDS_TABLE_DEFAULT,180);}
 function clientsTable(env){return clean(env.AIRTABLE_TABLE_CLIENTS||CLIENTS_TABLE_DEFAULT,180);}
 function modelsTable(env){return clean(env.AIRTABLE_TABLE_MODELS||MODELS_TABLE_DEFAULT,180);}
+function partnersTable(env){return clean(env.AIRTABLE_TABLE_MODEL_PARTNERS||PARTNERS_TABLE_DEFAULT,180);}
 function entitlementsTable(env){return clean(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS||MEMBER_ENTITLEMENTS_TABLE_DEFAULT,180);}
 function normalizeStatus(v){return clean(Array.isArray(v)?v[0]:v,80).toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");}
-function normalizeRole(v){const x=normalizeStatus(v);return x==="client"||x==="model"?x:"";}
+function normalizeRole(v){const x=normalizeStatus(v);return x==="client"||x==="model"||x==="partner"?x:"";}
 function linkedIds(v){return (Array.isArray(v)?v:[]).map(x=>clean(typeof x==="string"?x:x?.id,40)).filter(x=>/^rec[A-Za-z0-9]{14,24}$/.test(x));}
 function safeUsername(v){const x=clean(v,80).replace(/^@/,"");return /^[A-Za-z0-9_]{3,64}$/.test(x)?x:"";}
 function escapeFormula(v){return String(v||"").replace(/\\/g,"\\\\").replace(/"/g,'\\"');}
