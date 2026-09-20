@@ -1,110 +1,84 @@
 <main id="mmdshop-product-v1"
-  data-api-base=""
-  data-product-endpoint="/mmd-shop/api/product"
-  data-shop-url="/mmd-shop"
-  data-rules-url="/mmd-shop/rules"
-  data-cart-key="mmd_shop_cart">
-  <header class="mmdp__topbar">
-    <a class="mmdp__brand" href="/mmd-shop" aria-label="กลับ MMD Shop">
-      <span class="mmdp__brand-mark">MMD</span>
-      <span class="mmdp__brand-copy">SHOP</span>
-    </a>
-    <nav class="mmdp__nav" aria-label="MMD Shop">
-      <a href="/mmd-shop">สินค้า</a>
-      <a href="/mmd-shop/rules">กติกา</a>
-    </nav>
-  </header>
+ data-api-base=""
+ data-product-endpoint="/mmd-shop/api/product"
+ data-shop-url="/mmd-shop"
+ data-rules-url="/mmd-shop/rules"
+ data-cart-key="mmd_shop_cart">
 
-  <section class="mmdp__stage" aria-live="polite">
-    <div class="mmdp__state" data-mmdp-state="loading">
-      <div class="mmdp__spinner" aria-hidden="true"></div>
-      <p>กำลังเปิดรายละเอียดสินค้า…</p>
+ <header class="mmdp__topbar">
+  <a class="mmdp__brand" href="/mmd-shop"><span>MMD</span><small>SHOP</small></a>
+  <nav class="mmdp__nav"><a href="/mmd-shop">สินค้า</a><a href="/mmd-shop/rules">กติกา</a></nav>
+ </header>
+
+ <section class="mmdp__graphic" aria-label="MMD Shop product">
+  <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aaf1733a1d07fe4b41a040d_MMD%20Shop%20-%2006.webp" alt="MMD Shop — product detail" loading="eager" fetchpriority="high">
+  <div><small>PER'S PICK</small><strong>ดูของชิ้นเดียวให้จบในหน้าเดียว</strong></div>
+ </section>
+
+ <section class="mmdp__stage" aria-live="polite">
+  <div class="mmdp__state" data-mmdp-state="loading"><div class="mmdp__spinner"></div><p>ขอเปิดรายละเอียดแป๊บครับ…</p></div>
+
+  <div class="mmdp__state mmdp__state--error" data-mmdp-state="error" hidden>
+   <span class="mmdp__eyebrow">MMD SHOP</span>
+   <h1 data-error-title>เปิดรายละเอียดไม่ได้ครับ</h1>
+   <p data-error-copy>กลับไปเลือกจาก MMD Shop แล้วลองใหม่อีกครั้งได้เลย</p>
+   <div class="mmdp__state-actions"><button class="mmdp__button mmdp__button--dark" type="button" data-retry>ลองใหม่</button><a class="mmdp__button mmdp__button--light" href="/mmd-shop">กลับ MMD Shop</a></div>
+  </div>
+
+  <article class="mmdp__product" data-mmdp-state="ready" hidden>
+   <div class="mmdp__media">
+    <div class="mmdp__media-frame">
+     <img data-product-image alt="" loading="eager" decoding="async">
+     <span class="mmdp__badge" data-curation-label>PER'S PICK</span>
+    </div>
+   </div>
+
+   <div class="mmdp__content">
+    <div class="mmdp__micro"><span data-product-category>Selected</span><span data-product-sku>Product</span><span class="mmdp__stock" data-stock-label>กำลังเช็กของ</span></div>
+    <h1 class="mmdp__title" data-product-name>สินค้า MMD Shop</h1>
+    <p class="mmdp__description" data-product-description></p>\n\n    <div class="mmdp__variant" data-variant-wrap hidden>\n     <label>\n      <span class="mmdp__variant-label" data-variant-label>ตัวเลือก</span>\n      <select class="mmdp__variant-select" data-variant-select aria-label="Product variant"></select>\n     </label>\n    </div>
+
+    <div class="mmdp__price-row">
+     <div><span class="mmdp__price-label">MMD PRICE</span><strong class="mmdp__price" data-product-price>—</strong></div>
+     <span class="mmdp__price-note">ก่อนรับออเดอร์ MMD เช็กราคาและสต๊อกจริงอีกครั้งครับ</span>
     </div>
 
-    <div class="mmdp__state mmdp__state--error" data-mmdp-state="error" hidden>
-      <span class="mmdp__eyebrow">MMD SHOP</span>
-      <h1 data-error-title>เปิดรายละเอียดสินค้าไม่ได้</h1>
-      <p data-error-copy>กรุณากลับไปที่ MMD Shop แล้วลองอีกครั้ง</p>
-      <div class="mmdp__state-actions">
-        <button class="mmdp__button mmdp__button--dark" type="button" data-retry>ลองอีกครั้ง</button>
-        <a class="mmdp__button mmdp__button--light" href="/mmd-shop">กลับ MMD Shop</a>
+    <div class="mmdp__purchase" data-purchase-panel>
+     <div class="mmdp__qty-wrap">
+      <span class="mmdp__qty-label">จำนวน</span>
+      <div class="mmdp__qty" role="group" aria-label="จำนวนสินค้า">
+       <button type="button" data-qty-minus aria-label="ลดจำนวน">−</button>
+       <output data-qty aria-live="polite">1</output>
+       <button type="button" data-qty-plus aria-label="เพิ่มจำนวน">+</button>
       </div>
+     </div>
+     <div class="mmdp__actions">
+      <button class="mmdp__button mmdp__button--light" type="button" data-add-cart>เก็บไว้ใน Cart</button>
+      <button class="mmdp__button mmdp__button--dark" type="button" data-buy-now>เอาชิ้นนี้</button>
+     </div>
+     <p class="mmdp__feedback" data-feedback aria-live="polite"></p>
     </div>
 
-    <article class="mmdp__product" data-mmdp-state="ready" hidden>
-      <div class="mmdp__media">
-        <div class="mmdp__media-frame">
-          <img data-product-image alt="" loading="eager" decoding="async">
-          <span class="mmdp__badge" data-curation-label>MMD PICK</span>
-        </div>
-      </div>
+    <div class="mmdp__restricted" data-restricted-panel hidden>
+     <strong>ชิ้นนี้ยังไม่เปิดให้กดสั่งออนไลน์ครับ</strong>
+     <p>ดูรายละเอียดได้ก่อน ถ้าพร้อมเมื่อไร MMD จะเปิดปุ่มสั่งให้ตามสถานะจริง</p>
+     <a class="mmdp__button mmdp__button--light" href="/mmd-shop/rules#price">ดูกติกา</a>
+    </div>
 
-      <div class="mmdp__content">
-        <div class="mmdp__crumbs" aria-label="Breadcrumb">
-          <a href="/mmd-shop">MMD Shop</a>
-          <span aria-hidden="true">/</span>
-          <span data-product-sku>Product</span>
-        </div>
+    <div class="mmdp__fold">
+     <details>
+      <summary>ทำไมผมเลือกชิ้นนี้</summary>
+      <div class="mmdp__fold-body"><p data-curator-note>กำลังอัปเดตเหตุผลที่เลือกครับ</p></div>
+     </details>
+     <details>
+      <summary>ก่อนกดสั่งควรรู้อะไร</summary>
+      <div class="mmdp__fold-body"><p>ราคาและสต๊อกบน Order คือข้อมูลที่ใช้จริง ส่วนสลิปที่ส่งเข้ามาจะรอตรวจยอดก่อนถือว่าชำระแล้วครับ</p><a href="/mmd-shop/rules">อ่านกติกาสั้น ๆ →</a></div>
+     </details>
+    </div>
+   </div>
+  </article>
+ </section>
 
-        <div class="mmdp__meta-line">
-          <span class="mmdp__category" data-product-category>Selected</span>
-          <span class="mmdp__stock" data-stock-label>กำลังตรวจสถานะ</span>
-        </div>
-
-        <h1 class="mmdp__title" data-product-name>สินค้า MMD Shop</h1>
-        <p class="mmdp__description" data-product-description></p>
-
-        <div class="mmdp__price-row">
-          <div>
-            <span class="mmdp__price-label">MMD PRICE</span>
-            <strong class="mmdp__price" data-product-price>—</strong>
-          </div>
-          <span class="mmdp__price-note">ระบบตรวจราคาอีกครั้งก่อนสร้าง Order</span>
-        </div>
-
-        <div class="mmdp__purchase" data-purchase-panel>
-          <div class="mmdp__qty-wrap">
-            <span class="mmdp__qty-label">จำนวน</span>
-            <div class="mmdp__qty" role="group" aria-label="จำนวนสินค้า">
-              <button type="button" data-qty-minus aria-label="ลดจำนวน">−</button>
-              <output data-qty aria-live="polite">1</output>
-              <button type="button" data-qty-plus aria-label="เพิ่มจำนวน">+</button>
-            </div>
-          </div>
-          <div class="mmdp__actions">
-            <button class="mmdp__button mmdp__button--light" type="button" data-add-cart>เพิ่มลง Cart</button>
-            <button class="mmdp__button mmdp__button--dark" type="button" data-buy-now>ซื้อและไปชำระเงิน</button>
-          </div>
-          <p class="mmdp__feedback" data-feedback aria-live="polite"></p>
-        </div>
-
-        <div class="mmdp__restricted" data-restricted-panel hidden>
-          <strong>สินค้านี้ไม่เปิด Online Checkout</strong>
-          <p>สามารถดูรายละเอียดได้ แต่ระบบจะไม่สร้าง Order ออนไลน์สำหรับรายการนี้</p>
-          <a class="mmdp__button mmdp__button--light" href="/mmd-shop/rules#restricted">ดูเงื่อนไขสินค้า</a>
-        </div>
-
-        <section class="mmdp__note" aria-labelledby="mmdp-note-title">
-          <span class="mmdp__eyebrow">CURATED BY PER</span>
-          <h2 id="mmdp-note-title">ทำไมสินค้านี้อยู่ใน MMD Shop</h2>
-          <p data-curator-note>รายละเอียดการคัดสรรกำลังอัปเดต</p>
-        </section>
-      </div>
-    </article>
-  </section>
-
-  <section class="mmdp__trust">
-    <a class="mmdp__trust-card" href="/mmd-shop/rules">
-      <small>ORDER RULES</small>
-      <strong>ดูเงื่อนไขก่อนสั่งซื้อ</strong>
-      <span>ราคา · การชำระเงิน · สถานะ Order</span>
-    </a>
-    <a class="mmdp__trust-card" href="/mmd-shop">
-      <small>MMD SHOP</small>
-      <strong>กลับไปดูสินค้าทั้งหมด</strong>
-      <span>ของที่เปอร์คัดสรรมาให้ลูกค้า MMD</span>
-    </a>
-  </section>
-
-  <div class="mmdp__toast" data-toast role="status" aria-live="polite" aria-atomic="true"></div>
+ <nav class="mmdp__bottom" aria-label="MMD Shop navigation"><a href="/mmd-shop">← กลับไปเลือกของ</a><a href="/my-mmd/orders">ดู Orders ของฉัน →</a></nav>
+ <div class="mmdp__toast" data-toast role="status" aria-live="polite"></div>
 </main>
