@@ -29,7 +29,7 @@ function envFor(record, {
     TELEGRAM_INTERNAL_SEND_URL: "https://telegram.example/internal/send",
     INTERNAL_TOKEN: "internal-test",
     TELEGRAM_CHAT_ID: "-1003546439681",
-    TG_THREAD_CONFIRM: "22",
+    TG_THREAD_PAYMENTS_CONFIRM: "22",
     LINE_CHANNEL_ACCESS_TOKEN: "line-token",
     AIRTABLE_HTTP: {
       async fetch(request) {
@@ -107,9 +107,11 @@ test("deposit approval sends each confirmation URL to the correct LINE identity 
     const telegram = calls.find((call) => call.url === "https://telegram.example/internal/send");
     assert.ok(telegram);
     assert.equal(telegram.headers.get("x-internal-token"), "internal-test");
-    assert.match(telegram.body.text, /PAYMENT APPROVED · JOB LINKS RELEASED/);
+    assert.equal(telegram.body.message_thread_id, 22);
+    assert.match(telegram.body.text, /PAYMENT APPROVED · CONFIRMATION URLS/);
     assert.match(telegram.body.text, /MEMBER URL: https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-confirmation\?t=member-secret/);
     assert.match(telegram.body.text, /MODEL URL: https:\/\/www\.mmdbkk\.com\/sigil\/confirm\/job-model\?t=model-secret/);
+    assert.match(telegram.body.text, /Manual confirm fallback/);
     assert.match(telegram.body.text, /Customer LINE: <b>sent<\/b>/);
     assert.match(telegram.body.text, /Model LINE: <b>sent<\/b>/);
   } finally {
