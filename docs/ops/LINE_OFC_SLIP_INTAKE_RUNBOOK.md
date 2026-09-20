@@ -63,6 +63,44 @@ pending Payment Proof
 
 The observer never becomes Money Truth. The authoritative verified write remains in `payments-worker`.
 
+### Lane: held / uncertain evidence
+
+```text
+classify -> hold
+  -> private held prefix (line-ofc/held-evidence/<proof-id>/)
+  -> bounded reprocess sweep (live LINE traffic + hourly cron)
+  -> same extractor / classifier / correlation gates
+  -> accepted -> one pending Payment Proof
+  -> rejected -> discarded
+  -> attempts exhausted -> terminal review_required + bounded Ops notice
+  -> retention elapsed -> terminal expired, bytes deleted
+```
+
+A held item is never paid, never verified and never reaches `payments-worker` while it is held. There is no operator force-paid path out of this lane.
+
+Bounded switches (non-secret):
+
+- `LINE_HELD_EVIDENCE_RETENTION_HOURS` — default 72, max 168;
+- `LINE_HELD_EVIDENCE_MAX_ATTEMPTS` — default 5;
+- `LINE_HELD_EVIDENCE_BASE_BACKOFF_MINUTES` — default 15.
+
+### Lane: durable Ops notification
+
+```text
+pending/verified outcome
+  -> outbox record persisted first (line-ofc/ops-outbox/<id>.json)
+  -> telegram-worker send
+  -> delivered | retryable -> backoff -> retry sweep | failed_terminal
+```
+
+Bounded switches (non-secret):
+
+- `LINE_OPS_OUTBOX_MAX_ATTEMPTS` — default 6, max 12;
+- `LINE_OPS_OUTBOX_BASE_BACKOFF_SECONDS` — default 60;
+- `LINE_OPS_OUTBOX_RETENTION_HOURS` — default 168.
+
+If HYPE/Ops stops receiving payment alerts, check in this order: the Telegram service secret, `telegram-worker` health, then the outbox prefix for `retryable` / `failed_terminal` records. Do not resend by re-running intake; the sweep is the supported recovery path.
+
 ## Production behavior checks
 
 When reviewing a regression, verify these in order:
@@ -85,6 +123,9 @@ When reviewing a regression, verify these in order:
 16. Payment Proof becomes `verified` only after authoritative settlement succeeds.
 17. HYPE/Telegram is notification/operations only.
 18. Duplicate evidence is idempotent by proof ID.
+19. A failed Telegram send leaves a durable retryable outbox record; it never blocks the pending Payment Proof and never rolls back settlement.
+20. A notification retry re-sends only the already-rendered message; it never re-runs `payments-worker` or re-creates a Payment Proof.
+21. Held/uncertain evidence is retained privately under the held prefix, reprocessed through the same canonical gates, and can only end as accepted / rejected / review_required / expired.
 
 ## Focused regression tests
 
@@ -92,6 +133,8 @@ From repository root:
 
 ```sh
 node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
+node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-ops-notification-durability.test.mjs
+node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-held-evidence-lane.test.mjs
 node --test payments-worker/reviewed-proof-line-recovery.test.mjs
 node --test payments-worker/reviewed-proof-canonical-money-truth.test.mjs
 node --test admin-worker/payment-approved-job-link-dispatch.test.mjs
@@ -132,7 +175,9 @@ Production evidence handling must retain these boundaries:
 - no payment truth from message wording;
 - no service payment truth from extraction alone;
 - Membership auto-settlement only through the explicit owner policy and `payments-worker` validation;
-- no direct Points/Booking/Model-assignment mutation from the slip observer.
+- no direct Points/Booking/Model-assignment mutation from the slip observer;
+- held evidence bytes and their private reprocess inputs stay in the private bucket under the held prefix, within the bounded retention window, and never appear in logs, Telegram messages, receipts or GitHub;
+- outbox delivery receipts carry bounded metadata only and are never treated as payment verification.
 
 ## Synthetic staging harness
 
