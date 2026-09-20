@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canonicalProofLinks, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
+import { canonicalProofLinks, canonicalProofRecordFields, enrichUnifiedConfirmVerify, handleUnifiedPaymentIntent, paymentProofTelegramRoute, stablePaymentRef } from "./unified-payment-proof.js";
 import { membershipTermForPackage } from "./reviewed-proof.js";
 import { reconcilePremiumReviewedMembershipTerm } from "./premium-membership-term.js";
 
@@ -23,6 +23,42 @@ test("web payment proof links canonical Payment, Session, and Client records", (
     session: ["recSession"],
     client: ["recClient"],
   });
+});
+
+test("web proof record uses only fields present in MMD — Payment Proofs", () => {
+  const fields = canonicalProofRecordFields({
+    proofId: "webproof_test",
+    note: "schema=mmd_web_payment_proof_v1",
+    snapshot: { payer_name: "Customer", amount_thb: 7500, session_id: "sess_test", payment_stage: "deposit", member_email: "hidden@example.com" },
+    paymentRef: "pay_test",
+    links: { payment: ["recPayment"], session: ["recSession"], client: ["recClient"] },
+  });
+  assert.deepEqual(Object.keys(fields).sort(), [
+    "Client",
+    "amount_thb",
+    "channel",
+    "note",
+    "payer_name",
+    "payment",
+    "payment_ref",
+    "proof_id",
+    "session",
+    "status",
+  ].sort());
+  assert.equal("session_id" in fields, false);
+  assert.equal("member_email" in fields, false);
+  assert.equal("payment_stage" in fields, false);
+});
+
+test("service proof V22 source routes to canonical Payments Confirm topic 22", () => {
+  const route = paymentProofTelegramRoute({ TG_THREAD_PAYMENTS_CONFIRM: "22" }, {
+    amount_thb: 7500,
+    package_code: "",
+    payment_stage: "deposit",
+    payment_stage_explicit: true,
+  }, "sigil_pay_v22");
+  assert.equal(route.topic, "payment");
+  assert.equal(route.thread_id, 22);
 });
 
 test("web membership proof routes to Membership topic 20", () => {
@@ -57,7 +93,7 @@ test("service deposit stays in Payments Confirm even when amount equals a member
     payment_stage_explicit: true,
   }, "sigil_pay");
   assert.equal(route.topic, "payment");
-  assert.equal(route.thread_id, 21);
+  assert.equal(route.thread_id, 22);
   assert.equal(route.classification, "service_payment");
 });
 
@@ -69,7 +105,7 @@ test("web membership amount/package conflict stays in Confirm and flags Alerts",
     payment_stage_explicit: true,
   }, "pay_membership");
   assert.equal(route.topic, "payment");
-  assert.equal(route.thread_id, 21);
+  assert.equal(route.thread_id, 22);
   assert.equal(route.alerts_thread_id, 9);
   assert.equal(route.should_alert, true);
   assert.equal(route.reason, "membership_amount_package_mismatch");
