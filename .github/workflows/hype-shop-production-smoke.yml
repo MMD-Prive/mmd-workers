@@ -282,8 +282,7 @@ jobs:
           elif [ "$code" != "200" ] && [ "$code" != "404" ]; then
             echo "Unexpected cleanup HTTP $code" >&2
             exit 1
-          fi
-; then expected+=("Deploy telegram-worker"); fi
+          fi; then expected+=("Deploy telegram-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^sigil-booking-worker/'; then expected+=("Deploy sigil-booking-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^mms-worker/'; then expected+=("Deploy mms-worker"); fi
 
@@ -490,7 +489,6 @@ jobs:
             echo "Unexpected cleanup HTTP $code" >&2
             exit 1
           fi
-
 
       - name: Record HYPE closed-loop production receipt
         if: always()
