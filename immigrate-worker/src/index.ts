@@ -9,6 +9,7 @@ import {
   listSessionsFromAirtable,
   patchClientMemberId,
   previewLineClientUpsert,
+  resolveCanonicalEntitlementSnapshot,
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
@@ -19,6 +20,8 @@ import {
   parseInviteIdentity,
   verifyInviteToken,
 } from "./lib/invite";
+// @ts-ignore -- shared JavaScript authority is consumed by the TypeScript worker.
+import { resolveModelSalesOfferFromAirtable } from "../../shared/model-sales-airtable.mjs";
 import { badRequest, internalError, json, makeMeta, redirect, unauthorized } from "./lib/response";
 import { seedLineInboxRecords, seedLogs, seedSessions } from "./lib/seed";
 import type {
@@ -1537,6 +1540,57 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
   };
 
   try {
+    const canonicalLineUserId = toStr(payload.line_user_id) || toStr(payload.client_lineage?.line_user_id);
+    const canonicalMemberId = toStr(payload.member_id) || toStr(payload.client_lineage?.member_id);
+    const entitlementSnapshot = await resolveCanonicalEntitlementSnapshot(env, {
+      line_user_id: canonicalLineUserId,
+      member_id: canonicalMemberId,
+    });
+    const sales = await resolveModelSalesOfferFromAirtable(env, {
+      model_id: toStr(payload.model_record_id),
+      model_key: toStr(payload.model_name),
+      client_id: toStr(payload.client_id) || toStr(payload.client_lineage?.client_id),
+      requested_at: toStr(payload.requested_at) || new Date().toISOString(),
+      work_lane: toStr(payload.work_lane),
+      entitlement_snapshot: entitlementSnapshot || {},
+    });
+    const salesControl = {
+      authority: "model_sales_control_v1",
+      configured_rule_count: Number(sales.configured_rule_count || 0),
+      sellable: sales.sellable === true,
+      customer_rate_thb: Number.isFinite(Number(sales.customer_rate_thb)) ? Number(sales.customer_rate_thb) : null,
+      price_visible: sales.price_visible === true,
+      reason_code: toStr(sales.reason_code),
+      matched_rule_key: toStr(sales.matched_rule_key) || null,
+    };
+
+    if (salesControl.configured_rule_count > 0 && salesControl.sellable !== true) {
+      return json({
+        ok: false,
+        error: {
+          code: "MODEL_SALES_BLOCKED",
+          message: "Model Sales Control has no eligible active rule for this customer/time context.",
+        },
+        data: { sales_control: salesControl },
+        meta,
+      }, { status: 409 });
+    }
+    if (
+      payload.quoted_rate_thb != null &&
+      salesControl.customer_rate_thb != null &&
+      Number(payload.quoted_rate_thb) !== salesControl.customer_rate_thb
+    ) {
+      return json({
+        ok: false,
+        error: {
+          code: "MODEL_SALES_RATE_MISMATCH",
+          message: "Quoted rate does not match the canonical Model Sales Control rate.",
+        },
+        data: { sales_control: salesControl },
+        meta,
+      }, { status: 409 });
+    }
+
     const result = await intakeLineClientUpsert(env, normalizedPayload);
     const promotion = await promoteLineClientAfterIntake(env, normalizedPayload, result);
     const links = await createLineLinksAfterPromotion(env, normalizedPayload, result, promotion);
@@ -1555,6 +1609,7 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
         links,
         telegram,
         airtable,
+        sales_control: salesControl,
         artifacts: {
           member_id: toStr(promotion?.member_id),
           customer_url: toStr(links?.customer_url),
@@ -1563,6 +1618,7 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
           model_dashboard_url: toStr(links?.model_dashboard_url),
           airtable,
           telegram,
+          sales_control: salesControl,
         },
       },
       meta,
