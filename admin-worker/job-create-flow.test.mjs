@@ -93,7 +93,13 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.equal(s.fldlTO5aNfqUmlNWm, 7000);
   assert.equal(s.fldBeG0FkWwa8kgnp, '2026-09-20T22:00:00+07:00');
   assert.equal(s.fldiDSz0wW9Ct9I3P, '2026-09-21T02:00:00+07:00');
-  assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line\n\[SIGIL Pricing v1\]/);
+  assert.match(s.fldEcDkF7CH9VixWM, /^Operator note\nSecond line$/);
+  assert.equal(h.issuances[0].payment_type, 'full');
+  assert.equal(h.records.get(PAYMENTS)[0].fields.fldvCSwrUW8OMAooS, 10000);
+  assert.equal(h.data.payment_type, 'full');
+  assert.equal(h.data.amount_due_thb, 10000);
+  assert.equal(h.data.balance_amount_thb, 0);
+  assert.equal(Object.hasOwn(h.data, 'deposit_amount_thb'), false);
   assert.equal(h.kv.size, 2);
   assert.match(h.data.customer_payment_url, /^https:\/\/mmdbkk\.com\/sigil\/pay\?t=/);
   assert.equal(h.data.payment_dispatch_state, 'awaiting_payment_approval');
