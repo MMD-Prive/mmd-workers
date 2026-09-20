@@ -15,6 +15,7 @@ import {
   isKenjiLineTransportHealthRequest,
 } from "./kenji-line-transport-health.mjs";
 import { handleKenjiLineWithIngressTrace } from "./kenji-line-ingress-trace.mjs";
+import { runLineSlipEvidenceMaintenance } from "./line-group-ingress-front-gate.js";
 
 export { KenjiModelIdempotency } from "./my-mmd-bounded-status-front-gate.js";
 
@@ -470,6 +471,12 @@ export default {
     return currentWorker.fetch(request, env, ctx);
   },
   async scheduled(event, env = {}, ctx) {
+    // Recovery floor for LINE payment evidence: retry undelivered HYPE/Ops
+    // notifications and reprocess held evidence candidates even when LINE is
+    // quiet. It never settles payments and never blocks the rich-menu job.
+    const maintenance = runLineSlipEvidenceMaintenance(env, {}).catch(() => null);
+    if (typeof ctx?.waitUntil === "function") ctx.waitUntil(maintenance);
+    else await maintenance;
     return handleMmdRichMenuScheduled(event, env, ctx);
   },
 };
