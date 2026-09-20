@@ -2999,6 +2999,8 @@ function renderHypeOwnerSummary(result = {}) {
   const watchNow = Array.isArray(result.what_to_watch_now) ? result.what_to_watch_now : [];
   const actions = Array.isArray(result.next_actions) ? result.next_actions : [];
   const observer = result.observer_health && typeof result.observer_health === "object" ? result.observer_health : {};
+  const router = result.telegram_router_health && typeof result.telegram_router_health === "object" ? result.telegram_router_health : {};
+  const digest = result.incident_digest && typeof result.incident_digest === "object" ? result.incident_digest : {};
   const lines = [
     "<b>HYPE · PER OWNER SUMMARY</b>",
     escapeHtml(clean(result.bangkok_date) || "วันนี้"),
@@ -3028,6 +3030,33 @@ function renderHypeOwnerSummary(result = {}) {
     if (clean(observer.summary)) lines.push("• " + escapeHtml(observer.summary));
   } else {
     lines.push("• Health source unavailable · HYPE จะไม่เดาสถานะ");
+  }
+
+  lines.push("");
+  lines.push("<b>TELEGRAM ROUTER HEALTH</b>");
+  if (router.available === true) {
+    lines.push(`• Status: ${escapeHtml((clean(router.status) || "unknown").toUpperCase())} · owner: telegram-worker`);
+    lines.push(`• Lanes: configured ${Number(router.counts?.configured || 0)} · partial ${Number(router.counts?.partial || 0)} · unavailable ${Number(router.counts?.unavailable || 0)}`);
+    lines.push(`• Legacy direct senders: ${Number(router.counts?.legacy_direct_senders || 0)}`);
+    if (Array.isArray(router.causes) && router.causes.length) lines.push("• " + escapeHtml(router.causes.slice(0, 4).join(" · ")));
+    if (clean(router.summary)) lines.push("• " + escapeHtml(router.summary));
+  } else {
+    lines.push("• Router health unavailable · HYPE จะไม่ถือว่า Telegram พร้อม");
+  }
+
+  lines.push("");
+  lines.push("<b>INCIDENT ROOT-CAUSE DIGEST</b>");
+  if (digest.primary && typeof digest.primary === "object") {
+    lines.push(`• Status: ${escapeHtml((clean(digest.status) || "unknown").toUpperCase())} · incidents ${Number(digest.incident_count || 0)}`);
+    lines.push(`• Likely layer: ${escapeHtml(clean(digest.primary.likely_layer) || "unknown")} · confidence ${escapeHtml(clean(digest.primary.confidence) || "unknown")}`);
+    lines.push("• " + escapeHtml(clean(digest.primary.title) || "No active cross-system incident"));
+    if (clean(digest.primary.explanation)) lines.push("• " + escapeHtml(digest.primary.explanation));
+    if (Array.isArray(digest.primary.evidence) && digest.primary.evidence.length) {
+      for (const evidence of digest.primary.evidence.slice(0, 3)) lines.push("  ↳ " + escapeHtml(clean(evidence)));
+    }
+    if (clean(digest.primary.owner_action?.title)) lines.push("• Owner action: " + escapeHtml(digest.primary.owner_action.title));
+  } else {
+    lines.push("• Incident digest unavailable · ไม่มีการเดา root cause");
   }
 
   if (recovery.available === true) {
