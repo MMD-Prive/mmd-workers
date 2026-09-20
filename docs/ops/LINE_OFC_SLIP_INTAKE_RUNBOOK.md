@@ -101,6 +101,8 @@ Bounded switches (non-secret):
 
 If HYPE/Ops stops receiving payment alerts, check in this order: the Telegram service secret, `telegram-worker` health, then the outbox prefix for `retryable` / `failed_terminal` records. Do not resend by re-running intake; the sweep is the supported recovery path.
 
+Delivery uses an R2 CAS lease to suppress concurrent duplicate observers. Telegram transport remains at-least-once under crash ambiguity: if Telegram accepts a message but the worker dies before persisting `delivered`, a later retry may repeat the notification. Such a retry can only resend the stored bounded message and can never rerun settlement or change Money Truth.
+
 ## Production behavior checks
 
 When reviewing a regression, verify these in order:
