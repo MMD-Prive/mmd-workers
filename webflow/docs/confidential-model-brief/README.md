@@ -42,7 +42,7 @@ V24 keeps the current page's substantive content:
 - payment/contact boundary: Client → MMD → Model
 - Model Console reminder flow and `/rules/private-model-work`
 - direct work without a public profile when appropriate and consented
-- final private Telegram handoff to `https://t.me/mmdapply`
+- final application handoff to `/sigil/apply`
 
 ## Files
 
