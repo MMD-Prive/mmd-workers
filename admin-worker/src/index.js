@@ -5365,7 +5365,11 @@ async function createAdminJob(env, body) {
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
   const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
-  const payment_type = "deposit";
+  const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
+  if (!["deposit", "full"].includes(requested_payment_type)) {
+    throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
+  }
+  const payment_type = requested_payment_type;
   const payment_method = str(body.payment_method || payment.payment_method || "promptpay");
   // amount_thb may include a separately itemized membership renewal. The
   // customer deposit is always calculated from service money only.
@@ -5382,9 +5386,13 @@ async function createAdminJob(env, body) {
     : service_amount_thb;
   const pricing_adjustment = str(body.pricing_adjustment || payment.pricing_adjustment || "")
     .toLowerCase();
-  const deposit_percent = CUSTOMER_DEPOSIT_PERCENT;
-  const deposit_amount_thb = computeCustomerDepositAmount(service_amount_thb);
-  const balance_amount_thb = Math.max(0, service_amount_thb - deposit_amount_thb);
+  const deposit_percent = payment_type === "deposit" ? CUSTOMER_DEPOSIT_PERCENT : undefined;
+  const deposit_amount_thb = payment_type === "deposit"
+    ? computeCustomerDepositAmount(service_amount_thb)
+    : undefined;
+  const balance_amount_thb = payment_type === "deposit"
+    ? Math.max(0, service_amount_thb - deposit_amount_thb)
+    : 0;
 
   const webBase = str(env.WEB_BASE_URL || "https://mmdbkk.com").replace(/\/+$/, "");
   const confirm_page = absoluteUrl(body.confirm_page || "/sigil/confirm/job-confirmation", webBase);
@@ -5477,6 +5485,7 @@ async function createAdminJob(env, body) {
       end_time,
       location_name,
       amount_thb,
+      payment_type,
       deposit_amount_thb,
       balance_amount_thb,
       customer_payment_url,
@@ -5495,8 +5504,9 @@ async function createAdminJob(env, body) {
     confirmation_release_state: "held_until_payment_approved",
     notification_status: notificationStatus,
     owner_job_grant_status: ownerJobGrantStatus,
-    deposit_percent,
-    deposit_amount_thb,
+    payment_type,
+    amount_due_thb: payment_type === "full" ? service_amount_thb : deposit_amount_thb,
+    ...(payment_type === "deposit" ? { deposit_percent, deposit_amount_thb } : {}),
     balance_amount_thb,
   };
 }
@@ -5535,8 +5545,9 @@ async function notifyJobCreated(env, data) {
     `Time: <b>${escHtml(data.start_time)} - ${escHtml(data.end_time)}</b>`,
     `Location: <b>${escHtml(data.location_name)}</b>`,
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
-    data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
-    data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.payment_type === "full" ? "Payment: <b>FULL</b>" : "",
+    data.payment_type === "deposit" && data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",
+    data.payment_type === "deposit" && data.balance_amount_thb != null ? `Balance: <b>${Number(data.balance_amount_thb).toLocaleString("en-US")} THB</b>` : "",
     `Session: <code>${escHtml(data.session_id || "-")}</code>`,
     `Payment Ref: <code>${escHtml(data.payment_ref || "-")}</code>`,
     "",
