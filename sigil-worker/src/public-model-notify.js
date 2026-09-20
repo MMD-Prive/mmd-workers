@@ -9,7 +9,6 @@ export const TELEGRAM_NOTIFY_FIELDS = Object.freeze({
 
 const APPLICATION_ID_FIELD_NAME = "application_id";
 const APPLICATION_ID_RE = /^pma_[A-Za-z0-9_-]{8,120}$/;
-const TELEGRAM_API_BASE = "https://api.telegram.org";
 const DEFAULT_PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/admin/model-applications";
 
 export function shouldAttemptPublicModelNotification({ duplicate, status }) {
@@ -82,15 +81,13 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
   });
 
   try {
-    const token = String(env.TELEGRAM_BOT_TOKEN || "").trim();
-    const chatId = publicModelChatId(env);
-    const threadId = publicModelThreadId(env);
-    const usesSharedChat = !String(env.TELEGRAM_PUBLIC_MODEL_CHAT_ID || "").trim();
-    if (!token || !chatId || (usesSharedChat && !threadId)) throw new Error("missing_public_model_telegram_configuration");
+    const service = env.TELEGRAM_WORKER;
+    const token = String(env.AUTH_SERVICE_SIGIL_TO_TELEGRAM || "").trim();
+    if (!service || typeof service.fetch !== "function" || !token) throw new Error("missing_public_model_telegram_router_configuration");
 
     const reviewUrl = buildPublicModelReviewUrl(env, applicationId);
     const telegramPayload = {
-      chat_id: chatId,
+      flow: "public_model",
       text: buildPublicModelTelegramMessage(payload, applicationId, reviewUrl),
     };
     if (reviewUrl) {
@@ -98,17 +95,19 @@ export async function notifyPublicModelApplication({ env, payload, applicationId
         inline_keyboard: [[{ text: "ตรวจ / อนุมัติใบสมัคร", url: reviewUrl }]],
       };
     }
-    if (threadId) telegramPayload.message_thread_id = threadId;
 
-    const fetcher = typeof env.TELEGRAM_FETCH === "function" ? env.TELEGRAM_FETCH : fetch;
-    const response = await fetcher(`${TELEGRAM_API_BASE}/bot${token}/sendMessage`, {
+    const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${token}`,
+      },
       body: JSON.stringify(telegramPayload),
-    });
-    if (!response.ok) {
-      const providerText = sanitizeErrorText(await response.text().catch(() => ""));
-      throw new Error(`telegram_http_${response.status}${providerText ? `:${providerText}` : ""}`);
+    }));
+    const routed = await response.json().catch(() => ({}));
+    if (!response.ok || routed?.ok !== true || routed?.telegram?.ok !== true) {
+      const providerText = sanitizeErrorText(routed?.telegram?.error?.description || routed?.error || "");
+      throw new Error(`telegram_router_http_${response.status}${providerText ? `:${providerText}` : ""}`);
     }
     await updateNotificationState(env, record.id, {
       [TELEGRAM_NOTIFY_FIELDS.status]: "sent",

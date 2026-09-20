@@ -65,6 +65,16 @@ jobs:
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
 
+      - name: Rotate HIMAI-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'HIMAI_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_HIMAI_TO_TELEGRAM --config telegram-worker/wrangler.toml
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_HIMAI_TO_TELEGRAM --config himai-chat-worker/wrangler.toml
+
       - name: Validate version upload
         run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 

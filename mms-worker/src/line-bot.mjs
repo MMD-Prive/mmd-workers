@@ -127,16 +127,19 @@ async function replyLine(env, replyToken, text) {
 }
 
 async function notifyManualHandoff(env, event, intent) {
-  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  const chatId = clean(env.MMS_TELEGRAM_CHAT_ID);
-  if (!botToken || !chatId) return false;
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_MMS_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function" || !token) return false;
   const sourceType = clean(event?.source?.type || "user").slice(0, 24);
   const messageId = clean(event?.message?.id || "unknown").slice(0, 80);
-  const result = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const result = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      chat_id: chatId,
+      flow: intent === "manual_recovery" ? "recovery" : "mms_manual_handoff",
       text: [
         "🐔 HENNA · MMS LINE ต้องการคนรับช่วง",
         `เหตุผล: ${intent}`,
@@ -148,9 +151,11 @@ async function notifyManualHandoff(env, event, intent) {
       ].join("\n"),
       disable_web_page_preview: true,
     }),
-  });
-  if (!result.ok) console.error(JSON.stringify({ event: "mms_line_handoff_notify_failed", status: result.status }));
-  return result.ok;
+  }));
+  const body = await result.json().catch(() => ({}));
+  const ok = result.ok && body?.ok === true && body?.telegram?.ok === true;
+  if (!ok) console.error(JSON.stringify({ event: "mms_line_handoff_notify_failed", status: result.status }));
+  return ok;
 }
 
 async function readWebhookBody(request) {

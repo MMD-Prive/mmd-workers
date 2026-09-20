@@ -509,22 +509,22 @@ function absoluteUrl(value, base) {
 }
 
 async function telegramSend(env, message) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN);
-  if (!token) return;
-  const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = clean(env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
-  const payload = {
-    chat_id: chatId,
-    text: message,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
-  if (thread) payload.message_thread_id = Number(thread);
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function" || !token) return;
+  await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      flow: "payment",
+      text: message,
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  }));
 }
 
 function field(configured, fallback) {

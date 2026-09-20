@@ -75,6 +75,10 @@ export default {
             "AUTH_SERVICE_AUTH_TO_TELEGRAM",
             "AUTH_SERVICE_LINE_TO_TELEGRAM",
             "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
+            "AUTH_SERVICE_MMS_TO_TELEGRAM",
+            "AUTH_SERVICE_SIGIL_TO_TELEGRAM",
+            "AUTH_SERVICE_HIMAI_TO_TELEGRAM",
+            "AUTH_SERVICE_PARTNERS_TO_TELEGRAM",
           ],
         });
         const result = await buildTelegramRouterHealth(env, { probe: url.searchParams.get("probe") === "1" });
@@ -105,6 +109,10 @@ export default {
                 "AUTH_SERVICE_AUTH_TO_TELEGRAM",
                 "AUTH_SERVICE_LINE_TO_TELEGRAM",
                 "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
+                "AUTH_SERVICE_MMS_TO_TELEGRAM",
+                "AUTH_SERVICE_SIGIL_TO_TELEGRAM",
+                "AUTH_SERVICE_HIMAI_TO_TELEGRAM",
+                "AUTH_SERVICE_PARTNERS_TO_TELEGRAM",
               ]
             : [],
         });

@@ -153,6 +153,15 @@ jobs:
             exit 1
           fi
 
+      - name: Rotate SIGIL-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'SIGIL_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_SIGIL_TO_TELEGRAM --config telegram-worker/wrangler.toml
+
       - name: Prepare production secrets
         id: runtime-secrets
         shell: bash
@@ -162,14 +171,14 @@ jobs:
           const fs = require("node:fs");
           const clean = (value) => String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
           const airtableToken = clean(process.env.AIRTABLE_API_TOKEN);
-          const telegramToken = clean(process.env.TELEGRAM_BOT_TOKEN);
+          const routerSecret = clean(process.env.SIGIL_TELEGRAM_ROUTER_SECRET);
           const lines = [`AIRTABLE_API_TOKEN=${airtableToken}`];
-          if (telegramToken) {
-            console.log(`::add-mask::${telegramToken}`);
-            lines.push(`TELEGRAM_BOT_TOKEN=${telegramToken}`);
+          if (routerSecret) {
+            console.log(`::add-mask::${routerSecret}`);
+            lines.push(`AUTH_SERVICE_SIGIL_TO_TELEGRAM=${routerSecret}`);
           }
           fs.writeFileSync(process.env.RUNNER_TEMP + "/sigil-worker.env", `${lines.join("\n")}\n`, { mode: 0o600 });
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `telegram_configured=${telegramToken ? "true" : "false"}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `telegram_configured=${routerSecret ? "true" : "false"}\n`);
           NODE
 
       - name: Deploy sigil-worker

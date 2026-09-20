@@ -90,6 +90,16 @@ jobs:
         working-directory: partners-worker
         run: npm run typecheck
 
+      - name: Rotate Partners-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'PARTNERS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config telegram-worker/wrangler.toml
+          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config partners-worker/wrangler.toml
+
       - name: Build route-free deploy config
         working-directory: partners-worker
         shell: bash

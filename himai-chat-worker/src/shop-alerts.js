@@ -124,31 +124,35 @@ function threadId(env, shop, lane) {
 }
 
 async function sendShopAlertToTelegram(env, shop, action, text) {
-  const botToken = clean(env.TELEGRAM_BOT_TOKEN);
-  if (!botToken) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
-
-  const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  if (!chatId) return { ok: false, skipped: true, reason: "missing_shop_alert_chat_id" };
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_HIMAI_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
 
   const lane = eventLane(action);
-  const messageThreadId = threadId(env, shop, lane);
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  const flow = shop === "mmd-shop"
+    ? { orders: "mmd_shop_orders", payments: "mmd_shop_payments", alerts: "mmd_shop_alerts" }[lane]
+    : { orders: "himai_orders", payments: "himai_payments", alerts: "himai_alerts" }[lane];
+
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      chat_id: chatId,
-      message_thread_id: messageThreadId,
+      flow,
       text,
-      disable_web_page_preview: true
-    })
-  });
+      disable_web_page_preview: true,
+    }),
+  }));
 
   const data = await response.json().catch(() => null);
-  if (!response.ok || data?.ok === false) {
-    return { ok: false, status: response.status, thread_id: messageThreadId, error: data || null };
+  if (!response.ok || data?.ok !== true || data?.telegram?.ok !== true) {
+    return { ok: false, status: response.status, flow, error: data || null };
   }
 
-  return { ok: true, thread_id: messageThreadId, result: data?.result || null };
+  return { ok: true, flow, result: data?.telegram?.result || null };
 }
 
 function numberOrNull(value) {

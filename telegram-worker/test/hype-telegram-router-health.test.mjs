@@ -12,6 +12,11 @@ function configuredEnv() {
     TELEGRAM_CHAT_ID: "-1003546439681",
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "secret",
     INTERNAL_API_TOKEN: "svc-secret-router-health-test",
+    AUTH_SERVICE_PAYMENTS_TO_TELEGRAM: "payments-service-secret",
+    AUTH_SERVICE_MMS_TO_TELEGRAM: "mms-service-secret",
+    AUTH_SERVICE_SIGIL_TO_TELEGRAM: "sigil-service-secret",
+    AUTH_SERVICE_HIMAI_TO_TELEGRAM: "himai-service-secret",
+    AUTH_SERVICE_PARTNERS_TO_TELEGRAM: "partners-service-secret",
     TG_THREAD_BOOKING_DRAFT: "1399",
     TG_THREAD_PAYMENTS_MEMBERSHIP: "20",
     TG_THREAD_POINTS: "17",
@@ -31,15 +36,16 @@ function configuredEnv() {
   };
 }
 
-test("router health is partial while legacy direct senders remain", async () => {
+test("router health is configured after active direct senders are fully migrated", async () => {
   const result = await buildTelegramRouterHealth(configuredEnv());
   assert.equal(result.schema, HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA);
-  assert.equal(result.status, "partial");
+  assert.equal(result.registry_version, "2026-09-21.2");
+  assert.equal(result.status, "configured");
   assert.equal(result.ok, true);
   assert.equal(result.counts.unavailable, 0);
-  assert.ok(result.counts.partial > 0);
-  assert.ok(result.counts.legacy_direct_senders > 0);
-  assert.ok(result.causes.includes("legacy_direct_senders_present"));
+  assert.equal(result.counts.partial, 0);
+  assert.equal(result.counts.legacy_direct_senders, 0);
+  assert.equal(result.causes.includes("legacy_direct_senders_present"), false);
   assert.equal(result.canonical_owner, "telegram-worker");
 });
 
@@ -53,16 +59,30 @@ test("missing bot token makes router degraded", async () => {
   assert.ok(result.counts.unavailable > 0);
 });
 
-test("canonical payment lanes remain configured while direct sender lanes are partial", async () => {
+test("all migrated domain lanes require and report canonical service auth", async () => {
   const result = await buildTelegramRouterHealth(configuredEnv());
   const byKey = Object.fromEntries(result.lanes.map((lane) => [lane.key, lane]));
-  assert.equal(byKey.payments.status, "configured");
-  assert.equal(byKey.membership.status, "configured");
-  assert.equal(byKey.booking.status, "configured");
-  assert.equal(byKey.public_model.status, "partial");
-  assert.equal(byKey.mms_applications.status, "partial");
-  assert.equal(byKey.partner_ops.status, "partial");
-  assert.equal(byKey.mmd_shop_payments.status, "partial");
+  for (const key of ["payments","membership","booking","public_model","mms_applications","mms_ops","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
+    assert.equal(byKey[key].status, "configured", key);
+  }
+  for (const key of ["public_model","mms_applications","mms_ops","partner_ops","himai_orders","himai_payments","himai_alerts","mmd_shop_orders","mmd_shop_payments","mmd_shop_alerts"]) {
+    assert.equal(byKey[key].service_auth_configured, true, key);
+    assert.equal(byKey[key].migration_state, "canonical_internal_send", key);
+  }
+});
+
+
+test("missing migrated domain service auth degrades only because the route requirement is incomplete", async () => {
+  const env = configuredEnv();
+  delete env.AUTH_SERVICE_MMS_TO_TELEGRAM;
+  const result = await buildTelegramRouterHealth(env);
+  const byKey = Object.fromEntries(result.lanes.map((lane) => [lane.key, lane]));
+  assert.equal(result.status, "degraded");
+  assert.equal(byKey.mms_applications.status, "unavailable");
+  assert.equal(byKey.mms_ops.status, "unavailable");
+  assert.equal(byKey.mms_applications.destination_configured, true);
+  assert.equal(byKey.mms_applications.service_auth_configured, false);
+  assert.ok(result.causes.includes("one_or_more_lane_service_auth_missing"));
 });
 
 test("router health never exposes raw chat ids or thread ids", async () => {
@@ -74,7 +94,9 @@ test("router health never exposes raw chat ids or thread ids", async () => {
     assert.equal(new RegExp('\"thread_id\"\\s*:\\s*' + thread).test(serialized), false);
   }
   assert.equal(serialized.includes("test-bot-token"), false);
-  assert.equal(serialized.includes("svc-secret-router-health-test"), false);
+  for (const secret of ["svc-secret-router-health-test","payments-service-secret","mms-service-secret","sigil-service-secret","himai-service-secret","partners-service-secret"]) {
+    assert.equal(serialized.includes(secret), false);
+  }
 });
 
 test("live probe failure degrades otherwise-configured router without sending a message", async () => {

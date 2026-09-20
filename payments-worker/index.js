@@ -397,31 +397,29 @@ async function createSessionIfMissing(env, payload) {
 /* telegram */
 /* -------------------------------------------------- */
 async function telegramSend(env, text, threadId = null) {
-  const token = toStr(env.TELEGRAM_BOT_TOKEN);
-  const chatId = toStr(env.TELEGRAM_CHAT_ID || "-1003546439681");
-  const thread = toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "21");
+  const service = env.TELEGRAM_WORKER;
+  const token = toStr(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
 
-  if (!token) {
-    return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
-  }
-
-  const body = {
-    chat_id: chatId,
-    text: toStr(text),
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-  };
-
-  if (thread) body.message_thread_id = Number(thread);
-
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const thread = Number(toStr(threadId || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || "22"));
+  const flow = thread === 17 ? "points_threshold" : thread === 20 ? "membership" : "payment";
+  const res = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      flow,
+      text: toStr(text),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  }));
 
   const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
+  return { ok: res.ok && data?.ok === true && data?.telegram?.ok === true, status: res.status, data, flow };
 }
 
 /* -------------------------------------------------- */
