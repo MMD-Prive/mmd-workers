@@ -1,4 +1,5 @@
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
+import { verifyConfirmToken } from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
@@ -493,8 +494,38 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
   }
   const paymentRef = clean(form.get("payment_ref") || form.get("transaction_ref"), 220);
   if (!paymentRef) return downstream(request);
+  const source = code(form.get("source_page") || "");
 
   try {
+    if (CANONICAL_WEB_SOURCES.has(source)) {
+      const token = clean(form.get("t") || form.get("token"), 12000);
+      if (!token) return json({ ok: false, error: "confirmation_token_required", authority: "payments-worker" }, 401);
+      let claims;
+      try {
+        claims = await verifyConfirmToken(env, token, { expectedRole: "customer" });
+      } catch (error) {
+        return json({
+          ok: false,
+          error: clean(error?.message || "invalid_confirmation_token", 180),
+          authority: "payments-worker",
+        }, 401);
+      }
+      const claimRef = clean(claims?.payment_ref, 220);
+      const claimSession = clean(claims?.session_id, 220);
+      const claimStage = code(claims?.payment_type);
+      const formSession = clean(form.get("session_id"), 220);
+      const formStage = code(form.get("payment_stage") || form.get("payment_type"));
+      if (claimRef !== paymentRef) {
+        return json({ ok: false, error: "confirmation_payment_ref_mismatch", authority: "payments-worker" }, 409);
+      }
+      if (formSession && claimSession && formSession !== claimSession) {
+        return json({ ok: false, error: "confirmation_session_mismatch", authority: "payments-worker" }, 409);
+      }
+      if (formStage && claimStage && formStage !== claimStage) {
+        return json({ ok: false, error: "confirmation_payment_stage_mismatch", authority: "payments-worker" }, 409);
+      }
+    }
+
     const existing = await findProof(env, paymentRef);
     if (existing) {
       const proof = proofSnapshot(existing);
@@ -514,7 +545,6 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       });
     }
 
-    const source = code(form.get("source_page") || "");
     const payment = await findPayment(env, paymentRef);
     if (!payment && CANONICAL_WEB_SOURCES.has(source)) {
       return json({ ok: false, error: "canonical_payment_not_found", payment_ref: paymentRef }, 409);
