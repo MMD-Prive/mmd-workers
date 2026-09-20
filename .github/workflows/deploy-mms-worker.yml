@@ -156,7 +156,7 @@ jobs:
             --tag "router-mms-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
             --message "Rotate AUTH_SERVICE_MMS_TO_TELEGRAM from ${GITHUB_SHA}" \
             2>&1 | tee "$router_secret_log"
-          router_version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
           if [ -z "$router_version_id" ]; then
             echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_MMS_TO_TELEGRAM" >&2
             cat "$router_secret_log" >&2
