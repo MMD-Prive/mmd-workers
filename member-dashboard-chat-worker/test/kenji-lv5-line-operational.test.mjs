@@ -173,10 +173,12 @@ test("HYPE exception routing keeps payment, membership and identity in canonical
   const payment = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "payment_review_required", operational: { primary_action: "review_payment" } });
   const membership = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "model_access:renewal", operational: { model_access_status: "renewal" } });
   const identity = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "canonical_client_unresolved", operational: { primary_action: "resolve_identity" } });
+  const silent = KENJI_LV5_HYPE_INTERNALS.routeForDecision(env, { handoff_reason: "model_access:silent", operational: { model_access_status: "silent" } });
   assert.equal(payment.thread_id, 22);
   assert.equal(payment.event, "payment_match_uncertain");
   assert.equal(membership.thread_id, 20);
   assert.equal(membership.event, "membership_review_required");
   assert.equal(identity.thread_id, 9);
   assert.equal(identity.event, "identity_client_verification_failed");
+  assert.equal(silent, null);
 });
