@@ -85,3 +85,46 @@ service = "admin-worker"
 [[services]]
 binding = "HYPE_CONTEXT_WRITER"
 service = "admin-worker"
+
+
+# Canonical production Telegram ingress / internal-send ownership.
+# Exact paths only; workers.dev remains compatibility transport for existing internal callers.
+[[routes]]
+pattern = "mmdbkk.com/telegram/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/telegram/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/webhook"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/telegram/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/telegram/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/internal/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/send"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/send"
+zone_name = "mmdbkk.com"
