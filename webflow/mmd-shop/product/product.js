@@ -96,6 +96,12 @@ function stockText(item){
   }
   return {label:t("stockChecking"),className:""};
 }
+function canCheckout(item){
+  if(!item||item.checkout_eligible!==true)return false;
+  if(!(Number(item.selling_price_thb)>0))return false;
+  if(item.stock_status==="tracked"&&Number(item.available)<=0)return false;
+  return true;
+}
 function setQty(next){
   var max=20;
   if(product&&product.stock_status==="tracked"&&Number.isFinite(Number(product.available))){
@@ -119,7 +125,9 @@ function renderVariantControl(){
     return;
   }
   variantWrap.hidden=false;
-  if(variantLabel)variantLabel.textContent=product.variant_type==="flavour"?t("variantFlavour"):t("variantSize");
+  var label=product.variant_type==="flavour"?t("variantFlavour"):t("variantSize");
+  if(variantLabel)variantLabel.textContent=label;
+  variantSelect.setAttribute("aria-label",label);
   variantSelect.innerHTML=available.map(function(item){
     return '<option value="'+String(item.id).replace(/"/g,"&quot;")+'">'+variantOptionLabel(item)+'</option>';
   }).join("");
@@ -138,6 +146,8 @@ function updateVariantUrl(item){
 function render(item,options){
   options=options||{};
   product=item;
+  root.dataset.activeProductId=item.id||"";
+  root.dataset.activeSku=item.sku||"";
   var image=root.querySelector("[data-product-image]");
   if(image){
     image.src=item.image_url||fallbackImage(item);
@@ -161,7 +171,7 @@ function render(item,options){
 
   var priceOk=Number(item.selling_price_thb)>0;
   var trackedOut=item.stock_status==="tracked"&&Number(item.available)<=0;
-  var allowed=item.checkout_eligible===true&&priceOk&&!trackedOut;
+  var allowed=canCheckout(item);
   if(purchasePanel)purchasePanel.hidden=!allowed;
   if(restrictedPanel)restrictedPanel.hidden=allowed;
   if(!allowed&&restrictedPanel){
@@ -198,7 +208,7 @@ function saveCart(items){
   try{localStorage.setItem(cartKey,JSON.stringify(items));return true;}catch(e){return false;}
 }
 function addToCart(){
-  if(!product||product.checkout_eligible!==true)return false;
+  if(!canCheckout(product))return false;
   var items=readCart();
   var found=items.find(function(x){return x.product_id===product.id;});
   var max=20;

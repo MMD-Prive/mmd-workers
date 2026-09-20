@@ -4,7 +4,7 @@
  min-height:100vh;padding:12px;background:var(--bg);color:var(--ink);
  font-family:"IBM Plex Sans Thai","Noto Sans Thai","LINE Seed Sans TH",Tahoma,sans-serif;font-weight:400;-webkit-font-smoothing:antialiased
 }
-#mmdshop-product-v1 a{color:inherit;text-decoration:none}#mmdshop-product-v1 button{font:inherit}#mmdshop-product-v1 [hidden]{display:none!important}
+#mmdshop-product-v1 a{color:inherit;text-decoration:none}#mmdshop-product-v1 button,#mmdshop-product-v1 select{font:inherit}#mmdshop-product-v1 :focus-visible{outline:2px solid var(--signal);outline-offset:2px}#mmdshop-product-v1 button:disabled{cursor:not-allowed;opacity:.45}#mmdshop-product-v1 [hidden]{display:none!important}
 #mmdshop-product-v1 .mmdp__topbar{width:min(1160px,100%);min-height:52px;margin:0 auto 10px;padding:7px 9px 7px 12px;display:flex;align-items:center;justify-content:space-between;border-radius:14px;background:#111416;color:#fff}
 #mmdshop-product-v1 .mmdp__brand{display:flex;align-items:baseline;gap:6px;font-family:"Inter",Arial,sans-serif;font-size:15px;font-weight:600}
 #mmdshop-product-v1 .mmdp__brand small{font-size:8px;letter-spacing:.15em;color:#c8e4e8}
