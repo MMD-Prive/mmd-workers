@@ -76,8 +76,19 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'PAYMENTS_TELEGRAM_SHARED_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config telegram-worker/wrangler.toml
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config payments-worker/wrangler.merged.toml
+          router_secret_ready=0
+          for attempt in $(seq 1 24); do
+            if printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config telegram-worker/wrangler.toml; then
+              router_secret_ready=1
+              echo "telegram-worker service secret ready on attempt $attempt"
+              break
+            fi
+            echo "telegram-worker latest version not deployable yet; retrying secret rotation (attempt $attempt)"
+            sleep 5
+          done
+          test "$router_secret_ready" = "1"
+          printf 'AUTH_SERVICE_PAYMENTS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/payments-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/payments-worker-router.env"
 
       - name: Smoke canonical Payments Confirm service transport
         shell: bash
@@ -106,7 +117,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml \
+          npx --yes wrangler@4 versions upload --keep-vars --secrets-file "$RUNNER_TEMP/payments-worker-router.env" --config payments-worker/wrangler.merged.toml \
             2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
 
       - name: Resolve uploaded version ID
@@ -166,7 +177,7 @@ jobs:
           fs.writeFileSync(target, rendered);
           NODE
           trap 'rm -f "$migration_config"' EXIT
-          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config"
+          npx --yes wrangler@4 deploy --keep-vars --secrets-file "$RUNNER_TEMP/payments-worker-router.env" --config "$migration_config"
 
       - name: Deploy uploaded version without changing route ownership
         id: deploy_version

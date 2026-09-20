@@ -97,8 +97,19 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'PARTNERS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config telegram-worker/wrangler.toml
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config partners-worker/wrangler.toml
+          router_secret_ready=0
+          for attempt in $(seq 1 24); do
+            if printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config telegram-worker/wrangler.toml; then
+              router_secret_ready=1
+              echo "telegram-worker service secret ready on attempt $attempt"
+              break
+            fi
+            echo "telegram-worker latest version not deployable yet; retrying secret rotation (attempt $attempt)"
+            sleep 5
+          done
+          test "$router_secret_ready" = "1"
+          printf 'AUTH_SERVICE_PARTNERS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/partners-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/partners-worker-router.env"
 
       - name: Build route-free deploy config
         working-directory: partners-worker
@@ -132,7 +143,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --keep-vars --config .wrangler-no-routes.toml
+          npx wrangler deploy --keep-vars --secrets-file "$RUNNER_TEMP/partners-worker-router.env" --config .wrangler-no-routes.toml
 
       - name: Verify Cloudflare routes token
         shell: bash
@@ -264,4 +275,4 @@ jobs:
       - name: Clean temporary config
         if: always()
         working-directory: partners-worker
-        run: rm -f .wrangler-no-routes.toml
+        run: rm -f .wrangler-no-routes.toml "$RUNNER_TEMP/partners-worker-router.env"
