@@ -60,10 +60,14 @@ test("every migrated runtime service auth is provisioned by its production deplo
   }
 });
 
-test("payments deploy closes the loop with a live configured router probe", async () => {
-  const text = await source("../../.github/workflows/deploy-payments-worker.yml");
+test("dedicated production closure waits for domain deploys and requires a live configured router probe", async () => {
+  const text = await source("../../.github/workflows/telegram-router-production-closure.yml");
+  for (const workflow of ["Deploy mms-worker","Deploy sigil-worker","Deploy himai-chat-worker","Deploy partners-worker","Deploy payments-worker"]) {
+    assert.equal(text.includes(workflow), true, workflow);
+  }
   assert.match(text, /\/telegram\/internal\/router\/health\?probe=1/);
   assert.match(text, /registry_version!=="2026-09-21\.2"/);
   assert.match(text, /status!=="configured"/);
   assert.match(text, /legacy_direct_senders\|\|0/);
+  assert.match(text, /service_auth_configured===true/);
 });
