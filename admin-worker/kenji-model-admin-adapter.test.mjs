@@ -6,6 +6,7 @@ import {
   isKenjiModelAdminRequest,
   KENJI_MODEL_ADMIN_BASE_PATH,
   KENJI_MODEL_ADMIN_DRAFT_PATH,
+  KENJI_MODEL_SALES_RESOLVE_PATH,
   projectKenjiAdminModelRecord,
   projectKenjiKeywordProfileRecord,
 } from "./src/kenji-model-admin-adapter.js";
@@ -16,6 +17,7 @@ const ENV = {
   AIRTABLE_TABLE_MODELS_ID: "tblModelsCanonical",
   AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES_ID: "tblKeywordProfilesCanonical",
   AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID: "tblReviewRequestsCanonical",
+  AIRTABLE_TABLE_MODEL_OFFER_RULES_ID: "tblModelOfferRulesCanonical",
 };
 
 function response(body, status = 200) {
@@ -32,6 +34,7 @@ async function bodyOf(result) {
 test("recognizes only the exact Kenji model admin routes", () => {
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_ADMIN_BASE_PATH, "GET"), true);
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_ADMIN_DRAFT_PATH, "POST"), true);
+  assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RESOLVE_PATH, "POST"), true);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/kenji/models/publish", "POST"), false);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/models/upsert", "POST"), false);
 });
@@ -339,4 +342,79 @@ test("draft rejects values outside the Airtable keyword-profile choice contract"
     assert.equal(result.status, 400);
     assert.equal((await bodyOf(result)).error, expected);
   }
+});
+
+
+test("sales resolver reads canonical Model Offer Rules and returns a safe customer rate", async () => {
+  const fetchImpl = async (url) => {
+    assert.ok(decodeURIComponent(url).includes("tblModelOfferRulesCanonical"));
+    return response({
+      records: [{
+        id: "recOffer123456789",
+        fields: {
+          model_key: "ems21-jdye",
+          status: "Active",
+          sales_visibility: "on",
+          audience_scope: ["Premium"],
+          customer_sell_rate_thb: 25000,
+          price_visibility: "visible",
+          priority: 10,
+          version: 2,
+        },
+      }],
+    });
+  };
+
+  const result = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_key: "ems21-jdye",
+        requested_at: "2026-09-21T19:00:00+07:00",
+        entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+      }),
+    }),
+    ENV,
+    { fetchImpl }
+  );
+  const body = await bodyOf(result);
+  assert.equal(result.status, 200);
+  assert.equal(body.authority, "model_sales_control_v1");
+  assert.equal(body.sellable, true);
+  assert.equal(body.customer_rate_thb, 25000);
+  assert.equal(body.production_mutated, false);
+});
+
+test("sales resolver keeps Draft legacy rules fail closed", async () => {
+  const fetchImpl = async () => response({
+    records: [{
+      id: "recDraftOffer12345",
+      fields: {
+        model_key: "ems04-sin-m",
+        status: "Draft",
+        default_rate_thb: 17500,
+        price_visibility: "Per approval only",
+        version: 1,
+      },
+    }],
+  });
+  const result = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model_key: "ems04-sin-m",
+        requested_at: "2026-09-21T19:00:00+07:00",
+        entitlement_snapshot: { capability_state: { active: ["vip"] } },
+      }),
+    }),
+    ENV,
+    { fetchImpl }
+  );
+  const body = await bodyOf(result);
+  assert.equal(result.status, 200);
+  assert.equal(body.sellable, false);
+  assert.equal(body.reason_code, "no_matching_active_rule");
+  assert.equal(body.customer_rate_thb, null);
 });

@@ -2,9 +2,11 @@ import {
   handleKenjiModelWorkflowRequest,
   isKenjiModelWorkflowRequest,
 } from "./kenji-model-workflow.js";
+import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
 export const KENJI_MODEL_ADMIN_BASE_PATH = "/v1/admin/kenji/models";
 export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draft`;
+export const KENJI_MODEL_SALES_RESOLVE_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/resolve`;
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MAX_LIST_SCAN = 500;
@@ -111,6 +113,11 @@ function airtableConfig(env = {}) {
       env,
       ["AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS_ID", "AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS"],
       "MMD — Model Review Requests"
+    ),
+    offerRulesTable: envName(
+      env,
+      ["AIRTABLE_TABLE_MODEL_OFFER_RULES_ID", "AIRTABLE_TABLE_MODEL_OFFER_RULES"],
+      "MMD — Model Offer Rules"
     ),
   };
 }
@@ -556,13 +563,44 @@ async function createDraft(request, env, options, fetchImpl) {
   }, 201);
 }
 
+async function resolveSalesOffer(request, env, fetchImpl) {
+  let body;
+  try { body = await request.json(); }
+  catch (_) { return json({ ok: false, error: "invalid_json" }, 400); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return json({ ok: false, error: "invalid_body" }, 400);
+  }
+  const modelId = clean(body.model_id, 80);
+  const modelKey = clean(body.model_key, 160);
+  if (!modelId && !modelKey) return json({ ok: false, error: "model_identity_required" }, 400);
+  if (!clean(body.requested_at, 100)) return json({ ok: false, error: "requested_at_required" }, 400);
+
+  const config = airtableConfig(env);
+  const rulesResult = await fetchAllRecords(env, config.offerRulesTable, fetchImpl);
+  if (!rulesResult.ok) {
+    return json({ ok: false, error: "model_offer_rules_unavailable" }, rulesResult.status === 401 || rulesResult.status === 403 ? 502 : 503);
+  }
+
+  const resolved = resolveModelSalesOffer({
+    ...body,
+    rules: rulesResult.records,
+  });
+  return json({
+    ...resolved,
+    source: "airtable_model_offer_rules",
+    authority: "model_sales_control_v1",
+    production_mutated: false,
+  });
+}
+
 export function isKenjiModelAdminRequest(path, method = "GET") {
   const normalized = (clean(path, 500).replace(/\/+$/g, "") || "/");
   const verb = clean(method, 10).toUpperCase();
   if (isKenjiModelWorkflowRequest(normalized, verb)) return true;
   return (
     (normalized === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
-    (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST")
+    (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST") ||
+    (normalized === KENJI_MODEL_SALES_RESOLVE_PATH && verb === "POST")
   );
 }
 
@@ -573,5 +611,6 @@ export async function handleKenjiModelAdminRequest(request, env = {}, options = 
   if (isKenjiModelWorkflowRequest(path, method)) return handleKenjiModelWorkflowRequest(request, env, options);
   const fetchImpl = options.fetchImpl || fetch;
   if (path === KENJI_MODEL_ADMIN_BASE_PATH) return listModels(request, env, fetchImpl);
+  if (path === KENJI_MODEL_SALES_RESOLVE_PATH) return resolveSalesOffer(request, env, fetchImpl);
   return createDraft(request, env, options, fetchImpl);
 }
