@@ -13,7 +13,7 @@ function hasCode(observer, code) {
   return Array.isArray(observer?.alert_codes) && observer.alert_codes.includes(code);
 }
 
-function incident({ code, severity, confidence, layer, title, explanation, evidence = [], action }) {
+function incident({ code, severity, confidence, layer, title, explanation, evidence = [], action, causality = 1 }) {
   const ranks = { critical: 4, warning: 3, attention: 2, info: 1 };
   const confidenceRanks = { high: 3, medium: 2, low: 1 };
   return {
@@ -22,6 +22,7 @@ function incident({ code, severity, confidence, layer, title, explanation, evide
     severity_rank: ranks[severity] || 0,
     confidence,
     confidence_rank: confidenceRanks[confidence] || 0,
+    causality_rank: Number(causality) || 1,
     likely_layer: layer,
     title,
     explanation,
@@ -44,6 +45,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "telegram_router_health_unavailable",
       severity: "warning",
+      causality: 2,
       confidence: "high",
       layer: "health_control_plane",
       title: "Telegram Router Health unavailable",
@@ -55,6 +57,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "telegram_router_degraded",
       severity: "critical",
+      causality: 4,
       confidence: "high",
       layer: "telegram_transport",
       title: "Telegram Router degraded",
@@ -73,6 +76,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: routerDegraded ? "telegram_delivery_chain_degraded" : "ops_outbox_terminal_failure",
       severity: "critical",
+      causality: 6,
       confidence: "high",
       layer: routerDegraded ? "telegram_transport" : "notification_outbox",
       title: routerDegraded ? "Telegram delivery chain degraded" : "Ops notification reached terminal failure",
@@ -92,6 +96,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "payment_extractor_degraded",
       severity: "critical",
+      causality: 6,
       confidence: "high",
       layer: "slip_extractor",
       title: "Payment extractor degraded",
@@ -109,6 +114,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "held_evidence_spike",
       severity: "warning",
+      causality: 4,
       confidence: "high",
       layer: "payment_evidence_classification",
       title: "Held payment evidence spike",
@@ -125,6 +131,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "payment_observer_contract_stale",
       severity: "critical",
+      causality: 5,
       confidence: "high",
       layer: "payment_observer_runtime",
       title: "Payment observer v4 contract absent",
@@ -151,6 +158,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: critical ? "line_payment_ingress_silent_48h" : "line_payment_ingress_silent_24h",
       severity: critical ? "critical" : "warning",
+      causality: extractorDegraded ? 2 : 3,
       confidence,
       layer,
       title: critical ? "LINE payment ingress silent >48h" : "LINE payment ingress silent >24h",
@@ -169,6 +177,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "telegram_router_legacy_sender_drift",
       severity: "attention",
+      causality: 1,
       confidence: "high",
       layer: "notification_governance",
       title: "Telegram routing still has legacy direct senders",
@@ -185,6 +194,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     incidents.push(incident({
       code: "recovery_queue_overdue",
       severity: "warning",
+      causality: 2,
       confidence: "high",
       layer: "recovery_operations",
       title: "Recovery cases overdue",
@@ -198,7 +208,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
     }));
   }
 
-  incidents.sort((a, b) => (b.severity_rank - a.severity_rank) || (b.confidence_rank - a.confidence_rank) || a.code.localeCompare(b.code));
+  incidents.sort((a, b) => (b.severity_rank - a.severity_rank) || (b.causality_rank - a.causality_rank) || (b.confidence_rank - a.confidence_rank) || a.code.localeCompare(b.code));
   const primary = incidents[0] || null;
   const criticalCount = incidents.filter((x) => x.severity === "critical").length;
   const warningCount = incidents.filter((x) => x.severity === "warning").length;
@@ -231,7 +241,7 @@ export function buildIncidentRootCauseDigest({ observer = null, router = null, r
       evidence: [],
       owner_action: { title: "เปิด Owner Control Room", href: "/internal/admin/control-room", authority: "read_only_observation" },
     },
-    incidents: incidents.slice(0, 8).map(({ severity_rank, confidence_rank, ...item }) => item),
+    incidents: incidents.slice(0, 8).map(({ severity_rank, confidence_rank, causality_rank, ...item }) => item),
     source_availability: {
       payment_observer: observerAvailable,
       telegram_router: routerAvailable,
