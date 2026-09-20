@@ -268,6 +268,99 @@ const DASHBOARD_JS = String.raw`
     return "<article><span>" + label + "</span><strong>" + value + "</strong></article>";
   }
 
+  function html(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g,function(ch){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]||ch);});
+  }
+
+  function canonicalAudience(value) {
+    var map={public_member:"Public Member",elite:"Elite",red_card:"Red Card",standard:"Standard",premium:"Premium",vip_black_card:"VIP / Black Card",svip:"SVIP",per_review:"Per Review"};
+    return map[String(value||"")]||String(value||"");
+  }
+
+  function scheduleLabel(value) {
+    var map={always:"Always",date_range:"Date range",date_time_range:"Date + time range",weekly_recurring:"Weekly recurring"};
+    return map[String(value||"")]||String(value||"Always");
+  }
+
+  function checkbox(name,value,current) {
+    var checked=current.indexOf(value)>=0?" checked":"";
+    return "<label class='mmdp-check'><input type='checkbox' name='"+html(name)+"' value='"+html(value)+"'"+checked+"><span>"+html(value)+"</span></label>";
+  }
+
+  function renderSalesModel(model) {
+    var p=model.proposal||{};
+    var audiences=(p.audience_scope||[]).map(canonicalAudience);
+    var days=p.days_of_week||[];
+    var id=String(model.model_id||"");
+    var prefix="sales-"+id;
+    return "<article class='mmdp-sales-card' data-sales-model='"+html(id)+"'>"+
+      "<div class='mmdp-sales-title'><div><small>"+html(model.model_status||"MODEL")+"</small><h4>"+html(model.model_name||id)+"</h4></div><span>"+html(p.status||"New Draft")+"</span></div>"+
+      "<div class='mmdp-sales-grid'>"+
+        "<label>Partner / Source Rate THB<input data-sales-field='partner_source_rate_thb' type='number' min='0' step='1' value='"+html(p.source_rate_thb==null?"":p.source_rate_thb)+"'></label>"+
+        "<label>Visibility<select data-sales-field='sales_visibility'><option value='on'"+(p.sales_visibility==="on"?" selected":"")+">On</option><option value='off'"+(p.sales_visibility!=="on"?" selected":"")+">Off</option></select></label>"+
+        "<label>Schedule<select data-sales-field='schedule_type'>"+["Always","Date range","Date + time range","Weekly recurring"].map(function(v){return"<option value='"+v+"'"+(scheduleLabel(p.schedule_type)===v?" selected":"")+">"+v+"</option>";}).join("")+"</select></label>"+
+        "<label>Effective From<input data-sales-field='effective_from_at' type='datetime-local' value=''></label>"+
+        "<label>Effective Until<input data-sales-field='effective_until_at' type='datetime-local' value=''></label>"+
+        "<label>Start Bangkok<input data-sales-field='start_time_local' type='time' value='"+html(p.start_time_local||"")+"'></label>"+
+        "<label>End Bangkok<input data-sales-field='end_time_local' type='time' value='"+html(p.end_time_local||"")+"'></label>"+
+      "</div>"+
+      "<div class='mmdp-sales-section'><b>Customer audience proposal</b><div class='mmdp-sales-checks'>"+["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"].map(function(v){return checkbox(prefix+"-audience",v,audiences);}).join("")+"</div></div>"+
+      "<div class='mmdp-sales-section'><b>Weekly days</b><div class='mmdp-sales-checks'>"+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(v){return checkbox(prefix+"-day",v,days);}).join("")+"</div></div>"+
+      "<label>Change reason<textarea data-sales-field='change_reason' placeholder='อัปเดตเรท / availability / audience'>"+html(p.change_reason||"Partner Dashboard update")+"</textarea></label>"+
+      "<div class='mmdp-sales-foot'><p>Draft only · Per approval required · MMD customer sell rate remains internal.</p><button class='mmdp-btn' type='button' data-sales-save>Save Proposal</button></div>"+
+      "<p data-sales-status></p>"+
+    "</article>";
+  }
+
+  function field(card,name) {
+    var node=card.querySelector("[data-sales-field='"+name+"']");
+    return node?String(node.value||"").trim():"";
+  }
+
+  function checked(card,suffix) {
+    return Array.prototype.slice.call(card.querySelectorAll("input[name$='"+suffix+"']:checked")).map(function(node){return node.value;});
+  }
+
+  function localIso(value) {
+    if(!value)return"";
+    var date=new Date(value);
+    return Number.isFinite(date.getTime())?date.toISOString():"";
+  }
+
+  function saveSalesProposal(button, token, lists) {
+    var card=button.closest("[data-sales-model]");
+    if(!card)return;
+    var status=card.querySelector("[data-sales-status]");
+    var rate=Number(field(card,"partner_source_rate_thb"));
+    if(!Number.isFinite(rate)||rate<0){if(status)status.textContent="กรอก Partner / Source Rate ให้ถูกต้อง";return;}
+    button.disabled=true;
+    if(status)status.textContent="Saving proposal…";
+    var payload={
+      model_id:card.getAttribute("data-sales-model")||"",
+      partner_source_rate_thb:rate,
+      sales_visibility:field(card,"sales_visibility"),
+      audience_scope:checked(card,"-audience"),
+      schedule_type:field(card,"schedule_type"),
+      effective_from_at:localIso(field(card,"effective_from_at")),
+      effective_until_at:localIso(field(card,"effective_until_at")),
+      days_of_week:checked(card,"-day"),
+      start_time_local:field(card,"start_time_local"),
+      end_time_local:field(card,"end_time_local"),
+      change_reason:field(card,"change_reason")||"Partner Dashboard update"
+    };
+    fetch("/v1/partner/models/sales-control?t="+encodeURIComponent(token),{
+      method:"POST",
+      headers:{"accept":"application/json","content-type":"application/json"},
+      body:JSON.stringify(payload)
+    }).then(function(response){return response.json().then(function(payload){return{ok:response.ok,payload:payload};});})
+      .then(function(result){
+        if(!result.ok||!result.payload||!result.payload.ok)throw new Error((result.payload&&result.payload.error)||"sales_control_failed");
+        if(status)status.textContent="Saved · Pending Per approval · v"+String(result.payload.version||"");
+      }).catch(function(error){
+        if(status)status.textContent=error&&error.message?error.message:"Unable to save proposal.";
+      }).finally(function(){button.disabled=false;});
+  }
+
   fetch("/v1/partner/dashboard?t=" + encodeURIComponent(token), { headers: { "accept": "application/json" } })
     .then(function (response) { return response.json().then(function (payload) { return { ok: response.ok, payload: payload }; }); })
     .then(function (result) {
@@ -284,7 +377,12 @@ const DASHBOARD_JS = String.raw`
       telegram.innerHTML = partner.telegram_connected
         ? "<p><b>Telegram connected</b>" + (partner.telegram_username ? " · @" + partner.telegram_username : "") + "</p>"
         : "<p><b>Telegram Job Confirm</b> · เชื่อม Telegram เพื่อรับงานและกดยืนยันจาก MMD ได้ทันที</p><button class=\"mmdp-btn\" type=\"button\" data-connect-telegram>Connect Telegram</button><p data-telegram-status></p>";
-      lists.innerHTML = "<p>Referrals: " + ((result.payload.referrals || []).length) + " / Commissions: " + ((result.payload.commissions || []).length) + "</p>";
+      var models = result.payload.models || [];
+      lists.innerHTML = "<div class='mmdp-sales-head'><small>MODEL SALES CONTROL</small><h3>Models · Rate · Audience · Schedule</h3><p>Partner source rate และการตั้งค่าที่ส่งจากหน้านี้จะเข้า Draft เพื่อรอ Per approval ก่อน Production ทุกครั้ง</p></div>" +
+        (models.length ? models.map(renderSalesModel).join("") : "<p>ยังไม่มี Model ที่ผูกกับ Partner account นี้</p>");
+      lists.querySelectorAll("[data-sales-save]").forEach(function(button){
+        button.addEventListener("click", function(){ saveSalesProposal(button, token, lists); });
+      });
       var connect = telegram.querySelector("[data-connect-telegram]");
       if (connect) connect.addEventListener("click", function () {
         connect.disabled = true;
@@ -317,7 +415,7 @@ const DASHBOARD_JS = String.raw`
 `;
 
 const PARTNER_DESIGN_CSS = String.raw`
-:root{color-scheme:dark;--mmdp-bg:#050403;--mmdp-ink:#fff8e8;--mmdp-muted:rgba(255,248,232,.68);--mmdp-soft:rgba(255,248,232,.1);--mmdp-line:rgba(218,174,91,.22);--mmdp-gold:#e6bd72;--mmdp-gold-2:#ffe6ad;--mmdp-panel:rgba(16,12,8,.78);--mmdp-wine:#2a0d14}html{background:var(--mmdp-bg);scroll-behavior:smooth}body[data-mmd-partner-page]{margin:0;background:radial-gradient(circle at 12% -8%,rgba(230,189,114,.18),transparent 34%),radial-gradient(circle at 86% 10%,rgba(78,33,45,.22),transparent 30%),linear-gradient(145deg,#050403 0%,#100b07 52%,#030202 100%);color:var(--mmdp-ink);font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif;letter-spacing:-.01em}body[data-mmd-partner-page] *{box-sizing:border-box}body[data-mmd-partner-page] a{color:inherit}body[data-mmd-partner-page] .pa18-shell,body[data-mmd-partner-page] .sigil-partner-form,body[data-mmd-partner-page] .mmd-partner-system{font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif}.mmdp-nav{position:sticky;top:0;z-index:20;width:min(1180px,calc(100% - 32px));margin:0 auto;min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(to bottom,rgba(5,4,3,.88),rgba(5,4,3,.5),transparent);backdrop-filter:blur(18px)}.mmdp-nav a{text-decoration:none;color:rgba(255,248,232,.72);font-weight:850}.mmdp-nav div{display:flex;gap:16px;flex-wrap:wrap}.mmdp-brand{display:flex;align-items:baseline;gap:10px}.mmdp-brand b{color:#fff;font-size:26px;letter-spacing:-.07em}.mmdp-brand span{color:var(--mmdp-gold);font-size:13px;text-transform:uppercase;letter-spacing:.16em}.mmd-partner-system{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:0 0 70px}.mmdp-hero{min-height:calc(100vh - 90px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(280px,.72fr);align-items:center;gap:clamp(28px,6vw,76px);padding:52px 0}.mmdp-eyebrow{margin:0 0 18px;color:var(--mmdp-gold);font-size:12px;font-weight:950;letter-spacing:.3em;text-transform:uppercase}.mmdp-hero h1{margin:0 0 22px;max-width:880px;color:#fff;font-size:clamp(54px,9.6vw,112px);line-height:.86;letter-spacing:-.085em}.mmdp-lead{color:rgba(255,248,232,.86);font-size:clamp(19px,2.2vw,25px);line-height:1.62}.mmdp-hero p,.mmdp-grid p,.mmdp-dashboard p{color:var(--mmdp-muted);line-height:1.78}.mmdp-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.mmdp-btn{min-height:52px;display:inline-flex;align-items:center;justify-content:center;padding:0 22px;border:1px solid rgba(255,230,173,.5);border-radius:999px;background:linear-gradient(135deg,#fff0c4,var(--mmdp-gold) 52%,#9a6828);color:#120c05!important;text-decoration:none;font-weight:950}.mmdp-btn.ghost{color:var(--mmdp-ink)!important;background:rgba(255,255,255,.055);border-color:var(--mmdp-line)}.mmdp-card{min-height:330px;border:1px solid var(--mmdp-line);border-radius:34px;padding:30px;background:radial-gradient(circle at 24% 14%,rgba(255,255,255,.12),transparent 25%),linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:0 40px 120px rgba(0,0,0,.45)}.mmdp-card small,.mmdp-card span{color:rgba(255,230,173,.72);font-weight:900;letter-spacing:.2em;text-transform:uppercase}.mmdp-card strong{display:block;margin:70px 0 18px;color:#fff;font-size:clamp(42px,5vw,68px);line-height:.86;letter-spacing:-.07em}.mmdp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}.mmdp-grid article,.mmdp-dashboard{border:1px solid rgba(255,255,255,.08);border-radius:28px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));padding:28px;backdrop-filter:blur(16px)}.mmdp-grid span{color:var(--mmdp-gold);font-weight:950}.mmdp-grid h2,.mmdp-dashboard h2{margin:10px 0;color:#fff;font-size:24px}.mmdp-dashboard{margin:0 0 28px}.mmdp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.mmdp-metrics article{padding:18px;border:1px solid var(--mmdp-line);border-radius:22px;background:rgba(0,0,0,.2)}.mmdp-metrics span{display:block;color:var(--mmdp-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.14em}.mmdp-metrics strong{display:block;margin-top:10px;color:#fff;font-size:22px}body[data-mmd-partner-page] .pa18-card,body[data-mmd-partner-page] .pa18-panel,body[data-mmd-partner-page] .sigil-form-card{border-color:var(--mmdp-line)!important;box-shadow:0 26px 90px rgba(0,0,0,.32)!important}body[data-mmd-partner-page] button,body[data-mmd-partner-page] input,body[data-mmd-partner-page] textarea,body[data-mmd-partner-page] select{font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif!important}@media(max-width:820px){.mmdp-nav{align-items:flex-start;flex-direction:column;padding:16px 0}.mmdp-hero{grid-template-columns:1fr;min-height:auto;padding:36px 0}.mmdp-grid,.mmdp-metrics{grid-template-columns:1fr}.mmdp-hero h1{font-size:clamp(46px,18vw,76px)}}
+:root{color-scheme:dark;--mmdp-bg:#050403;--mmdp-ink:#fff8e8;--mmdp-muted:rgba(255,248,232,.68);--mmdp-soft:rgba(255,248,232,.1);--mmdp-line:rgba(218,174,91,.22);--mmdp-gold:#e6bd72;--mmdp-gold-2:#ffe6ad;--mmdp-panel:rgba(16,12,8,.78);--mmdp-wine:#2a0d14}html{background:var(--mmdp-bg);scroll-behavior:smooth}body[data-mmd-partner-page]{margin:0;background:radial-gradient(circle at 12% -8%,rgba(230,189,114,.18),transparent 34%),radial-gradient(circle at 86% 10%,rgba(78,33,45,.22),transparent 30%),linear-gradient(145deg,#050403 0%,#100b07 52%,#030202 100%);color:var(--mmdp-ink);font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif;letter-spacing:-.01em}body[data-mmd-partner-page] *{box-sizing:border-box}body[data-mmd-partner-page] a{color:inherit}body[data-mmd-partner-page] .pa18-shell,body[data-mmd-partner-page] .sigil-partner-form,body[data-mmd-partner-page] .mmd-partner-system{font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif}.mmdp-nav{position:sticky;top:0;z-index:20;width:min(1180px,calc(100% - 32px));margin:0 auto;min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:linear-gradient(to bottom,rgba(5,4,3,.88),rgba(5,4,3,.5),transparent);backdrop-filter:blur(18px)}.mmdp-nav a{text-decoration:none;color:rgba(255,248,232,.72);font-weight:850}.mmdp-nav div{display:flex;gap:16px;flex-wrap:wrap}.mmdp-brand{display:flex;align-items:baseline;gap:10px}.mmdp-brand b{color:#fff;font-size:26px;letter-spacing:-.07em}.mmdp-brand span{color:var(--mmdp-gold);font-size:13px;text-transform:uppercase;letter-spacing:.16em}.mmd-partner-system{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:0 0 70px}.mmdp-hero{min-height:calc(100vh - 90px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(280px,.72fr);align-items:center;gap:clamp(28px,6vw,76px);padding:52px 0}.mmdp-eyebrow{margin:0 0 18px;color:var(--mmdp-gold);font-size:12px;font-weight:950;letter-spacing:.3em;text-transform:uppercase}.mmdp-hero h1{margin:0 0 22px;max-width:880px;color:#fff;font-size:clamp(54px,9.6vw,112px);line-height:.86;letter-spacing:-.085em}.mmdp-lead{color:rgba(255,248,232,.86);font-size:clamp(19px,2.2vw,25px);line-height:1.62}.mmdp-hero p,.mmdp-grid p,.mmdp-dashboard p{color:var(--mmdp-muted);line-height:1.78}.mmdp-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}.mmdp-btn{min-height:52px;display:inline-flex;align-items:center;justify-content:center;padding:0 22px;border:1px solid rgba(255,230,173,.5);border-radius:999px;background:linear-gradient(135deg,#fff0c4,var(--mmdp-gold) 52%,#9a6828);color:#120c05!important;text-decoration:none;font-weight:950}.mmdp-btn.ghost{color:var(--mmdp-ink)!important;background:rgba(255,255,255,.055);border-color:var(--mmdp-line)}.mmdp-card{min-height:330px;border:1px solid var(--mmdp-line);border-radius:34px;padding:30px;background:radial-gradient(circle at 24% 14%,rgba(255,255,255,.12),transparent 25%),linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:0 40px 120px rgba(0,0,0,.45)}.mmdp-card small,.mmdp-card span{color:rgba(255,230,173,.72);font-weight:900;letter-spacing:.2em;text-transform:uppercase}.mmdp-card strong{display:block;margin:70px 0 18px;color:#fff;font-size:clamp(42px,5vw,68px);line-height:.86;letter-spacing:-.07em}.mmdp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}.mmdp-grid article,.mmdp-dashboard{border:1px solid rgba(255,255,255,.08);border-radius:28px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));padding:28px;backdrop-filter:blur(16px)}.mmdp-grid span{color:var(--mmdp-gold);font-weight:950}.mmdp-grid h2,.mmdp-dashboard h2{margin:10px 0;color:#fff;font-size:24px}.mmdp-dashboard{margin:0 0 28px}.mmdp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.mmdp-sales-head{margin:28px 0 14px}.mmdp-sales-head small{color:var(--mmdp-gold);font-weight:950;letter-spacing:.16em}.mmdp-sales-head h3{margin:7px 0;color:#fff;font-size:24px}.mmdp-sales-card{margin-top:14px;padding:18px;border:1px solid var(--mmdp-line);border-radius:24px;background:rgba(0,0,0,.22)}.mmdp-sales-title,.mmdp-sales-foot{display:flex;align-items:center;justify-content:space-between;gap:14px}.mmdp-sales-title h4{margin:5px 0 0;color:#fff;font-size:22px}.mmdp-sales-title small,.mmdp-sales-title>span{color:var(--mmdp-gold);font-size:11px;font-weight:900;letter-spacing:.12em;text-transform:uppercase}.mmdp-sales-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}.mmdp-sales-card label{display:grid;gap:6px;color:var(--mmdp-muted);font-size:12px;font-weight:800}.mmdp-sales-card input,.mmdp-sales-card select,.mmdp-sales-card textarea{width:100%;min-height:44px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(0,0,0,.28);color:#fff;padding:10px}.mmdp-sales-card textarea{min-height:74px;resize:vertical}.mmdp-sales-section{margin:16px 0}.mmdp-sales-section>b{display:block;margin-bottom:8px;color:#fff}.mmdp-sales-checks{display:flex;gap:7px;flex-wrap:wrap}.mmdp-check{display:flex!important;grid-template-columns:none!important;align-items:center!important;gap:5px!important;padding:7px 9px;border:1px solid rgba(255,255,255,.1);border-radius:999px}.mmdp-check input{width:15px!important;min-height:15px!important;padding:0!important}.mmdp-sales-foot{margin-top:14px}.mmdp-sales-foot p{margin:0;font-size:12px}.mmdp-sales-foot .mmdp-btn{min-height:44px}.mmdp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.mmdp-metrics article{padding:18px;border:1px solid var(--mmdp-line);border-radius:22px;background:rgba(0,0,0,.2)}.mmdp-metrics span{display:block;color:var(--mmdp-muted);font-size:12px;font-weight:900;text-transform:uppercase;letter-spacing:.14em}.mmdp-metrics strong{display:block;margin-top:10px;color:#fff;font-size:22px}body[data-mmd-partner-page] .pa18-card,body[data-mmd-partner-page] .pa18-panel,body[data-mmd-partner-page] .sigil-form-card{border-color:var(--mmdp-line)!important;box-shadow:0 26px 90px rgba(0,0,0,.32)!important}body[data-mmd-partner-page] button,body[data-mmd-partner-page] input,body[data-mmd-partner-page] textarea,body[data-mmd-partner-page] select{font-family:Inter,Outfit,"DM Sans","Noto Sans Thai",Arial,sans-serif!important}@media(max-width:820px){.mmdp-sales-grid{grid-template-columns:1fr}.mmdp-sales-title,.mmdp-sales-foot{align-items:flex-start;flex-direction:column}.mmdp-nav{align-items:flex-start;flex-direction:column;padding:16px 0}.mmdp-hero{grid-template-columns:1fr;min-height:auto;padding:36px 0}.mmdp-grid,.mmdp-metrics{grid-template-columns:1fr}.mmdp-hero h1{font-size:clamp(46px,18vw,76px)}}
 `;
 
 const PARTNER_FORM_BRIDGE_JS = String.raw`
