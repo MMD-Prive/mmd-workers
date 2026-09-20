@@ -2,6 +2,7 @@
   data-profile-endpoint="/v1/model/profile"
   data-submit-endpoint="/v1/model/session/current?mode=year6_direct_wish"
   data-media-upload-endpoint="/v1/model/media/upload"
+  data-telegram-bind-endpoint="/v1/model/telegram/bind"
   data-dashboard-url="/sigil/model/dashboard?notice=wish_pending_review"
   data-liff-id="2010864854-N34SgCqq" lang="th">
   <div class="mmw-shell">
@@ -104,6 +105,20 @@
             <p class="mmw-media-note" data-media-note>ไฟล์จะเข้า Gallery / Intro Video และไม่ถูกแนบไปกับคำอวยพรโดยอัตโนมัติ</p>
           </div>
         </details>
+
+        <aside class="mmw-telegram-connect is-checking" data-telegram-link role="status" aria-live="polite">
+          <span class="mmw-telegram-connect-icon" aria-hidden="true">↗</span>
+          <div class="mmw-telegram-connect-copy">
+            <span class="mmw-eyebrow">JOB NOTIFICATIONS</span>
+            <strong data-telegram-title>กำลังตรวจ Telegram…</strong>
+            <small data-telegram-copy>เชื่อมบัญชีเพื่อรับลิงก์ยืนยันงานและข้อความสำคัญจาก MMD โดยตรง</small>
+            <small class="mmw-telegram-separate">ส่วนนี้เป็นบัญชีสำหรับแจ้งงาน · แยกจากตัวเลือก “Telegram MMD” สำหรับเผยแพร่คำอวยพรด้านล่าง</small>
+          </div>
+          <div class="mmw-telegram-connect-actions">
+            <button type="button" data-telegram-connect hidden>เชื่อม Telegram</button>
+            <button type="button" data-telegram-refresh hidden>ตรวจสถานะ</button>
+          </div>
+        </aside>
 
         <fieldset class="mmw-consents">
           <legend>ให้คำอวยพรนี้เดินทางถึงใครบ้าง</legend>

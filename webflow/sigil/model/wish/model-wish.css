@@ -108,6 +108,24 @@
 #mmd-model-wish-v1 .mmw-media-badge { position: absolute; bottom: 4px; right: 4px; padding: 2px 4px; background: #0d0e0ce6; color: var(--mmw-cream); font-size: 8px; }
 #mmd-model-wish-v1 .mmw-media-slot.is-uploaded { border-color: #b7c4a5; }
 #mmd-model-wish-v1 .mmw-media-note { margin-top: 13px; color: var(--mmw-muted); font-size: 11px; line-height: 1.8; }
+#mmd-model-wish-v1 .mmw-telegram-connect { margin-top: 28px; padding: 16px; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 11px 13px; align-items: center; border: 1px solid rgba(126,176,235,.28); border-radius: 4px; background: linear-gradient(180deg,rgba(22,31,43,.9),rgba(16,21,29,.9)); }
+#mmd-model-wish-v1 .mmw-telegram-connect-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid rgba(126,176,235,.3); border-radius: 50%; color: #a7cef8; background: rgba(126,176,235,.08); }
+#mmd-model-wish-v1 .mmw-telegram-connect-copy { min-width: 0; display: grid; gap: 3px; }
+#mmd-model-wish-v1 .mmw-telegram-connect-copy .mmw-eyebrow { color: #a7cef8; font-size: 8px; }
+#mmd-model-wish-v1 .mmw-telegram-connect-copy strong { color: var(--mmw-cream); font-size: 13px; font-weight: 500; line-height: 1.55; }
+#mmd-model-wish-v1 .mmw-telegram-connect-copy small { color: var(--mmw-muted); font-size: 10.5px; line-height: 1.7; }
+#mmd-model-wish-v1 .mmw-telegram-connect-copy .mmw-telegram-separate { margin-top: 3px; color: #777f8a; }
+#mmd-model-wish-v1 .mmw-telegram-connect-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 7px; }
+#mmd-model-wish-v1 .mmw-telegram-connect-actions button { min-height: 36px; padding: 7px 12px; border: 1px solid rgba(167,206,248,.34); border-radius: 999px; background: rgba(167,206,248,.09); color: #d9eaff; font-size: 11px; font-weight: 600; }
+#mmd-model-wish-v1 .mmw-telegram-connect-actions [data-telegram-connect] { background: #dcecff; border-color: #dcecff; color: #162333; }
+#mmd-model-wish-v1 .mmw-telegram-connect.is-connected { border-color: rgba(146,198,158,.3); background: linear-gradient(180deg,rgba(21,38,28,.9),rgba(16,27,21,.9)); }
+#mmd-model-wish-v1 .mmw-telegram-connect.is-connected .mmw-telegram-connect-icon,
+#mmd-model-wish-v1 .mmw-telegram-connect.is-connected .mmw-eyebrow { color: #afd4b7; border-color: rgba(146,198,158,.34); }
+#mmd-model-wish-v1 .mmw-telegram-connect.is-error { border-color: rgba(224,201,120,.32); background: linear-gradient(180deg,rgba(48,39,20,.9),rgba(29,25,17,.9)); }
+@media (min-width: 600px) {
+  #mmd-model-wish-v1 .mmw-telegram-connect { grid-template-columns: auto minmax(0,1fr) auto; padding: 18px 20px; }
+  #mmd-model-wish-v1 .mmw-telegram-connect-actions { grid-column: 3; grid-row: 1; justify-self: end; }
+}
 #mmd-model-wish-v1 .mmw-consents { min-width: 0; margin: 34px 0 0; padding: 0; border: 0; }
 #mmd-model-wish-v1 .mmw-consents legend { padding: 0; color: var(--mmw-cream); font-size: 17px; font-weight: 400; }
 #mmd-model-wish-v1 .mmw-consent-help { margin: 9px 0 18px; color: var(--mmw-muted); font-size: 12px; line-height: 1.9; }

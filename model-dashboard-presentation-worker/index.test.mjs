@@ -5,6 +5,7 @@ import {
   isPresentationAssetPath,
   isPresentationRootRuntimePath,
   isWishStatusAssetPath,
+  isTelegramConnectAssetPath,
   presentationUrlForPage,
   presentationUrlForAsset,
   rewritePresentationHtml,
@@ -32,6 +33,9 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.js"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.css"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
+  assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/telegram-connect-v1.js"), true);
+  assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/telegram-connect-v1.css"), true);
+  assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
 });
 
 test("bare MMD MODEL entry keeps the exact published Mini App base URL", () => {
@@ -203,6 +207,9 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /wish-status-v1\.css/);
   assert.match(out, /wish-status-v1\.js/);
   assert.match(out, /data-mmd-wish-status-assets="v1"/);
+  assert.match(out, /telegram-connect-v1\.css/);
+  assert.match(out, /telegram-connect-v1\.js/);
+  assert.match(out, /data-mmd-telegram-connect-assets="v1"/);
   assert.doesNotMatch(out, /lovable-badge/);
   assert.doesNotMatch(out, /~flock\.js/);
 });
@@ -231,4 +238,23 @@ test("serves the Model Wish pending status add-on locally instead of proxying it
   assert.equal(css.status, 200);
   assert.match(css.headers.get("content-type"), /text\/css/);
   assert.match(await css.text(), /#f1c75b/);
+});
+
+
+test("serves the Model Telegram readiness add-on locally and keeps LINE as authority", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const js = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/telegram-connect-v1.js"));
+  assert.equal(js.status, 200);
+  assert.match(js.headers.get("content-type"), /javascript/);
+  const source = await js.text();
+  assert.match(source, /\/v1\/model\/profile/);
+  assert.match(source, /\/v1\/model\/telegram\/bind/);
+  assert.match(source, /telegram_connected/);
+  assert.match(source, /LINE ยังเป็นบัญชีหลัก/);
+  assert.doesNotMatch(source, /telegram_user_id\s*=/);
+
+  const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/telegram-connect-v1.css"));
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type"), /text\/css/);
+  assert.match(await css.text(), /#mmd-model-telegram-connect-v1/);
 });

@@ -23,16 +23,23 @@
   const authRetry = $('[data-auth-retry]');
   const success = $('[data-success]');
   const scope = $('[data-success-scope]');
+  const telegramLink = $('[data-telegram-link]');
+  const telegramTitle = $('[data-telegram-title]');
+  const telegramCopy = $('[data-telegram-copy]');
+  const telegramConnect = $('[data-telegram-connect]');
+  const telegramRefresh = $('[data-telegram-refresh]');
   const questions = [...R.querySelectorAll('[data-question]')];
 
   if (![form, birthday, mmd, privatePer, telegram, past, mediaInput, mediaGrid,
-    mediaCount, mediaNote, error, submit, submitLabel, chip, authNote, authRetry, success, scope].every(Boolean)) return;
+    mediaCount, mediaNote, error, submit, submitLabel, chip, authNote, authRetry, success, scope,
+    telegramLink, telegramTitle, telegramCopy, telegramConnect, telegramRefresh].every(Boolean)) return;
 
   R.dataset.ready = '1';
 
   const PROFILE = R.dataset.profileEndpoint || '/v1/model/profile';
   const SUBMIT = R.dataset.submitEndpoint || '/v1/model/session/current?mode=year6_direct_wish';
   const MEDIA_UPLOAD = R.dataset.mediaUploadEndpoint || '/v1/model/media/upload';
+  const TELEGRAM_BIND = R.dataset.telegramBindEndpoint || '/v1/model/telegram/bind';
   const DASHBOARD = R.dataset.dashboardUrl || '/sigil/model/dashboard?notice=wish_pending_review';
   const LIFF_ID = R.dataset.liffId || '2010864854-N34SgCqq';
   const DRAFT = 'mmd_model_wish_draft_v5';
@@ -45,6 +52,7 @@
   let authed = false;
   let busy = false;
   let authBusy = false;
+  let telegramBusy = false;
   let liffLoading = null;
   let selectedFiles = [];
   let uploadedMediaIds = [];
@@ -131,6 +139,102 @@
       payload?.per_name || payload?.display_name || '';
   }
 
+  function profileModel(payload) {
+    return payload?.model || payload?.profile || payload || {};
+  }
+
+  function safeTelegramConnectUrl(value) {
+    try {
+      const url = new URL(String(value || ''));
+      return url.protocol === 'https:' && url.hostname === 't.me' ? url.toString() : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function renderTelegramStatus(payload) {
+    const model = profileModel(payload);
+    const connected = model?.telegram_connected === true ||
+      String(model?.telegram_verification_status || '').toLowerCase() === 'verified';
+    const username = String(model?.telegram_username || '').replace(/^@/, '').trim();
+
+    telegramLink.classList.remove('is-checking', 'is-needed', 'is-connected', 'is-error');
+    if (connected) {
+      telegramLink.classList.add('is-connected');
+      telegramTitle.textContent = username ? 'Telegram Connected · @' + username : 'Telegram Connected';
+      telegramCopy.textContent = 'พร้อมรับลิงก์ยืนยันงานและข้อความสำคัญจาก MMD โดยตรง';
+      telegramConnect.hidden = true;
+      telegramRefresh.hidden = true;
+      return;
+    }
+
+    telegramLink.classList.add('is-needed');
+    telegramTitle.textContent = 'เชื่อม Telegram สำหรับแจ้งงาน';
+    telegramCopy.textContent = 'ใช้รับลิงก์ยืนยันงานและข้อความสำคัญจาก MMD · LINE ยังเป็นบัญชีหลัก และการส่ง Wish ไม่ถูกบล็อก';
+    telegramConnect.hidden = false;
+    telegramRefresh.hidden = false;
+  }
+
+  function renderTelegramError(message) {
+    telegramLink.classList.remove('is-checking', 'is-needed', 'is-connected');
+    telegramLink.classList.add('is-error');
+    telegramTitle.textContent = 'ยังตรวจ Telegram ไม่สำเร็จ';
+    telegramCopy.textContent = message || 'ลองตรวจสถานะอีกครั้งได้ครับ';
+    telegramConnect.hidden = true;
+    telegramRefresh.hidden = false;
+  }
+
+  async function refreshTelegramStatus() {
+    if (!authed || telegramBusy) return;
+    telegramBusy = true;
+    telegramRefresh.disabled = true;
+    try {
+      const response = await fetch(PROFILE, {
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('profile_unavailable');
+      const profile = await response.json().catch(() => null);
+      if (!profile || typeof profile !== 'object') throw new Error('profile_invalid');
+      renderTelegramStatus(profile);
+    } catch {
+      renderTelegramError('ยังตรวจสถานะ Telegram ไม่สำเร็จ · ลองอีกครั้งได้ครับ');
+    } finally {
+      telegramBusy = false;
+      telegramRefresh.disabled = false;
+    }
+  }
+
+  async function connectTelegram() {
+    if (!authed || telegramBusy) return;
+    telegramBusy = true;
+    saveDraft();
+    telegramConnect.disabled = true;
+    telegramRefresh.disabled = true;
+    const oldLabel = telegramConnect.textContent;
+    telegramConnect.textContent = 'กำลังเปิด Telegram…';
+    try {
+      const response = await fetch(TELEGRAM_BIND, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { accept: 'application/json' },
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result || result.ok !== true) throw new Error(result?.error || 'telegram_bind_failed');
+      const connectUrl = safeTelegramConnectUrl(result.connect_url);
+      if (!connectUrl) throw new Error('telegram_connect_url_invalid');
+      location.assign(connectUrl);
+    } catch {
+      renderTelegramError('เปิด Telegram ยังไม่สำเร็จครับ · ลองเชื่อมอีกครั้งได้');
+    } finally {
+      telegramBusy = false;
+      telegramConnect.disabled = false;
+      telegramRefresh.disabled = false;
+      telegramConnect.textContent = oldLabel || 'เชื่อม Telegram';
+    }
+  }
+
   async function checkProfile() {
     setChip('is-checking', 'กำลังยืนยันตัวตน');
     setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
@@ -145,6 +249,7 @@
       if (!profile || typeof profile !== 'object') return false;
       const name = profileName(profile);
       authed = true;
+      renderTelegramStatus(profile);
       setChip('is-ready', name ? 'ยืนยันแล้ว · ' + name : 'ยืนยันแล้ว');
       setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD MODEL ของคุณ');
       return true;
@@ -521,6 +626,15 @@
     } finally {
       lock(false);
     }
+  });
+
+  telegramConnect.addEventListener('click', connectTelegram);
+  telegramRefresh.addEventListener('click', refreshTelegramStatus);
+  window.addEventListener('focus', () => {
+    if (authed) setTimeout(refreshTelegramStatus, 250);
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && authed) setTimeout(refreshTelegramStatus, 250);
   });
 
   mediaInput.addEventListener('click', async event => {

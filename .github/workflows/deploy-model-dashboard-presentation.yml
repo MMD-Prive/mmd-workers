@@ -242,6 +242,16 @@ jobs:
               exit 1
             fi
 
+            tg_js="$origin/sigil/model/dashboard-assets/telegram-connect-v1.js"
+            tg_css="$origin/sigil/model/dashboard-assets/telegram-connect-v1.css"
+            tg_js_body="$(mktemp)"
+            tg_js_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$tg_js_body" -w "%{http_code}" "$tg_js")"
+            test "$tg_js_code" = "200"
+            grep -q '/v1/model/telegram/bind' "$tg_js_body"
+            grep -q 'telegram_connected' "$tg_js_body"
+            tg_css_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$tg_css")"
+            test "$tg_css_code" = "200"
+
             asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
             if [ -n "$asset" ]; then
               asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
