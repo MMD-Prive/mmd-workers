@@ -571,20 +571,22 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
   }
 
   try {
-    const response = await fetch(`https://api.telegram.org/bot${String(env.TELEGRAM_BOT_TOKEN).trim()}/sendMessage`, {
+    const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${String(env.AUTH_SERVICE_MMS_TO_TELEGRAM || "").trim()}`,
+      },
       body: JSON.stringify({
-        chat_id: String(env.MMS_TELEGRAM_CHAT_ID).trim(),
-        message_thread_id: mmsApplicationThreadId(env),
+        flow: "mms_application",
         text: applicationTelegramMessage(payload, { application_id: applicationId }),
         disable_web_page_preview: true,
       }),
-    });
+    }));
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.ok !== true) {
-      const error = new Error(`TELEGRAM_HTTP_${response.status}`);
-      error.code = `TELEGRAM_HTTP_${response.status}`;
+    if (!response.ok || data?.ok !== true || data?.telegram?.ok !== true) {
+      const error = new Error(`TELEGRAM_ROUTER_HTTP_${response.status}`);
+      error.code = `TELEGRAM_ROUTER_HTTP_${response.status}`;
       throw error;
     }
     const notifiedAt = new Date().toISOString();
@@ -606,7 +608,11 @@ async function syncApplicationTelegram(env, applicationRecord, payload, applicat
 }
 
 function telegramConfigured(env) {
-  return Boolean(String(env.TELEGRAM_BOT_TOKEN || "").trim() && String(env.MMS_TELEGRAM_CHAT_ID || "").trim());
+  return Boolean(
+    env.TELEGRAM_WORKER
+      && typeof env.TELEGRAM_WORKER.fetch === "function"
+      && String(env.AUTH_SERVICE_MMS_TO_TELEGRAM || "").trim()
+  );
 }
 
 function selectName(value) {
