@@ -108,7 +108,8 @@ jobs:
             sleep 5
           done
           test "$router_secret_ready" = "1"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM --config partners-worker/wrangler.toml
+          printf 'AUTH_SERVICE_PARTNERS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/partners-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/partners-worker-router.env"
 
       - name: Build route-free deploy config
         working-directory: partners-worker
@@ -142,7 +143,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --keep-vars --config .wrangler-no-routes.toml
+          npx wrangler deploy --keep-vars --secrets-file "$RUNNER_TEMP/partners-worker-router.env" --config .wrangler-no-routes.toml
 
       - name: Verify Cloudflare routes token
         shell: bash
@@ -274,4 +275,4 @@ jobs:
       - name: Clean temporary config
         if: always()
         working-directory: partners-worker
-        run: rm -f .wrangler-no-routes.toml
+        run: rm -f .wrangler-no-routes.toml "$RUNNER_TEMP/partners-worker-router.env"
