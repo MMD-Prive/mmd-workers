@@ -60,15 +60,6 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
-      - name: Generate deployment control token
-        shell: bash
-        run: |
-          set -euo pipefail
-          token="$(openssl rand -hex 32)"
-          test -n "$token"
-          echo "::add-mask::$token"
-          echo "TELEGRAM_DEPLOY_CONTROL_TOKEN=$token" >> "$GITHUB_ENV"
-
       - name: Verify Cloudflare token
         run: npx --yes wrangler@4 whoami
 
@@ -158,13 +149,6 @@ jobs:
           printf '%s' "$body" | grep -Fq 'mmd-concierge-capability-pack-v1-20260919'
           printf '%s' "$body" | grep -Fq 'mmd-recovery-outcome-taxonomy-v1-20260919'
 
-      - name: Install deployment control secret
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$TELEGRAM_DEPLOY_CONTROL_TOKEN"
-          printf '%s' "$TELEGRAM_DEPLOY_CONTROL_TOKEN" | npx --yes wrangler@4 secret put TELEGRAM_DEPLOY_REPAIR_SECRET
-
       - name: Repair Telegram webhook to canonical route
         shell: bash
         run: |
@@ -174,7 +158,7 @@ jobs:
             -o "$body_file" \
             -w "%{http_code}" \
             -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/webhook/ensure-canonical' \
-            -H "X-Deploy-Control-Token: $TELEGRAM_DEPLOY_CONTROL_TOKEN" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -H 'Content-Type: application/json' \
             --data '{"confirm":"ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1"}')"
           cat "$body_file"
@@ -186,10 +170,10 @@ jobs:
           if (payload?.canonical_url !== "https://mmdbkk.com/telegram/webhook") throw new Error("canonical webhook URL mismatch");
           if (payload?.observed_url !== payload?.canonical_url) throw new Error("Telegram webhook did not repair to canonical URL");
           if (payload?.secret_token_enforced !== true) throw new Error("Telegram webhook secret enforcement was not applied");
-          console.log("Telegram webhook repaired by telegram-worker runtime authority");
+          console.log("Telegram webhook repaired by verified Cloudflare deploy authority");
           NODE
 
-      - name: Verify Telegram webhook canonical from runtime
+      - name: Verify Telegram webhook canonical state
         shell: bash
         run: |
           set -euo pipefail
@@ -224,12 +208,12 @@ jobs:
             send_body="$(mktemp)"
             send_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$send_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/telegram/internal/send")"
             cat "$send_body"
-            test "$send_code" = "401"
+            test "$send_code" = "403"
 
             alias_body="$(mktemp)"
             alias_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$alias_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/v1/send")"
             cat "$alias_body"
-            test "$alias_code" = "401"
+            test "$alias_code" = "403"
 
             webhook_body="$(mktemp)"
             webhook_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$webhook_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' -H 'X-Telegram-Bot-Api-Secret-Token: invalid-smoke-secret' --data '{"update_id":0}' "$origin/telegram/webhook")"
