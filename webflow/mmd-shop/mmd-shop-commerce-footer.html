@@ -34,7 +34,7 @@ var COPY={
   yourCart:"YOUR CART",cartTitle:"ของที่เลือกไว้",cartCopy:"พอพร้อมสั่ง ผมให้ MMD เช็กราคาและสต๊อกจริงอีกครั้งก่อนเปิด Order ครับ",
   total:"รวม",askMmd:"ถาม MMD",copy:"คัดลอก",clearCart:"ล้าง Cart",emptyCart:"เริ่มเลือกสินค้าใส่ Cart ได้เลย",remove:"ลบ",
   addCart:"เพิ่มลง Cart",addedCart:"เพิ่มลง Cart แล้ว",viewDetails:"ดูรายละเอียด",viewVariant:"ดูรายละเอียดตัวเลือกนี้",
-  variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",sku:"SKU",readyOrder:"พร้อมสั่งซื้อ",
+  variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",variantBottle:"เลือกแบบขวด",sku:"SKU",readyOrder:"พร้อมสั่งซื้อ",
   restricted:"สินค้ากลุ่มนี้สั่งผ่าน MMD ได้โดยตรง",stockChecking:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",
   supplierChecking:"กำลังยืนยัน Supplier ก่อนเปิดรับรายการ",outStock:"รอรอบสต๊อกถัดไป",onlineClosed:"กำลังเตรียมเปิดรับรายการออนไลน์",
   checkoutTitle:"ข้อมูลสำหรับสั่งซื้อ",checkoutCopy:"ก่อนเปิด Order ผมให้ MMD เช็กราคา สต๊อก และข้อมูลจัดส่งอีกครั้งครับ",
@@ -100,7 +100,7 @@ var COPY={
   yourCart:"YOUR CART",cartTitle:"Your selection",cartCopy:"When you’re ready, MMD checks the real price and stock once more before opening the Order.",
   total:"Total",askMmd:"Ask MMD",copy:"Copy",clearCart:"Clear Cart",emptyCart:"Start your Cart with a favorite",remove:"Remove",
   addCart:"Add to Cart",addedCart:"Added to Cart",viewDetails:"View details",viewVariant:"View this option",
-  variantSize:"Choose size",variantFlavour:"Choose flavour",sku:"SKU",readyOrder:"Ready to order",
+  variantSize:"Choose size",variantFlavour:"Choose flavour",variantBottle:"Choose bottle",sku:"SKU",readyOrder:"Ready to order",
   restricted:"This product group is available directly through MMD",stockChecking:"Checking stock before orders open",
   supplierChecking:"Confirming with the supplier before orders open",outStock:"Next stock round",onlineClosed:"Online ordering is being prepared",
   checkoutTitle:"Order details",checkoutCopy:"Before opening the Order, MMD checks price, stock, and delivery details again.",
@@ -166,7 +166,7 @@ var COPY={
   yourCart:"你的 CART",cartTitle:"已选商品",cartCopy:"准备下单时，MMD 会再次确认真实价格和库存，再开启 Order。",
   total:"合计",askMmd:"询问 MMD",copy:"复制",clearCart:"清空 Cart",emptyCart:"现在就可以把喜欢的商品放进 Cart",remove:"删除",
   addCart:"加入 Cart",addedCart:"已加入 Cart",viewDetails:"查看详情",viewVariant:"查看这个选项",
-  variantSize:"选择容量",variantFlavour:"选择口味",sku:"SKU",readyOrder:"可以下单",
+  variantSize:"选择容量",variantFlavour:"选择口味",variantBottle:"选择瓶型",sku:"SKU",readyOrder:"可以下单",
   restricted:"此商品类别可直接通过 MMD 下单",stockChecking:"正在确认库存，确认后开放下单",
   supplierChecking:"正在向 Supplier 确认，确认后开放下单",outStock:"等待下一轮库存",onlineClosed:"正在准备开放线上下单",
   checkoutTitle:"下单资料",checkoutCopy:"开启 Order 前，MMD 会再次确认价格、库存和配送资料。",
@@ -377,10 +377,17 @@ function ggSize(p){
  var n=String((p&&p.product_name)||"")+" "+String((p&&p.sku)||""),m=n.match(/(10|25|50)\s*ml/i);
  return m?m[1]+"ml":"";
 }
+function glenBottle(p){
+ var s=String(p&&p.sku||"").toUpperCase(),n=String(p&&p.product_name||"");
+ if(s.indexOf("-BLK")>0||/black bottle/i.test(n))return "Black Bottle";
+ if(s.indexOf("-WHT")>0||/white bottle/i.test(n))return "White Bottle";
+ return p&&p.variant_value?p.variant_value:(p&&p.sku?p.sku:"Bottle");
+}
 function detailUrl(p){return p.product_url||("/mmd-shop/product/"+encodeURIComponent(String(p.sku||p.id||"product").toLowerCase()))}
 function groupProducts(rows){
- var normal=[],pod=[],gg=[];
- rows.forEach(function(p){var t=familyType(p);if(t==="pod"){pod.push(p);return}if(t==="gg"){gg.push(p);return}normal.push(p)});
+ var normal=[],pod=[],gg=[],glen=[];
+ rows.forEach(function(p){var t=familyType(p);if(t==="pod"){pod.push(p);return}if(t==="gg"){gg.push(p);return}if(t==="glen"){glen.push(p);return}normal.push(p)});
+ if(glen.length){var go={"Black Bottle":1,"White Bottle":2};glen.sort(function(a,b){return (go[glenBottle(a)]||99)-(go[glenBottle(b)]||99)});normal.unshift({type:"glen_group",name:"Glenburgies Pop Plus",variants:glen})}
  if(pod.length)normal.unshift({type:"pod_group",name:"Pod Premium Plus 2.5mg",variants:pod});
  if(gg.length){var order={"10ml":1,"25ml":2,"50ml":3};gg.sort(function(a,b){return (order[ggSize(a)]||99)-(order[ggSize(b)]||99)});normal.unshift({type:"gg_group",name:"GG Water",variants:gg})}
  return normal;
@@ -401,6 +408,13 @@ function renderGGGroup(card,item){
  var first=item.variants[0];
  card.innerHTML='<div class="mmd-card-media"><img src="'+img(first)+'" alt="GG Water" loading="lazy"><span class="mmd-badge">SIZE SELECT</span></div><div class="mmd-card-body"><h3>GG Water</h3><p>เลือกขนาด 10ml / 25ml / 50ml</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span><strong data-gg-price>'+money(first&&first.selling_price_thb)+'</strong></div><div class="mmd-variant"><div class="mmd-variant-label">เลือกขนาด</div><select class="mmd-select" data-gg-select>'+item.variants.map(function(v,i){return '<option value="'+i+'">'+esc((ggSize(v)||v.sku||"Variant").toUpperCase())+' — '+esc(money(v.selling_price_thb))+'</option>'}).join("")+'</select><div class="mmd-variant-meta"><span>SKU</span><strong data-gg-sku>'+esc(first&&first.sku)+'</strong></div><div class="mmd-variant-state" data-gg-state></div></div><a class="mmd-shop-detail" data-gg-detail href="'+esc(detailUrl(first))+'">ดูรายละเอียดขนาดนี้</a><div data-gg-action>'+eligibleAction(first)+'</div></div></div>';
  var s=card.querySelector("[data-gg-select]"),sku=card.querySelector("[data-gg-sku]"),price=card.querySelector("[data-gg-price]"),detail=card.querySelector("[data-gg-detail]"),state=card.querySelector("[data-gg-state]"),action=card.querySelector("[data-gg-action]");
+ function update(){var p=item.variants[Number(s.value)]||first;sku.textContent=p.sku||"—";price.textContent=money(p.selling_price_thb);detail.href=detailUrl(p);state.textContent=p.checkout_eligible===true?"พร้อมสั่งซื้อ":checkoutStatusText(p);action.innerHTML=eligibleAction(p)}
+ s.addEventListener("change",update);update();
+}
+function renderGlenGroup(card,item){
+ var first=item.variants[0];
+ card.innerHTML='<div class="mmd-card-media"><img src="'+img(first)+'" alt="Glenburgies Pop Plus" loading="lazy"><span class="mmd-badge">BOTTLE SELECT</span></div><div class="mmd-card-body"><h3>Glenburgies Pop Plus</h3><p>เลือก Black Bottle / White Bottle</p><div class="mmd-card-bottom"><div class="mmd-price"><span>MMD Price</span><strong data-glen-price>'+money(first&&first.selling_price_thb)+'</strong></div><div class="mmd-variant"><div class="mmd-variant-label">เลือกแบบขวด</div><select class="mmd-select" data-glen-select>'+item.variants.map(function(v,i){return '<option value="'+i+'">'+esc(glenBottle(v))+' — '+esc(money(v.selling_price_thb))+'</option>'}).join("")+'</select><div class="mmd-variant-meta"><span>SKU</span><strong data-glen-sku>'+esc(first&&first.sku)+'</strong></div><div class="mmd-variant-state" data-glen-state></div></div><a class="mmd-shop-detail" data-glen-detail href="'+esc(detailUrl(first))+'">ดูรายละเอียดตัวเลือกนี้</a><div data-glen-action>'+eligibleAction(first)+'</div></div></div>';
+ var s=card.querySelector("[data-glen-select]"),sku=card.querySelector("[data-glen-sku]"),price=card.querySelector("[data-glen-price]"),detail=card.querySelector("[data-glen-detail]"),state=card.querySelector("[data-glen-state]"),action=card.querySelector("[data-glen-action]");
  function update(){var p=item.variants[Number(s.value)]||first;sku.textContent=p.sku||"—";price.textContent=money(p.selling_price_thb);detail.href=detailUrl(p);state.textContent=p.checkout_eligible===true?"พร้อมสั่งซื้อ":checkoutStatusText(p);action.innerHTML=eligibleAction(p)}
  s.addEventListener("change",update);update();
 }
@@ -441,6 +455,7 @@ function renderProducts(){
   var card=document.createElement("article");card.className="mmd-card";
   if(item.type==="pod_group")renderPodGroup(card,item);
   else if(item.type==="gg_group")renderGGGroup(card,item);
+  else if(item.type==="glen_group")renderGlenGroup(card,item);
   else{
    var p=item,locked=restricted(p),priced=Number(p.selling_price_thb)>0,eligible=p.checkout_eligible===true&&!locked&&priced;
    var detail=detailUrl(p);
