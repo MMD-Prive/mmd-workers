@@ -60,6 +60,15 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
+      - name: Generate deployment control token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 32)"
+          test -n "$token"
+          echo "::add-mask::$token"
+          echo "TELEGRAM_DEPLOY_CONTROL_TOKEN=$token" >> "$GITHUB_ENV"
+
       - name: Verify Cloudflare token
         run: npx --yes wrangler@4 whoami
 
@@ -71,14 +80,14 @@ jobs:
           node --test test/*.test.mjs
 
       - name: Validate version upload
-        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars --var "TELEGRAM_DEPLOY_CONTROL_TOKEN:${TELEGRAM_DEPLOY_CONTROL_TOKEN}"
 
       - name: Upload telegram-worker version
         shell: bash
         run: |
           set -euo pipefail
           tag="gha-${GITHUB_SHA:0:12}"
-          npx --yes wrangler@4 versions upload --keep-vars --tag "$tag" --message "GitHub Actions ${GITHUB_SHA}" 2>&1 | tee "$RUNNER_TEMP/telegram-worker-upload.log"
+          npx --yes wrangler@4 versions upload --keep-vars --var "TELEGRAM_DEPLOY_CONTROL_TOKEN:${TELEGRAM_DEPLOY_CONTROL_TOKEN}" --tag "$tag" --message "GitHub Actions ${GITHUB_SHA}" 2>&1 | tee "$RUNNER_TEMP/telegram-worker-upload.log"
           version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/telegram-worker-upload.log" | tail -n 1)"
           test -n "$version_id"
           echo "TELEGRAM_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
@@ -153,13 +162,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$INTERNAL_API_TOKEN"
+          test -n "$TELEGRAM_DEPLOY_CONTROL_TOKEN"
           body_file="$(mktemp)"
           code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
             -o "$body_file" \
             -w "%{http_code}" \
             -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/webhook/ensure-canonical' \
-            -H "X-Internal-Token: $INTERNAL_API_TOKEN" \
+            -H "X-Deploy-Control-Token: $TELEGRAM_DEPLOY_CONTROL_TOKEN" \
             -H 'Content-Type: application/json' \
             --data '{"confirm":"ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1"}')"
           cat "$body_file"
