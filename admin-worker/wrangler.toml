@@ -553,6 +553,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/models/draft"
 zone_name = "mmdbkk.com"
 
+# Model Sales Control V1 resolver. Browser access remains behind the credential-bound
+# admin gate; the handler reads canonical Airtable Model Offer Rules and is read-only.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/resolve"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/resolve"
+zone_name = "mmdbkk.com"
+
 # Kenji CEO Control read APIs. Keep exact routes plus narrow query-safe companions; no broad /v1/admin/kenji/control/* ownership.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/control/memory"
