@@ -8,3 +8,4 @@ FINAL paired acceptance trigger after PR #1446 removed deploy-time secret mutati
 FINAL paired acceptance trigger after PR #1448 switched Telegram webhook acceptance to read-only canonical-state verification. Marker-only; no runtime behavior mutation.
 FINAL paired acceptance trigger after PR #1450 added verified Cloudflare deploy authority for fixed canonical webhook repair. Marker-only; no runtime behavior mutation.
 FINAL paired acceptance after canonical webhook repair succeeded and internal-send smoke was aligned to the existing 403 fail-closed contract. Marker-only; no runtime behavior mutation.
+2026-09-21 paired closure reverify: trigger telegram-worker production deploy on the same source SHA as the HYPE closed-loop smoke so the FINAL HYPE receipt can prove the pair atomically. Marker-only; no runtime behavior mutation.

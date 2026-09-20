@@ -1,4 +1,5 @@
 name: Deploy himai-chat-worker
+# Router closure rerun: 2026-09-21 configured-state verification
 
 on:
   workflow_dispatch:
@@ -13,7 +14,7 @@ on:
       - ".github/workflows/deploy-himai-chat-worker.yml"
 
 concurrency:
-  group: deploy-himai-chat-worker-production
+  group: telegram-router-secret-rotation-production
   cancel-in-progress: false
 
 permissions:
@@ -65,6 +66,29 @@ jobs:
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
 
+      - name: Rotate HIMAI-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'HIMAI_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          router_secret_log="$RUNNER_TEMP/telegram-worker-himai-secret-version.log"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_HIMAI_TO_TELEGRAM \
+            --config ../telegram-worker/wrangler.toml \
+            --tag "router-himai-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
+            --message "Rotate AUTH_SERVICE_HIMAI_TO_TELEGRAM from ${GITHUB_SHA}" \
+            2>&1 | tee "$router_secret_log"
+          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          if [ -z "$router_version_id" ]; then
+            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_HIMAI_TO_TELEGRAM" >&2
+            cat "$router_secret_log" >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config ../telegram-worker/wrangler.toml
+          printf 'AUTH_SERVICE_HIMAI_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/himai-chat-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/himai-chat-worker-router.env"
+
       - name: Validate version upload
         run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
 
@@ -77,6 +101,7 @@ jobs:
           tag="gha-${GITHUB_SHA:0:12}"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
+            --secrets-file "$RUNNER_TEMP/himai-chat-worker-router.env" \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-upload.log"
@@ -106,7 +131,7 @@ jobs:
           fs.writeFileSync(".wrangler-migration-no-routes.toml", output.join("\n")+"\n");
           NODE
           trap 'rm -f "$migration_config"' EXIT
-          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config" 2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-migration.log"
+          npx --yes wrangler@4 deploy --keep-vars --secrets-file "$RUNNER_TEMP/himai-chat-worker-router.env" --config "$migration_config" 2>&1 | tee "$RUNNER_TEMP/himai-chat-worker-migration.log"
           echo "HIMAI_CHAT_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
 
       - name: Resolve uploaded version ID

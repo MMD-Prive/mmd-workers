@@ -245,6 +245,8 @@ function projectTelegramRouterSummary(value = null) {
       label: clean(lane?.label, 140),
       status: clean(lane?.status, 40) || "unknown",
       topic: clean(lane?.topic, 80),
+      destination_configured: lane?.destination_configured === true,
+      service_auth_configured: lane?.service_auth_configured === true,
       fallback: clean(lane?.fallback, 80) || null,
       migration_state: clean(lane?.migration_state, 80) || "unknown",
       shared_destination: clean(lane?.shared_destination, 80) || null,

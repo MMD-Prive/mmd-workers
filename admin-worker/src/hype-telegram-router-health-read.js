@@ -15,6 +15,8 @@ function projectLane(item = {}) {
     label: clean(item.label, 140),
     status: clean(item.status, 40) || "unknown",
     topic: clean(item.topic, 80),
+    destination_configured: item.destination_configured === true,
+    service_auth_configured: item.service_auth_configured === true,
     source_workers: (Array.isArray(item.source_workers) ? item.source_workers : []).slice(0, 8).map((x) => clean(x, 80)).filter(Boolean),
     flows: (Array.isArray(item.flows) ? item.flows : []).slice(0, 12).map((x) => clean(x, 80)).filter(Boolean),
     fallback: clean(item.fallback, 80) || null,

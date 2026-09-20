@@ -68,6 +68,10 @@ binding = "SIGIL_BOARD_KV"
 id = "7922350083a644db8a48c16c7e48fca7"
 preview_id = "f673c4ab6e4f456baefeab032564db72"
 
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
 [[r2_buckets]]
 binding = "PUBLIC_MODEL_UPLOADS_R2"
 bucket_name = "mmd-private-public-model-uploads"

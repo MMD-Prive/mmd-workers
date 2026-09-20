@@ -289,7 +289,7 @@ export function validateAndPriceCart(cart, products, stock) {
     const price = positiveNumber(fields[PRODUCT_FIELDS.mmdPrice]);
     const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
     const productName = clean(fields[PRODUCT_FIELDS.name], 220);
-    if (isRestrictedCheckoutProduct(sku, productName)) throw httpError(403, "product_not_eligible_for_online_checkout");
+    if (isRestrictedCheckoutProduct(sku, productName, fields[PRODUCT_FIELDS.note])) throw httpError(403, "product_not_eligible_for_online_checkout");
     if (status !== "active") throw httpError(409, "product_not_active");
     if (!isMmd) throw httpError(409, "product_not_available_in_mmd_shop");
     if (price === null) throw httpError(409, "product_price_unavailable");
@@ -495,15 +495,19 @@ async function createPaymentIntent(env, { orderId, total, email }) {
 }
 
 async function notifyOrder(env, input) {
-  const token = clean(env.TELEGRAM_BOT_TOKEN, 5000);
-  if (!token) return { ok: false, skipped: true, reason: "missing_telegram_bot_token" };
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_HIMAI_TO_TELEGRAM, 5000);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
   const lines = input.items.map((item) => `• ${escapeHtml(item.product_name)} x${item.quantity} = ${money(item.line_total_thb)} THB`);
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 100),
-      message_thread_id: Number(env.TG_THREAD_MMD_SHOP_ORDERS || 160),
+      flow: "mmd_shop_orders",
       parse_mode: "HTML",
       disable_web_page_preview: true,
       text: [
@@ -517,8 +521,9 @@ async function notifyOrder(env, input) {
         "Payment: pending · official verification required",
       ].join("\n"),
     }),
-  });
-  return { ok: response.ok, status: response.status };
+  }));
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok && data?.ok === true && data?.telegram?.ok === true, status: response.status, flow: "mmd_shop_orders" };
 }
 
 async function appendOrderNote(env, order, extra) {
@@ -583,10 +588,12 @@ function isOnDemandProduct(note) {
   return /\bon[-\s]*demand\b/i.test(clean(note, 500));
 }
 
-function isRestrictedCheckoutProduct(sku, name) {
-  const code = String(sku || "").toUpperCase();
-  const label = String(name || "").toLowerCase();
-  return /^PPP25-/.test(code) || /\bpod\b/.test(label);
+function isRestrictedCheckoutProduct(sku, name, productNote) {
+  const text = [sku, name, productNote]
+    .map((value) => String(value || ""))
+    .join(" ")
+    .toLowerCase();
+  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function selectName(value) {

@@ -14,6 +14,10 @@ routes = [
   { pattern = "www.mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" }
 ]
 
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
 [[r2_buckets]]
 binding = "PARTNER_ASSETS"
 bucket_name = "mmd-sigil-partner-assets"

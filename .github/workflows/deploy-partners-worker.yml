@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: deploy-partners-worker-production
+  group: telegram-router-secret-rotation-production
   cancel-in-progress: false
 
 jobs:
@@ -90,6 +90,29 @@ jobs:
         working-directory: partners-worker
         run: npm run typecheck
 
+      - name: Rotate Partners-to-Telegram service secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          service_secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$service_secret"
+          printf 'PARTNERS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
+          router_secret_log="$RUNNER_TEMP/telegram-worker-partners-secret-version.log"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM \
+            --config telegram-worker/wrangler.toml \
+            --tag "router-partners-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
+            --message "Rotate AUTH_SERVICE_PARTNERS_TO_TELEGRAM from ${GITHUB_SHA}" \
+            2>&1 | tee "$router_secret_log"
+          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          if [ -z "$router_version_id" ]; then
+            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_PARTNERS_TO_TELEGRAM" >&2
+            cat "$router_secret_log" >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
+          printf 'AUTH_SERVICE_PARTNERS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/partners-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/partners-worker-router.env"
+
       - name: Build route-free deploy config
         working-directory: partners-worker
         shell: bash
@@ -122,7 +145,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --keep-vars --config .wrangler-no-routes.toml
+          npx wrangler deploy --keep-vars --secrets-file "$RUNNER_TEMP/partners-worker-router.env" --config .wrangler-no-routes.toml
 
       - name: Verify Cloudflare routes token
         shell: bash
@@ -254,4 +277,4 @@ jobs:
       - name: Clean temporary config
         if: always()
         working-directory: partners-worker
-        run: rm -f .wrangler-no-routes.toml
+        run: rm -f .wrangler-no-routes.toml "$RUNNER_TEMP/partners-worker-router.env"

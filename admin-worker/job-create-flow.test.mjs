@@ -111,6 +111,66 @@ test('active Create Job returns only payment URL while storing confirmation link
   assert.match(s.fld0mFma9J9yfEaKb, /\/confirm\/job-model\?t=/);
 });
 
+test('Public Job V2 persists an operational brief and uses format as canonical job type', async () => {
+  const body = form();
+  body.public_job = {
+    schema_version: 'mmd_public_job_v2',
+    format: 'event',
+    duties: 'Host guests and provide event presence',
+    customer_count: 8,
+    care_count: 3,
+    special_care_names: 'คุณ A, คุณ B',
+    model_count: 3,
+    model_assignment_note: 'Lead Model handles A/B; remaining staff cover the group',
+    presentation_note: 'Black smart casual',
+    remark: 'Public event brief',
+  };
+  body.job_details = { world: 'public', public_job: body.public_job };
+  const h = await run(body);
+  assert.equal(h.status, 200, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 1);
+  assert.equal(h.issuances[0].job_type, 'event');
+  assert.equal(h.data.public_job.format, 'event');
+  assert.equal(h.data.public_job.model_count, 3);
+  const note = String(h.records.get(SESSIONS)[0].fields.fldEcDkF7CH9VixWM || '');
+  const marker = note.match(/\[MMD PUBLIC JOB v2\]\s+(\{[^\n]+\})/);
+  assert.ok(marker, note);
+  const brief = JSON.parse(marker[1]);
+  assert.equal(brief.customer_count, 8);
+  assert.equal(brief.care_count, 3);
+  assert.equal(brief.model_count, 3);
+  assert.equal(brief.duties, 'Host guests and provide event presence');
+});
+
+test('Public Job rejects PN/VIP semantics before any payment issuer call', async () => {
+  for (const jobType of ['pn', 'vip']) {
+    const body = form();
+    body.job_type = jobType;
+    body.job_visibility = 'public';
+    const h = await run(body);
+    assert.equal(h.status, 400, JSON.stringify(h.data));
+    assert.equal(h.issuances.length, 0);
+    assert.equal(h.records.size, 0);
+  }
+});
+
+test('Public Job V2 rejects care count above customer count', async () => {
+  const body = form();
+  body.public_job = {
+    schema_version: 'mmd_public_job_v2',
+    format: 'dining',
+    duties: 'Guest care',
+    customer_count: 2,
+    care_count: 3,
+    model_count: 1,
+  };
+  body.job_details = { world: 'public', public_job: body.public_job };
+  const h = await run(body);
+  assert.equal(h.status, 400, JSON.stringify(h.data));
+  assert.equal(h.issuances.length, 0);
+  assert.equal(h.records.size, 0);
+});
+
 test('Create Job preserves negotiated discount into SIGIL Pricing v1', async () => {
   const body = form();
   body.payment = {

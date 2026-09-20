@@ -15,7 +15,7 @@ on:
       - "shared/payment-intelligence.mjs"
 
 concurrency:
-  group: deploy-payments-worker-production
+  group: telegram-router-secret-rotation-production
   cancel-in-progress: false
 
 permissions:
@@ -76,8 +76,21 @@ jobs:
           service_secret="$(openssl rand -hex 32)"
           echo "::add-mask::$service_secret"
           printf 'PAYMENTS_TELEGRAM_SHARED_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config telegram-worker/wrangler.toml
-          printf '%s' "$service_secret" | npx --yes wrangler@4 secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM --config payments-worker/wrangler.merged.toml
+          router_secret_log="$RUNNER_TEMP/telegram-worker-payments-secret-version.log"
+          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_PAYMENTS_TO_TELEGRAM \
+            --config telegram-worker/wrangler.toml \
+            --tag "router-payments-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
+            --message "Rotate AUTH_SERVICE_PAYMENTS_TO_TELEGRAM from ${GITHUB_SHA}" \
+            2>&1 | tee "$router_secret_log"
+          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
+          if [ -z "$router_version_id" ]; then
+            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_PAYMENTS_TO_TELEGRAM" >&2
+            cat "$router_secret_log" >&2
+            exit 1
+          fi
+          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
+          printf 'AUTH_SERVICE_PAYMENTS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/payments-worker-router.env"
+          chmod 600 "$RUNNER_TEMP/payments-worker-router.env"
 
       - name: Smoke canonical Payments Confirm service transport
         shell: bash
@@ -90,15 +103,46 @@ jobs:
           proof_file="$RUNNER_TEMP/payment-proof-transport-smoke.txt"
           response_file="$RUNNER_TEMP/payment-proof-transport-smoke.json"
           printf '%s\n' 'synthetic transport smoke; no customer data' > "$proof_file"
-          code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS             -o "$response_file" -w "%{http_code}"             -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/payments/proof-document'             -H "Authorization: Bearer ${PAYMENTS_TELEGRAM_SHARED_SECRET}"             -F "chat_id=${TELEGRAM_CHAT_ID}"             -F "message_thread_id=${TELEGRAM_PAYMENT_THREAD_ID}"             -F 'caption=🧪 MMD Payments Confirm transport check · synthetic / no customer data'             -F 'disable_notification=true'             -F "document=@${proof_file};type=text/plain;filename=payment-proof-transport-smoke.txt")"
-          cat "$response_file"
-          test "$code" = "200"
-          node -e '
-            const fs=require("node:fs");
-            const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            if (b.ok !== true || !b.message_id || Number(b.message_thread_id) !== 22) process.exit(1);
-            console.log("Payments Confirm service transport delivered, message_id="+b.message_id);
-          ' "$response_file"
+
+          passed=0
+          for attempt in $(seq 1 24); do
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS \
+              -o "$response_file" -w "%{http_code}" \
+              -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/payments/proof-document' \
+              -H "Authorization: Bearer ${PAYMENTS_TELEGRAM_SHARED_SECRET}" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "message_thread_id=${TELEGRAM_PAYMENT_THREAD_ID}" \
+              -F 'caption=🧪 MMD Payments Confirm transport check · synthetic / no customer data' \
+              -F 'disable_notification=true' \
+              -F "document=@${proof_file};type=text/plain;filename=payment-proof-transport-smoke.txt")"
+            cat "$response_file"
+
+            if [ "$code" = "200" ] && node -e '
+              const fs=require("node:fs");
+              const b=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+              if (b.ok !== true || !b.message_id || Number(b.message_thread_id) !== 22) process.exit(1);
+              console.log("Payments Confirm service transport delivered, message_id="+b.message_id);
+            ' "$response_file"; then
+              passed=1
+              echo "Payments Confirm service transport ready on attempt $attempt"
+              break
+            fi
+
+            if [ "$code" = "403" ] && node -e '
+              const fs=require("node:fs");
+              let body={};
+              try { body=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); } catch {}
+              process.exit(body?.error === "internal_token_required" ? 0 : 1);
+            ' "$response_file"; then
+              echo "Payments Telegram auth not propagated yet (attempt $attempt); retrying..."
+              sleep 5
+              continue
+            fi
+
+            echo "Payments Confirm service transport failed with non-propagation response (HTTP $code)" >&2
+            exit 1
+          done
+          test "$passed" = "1"
 
       - name: Upload payments-worker version
         id: upload
@@ -106,7 +150,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx --yes wrangler@4 versions upload --keep-vars --config payments-worker/wrangler.merged.toml \
+          npx --yes wrangler@4 versions upload --keep-vars --secrets-file "$RUNNER_TEMP/payments-worker-router.env" --config payments-worker/wrangler.merged.toml \
             2>&1 | tee "$RUNNER_TEMP/payments-upload.log"
 
       - name: Resolve uploaded version ID
@@ -166,7 +210,7 @@ jobs:
           fs.writeFileSync(target, rendered);
           NODE
           trap 'rm -f "$migration_config"' EXIT
-          npx --yes wrangler@4 deploy --keep-vars --config "$migration_config"
+          npx --yes wrangler@4 deploy --keep-vars --secrets-file "$RUNNER_TEMP/payments-worker-router.env" --config "$migration_config"
 
       - name: Deploy uploaded version without changing route ownership
         id: deploy_version
@@ -231,3 +275,35 @@ jobs:
           cat "$unauth_body"
           test "$unauth_code" = "401"
           grep -F '"error":"service_auth_required"' "$unauth_body"
+
+
+      - name: Verify fully unified Telegram Router Health
+        if: steps.deploy_version.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${PAYMENTS_TELEGRAM_SHARED_SECRET:-}"
+          body="$(mktemp)"
+          passed=0
+          for attempt in $(seq 1 24); do
+            code="$(curl --retry 2 --retry-delay 1 --retry-all-errors -sS               -o "$body" -w "%{http_code}"               -H "Authorization: Bearer ${PAYMENTS_TELEGRAM_SHARED_SECRET}"               'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/router/health?probe=1')"
+            cat "$body"
+            if [ "$code" = "200" ] && node -e '
+              const fs=require("node:fs");
+              const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+              const c=p?.counts||{};
+              if (p?.schema!=="mmd.hype_telegram_router_health.v1") process.exit(1);
+              if (p?.registry_version!=="2026-09-21.2") process.exit(1);
+              if (p?.status!=="configured" || p?.ok!==true) process.exit(1);
+              if (Number(c.partial||0)!==0 || Number(c.unavailable||0)!==0 || Number(c.legacy_direct_senders||0)!==0) process.exit(1);
+              if (p?.transport?.live_probe?.attempted!==true || p?.transport?.live_probe?.ok!==true) process.exit(1);
+              if (!(Array.isArray(p?.lanes) && p.lanes.every((lane)=>lane.status==="configured"))) process.exit(1);
+            ' "$body"; then
+              passed=1
+              echo "Unified Telegram Router Health configured on attempt $attempt"
+              break
+            fi
+            echo "Unified Telegram Router Health not fully propagated yet (attempt $attempt, HTTP $code)"
+            sleep 5
+          done
+          test "$passed" = "1"

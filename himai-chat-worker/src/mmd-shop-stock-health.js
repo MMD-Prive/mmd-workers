@@ -79,7 +79,7 @@ export async function inspectMmdShopStockHealth(env = {}) {
       const active = code(fields[PRODUCT_FIELDS.status]) === "active";
       const isMmd = brands.some((value) => value.includes("mmd") || value.includes("both"));
       const price = Number(fields[PRODUCT_FIELDS.mmdPrice]);
-      const restricted = isRestrictedOnlineCheckout(sku, name);
+      const restricted = isRestrictedOnlineCheckout(sku, name, fields[PRODUCT_FIELDS.note]);
       const onDemand = isOnDemandProduct(fields[PRODUCT_FIELDS.note]);
       if (!active || !isMmd || !(Number.isFinite(price) && price > 0) || restricted) return null;
       return { product_id: record.id, sku: sku || null, product_name: name || null, on_demand: onDemand };
@@ -221,10 +221,12 @@ function isOnDemandProduct(note) {
   return /\bon[-\s]*demand\b/i.test(clean(note, 500));
 }
 
-function isRestrictedOnlineCheckout(sku, productName) {
-  const codeValue = clean(sku, 120).toUpperCase();
-  const label = clean(productName, 220).toLowerCase();
-  return /^PPP25-/.test(codeValue) || /\bpod\b/.test(label);
+function isRestrictedOnlineCheckout(sku, productName, productNote) {
+  const text = [sku, productName, productNote]
+    .map((value) => clean(value, 1200))
+    .join(" ")
+    .toLowerCase();
+  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function number(value) {

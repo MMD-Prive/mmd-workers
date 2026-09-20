@@ -33,6 +33,12 @@
     "AIRTABLE_OFFERS_TABLE_ID": "tblrSS5OegYNnGiEU",
     "AIRTABLE_SERVICE_ZONES_TABLE_ID": "tbl6VODlZSC0vJgJD"
   },
+  "services": [
+    {
+      "binding": "TELEGRAM_WORKER",
+      "service": "telegram-worker"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "MMS_PRIVATE_UPLOADS",

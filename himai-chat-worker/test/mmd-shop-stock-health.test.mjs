@@ -21,6 +21,7 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
   const productId = "recProduct1234567";
   const originalFetch = globalThis.fetch;
   let telegramCalls = 0;
+  const telegramPayloads = [];
 
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -89,10 +90,6 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
         });
       }
     }
-    if (url.hostname === "api.telegram.org") {
-      telegramCalls += 1;
-      return Response.json({ ok: true, result: { message_id: telegramCalls } });
-    }
     throw new Error("unexpected fetch " + String(input));
   };
 
@@ -106,9 +103,21 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
   const env = {
     AIRTABLE_BASE_ID: "appTest",
     AIRTABLE_TOKEN: "token",
-    TELEGRAM_BOT_TOKEN: "telegram-token",
-    TELEGRAM_CHAT_ID: "-1003546439681",
-    TG_THREAD_MMD_SHOP_ALERTS: "162",
+    AUTH_SERVICE_HIMAI_TO_TELEGRAM: "himai-router-secret",
+    TELEGRAM_WORKER: {
+      async fetch(request) {
+        telegramCalls += 1;
+        telegramPayloads.push({
+          url: request.url,
+          auth: request.headers.get("authorization"),
+          body: await request.json(),
+        });
+        return Response.json({
+          ok: true,
+          telegram: { ok: true, result: { message_id: telegramCalls, message_thread_id: 162 } },
+        });
+      },
+    },
   };
 
   try {
@@ -127,6 +136,11 @@ test("stock health coordinator alerts only when actionable fingerprint changes",
     assert.equal(firstBody.fingerprint_changed, true);
     assert.equal(firstBody.alert.ok, true);
     assert.equal(telegramCalls, 1);
+    assert.match(telegramPayloads[0].url, /telegram-worker\.internal\/telegram\/internal\/send$/);
+    assert.equal(telegramPayloads[0].auth, "Bearer himai-router-secret");
+    assert.equal(telegramPayloads[0].body.flow, "mmd_shop_alerts");
+    assert.equal("chat_id" in telegramPayloads[0].body, false);
+    assert.equal("message_thread_id" in telegramPayloads[0].body, false);
 
     const second = await coordinator.fetch(new Request("https://mmd-shop-stock.internal/stock-health", {
       method: "POST",

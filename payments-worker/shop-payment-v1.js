@@ -800,14 +800,18 @@ async function stableShopPaymentRef(orderId) {
 }
 
 async function notifyShopPayment(env, input) {
-  const token = text(env.TELEGRAM_BOT_TOKEN, 5000);
-  if (!token) return { ok: false, skipped: true };
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const service = env.TELEGRAM_WORKER;
+  const token = text(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
+  if (!service || typeof service.fetch !== "function") return { ok: false, skipped: true, reason: "telegram_router_binding_missing" };
+  if (!token) return { ok: false, skipped: true, reason: "telegram_router_auth_missing" };
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "authorization": `Bearer ${token}`,
+    },
     body: JSON.stringify({
-      chat_id: text(env.TELEGRAM_CHAT_ID || "-1003546439681", 120),
-      message_thread_id: Number(env.TG_THREAD_MMD_SHOP_PAYMENTS || 161),
+      flow: "mmd_shop_payments",
       parse_mode: "HTML",
       text: [
         "<b>MMD SHOP · PAYMENT VERIFIED</b>",
@@ -817,8 +821,9 @@ async function notifyShopPayment(env, input) {
         "Order status: <b>confirmed</b>",
       ].join("\n"),
     }),
-  });
-  return { ok: response.ok, status: response.status };
+  }));
+  const data = await response.json().catch(() => ({}));
+  return { ok: response.ok && data?.ok === true && data?.telegram?.ok === true, status: response.status, routed: true };
 }
 
 function signingSecret(env) {

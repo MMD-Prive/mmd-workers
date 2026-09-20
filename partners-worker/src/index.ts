@@ -1,4 +1,4 @@
-type SecretName = "AIRTABLE_API_KEY" | "TELEGRAM_BOT_TOKEN" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
+type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
   | "TELEGRAM_PUBLIC_MODEL_THREAD_ID"
@@ -789,7 +789,7 @@ async function handlePublicModelApplication(
       files,
       whyConsider,
       applicationRecordId: applicationRecord.id
-    }), publicModelThreadId(env)).catch((error) => console.error("telegram public model application failed", error))
+    }), "public_model").catch((error) => console.error("telegram public model application failed", error))
   );
 
   return json(request, env, {
@@ -936,7 +936,7 @@ async function handleAcceptTerms(request: Request, env: RuntimeEnv, ctx: Executi
       `Partner: ${fieldText(updatedRecord, MODEL_PARTNERS.partnerName) || updatedRecord.id}`,
       `Version: ${agreementVersion}`,
       `Accepted At: ${acceptedAt}`
-    ].join("\n")).catch((error) => console.error("telegram terms failed", error))
+    ].join("\n"), "partner_confirm").catch((error) => console.error("telegram terms failed", error))
   );
 
   return json(request, env, {
@@ -952,7 +952,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const partnerRecord = verified.value.partnerRecord;
   const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
   const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
-  const telegramConnected = telegramStatus === "verified" && /^\\d{5,20}$/.test(telegramId);
+  const telegramConnected = telegramStatus === "verified" && typeof telegramId === "string" && /^\\d{5,20}$/.test(telegramId);
   const [referrals, commissions] = await Promise.all([
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id),
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id)
@@ -1024,7 +1024,14 @@ async function handlePartnerTelegramConnect(request: Request, env: RuntimeEnv): 
       partner_record_id: verified.value.partnerRecord.id
     })
   }));
-  const payload = await response.json().catch(() => null);
+  const payload = await response.json().catch(() => null) as {
+    ok?: boolean;
+    error?: string;
+    telegram_connected?: boolean;
+    state?: string;
+    connect_url?: string | null;
+    expires_at?: string | null;
+  } | null;
   if (!response.ok || !payload?.ok) {
     return errorResponse(
       request,
@@ -1135,7 +1142,7 @@ async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv
       `Model: ${safeModel}`,
       `Response: ${nextStatus}`,
       `Revision: ${nextRevision}`
-    ].join("\n"));
+    ].join("\n"), "partner_confirm");
   } catch (error) {
     console.error("partner response telegram alert failed", error);
   }
@@ -1746,31 +1753,26 @@ function randomBase64Url(byteLength: number): string {
   return base64UrlEncodeBytes(bytes);
 }
 
-async function sendTelegramMessage(env: RuntimeEnv, text: string, threadIdOverride?: number): Promise<void> {
-  const token = env.TELEGRAM_BOT_TOKEN || "";
-  if (!token || !env.TELEGRAM_CHAT_ID) {
-    console.warn("Telegram notification skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID.");
+async function sendTelegramMessage(env: RuntimeEnv, text: string, flow = "partner_review"): Promise<void> {
+  const token = String(env.AUTH_SERVICE_PARTNERS_TO_TELEGRAM || "").trim();
+  const service = (env as RuntimeEnv & { TELEGRAM_WORKER?: { fetch(input: Request): Promise<Response> } }).TELEGRAM_WORKER;
+  if (!token || !service || typeof service.fetch !== "function") {
+    console.warn("Telegram notification skipped: canonical telegram-worker transport is unavailable.");
     return;
   }
 
-  const payload: Record<string, string | number> = {
-    chat_id: env.TELEGRAM_CHAT_ID,
-    text
-  };
-
-  const threadId = threadIdOverride ?? Number(env.TG_THREAD_CONFIRM || 0);
-  if (Number.isFinite(threadId) && threadId > 0) {
-    payload.message_thread_id = threadId;
-  }
-
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({ flow, text, disable_web_page_preview: true })
+  }));
 
-  if (!response.ok) {
-    throw new Error(`Telegram notify failed (${response.status}): ${await boundedText(response)}`);
+  const payload = await response.json().catch(() => ({})) as { ok?: boolean; telegram?: { ok?: boolean; error?: unknown }; error?: unknown };
+  if (!response.ok || payload?.ok !== true || payload?.telegram?.ok !== true) {
+    throw new Error(`Telegram router notify failed (${response.status}): ${JSON.stringify(payload?.telegram?.error || payload?.error || {})}`);
   }
 }
 

@@ -5333,6 +5333,88 @@ export function computeCustomerDepositAmount(serviceAmountThb) {
   return Math.min(total, rounded);
 }
 
+const PUBLIC_JOB_V2_FORMATS = new Set([
+  "dining",
+  "event",
+  "party",
+  "travel",
+  "guest_care",
+  "social_appearance",
+  "brand_guest",
+  "city_companion",
+  "other",
+]);
+const PRIVATE_JOB_TYPE_TOKENS = new Set(["pn", "vip", "private_review"]);
+
+function publicJobInteger(value, field, { min = 0, max = 1000, fallback } = {}) {
+  if ((value === undefined || value === null || value === "") && fallback !== undefined) return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < min || n > max) {
+    throw new CreateSessionAccessError("public_job_invalid", `Public Job ${field} is invalid.`, 400);
+  }
+  return n;
+}
+
+function normalizePublicJobV2(body = {}, jobVisibility = "public") {
+  const details = body?.job_details || {};
+  const raw = body?.public_job || details.public_job;
+  const hasPublicJob = raw && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length > 0;
+  const requestedJobType = accessToken(body.job_type || body?.work?.job_type || body?.work?.work_type || "");
+  if (jobVisibility === "public" && PRIVATE_JOB_TYPE_TOKENS.has(requestedJobType)) {
+    throw new CreateSessionAccessError("public_job_private_type_forbidden", "Public Job cannot use PN, VIP, or private-review work types.", 400);
+  }
+  if (jobVisibility !== "public") {
+    if (hasPublicJob && accessToken(raw.schema_version) === "mmd_public_job_v2") {
+      throw new CreateSessionAccessError("private_job_public_brief_forbidden", "Private Job cannot submit a Public Job V2 brief.", 400);
+    }
+    return null;
+  }
+  if (!hasPublicJob) return null; // legacy public callers remain compatible
+
+  const schemaVersion = accessToken(raw.schema_version || "mmd_public_job_v2");
+  if (schemaVersion !== "mmd_public_job_v2") {
+    throw new CreateSessionAccessError("public_job_schema_invalid", "Unsupported Public Job schema.", 400);
+  }
+  const format = accessToken(raw.format || raw.job_format);
+  if (!PUBLIC_JOB_V2_FORMATS.has(format)) {
+    throw new CreateSessionAccessError("public_job_format_invalid", "Public Job format is not supported.", 400);
+  }
+  const duties = str(raw.duties).slice(0, 1200);
+  if (!duties) throw new CreateSessionAccessError("public_job_duties_required", "Public Job duties are required.", 400);
+
+  const customerCount = publicJobInteger(raw.customer_count, "customer_count", { min: 1, max: 200 });
+  const careCount = publicJobInteger(raw.care_count, "care_count", { min: 0, max: 200, fallback: 0 });
+  if (careCount > customerCount) {
+    throw new CreateSessionAccessError("public_job_care_count_invalid", "Public Job care_count cannot exceed customer_count.", 400);
+  }
+  const modelCount = publicJobInteger(raw.model_count, "model_count", { min: 1, max: 20, fallback: 1 });
+
+  return {
+    schema_version: "mmd_public_job_v2",
+    format,
+    duties,
+    customer_count: customerCount,
+    care_count: careCount,
+    special_care_names: str(raw.special_care_names).slice(0, 1200),
+    model_count: modelCount,
+    model_assignment_note: str(raw.model_assignment_note).slice(0, 1200),
+    presentation_note: str(raw.presentation_note).slice(0, 1200),
+    remark: str(raw.remark || body.remark).slice(0, 1200),
+  };
+}
+
+function withCanonicalPublicJobNote(note, publicJob) {
+  const lines = str(note)
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("[MMD PUBLIC JOB v2]"));
+  const cleanNote = lines.join("\n").trim();
+  if (!publicJob) return cleanNote;
+  return [cleanNote, `[MMD PUBLIC JOB v2] ${JSON.stringify(publicJob)}`]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4000);
+}
+
 async function createAdminJob(env, body) {
   const work = body?.work || {};
   const model = body?.model || {};
@@ -5355,16 +5437,18 @@ async function createAdminJob(env, body) {
     }
   }
 
+  const publicJob = normalizePublicJobV2(body, jobVisibility);
   const client_name = strReq(body.client_name || body.client_lineage?.client_name, "client_name");
   const model_name = strReq(body.model_name || model.model_name, "model_name");
-  const job_type = strReq(body.job_type || work.job_lane || work.work_type, "job_type");
+  const job_type = publicJob?.format || strReq(body.job_type || work.job_lane || work.work_type, "job_type");
   const job_date = strReq(body.job_date || jobDetails.job_date, "job_date");
   const start_time = strReq(body.start_time || jobDetails.start_time, "start_time");
   const end_time = strReq(body.end_time || jobDetails.end_time, "end_time");
   const location_name = strReq(body.location_name || jobDetails.location_name, "location_name");
 
   const google_map_url = str(body.google_map_url || jobDetails.google_map_url || "");
-  const note = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const rawNote = str(body.note || notes.operation_note || notes.handling_note || body.notes || "");
+  const note = withCanonicalPublicJobNote(rawNote, publicJob);
   const requested_payment_type = str(body.payment_type || payment.payment_type || "deposit").toLowerCase();
   if (!["deposit", "full"].includes(requested_payment_type)) {
     throw new CreateSessionAccessError("payment_type_invalid", "Payment type must be deposit or full.", 400);
@@ -5420,6 +5504,7 @@ async function createAdminJob(env, body) {
     payment_stage: payment_type,
     payment_method,
     note,
+    public_job: publicJob || undefined,
     confirm_page,
     model_confirm_page,
   };
@@ -5489,6 +5574,7 @@ async function createAdminJob(env, body) {
       deposit_amount_thb,
       balance_amount_thb,
       customer_payment_url,
+      public_job: publicJob || undefined,
     });
     if (notification) notificationStatus = notification.ok && notification.data?.ok !== false ? "sent" : "failed";
   } catch (_) {
@@ -5506,6 +5592,7 @@ async function createAdminJob(env, body) {
     owner_job_grant_status: ownerJobGrantStatus,
     payment_type,
     amount_due_thb: payment_type === "full" ? service_amount_thb : deposit_amount_thb,
+    ...(publicJob ? { public_job: publicJob } : {}),
     ...(payment_type === "deposit" ? { deposit_percent, deposit_amount_thb } : {}),
     balance_amount_thb,
   };
@@ -5544,6 +5631,9 @@ async function notifyJobCreated(env, data) {
     `Date: <b>${escHtml(data.job_date)}</b>`,
     `Time: <b>${escHtml(data.start_time)} - ${escHtml(data.end_time)}</b>`,
     `Location: <b>${escHtml(data.location_name)}</b>`,
+    data.public_job ? `Public: <b>${escHtml(data.public_job.format)}</b> · ${Number(data.public_job.customer_count)} guests · care ${Number(data.public_job.care_count)} · ${Number(data.public_job.model_count)} model(s)` : "",
+    data.public_job?.duties ? `Duties: ${escHtml(data.public_job.duties)}` : "",
+    data.public_job?.special_care_names ? `Special care: ${escHtml(data.public_job.special_care_names)}` : "",
     `Amount: <b>${Number(data.amount_thb).toLocaleString("en-US")} THB</b>`,
     data.payment_type === "full" ? "Payment: <b>FULL</b>" : "",
     data.payment_type === "deposit" && data.deposit_amount_thb != null ? `Deposit 30%: <b>${Number(data.deposit_amount_thb).toLocaleString("en-US")} THB</b>` : "",

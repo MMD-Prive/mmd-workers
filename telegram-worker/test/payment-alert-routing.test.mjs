@@ -12,6 +12,7 @@ test("topic registry keeps the latest canonical MMD operations topic map", () =>
       ["payment", 22],
       ["alerts", 9],
       ["public_model", 155],
+      ["partner", 61],
       ["himai_orders", 157],
       ["himai_payments", 158],
       ["himai_alerts", 159],
@@ -63,6 +64,8 @@ test("operational flow aliases route through the central registry", () => {
   assert.equal(threads.applications, 155);
   assert.equal(threads.public_model_application, 155);
   assert.equal(threads.mms_therapist_application, 155);
+  assert.equal(threads.partner_confirm, 61);
+  assert.equal(threads.partner_review, 61);
   assert.equal(threads.booking_draft, 1399);
   assert.equal(threads.dispatch, 1399);
   assert.equal(threads.himai_orders, 157);

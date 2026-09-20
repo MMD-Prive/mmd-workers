@@ -27,12 +27,12 @@ Visible copy must not expose internal routing, token or staff/system language.
 .st29__langs button{width:30px;height:28px;border:0;border-radius:999px;background:transparent;color:#777067!important;font-size:8px;font-weight:850;letter-spacing:.05em;cursor:pointer}
 .st29__langs button[aria-pressed="true"]{background:rgba(217,187,119,.16);color:var(--gold2)!important}
 
-.st29__hero{position:relative;min-height:520px;display:flex;align-items:flex-end;padding:88px 14px 30px;overflow:hidden;background:#070707 url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab042681d11dfe0e5a5689d_Boss%20sigil%20start%20mob.webp") center 18%/cover no-repeat}
-.st29__hero:before{content:"";position:absolute;inset:0;z-index:0;background:
-  linear-gradient(180deg,rgba(7,7,7,.05) 0%,rgba(7,7,7,.12) 28%,rgba(7,7,7,.68) 72%,#070707 100%),
-  linear-gradient(90deg,rgba(7,7,7,.68) 0%,rgba(7,7,7,.28) 50%,rgba(7,7,7,.08) 100%)}
-.st29__hero:after{content:"";position:absolute;right:-72px;top:86px;width:240px;height:240px;border:1px solid rgba(241,220,168,.12);border-radius:58px;transform:rotate(33deg);z-index:1}
-.st29__hero-grid{display:grid;gap:20px;width:100%;position:relative;z-index:2}
+.st29__hero{position:relative;min-height:520px;display:flex;align-items:flex-end;padding:88px 14px 30px;overflow:hidden}
+.st29__hero:before{content:"";position:absolute;inset:0;z-index:-3;background:
+  radial-gradient(circle at 74% 18%,rgba(217,187,119,.12),transparent 20rem),
+  linear-gradient(142deg,#17130f 0%,#0b0a09 38%,#070707 72%)}
+.st29__hero:after{content:"";position:absolute;right:-72px;top:86px;width:240px;height:240px;border:1px solid rgba(241,220,168,.12);border-radius:58px;transform:rotate(33deg);z-index:-2}
+.st29__hero-grid{display:grid;gap:20px;width:100%}
 .st29__eyebrow{margin:0 0 11px;color:var(--gold)!important;font-size:8px;font-weight:900;letter-spacing:.18em;text-transform:uppercase}
 .st29__hero h1{margin:0;max-width:780px;color:#fff9ef!important;font-size:clamp(48px,14vw,72px);line-height:.9;letter-spacing:-.06em;font-weight:760}
 .st29__hero h1 em{display:block;margin-top:10px;color:var(--gold2)!important;font-style:normal;font-size:.4em;line-height:1.12;letter-spacing:-.028em}
@@ -110,9 +110,9 @@ Visible copy must not expose internal routing, token or staff/system language.
 
 @media(min-width:860px){
   .st29__nav{height:68px;padding:0 24px}.st29__brand{width:150px}
-  .st29__hero{min-height:560px;padding:92px 24px 40px;background-image:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab042672da68cef12603a49_Boss%20sigil%20start%20Desk.webp");background-position:center center}.st29__hero-grid{grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:end;gap:26px}.st29__hero h1{font-size:84px}.st29__lead{font-size:13px}
+  .st29__hero{min-height:560px;padding:92px 24px 40px}.st29__hero-grid{grid-template-columns:minmax(0,1.35fr) minmax(300px,.65fr);align-items:end;gap:26px}.st29__hero h1{font-size:84px}.st29__lead{font-size:13px}
   .st29__transition{height:170px}.st29__lanes-sec{padding:30px 24px 42px}.st29__lanes-head h2{font-size:36px}.st29__tabs{display:none}
-  .st29__grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}.st29__lane[hidden]{display:block!important}.st29__media{aspect-ratio:16/9;max-height:286px}.st29__body{padding:17px}.st29__body h3{font-size:34px}
+  .st29__grid{grid-template-columns:repeat(3,minmax(0,1fr));align-items:start}.st29__lane[hidden]{display:block!important}.st29__media{aspect-ratio:16/11}.st29__body{padding:17px}.st29__body h3{font-size:34px}
   .st29__closing{padding:36px 24px 42px}.st29__closing-grid{grid-template-columns:.75fr 1.25fr;align-items:end;gap:32px}.st29__closing h2{font-size:42px}.st29__footer{padding:16px 24px 22px}
 }
 @media(max-width:420px){

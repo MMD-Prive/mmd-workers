@@ -143,7 +143,7 @@ async function loadProducts(env, shopKey) {
       const productName = recordFields["Product Name"] || "";
       const status = selectName(recordFields["Status"]) || "";
       const note = recordFields["Product Note"] || "";
-      const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName);
+      const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName, note);
       const onDemand = shopKey === "mmd-shop" && isOnDemandProduct(note);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
       const checkoutEligible = shopKey === "mmd-shop"
@@ -354,10 +354,12 @@ function isOnDemandProduct(note) {
   return /\bon[-\s]*demand\b/i.test(String(note || ""));
 }
 
-function isRestrictedOnlineCheckout(sku, productName) {
-  const code = String(sku || "").toUpperCase();
-  const label = String(productName || "").toLowerCase();
-  return /^PPP25-/.test(code) || /\bpod\b/.test(label);
+function isRestrictedOnlineCheckout(sku, productName, productNote) {
+  const text = [sku, productName, productNote]
+    .map((value) => String(value || ""))
+    .join(" ")
+    .toLowerCase();
+  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function slugify(value) {
