@@ -105,8 +105,8 @@ try {
   assert.doesNotMatch(body, /href="\/male-massage\/therapists\/me"/);
   assert.match(body, /payments-worker · Money Truth/);
   assert.match(body, /my_mmd_entitlement_resolver_v1/);
-  assert.match(body, /Telegram alerts · Partial \/ Drive observed/);
-  assert.match(body, /Partial Alerts/);
+  assert.match(body, /Telegram alerts · Unified Router Health V1 \/ Drive observed/);
+  assert.match(body, /Telegram \/ Google Drive · Router Health Read-only/);
   assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
 
