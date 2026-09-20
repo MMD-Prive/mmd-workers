@@ -908,12 +908,18 @@ If Telegram delivery fails, the revision remains pending so a later interaction 
 
 This delivery acknowledgment uses the existing trusted `telegram-worker → admin-worker` service-binding path. Recovery Control does not receive Telegram send authority.
 
-## Next implementation lanes
+## Recovery audit completion
 
-1. optional assignment history/audit trail if multi-operator identity becomes richer than the current credential actor model;
-2. optional bounded owner visibility for picker refresh history if operational debugging later requires it.
+The remaining operational observability lanes are implemented with bounded history stored inside the existing Recovery Case payload:
 
-All future lanes must preserve the same authority and privacy locks.
+- assignment history records the last bounded claim / release / takeover coordination events;
+- picker refresh history records the last bounded customer-stale / Owner-manual refresh results;
+- both histories are projected through Recovery Control and the verified Owner Summary only;
+- history is operational metadata and does not reset workflow timestamps or SLA age;
+- history does not grant authority, select a candidate, infer business truth or mutate Payment, Job, Fulfillment, MMS, Membership, Points or Coupon truth;
+- histories are capped server-side and are not a new database or event authority.
+
+With these lanes in place, HYPE Recovery operational coverage is complete for the current single-Owner/Admin credential actor model. Any future expansion to richer operator identities must preserve the same authority and privacy locks.
 
 
 ---

@@ -107,6 +107,15 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
           picker_candidate_count: 2,
           picker_reissue_count: 2,
           picker_last_stale_reason: "booking_authority_unavailable",
+          picker_refresh_history: [{
+            trigger: "owner_manual",
+            result: "authority_unavailable",
+            source_revision: 3,
+            revision: 3,
+            candidate_count: 2,
+            reason: "booking_authority_unavailable",
+            at: "2026-09-19T07:40:00.000Z",
+          }],
           picker_next_attention: "owner_refresh_picker",
           assignment_status: "unassigned",
           assigned_to: null,
@@ -162,6 +171,9 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
   assert.equal(summary.what_to_watch_now[0].assignment_status, "unassigned");
   assert.equal(summary.what_to_watch_now[0].picker_state, "authority_unavailable");
   assert.equal(summary.what_to_watch_now[0].picker_revision, 3);
+  assert.equal(summary.what_to_watch_now[0].picker_refresh_history.length, 1);
+  assert.equal(summary.what_to_watch_now[0].picker_refresh_history[0].trigger, "owner_manual");
+  assert.equal(summary.what_to_watch_now[0].picker_refresh_history[0].result, "authority_unavailable");
   assert.equal(summary.what_to_watch_now[0].picker_next_attention, "owner_refresh_picker");
   assert.equal(summary.what_to_watch_now[1].client_name, "คุณเลือกใหม่");
   assert.equal(summary.what_to_watch_now[1].assigned_to, "Per");
@@ -180,6 +192,8 @@ test("HYPE owner summary projects canonical dashboard into a bounded read-only b
   assert.equal(summary.authority.recovery_picker_policy, "mmd-recovery-picker-intelligence-v1-20260920");
   assert.equal(summary.authority.recovery_picker_interaction_metadata_only, true);
   assert.equal(summary.authority.recovery_picker_manual_refresh_owner_only, true);
+  assert.equal(summary.authority.recovery_assignment_history_bounded, true);
+  assert.equal(summary.authority.recovery_picker_refresh_history_bounded, true);
   assert.equal(summary.authority.recovery_picker_grants_authority, false);
   assert.equal(summary.authority.read_only, true);
 
