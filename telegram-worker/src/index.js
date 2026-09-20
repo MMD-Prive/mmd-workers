@@ -63,6 +63,7 @@ export default {
                 "AUTH_SERVICE_STUDIO_TO_TELEGRAM",
                 "AUTH_SERVICE_AUTH_TO_TELEGRAM",
                 "AUTH_SERVICE_LINE_TO_TELEGRAM",
+                "AUTH_SERVICE_PAYMENTS_TO_TELEGRAM",
               ]
             : [],
         });
