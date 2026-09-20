@@ -299,6 +299,16 @@ function mmdProductVariantMeta(sku, productName) {
     };
   }
 
+  if (code.startsWith("GLEN-POP")) {
+    const suffix = code.includes("-BLK") ? "Black Bottle" : code.includes("-WHT") ? "White Bottle" : "";
+    const nameValue = name.replace(/^Glenburgies Pop Plus(?:\s*\d+ml)?\s*[—-]?\s*/i, "").trim();
+    return {
+      group: "GLEN",
+      type: "bottle",
+      value: suffix || nameValue || code
+    };
+  }
+
   if (code.startsWith("PPP25-")) {
     const suffix = code.slice("PPP25-".length);
     const flavourBySku = {
@@ -328,6 +338,10 @@ function compareProductVariants(a, b) {
   if (a?.variant_group === "WGG" && b?.variant_group === "WGG") {
     const number = (item) => Number(String(item?.variant_value || "").replace(/[^0-9.]/g, "")) || 999;
     return number(a) - number(b);
+  }
+  if (a?.variant_group === "GLEN" && b?.variant_group === "GLEN") {
+    const order = { "Black Bottle": 1, "White Bottle": 2 };
+    return (order[a?.variant_value] || 99) - (order[b?.variant_value] || 99);
   }
   return String(a?.variant_value || a?.sku || "").localeCompare(
     String(b?.variant_value || b?.sku || ""),
