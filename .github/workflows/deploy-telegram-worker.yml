@@ -60,15 +60,6 @@ jobs:
           fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
           NODE
 
-      - name: Generate deployment control token
-        shell: bash
-        run: |
-          set -euo pipefail
-          token="$(openssl rand -hex 32)"
-          test -n "$token"
-          echo "::add-mask::$token"
-          echo "TELEGRAM_DEPLOY_CONTROL_TOKEN=$token" >> "$GITHUB_ENV"
-
       - name: Verify Cloudflare token
         run: npx --yes wrangler@4 whoami
 
@@ -158,23 +149,17 @@ jobs:
           printf '%s' "$body" | grep -Fq 'mmd-concierge-capability-pack-v1-20260919'
           printf '%s' "$body" | grep -Fq 'mmd-recovery-outcome-taxonomy-v1-20260919'
 
-      - name: Install deployment control secret
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "$TELEGRAM_DEPLOY_CONTROL_TOKEN"
-          printf '%s' "$TELEGRAM_DEPLOY_CONTROL_TOKEN" | npx --yes wrangler@4 secret put TELEGRAM_DEPLOY_CONTROL_TOKEN
-
       - name: Repair Telegram webhook to canonical route
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$INTERNAL_API_TOKEN"
           body_file="$(mktemp)"
           code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS \
             -o "$body_file" \
             -w "%{http_code}" \
             -X POST 'https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/webhook/ensure-canonical' \
-            -H "X-Deploy-Control-Token: $TELEGRAM_DEPLOY_CONTROL_TOKEN" \
+            -H "Authorization: Bearer $INTERNAL_API_TOKEN" \
             -H 'Content-Type: application/json' \
             --data '{"confirm":"ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1"}')"
           cat "$body_file"
