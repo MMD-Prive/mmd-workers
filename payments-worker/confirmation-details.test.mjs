@@ -116,7 +116,9 @@ async function envAndTokens({ session = sessionRecord(), payment = paymentRecord
         const url = new URL(request.url);
         const records = url.pathname.includes("tblWGGJJOx5eBvBZJ")
           ? (payment ? [payment] : [])
-          : [session];
+          : url.pathname.includes("tblfJfM4Sqag9zrLi")
+            ? []
+            : [session];
         return new Response(JSON.stringify({ records }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -214,6 +216,60 @@ test("customer payment display rejects non-https QR values", async () => {
   assert.equal(response.status, 200);
   const data = await response.json();
   assert.equal(data.payment.qr_url, null);
+});
+
+test("customer payment display recognizes canonical Payment Proof evidence without marking payment verified", async () => {
+  const kv = kvStore();
+  const session = sessionRecord();
+  const payment = paymentRecord({
+    [P.intentStatus]: "Pending Confirmation",
+    [P.verificationStatus]: "pending_review",
+    [P.paymentStatus]: "Pending",
+  });
+  const proof = { id: "rec_proof_test", fields: { status: "submitted", payment_ref: "pay_confirm_details_test" } };
+  const env = {
+    PAYMENT_CONFIRMATION_SIGNING_SECRET: "confirmation-details-test-secret",
+    PAY_SESSIONS_KV: kv,
+    PAY_TOKEN_TTL_SECONDS: "3600",
+    ALLOWED_ORIGINS: "\"https://mmdbkk.com,https://www.mmdbkk.com\"",
+    AIRTABLE_BASE_ID: "app_test",
+    AIRTABLE_API_KEY: "pat_test",
+    AIRTABLE_TABLE_SESSIONS: "tblC98mKWbzmPuNzX",
+    AIRTABLE_TABLE_PAYMENTS: "tblWGGJJOx5eBvBZJ",
+    AIRTABLE_TABLE_PAYMENT_PROOFS: "tblfJfM4Sqag9zrLi",
+    AIRTABLE_HTTP: {
+      async fetch(request) {
+        const url = new URL(request.url);
+        const records = url.pathname.includes("tblWGGJJOx5eBvBZJ")
+          ? [payment]
+          : url.pathname.includes("tblfJfM4Sqag9zrLi")
+            ? [proof]
+            : [session];
+        return new Response(JSON.stringify({ records }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    },
+  };
+  const iat = Math.floor(Date.now() / 1000);
+  const claims = {
+    kind: "customer_confirm",
+    role: "customer",
+    session_id: "sess_confirm_details_test",
+    payment_ref: "pay_confirm_details_test",
+    payment_type: "deposit",
+    iat,
+    exp: iat + 3600,
+  };
+  const customerToken = await signConfirmToken(claims, env.PAYMENT_CONFIRMATION_SIGNING_SECRET);
+  await createConfirmTokenRecord(env, customerToken, claims);
+
+  const response = await handleConfirmationDetails(post(customerToken, "customer"), env);
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.equal(data.payment.proof_received, true);
+  assert.equal(data.payment.verified, false);
 });
 
 test("customer payment display recognizes evidence metadata without treating it as verified payment", async () => {
