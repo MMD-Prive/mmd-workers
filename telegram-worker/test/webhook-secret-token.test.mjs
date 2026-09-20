@@ -10,6 +10,7 @@ const COMPLAINT_URL = "https://telegram-worker.mmd.test/telegram/internal/compla
 const PREVIEW_POST_URL = "https://telegram-worker.mmd.test/telegram/preview/post";
 const TOPIC_SMOKE_URL = "https://telegram-worker.mmd.test/telegram/internal/topics/smoke";
 const WEBHOOK_LOCK_URL = "https://telegram-worker.mmd.test/telegram/internal/webhook/ensure-canonical";
+const WEBHOOK_STATUS_URL = "https://telegram-worker.mmd.test/telegram/webhook/status";
 const CANONICAL_WEBHOOK_URL = "https://mmdbkk.com/telegram/webhook";
 
 function env(overrides = {}) {
@@ -17,6 +18,7 @@ function env(overrides = {}) {
     TELEGRAM_WEBHOOK_SECRET_TOKEN: "expected-secret",
     INTERNAL_API_TOKEN: "internal-secret",
     TELEGRAM_DEPLOY_CONTROL_TOKEN: "deploy-control-secret",
+    TELEGRAM_DEPLOY_REPAIR_SECRET: "deploy-control-secret",
     AUTH_SERVICE_BOOKING_TO_TELEGRAM: "booking-service-secret",
     AUTH_SERVICE_EVENTS_TO_TELEGRAM: "events-service-secret",
     AUTH_SERVICE_STUDIO_TO_TELEGRAM: "studio-service-secret",
@@ -154,6 +156,51 @@ test("/telegram/webhook remains open when secret token is not configured", async
   assert.equal(body.reason, "no_matching_command");
 });
 
+test("webhook status is read-only and verifies canonical Telegram runtime state", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    calls.push({ url: String(url), init });
+    assert.match(String(url), /getWebhookInfo$/);
+    assert.equal(init.method, undefined);
+    return Response.json({ ok: true, result: { url: CANONICAL_WEBHOOK_URL, pending_update_count: 1 } });
+  };
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env());
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.canonical, true);
+    assert.equal(body.canonical_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(body.observed_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(body.webhook_secret_configured, true);
+    assert.equal(calls.length, 1);
+    assert.doesNotMatch(JSON.stringify(body), /expected-secret|telegram-token/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("webhook status fails closed when observed webhook drifts or runtime secret is absent", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ ok: true, result: { url: "https://example.invalid/webhook" } });
+  try {
+    const drift = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env());
+    const driftBody = await drift.json();
+    assert.equal(drift.status, 503);
+    assert.equal(driftBody.ok, false);
+    assert.equal(driftBody.canonical, false);
+
+    const secretMissing = await worker.fetch(new Request(WEBHOOK_STATUS_URL), env({ TELEGRAM_WEBHOOK_SECRET_TOKEN: "" }));
+    const secretBody = await secretMissing.json();
+    assert.equal(secretMissing.status, 503);
+    assert.equal(secretBody.ok, false);
+    assert.equal(secretBody.webhook_secret_configured, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("runtime webhook lock is internal-only, requires confirmation, and never accepts a caller URL", { concurrency: false }, async () => {
   const missingAuth = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
     method: "POST",
@@ -228,6 +275,49 @@ test("runtime webhook lock is internal-only, requires confirmation, and never ac
     assert.equal(deployBody.ok, true);
     assert.equal(deployBody.canonical_url, CANONICAL_WEBHOOK_URL);
     assert.equal(calls.length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("runtime webhook lock accepts only a Cloudflare token proven against the production telegram-worker script", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    calls.push({ url: href, init });
+    if (href.includes("/accounts/b176eda1172b741fd2e58904cc9d77c5/workers/scripts/telegram-worker/settings")) {
+      assert.equal(init.headers.Authorization, "Bearer cloudflare-deploy-token");
+      return Response.json({ success: true, result: { compatibility_date: "2026-01-20" } });
+    }
+    if (href.endsWith("/setWebhook")) {
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.url, CANONICAL_WEBHOOK_URL);
+      assert.equal(body.secret_token, "expected-secret");
+      return Response.json({ ok: true, result: true });
+    }
+    if (href.endsWith("/getWebhookInfo")) {
+      return Response.json({ ok: true, result: { url: CANONICAL_WEBHOOK_URL } });
+    }
+    throw new Error("unexpected request");
+  };
+  try {
+    const response = await worker.fetch(new Request(WEBHOOK_LOCK_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer cloudflare-deploy-token",
+      },
+      body: JSON.stringify({ confirm: "ENSURE_CANONICAL_TELEGRAM_WEBHOOK_V1" }),
+    }), env({
+      INTERNAL_API_TOKEN: "",
+      TELEGRAM_DEPLOY_CONTROL_TOKEN: "",
+    }));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.observed_url, CANONICAL_WEBHOOK_URL);
+    assert.equal(calls.length, 3);
   } finally {
     globalThis.fetch = originalFetch;
   }
