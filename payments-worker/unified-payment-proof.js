@@ -349,6 +349,10 @@ function paymentProofLane(snapshot = {}) {
   return code(snapshot.payment_stage) === "shop" ? "mmd_shop" : "mmd";
 }
 
+export function paymentProofStoragePrefix(snapshot = {}) {
+  return paymentProofLane(snapshot) === "mmd_shop" ? "mmd-shop-payment-proofs" : "web-payment-proofs";
+}
+
 async function storeEvidence(env, file, proofId, paymentRef, snapshot = {}) {
   if (!file) return { stored: false, reason: "file_missing" };
   if (Number(file.size || 0) > MAX_FILE_BYTES) {
@@ -360,7 +364,7 @@ async function storeEvidence(env, file, proofId, paymentRef, snapshot = {}) {
   const sha256 = bytesToHex(await crypto.subtle.digest("SHA-256", bytes));
   const date = new Date();
   const lane = paymentProofLane(snapshot);
-  const prefix = lane === "mmd_shop" ? "mmd-shop-payment-proofs" : "web-payment-proofs";
+  const prefix = paymentProofStoragePrefix(snapshot);
   const key = `${prefix}/${date.getUTCFullYear()}/${String(date.getUTCMonth() + 1).padStart(2, "0")}/${proofId}/original.${extensionFor(file)}`;
   const bucket = env.PAYMENT_SLIP_EVIDENCE;
   if (!bucket || typeof bucket.put !== "function") return { stored: false, reason: "r2_not_bound", key, sha256 };
