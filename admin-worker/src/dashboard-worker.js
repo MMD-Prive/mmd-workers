@@ -13,6 +13,7 @@
 import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
+import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -57,12 +58,13 @@ export async function buildAdminDashboard(env) {
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult] = await Promise.allSettled([
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
+    readHypeTelegramRouterHealth(env),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
@@ -117,6 +119,16 @@ export async function buildAdminDashboard(env) {
   };
 
   const focus = buildFocus({ money, historicalPending, jobs, members, boss });
+  const telegramRouterHealth = telegramRouterResult.status === "fulfilled"
+    ? telegramRouterResult.value
+    : { available: false, status: "unknown", summary: "Telegram Router health source unavailable" };
+  const telegramStatus = telegramRouterHealth?.status === "configured"
+    ? "พร้อม"
+    : telegramRouterHealth?.status === "partial"
+      ? "บางส่วน"
+      : telegramRouterHealth?.status === "degraded"
+        ? "มีปัญหา"
+        : "ยังยืนยันไม่ได้";
 
   return {
     ok: true,
@@ -133,11 +145,12 @@ export async function buildAdminDashboard(env) {
     members,
     boss,
     reconfirm,
+    telegram_router_health: telegramRouterHealth,
     status: {
       admin: "พร้อม",
       payments: statusFromResult(paymentQueueResult),
       historical_recovery: statusFromResult(historicalQueueResult),
-      telegram: "พร้อม",
+      telegram: telegramStatus,
       data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
       reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
     },
@@ -153,6 +166,7 @@ export async function buildAdminDashboard(env) {
       session_source: resultReason(sessionsResult),
       member_source: resultReason(membersResult),
       reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
+      telegram_router_source: telegramRouterResult.status === "fulfilled" ? cleanDebugStatus(telegramRouterHealth?.status) : resultReason(telegramRouterResult),
     },
   };
 }
@@ -557,6 +571,10 @@ function settledRecords(result) {
 
 function statusFromResult(result) {
   return result.status === "fulfilled" ? "พร้อม" : "ยังไม่มีข้อมูล";
+}
+
+function cleanDebugStatus(value) {
+  return String(value ?? "").trim().slice(0, 80) || "unknown";
 }
 
 function resultReason(result) {
