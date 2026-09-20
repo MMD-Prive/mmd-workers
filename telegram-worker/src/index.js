@@ -58,7 +58,7 @@ export default {
       }
 
       if (isWebhookLockPath(path) && req.method === "POST") {
-        requireInternalToken(req, env);
+        requireWebhookLockDeployNonce(req, env);
         const body = (await safeJson(req)) || {};
         if (clean(body.confirm) !== TELEGRAM_WEBHOOK_LOCK_CONFIRMATION) {
           return json({
@@ -4068,6 +4068,14 @@ function timingSafeEqual(left, right) {
 
 function isTelegramWebhookPath(path) {
   return path === "/telegram/webhook" || path === "/v1/webhook";
+}
+
+function requireWebhookLockDeployNonce(req, env) {
+  const expected = clean(env.TELEGRAM_WEBHOOK_LOCK_DEPLOY_NONCE);
+  const actual = clean(req.headers.get("X-MMD-Deploy-Nonce"));
+  if (!expected || !actual || !timingSafeEqual(actual, expected)) {
+    throw new HttpError(403, { ok: false, error: "webhook_lock_deploy_nonce_required" });
+  }
 }
 
 function isWebhookLockPath(path) {
