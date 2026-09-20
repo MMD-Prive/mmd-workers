@@ -208,12 +208,12 @@ jobs:
             send_body="$(mktemp)"
             send_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$send_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/telegram/internal/send")"
             cat "$send_body"
-            test "$send_code" = "401"
+            test "$send_code" = "403"
 
             alias_body="$(mktemp)"
             alias_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$alias_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' --data '{"chat_id":"0","text":"redacted-route-smoke"}' "$origin/v1/send")"
             cat "$alias_body"
-            test "$alias_code" = "401"
+            test "$alias_code" = "403"
 
             webhook_body="$(mktemp)"
             webhook_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$webhook_body" -w "%{http_code}" -X POST -H 'Content-Type: application/json' -H 'X-Telegram-Bot-Api-Secret-Token: invalid-smoke-secret' --data '{"update_id":0}' "$origin/telegram/webhook")"
