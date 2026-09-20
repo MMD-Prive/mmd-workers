@@ -19,8 +19,16 @@ const SESSION_FIELDS = {
 };
 
 function envFor(record, {
-  clientRecord = { id: "recClient123", fields: { fld5HfSGChKFbd4uh: "U11111111111111111111111111111111" } },
-  modelRecord = { id: "recModel123", fields: { fld2ywTFI6MZhX6PV: "U22222222222222222222222222222222" } },
+  clientRecord = { id: "recClient123", fields: {
+    fld5HfSGChKFbd4uh: "U11111111111111111111111111111111",
+    fldAmysO51nIneg0C: "111111111",
+    fldlPum9VYKboCofh: "verified",
+  } },
+  modelRecord = { id: "recModel123", fields: {
+    fld2ywTFI6MZhX6PV: "U22222222222222222222222222222222",
+    fldLogasesRw5zwyB: "222222222",
+    fldlSR082K0O0wLqY: "verified",
+  } },
 } = {}) {
   return {
     AIRTABLE_BASE_ID: "app-test",
@@ -74,7 +82,7 @@ function sessionRecord() {
   };
 }
 
-test("deposit approval sends each confirmation URL to the correct LINE identity and reports to internal Telegram", async () => {
+test("deposit approval sends each confirmation URL to the correct verified LINE and Telegram identities and reports to Ops", async () => {
   const original = globalThis.fetch;
   const calls = [];
   globalThis.fetch = async (input, init) => {
@@ -92,6 +100,9 @@ test("deposit approval sends each confirmation URL to the correct LINE identity 
     assert.equal(result.status, "sent");
     assert.equal(result.customer_line_sent, true);
     assert.equal(result.model_line_sent, true);
+    assert.equal(result.customer_telegram_sent, true);
+    assert.equal(result.model_telegram_sent, true);
+    assert.equal(result.telegram_identity_collision, false);
 
     const lineCalls = calls.filter((call) => call.url === "https://api.line.me/v2/bot/message/push");
     assert.equal(lineCalls.length, 2);
@@ -104,8 +115,18 @@ test("deposit approval sends each confirmation URL to the correct LINE identity 
     assert.match(modelPush.body.messages[0].text, /job-model\?t=model-secret/);
     assert.doesNotMatch(modelPush.body.messages[0].text, /job-confirmation\?t=member-secret/);
 
-    const telegram = calls.find((call) => call.url === "https://telegram.example/internal/send");
+    const telegramCalls = calls.filter((call) => call.url === "https://telegram.example/internal/send");
+    assert.equal(telegramCalls.length, 3);
+    const customerTelegram = telegramCalls.find((call) => String(call.body.chat_id) === "111111111");
+    const modelTelegram = telegramCalls.find((call) => String(call.body.chat_id) === "222222222");
+    const telegram = telegramCalls.find((call) => String(call.body.chat_id) === "-1003546439681");
+    assert.ok(customerTelegram);
+    assert.ok(modelTelegram);
     assert.ok(telegram);
+    assert.match(customerTelegram.body.text, /job-confirmation\?t=member-secret/);
+    assert.doesNotMatch(customerTelegram.body.text, /job-model\?t=model-secret/);
+    assert.match(modelTelegram.body.text, /job-model\?t=model-secret/);
+    assert.doesNotMatch(modelTelegram.body.text, /job-confirmation\?t=member-secret/);
     assert.equal(telegram.headers.get("x-internal-token"), "internal-test");
     assert.equal(telegram.body.message_thread_id, 22);
     assert.match(telegram.body.text, /PAYMENT APPROVED · CONFIRMATION URLS/);
@@ -114,6 +135,8 @@ test("deposit approval sends each confirmation URL to the correct LINE identity 
     assert.match(telegram.body.text, /Manual confirm fallback/);
     assert.match(telegram.body.text, /Customer LINE: <b>sent<\/b>/);
     assert.match(telegram.body.text, /Model LINE: <b>sent<\/b>/);
+    assert.match(telegram.body.text, /Customer Telegram: <b>sent<\/b>/);
+    assert.match(telegram.body.text, /Model Telegram: <b>sent<\/b>/);
   } finally {
     globalThis.fetch = original;
   }
@@ -166,6 +189,7 @@ test("same LINE identity for customer and model fails closed and only alerts ops
   };
   try {
     const result = await dispatchApprovedJobLinks(envFor(record, {
+      clientRecord: { id: "recClient123", fields: { fld5HfSGChKFbd4uh: same } },
       modelRecord: { id: "recModel123", fields: { fld2ywTFI6MZhX6PV: same } },
     }), {
       session_id: "sess_approved_1",
@@ -176,8 +200,82 @@ test("same LINE identity for customer and model fails closed and only alerts ops
     assert.equal(result.model_line_sent, false);
     assert.equal(result.line_identity_collision, true);
     assert.equal(calls.filter((call) => call.url === "https://api.line.me/v2/bot/message/push").length, 0);
-    const telegram = calls.find((call) => call.url === "https://telegram.example/internal/send");
+    const telegram = calls.find((call) => call.url === "https://telegram.example/internal/send" && String(call.body.chat_id) === "-1003546439681");
     assert.match(telegram.body.text, /identity collision/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+
+test("same verified Telegram identity for customer and model fails closed for DMs while Ops receives audit", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request && !init ? input : new Request(input, init);
+    calls.push({ url: request.url, body: await request.json() });
+    return Response.json({ ok: true });
+  };
+  try {
+    const sameTelegram = "333333333";
+    const result = await dispatchApprovedJobLinks(envFor(sessionRecord(), {
+      clientRecord: { id: "recClient123", fields: {
+        fld5HfSGChKFbd4uh: "U11111111111111111111111111111111",
+        fldAmysO51nIneg0C: sameTelegram,
+        fldlPum9VYKboCofh: "verified",
+      } },
+      modelRecord: { id: "recModel123", fields: {
+        fld2ywTFI6MZhX6PV: "U22222222222222222222222222222222",
+        fldLogasesRw5zwyB: sameTelegram,
+        fldlSR082K0O0wLqY: "verified",
+      } },
+    }), {
+      session_id: "sess_approved_1",
+      payment_stage: "deposit",
+      payment_ref: "pay_approved_tg_collision",
+    });
+    assert.equal(result.telegram_identity_collision, true);
+    assert.equal(result.customer_telegram_sent, false);
+    assert.equal(result.model_telegram_sent, false);
+    assert.equal(calls.filter((call) => call.url === "https://telegram.example/internal/send" && String(call.body.chat_id) === sameTelegram).length, 0);
+    const ops = calls.find((call) => call.url === "https://telegram.example/internal/send" && String(call.body.chat_id) === "-1003546439681");
+    assert.ok(ops);
+    assert.match(ops.body.text, /Telegram dispatch held: customer\/model identity collision/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("unverified Telegram bindings never receive confirmation URLs", async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request && !init ? input : new Request(input, init);
+    calls.push({ url: request.url, body: await request.json() });
+    return Response.json({ ok: true });
+  };
+  try {
+    const result = await dispatchApprovedJobLinks(envFor(sessionRecord(), {
+      clientRecord: { id: "recClient123", fields: {
+        fld5HfSGChKFbd4uh: "U11111111111111111111111111111111",
+        fldAmysO51nIneg0C: "444444444",
+        fldlPum9VYKboCofh: "not_connected",
+      } },
+      modelRecord: { id: "recModel123", fields: {
+        fld2ywTFI6MZhX6PV: "U22222222222222222222222222222222",
+        fldLogasesRw5zwyB: "555555555",
+        fldlSR082K0O0wLqY: "conflict",
+      } },
+    }), {
+      session_id: "sess_approved_1",
+      payment_stage: "deposit",
+      payment_ref: "pay_approved_unverified_tg",
+    });
+    assert.equal(result.customer_telegram_sent, false);
+    assert.equal(result.model_telegram_sent, false);
+    assert.equal(result.customer_telegram_status, "telegram_identity_missing_or_unverified");
+    assert.equal(result.model_telegram_status, "telegram_identity_missing_or_unverified");
+    assert.equal(calls.some((call) => ["444444444", "555555555"].includes(String(call.body.chat_id))), false);
   } finally {
     globalThis.fetch = original;
   }

@@ -1,4 +1,4 @@
-name: HYPE Shop production smoke
+name: HYPE closed-loop production smoke
 
 on:
   workflow_dispatch:
@@ -7,11 +7,21 @@ on:
       - main
     paths:
       - "admin-worker/src/hype-shop-orders.js"
+      - "admin-worker/src/hype-handoff-runtime.js"
+      - "admin-worker/src/hype-owner-summary.js"
+      - "admin-worker/src/recovery-control.js"
+      - "admin-worker/src/recovery-control-page.js"
+      - "admin-worker/src/payment-approved-job-link-dispatch.js"
+      - "admin-worker/payment-approved-job-link-dispatch.test.mjs"
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/wrangler.toml"
       - "member-pages-worker/src/hype-shop-orders-projection.js"
       - "member-pages-worker/src/runtime-index.js"
       - "member-dashboard-chat-worker/src/index.js"
+      - "member-dashboard-chat-worker/src/line-group-ingress-front-gate.js"
+      - "member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs"
+      - "sigil-booking-worker/**"
+      - "mms-worker/**"
       - "himai-chat-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
@@ -66,6 +76,8 @@ jobs:
           if printf '%s\n' "$changed" | grep -Eq '^himai-chat-worker/|^shared/mmd-shop-'; then expected+=("Deploy himai-chat-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^member-dashboard-chat-worker/'; then expected+=("Deploy member-dashboard-chat-worker"); fi
           if printf '%s\n' "$changed" | grep -Eq '^telegram-worker/'; then expected+=("Deploy telegram-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^sigil-booking-worker/'; then expected+=("Deploy sigil-booking-worker"); fi
+          if printf '%s\n' "$changed" | grep -Eq '^mms-worker/'; then expected+=("Deploy mms-worker"); fi
 
           if [ "${#expected[@]}" -eq 0 ]; then
             echo "No production Worker path changed in this push; validating current deployed chain."
@@ -112,6 +124,15 @@ jobs:
           node --check ops/hype-shop-production-smoke/src/mmd-shop-transaction-smoke.js
           node --experimental-default-type=module --test ops/hype-shop-production-smoke/test/mmd-shop-transaction-smoke.test.mjs
           npx --yes wrangler@4 deploy --dry-run --config ops/hype-shop-production-smoke/wrangler.toml --var "SMOKE_TOKEN:${SMOKE_TOKEN}" --var "SMOKE_LINE_ID:${SMOKE_LINE_ID}" --var "SMOKE_TELEGRAM_ID:${SMOKE_TELEGRAM_ID}" --var "SMOKE_EXPIRES_AT:${SMOKE_EXPIRES_AT}"
+
+      - name: Validate cross-domain Recovery and notification contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test admin-worker/hype-recovery-picker-stale.test.mjs admin-worker/recovery-control.test.mjs
+          node --test telegram-worker/test/capability-pack-awareness.test.mjs
+          node --test admin-worker/payment-approved-job-link-dispatch.test.mjs
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/line-payment-proof-ingress.test.mjs
 
       - name: Deploy temporary smoke worker
         id: deploy_smoke
@@ -175,6 +196,34 @@ jobs:
           test "$telegram_code" = "200"
           node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(p?.ok!==true) throw new Error("telegram health is not ok"); if(p?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HYPE capability pack"); if(p?.recovery_outcome_taxonomy!=="mmd-recovery-outcome-taxonomy-v1-20260919") throw new Error("unexpected Recovery outcome taxonomy");' "$telegram_body"
 
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            recovery_body="$(mktemp)"
+            recovery_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$recovery_body" -w "%{http_code}" "$origin/v1/admin/recovery/cases?limit=1")"
+            cat "$recovery_body"
+            test "$recovery_code" = "401"
+            grep -Eq '"error":"admin_session_required"|"error":"unauthorized"' "$recovery_body"
+          done
+
+          booking_health="$(mktemp)"
+          booking_health_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$booking_health" -w "%{http_code}" "https://sigil-booking-worker.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health")"
+          cat "$booking_health"
+          test "$booking_health_code" = "200"
+          grep -q '"ok":true' "$booking_health"
+          grep -q 'sigil-booking-worker' "$booking_health"
+
+          booking_body="$(mktemp)"
+          booking_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$booking_body" -w "%{http_code}" -H 'Origin: https://mmdbkk.com' "https://sigil.mmdbkk.com/sigil/api/models/search?q=__hype_recovery_smoke_no_match__&scope=private&booking_ref=hype-recovery-smoke")"
+          cat "$booking_body"
+          test "$booking_code" = "200"
+          grep -q '"blocked":true' "$booking_body"
+          grep -q 'private_requires_entitlement_snapshot' "$booking_body"
+
+          line_body="$(mktemp)"
+          line_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$line_body" -w "%{http_code}" "https://www.mmdbkk.com/webhooks/line")"
+          cat "$line_body"
+          test "$line_code" = "200"
+          node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); if(p?.ok!==true||p?.worker!=="member-dashboard-chat-worker"||p?.route!=="line_webhook") throw new Error("canonical LINE webhook owner smoke failed");' "$line_body"
+
           mms_body="$(mktemp)"
           mms_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$mms_body" -w "%{http_code}" "https://mms-worker.${WORKERS_DEV_SUBDOMAIN}.workers.dev/health")"
           cat "$mms_body"
@@ -186,7 +235,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "### HYPE Shop production smoke"
+            echo "### HYPE closed-loop production smoke"
             echo ""
             echo "- source_sha: \`${GITHUB_SHA}\`"
             echo "- admin -> member-pages Shop binding: PASS"
@@ -205,6 +254,12 @@ jobs:
             echo "- recovery outcome taxonomy health: PASS"
             echo "- HENNA MMS LINE taxonomy health: PASS"
             echo "- HENNA auto reply remains disabled: PASS"
+            echo "- Recovery Control apex/www auth boundary: PASS"
+            echo "- Booking recovery authority custom-host fail-closed: PASS"
+            echo "- MMS recovery authority health/taxonomy: PASS"
+            echo "- LINE signed-webhook production owner: PASS"
+            echo "- LINE payment-proof ingress regression: PASS"
+            echo "- verified Customer/Model Telegram Auto-DM contract: PASS"
             echo "- customer data used: NONE"
             echo "- production Airtable writes: NONE"
             echo "- LINE pushes sent by transaction smoke: NONE"

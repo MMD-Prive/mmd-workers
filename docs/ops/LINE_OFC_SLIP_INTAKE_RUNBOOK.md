@@ -7,9 +7,9 @@ Cloudflare staging source is now split into:
 - extractor: `services/mmd-slip-extractor/cloudflare`
 - Queue-backed intake: `services/mmd-line-slip-intake/cloudflare`
 
-Production remains unchanged. Production LINE integration approval is still PENDING.
+Production LINE evidence intake is LIVE under the existing `member-dashboard-chat-worker` webhook at `/webhooks/line`. The signed production handler remains the only LINE webhook owner. After a successful signed webhook response, the production observer in `line-group-ingress-front-gate.js` re-verifies the signature, captures eligible payment images to private production R2, classifies/extracts evidence, creates pending Payment Proof evidence, and sends the bounded HYPE operator alert.
 
-The production LINE webhook stays on `member-dashboard-chat-worker` at `/webhooks/line`. Do not set `LINE_WEBHOOK_UPSTREAM_URL`, do not create a second production webhook, and do not point LINE at either staging workers.dev service.
+The Queue-backed intake in this runbook remains a synthetic/redacted staging harness only; it is not the production transport. Do not set `LINE_WEBHOOK_UPSTREAM_URL`, do not create a second production webhook, and do not point LINE at either staging workers.dev service. `payments-worker` remains Money Truth.
 
 ## Preview scope
 

@@ -99,4 +99,4 @@ Then configure the secrets and deploy only the staging worker. Do not add a cust
 9. Duplicate fixture does not create a second staging proof or second alert.
 10. No `paid`, `verified`, entitlement, points, membership, or session mutation occurs.
 
-Only after this isolated staging smoke passes should a separate production integration connect the verified `member-dashboard-chat-worker` LINE webhook to a Queue producer. That later PR must enqueue only after LINE signature verification and must retain the existing webhook owner.
+This staging Queue is intentionally not promoted into the production webhook path. Production evidence intake is already implemented separately in `member-dashboard-chat-worker/src/line-group-ingress-front-gate.js`: after the canonical webhook accepts and re-verifies the LINE signature, eligible payment images are captured to private production R2, classified/extracted, persisted as pending Payment Proof evidence, and surfaced to HYPE for operator review. The existing `member-dashboard-chat-worker` remains the only LINE webhook owner and `payments-worker` remains Money Truth.
