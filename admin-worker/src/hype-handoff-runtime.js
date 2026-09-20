@@ -2124,6 +2124,7 @@ function safeRecoveryCorrelation(value = {}) {
       : null,
     picker_delivery_revision: normalizePickerRevision(value.picker_delivery_revision),
     picker_delivered_at: clean(value.picker_delivered_at, 80) || null,
+    picker_refresh_history: safePickerRefreshHistory(value.picker_refresh_history),
   };
 
   if (domain === "booking") {
@@ -2279,6 +2280,29 @@ function normalizePickerRevision(value) {
 function boundedPickerReissueCount(value) {
   const n = Number(value);
   return Number.isInteger(n) ? Math.max(0, Math.min(9999, n)) : 0;
+}
+
+function safePickerRefreshHistory(value) {
+  const rows = Array.isArray(value) ? value : [];
+  return rows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+    const trigger = token(row.trigger);
+    const result = token(row.result);
+    if (!["customer_stale", "owner_manual"].includes(trigger)) return null;
+    if (!["reissued", "no_candidates", "authority_unavailable"].includes(result)) return null;
+    return {
+      trigger,
+      result,
+      source_revision: normalizePickerRevision(row.source_revision),
+      revision: normalizePickerRevision(row.revision),
+      candidate_count: boundedCandidateCount(row.candidate_count),
+      reason: token(row.reason) || null,
+      at: clean(row.at, 80) || null,
+    };
+  }).filter(Boolean).slice(-12);
+}
+function appendPickerRefreshHistory(correlation, entry) {
+  return [...safePickerRefreshHistory(correlation?.picker_refresh_history), entry].slice(-12);
 }
 
 function effectivePickerRevision(correlation = {}) {
@@ -2959,6 +2983,15 @@ export async function refreshRecoveryPickerForOwner(env, {
     picker_delivery_status: candidateCount > 0 ? "pending_customer_delivery" : null,
     picker_delivery_revision: candidateCount > 0 ? nextRevision : null,
     picker_delivered_at: null,
+    picker_refresh_history: appendPickerRefreshHistory(priorCorrelation, {
+      trigger: "owner_manual",
+      result: candidateCount === 0 ? "no_candidates" : "reissued",
+      source_revision: expectedRevision,
+      revision: nextRevision,
+      candidate_count: candidateCount,
+      reason: "owner_manual_refresh",
+      at: stamp,
+    }),
   });
 
   const write = await persistRecoveryPickerCorrelation(env, {
@@ -3031,6 +3064,15 @@ async function persistOwnerUnavailableRecoveryPicker(env, {
     last_reissue_source: source,
     live_refresh_status: "unavailable",
     refreshed_at: stamp,
+    picker_refresh_history: appendPickerRefreshHistory(priorCorrelation, {
+      trigger: "owner_manual",
+      result: "authority_unavailable",
+      source_revision: expectedRevision,
+      revision: effectivePickerRevision(priorCorrelation),
+      candidate_count: boundedCandidateCount(priorCorrelation.candidate_count),
+      reason: reason || "authority_unavailable",
+      at: stamp,
+    }),
   });
   const write = await persistRecoveryPickerCorrelation(env, {
     matrixRecord,
@@ -3211,6 +3253,15 @@ async function refreshStaleRecoveryPicker(env, {
     picker_delivery_status: candidateCount > 0 ? "pending_customer_delivery" : null,
     picker_delivery_revision: candidateCount > 0 ? nextRevision : null,
     picker_delivered_at: null,
+    picker_refresh_history: appendPickerRefreshHistory(priorCorrelation, {
+      trigger: "customer_stale",
+      result: candidateCount === 0 ? "no_candidates" : "reissued",
+      source_revision: effectivePickerRevision(priorCorrelation),
+      revision: nextRevision,
+      candidate_count: candidateCount,
+      reason: staleReason || "selected_candidate_stale",
+      at: stamp,
+    }),
   });
 
   const write = await persistRecoveryPickerCorrelation(env, {
@@ -3270,6 +3321,15 @@ async function persistUnavailableRecoveryPicker(env, {
     last_reissue_source: source || priorCorrelation.last_reissue_source,
     live_refresh_status: "unavailable",
     refreshed_at: stamp,
+    picker_refresh_history: appendPickerRefreshHistory(priorCorrelation, {
+      trigger: "customer_stale",
+      result: "authority_unavailable",
+      source_revision: effectivePickerRevision(priorCorrelation),
+      revision: effectivePickerRevision(priorCorrelation),
+      candidate_count: boundedCandidateCount(priorCorrelation.candidate_count),
+      reason: staleReason || "authority_unavailable",
+      at: stamp,
+    }),
   });
   const write = await persistRecoveryPickerCorrelation(env, {
     matrixRecord,
