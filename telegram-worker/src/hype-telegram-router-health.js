@@ -327,6 +327,8 @@ export async function buildTelegramRouterHealth(env = {}, { probe = false } = {}
   const live = probe ? await telegramApiProbe(env) : { attempted: false, ok: null };
 
   const unavailable = lanes.filter((lane) => lane.status === "unavailable");
+  const missingDestinations = lanes.filter((lane) => lane.destination_configured !== true);
+  const missingServiceAuth = lanes.filter((lane) => lane.service_auth_configured !== true);
   const partial = lanes.filter((lane) => lane.status === "partial");
   const directSenders = LEGACY_DIRECT_SENDERS.map((item) => ({ ...item, migration_required: true }));
 
@@ -335,7 +337,8 @@ export async function buildTelegramRouterHealth(env = {}, { probe = false } = {}
   if (!chatConfigured) causes.push("telegram_chat_missing");
   if (!webhookSecretConfigured) causes.push("telegram_webhook_secret_missing");
   if (!internalAuthConfigured) causes.push("telegram_internal_auth_missing");
-  if (unavailable.length) causes.push("one_or_more_lane_destinations_missing");
+  if (missingDestinations.length) causes.push("one_or_more_lane_destinations_missing");
+  if (missingServiceAuth.length) causes.push("one_or_more_lane_service_auth_missing");
   if (probe && live.ok === false) causes.push(live.reason || "telegram_live_probe_failed");
   if (directSenders.length) causes.push("legacy_direct_senders_present");
 
