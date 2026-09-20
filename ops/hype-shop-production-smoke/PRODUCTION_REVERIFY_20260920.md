@@ -1,3 +1,3 @@
 # HYPE closed-loop production re-verification marker
 
-This marker intentionally retriggers the synthetic/read-only closed-loop production smoke after the final route and notification changes.
+Final owner-requested re-verification on 2026-09-20 after Recovery audit, LINE slip live intake lock, verified Customer/Model Telegram Auto-DM, and canonical Telegram route ownership were merged. This marker changes no business logic; it retriggers the synthetic/read-only closed-loop production smoke only.
