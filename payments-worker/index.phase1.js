@@ -7,6 +7,7 @@ import {
   handleConfirmationContext,
 } from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
+import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
 const NOTIFY_PATH = "/v1/payments/notify";
@@ -214,10 +215,21 @@ async function runTrustedNotify(request, env, ctx, body, { injectInternalToken }
     error: String(error?.message || error || "points_phase1_failed"),
   }));
 
+  const partnerConfirmation = await notifyPartnerJobAfterOfficialVerify(env, {
+    payment_ref: body.payment_ref || body.transaction_ref,
+    stage: body.stage || body.payment_stage || body.payment_type || "deposit",
+    session_id: body.session_id,
+  }).catch((error) => ({
+    ok:false,
+    sent:false,
+    reason:"partner_confirmation_hook_failed",
+    error:String(error?.message || error || "unknown"),
+  }));
+
   const headers = new Headers(response.headers);
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
-  return new Response(JSON.stringify({ ...payload, points_ledger: pointsLedger }), {
+  return new Response(JSON.stringify({ ...payload, points_ledger: pointsLedger, partner_confirmation: partnerConfirmation }), {
     status: response.status,
     headers,
   });
