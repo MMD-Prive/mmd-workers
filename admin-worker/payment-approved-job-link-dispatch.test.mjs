@@ -35,8 +35,8 @@ function envFor(record, {
       async fetch(request) {
         const url = new URL(request.url);
         const parts = decodeURIComponent(url.pathname).split("/").filter(Boolean);
-        const table = parts[1] || "";
-        const recordId = parts[2] || "";
+        const table = parts[2] || "";
+        const recordId = parts[3] || "";
         if (table === "tblC98mKWbzmPuNzX" && !recordId) {
           assert.match(url.searchParams.get("filterByFormula") || "", /session_id/);
           return Response.json({ records: record ? [record] : [] });
