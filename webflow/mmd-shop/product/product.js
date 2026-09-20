@@ -38,12 +38,12 @@ function t(key,vars){
     stockOut:"สินค้าหมด",stockLow:"เหลือน้อย",stockReady:"พร้อมสั่ง · "+(vars&&vars.n||0)+" ชิ้น",
     stockChecking:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",variantSize:"เลือกขนาด",variantFlavour:"เลือก Flavour",
     stockUntrackedTitle:"กำลังตรวจสต๊อกก่อนเปิดรับรายการ",stockUntrackedCopy:"พอมีสต๊อกจริงที่ยืนยันแล้ว ปุ่มสั่งจะเปิดให้เองครับ",
-    outStock:"สินค้าหมดชั่วคราว",stockOutCopy:"ตอนนี้ยังรับออเดอร์ชิ้นนี้ไม่ได้ครับ",priceClosed:"ยังไม่เปิดราคา Online Checkout",
-    priceClosedCopy:"ดูรายละเอียดได้ก่อน ถ้าอยากถามเพิ่มคุยกับ MMD ได้ครับ",productRestricted:"ชิ้นนี้ยังไม่เปิดให้กดสั่งออนไลน์ครับ",
-    productRestrictedCopy:"ดูรายละเอียดได้ก่อน ถ้าพร้อมเมื่อไร MMD จะเปิดปุ่มสั่งให้ตามสถานะจริง",cartStorage:"อุปกรณ์นี้ไม่อนุญาตให้บันทึก Cart",
-    cartSaved:"เพิ่ม "+(vars&&vars.n||0)+" ชิ้นลง Cart แล้ว",addedCart:"เพิ่มลง Cart แล้ว",noProduct:"ยังไม่ได้เลือกสินค้า",
-    noProductCopy:"เปิดหน้านี้จากสินค้าบน MMD Shop หรือใช้ URL ที่มี SKU ของสินค้า",productNotFound:"ไม่พบสินค้านี้",
-    productNotFoundCopy:"สินค้านี้อาจถูกเปลี่ยนสถานะหรือ URL ไม่ถูกต้อง",productLoadError:"เปิดรายละเอียดสินค้าไม่ได้",
+    outStock:"รอรอบสต๊อกถัดไป",stockOutCopy:"รอบรับ Order ถัดไปจะเปิดเมื่อสินค้าพร้อมครับ",priceClosed:"กำลังเตรียมราคา Online Checkout",
+    priceClosedCopy:"ดูรายละเอียดได้ก่อน ถ้าอยากถามเพิ่มคุยกับ MMD ได้ครับ",productRestricted:"ชิ้นนี้จะเปิดสั่งออนไลน์ทันทีเมื่อสถานะพร้อมครับ",
+    productRestrictedCopy:"ดูรายละเอียดได้ก่อน และปุ่มสั่งจะพร้อมทันทีเมื่อสินค้าพร้อม",cartStorage:"Cart จะเก็บรายการไว้ระหว่างการใช้งานหน้านี้",
+    cartSaved:"เพิ่ม "+(vars&&vars.n||0)+" ชิ้นลง Cart แล้ว",addedCart:"เพิ่มลง Cart แล้ว",noProduct:"เลือกสินค้าจาก MMD Shop เพื่อดูรายละเอียด",
+    noProductCopy:"เปิดหน้านี้จากสินค้าบน MMD Shop หรือใช้ URL ที่มี SKU ของสินค้า",productNotFound:"กำลังพากลับไปดูสินค้าที่พร้อม",
+    productNotFoundCopy:"สถานะสินค้าหรือ URL มีการอัปเดต กรุณาเปิดจาก MMD Shop อีกครั้ง",productLoadError:"กำลังเตรียมรายละเอียดสินค้า",
     productLoadErrorCopy:"กรุณาลองใหม่ หรือกลับไปที่ MMD Shop",timeout:"การเชื่อมต่อใช้เวลานานเกินไป กรุณาลองอีกครั้ง"
   };
   return fallback[key]||key;
