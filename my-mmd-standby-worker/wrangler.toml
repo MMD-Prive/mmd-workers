@@ -4,6 +4,9 @@ compatibility_date = "2026-07-02"
 workers_dev = true
 preview_urls = true
 
+[vars]
+LINE_LIFF_BACKUP_ID = "2011691294-GCxAQ2yW"
+
 # The standby is a separate public front door only. Canonical member, Points,
 # history, tier, renewal, signup and payment truth remain in member-pages-worker
 # and its existing resolver/payment service bindings.
@@ -55,6 +58,6 @@ zone_name = "mmdbkk.com"
 enabled = true
 head_sampling_rate = 1
 
-# LINE_LIFF_BACKUP_ID is supplied at deploy time from the repository variable
-# MY_MMD_BACKUP_LIFF_ID. It must be a second LIFF app on LINE Login channel
-# 2010862595 with endpoint https://www.mmdbkk.com/member/liff-backup.
+# LINE_LIFF_BACKUP_ID is public configuration for the dedicated MY MMD Backup
+# LIFF app on LINE Login channel 2011691294. Its endpoint is
+# https://mmdbkk.com/member/liff-backup and its only scope is openid.
