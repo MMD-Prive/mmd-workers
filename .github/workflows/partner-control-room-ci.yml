@@ -1,0 +1,26 @@
+name: Partner Control Room CI
+on:
+  pull_request:
+    paths:
+      - 'partners-worker/**'
+      - 'admin-worker/src/partner-owner-console.js'
+      - 'admin-worker/partner-owner-console.test.mjs'
+      - '.github/workflows/partner-control-room-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: partners-worker/package-lock.json
+      - run: npm ci
+        working-directory: partners-worker
+      - run: npm run typecheck && npm test
+        working-directory: partners-worker
+      - run: node --test admin-worker/partner-owner-console.test.mjs
