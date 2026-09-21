@@ -242,7 +242,24 @@ jobs:
             -H 'origin: https://www.mmdbkk.com' \
             --data '{"customer":{"name":"[SMOKE] MMD SHOP TELEGRAM TEST","phone":"0999999999"},"shipping":{"delivery_method":"pickup","recipient_name":"[SMOKE] MMD SHOP TELEGRAM TEST","phone":"0999999999"},"items":[{"product_id":"recIIR1rsbqTH5y6D","quantity":1}],"source_path":"/mmd-shop?smoke=telegram-canary-20260921"}' \
             'https://www.mmdbkk.com/mmd-shop/api/checkout')"
-          test "$code" = "200"
+          if [ "$code" != "200" ]; then
+            node -e '
+              const fs=require("node:fs");
+              const raw=fs.readFileSync(process.argv[1],"utf8");
+              let p={};
+              try{p=JSON.parse(raw)}catch{}
+              console.error(JSON.stringify({
+                http_status: process.argv[2],
+                ok: p?.ok === true,
+                error: p?.error || "non_json_response",
+                order_id: p?.order_id || null,
+                order_created: p?.order_created === true,
+                retryable: p?.retryable === true,
+                total_thb: p?.total_thb || null
+              }));
+              process.exit(1);
+            ' "$body" "$code"
+          fi
           node -e '
             const fs=require("node:fs");
             const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
