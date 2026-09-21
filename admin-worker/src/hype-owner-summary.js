@@ -3,6 +3,7 @@ import { RECOVERY_PICKER_INTELLIGENCE_VERSION, RECOVERY_QUEUE_ASSIGNMENT_VERSION
 import { readHypeObserverHealth } from "./hype-observer-health-read.js";
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 import { buildIncidentRootCauseDigest } from "./hype-incident-root-cause.js";
+import { HYPE_STUCK_SLA_POLICY, readCrossSystemStuckSlaWatch } from "./hype-cross-system-stuck-sla.js";
 
 export const HYPE_OWNER_SUMMARY_PATH = "/__internal/hype/owner-summary";
 
@@ -19,14 +20,19 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
 
   try {
     const now = new Date();
-    const [dashboard, recoveryQueue, observerHealth, telegramRouterHealth] = await Promise.all([
+    const recoveryPromise = readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now)
+      .catch(() => ({ ok: false, error: "recovery_queue_unavailable" }));
+    const stuckWatchPromise = recoveryPromise
+      .then((recoveryQueue) => readCrossSystemStuckSlaWatch(env, { now, recoveryQueue }))
+      .catch(() => ({ available: false, status: "unknown", reason: "stuck_sla_watch_unavailable" }));
+    const [dashboard, recoveryQueue, observerHealth, telegramRouterHealth, stuckSlaWatch] = await Promise.all([
       buildAdminDashboard(env),
-      readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now)
-        .catch(() => ({ ok: false, error: "recovery_queue_unavailable" })),
+      recoveryPromise,
       readHypeObserverHealth(env).catch(() => ({ available: false, reason: "health_source_unavailable" })),
       readHypeTelegramRouterHealth(env).catch(() => ({ available: false, status: "unknown", summary: "Telegram Router health source unavailable" })),
+      stuckWatchPromise,
     ]);
-    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue, observerHealth, telegramRouterHealth), 200);
+    return json(buildHypeOwnerSummaryProjection(dashboard, now, recoveryQueue, observerHealth, telegramRouterHealth, stuckSlaWatch), 200);
   } catch {
     return json({
       ok: false,
@@ -37,7 +43,7 @@ export async function handleHypeOwnerSummaryRpc(request, env = {}) {
   }
 }
 
-export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null, observerHealth = null, telegramRouterHealth = null) {
+export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date(), recoveryQueue = null, observerHealth = null, telegramRouterHealth = null, stuckSlaWatch = null) {
   const counts = dashboard?.counts || {};
   const paymentItems = safeItems(dashboard?.money, 4, projectPayment);
   const historicalItems = safeItems(dashboard?.historical_recovery, 3, projectHistorical);
@@ -52,6 +58,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
   const observer = projectObserverHealthSummary(observerHealth);
   const telegramRouter = projectTelegramRouterSummary(telegramRouterHealth);
   const incidentDigest = buildIncidentRootCauseDigest({ observer, router: telegramRouter, recovery });
+  const stuckWatch = projectStuckSlaWatch(stuckSlaWatch);
 
   const todayJobs = jobItems.filter((item) => item.job_date === today).slice(0, 4);
   const tomorrowJobs = jobItems.filter((item) => item.job_date === tomorrow).slice(0, 4);
@@ -70,6 +77,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
     recovery_picker_authority_unavailable: nn(recovery.picker_authority_unavailable_count),
     recovery_picker_no_candidates: nn(recovery.picker_no_candidates_count),
     recovery_picker_watch: nn(recovery.picker_watch_count),
+    stuck_total: nn(stuckWatch.counts.total),
+    stuck_overdue: nn(stuckWatch.counts.overdue),
+    stuck_watch: nn(stuckWatch.counts.watch),
+    stuck_unavailable_sources: nn(stuckWatch.counts.unavailable_sources),
   };
 
   const affectedClients = dedupe([
@@ -84,6 +95,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
     nextActions.push(action(1, incidentDigest.primary?.owner_action?.title || "เช็ก Incident Digest", incidentDigest.primary?.owner_action?.href || "/internal/admin/control-room", incidentDigest.primary?.owner_action?.authority || "diagnostic_read_only"));
   } else if (observer.alert_required === true) {
     nextActions.push(action(1, "เช็ก Payment Observer Health", "/internal/admin/control-room", "observer_health_read_only"));
+  }
+  if (stuckWatch.attention_required === true) {
+    const firstStuck = stuckWatch.items[0] || {};
+    nextActions.push(action(nextActions.length ? 2 : 1, "ดู STUCK / NEEDS ATTENTION", firstStuck.href || "/internal/admin/control-room", firstStuck.authority || "cross_system_stuck_sla_read_only"));
   }
   if (reviewCounts.payment_review > 0) nextActions.push(action(nextActions.length ? 2 : 1, "ตรวจ Payments", "/internal/admin/payments", "payments-worker"));
   if (reviewCounts.recovery_picker_authority_unavailable > 0) {
@@ -125,6 +140,10 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       recovery_picker_no_candidates: nn(recovery.picker_no_candidates_count),
       recovery_picker_selected: nn(recovery.picker_selected_count),
       recovery_picker_watch: nn(recovery.picker_watch_count),
+      stuck_total: nn(stuckWatch.counts.total),
+      stuck_overdue: nn(stuckWatch.counts.overdue),
+      stuck_watch: nn(stuckWatch.counts.watch),
+      stuck_unavailable_sources: nn(stuckWatch.counts.unavailable_sources),
     },
     review_required: {
       count: reviewCounts.payment_review
@@ -168,12 +187,18 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       }] : []),
       ...(telegramRouter.status === "degraded" ? [{ title: "Telegram Router Health", text: telegramRouter.summary, href: "/internal/admin/control-room" }] : []),
       ...(observer.alert_required === true ? [{ title: "Payment Observer Health", text: observer.summary, href: "/internal/admin/control-room" }] : []),
+      ...(stuckWatch.attention_required === true ? [{
+        title: "STUCK / NEEDS ATTENTION",
+        text: stuckWatch.summary,
+        href: stuckWatch.items[0]?.href || "/internal/admin/control-room",
+      }] : []),
       ...bossItems,
       ...todoItems,
     ], (item) => item.title + "|" + item.text).slice(0, 6),
     observer_health: observer,
     telegram_router_health: telegramRouter,
     incident_digest: incidentDigest,
+    stuck_sla_watch: stuckWatch,
     system: {
       admin: token(dashboard?.status?.admin),
       payments: token(dashboard?.status?.payments),
@@ -187,6 +212,7 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
             : token(dashboard?.status?.telegram),
       data: token(dashboard?.status?.data),
       reconfirm: token(dashboard?.status?.reconfirm),
+      stuck_sla: stuckWatch.status,
     },
     next_actions: nextActions.slice(0, 4),
     authority: {
@@ -209,9 +235,78 @@ export function buildHypeOwnerSummaryProjection(dashboard = {}, now = new Date()
       telegram_router_health_operational_only: true,
       incident_digest_diagnostic_only: true,
       incident_digest_may_mutate_business_truth: false,
+      stuck_sla_policy: HYPE_STUCK_SLA_POLICY,
+      stuck_sla_operational_only: true,
+      stuck_sla_may_mutate_business_truth: false,
       read_only: true,
       owner_confirmation_required_for_mutation: true,
     },
+  };
+}
+
+function projectStuckSlaWatch(value = null) {
+  if (!value || value.available !== true) {
+    return {
+      available: false,
+      complete: false,
+      status: "unknown",
+      checked_at: null,
+      attention_required: false,
+      counts: { total: 0, overdue: 0, watch: 0, unavailable_sources: 6, unaged_records: 0, by_kind: {} },
+      unavailable_sources: [],
+      sources: {},
+      items: [],
+      summary: "Cross-system Stuck / SLA source unavailable",
+      operational_only: true,
+      business_truth_inferred: false,
+      business_truth_mutated: false,
+    };
+  }
+  const counts = value.counts && typeof value.counts === "object" ? value.counts : {};
+  const sourceEntries = value.sources && typeof value.sources === "object" ? Object.entries(value.sources) : [];
+  return {
+    available: true,
+    complete: value.complete === true,
+    schema: clean(value.schema, 120),
+    policy_version: clean(value.policy_version, 120) || HYPE_STUCK_SLA_POLICY,
+    status: clean(value.status, 40) || "unknown",
+    checked_at: clean(value.checked_at, 80) || null,
+    attention_required: value.attention_required === true,
+    counts: {
+      total: nn(counts.total),
+      overdue: nn(counts.overdue),
+      watch: nn(counts.watch),
+      unavailable_sources: nn(counts.unavailable_sources),
+      unaged_records: nn(counts.unaged_records),
+      by_kind: safeCountMap(counts.by_kind),
+    },
+    unavailable_sources: (Array.isArray(value.unavailable_sources) ? value.unavailable_sources : [])
+      .slice(0, 8)
+      .map((item) => clean(item, 80))
+      .filter(Boolean),
+    sources: Object.fromEntries(sourceEntries.slice(0, 8).map(([key, source]) => [clean(key, 80), {
+      available: source?.available === true,
+      record_count: nn(source?.record_count),
+      reason: source?.available === true ? null : clean(source?.reason, 120) || "unavailable",
+    }])),
+    items: (Array.isArray(value.items) ? value.items : []).slice(0, 12).map((item) => ({
+      kind: clean(item?.kind, 80),
+      sla_status: clean(item?.sla_status, 40),
+      age_minutes: nullableNonNegative(item?.age_minutes),
+      observed_at: clean(item?.observed_at, 80) || null,
+      threshold_minutes: nullableNonNegative(item?.threshold_minutes),
+      reference: clean(item?.reference, 180),
+      label: clean(item?.label, 180),
+      detail: clean(item?.detail, 260),
+      href: safeInternalHref(item?.href) || "/internal/admin/control-room",
+      authority: clean(item?.authority, 120) || "operational_read_only",
+      operational_only: true,
+      business_truth_inferred: false,
+    })),
+    summary: clean(value.summary, 500) || "Cross-system Stuck / SLA watch available",
+    operational_only: true,
+    business_truth_inferred: false,
+    business_truth_mutated: false,
   };
 }
 

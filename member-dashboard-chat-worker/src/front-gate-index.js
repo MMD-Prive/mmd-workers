@@ -384,6 +384,12 @@ function recordBridgeTelemetry(result = {}) {
     observed: Number(result.observed) || 0,
     succeeded: Number(result.succeeded) || 0,
     evidence_incomplete: Number(result.evidence_incomplete) || 0,
+    memory_used: Number(result.memory_used) || 0,
+    identity_state: String(result.identity_state || "unknown").slice(0, 24),
+    matrix_version: Number(result.matrix_version) || 0,
+    review_required: Number(result.review_required) || 0,
+    shadow_only: result.shadow_only === true,
+    customer_copy_changed: false,
     ok: result.ok === true,
   }));
 }

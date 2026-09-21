@@ -371,6 +371,7 @@ KENJI_LINE_CONTINUITY_ENABLED = "true"
 AIRTABLE_TABLE_KENJI_CONVERSATION_MATRIX_ID = "tblS6iRgPjYLBqZJh"
 AIRTABLE_TABLE_CLIENTS_ID = "tblVv58TCbwh5j1fS"
 AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID = "tblNImdF9PKAxhXGi"
+AIRTABLE_TABLE_CLIENT_INTELLIGENCE_EVIDENCE_ID = "tblx7NdfHO5iY6qtg"
 # Read-only shadow bridge: every accepted MMD LINE webhook is also observed by
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
