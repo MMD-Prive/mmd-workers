@@ -1,0 +1,82 @@
+name: Apply reviewed Shop Phase 1 source
+on:
+  push:
+    branches: [codex/shop-phase1-reliability-20260922]
+    paths: [.github/workflows/shop-phase1-apply-reviewed-source.yml]
+permissions:
+  contents: write
+concurrency:
+  group: shop-phase1-reviewed-source-feature-only
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'MMD-Prive/mmd-workers' && github.ref == 'refs/heads/codex/shop-phase1-reliability-20260922'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify checksum and exact preimage before applying source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import base64, hashlib, json, lzma, pathlib, subprocess
+          root = pathlib.Path.cwd()
+          folder = root / 'ops/shop-phase1/transfer'
+          manifest = json.loads((folder/'manifest.json').read_text())
+          assert len(manifest) == 27
+          for name, entry in manifest.items():
+              p = pathlib.PurePosixPath(name)
+              assert not p.is_absolute() and '..' not in p.parts and not name.startswith('.github/')
+              target = root / name
+              assert not target.is_symlink()
+              actual = hashlib.sha256(target.read_bytes()).hexdigest() if target.exists() else None
+              assert actual == entry['before'], 'preimage mismatch: ' + name
+          encoded = ''.join((folder/f'implementation-{i}.b64').read_text().strip() for i in range(4))
+          packed = base64.b64decode(encoded, validate=True)
+          assert hashlib.sha256(packed).hexdigest() == '3d19c63e342fcb30b2690f5aa8422e145b659c00664b968359bd06054eea4893', 'transfer checksum mismatch'
+          patch = lzma.decompress(packed)
+          assert len(patch) == 131618
+          for line in patch.decode().splitlines():
+              if line.startswith('diff --git '):
+                  old, new = line.split()[2:]
+                  assert old.startswith('a/') and new.startswith('b/') and old[2:] == new[2:]
+                  assert new[2:] in manifest, 'unreviewed patch path'
+          out = pathlib.Path('/tmp/shop-phase1-reviewed.patch')
+          out.write_bytes(patch)
+          subprocess.run(['git','apply','--check','--unidiff-zero',str(out)],check=True)
+          subprocess.run(['git','apply','--unidiff-zero',str(out)],check=True)
+          subprocess.run(['node','ops/shop-phase1/build-presentation.mjs'],check=True)
+          for name, entry in manifest.items():
+              assert hashlib.sha256((root/name).read_bytes()).hexdigest() == entry['after'], 'postimage mismatch: ' + name
+          changed = subprocess.check_output(['git','diff','--name-only']).decode().splitlines()
+          untracked = subprocess.check_output(['git','ls-files','--others','--exclude-standard']).decode().splitlines()
+          assert set(changed + untracked) == set(manifest), 'unexpected source change'
+          subprocess.run(['git','add','--',*manifest.keys()],check=True)
+          print('Verified all 27 reviewed source files; no production mutation.')
+          PY
+      - name: Verify implemented and existing authority contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node ops/shop-phase1/build-presentation.mjs --check
+          node --experimental-default-type=module --test himai-chat-worker/test/*.test.mjs shared/shop-brand.test.mjs webflow/shared/shop-reliability.test.mjs payments-worker/shop-phase1-brand.test.mjs payments-worker/unified-payment-proof.test.mjs payments-worker/shop-refund-v1.test.mjs payments-worker/payment-instructions-v1.test.mjs shared/mmd-shop-fulfillment-aftercare.test.mjs shared/mmd-shop-stock-reconciliation.test.mjs
+          node --check telegram-worker/src/index.js
+      - name: Commit only verified source to feature branch
+        shell: bash
+        env:
+          TARGET_BRANCH: codex/shop-phase1-reliability-20260922
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/$TARGET_BRANCH"
+          remote_sha="$(git ls-remote origin "refs/heads/$TARGET_BRANCH" | cut -f1)"
+          test "$remote_sha" = "$GITHUB_SHA"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(shop): complete tested Phase 1 reliability implementation'
+          git push origin "HEAD:refs/heads/$TARGET_BRANCH"
