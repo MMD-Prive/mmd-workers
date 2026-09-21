@@ -4266,7 +4266,7 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   return result;
 }
 const PARTNER_LINE_LOGIN_URL = "https://mmdbkk.com/sigil/model/dashboard/partner-login";
-const PARTNER_LINE_LOGIN = \`<!doctype html>
+const PARTNER_LINE_LOGIN = `<!doctype html>
 <html lang="th">
 <head>
   <meta charset="utf-8">
@@ -4388,8 +4388,8 @@ const PARTNER_LINE_LOGIN = \`<!doctype html>
 const go=document.getElementById('go'),state=document.getElementById('state');
 let initialized;
 function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'\${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
 if(typeof liff!=='undefined')initialize().catch(()=>{state.textContent='พร้อมแล้ว · กดเข้าสู่ระบบด้วย LINE อีกครั้ง';});
   </script>
 </body>
-</html>\`;
+</html>`;
