@@ -169,6 +169,8 @@ jobs:
           const desired = [
             "mmdbkk.com/v1/partner/*",
             "www.mmdbkk.com/v1/partner/*",
+            "mmdbkk.com/partner/dashboard*",
+            "www.mmdbkk.com/partner/dashboard*",
           ];
 
           async function cf(path, options = {}) {
@@ -252,7 +254,7 @@ jobs:
           set -euo pipefail
           sleep 3
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            page="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/partner/dashboard?t=production-smoke-placeholder")"
+            page="$(curl --location --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/partner/dashboard?t=production-smoke-placeholder")"
             grep -Fq 'data-partner-control-room' <<<"$page"
             grep -Fq 'MMD ไม่มีสิทธิ์อ่าน' <<<"$page"
             grep -Fq 'Private Vault' <<<"$page"
@@ -263,7 +265,7 @@ jobs:
               body="$(mktemp)"
               code="$(curl --silent --show-error -o "$body" -w "%{http_code}" "$origin$path")"
               test "$code" = "401"
-              test "$(jq -r '.error // empty' "$body")" = "token_missing"
+              test "$(jq -r '.error.code // .error // empty' "$body")" = "token_missing"
             done
 
             for path in \
@@ -274,7 +276,7 @@ jobs:
               body="$(mktemp)"
               code="$(curl --silent --show-error -o "$body" -w "%{http_code}" -X POST "$origin$path")"
               test "$code" = "401"
-              test "$(jq -r '.error // empty' "$body")" = "token_missing"
+              test "$(jq -r '.error.code // .error // empty' "$body")" = "token_missing"
             done
           done
 

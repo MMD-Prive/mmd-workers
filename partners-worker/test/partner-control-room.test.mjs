@@ -5,6 +5,8 @@ import test from "node:test";
 const indexSource = await readFile(new URL("../src/index.ts", import.meta.url), "utf8");
 const pageSource = await readFile(new URL("../src/public-index.ts", import.meta.url), "utf8");
 const uiSource = await readFile(new URL("../src/partner-control-room.ts", import.meta.url), "utf8");
+const wranglerSource = await readFile(new URL("../wrangler.toml", import.meta.url), "utf8");
+const deployWorkflowSource = await readFile(new URL("../../.github/workflows/deploy-partners-worker.yml", import.meta.url), "utf8");
 
 test("Partner Control Room exposes the complete authenticated mutation surface", () => {
   for (const route of [
@@ -47,4 +49,13 @@ test("Control Room includes jobs, models, earnings, Telegram and mobile layout",
   }
   assert.match(uiSource, /@media\(max-width:860px\)/);
   assert.match(uiSource, /@media\(max-width:520px\)/);
+});
+
+test("production routing binds the Partner Control Room page and follows the apex redirect", () => {
+  for (const route of ["mmdbkk.com/partner/dashboard*", "www.mmdbkk.com/partner/dashboard*"]) {
+    assert.match(wranglerSource, new RegExp(route.replaceAll("/", "\\/")));
+    assert.match(deployWorkflowSource, new RegExp(route.replaceAll("/", "\\/")));
+  }
+  assert.match(deployWorkflowSource, /page="\$\(curl --location /);
+  assert.match(deployWorkflowSource, /\.error\.code \/\/ \.error/);
 });
