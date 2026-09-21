@@ -3,7 +3,7 @@ const DEFAULT_PUBLIC_ASSET_BASE = "https://models.mmdbkk.com";
 const IMAGE_EXTENSION = /\.(?:avif|jpe?g|png|webp)$/i;
 const PREFERRED_IMAGE = /(?:^|[-_. ])(?:card|cover|hero|main|primary|profile|01)(?:[-_. ]|$)/i;
 const BLOCKED_SEGMENTS = new Set(["private", "evidence", "slips", "line-notes", "line_notes", "sigil", "internal"]);
-const PUBLIC_CATALOG_PATH = "/sigil/api/models/public-catalog";
+const PUBLIC_CATALOG_PATH = "/sigil/api/models/search/public-catalog";
 
 export function isPublicProfilesCatalogRequest(path, method = "GET") {
   return normalizePath(path) === PUBLIC_CATALOG_PATH && ["GET", "HEAD", "OPTIONS"].includes(String(method).toUpperCase());
