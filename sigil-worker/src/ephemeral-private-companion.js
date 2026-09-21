@@ -162,7 +162,7 @@ function injectTimedShell(html, expiresAtMs) {
   let out = String(html || "");
   if (/<head[^>]*>/i.test(out)) out = out.replace(/<head([^>]*)>/i, '<head$1>' + base);
   else out = base + out;
-  if (/</body>/i.test(out)) out = out.replace(/</body>/i, guard + '</body>');
+  if (out.toLowerCase().includes("</body>")) out = out.replace("</body>", guard + "</body>");
   else out += guard;
   return out;
 }
