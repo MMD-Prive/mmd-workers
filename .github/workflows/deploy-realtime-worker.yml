@@ -154,26 +154,53 @@ jobs:
           console.log(`verified ${desired.length}/${desired.length} realtime routes -> ${worker}`);
           NODE
 
-      - name: Smoke health
+      - name: Smoke health after route propagation
         shell: bash
         run: |
           set -euo pipefail
           body="$(mktemp)"
           code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
             "$REALTIME_WORKERS_DEV_URL/health")"
-          cat "$body"
           test "$code" = "200"
           grep -q '"worker":"realtime-worker"' "$body"
 
+          custom_ok=0
           custom_body="$(mktemp)"
-          custom_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$custom_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com' "$REALTIME_CUSTOM_HEALTH")"
-          cat "$custom_body"
-          test "$custom_code" = "200"
-          grep -q '"worker":"realtime-worker"' "$custom_body"
-          grep -q '"route_owner":"realtime-worker"' "$custom_body"
+          custom_headers="$(mktemp)"
+          for attempt in $(seq 1 30); do
+            : > "$custom_body"
+            : > "$custom_headers"
+            custom_code="$(curl -sS -D "$custom_headers" -o "$custom_body" -w "%{http_code}" \
+              -H 'Origin: https://www.mmdbkk.com' "$REALTIME_CUSTOM_HEALTH" || true)"
+            if [ "$custom_code" = "200" ] \
+              && grep -qi '^x-mmd-route-owner: realtime-worker' "$custom_headers" \
+              && grep -q '"worker":"realtime-worker"' "$custom_body" \
+              && grep -q '"route_owner":"realtime-worker"' "$custom_body"; then
+              custom_ok=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$custom_ok" != "1" ]; then
+            echo "Realtime custom route did not converge after route sync" >&2
+            echo "last_http=$custom_code" >&2
+            sed -n '1,40p' "$custom_headers" >&2 || true
+            head -c 500 "$custom_body" >&2 || true
+            exit 1
+          fi
 
-          unauth_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o /dev/null -w "%{http_code}"             -X POST -H 'Origin: https://www.mmdbkk.com' -H 'Content-Type: application/json'             --data '{"job_id":"phase1-route-smoke"}' https://www.mmdbkk.com/v1/rt/room/open || true)"
-          test "$unauth_code" = "401"
+          unauth_ok=0
+          for attempt in $(seq 1 10); do
+            unauth_code="$(curl -sS -o /dev/null -w "%{http_code}" \
+              -X POST \
+              -H 'Origin: https://www.mmdbkk.com' \
+              -H 'Content-Type: application/json' \
+              --data '{"job_id":"phase1-route-smoke"}' \
+              https://www.mmdbkk.com/v1/rt/room/open || true)"
+            if [ "$unauth_code" = "401" ]; then unauth_ok=1; break; fi
+            sleep 2
+          done
+          test "$unauth_ok" = "1"
 
       - name: Deployment receipt
         shell: bash
