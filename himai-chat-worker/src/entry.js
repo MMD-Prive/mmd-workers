@@ -13,6 +13,7 @@ import {
   commitViaMmdShopCoordinator,
   expireViaMmdShopCoordinator,
   releaseViaMmdShopCoordinator,
+  reserveViaMmdShopCoordinator,
   stockHealthViaMmdShopCoordinator,
   MmdShopStockCoordinator,
 } from "./mmd-shop-stock-coordinator.js";
@@ -27,6 +28,9 @@ export default {
 
     if (path === "/mmd-shop/internal/reservation/release" && request.method.toUpperCase() === "POST") {
       return handleInternalReservationMutation(request, env, "release");
+    }
+    if (path === "/mmd-shop/internal/reservation/reserve" && request.method.toUpperCase() === "POST") {
+      return handleInternalReservationMutation(request, env, "reserve");
     }
     if (path === "/mmd-shop/internal/reservation/commit" && request.method.toUpperCase() === "POST") {
       return handleInternalReservationMutation(request, env, "commit");
@@ -120,6 +124,15 @@ async function handleInternalReservationMutation(request, env, action) {
   }
 
   const body = await request.json().catch(() => null);
+  if (action === "reserve") {
+    try {
+      const result = await reserveViaMmdShopCoordinator(env, body?.input || body || {});
+      return json({ ok: true, reservation: result }, 200);
+    } catch (error) {
+      return json({ ok: false, error: String(error?.message || error || "reservation_failed") }, Number(error?.status || 500));
+    }
+  }
+
   const reservation = body?.reservation || readMmdShopReservation(body?.notes || "");
   if (!reservation) return json({ ok: false, error: "reservation_required" }, 400);
 

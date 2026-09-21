@@ -1,6 +1,7 @@
 import {
   createMmdShopFulfillment,
   fulfillmentStateFromOrder,
+  normalizeMmdShopShipping,
   publicMmdShopFulfillment,
   readMmdShopFulfillment,
   transitionMmdShopFulfillment,
@@ -17,11 +18,13 @@ const PAGE_PATHS = new Set(["/internal/admin/shop/orders", "/internal/admin/shop
 const API_LIST_PATH = "/v1/admin/shop/orders";
 const API_FULFILL_PATH = "/v1/admin/shop/orders/fulfill";
 const API_FULFILLMENT_PATH = "/v1/admin/shop/orders/fulfillment";
+const API_CREATE_PATH = "/v1/admin/shop/orders/create";
 const SOURCE_URL = "https://mmdprive.webflow.io/internal-admin-shop-orders";
 
 const TABLES = Object.freeze({
   customers: "tbllkfCySeL9fSfZw",
   orders: "tblr8lbi2wMuRM1N4",
+  products: "tblzsmNLfP6J0kQ90",
   orderItems: "tbl37Iprxz4OLL65P",
 });
 
@@ -32,6 +35,22 @@ const CUSTOMER_FIELDS = Object.freeze({
   email: "flddYltR97rxzIQa4",
   memberId: "fldCjBe9gqIq6y7rR",
   lineUserId: "fldhL0PHPwrkT8X3p",
+  brandOrigin: "fldtB8vxXuy0eYnC2",
+  acquisitionChannel: "fldKj1Voj6R4juSeP",
+  sourcePath: "fld8wsDN9c6swepc7",
+  signupStatus: "fldVpDEo1QoECO9ic",
+  customerOrigin: "fldSHQS36g44ngf0b",
+  note: "fldiG60HuRFApYgVh",
+  createdAt: "fldobLojYBjeRJHYf",
+});
+
+const PRODUCT_FIELDS = Object.freeze({
+  name: "fld0oKjoZrb1IqntV",
+  sku: "fldhJE7UEE4VYHjR6",
+  brandAvailability: "fldve5nrQmymoZgiX",
+  status: "fldxYkkvmK9izvACA",
+  supplier: "fldJCZ7YzsUjIItKf",
+  mmdPrice: "fldD6Q5yido7pTlU0",
 });
 
 const ORDER_FIELDS = Object.freeze({
@@ -48,10 +67,13 @@ const ORDER_FIELDS = Object.freeze({
 const ITEM_FIELDS = Object.freeze({
   name: "fldLR9aIu2m6DTr2e",
   order: "fldSVk92UcASTOuOK",
+  product: "fld40mHWKpBthoO9T",
+  supplier: "fld5AUxwx9bSOd0gY",
   quantity: "fldJkKWMZiVQ3g1a6",
   price: "fldm746RgAwIbXYL7",
   lineTotal: "fldr7KTPoSbnblo5I",
   status: "flddJVVBAjVoyqcpY",
+  pricingSource: "fldWmcjTLSzAAkDe3",
 });
 
 const PAID_FULFILLMENT_STATES = new Set([
@@ -77,6 +99,7 @@ export function isAdminShopOrdersApiRequest(path, method) {
   const verb = String(method || "GET").toUpperCase();
   return (
     (p === API_LIST_PATH && verb === "GET") ||
+    (p === API_CREATE_PATH && verb === "POST") ||
     (p === API_FULFILL_PATH && verb === "POST") ||
     (p === API_FULFILLMENT_PATH && verb === "POST")
   );
@@ -126,6 +149,17 @@ export async function handleAdminShopOrdersApi(request, env, actor) {
       });
     }
 
+    if (path === API_CREATE_PATH && request.method.toUpperCase() === "POST") {
+      const body = await boundedJson(request);
+      const result = await createManualOrder(env, actor, body);
+      return json({
+        ok: true,
+        authority: "admin-worker",
+        schema: "mmd_shop_manual_order_v1",
+        ...result,
+      }, 201);
+    }
+
     if (path === API_FULFILL_PATH && request.method.toUpperCase() === "POST") {
       const body = await boundedJson(request);
       const result = await updateFulfillment(env, actor, {
@@ -159,6 +193,263 @@ export async function handleAdminShopOrdersApi(request, env, actor) {
   }
 
   return json({ ok: false, error: "not_found" }, 404);
+}
+
+async function createManualOrder(env, actor, body) {
+  const customerInput = normalizeManualCustomer(body?.customer || body);
+  const shipping = normalizeMmdShopShipping(body?.shipping || {}, customerInput);
+  const requestedItems = Array.isArray(body?.items) ? body.items : [];
+  if (!requestedItems.length) throw httpError(400, "order_items_required");
+
+  const productRecords = await listRecords(env, TABLES.products, Object.values(PRODUCT_FIELDS));
+  const productById = new Map(productRecords.map((record) => [record.id, record]));
+  const items = requestedItems.map((line) => {
+    const productId = clean(line?.product_id, 80);
+    const product = productById.get(productId);
+    if (!product?.id) throw httpError(404, "product_not_found");
+    const fields = product.fields || {};
+    const status = code(fields[PRODUCT_FIELDS.status]);
+    const brands = selectList(fields[PRODUCT_FIELDS.brandAvailability]).map((value) => value.toLowerCase());
+    if (status !== "active") throw httpError(409, "product_not_active");
+    if (brands.length && !brands.some((value) => value.includes("mmd") || value.includes("both"))) {
+      throw httpError(409, "product_not_available_in_mmd_shop");
+    }
+    const quantity = integer(line?.quantity);
+    const unitPrice = numberOrNull(fields[PRODUCT_FIELDS.mmdPrice]);
+    if (!(quantity > 0)) throw httpError(400, "invalid_item_quantity");
+    if (!(unitPrice > 0)) throw httpError(409, "product_price_unavailable");
+    const productName = clean(fields[PRODUCT_FIELDS.name], 220) || "MMD Shop Item";
+    const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
+    return {
+      product_id: product.id,
+      product_name: productName,
+      sku,
+      supplier_ids: linkedIds(fields[PRODUCT_FIELDS.supplier]),
+      quantity,
+      unit_price_thb: roundMoney(unitPrice),
+      line_total_thb: roundMoney(unitPrice * quantity),
+      stock_status: "tracked",
+    };
+  });
+
+  const originalTotal = roundMoney(items.reduce((sum, item) => sum + item.line_total_thb, 0));
+  const discount = roundMoney(numberOrNull(body?.discount_amount_thb) || 0);
+  if (discount < 0 || discount > originalTotal) throw httpError(400, "invalid_discount_amount");
+  const total = roundMoney(originalTotal - discount);
+  if (!(total > 0)) throw httpError(400, "order_total_must_be_positive");
+  const discountReason = clean(body?.discount_reason, 300);
+  const customer = await findOrCreateManualCustomer(env, customerInput);
+  const orderId = makeManualOrderId();
+  const noteLines = [
+    "schema=mmd_shop_order_v1",
+    "source=admin_manual_order",
+    "created_by=" + (clean(actor?.email || actor?.name || actor?.id, 180) || "admin"),
+    "original_total_thb=" + originalTotal,
+    "discount_total_thb=" + discount,
+    "final_total_thb=" + total,
+    "discount_reason=" + (discountReason || "close_customer"),
+    "payment_verification_required=true",
+  ];
+  const fulfillment = createMmdShopFulfillment({ shipping });
+  const baseNotes = writeMmdShopFulfillment(noteLines.join("; "), fulfillment);
+  const order = await createRecord(env, TABLES.orders, {
+    [ORDER_FIELDS.orderId]: orderId,
+    [ORDER_FIELDS.customer]: [customer.id],
+    [ORDER_FIELDS.orderDate]: new Date().toISOString(),
+    [ORDER_FIELDS.orderStatus]: "draft",
+    [ORDER_FIELDS.paymentStatus]: "pending",
+    [ORDER_FIELDS.total]: total,
+    [ORDER_FIELDS.notes]: baseNotes,
+    [ORDER_FIELDS.source]: "web",
+  });
+
+  let reservation = null;
+  try {
+    reservation = await reserveReservationThroughShopWorker(env, {
+      order_id: orderId,
+      order_record_id: order.id,
+      order_notes: baseNotes,
+      items,
+    });
+    const reservedNotes = writeMmdShopReservation(baseNotes, reservation);
+    await patchRecord(env, TABLES.orders, order.id, { [ORDER_FIELDS.notes]: reservedNotes });
+    await createManualOrderItems(env, order.id, items);
+    const payment = await createManualPaymentIntent(env, {
+      orderId,
+      total,
+      email: customerInput.email,
+    });
+    if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
+      throw httpError(502, payment?.error || "payment_initialization_failed");
+    }
+    const paymentNotes = [
+      reservedNotes,
+      "payment_ref=" + clean(payment.payment_ref, 220),
+      "payment_stage=shop",
+      "money_truth=payments-worker",
+      "reservation_expires_at=" + clean(reservation?.expires_at, 80),
+    ].filter(Boolean).join("\n");
+    await patchRecord(env, TABLES.orders, order.id, { [ORDER_FIELDS.notes]: paymentNotes });
+    return {
+      order_id: orderId,
+      order_record_id: order.id,
+      customer_record_id: customer.id,
+      original_total_thb: originalTotal,
+      discount_total_thb: discount,
+      total_thb: total,
+      currency: "THB",
+      discount_reason: discountReason || "close_customer",
+      payment_ref: clean(payment.payment_ref, 220) || null,
+      payment_url: payment.customer_payment_url,
+      payment_status: "pending",
+      order_status: "draft",
+      reservation: publicMmdShopReservation(reservation),
+    };
+  } catch (error) {
+    if (reservation) {
+      await releaseReservationThroughShopWorker(env, reservation, "manual_order_initialization_failed").catch(() => null);
+    }
+    await patchRecord(env, TABLES.orders, order.id, {
+      [ORDER_FIELDS.orderStatus]: "cancelled",
+      [ORDER_FIELDS.notes]: appendAudit(baseNotes, actor, "manual_order_failed=" + clean(error?.message || "unknown", 220)),
+    }).catch(() => null);
+    throw error;
+  }
+}
+
+async function findOrCreateManualCustomer(env, customer) {
+  const records = await listRecords(env, TABLES.customers, Object.values(CUSTOMER_FIELDS));
+  const match = records.find((record) => {
+    const fields = record.fields || {};
+    const phone = normalizePhone(fields[CUSTOMER_FIELDS.phone]);
+    const email = clean(fields[CUSTOMER_FIELDS.email], 320).toLowerCase();
+    return (phone && phone === customer.phone) || (customer.email && email === customer.email);
+  });
+  if (match?.id) return match;
+  return createRecord(env, TABLES.customers, {
+    [CUSTOMER_FIELDS.name]: customer.name,
+    [CUSTOMER_FIELDS.displayName]: customer.name,
+    [CUSTOMER_FIELDS.phone]: customer.phone,
+    [CUSTOMER_FIELDS.email]: customer.email || undefined,
+    [CUSTOMER_FIELDS.brandOrigin]: "MMD Shop",
+    [CUSTOMER_FIELDS.acquisitionChannel]: "web",
+    [CUSTOMER_FIELDS.sourcePath]: "/internal/admin/shop/orders",
+    [CUSTOMER_FIELDS.signupStatus]: "active",
+    [CUSTOMER_FIELDS.customerOrigin]: "web",
+    [CUSTOMER_FIELDS.note]: "Created by MMD Shop manual admin order.",
+    [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
+  });
+}
+
+async function reserveReservationThroughShopWorker(env, input) {
+  if (!env.MMD_SHOP_WORKER?.fetch) throw httpError(503, "mmd_shop_worker_binding_missing");
+  const token = clean(env.INTERNAL_TOKEN, 5000);
+  if (!token) throw httpError(503, "internal_token_not_configured");
+  const response = await env.MMD_SHOP_WORKER.fetch(
+    "https://himai-chat-worker.internal/mmd-shop/internal/reservation/reserve",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-token": token,
+      },
+      body: JSON.stringify({ input }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok !== true || !data.reservation) {
+    throw httpError(response.status || 502, data.error || "reservation_failed");
+  }
+  return data.reservation;
+}
+
+async function createManualPaymentIntent(env, input) {
+  if (!env.PAYMENTS_WORKER?.fetch) throw httpError(503, "payments_worker_binding_missing");
+  const response = await env.PAYMENTS_WORKER.fetch(
+    "https://payments.internal/v1/pay/shop-intent",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        order_id: input.orderId,
+        session_id: input.orderId,
+        payment_stage: "shop",
+        amount: input.total,
+        payment_method: "promptpay",
+        member_email: input.email || undefined,
+        notes: "MMD Shop manual Order " + input.orderId + "; payment_stage=shop",
+      }),
+    },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false, error: data?.error || "payments_http_" + response.status };
+  return data;
+}
+
+async function createManualOrderItems(env, orderRecordId, items) {
+  const records = items.map((item) => ({ fields: {
+    [ITEM_FIELDS.name]: item.sku ? item.product_name + " · " + item.sku : item.product_name,
+    [ITEM_FIELDS.order]: [orderRecordId],
+    [ITEM_FIELDS.product]: [item.product_id],
+    [ITEM_FIELDS.supplier]: item.supplier_ids,
+    [ITEM_FIELDS.quantity]: item.quantity,
+    [ITEM_FIELDS.price]: item.unit_price_thb,
+    [ITEM_FIELDS.lineTotal]: item.line_total_thb,
+    [ITEM_FIELDS.status]: "draft",
+    [ITEM_FIELDS.pricingSource]: "catalog_default",
+  }}));
+  const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 120);
+  if (!token || !baseId) throw httpError(503, "airtable_not_configured");
+  const response = await fetch(
+    AIRTABLE_API + "/" + encodeURIComponent(baseId) + "/" + encodeURIComponent(TABLES.orderItems),
+    {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + token,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ records, typecast: true }),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw httpError(response.status >= 500 ? 502 : response.status, "airtable_order_items_" + response.status);
+  return payload.records || [];
+}
+
+function normalizeManualCustomer(input) {
+  const name = clean(input?.name || input?.customer_name, 180);
+  const phone = normalizePhone(input?.phone || input?.customer_phone);
+  const email = clean(input?.email || input?.customer_email, 320).toLowerCase();
+  if (!name) throw httpError(400, "customer_name_required");
+  if (phone.length < 8) throw httpError(400, "customer_phone_required");
+  return { name, phone, email };
+}
+
+function makeManualOrderId() {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const suffix = (globalThis.crypto?.randomUUID?.() || Math.random().toString(16).slice(2)).replace(/-/g, "").slice(0, 8).toUpperCase();
+  return "MMD-" + stamp + "-" + suffix;
+}
+
+function linkedIds(value) {
+  return Array.isArray(value) ? value.map((item) => clean(typeof item === "string" ? item : item?.id, 80)).filter(Boolean) : [];
+}
+
+function selectList(value) {
+  return Array.isArray(value)
+    ? value.map((item) => clean(typeof item === "string" ? item : item?.name, 120)).filter(Boolean)
+    : [];
+}
+
+function integer(value) {
+  const number = Number(value);
+  return Number.isInteger(number) ? number : 0;
+}
+
+function roundMoney(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 100) / 100 : 0;
 }
 
 async function updateFulfillment(env, actor, body) {
@@ -507,6 +798,9 @@ async function loadAdminOrders(env) {
         order_status: orderStatus,
         payment_status: paymentStatus,
         total_thb: numberOrNull(fields[ORDER_FIELDS.total]),
+        original_total_thb: numberOrNull(noteValue(fields[ORDER_FIELDS.notes], "original_total_thb")),
+        discount_total_thb: numberOrNull(noteValue(fields[ORDER_FIELDS.notes], "discount_total_thb")) || 0,
+        discount_reason: noteValue(fields[ORDER_FIELDS.notes], "discount_reason"),
         source: code(fields[ORDER_FIELDS.source]) || "web",
         customer: {
           name: clean(customer[CUSTOMER_FIELDS.displayName] || customer[CUSTOMER_FIELDS.name], 180) || "MMD Shop Customer",
@@ -539,6 +833,13 @@ function normalizedFulfillment(orderFields) {
 
 function adminFulfillment(value) {
   return publicMmdShopFulfillment(value, { includeAddress: true, maskPhone: false });
+}
+
+function noteValue(notes, key) {
+  const source = String(notes || "");
+  const escapedKey = String(key).replace(/[.*+?^$()|[\]\\]/g, "\\function safeItem(record) {");
+  const match = source.match(new RegExp("(?:^|[;\\n])" + escapedKey + "=([^;\\n]*)"));
+  return match ? clean(match[1], 500) : "";
 }
 
 function safeItem(record) {
@@ -619,6 +920,23 @@ async function patchRecord(env, tableId, recordId, fields) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status >= 500 ? 502 : response.status, `airtable_patch_${response.status}`);
+  return payload;
+}
+
+async function createRecord(env, tableId, fields) {
+  const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 120);
+  if (!token || !baseId) throw httpError(503, "airtable_not_configured");
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(tableId)}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ fields, typecast: true }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw httpError(response.status >= 500 ? 502 : response.status, `airtable_create_${response.status}`);
   return payload;
 }
 
@@ -703,6 +1021,10 @@ function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function normalizePhone(value) {
+  return clean(value, 60).replace(/[^0-9+]/g, "").replace(/^00/, "+");
 }
 
 function httpError(status, message) {
