@@ -2,13 +2,14 @@
 // MMD Booking / SIGIL public booking resolver
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 // Webflow calls this worker. Browser never touches Airtable, R2, Gmail, or Drive directly.
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LOCK = "sigil-booking-worker-v24-airtable-resolver-telegram-notify";
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const path = normalizePath(url.pathname);
     const method = req.method.toUpperCase();
@@ -28,7 +29,7 @@ export default {
         return withCors(json(await handleModelSearch(req, env, url)), cors);
       }
       if (method === "POST" && path === "/sigil/api/booking/intake") {
-        return withCors(json(await handleBookingIntake(req, env)), cors);
+        return withCors(json(await handleBookingIntake(req, env, ctx)), cors);
       }
       return withCors(json({ ok: false, error: "not_found", path }, 404), cors);
     } catch (error) {
@@ -124,7 +125,7 @@ async function handleModelSearch(req, env, url) {
   };
 }
 
-async function handleBookingIntake(req, env) {
+async function handleBookingIntake(req, env, ctx) {
   const body = await safeJson(req);
   requireAirtable(env);
 
@@ -176,6 +177,23 @@ async function handleBookingIntake(req, env) {
   const telegram = bool(body.suppress_telegram_notify)
     ? { ok: false, skipped: true, reason: "silent_booking_intent_collection" }
     : await notifyBookingDraft(env, { body, fields, rec, bookingRef, sessionId, nextUrl });
+
+  queueAuthorityEvent(ctx, env, {
+    event: "booking_received",
+    authority: "sigil-booking-worker",
+    scope: "booking",
+    distinctValue: bookingRef,
+    insertValue: bookingRef,
+    properties: {
+      surface: "booking",
+      world: fields.lane === "private" ? "private" : "public",
+      lane: fields.lane,
+      job_class: fields.job_class,
+      access_scope: fields.access_scope,
+      member_status: fields.member_status,
+      status: "draft",
+    },
+  });
 
   return {
     ok: true,
