@@ -1,0 +1,47 @@
+name: Shop Phase 1 safety CI
+
+on:
+  pull_request:
+    paths:
+      - "himai-chat-worker/**"
+      - "payments-worker/**"
+      - "shared/shop-*.mjs"
+      - "webflow/himai-shop/**"
+      - "webflow/mmd-shop/**"
+      - "telegram-worker/**"
+      - ".github/workflows/shop-phase1-safety-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Archive tracked source for reproducible verification
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/shop-phase1-source-sha.txt"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/shop-phase1-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shop-phase1-source
+          path: |
+            ${{ runner.temp }}/shop-phase1-source.tar.gz
+            ${{ runner.temp }}/shop-phase1-source-sha.txt
+          retention-days: 3
+      - name: Existing commerce regression baseline
+        run: node --experimental-default-type=module --test himai-chat-worker/test/*.test.mjs
+      - name: Phase 1 isolated safety suite
+        run: |
+          if test -f scripts/test-shop-phase1.mjs; then
+            node scripts/test-shop-phase1.mjs
+          else
+            echo "Phase 1 source preparation: dedicated suite not added yet."
+          fi
