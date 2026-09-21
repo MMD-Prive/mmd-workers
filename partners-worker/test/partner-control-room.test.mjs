@@ -12,12 +12,25 @@ test("Partner Control Room exposes the complete authenticated mutation surface",
   for (const route of [
     "/v1/partner/dashboard",
     "/v1/partner/models/change",
+    "/v1/partner/working-system",
     "/v1/partner/models/upload",
     "/v1/partner/jobs/action",
     "/v1/partner/sales/proposal",
     "/v1/partner/private-vault",
     "/v1/partner/telegram/connect"
   ]) assert.match(indexSource, new RegExp(route.replaceAll("/", "\\/")));
+});
+
+test("working systems are per-model, versioned and remain server-authoritative", () => {
+  for (const marker of [
+    '"bridge", "co_partner", "profit_share"',
+    "Bridge commission must be between 5% and 10%",
+    "Co-Partner source rate must be a valid THB amount",
+    "Partner share must be greater than 0% and less than 100%",
+    'canonical_agreement_mutated: false',
+    'ledger_mutated: false',
+    'basis_rule: "payment_truth_net_basis"'
+  ]) assert.match(indexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
 test("shared model mutations require explicit consent and remain review-gated", () => {
