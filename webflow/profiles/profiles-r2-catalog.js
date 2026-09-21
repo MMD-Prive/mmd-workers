@@ -30,7 +30,7 @@
     if (!item || item.visibility !== "public" || item.source !== "r2_public_model" || !item.display_name) return false;
     try {
       var url = new URL(item.image_url);
-      return url.protocol === "https:" && url.hostname === "models.mmdbkk.com" && url.pathname.indexOf("/Public%20Model/") === 0;
+      return url.protocol === "https:" && url.hostname === "models.mmdbkk.com" && url.pathname.indexOf("/MMD%20Public%20Models/") === 0;
     } catch (_) { return false; }
   }
   function card(item, index) {
@@ -57,7 +57,7 @@
     var title = document.createElement("div");
     title.className = "mp8-card__title";
     var titleText = document.createElement("div");
-    titleText.append(text("p", "R2 · PUBLIC MODEL"), text("h3", item.display_name));
+    titleText.append(text("p", "PUBLIC MODEL"), text("h3", item.display_name));
     title.append(titleText, text("em", words.badge));
     body.append(title, text("p", words.line, "mp8-card__line"));
 
