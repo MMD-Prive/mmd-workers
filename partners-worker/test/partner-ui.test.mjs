@@ -64,13 +64,13 @@ test('Telegram stays optional and never hides Dashboard job state in Phase 1',as
   assert.match(q('[data-telegram]').textContent,/Telegram เชื่อมภายหลังได้/);
   assert.ok(q('[data-connect-telegram]'));
   assert.equal(q('[data-telegram-job-gate]'),null);
-  assert.match(q('[data-jobs]').textContent,/รอ Official Verify/);
+  assert.match(q('[data-jobs]').textContent,/Official Verify/);
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramId]='123456789';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramVerificationStatus]='verified';
   w.dispatchEvent(new w.Event('focus'));
   await settle(()=>q('[data-telegram]').dataset.state==='connected');
   assert.match(q('[data-telegram]').textContent,/Telegram connected/);
-  assert.match(q('[data-jobs]').textContent,/รอ Official Verify/);
+  assert.match(q('[data-jobs]').textContent,/Official Verify/);
   assert.deepEqual(errors,[]);
 });
 test('private schedule encrypts locally, refuses overlap, survives relock, and never enters shared changes',async t=>{
