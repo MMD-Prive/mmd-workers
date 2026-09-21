@@ -1,4 +1,5 @@
 import runtime from "./runtime-index-with-application-v4.js";
+import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { maybeHandleMyMmsDispatch } from "./my-mms-dispatch-runtime.mjs";
 import { maybeHandleMmsServiceZones } from "./service-zones-runtime.mjs";
 import { canonicalZoneErrorResponse, maybeHandleCanonicalZoneBooking } from "./canonical-zone-booking-runtime.mjs";
@@ -126,6 +127,7 @@ export default {
     if (request.method === "GET" && (path === "/health" || path === "/ping") && response.ok) {
       try {
         const payload = await response.clone().json();
+        payload.analytics = authorityRuntimeHealth(env, "mms-worker", ctx);
         payload.bindings = {
           ...(payload.bindings || {}),
           dispatch_coordinator: Boolean(env.MMS_DISPATCH_COORDINATOR),
