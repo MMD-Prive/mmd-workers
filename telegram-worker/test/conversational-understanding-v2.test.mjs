@@ -61,6 +61,26 @@ test("V2 understands bounded Thai colloquialisms, spelling variants and typos", 
   }
 });
 
+test("V2 fuzzy English correction stays on whole domain tokens", () => {
+  const typoCases = [
+    ["bookng ของผม", "booking"],
+    ["paymant ถึงหรือยัง", "payment"],
+    ["membeship หมดเมื่อไหร่", "membership"],
+  ];
+  for (const [input, command] of typoCases) {
+    const result = routeHypeConversationalUnderstandingV2(input);
+    assert.equal(result.routed, true, input);
+    assert.equal(result.command, command, input);
+  }
+
+  for (const input of ["looking good", "I am looking for help"]) {
+    const result = routeHypeConversationalUnderstandingV2(input);
+    assert.equal(result.routed, false, input);
+    assert.equal(result.command, "", input);
+    assert.equal(result.normalizations.includes("booking_typo_en"), false, input);
+  }
+});
+
 test("V2 honors an explicit correction but keeps protected multi-domain ambiguity fail-closed", () => {
   const corrected = routeHypeConversationalUnderstandingV2("ไม่ใช่เรื่องสมาชิก หมายถึงสลิปที่ส่งไป");
   assert.equal(corrected.routed, true);
