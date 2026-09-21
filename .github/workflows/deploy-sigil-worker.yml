@@ -254,7 +254,35 @@ jobs:
           routes = await list();
           const missing = desired.filter((pattern) => !routes.some((route) => route.pattern === pattern && route.script === worker));
           if (missing.length) throw new Error(`missing Private Model routes: ${missing.join(", ")}`);
-          console.log(`verified ${desired.length}/${desired.length} Private Model routes -> ${worker}`);
+
+          // Retire only the exact legacy ingress records that can outrank the
+          // new /sigil/apply* canonical route. The broad legacy catch-all is
+          // intentionally left for Phase 1-B compatibility migration.
+          const legacyExactPatterns = new Set([
+            "mmdbkk.com/sigil/apply",
+            "mmdbkk.com/sigil/apply/",
+            "www.mmdbkk.com/sigil/apply",
+            "www.mmdbkk.com/sigil/apply/",
+          ]);
+          const legacyExact = routes.filter((route) =>
+            route.script === "mmd-redirect-worker" && legacyExactPatterns.has(route.pattern)
+          );
+          for (const route of legacyExact) {
+            const response = await fetch(`${base}/${route.id}`, { method: "DELETE", headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`failed to retire legacy route ${route.pattern}: ${JSON.stringify(payload)}`);
+            }
+          }
+
+          routes = await list();
+          const residualLegacy = routes.filter((route) =>
+            route.script === "mmd-redirect-worker" && legacyExactPatterns.has(route.pattern)
+          );
+          if (residualLegacy.length) {
+            throw new Error(`legacy SIGIL apply routes still attached: ${residualLegacy.map(x => x.pattern).join(", ")}`);
+          }
+          console.log(`verified ${desired.length}/${desired.length} Private Model routes -> ${worker}; retired ${legacyExact.length} legacy exact route(s)`);
           NODE
 
       - name: Verify production readiness
