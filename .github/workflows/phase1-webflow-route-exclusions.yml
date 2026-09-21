@@ -144,5 +144,5 @@ jobs:
           - /member/login*: Webflow origin, Worker exclusion locked
           - /member/dashboard*: Webflow origin, Worker exclusion locked
           - legacy exact mmd-redirect routes on those surfaces: retired
-          - legacy global catch-all: intentionally retained for Phase 1-B
+          - legacy global catch-all: retired; no-script exclusions remain guardrails
           EOF
