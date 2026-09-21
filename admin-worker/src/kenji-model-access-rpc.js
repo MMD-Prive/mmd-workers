@@ -1,4 +1,5 @@
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
 export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
@@ -6,6 +7,7 @@ export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
+const MODEL_OFFER_RULES_TABLE_FALLBACK = "MMD — Model Offer Rules";
 const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 const PRIVATE_CAPABILITIES = new Set(["private_standard", "private_premium", "vip", "svip", "black_card"]);
 const PROTECTED_ENVELOPES = new Set(["vip", "svip", "black_card"]);
@@ -153,6 +155,30 @@ async function queryAcrossFields(env, tableName, fields, value, fetchImpl, limit
   return uniqueRecords(records);
 }
 
+async function airtableListRecords(env, tableName, fetchImpl = fetch, maxRecords = 500) {
+  const apiKey = clean(env.AIRTABLE_API_KEY, 1000);
+  const baseId = clean(env.AIRTABLE_BASE_ID, 200);
+  if (!apiKey || !baseId || !tableName) throw new KenjiModelAccessSourceError();
+  const records = [];
+  let offset = "";
+  do {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(tableName)}`);
+    url.searchParams.set("pageSize", "100");
+    if (offset) url.searchParams.set("offset", offset);
+    let response;
+    try {
+      response = await fetchImpl(url.toString(), { method: "GET", headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
+    } catch (_) {
+      throw new KenjiModelAccessSourceError();
+    }
+    if (!response.ok) throw new KenjiModelAccessSourceError();
+    const payload = await response.json().catch(() => ({}));
+    records.push(...(Array.isArray(payload?.records) ? payload.records : []));
+    offset = clean(payload?.offset, 200);
+  } while (offset && records.length < maxRecords);
+  return records.slice(0, maxRecords);
+}
+
 function currentlyValidCapabilities(snapshot = {}) {
   return new Set(Array.isArray(snapshot?.capability_state?.active) ? snapshot.capability_state.active.map(token) : []);
 }
@@ -261,10 +287,54 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (cls.visibility === "public" && !access.allowPublic) return [];
     if (cls.visibility === "private" && !access.folders.includes(cls.folder)) return [];
     const safeModel = projectKenjiSafeModel(record);
-    return safeModel ? [{ cls, safeModel }] : [];
+    return safeModel ? [{ cls, safeModel, record }] : [];
   });
   if (authorized.length > 1) return { status: "clarification" };
-  if (authorized.length === 1) return { status: "match", model: authorized[0].safeModel };
+  if (authorized.length === 1) {
+    const authorizedRecord = authorized[0];
+    const configuredOfferRulesTable = clean(env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES, 200);
+    if (!configuredOfferRulesTable) {
+      return { status: "match", model: authorizedRecord.safeModel };
+    }
+    const offerRulesTable = configuredOfferRulesTable || MODEL_OFFER_RULES_TABLE_FALLBACK;
+    const rules = await airtableListRecords(env, offerRulesTable, fetchImpl, 500);
+    const modelId = authorizedRecord.record?.id || "";
+    const modelKey = clean(authorizedRecord.safeModel?.model_code, 160).toLowerCase();
+    const relevantRules = rules.filter((record) => {
+      const fields = record?.fields || {};
+      const linked = Array.isArray(fields.Model) ? fields.Model.map((value) => clean(value?.id || value, 100)) : [];
+      const key = clean(fields.model_key, 160).toLowerCase();
+      return Boolean((modelId && linked.includes(modelId)) || (modelKey && key && key === modelKey));
+    });
+    if (!relevantRules.length) {
+      return { status: "match", model: authorizedRecord.safeModel };
+    }
+    const salesOffer = resolveModelSalesOffer({
+      model_id: modelId,
+      model_key: modelKey,
+      requested_at: input.requested_at || input.requestedAt || new Date().toISOString(),
+      work_lane: input.work_lane || input.workLane || "",
+      entitlement_snapshot: access.snapshot,
+      rules: relevantRules,
+    });
+    return {
+      status: "match",
+      model: {
+        ...authorizedRecord.safeModel,
+        sales: {
+          sellable: salesOffer.sellable === true,
+          visibility: salesOffer.visibility || "off",
+          customer_rate_thb: Number.isFinite(salesOffer.customer_rate_thb) ? salesOffer.customer_rate_thb : null,
+          price_visible: salesOffer.price_visible === true,
+          requires_per_approval: salesOffer.requires_per_approval === true,
+          reason_code: clean(salesOffer.reason_code, 120),
+          term_summary: clean(salesOffer.term_summary, 240),
+          matched_rule_key: clean(salesOffer.matched_rule_key, 180) || null,
+          rule_version: salesOffer.rule_version ?? null,
+        },
+      },
+    };
+  }
 
   const requestedPrivate = model.records.some((record) => {
     const cls = modelAccessClass(record);

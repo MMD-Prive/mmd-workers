@@ -7,6 +7,7 @@ import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs"
 export const KENJI_MODEL_ADMIN_BASE_PATH = "/v1/admin/kenji/models";
 export const KENJI_MODEL_ADMIN_DRAFT_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/draft`;
 export const KENJI_MODEL_SALES_RESOLVE_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/resolve`;
+export const KENJI_MODEL_SALES_RULES_PATH = `${KENJI_MODEL_ADMIN_BASE_PATH}/sales/rules`;
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MAX_LIST_SCAN = 500;
@@ -563,6 +564,200 @@ async function createDraft(request, env, options, fetchImpl) {
   }, 201);
 }
 
+
+const OWNER_SALES_AUDIENCES = new Set(["Public Member", "Elite", "Red Card", "Standard", "Premium", "VIP / Black Card", "SVIP", "Per Review", "Exact Client"]);
+const OWNER_SALES_SCHEDULES = new Set(["Always", "Date range", "Date + time range", "Weekly recurring"]);
+const OWNER_SALES_DAYS = new Set(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+
+function selectText(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return clean(value.name || value.value, 120);
+  return clean(value, 120);
+}
+
+function multiText(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return raw.map((item) => selectText(item)).filter(Boolean);
+}
+
+function projectOwnerSalesRule(record = {}) {
+  const fields = record.fields || {};
+  return {
+    rule_id: clean(record.id, 80),
+    offer_rule_key: clean(fields.offer_rule_key, 180),
+    model_ids: Array.isArray(fields.Model) ? fields.Model.map((value) => clean(value?.id || value, 80)).filter(Boolean) : [],
+    model_key: clean(fields.model_key, 160),
+    client_identity_key: clean(fields.client_identity_key, 180),
+    offer_type: selectText(fields.offer_type),
+    audience_scope: multiText(fields.audience_scope),
+    partner_source_rate_thb: Number.isFinite(Number(fields.partner_source_rate_thb)) ? Number(fields.partner_source_rate_thb) : null,
+    customer_sell_rate_thb: Number.isFinite(Number(fields.customer_sell_rate_thb)) ? Number(fields.customer_sell_rate_thb) : null,
+    sales_visibility: selectText(fields.sales_visibility) || "off",
+    price_visibility: selectText(fields.price_visibility) || "Per approval only",
+    schedule_type: selectText(fields.schedule_type) || "Always",
+    effective_from_at: clean(fields.effective_from_at || fields.effective_from, 100) || null,
+    effective_until_at: clean(fields.effective_until_at || fields.effective_until, 100) || null,
+    days_of_week: multiText(fields.days_of_week),
+    start_time_local: clean(fields.start_time_local, 20) || null,
+    end_time_local: clean(fields.end_time_local, 20) || null,
+    priority: Number.isFinite(Number(fields.priority)) ? Number(fields.priority) : 0,
+    requires_per_approval: normalizeToken(selectText(fields.requires_per_approval)) === "yes",
+    status: selectText(fields.status) || "Draft",
+    source_actor_type: selectText(fields.source_actor_type),
+    source_partner_ref: clean(fields.source_partner_ref, 100) || null,
+    change_reason: clean(fields.change_reason, 1200),
+    updated_by: clean(fields.updated_by || fields.reviewed_by, 120),
+    updated_at: clean(fields.updated_at || fields.reviewed_at, 100) || record.createdTime || null,
+    version: Math.max(1, Number(fields.version) || 1),
+  };
+}
+
+async function listOwnerSalesRules(request, env, fetchImpl) {
+  const url = new URL(request.url);
+  const modelId = clean(url.searchParams.get("model_id"), 80);
+  const modelKey = clean(url.searchParams.get("model_key"), 160).toLowerCase();
+  if (!modelId && !modelKey) return json({ ok: false, error: "model_identity_required" }, 400);
+  const config = airtableConfig(env);
+  const result = await fetchAllRecords(env, config.offerRulesTable, fetchImpl);
+  if (!result.ok) return json({ ok: false, error: "model_offer_rules_unavailable" }, 503);
+  const items = result.records
+    .map(projectOwnerSalesRule)
+    .filter((rule) => (modelId && rule.model_ids.includes(modelId)) || (modelKey && rule.model_key.toLowerCase() === modelKey))
+    .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || b.version - a.version);
+  return json({ ok: true, authority: "model_sales_control_v1", items, count: items.length });
+}
+
+function ownerSalesBody(body = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "invalid_body" };
+  const modelId = clean(body.model_id, 80);
+  const modelKey = clean(body.model_key, 160);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelId) || !modelKey) return { ok: false, error: "model_identity_required" };
+
+  const audiences = uniqueList(body.audience_scope, 12, 80);
+  if (!audiences.length || audiences.some((value) => !OWNER_SALES_AUDIENCES.has(value))) return { ok: false, error: "invalid_audience_scope" };
+  const scheduleType = clean(body.schedule_type || "Always", 80);
+  if (!OWNER_SALES_SCHEDULES.has(scheduleType)) return { ok: false, error: "invalid_schedule_type" };
+  const days = uniqueList(body.days_of_week, 7, 10);
+  if (days.some((value) => !OWNER_SALES_DAYS.has(value))) return { ok: false, error: "invalid_days_of_week" };
+  if (scheduleType === "Weekly recurring" && !days.length) return { ok: false, error: "days_of_week_required" };
+
+  const visibility = normalizeToken(body.sales_visibility || "off");
+  if (!["on", "off"].includes(visibility)) return { ok: false, error: "invalid_sales_visibility" };
+  const priceMode = normalizeToken(body.price_visibility || "per_approval_only");
+  const priceVisibility = priceMode === "visible" ? "visible" : "Per approval only";
+
+  const customerRate = Number(body.customer_sell_rate_thb);
+  if (!Number.isFinite(customerRate) || customerRate < 0 || customerRate > 1000000) return { ok: false, error: "invalid_customer_sell_rate" };
+  const sourceRate = body.partner_source_rate_thb == null || body.partner_source_rate_thb === "" ? null : Number(body.partner_source_rate_thb);
+  if (sourceRate != null && (!Number.isFinite(sourceRate) || sourceRate < 0 || sourceRate > 1000000)) return { ok: false, error: "invalid_partner_source_rate" };
+
+  const startTime = clean(body.start_time_local, 20);
+  const endTime = clean(body.end_time_local, 20);
+  if ((startTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) || (endTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime))) {
+    return { ok: false, error: "invalid_local_time" };
+  }
+  const effectiveFrom = clean(body.effective_from_at, 100);
+  const effectiveUntil = clean(body.effective_until_at, 100);
+  if (effectiveFrom && !Number.isFinite(Date.parse(effectiveFrom))) return { ok: false, error: "invalid_effective_from" };
+  if (effectiveUntil && !Number.isFinite(Date.parse(effectiveUntil))) return { ok: false, error: "invalid_effective_until" };
+  if (effectiveFrom && effectiveUntil && Date.parse(effectiveUntil) <= Date.parse(effectiveFrom)) return { ok: false, error: "invalid_schedule_window" };
+
+  return {
+    ok: true,
+    value: {
+      model_id: modelId,
+      model_key: modelKey,
+      offer_type: clean(body.offer_type || "Default", 80),
+      audience_scope: audiences,
+      partner_source_rate_thb: sourceRate,
+      customer_sell_rate_thb: customerRate,
+      sales_visibility: visibility,
+      price_visibility: priceVisibility,
+      schedule_type: scheduleType,
+      effective_from_at: effectiveFrom || null,
+      effective_until_at: effectiveUntil || null,
+      days_of_week: days,
+      start_time_local: startTime || null,
+      end_time_local: endTime || null,
+      priority: Math.max(0, Math.min(1000, Math.trunc(Number(body.priority) || 0))),
+      requires_per_approval: body.requires_per_approval === true,
+      activate: body.activate === true,
+      change_reason: clean(body.change_reason, 1200),
+    },
+  };
+}
+
+async function createOwnerSalesRule(request, env, options, fetchImpl) {
+  const key = clean(request.headers.get("Idempotency-Key"), 180);
+  if (key.length < 8) return json({ ok: false, error: "idempotency_key_required" }, 400);
+  let body;
+  try { body = await request.json(); } catch (_) { return json({ ok: false, error: "invalid_json" }, 400); }
+  const parsed = ownerSalesBody(body);
+  if (!parsed.ok) return json({ ok: false, error: parsed.error }, 400);
+
+  const config = airtableConfig(env);
+  if (!config.apiKey || !config.baseId) return json({ ok: false, error: "missing_airtable_env" }, 503);
+  const digest = await hashIdempotencyKey(`owner-sales:${key}`);
+  const ruleKey = `owner-sales-${digest.slice(0, 24)}`;
+  const params = new URLSearchParams();
+  params.set("pageSize", "2");
+  params.set("filterByFormula", `{offer_rule_key}="${escapeFormulaValue(ruleKey)}"`);
+  const existing = await airtableFetch(env, config.offerRulesTable, { method: "GET" }, params, fetchImpl);
+  if (!existing.ok) return json({ ok: false, error: "model_offer_rules_unavailable" }, 503);
+  if ((existing.data?.records || []).length === 1) {
+    return json({ ok: true, idempotent: true, rule: projectOwnerSalesRule(existing.data.records[0]) });
+  }
+  if ((existing.data?.records || []).length > 1) return json({ ok: false, error: "sales_rule_idempotency_conflict" }, 409);
+
+  const actor = clean(options?.actor?.id || request.headers.get("x-mmd-admin-actor") || "admin", 100);
+  const now = new Date().toISOString();
+  const v = parsed.value;
+  const fields = {
+    offer_rule_key: ruleKey,
+    Model: [v.model_id],
+    model_key: v.model_key,
+    offer_type: v.offer_type,
+    audience_scope: v.audience_scope,
+    partner_source_rate_thb: v.partner_source_rate_thb,
+    customer_sell_rate_thb: v.customer_sell_rate_thb,
+    sales_visibility: v.sales_visibility,
+    price_visibility: v.price_visibility,
+    schedule_type: v.schedule_type,
+    effective_from_at: v.effective_from_at,
+    effective_until_at: v.effective_until_at,
+    days_of_week: v.days_of_week,
+    start_time_local: v.start_time_local,
+    end_time_local: v.end_time_local,
+    priority: v.priority,
+    requires_per_approval: v.requires_per_approval ? "Yes" : "No",
+    status: v.activate ? "Active" : "Review",
+    internal_only: "Yes",
+    source_actor_type: "owner",
+    change_reason: v.change_reason || (v.activate ? "Owner activated Model Sales Control rule." : "Owner submitted Model Sales Control review."),
+    reviewed_by: v.activate ? actor : null,
+    reviewed_at: v.activate ? now : null,
+    updated_by: actor,
+    updated_at: now,
+    notify_status: "pending",
+    version: 1,
+  };
+  Object.keys(fields).forEach((name) => { if (fields[name] == null || fields[name] === "") delete fields[name]; });
+
+  const result = await airtableFetch(env, config.offerRulesTable, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ records: [{ fields }], typecast: true }),
+  }, null, fetchImpl);
+  if (!result.ok) return json({ ok: false, error: "sales_rule_write_failed" }, result.status === 422 ? 503 : 502);
+  const record = result.data?.records?.[0];
+  if (!record) return json({ ok: false, error: "sales_rule_write_failed" }, 502);
+  return json({
+    ok: true,
+    status: v.activate ? "Active" : "Review",
+    sellability_mutated: v.activate,
+    rule: projectOwnerSalesRule(record),
+  }, 201);
+}
+
 async function resolveSalesOffer(request, env, fetchImpl) {
   let body;
   try { body = await request.json(); }
@@ -600,7 +795,8 @@ export function isKenjiModelAdminRequest(path, method = "GET") {
   return (
     (normalized === KENJI_MODEL_ADMIN_BASE_PATH && verb === "GET") ||
     (normalized === KENJI_MODEL_ADMIN_DRAFT_PATH && verb === "POST") ||
-    (normalized === KENJI_MODEL_SALES_RESOLVE_PATH && verb === "POST")
+    (normalized === KENJI_MODEL_SALES_RESOLVE_PATH && verb === "POST") ||
+    (normalized === KENJI_MODEL_SALES_RULES_PATH && (verb === "GET" || verb === "POST"))
   );
 }
 
@@ -612,5 +808,10 @@ export async function handleKenjiModelAdminRequest(request, env = {}, options = 
   const fetchImpl = options.fetchImpl || fetch;
   if (path === KENJI_MODEL_ADMIN_BASE_PATH) return listModels(request, env, fetchImpl);
   if (path === KENJI_MODEL_SALES_RESOLVE_PATH) return resolveSalesOffer(request, env, fetchImpl);
+  if (path === KENJI_MODEL_SALES_RULES_PATH) {
+    return method === "GET"
+      ? listOwnerSalesRules(request, env, fetchImpl)
+      : createOwnerSalesRule(request, env, options, fetchImpl);
+  }
   return createDraft(request, env, options, fetchImpl);
 }
