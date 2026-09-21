@@ -7,7 +7,7 @@ const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'))).default;
 const env={ALLOWED_ORIGINS:'https://www.mmdbkk.com'};
 const req=(body,origin='https://www.mmdbkk.com')=>new Request('https://www.mmdbkk.com/v1/partner/line/exchange',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)});
-test('LINE entry is no-store and requires explicit login',async()=>{const r=await worker.fetch(new Request('https://www.mmdbkk.com/v1/partner/line/login'),env,{});assert.equal(r.status,200);assert.equal(r.headers.get('Cache-Control'),'no-store');assert.match(await r.text(),/เข้าสู่ระบบด้วย LINE/);});
+test('LINE entry is no-store and requires explicit login',async()=>{const r=await worker.fetch(new Request('https://mmdbkk.com/sigil/model/dashboard/partner-login'),env,{});assert.equal(r.status,200);assert.equal(r.headers.get('Cache-Control'),'no-store');assert.match(await r.text(),/เข้าสู่ระบบด้วย LINE/);});
 test('rejects foreign origin before identity lookup',async()=>{assert.equal((await worker.fetch(req({id_token:'fake'},'https://example.com'),env,{})).status,403);});
 test('requires fresh LINE token',async()=>{assert.equal((await worker.fetch(req({}),env,{})).status,401);});
 test('rejects wrong LINE channel without Airtable access',async()=>{const original=globalThis.fetch;let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({aud:'wrong',sub:'U'+'a'.repeat(32)});};try{assert.equal((await worker.fetch(req({id_token:'fake'}),env,{})).status,401);assert.equal(calls,1);}finally{globalThis.fetch=original;}});

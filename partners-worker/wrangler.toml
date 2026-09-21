@@ -8,6 +8,8 @@ workers_dev = true
 # Do not claim shared terms/legal routes here; those are currently owned outside
 # partners-worker and will conflict during `wrangler deploy`.
 routes = [
+  { pattern = "mmdbkk.com/sigil/model/dashboard/partner-login*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/sigil/model/dashboard/partner-login*", zone_name = "mmdbkk.com" },
   { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },

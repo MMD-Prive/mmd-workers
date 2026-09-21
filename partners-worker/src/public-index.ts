@@ -174,7 +174,7 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     "<meta name=\"robots\" content=\"noindex,nofollow\"><title>" + escapeHtml(copy.title) + "</title>" +
     "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
-    "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b>MMD</b><span>Partner Division</span></a>" +
+    "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b>SĪGIL</b><span>Partner Division</span></a>" +
     "<div><a href=\"/partner/model\">Model Partner</a><a href=\"/partner/apply\">Apply</a><a href=\"/partner/terms\">Terms</a></div></nav>" +
     "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
@@ -183,7 +183,7 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     renderDashboardPanel(page, token) +
     "<section class=\"mmdp-grid\"><article><span>01</span><h2>Submit</h2><p>ส่งข้อมูลให้ชัดพอสำหรับการพิจารณา ไม่ต้องเปิดข้อมูลส่วนตัวเกินจำเป็น</p></article>" +
     "<article><span>02</span><h2>Review</h2><p>Yuki ตรวจบทบาท แหล่งที่มา ความพร้อม และความเหมาะสมของ partner lane</p></article>" +
-    "<article><span>03</span><h2>Recognize</h2><p>เมื่อผ่านแล้วระบบออก private token ด้วยพารามิเตอร์ t เพื่อไปต่อในชั้น partner</p></article></section>" +
+    "<article><span>03</span><h2>Recognize</h2><p>เมื่อได้รับการรับรองแล้ว เข้าสู่พื้นที่ Partner ด้วยบัญชี LINE ที่เชื่อมไว้</p></article></section>" +
     "</main>" + renderDashboardScript(page) + "</body></html>";
 
   const response = new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
@@ -210,10 +210,10 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
 
   if (page === "dashboard") {
     return {
-      title: "MMD Partner Dashboard",
+      title: "SĪGIL Partner Dashboard",
       heading: "Partner control room.",
-      lead: hasToken ? "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว." : "Dashboard ต้องใช้ private token จากลิงก์ recognized เท่านั้น.",
-      body: hasToken ? "ข้อมูลส่วนตัวเริ่มต้นเป็น Private และจะถูกแชร์กับ MMD เฉพาะรายการที่ Partner ยืนยันอย่างชัดเจน." : "กลับไปเปิดลิงก์ recognized หรือขอให้ทีมออกลิงก์ใหม่ถ้า token หมดอายุ.",
+      lead: hasToken ? "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว." : "เข้าสู่ระบบด้วย LINE บัญชีเดิมที่เชื่อมกับ Partner.",
+      body: hasToken ? "ข้อมูลส่วนตัวเริ่มต้นเป็น Private และจะถูกแชร์กับ MMD เฉพาะรายการที่ Partner ยืนยันอย่างชัดเจน." : "จากนั้นเชื่อม Telegram เพื่อรับแจ้งงานและส่งคำตอบให้ MMD.",
       card: "CONTROL ROOM"
     };
   }
@@ -232,6 +232,7 @@ function renderSystemActions(page: string, tokenQuery: string, reviewHref: strin
     return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Read Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">Open Dashboard</a></p>";
   }
   if (page === "dashboard") {
+    if (!tokenQuery) return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE</a></p>";
     return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"/partner\">Partner Gate</a></p>";
   }
   return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Back to Partner Gate</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(reviewHref) + "\">Review Status</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">Open token dashboard</a></p>" : "");
@@ -239,11 +240,12 @@ function renderSystemActions(page: string, tokenQuery: string, reviewHref: strin
 
 function renderDashboardPanel(page: string, token: string): string {
   if (page !== "dashboard") return "";
-  if (!token) return "<section class=\"mmdp-dashboard\"><h2>Private access required</h2><p>เปิด Dashboard จากลิงก์ Partner ที่ได้รับการรับรองเท่านั้น</p></section>";
+  if (!token) return "<section class=\"mmdp-dashboard\"><h2>บัญชี Partner ของคุณ</h2><p>ใช้บัญชี LINE ที่เคยส่งคำขอไว้ สถานะและสิทธิ์จะตรวจสอบจากบัญชีเดิม</p></section>";
   const audiences = ["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"];
   const audienceHtml = audiences.map((value) => "<label><input type=\"checkbox\" name=\"audience_scope\" value=\"" + escapeHtml(value) + "\"><span>" + escapeHtml(value) + "</span></label>").join("");
   const sharedFields = "<label><span>ชื่อที่ใช้แสดง</span><input name=\"display_name\" maxlength=\"120\"></label><label><span>อายุ</span><input name=\"age\" type=\"number\" min=\"18\" max=\"70\"></label><label><span>ส่วนสูง (cm)</span><input name=\"height_cm\" type=\"number\" min=\"120\" max=\"230\"></label><label><span>น้ำหนัก (kg)</span><input name=\"weight_kg\" type=\"number\" min=\"35\" max=\"250\"></label><label class=\"wide\"><span>ข้อมูลแนะนำตัว</span><textarea name=\"profile_summary\"></textarea></label><label class=\"wide\"><span>ทักษะ / จุดแข็ง</span><textarea name=\"skills_summary\"></textarea></label><label class=\"wide\"><span>ประสบการณ์ / ผลงาน</span><textarea name=\"experience_summary\"></textarea></label><label class=\"wide\"><span>ข้อความสำหรับขาย</span><textarea name=\"sales_copy\"></textarea></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 1</span><input name=\"portfolio_url_1\" type=\"url\" placeholder=\"https://\"></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 2</span><input name=\"portfolio_url_2\" type=\"url\" placeholder=\"https://\"></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 3</span><input name=\"portfolio_url_3\" type=\"url\" placeholder=\"https://\"></label>";
   return "<section data-partner-control-room>" +
+    "<a class=\"mmdp-btn\" data-reconnect-line hidden href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE อีกครั้ง</a>" +
     "<p class=\"pcr-flash\" data-flash hidden></p>" +
     "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>ข้อมูลส่วนตัวและโน้ตภายในเป็นความลับของ Partner; MMD ไม่มีสิทธิ์อ่าน ข้อมูลจะส่งให้ MMD เฉพาะเมื่อกด Share with MMD เท่านั้น</p></div></div>" +
     "<div class=\"pcr-shell\"><aside class=\"pcr-side\"><small>Control Room</small><button type=\"button\" data-view=\"home\" aria-current=\"page\">Home & Jobs</button><button type=\"button\" data-view=\"models\">Models</button><button type=\"button\" data-view=\"earnings\">Earnings</button><button type=\"button\" data-view=\"privacy\">Private Vault</button></aside>" +
