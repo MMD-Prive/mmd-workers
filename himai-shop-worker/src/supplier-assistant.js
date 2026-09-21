@@ -613,7 +613,7 @@ export class SupplierAlertState {
     }
     if (action === "write-draft") {
       const drafts = await this.state.storage.get("drafts:" + key) || [];
-      const next = [body.draft, ...Array.isArray(drafts) ? drafts : []].slice(0, 20);
+      const next = [body.draft, ...(Array.isArray(drafts) ? drafts : [])].slice(0, 20);
       await this.state.storage.put("drafts:" + key, next);
       return json({ ok: true, stored: true });
     }
