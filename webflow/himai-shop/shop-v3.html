@@ -1,0 +1,275 @@
+<main id="himai-shop-v3" data-catalog="/shop/api/products" data-checkout="/shop/api/checkout">
+<style>
+#himai-shop-v3,#himai-shop-v3 *{box-sizing:border-box}
+#himai-shop-v3{
+ --ink:#201811;--paper:#f4eadb;--surface:#fffaf2;--surface2:#ead9bf;--muted:#705d4e;
+ --line:rgba(43,30,20,.14);--red:#b9372c;--red2:#d24b3e;--dark:#211810;--gold:#bf8a52;
+ min-height:100vh;background:var(--paper);color:var(--ink);overflow:hidden;
+ font-family:"IBM Plex Sans Thai","Noto Sans Thai",Tahoma,sans-serif;font-weight:400;
+ -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility
+}
+#himai-shop-v3 a{color:inherit;text-decoration:none}
+#himai-shop-v3 button,#himai-shop-v3 input,#himai-shop-v3 select,#himai-shop-v3 textarea{font:inherit}
+#himai-shop-v3 .hs-shell{width:min(1160px,calc(100% - 24px));margin:auto}
+#himai-shop-v3 .hs-hero{position:relative;min-height:min(72svh,700px);display:grid;align-items:end;background:#1b120d;color:#fff}
+#himai-shop-v3 .hs-hero picture,#himai-shop-v3 .hs-hero picture img{position:absolute;inset:0;width:100%;height:100%}
+#himai-shop-v3 .hs-hero picture img{object-fit:cover;object-position:center}
+#himai-shop-v3 .hs-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(20,12,7,.88),rgba(20,12,7,.28) 56%,rgba(20,12,7,.06)),linear-gradient(90deg,rgba(20,12,7,.38),transparent 74%)}
+#himai-shop-v3 .hs-nav{position:absolute;z-index:5;top:12px;left:12px;right:12px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+#himai-shop-v3 .hs-logo{width:154px;max-height:46px;object-fit:contain;filter:drop-shadow(0 2px 10px rgba(0,0,0,.28))}
+#himai-shop-v3 .hs-navlinks{display:flex;align-items:center;gap:6px}
+#himai-shop-v3 .hs-navlinks a,#himai-shop-v3 .hs-lang button{min-height:34px;padding:0 9px;border:1px solid rgba(255,255,255,.20);border-radius:9px;background:rgba(27,18,13,.22);color:#fff;backdrop-filter:blur(10px);font-family:"Inter",Arial,sans-serif;font-size:10px;font-weight:500}
+#himai-shop-v3 .hs-lang{display:flex;gap:2px;padding:3px;border:1px solid rgba(255,255,255,.18);border-radius:10px;background:rgba(27,18,13,.24);backdrop-filter:blur(10px)}
+#himai-shop-v3 .hs-lang button{min-width:30px;min-height:28px;padding:0 6px;border:0;background:transparent;color:rgba(255,255,255,.65)}
+#himai-shop-v3 .hs-lang button[aria-pressed="true"]{background:#fff;color:#211810}
+#himai-shop-v3 .hs-hero-copy{position:relative;z-index:2;padding:110px 0 30px}
+#himai-shop-v3 .hs-kicker{font-family:"Inter",Arial,sans-serif;font-size:9px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#ffd8aa}
+#himai-shop-v3 .hs-hero h1{max-width:780px;margin:9px 0 9px;font-size:clamp(40px,9vw,76px);line-height:.99;letter-spacing:-.045em;font-weight:600;text-wrap:balance}
+#himai-shop-v3 .hs-hero p{max-width:640px;margin:0;color:rgba(255,255,255,.78);font-size:14px;line-height:1.65}
+#himai-shop-v3 .hs-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:17px}
+#himai-shop-v3 .hs-btn{min-height:43px;padding:0 14px;border:1px solid transparent;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:600;cursor:pointer}
+#himai-shop-v3 .hs-btn-primary{background:#fff;color:#211810}
+#himai-shop-v3 .hs-btn-glass{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.08);color:#fff;backdrop-filter:blur(10px)}
+#himai-shop-v3 .hs-path{background:#fffaf2;border-bottom:1px solid var(--line)}
+#himai-shop-v3 .hs-path-track{display:flex;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity;padding:0 12px}
+#himai-shop-v3 .hs-path-track::-webkit-scrollbar{display:none}
+#himai-shop-v3 .hs-step{flex:0 0 160px;padding:13px 17px 13px 0;margin-right:18px;scroll-snap-align:start}
+#himai-shop-v3 .hs-step small{display:block;color:var(--red);font-family:"Inter",Arial,sans-serif;font-size:8px;font-weight:600;letter-spacing:.11em}
+#himai-shop-v3 .hs-step strong{display:block;margin-top:3px;font-size:12px;line-height:1.35;font-weight:500}
+#himai-shop-v3 .hs-catalog{padding:32px 0 22px}
+#himai-shop-v3 .hs-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:14px}
+#himai-shop-v3 .hs-head>div{max-width:670px}
+#himai-shop-v3 .hs-label{font-family:"Inter",Arial,sans-serif;font-size:8px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
+#himai-shop-v3 .hs-head h2{margin:5px 0 4px;font-size:clamp(30px,7vw,48px);line-height:1.04;letter-spacing:-.035em;font-weight:600}
+#himai-shop-v3 .hs-head p{margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+#himai-shop-v3 .hs-grid{display:grid;gap:10px}
+#himai-shop-v3 .hs-card{overflow:hidden;border:1px solid var(--line);border-radius:17px;background:var(--surface);box-shadow:0 12px 30px rgba(52,31,16,.05)}
+#himai-shop-v3 .hs-media{position:relative;aspect-ratio:16/10;background:#d9c2a2;overflow:hidden}
+#himai-shop-v3 .hs-media img{width:100%;height:100%;display:block;object-fit:cover}
+#himai-shop-v3 .hs-badge{position:absolute;left:10px;top:10px;padding:6px 8px;border:1px solid rgba(43,30,20,.10);border-radius:8px;background:rgba(255,250,242,.92);color:var(--red);font-family:"Inter",Arial,sans-serif;font-size:8px;font-weight:600;letter-spacing:.09em;text-transform:uppercase}
+#himai-shop-v3 .hs-body{padding:14px}
+#himai-shop-v3 .hs-body h3{margin:0;font-size:22px;line-height:1.13;font-weight:600;letter-spacing:-.015em}
+#himai-shop-v3 .hs-body>p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+#himai-shop-v3 .hs-price{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-family:"Inter",Arial,sans-serif}
+#himai-shop-v3 .hs-price small{display:block;color:var(--muted);font-size:8px;font-weight:500;letter-spacing:.1em;text-transform:uppercase}
+#himai-shop-v3 .hs-price strong{display:block;margin-top:2px;font-size:21px;font-weight:600}
+#himai-shop-v3 .hs-variant{margin-top:10px;padding:9px;border:1px solid var(--line);border-radius:11px;background:#f8f0e4}
+#himai-shop-v3 .hs-variant label{display:grid;gap:5px}
+#himai-shop-v3 .hs-variant-label{color:var(--muted);font-size:9px;font-weight:500}
+#himai-shop-v3 .hs-select{width:100%;min-height:41px;padding:0 9px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:500}
+#himai-shop-v3 .hs-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:7px;color:var(--muted);font-size:9px}
+#himai-shop-v3 .hs-meta strong{color:var(--ink);font-weight:500;text-align:right}
+#himai-shop-v3 .hs-stock{display:inline-flex;align-items:center;gap:6px}
+#himai-shop-v3 .hs-dot{width:7px;height:7px;border-radius:50%;background:#8f857d}
+#himai-shop-v3 .hs-stock.in .hs-dot{background:#5b8a53}
+#himai-shop-v3 .hs-stock.low .hs-dot{background:#c9873d}
+#himai-shop-v3 .hs-stock.out .hs-dot{background:#a54b44}
+#himai-shop-v3 .hs-card-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:10px}
+#himai-shop-v3 .hs-buy,#himai-shop-v3 .hs-contact{min-height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;padding:0 12px;font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:600}
+#himai-shop-v3 .hs-buy{border:1px solid var(--red);background:var(--red);color:#fff;cursor:pointer}
+#himai-shop-v3 .hs-buy:disabled{opacity:.42;cursor:not-allowed}
+#himai-shop-v3 .hs-contact{border:1px solid var(--line);background:#fff;color:var(--ink)}
+#himai-shop-v3 .hs-note{margin-top:8px;color:#8b5a3c;font-size:9px;line-height:1.5}
+#himai-shop-v3 .hs-info{padding:8px 0 30px}
+#himai-shop-v3 .hs-info details{border-top:1px solid var(--line)}
+#himai-shop-v3 .hs-info details:last-child{border-bottom:1px solid var(--line)}
+#himai-shop-v3 .hs-info summary{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:14px;list-style:none;cursor:pointer;font-size:12px;font-weight:500}
+#himai-shop-v3 .hs-info summary::-webkit-details-marker{display:none}
+#himai-shop-v3 .hs-info summary:after{content:"+";font-family:"Inter",Arial,sans-serif;font-size:20px;transition:transform .25s}
+#himai-shop-v3 .hs-info details[open] summary:after{transform:rotate(45deg)}
+#himai-shop-v3 .hs-fold-body{padding:0 0 13px;color:var(--muted);font-size:11px;line-height:1.65}
+#himai-shop-v3 .hs-aftercare{position:relative;min-height:220px;display:flex;align-items:end;background:#17110d;overflow:hidden;color:#fff}
+#himai-shop-v3 .hs-aftercare img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:saturate(.86)}
+#himai-shop-v3 .hs-aftercare:after{content:"";position:absolute;inset:0;background:linear-gradient(0deg,rgba(19,12,8,.82),rgba(19,12,8,.10))}
+#himai-shop-v3 .hs-aftercare-copy{position:relative;z-index:2;padding:28px 0}
+#himai-shop-v3 .hs-aftercare h2{max-width:650px;margin:5px 0;font-size:clamp(27px,6vw,42px);line-height:1.05;letter-spacing:-.03em;font-weight:600}
+#himai-shop-v3 .hs-aftercare p{margin:0;color:rgba(255,255,255,.72);font-size:11px;line-height:1.55}
+#himai-shop-v3 .hs-cart{position:fixed;z-index:9998;right:12px;bottom:12px;min-height:44px;padding:7px 10px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:#211810;color:#fff;display:flex;align-items:center;gap:8px;box-shadow:0 14px 34px rgba(0,0,0,.24);cursor:pointer}
+#himai-shop-v3 .hs-count{min-width:24px;height:24px;border-radius:8px;display:grid;place-items:center;background:#fff4e4;color:#211810;font-family:"Inter",Arial,sans-serif;font-size:10px;font-weight:600}
+#himai-shop-v3 .hs-toast{position:fixed;z-index:10002;left:50%;bottom:68px;transform:translate(-50%,12px);opacity:0;pointer-events:none;padding:10px 12px;border-radius:10px;background:#211810;color:#fff;font-size:10px;transition:.2s;white-space:nowrap}
+#himai-shop-v3 .hs-toast.show{opacity:1;transform:translate(-50%,0)}
+#himai-shop-v3 .hs-drawer{position:fixed;inset:0;z-index:10000;display:none}
+#himai-shop-v3 .hs-drawer.open{display:block}
+#himai-shop-v3 .hs-shade{position:absolute;inset:0;border:0;background:rgba(0,0,0,.48);backdrop-filter:blur(7px)}
+#himai-shop-v3 .hs-panel{position:absolute;left:0;right:0;bottom:0;max-height:90svh;overflow:auto;padding:14px 14px calc(22px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;background:#fffaf2;color:var(--ink)}
+#himai-shop-v3 .hs-panel-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+#himai-shop-v3 .hs-panel h3{margin:4px 0 0;font-size:25px;line-height:1.08;font-weight:600}
+#himai-shop-v3 .hs-close{width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:#fff;color:#211810;font-size:22px}
+#himai-shop-v3 .hs-dtext{margin:6px 0 0;color:var(--muted);font-size:10px;line-height:1.55}
+#himai-shop-v3 .hs-list{display:grid;gap:7px;margin-top:12px}
+#himai-shop-v3 .hs-item{display:flex;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+#himai-shop-v3 .hs-item strong{font-size:11px;font-weight:600}
+#himai-shop-v3 .hs-item small{display:block;margin-top:2px;color:var(--muted);font-size:9px}
+#himai-shop-v3 .hs-item button{border:0;background:transparent;color:#9d493f;font-size:9px}
+#himai-shop-v3 .hs-total{display:flex;justify-content:space-between;gap:12px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12px;font-weight:600}
+#himai-shop-v3 .hs-checkout{display:grid;gap:7px;margin-top:12px;padding:11px;border:1px solid var(--line);border-radius:12px;background:#f7ecdc}
+#himai-shop-v3 .hs-checkout h4{margin:0;font-size:15px;font-weight:600}
+#himai-shop-v3 .hs-checkout p{margin:0;color:var(--muted);font-size:9px;line-height:1.5}
+#himai-shop-v3 .hs-checkout input,#himai-shop-v3 .hs-checkout select,#himai-shop-v3 .hs-checkout textarea{width:100%;min-height:40px;padding:0 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);font-size:11px}
+#himai-shop-v3 .hs-checkout textarea{padding-top:9px;padding-bottom:9px;resize:vertical}
+#himai-shop-v3 .hs-checkout label{display:grid;gap:4px}
+#himai-shop-v3 .hs-checkout label>span{color:var(--muted);font-size:9px}
+#himai-shop-v3 .hs-two{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#himai-shop-v3 .hs-shipping[hidden]{display:none!important}
+#himai-shop-v3 .hs-checkout-status{color:#8b5a3c;font-size:9px;line-height:1.5}
+#himai-shop-v3 .hs-checkout-btn{min-height:44px;border:0;border-radius:10px;background:var(--red);color:#fff;font-family:"Inter",Arial,sans-serif;font-size:11px;font-weight:600;cursor:pointer}
+#himai-shop-v3 .hs-checkout-btn:disabled{opacity:.45}
+#himai-shop-v3 .hs-cartlinks{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+#himai-shop-v3 .hs-cartlinks a,#himai-shop-v3 .hs-cartlinks button{flex:1;min-height:40px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500}
+#himai-shop-v3 .hs-loading{padding:22px;text-align:center;color:var(--muted);font-size:11px}
+@media(min-width:720px){
+ #himai-shop-v3 .hs-shell{width:min(1160px,calc(100% - 44px))}
+ #himai-shop-v3 .hs-nav{top:22px;left:22px;right:22px}
+ #himai-shop-v3 .hs-logo{width:190px;max-height:58px}
+ #himai-shop-v3 .hs-hero-copy{padding-bottom:48px}
+ #himai-shop-v3 .hs-path-track{justify-content:center}
+ #himai-shop-v3 .hs-step{flex-basis:190px}
+ #himai-shop-v3 .hs-catalog{padding:50px 0 34px}
+ #himai-shop-v3 .hs-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #himai-shop-v3 .hs-aftercare{min-height:320px}
+ #himai-shop-v3 .hs-panel{left:auto;top:0;bottom:0;right:0;width:min(520px,100%);max-height:none;border-radius:0;padding:20px}
+}
+@media(max-width:520px){
+ #himai-shop-v3 .hs-navlinks>a{display:none}
+ #himai-shop-v3 .hs-hero{min-height:70svh}
+ #himai-shop-v3 .hs-hero h1{font-size:clamp(38px,12vw,48px)}
+ #himai-shop-v3 .hs-head{display:block}
+ #himai-shop-v3 .hs-head p{margin-top:6px}
+}
+@media(prefers-reduced-motion:reduce){#himai-shop-v3 *{scroll-behavior:auto!important;transition:none!important}}
+</style>
+
+<section class="hs-hero">
+ <picture>
+  <source media="(max-width:767px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8ae434c7bedab2e3d365a7_Himai%20Shop%20Mobile%20Ver.webp">
+  <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8ae434cafcedc39aba941f_Himai%20Shop%20Dektop%20Ver.webp" alt="Himai Shop" loading="eager" fetchpriority="high">
+ </picture>
+ <header class="hs-nav">
+  <a href="/shop" aria-label="Himai Shop"><img class="hs-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e9d0c363387bd08559ec78_Himai%20Shop%20Trans%20Full.png" alt="Himai Shop"></a>
+  <div class="hs-navlinks">
+   <div class="hs-lang" role="group" aria-label="Language"><button type="button" data-lang="th">TH</button><button type="button" data-lang="en">EN</button><button type="button" data-lang="zh">中文</button></div>
+   <a href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="contact">คุยกับร้าน</a>
+  </div>
+ </header>
+ <div class="hs-shell hs-hero-copy">
+  <span class="hs-kicker">HIMAI · SELECTED WITH CARE</span>
+  <h1 data-i18n="heroTitle">ของที่ชอบ เลือกให้ชัด แล้วค่อยสั่งครับ</h1>
+  <p data-i18n="heroCopy">ผมจัดของในร้านให้เลือกง่ายขึ้น ราคาและสต๊อกที่กดสั่งได้จะยึดจากข้อมูลจริงของร้านครับ</p>
+  <div class="hs-actions"><a class="hs-btn hs-btn-primary" href="#hs-products" data-i18n="browse">ดูสินค้า</a><a class="hs-btn hs-btn-glass" href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="ask">ถาม Himai</a></div>
+ </div>
+</section>
+
+<section class="hs-path" aria-label="How to order">
+ <div class="hs-path-track">
+  <div class="hs-step"><small>01 · PICK</small><strong data-i18n="step1">เลือกตัวและขนาดที่ต้องการ</strong></div>
+  <div class="hs-step"><small>02 · CHECK</small><strong data-i18n="step2">ร้านเช็กราคาและสต๊อกจริง</strong></div>
+  <div class="hs-step"><small>03 · PAY</small><strong data-i18n="step3">จ่ายจาก Order ที่เปิดให้</strong></div>
+  <div class="hs-step"><small>04 · TRACK</small><strong data-i18n="step4">สถานะเดินต่อใน Order เดิม</strong></div>
+ </div>
+</section>
+
+<section class="hs-catalog" id="hs-products">
+ <div class="hs-shell">
+  <div class="hs-head"><div><span class="hs-label">CURRENT SELECTION</span><h2 data-i18n="selectionTitle">เลือกจากของที่มีจริงก่อน</h2><p data-i18n="selectionCopy">สต๊อกกองเดียวกับ MMD Shop แต่ Himai ใช้ราคาของ Himai เองครับ</p></div></div>
+  <div class="hs-grid" id="hsGrid" aria-live="polite"><div class="hs-loading" data-i18n="loading">กำลังเปิดรายการสินค้า…</div></div>
+ </div>
+</section>
+
+<section class="hs-info">
+ <div class="hs-shell">
+  <details><summary data-i18n="info1">ราคา Himai กับ MMD Shop เหมือนกันไหม</summary><div class="hs-fold-body" data-i18n="info1b">ไม่จำเป็นครับ ของกองเดียวกันได้ แต่แต่ละร้านมีราคาขายของตัวเอง ระบบจะใช้ราคาของ Himai ตอนสั่งจากหน้านี้</div></details>
+  <details><summary data-i18n="info2">ถ้าปุ่มสั่งยังไม่เปิด</summary><div class="hs-fold-body" data-i18n="info2b">หมายถึงรายการนั้นยังไม่พร้อมสำหรับ Online Checkout อาจกำลังเช็กสต๊อก ราคา หรือเป็นสินค้าที่ใช้ช่องทางสั่งเฉพาะครับ</div></details>
+  <details><summary data-i18n="info3">หลังจ่ายเงินแล้วตามจากไหน</summary><div class="hs-fold-body" data-i18n="info3b">Order เดิมจะเป็นตัวตามยอด การเตรียมสินค้า การส่ง Return และ Refund เพื่อไม่ให้ข้อมูลแยกกันครับ</div></details>
+ </div>
+</section>
+
+<section class="hs-aftercare">
+ <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a8c10b5ae54a09ce22cbf_06%20Vintage%20Comic.webp" alt="Himai Shop packed with care" loading="lazy">
+ <div class="hs-shell hs-aftercare-copy"><span class="hs-kicker">PACKED WITH CARE</span><h2 data-i18n="afterTitle">สั่งแล้วก็อยากให้ตามเรื่องง่ายจนถึงมือคุณ</h2><p data-i18n="afterCopy">Payment, stock, shipping และ aftercare เดินต่อจาก Order เดียวครับ</p></div>
+</section>
+
+<button class="hs-cart" id="hsCart" type="button" aria-label="Open Cart"><span>Cart</span><span class="hs-count" id="hsCount">0</span></button>
+<div class="hs-toast" id="hsToast" role="status" aria-live="polite"></div>
+
+<aside class="hs-drawer" id="hsDrawer" aria-label="Himai Cart">
+ <button class="hs-shade" type="button" data-close aria-label="Close Cart"></button>
+ <div class="hs-panel" role="dialog" aria-modal="true">
+  <div class="hs-panel-top"><div><span class="hs-label">HIMAI CART</span><h3 data-i18n="cartTitle">ของที่เลือกไว้</h3></div><button class="hs-close" type="button" data-close>×</button></div>
+  <p class="hs-dtext" data-i18n="cartCopy">ก่อนเปิด Order ร้านจะเช็กราคาและสต๊อกจริงอีกครั้งครับ</p>
+  <div class="hs-list" id="hsList"></div>
+  <div class="hs-total"><span data-i18n="total">รวม</span><strong id="hsTotal">—</strong></div>
+  <div class="hs-checkout">
+   <h4 data-i18n="checkoutTitle">ข้อมูลสำหรับสั่งซื้อ</h4>
+   <p data-i18n="checkoutCopy">กรอกครั้งเดียว แล้วไปชำระเงินจาก Order ที่ระบบเปิดให้ครับ</p>
+   <input id="hsName" autocomplete="name" placeholder="ชื่อผู้สั่งซื้อ *" data-ph="name">
+   <input id="hsPhone" inputmode="tel" autocomplete="tel" placeholder="เบอร์โทร *" data-ph="phone">
+   <input id="hsEmail" inputmode="email" autocomplete="email" placeholder="อีเมล (ถ้ามี)" data-ph="email">
+   <label><span data-i18n="method">วิธีรับสินค้า</span><select id="hsMethod"><option value="delivery" data-i18n="delivery">จัดส่ง</option><option value="pickup" data-i18n="pickup">รับสินค้าเอง / Pickup</option></select></label>
+   <div class="hs-shipping" id="hsShipping">
+    <input id="hsAddress1" autocomplete="address-line1" placeholder="ที่อยู่จัดส่ง *" data-ph="address1">
+    <input id="hsAddress2" autocomplete="address-line2" placeholder="อาคาร / ชั้น / ห้อง (ถ้ามี)" data-ph="address2">
+    <div class="hs-two"><input id="hsSubdistrict" placeholder="แขวง / ตำบล" data-ph="subdistrict"><input id="hsDistrict" placeholder="เขต / อำเภอ *" data-ph="district"></div>
+    <div class="hs-two"><input id="hsProvince" autocomplete="address-level1" placeholder="จังหวัด *" data-ph="province"><input id="hsPostal" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="รหัสไปรษณีย์ *" data-ph="postal"></div>
+   </div>
+   <textarea id="hsNote" rows="2" placeholder="หมายเหตุการจัดส่ง (ถ้ามี)" data-ph="note"></textarea>
+   <button class="hs-checkout-btn" id="hsCheckout" type="button" data-i18n="checkout">สั่งซื้อและชำระเงิน</button>
+   <div class="hs-checkout-status" id="hsStatus" aria-live="polite"></div>
+  </div>
+  <div class="hs-cartlinks"><a href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="contact">คุยกับร้าน</a><button id="hsClear" type="button" data-i18n="clear">ล้าง Cart</button></div>
+ </div>
+</aside>
+
+<script>
+(function(){
+"use strict";
+var root=document.getElementById("himai-shop-v3");if(!root||root.dataset.bound==="1")return;root.dataset.bound="1";
+var CATALOG=root.dataset.catalog||"/shop/api/products",CHECKOUT=root.dataset.checkout||"/shop/api/checkout",KEY="himai_shop_cart_v2";
+var grid=document.getElementById("hsGrid"),drawer=document.getElementById("hsDrawer"),list=document.getElementById("hsList"),total=document.getElementById("hsTotal"),count=document.getElementById("hsCount"),toastEl=document.getElementById("hsToast"),statusEl=document.getElementById("hsStatus");
+var products=[],items=[],lang="th";
+var COPY={
+ th:{contact:"คุยกับร้าน",heroTitle:"ของที่ชอบ เลือกให้ชัด แล้วค่อยสั่งครับ",heroCopy:"ผมจัดของในร้านให้เลือกง่ายขึ้น ราคาและสต๊อกที่กดสั่งได้จะยึดจากข้อมูลจริงของร้านครับ",browse:"ดูสินค้า",ask:"ถาม Himai",step1:"เลือกตัวและขนาดที่ต้องการ",step2:"ร้านเช็กราคาและสต๊อกจริง",step3:"จ่ายจาก Order ที่เปิดให้",step4:"สถานะเดินต่อใน Order เดิม",selectionTitle:"เลือกจากของที่มีจริงก่อน",selectionCopy:"สต๊อกกองเดียวกับ MMD Shop แต่ Himai ใช้ราคาของ Himai เองครับ",loading:"กำลังเปิดรายการสินค้า…",info1:"ราคา Himai กับ MMD Shop เหมือนกันไหม",info1b:"ไม่จำเป็นครับ ของกองเดียวกันได้ แต่แต่ละร้านมีราคาขายของตัวเอง ระบบจะใช้ราคาของ Himai ตอนสั่งจากหน้านี้",info2:"ถ้าปุ่มสั่งยังไม่เปิด",info2b:"หมายถึงรายการนั้นยังไม่พร้อมสำหรับ Online Checkout อาจกำลังเช็กสต๊อก ราคา หรือเป็นสินค้าที่ใช้ช่องทางสั่งเฉพาะครับ",info3:"หลังจ่ายเงินแล้วตามจากไหน",info3b:"Order เดิมจะเป็นตัวตามยอด การเตรียมสินค้า การส่ง Return และ Refund เพื่อไม่ให้ข้อมูลแยกกันครับ",afterTitle:"สั่งแล้วก็อยากให้ตามเรื่องง่ายจนถึงมือคุณ",afterCopy:"Payment, stock, shipping และ aftercare เดินต่อจาก Order เดียวครับ",cartTitle:"ของที่เลือกไว้",cartCopy:"ก่อนเปิด Order ร้านจะเช็กราคาและสต๊อกจริงอีกครั้งครับ",total:"รวม",checkoutTitle:"ข้อมูลสำหรับสั่งซื้อ",checkoutCopy:"กรอกครั้งเดียว แล้วไปชำระเงินจาก Order ที่ระบบเปิดให้ครับ",method:"วิธีรับสินค้า",delivery:"จัดส่ง",pickup:"รับสินค้าเอง / Pickup",checkout:"สั่งซื้อและชำระเงิน",clear:"ล้าง Cart",add:"เพิ่มลง Cart",askItem:"ถามร้าน",empty:"ยังไม่มีสินค้าใน Cart",remove:"ลบ",price:"ราคา Himai",chooseSize:"เลือกขนาด",chooseFlavour:"เลือก Flavour",chooseBottle:"เลือกแบบ",ready:"พร้อมสั่ง",low:"เหลือน้อย",out:"หมดชั่วคราว",checking:"กำลังตรวจสต๊อก",onDemand:"ยืนยันกับ Supplier หลังรับ Order",restricted:"รายการนี้ยังไม่เปิด Online Checkout",noPrice:"ยังไม่เปิดราคาสำหรับสั่งออนไลน์",added:"เพิ่มลง Cart แล้ว",stockOnly:"สต๊อกที่พร้อมสั่งมี {n} ชิ้น",cartUpdated:"Cart อัปเดตตามสต๊อกล่าสุดแล้ว",needCart:"กรุณาเพิ่มสินค้าลง Cart ก่อน",blocked:"Cart มีรายการที่ยังไม่พร้อมสั่ง กรุณานำออกก่อน",contactReq:"กรุณากรอกชื่อและเบอร์โทรให้ครบ",addressReq:"กรุณากรอกที่อยู่ เขต/อำเภอ จังหวัด และรหัสไปรษณีย์ให้ครบ",opening:"กำลังเปิด Order ให้ครับ…",failed:"ยังเปิดรายการชำระเงินไม่ได้ครับ ลองใหม่อีกครั้ง"},
+ en:{contact:"Chat with Himai",heroTitle:"Pick what you like. Order only when it’s clear.",heroCopy:"I keep the shop easy to browse. Anything you can order uses Himai’s real price and live stock.",browse:"Browse products",ask:"Ask Himai",step1:"Choose the exact option you want",step2:"Himai checks real price and stock",step3:"Pay only from the Order we open",step4:"Track everything on the same Order",selectionTitle:"Start with what’s actually available",selectionCopy:"The physical stock is shared with MMD Shop, while Himai keeps its own selling price.",loading:"Loading products…",info1:"Are Himai and MMD Shop prices the same?",info1b:"Not necessarily. The physical item can come from the same stock pool while each shop keeps its own selling price.",info2:"If the order button is closed",info2b:"That item is not ready for online checkout yet — stock, price, or channel rules may still need confirmation.",info3:"What happens after payment?",info3b:"The same Order carries payment, preparation, shipping, return, and refund status so the case stays in one place.",afterTitle:"Once you order, I want the rest to stay easy too.",afterCopy:"Payment, stock, shipping, and aftercare stay on one Order.",cartTitle:"Your selection",cartCopy:"Before the Order opens, Himai checks the real price and stock once more.",total:"Total",checkoutTitle:"Order details",checkoutCopy:"Fill this once, then pay from the Order we open.",method:"Delivery method",delivery:"Delivery",pickup:"Pickup",checkout:"Order & pay",clear:"Clear Cart",add:"Add to Cart",askItem:"Ask Himai",empty:"Your Cart is empty",remove:"Remove",price:"Himai price",chooseSize:"Choose size",chooseFlavour:"Choose flavour",chooseBottle:"Choose option",ready:"Ready",low:"Low stock",out:"Out of stock",checking:"Checking stock",onDemand:"Supplier confirmation after Order",restricted:"Online checkout isn’t open for this item",noPrice:"Online price isn’t open yet",added:"Added to Cart",stockOnly:"Only {n} available",cartUpdated:"Cart updated to latest stock",needCart:"Add an item to Cart first",blocked:"Some Cart items aren’t ready to order. Remove them first.",contactReq:"Please enter your name and phone number",addressReq:"Please complete the address, district, province, and postal code",opening:"Opening your Order…",failed:"Payment can’t be opened yet. Please try again."},
+ zh:{contact:"联系 Himai",heroTitle:"喜欢什么就选清楚，确认后再下单",heroCopy:"我把店里的商品整理得更容易选。能下单的商品会使用 Himai 的真实价格和实时库存。",browse:"查看商品",ask:"询问 Himai",step1:"选择你要的具体规格",step2:"Himai 再确认真实价格和库存",step3:"只从已开启的 Order 支付",step4:"所有状态都留在同一张 Order",selectionTitle:"先看真正有货的商品",selectionCopy:"实体库存与 MMD Shop 共用，但 Himai 使用自己的销售价格。",loading:"正在加载商品…",info1:"Himai 和 MMD Shop 的价格一样吗？",info1b:"不一定。实体库存可以共用，但每个店有自己的销售价格。",info2:"如果下单按钮还没开放",info2b:"代表该商品暂时不适合线上结账，可能仍在确认库存、价格或销售渠道。",info3:"付款后在哪里跟进？",info3b:"同一张 Order 会继续记录付款、备货、配送、退货和退款状态。",afterTitle:"下单之后，也希望你能轻松跟到收货",afterCopy:"付款、库存、配送和售后都跟着同一张 Order。",cartTitle:"已选商品",cartCopy:"开启 Order 前，Himai 会再次确认真实价格和库存。",total:"合计",checkoutTitle:"下单资料",checkoutCopy:"只填一次，然后从已开启的 Order 付款。",method:"收货方式",delivery:"配送",pickup:"自取",checkout:"下单并支付",clear:"清空 Cart",add:"加入 Cart",askItem:"询问 Himai",empty:"Cart 还是空的",remove:"删除",price:"Himai 价格",chooseSize:"选择容量",chooseFlavour:"选择口味",chooseBottle:"选择款式",ready:"可下单",low:"库存不多",out:"缺货",checking:"正在确认库存",onDemand:"收到 Order 后向 Supplier 确认",restricted:"此商品暂未开放线上结账",noPrice:"线上价格尚未开放",added:"已加入 Cart",stockOnly:"目前可下单 {n} 件",cartUpdated:"Cart 已按最新库存更新",needCart:"请先把商品加入 Cart",blocked:"Cart 中有暂时不能下单的商品，请先移除",contactReq:"请填写姓名和电话",addressReq:"请完整填写地址、区县、府/省和邮编",opening:"正在为你开启 Order…",failed:"暂时无法开启支付，请再试一次。"}
+};
+var PH={th:{name:"ชื่อผู้สั่งซื้อ *",phone:"เบอร์โทร *",email:"อีเมล (ถ้ามี)",address1:"ที่อยู่จัดส่ง *",address2:"อาคาร / ชั้น / ห้อง (ถ้ามี)",subdistrict:"แขวง / ตำบล",district:"เขต / อำเภอ *",province:"จังหวัด *",postal:"รหัสไปรษณีย์ *",note:"หมายเหตุการจัดส่ง (ถ้ามี)"},en:{name:"Name *",phone:"Phone *",email:"Email (optional)",address1:"Delivery address *",address2:"Building / floor / room (optional)",subdistrict:"Subdistrict",district:"District *",province:"Province *",postal:"Postal code *",note:"Delivery note (optional)"},zh:{name:"姓名 *",phone:"电话 *",email:"邮箱（可选）",address1:"配送地址 *",address2:"楼栋 / 楼层 / 房号（可选）",subdistrict:"街道 / 分区",district:"区 / 县 *",province:"府 / 省 *",postal:"邮编 *",note:"配送备注（可选）"}};
+function safeGet(){try{return localStorage.getItem("himai_shop_lang")||""}catch(_){return""}}
+function safeSet(v){try{localStorage.setItem("himai_shop_lang",v)}catch(_){}}
+function norm(v){v=String(v||"").toLowerCase();if(v==="en"||v.indexOf("en-")===0)return"en";if(v==="zh"||v.indexOf("zh-")===0)return"zh";return"th"}
+lang=norm(new URL(location.href).searchParams.get("lang")||safeGet()||"th");
+function t(k,vars){var s=(COPY[lang]&&COPY[lang][k])||COPY.th[k]||k;if(vars)Object.keys(vars).forEach(function(x){s=s.replace("{"+x+"}",vars[x])});return s}
+function applyLang(){document.documentElement.lang=lang==="zh"?"zh-CN":lang;safeSet(lang);root.querySelectorAll("[data-i18n]").forEach(function(el){var k=el.dataset.i18n;if(COPY[lang]&&COPY[lang][k])el.textContent=t(k)});root.querySelectorAll("[data-ph]").forEach(function(el){el.placeholder=(PH[lang]&&PH[lang][el.dataset.ph])||PH.th[el.dataset.ph]||""});root.querySelectorAll("[data-lang]").forEach(function(b){b.setAttribute("aria-pressed",b.dataset.lang===lang?"true":"false")});renderProducts();renderCart()}
+root.addEventListener("click",function(e){var l=e.target.closest("[data-lang]");if(l){lang=norm(l.dataset.lang);var u=new URL(location.href);u.searchParams.set("lang",lang);try{history.replaceState(history.state,"",u.pathname+u.search+u.hash)}catch(_){}applyLang()}});
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
+function money(v){var n=Number(v);if(!Number.isFinite(n)||n<=0)return lang==="th"?"สอบถามราคา":lang==="zh"?"询价":"Ask Himai";return lang==="th"?n.toLocaleString("th-TH")+" บาท":lang==="zh"?n.toLocaleString("zh-CN")+" 泰铢":"THB "+n.toLocaleString("en-US")}
+function fam(p){var s=String(p&&p.sku||"").toUpperCase(),n=String(p&&p.product_name||"").toLowerCase();if(s.indexOf("PPP25-")===0||n.indexOf("pod premium plus")>=0)return"pod";if(s.indexOf("WGG-")===0||n.indexOf("water gg plus")>=0)return"gg";if(s.indexOf("GLEN-POP")===0||n.indexOf("glenburgies pop plus")>=0)return"glen";return""}
+function optionLabel(p,type){if(type==="gg"){var m=(String(p.sku||"")+" "+String(p.product_name||"")).match(/(10|25|50)\s*ml/i);return m?m[1]+"ml":p.sku}if(type==="pod"){var m=String(p.product_name||"").match(/—\s*(.+)$/);return m?m[1]:p.sku}if(type==="glen"){if(/BLK/i.test(p.sku||""))return"Black Bottle";if(/WHT/i.test(p.sku||""))return"White Bottle"}return p.variant_value||p.sku||"Option"}
+function image(p,type){if(type==="pod")return"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a78818a012d138987678a_Shop%20Pod%20Plus%2001.webp";if(type==="gg")return"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a78818a012d1389876778_Shop%20GG%20Water.webp";if(type==="glen")return"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a7881b18c863ef26b9b64_Shop%20Pop%20Plus.webp";return p.image_url||"https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a7881f3192ef3a4accbe9_Shop%20Products.webp"}
+function group(rows){var out=[],m={pod:[],gg:[],glen:[]};rows.forEach(function(p){var f=fam(p);if(f)m[f].push(p);else out.push({type:"single",variants:[p],name:p.product_name})});["pod","gg","glen"].forEach(function(f){if(m[f].length){if(f==="gg")m[f].sort(function(a,b){return parseInt(optionLabel(a,f))-parseInt(optionLabel(b,f))});out.unshift({type:f,variants:m[f],name:f==="pod"?"Pod Premium Plus 2.5mg":f==="gg"?"GG Water":"Glenburgies Pop Plus"})}});return out}
+function stock(p){var s=String(p.stock_status||"");if(s==="on_demand")return{cls:"",txt:t("onDemand")};if(s==="tracked"){var a=Number(p.available);if(Number.isFinite(a)&&a<=0)return{cls:"out",txt:t("out")};if(p.low_stock)return{cls:"low",txt:t("low")+" · "+a};if(Number.isFinite(a))return{cls:"in",txt:t("ready")+" · "+a}}return{cls:"",txt:t("checking")}}
+function statusText(p){var s=String(p.online_checkout_status||"");if(s==="restricted")return t("restricted");if(s==="out_of_stock")return t("out");if(s==="stock_untracked")return t("checking");if(!(Number(p.selling_price_thb)>0))return t("noPrice");return t("restricted")}
+function canBuy(p){return p&&p.checkout_eligible===true&&Number(p.selling_price_thb)>0}
+function renderProducts(){if(!grid||!items.length)return;grid.innerHTML="";items.forEach(function(item,idx){var card=document.createElement("article");card.className="hs-card";var first=item.variants[0],type=item.type==="single"?"":item.type;card.innerHTML='<div class="hs-media"><img src="'+image(first,type)+'" alt="'+esc(item.name)+'" loading="lazy"><span class="hs-badge">'+esc(first.curation_label||"HIMAI PICK")+'</span></div><div class="hs-body"><h3>'+esc(item.name)+'</h3><p>'+esc(first.description||"")+'</p><div class="hs-variant" '+(item.variants.length<2?'hidden':'')+'><label><span class="hs-variant-label">'+esc(type==="gg"?t("chooseSize"):type==="pod"?t("chooseFlavour"):t("chooseBottle"))+'</span><select class="hs-select" data-variant>'+item.variants.map(function(p,i){return'<option value="'+i+'">'+esc(optionLabel(p,type))+'</option>'}).join("")+'</select></label><div class="hs-meta"><span class="hs-stock" data-stock><i class="hs-dot"></i><span></span></span><strong data-sku></strong></div></div><div class="hs-price"><small>'+esc(t("price"))+'</small><strong data-price>—</strong></div><div class="hs-card-actions"><div data-action></div></div><div class="hs-note" data-note></div></div>';grid.appendChild(card);var sel=card.querySelector("[data-variant]"),price=card.querySelector("[data-price]"),sku=card.querySelector("[data-sku]"),st=card.querySelector("[data-stock]"),stxt=st.querySelector("span"),act=card.querySelector("[data-action]"),note=card.querySelector("[data-note]");
+ function update(){var p=item.variants[sel?Number(sel.value):0]||first,ss=stock(p);price.textContent=money(p.selling_price_thb);sku.textContent=p.sku||"";st.className="hs-stock "+ss.cls;stxt.textContent=ss.txt;if(canBuy(p)){act.innerHTML='<button class="hs-buy" type="button" data-add="'+esc(p.id)+'">'+esc(t("add"))+'</button>';note.textContent=""}else{act.innerHTML='<a class="hs-contact" href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener">'+esc(t("askItem"))+'</a>';note.textContent=statusText(p)}}
+ if(sel)sel.addEventListener("change",update);update()})}
+function cart(){try{var c=JSON.parse(localStorage.getItem(KEY)||"[]");return Array.isArray(c)?c:[]}catch(_){return[]}}
+function save(c){try{localStorage.setItem(KEY,JSON.stringify(c))}catch(_){}renderCart()}
+function toast(s){if(!toastEl)return;toastEl.textContent=s;toastEl.classList.add("show");setTimeout(function(){toastEl.classList.remove("show")},1400)}
+function reconcile(){var c=cart(),next=[],changed=false;c.forEach(function(x){var p=products.find(function(v){return v.id===x.product_id});if(!p||!canBuy(p)){changed=true;return}var q=Math.max(1,Math.floor(Number(x.qty)||1));if(p.stock_status==="tracked"){var a=Math.max(0,Math.floor(Number(p.available)||0));if(a<=0){changed=true;return}if(q>a){q=a;changed=true}}next.push({product_id:p.id,name:p.product_name,sku:p.sku,unit_price_thb:Number(p.selling_price_thb)||0,qty:q})});if(changed)save(next);return changed}
+function add(id){var p=products.find(function(x){return x.id===id});if(!canBuy(p)){toast(statusText(p));return}var c=cart(),f=c.find(function(x){return x.product_id===id}),a=p.stock_status==="tracked"?Math.max(0,Math.floor(Number(p.available)||0)):20,current=f?Number(f.qty)||0:0;if(current>=a){toast(t("stockOnly",{n:a}));return}if(f)f.qty=current+1;else c.push({product_id:p.id,name:p.product_name,sku:p.sku,unit_price_thb:Number(p.selling_price_thb),qty:1});save(c);toast(t("added"))}
+function renderCart(){var c=cart(),q=c.reduce(function(s,x){return s+(Number(x.qty)||0)},0),sum=c.reduce(function(s,x){return s+(Number(x.unit_price_thb)||0)*(Number(x.qty)||0)},0);if(count)count.textContent=q;if(total)total.textContent=sum?money(sum):"—";if(list)list.innerHTML=c.length?c.map(function(x,i){return'<div class="hs-item"><div><strong>'+esc(x.name)+'</strong><small>'+esc(x.sku)+' · '+x.qty+' · '+money(x.unit_price_thb)+'</small></div><button type="button" data-remove="'+i+'">'+esc(t("remove"))+'</button></div>'}).join(""):'<p class="hs-dtext">'+esc(t("empty"))+'</p>'}
+function openCart(v){drawer.classList.toggle("open",!!v);document.body.style.overflow=v?"hidden":"";if(v){reconcile();renderCart()}}
+function shippingToggle(){document.getElementById("hsShipping").hidden=document.getElementById("hsMethod").value==="pickup"}
+async function checkout(){var btn=document.getElementById("hsCheckout"),name=document.getElementById("hsName").value.trim(),phone=document.getElementById("hsPhone").value.trim(),email=document.getElementById("hsEmail").value.trim(),method=document.getElementById("hsMethod").value,c=cart();if(!c.length){statusEl.textContent=t("needCart");return}if(reconcile()){statusEl.textContent=t("cartUpdated");return}var blocked=c.find(function(x){var p=products.find(function(v){return v.id===x.product_id});return!canBuy(p)});if(blocked){statusEl.textContent=t("blocked");return}if(name.length<2||phone.replace(/\D/g,"").length<8){statusEl.textContent=t("contactReq");return}var shipping={delivery_method:method,recipient_name:name,phone:phone,delivery_note:document.getElementById("hsNote").value.trim()};if(method==="delivery"){shipping.address_line1=document.getElementById("hsAddress1").value.trim();shipping.address_line2=document.getElementById("hsAddress2").value.trim();shipping.subdistrict=document.getElementById("hsSubdistrict").value.trim();shipping.district=document.getElementById("hsDistrict").value.trim();shipping.province=document.getElementById("hsProvince").value.trim();shipping.postal_code=document.getElementById("hsPostal").value.replace(/\D/g,"").slice(0,5);if(shipping.address_line1.length<5||!shipping.district||!shipping.province||shipping.postal_code.length!==5){statusEl.textContent=t("addressReq");return}}btn.disabled=true;statusEl.textContent=t("opening");try{var res=await fetch(CHECKOUT,{method:"POST",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({customer:{name:name,phone:phone,email:email},shipping:shipping,source_path:"/shop",items:c.map(function(x){return{product_id:x.product_id,quantity:Number(x.qty)||1}})})}),data=await res.json().catch(function(){return{}});if(!res.ok||data.ok!==true||!data.payment_url)throw new Error(data.error||"checkout_failed");localStorage.removeItem(KEY);location.href=data.payment_url}catch(e){statusEl.textContent=t("failed")+" "+(e&&e.message?e.message:"");btn.disabled=false}}
+grid.addEventListener("click",function(e){var b=e.target.closest("[data-add]");if(b)add(b.dataset.add)});
+list.addEventListener("click",function(e){var b=e.target.closest("[data-remove]");if(!b)return;var c=cart();c.splice(Number(b.dataset.remove),1);save(c)});
+document.getElementById("hsCart").addEventListener("click",function(){openCart(true)});
+root.querySelectorAll("[data-close]").forEach(function(b){b.addEventListener("click",function(){openCart(false)})});
+document.addEventListener("keydown",function(e){if(e.key==="Escape")openCart(false)});
+document.getElementById("hsClear").addEventListener("click",function(){save([])});
+document.getElementById("hsMethod").addEventListener("change",shippingToggle);
+document.getElementById("hsCheckout").addEventListener("click",checkout);
+shippingToggle();applyLang();renderCart();
+fetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw new Error("catalog");products=(data.products||[]).filter(function(p){return String(p.status||"").toLowerCase()==="active"});items=group(products);reconcile();renderProducts();renderCart()}).catch(function(){grid.innerHTML='<div class="hs-loading">'+esc(lang==="th"?"ยังเปิดรายการไม่ได้ครับ ลองใหม่อีกครั้ง":lang==="zh"?"暂时无法加载商品，请再试一次。":"Products are unavailable right now. Please try again.")+'</div>'});
+})();
+</script>
+</main>
