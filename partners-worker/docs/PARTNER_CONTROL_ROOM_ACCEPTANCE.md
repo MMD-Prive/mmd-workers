@@ -1,6 +1,6 @@
 # Partner Control Room — implementation and pilot acceptance
 
-Lovable remains paused. This increment closes the outstanding implementation paths after #1504/#1506. It does **not** certify an authenticated pilot journey or authorize synthetic payments, identity binding or messages to a real Partner.
+Lovable remains paused. This document is the **Partner Dashboard Phase 1 closure contract**. Phase 1 uses verified LINE Partner access as the Dashboard authority. Telegram is explicitly deferred and optional; it may add notifications later but is not an authentication or job-response gate. Payment Truth, owner approval and scoped Partner authority remain fail-closed.
 
 ## Implemented and tested
 
@@ -17,33 +17,40 @@ Lovable remains paused. This increment closes the outstanding implementation pat
 | History / reports | Airtable offsets are followed through all pages. Exact Partner-link filtering is retained. Void/refund/reversal/held states are excluded from pending earnings; paid status is exact, not a substring such as “unpaid”. CSV and print views use the complete returned history. |
 | Private Vault | AES-GCM/PBKDF2 remains browser-only. Import checks decrypted Partner ownership and re-encrypts with the current PIN. Failed saves fence queued writes; unsaved notes can be exported encrypted. Stale server revisions cannot overwrite another device. Lock/login expiry clears private editor state. |
 | Notifications / coordination | Partner Activity includes commission/payment history and durable payout references as well as shared requests and owner replies. Existing admin Telegram notifications remain. Console is an explicit shared coordination request queue; it does not automatically send customer messages. |
-| Partner identity onboarding | LINE continues to open the read/manage dashboard. Telegram binding is the required final onboarding step before any Dashboard job response. The UI removes response controls until the canonical Partner record has both a numeric Telegram ID and `verified` status, and the API independently enforces the same gate before every write. |
+| Partner identity onboarding | LINE opens and authorizes the read/manage dashboard. A valid Partner token plus canonical Partner scope is sufficient for Dashboard actions. Telegram is optional and may be connected later for notifications; it never grants Partner authority. Job responses remain independently blocked until canonical Payment Truth reaches Official Verify. |
 
-## Live pilot prerequisites observed on 2026-09-21
+## Phase 1 live state observed on 2026-09-22
 
-Read-only Airtable checks found:
+Read-only production checks found:
 
-- Kendo is Active and recognized; Telegram verification is absent.
+- Kendo is `Active` and `recognized`.
+- Kendo's verified LINE claim is linked to the canonical Partner record.
+- A fresh Partner access-token hash exists after Kendo used the LINE entry, confirming the real Partner LINE exchange path reached token issuance.
+- Telegram verification is absent by design and does not block Phase 1.
+- Kendo has two linked model referrals in the current roster.
 - The existing pilot Session remains `payment_status: pending`.
-- Its existing referral snapshot declares `commission_terms: not_set` and `commercial_terms: case_by_case`.
+- No synthetic payment, rate, agreement or job confirmation was created to force acceptance.
 
-Therefore a complete money/confirm journey still needs an actual approved commercial agreement, genuine Telegram binding by Kendo, and a genuinely verified payment. Kendo must use **Connect Telegram** and press **Start** in Telegram; no operator should enter or infer a Telegram ID on Kendo's behalf. Do not choose a rate, create a payment, or confirm a job to make acceptance pass. The owner reconciliation screen is prepared for the real agreement.
+Phase 1 therefore closes around real LINE access, Dashboard operations, model/roster control, agreements/proposals, private vault, reporting and the Payment Truth gate. A real Confirm/Changes/Decline event will become available automatically when a genuinely linked Session reaches Official Verify. Telegram can be added later as an optional notification channel without changing Partner authority.
 
 Login: <https://mmdbkk.com/sigil/model/dashboard/partner-login>
 Owner review: <https://mmdbkk.com/internal/admin/partners>
 
 ## Validation
 
-- Partner runtime/DOM suite: 73 tests, including Telegram onboarding/API enforcement, concurrent materialization, ambiguous-write fencing, historical and legacy agreement handling, deposit/final/refund scenarios, 305-row pagination, scoped photo review/publication/revocation, canonical sales resolver and encrypted backup recovery.
+- Partner runtime/DOM suite covers optional Telegram behavior, LINE-authorized Dashboard actions, Payment Truth enforcement, concurrent materialization, ambiguous-write fencing, historical and legacy agreement handling, deposit/final/refund scenarios, paginated history, scoped photo review/publication/revocation, canonical sales resolver and encrypted backup recovery.
 - Admin scope suite: 18 tests covering credential-bound owner access, exact-origin writes, fixed service routes, canonical creation/capture and bundled Co-Partner payout contracts.
 - TypeScript and `git diff --check` pass.
 - These are fixture/DOM tests, not visual mobile/desktop/PDF or authenticated pilot acceptance.
 
-## Operational limits and final handoff gate
+## Phase 1 closure and deferred work
 
-1. Genuine Partner/owner browser acceptance must cover login, private vault restore, owner image preview and printable earnings at mobile and desktop sizes. The supported browser previously blocked local/file preview; no alternative browser or network workaround is permitted. Public production/login checks alone cannot certify this.
-2. Existing downstream customer channels may intentionally limit the length of customer-safe profile excerpts. The full approved copy and links are retained in the canonical keyword profile; approval does not change channel entitlement policy.
-3. A mutation fence left in `reconciliation_required` needs operator investigation. Its deterministic R2 receipt records resource scope, route, record ID and nonce. Confirm the original Worker invocation has stopped, read back canonical records and deterministic source keys, and reconcile uncertain writes before an operator releases the fence. There is deliberately no automatic timed takeover. This coordinates Partner-owned mutations, not arbitrary external Airtable writers.
-4. A refund after an already recorded transfer requires actual financial reconciliation. Never delete or relabel the transfer as though no payment occurred.
+Phase 1 is considered operationally closed when this change is merged, deployed, and the production smoke remains green. The closed scope is: LINE login, Home/Jobs, Models, model detail/edit/add/remove requests, media review handoff, Agreements, System 1/2/3 proposals, Sales Control/visibility/audience proposals, Earnings/Performance, Partner Console, private external schedule/notes, Private Vault, and Payment Truth-gated job responses.
 
-Only mark full pilot handoff complete after the genuine-event and browser evidence above exists. Do not equate a merged/deployed increment with end-to-end pilot completion.
+Deferred beyond Phase 1:
+1. Telegram Partner binding and direct Partner notification UX.
+2. Real-event job confirmation until a genuine Session reaches Official Verify; never fabricate a payment to make this happen.
+3. Broader visual UAT refinements that do not change authority or data correctness.
+4. Historical financial reconciliation when a legacy row is ambiguous. A recorded transfer must never be deleted or relabeled as though no payment occurred.
+
+Existing downstream customer channels may intentionally limit customer-safe excerpts; approval does not widen entitlement policy. Mutation fences in `reconciliation_required` remain manual-reconciliation events and never auto-take over.
