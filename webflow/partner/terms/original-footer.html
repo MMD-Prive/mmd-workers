@@ -1,0 +1,253 @@
+<script>
+(function(){
+  "use strict";
+
+  var root=document.getElementById("sigil-partner-terms-v6");
+  if(!root||root.dataset.init==="1")return;
+  root.dataset.init="1";
+  root.classList.add("is-enhanced");
+
+  var WORKER_BASE=(root.getAttribute("data-worker-base")||"").replace(/\/$/,"");
+  var TERMS_VERSION=root.getAttribute("data-terms-version")||"modeling_partner_terms_v3_2026-09-20";
+  var DASHBOARD_PATH=root.getAttribute("data-dashboard-path")||"/partner/dashboard";
+  var params=new URLSearchParams(window.location.search);
+  var token=params.get("t")||"";
+  var reduced=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var nav=root.querySelector("[data-pt-nav]");
+  var status=root.querySelector("[data-partner-status]");
+  var statusTitle=root.querySelector("[data-partner-status-title]");
+  var statusCopy=root.querySelector("[data-partner-status-copy]");
+  var check=root.querySelector("[data-terms-check]");
+  var button=root.querySelector("[data-accept-terms]");
+  var message=root.querySelector("[data-terms-message]");
+  var tokenLinks=[].slice.call(root.querySelectorAll("[data-token-link]"));
+  var branchLinks=[].slice.call(root.querySelectorAll("[data-branch-link]"));
+  var sections=[].slice.call(root.querySelectorAll("[data-section]"));
+  var busy=false;
+  var verified=false;
+
+  function setStatus(mode,title,copy){
+    if(!status)return;
+    status.classList.remove("is-ready","is-error");
+    if(mode)status.classList.add(mode);
+    if(statusTitle)statusTitle.textContent=title||"";
+    if(statusCopy)statusCopy.textContent=copy||"";
+  }
+
+  function setMessage(text,mode){
+    if(!message)return;
+    message.classList.remove("is-ok","is-error");
+    if(mode)message.classList.add(mode);
+    message.textContent=text||"";
+  }
+
+  function syncButton(){
+    if(!button)return;
+    button.disabled=busy||!verified||!token||!check||!check.checked;
+    button.setAttribute("aria-busy",busy?"true":"false");
+  }
+
+  function dashboardFallback(){
+    var url=new URL(DASHBOARD_PATH,window.location.origin);
+    if(token)url.searchParams.set("t",token);
+    return url;
+  }
+
+  function safeDashboard(value){
+    try{
+      var url=new URL(value||DASHBOARD_PATH,window.location.origin);
+      if(url.protocol!=="https:")return null;
+      if(["mmdbkk.com","www.mmdbkk.com"].indexOf(url.hostname)<0)return null;
+      if(url.port||url.username||url.password)return null;
+      if(url.pathname!=="/partner/dashboard")return null;
+      if(!url.searchParams.get("t")&&token)url.searchParams.set("t",token);
+      if(url.searchParams.get("t")!==token)return null;
+      return url;
+    }catch(_error){
+      return null;
+    }
+  }
+
+  async function fetchJson(url,options,timeoutMs){
+    var controller="AbortController" in window?new AbortController():null;
+    var timer=controller?setTimeout(function(){controller.abort();},timeoutMs):null;
+    var opts=Object.assign({},options||{});
+    if(controller)opts.signal=controller.signal;
+
+    try{
+      var response=await fetch(url,opts);
+      var payload=await response.json().catch(function(){return null;});
+      return {response:response,payload:payload};
+    }finally{
+      if(timer)clearTimeout(timer);
+    }
+  }
+
+  function bindTokenLinks(){
+    tokenLinks.forEach(function(link){
+      var path=link.getAttribute("data-path")||DASHBOARD_PATH;
+      try{
+        var url=new URL(path,window.location.origin);
+        if(token)url.searchParams.set("t",token);
+        link.setAttribute("href",url.pathname+url.search);
+      }catch(_error){
+        link.setAttribute("href",DASHBOARD_PATH+(token?"?t="+encodeURIComponent(token):""));
+      }
+    });
+  }
+
+  async function verifyAccess(){
+    verified=false;
+    if(check){
+      check.checked=false;
+      check.disabled=true;
+    }
+    syncButton();
+
+    if(!token){
+      setStatus("is-error","เปิดจาก Partner Access ส่วนตัว","ใช้ลิงก์เดิมที่ได้รับจาก SĪGIL เพื่ออ่านและยืนยัน Terms");
+      setMessage("เมื่อเปิดจาก Partner Access ระบบจะตรวจสิทธิ์ให้โดยอัตโนมัติ","is-error");
+      return;
+    }
+
+    setStatus("","กำลังตรวจ Partner Access","ใช้เวลาเพียงครู่เดียวครับ");
+    setMessage("");
+
+    try{
+      var result=await fetchJson(
+        WORKER_BASE+"/v1/partner/verify?t="+encodeURIComponent(token),
+        {method:"GET",headers:{Accept:"application/json"},cache:"no-store"},
+        12000
+      );
+
+      if(!result.response.ok||!result.payload||result.payload.ok!==true){
+        var errorMessage=result.payload&&result.payload.error&&(result.payload.error.message||result.payload.error.code);
+        throw new Error(errorMessage||"Partner Access ต้องตรวจสอบอีกครั้ง");
+      }
+
+      verified=true;
+      if(check)check.disabled=false;
+      setStatus("is-ready","Partner Access พร้อมแล้ว","อ่าน Terms ให้ครบ แล้วติ๊กยืนยันเพื่อเข้าสู่ Partner Dashboard");
+      setMessage("");
+      syncButton();
+    }catch(error){
+      verified=false;
+      if(check)check.disabled=true;
+      setStatus("is-error","ลิงก์นี้ต้องตรวจสอบอีกครั้ง","เปิด Partner Access จากลิงก์ล่าสุดที่ SĪGIL ส่งให้คุณ");
+      setMessage(error&&error.name==="AbortError"?"การตรวจสิทธิ์ใช้เวลานานกว่าปกติ ลองเปิดลิงก์นี้อีกครั้งครับ":"Partner Access ยังไม่พร้อมสำหรับการยืนยัน Terms","is-error");
+      syncButton();
+    }
+  }
+
+  async function acceptTerms(){
+    if(busy||!verified||!token||!check||!check.checked)return;
+    busy=true;
+    syncButton();
+    setMessage("กำลังบันทึก Terms V3 เข้ากับ Partner Access ของคุณ…");
+
+    try{
+      var result=await fetchJson(
+        WORKER_BASE+"/v1/partner/accept-terms",
+        {
+          method:"POST",
+          headers:{"Content-Type":"application/json",Accept:"application/json"},
+          body:JSON.stringify({
+            t:token,
+            agreement_version:TERMS_VERSION,
+            accepted_at:new Date().toISOString(),
+            source_path:window.location.pathname
+          })
+        },
+        15000
+      );
+
+      if(!result.response.ok||!result.payload||result.payload.ok!==true){
+        var errorMessage=result.payload&&result.payload.error&&(result.payload.error.message||result.payload.error.code);
+        throw new Error(errorMessage||"ยังบันทึก Terms ไม่สำเร็จ");
+      }
+
+      setMessage("บันทึก Terms แล้ว กำลังเปิด Partner Dashboard","is-ok");
+      if(button){
+        var label=button.querySelector("span");
+        if(label)label.textContent="บันทึก Terms แล้ว";
+      }
+
+      var next=safeDashboard(result.payload.dashboard_url)||dashboardFallback();
+      window.setTimeout(function(){window.location.assign(next.toString());},450);
+    }catch(error){
+      busy=false;
+      syncButton();
+      setMessage(
+        error&&error.name==="AbortError"
+          ?"ใช้เวลาบันทึกนานกว่าปกติ ลองกดอีกครั้งได้เลยครับ"
+          :"ระบบยังบันทึก Terms ไม่สำเร็จ ลองอีกครั้งหรือเปิด Partner Access จากลิงก์ล่าสุด",
+        "is-error"
+      );
+    }
+  }
+
+  function setupBranchNav(){
+    branchLinks.forEach(function(link){
+      link.addEventListener("click",function(){
+        branchLinks.forEach(function(item){item.classList.remove("is-active");});
+        link.classList.add("is-active");
+      });
+    });
+
+    if(!("IntersectionObserver" in window)||!sections.length)return;
+
+    var observer=new IntersectionObserver(function(entries){
+      var visible=entries
+        .filter(function(entry){return entry.isIntersecting;})
+        .sort(function(a,b){return b.intersectionRatio-a.intersectionRatio;})[0];
+
+      if(!visible)return;
+      var id=visible.target.id;
+      branchLinks.forEach(function(link){
+        link.classList.toggle("is-active",link.getAttribute("href")==="#"+id);
+      });
+    },{rootMargin:"-28% 0px -58% 0px",threshold:[0,.15,.35,.6]});
+
+    sections.forEach(function(section){observer.observe(section);});
+  }
+
+  function setupReveal(){
+    var nodes=[].slice.call(root.querySelectorAll(".pt6-reveal"));
+    if(reduced||!("IntersectionObserver" in window)){
+      nodes.forEach(function(node){node.classList.add("is-visible");});
+      return;
+    }
+
+    var observer=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(entry.isIntersecting){
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        }
+      });
+    },{threshold:.08,rootMargin:"0px 0px -7% 0px"});
+
+    nodes.forEach(function(node){observer.observe(node);});
+  }
+
+  function setupNav(){
+    function update(){
+      if(nav)nav.classList.toggle("is-scrolled",(window.scrollY||0)>42);
+    }
+    update();
+    window.addEventListener("scroll",update,{passive:true});
+  }
+
+  if(check)check.addEventListener("change",syncButton);
+  if(button)button.addEventListener("click",acceptTerms);
+
+  bindTokenLinks();
+  setupBranchNav();
+  setupReveal();
+  setupNav();
+  verifyAccess();
+
+  requestAnimationFrame(function(){root.classList.add("is-ready");});
+})();
+</script>
