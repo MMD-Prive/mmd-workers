@@ -9,6 +9,7 @@ import {
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
 import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
 import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
+import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -95,6 +96,9 @@ async function getPaymentEvidence(request, env) {
 
 async function listReviewQueue(request, env) {
   const url = new URL(request.url);
+  if (url.searchParams.get("view") === "confirmation") {
+    return json(await followthrough(env, Object.fromEntries(url.searchParams)));
+  }
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
   const discovery = {
     list: (table, params) => airtableList(env, table, params),
@@ -151,6 +155,7 @@ async function listReviewQueue(request, env) {
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
 
   const decision = safeCode(body.decision);
   const proofId = safeText(body.proof_id, 120);
@@ -728,8 +733,16 @@ async function airtableList(env, tableName, params = {}) {
   return records.slice(0, limit);
 }
 
+function followthrough(env, input, options = {}) {
+  return paymentConfirmationFollowthrough(env, input, {
+    ...options, list: (table, params) => airtableList(env, table, params),
+    paymentsTable: paymentsTable(env), sessionsTable: discoveryTables(env).sessions,
+  });
+}
+
 async function airtablePage(env, tableName, params = {}) {
   const url = airtableUrl(env, tableName);
+  if (params.returnFieldsByFieldId) url.searchParams.set("returnFieldsByFieldId", "true");
   if (params.filterByFormula) url.searchParams.set("filterByFormula", params.filterByFormula);
   if (params.maxRecords) url.searchParams.set("maxRecords", String(params.maxRecords));
   if (params.pageSize) url.searchParams.set("pageSize", String(params.pageSize));
