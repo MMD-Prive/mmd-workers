@@ -78,7 +78,7 @@ test('P2A finance audit is owner/admin authenticated and adds no finance mutatio
   const html=await page.text();
   assert.match(html,/Finance & Audit/);
   assert.match(html,/Partner Source Rate/);
-  assert.match(html,/read_only|อ่านอย่างเดียว/);
+  assert.match(html,/อ่านจาก canonical ledgers เท่านั้น/);
   assert.doesNotMatch(html,/data-action="finance-audit"/);
 });
 
