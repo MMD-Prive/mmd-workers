@@ -8,6 +8,10 @@ on:
     paths:
       - ".github/workflows/deploy-kenji-recommendation-layer.yml"
       - "shared/kenji-recommendation-*.mjs"
+      - "shared/sigil-availability-snapshot-v1.mjs"
+      - "shared/sigil-availability-snapshot-v1.test.mjs"
+      - "admin-worker/src/sigil-availability-snapshot.js"
+      - "admin-worker/sigil-availability-snapshot.test.mjs"
       - "admin-worker/src/kenji-recommendation-*.js"
       - "admin-worker/src/kenji-lv5-operational-rpc.js"
       - "admin-worker/kenji-recommendation-*.mjs"
@@ -75,6 +79,8 @@ jobs:
           node --check ../shared/kenji-recommendation-context-v1.mjs
           node --check ../shared/kenji-recommendation-candidate-v1.mjs
           node --check ../shared/kenji-recommendation-layer-v1.mjs
+          node --check ../shared/sigil-availability-snapshot-v1.mjs
+          node --check src/sigil-availability-snapshot.js
           node --test \
             ../shared/kenji-recommendation-authority.test.mjs \
             ../shared/kenji-recommendation-personalization.test.mjs \
@@ -82,7 +88,9 @@ jobs:
             kenji-recommendation-rpc-behavior.test.mjs \
             kenji-recommendation-entrypoint.test.mjs \
             kenji-model-access-rpc.test.mjs \
-            ../shared/model-sales-control-v1.test.mjs
+            ../shared/model-sales-control-v1.test.mjs \
+            ../shared/sigil-availability-snapshot-v1.test.mjs \
+            sigil-availability-snapshot.test.mjs
 
       - name: Ensure sanitized availability KV binding
         id: availability_kv

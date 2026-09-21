@@ -37,6 +37,8 @@ jobs:
         run: |
           set -euo pipefail
           node --check src/index.js
+          node --check src/sigil-availability-producer.mjs
+          node --test test/sigil-availability-producer.test.mjs
           ! grep -q 'placeholder="ADMIN_BEARER"' public/index.html
           grep -q "credentials:'include'" public/index.html
           grep -q '"generic_proxy_disabled"' src/index.js

@@ -26,6 +26,10 @@ import {
   handleKenjiLv5OperationalRpc,
   isKenjiLv5OperationalRpcRequest,
 } from "./kenji-lv5-operational-rpc.js";
+import {
+  handleSigilAvailabilityInternalRequest,
+  isSigilAvailabilityInternalRequest,
+} from "./sigil-availability-snapshot.js";
 import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import {
@@ -183,6 +187,13 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    // SIGIL Availability Snapshot is a service-only write boundary. It accepts
+    // only sanitized Model Console / Model App inputs and writes no raw operational
+    // context into the recommendation KV.
+    if (isSigilAvailabilityInternalRequest(normalizedPath, method)) {
+      return handleSigilAvailabilityInternalRequest(request, env);
     }
 
     // Kenji LV5 orchestration is service-binding only. The handler performs its

@@ -1,9 +1,8 @@
 # SIGIL Availability Snapshot V1
 
-Status: docs/spec only. This document defines the API contract for a future
-sanitized availability layer. It does not implement worker code, deploy workers,
-publish Webflow, alter Airtable schema, or authorize Kenji to read raw Model
-Console data.
+Status: implementation candidate. The sanitized producer is implemented behind
+service/session boundaries, but this branch does not by itself authorize merge,
+deploy, Webflow publication, or any customer-visible Kenji send behavior.
 
 ## Purpose
 
@@ -34,22 +33,24 @@ Model Console / Model App
   -> LINE / Member Dashboard / Admin Assist
 ```
 
-## Proposed Endpoint Contracts
+## Producer Contracts
 
-Internal write endpoint:
-
-```http
-POST /v1/sigil/availability-snapshot
-```
-
-Internal read endpoint:
+Service-only Admin Worker write boundary:
 
 ```http
-GET /v1/sigil/availability-snapshot
+POST /v1/internal/sigil/availability-snapshot
 ```
 
-These names are contract placeholders. Final worker ownership, route paths, and
-bindings must be approved before implementation.
+Model Console operator facade:
+
+```http
+POST /v1/console/models/:id/availability-snapshot
+```
+
+Model App profile availability changes use the same sanitizer/writer after a
+valid Model session. The Recommendation Layer remains a read-only consumer of
+`availability:v1:{model_key}`. No public read/write availability endpoint is
+created.
 
 ## Auth Rules
 
