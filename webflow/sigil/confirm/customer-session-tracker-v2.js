@@ -9,6 +9,7 @@
   const ROOT_ID = "mmd-job-confirm-v16";
   const API = "https://sigil.mmdbkk.com";
   const POLL_MS = 25000;
+  const CHANGE_API = `${API}/v1/confirm/change-request`;
   const STAGES = ["confirmed", "en_route", "nearby", "arrived", "service", "aftercare"];
   const STAGE_LABELS = [
     ["01", "CONFIRMED", "ยืนยันแล้ว"],
@@ -88,6 +89,17 @@
 #${ROOT_ID} .mjc16__proof-status.is-error{border:1px solid rgba(255,180,168,.25);color:#ffb4a8}
 #${ROOT_ID} .mjc16__aftercare{display:flex;align-items:center;justify-content:center;width:100%;min-height:56px;margin-top:12px;border-radius:18px;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108!important;-webkit-text-fill-color:#171108!important;font-size:15px;font-weight:900;text-decoration:none;box-shadow:0 16px 36px rgba(201,159,77,.16)}
 #${ROOT_ID} .mjc16__aftercare:focus-visible{outline:3px solid rgba(255,245,177,.24);outline-offset:3px}
+#${ROOT_ID} .mjc16__change{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.24);border-radius:24px;background:rgba(255,255,255,.018)}
+#${ROOT_ID} .mjc16__change-grid{display:grid;gap:10px;margin-top:14px}
+#${ROOT_ID} .mjc16__field{display:grid;gap:6px}
+#${ROOT_ID} .mjc16__field span{color:#aaa29a;font-size:10px;font-weight:800;letter-spacing:.06em}
+#${ROOT_ID} .mjc16__input,#${ROOT_ID} .mjc16__select,#${ROOT_ID} .mjc16__textarea{width:100%;box-sizing:border-box;padding:12px 13px;border:1px solid rgba(255,255,255,.10);border-radius:14px;background:#0a0a0d;color:#f7f2ea;font:inherit}
+#${ROOT_ID} .mjc16__textarea{min-height:96px;resize:vertical}
+#${ROOT_ID} .mjc16__change-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+#${ROOT_ID} .mjc16__change-btn{min-height:46px;padding:0 16px;border:1px solid rgba(217,185,105,.28);border-radius:14px;background:rgba(217,185,105,.06);color:#fff5b1;font-weight:900;cursor:pointer}
+#${ROOT_ID} .mjc16__change-btn.is-primary{background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108;border:0}
+#${ROOT_ID} .mjc16__change-status{margin-top:10px;color:#aaa29a;font-size:11px;line-height:1.55}
+#${ROOT_ID} .mjc16__pending{margin-top:12px;padding:12px 13px;border-radius:14px;border:1px solid rgba(240,215,143,.20);color:#fff5b1;background:rgba(240,215,143,.04);font-size:12px;line-height:1.55}
 @media(min-width:760px){#${ROOT_ID} .mjc16__tracker{padding:24px}#${ROOT_ID} .mjc16__tracker-focus{grid-template-columns:1.3fr .7fr}#${ROOT_ID} .mjc16__timeline-step{flex:1 1 0;min-width:0}}
 @media(max-width:560px){#${ROOT_ID} .mjc16__tracker-head{display:grid}#${ROOT_ID} .mjc16__tracker-badge{width:max-content}#${ROOT_ID} .mjc16__timeline{margin-right:-4px}#${ROOT_ID} .mjc16__privacy{display:grid}}
 @media(max-width:560px){#${ROOT_ID} .mjc16__final-head{display:grid}#${ROOT_ID} .mjc16__final-amount{text-align:left}}
@@ -137,6 +149,23 @@
     <div class="mjc16__pay-methods" data-final-methods><div class="mjc16__pay-method">กำลังโหลดช่องทางชำระเงิน…</div></div>
     <a class="mjc16__proof-submit" data-final-pay-link href="#" style="display:flex;align-items:center;justify-content:center;text-decoration:none">ชำระยอดคงเหลือ / ส่งสลิป</a>
     <p class="mjc16__proof-status" data-final-proof-status>ระบบจะพาไปหน้า SIGIL PAY เดียวของงานนี้ เพื่อชำระและส่งสลิปครั้งเดียว</p>
+  </section>
+  <section class="mjc16__change" data-change-request>
+    <div class="mjc16__section-kicker">REVIEW & UPDATE</div>
+    <h3>ตรวจสอบรายละเอียดก่อนยืนยัน</h3>
+    <p class="mjc16__change-status">เวลาและสถานที่อาจยังเป็นข้อมูลเบื้องต้น หากต้องการแก้ไขให้ส่งคำขอถึง MMD ก่อน ระบบจะไม่แก้ Session จริงทันที</p>
+    <div class="mjc16__change-grid">
+      <label class="mjc16__field"><span>ประเภทคำขอ</span><select class="mjc16__select" data-change-type><option value="time_change">เปลี่ยนเวลา</option><option value="location_change">เปลี่ยนสถานที่</option><option value="date_change">เปลี่ยนวัน</option><option value="reschedule">เลื่อนงาน</option><option value="cancellation">ยกเลิกงาน</option><option value="remark">แจ้งเพิ่มเติม</option></select></label>
+      <label class="mjc16__field" data-change-date-wrap hidden><span>วันที่ใหม่</span><input class="mjc16__input" type="date" data-change-date></label>
+      <label class="mjc16__field" data-change-start-wrap><span>เวลาเริ่มใหม่</span><input class="mjc16__input" type="time" data-change-start></label>
+      <label class="mjc16__field" data-change-end-wrap><span>เวลาสิ้นสุดใหม่</span><input class="mjc16__input" type="time" data-change-end></label>
+      <label class="mjc16__field" data-change-location-wrap hidden><span>สถานที่ / พื้นที่</span><input class="mjc16__input" type="text" data-change-location placeholder="ชื่อสถานที่ หรือ ยังไม่สรุปสถานที่"></label>
+      <label class="mjc16__field" data-change-map-wrap hidden><span>Google Maps URL (ถ้ามี)</span><input class="mjc16__input" type="url" data-change-map placeholder="https://..."></label>
+      <label class="mjc16__field"><span>Remark / เหตุผล</span><textarea class="mjc16__textarea" data-change-remark placeholder="เช่น ไฟลต์เลื่อน ขอเปลี่ยนเวลา / โรงแรมเดิมเต็ม / ยังไม่สรุปสถานที่"></textarea></label>
+    </div>
+    <div class="mjc16__change-actions"><button class="mjc16__change-btn is-primary" type="button" data-change-submit>ส่งคำขอให้ MMD</button></div>
+    <div class="mjc16__pending" data-change-pending hidden></div>
+    <div class="mjc16__change-status" data-change-status></div>
   </section>
   <a class="mjc16__aftercare" data-session-aftercare href="/aftercare" hidden>ให้คะแนนและ Aftercare ⭐</a>
 </section>`;
@@ -312,6 +341,78 @@
     }
   }
 
+
+  function uid(prefix = "ccr") {
+    const rand = crypto.getRandomValues(new Uint32Array(2));
+    return prefix + "_" + Date.now().toString(36) + "_" + rand[0].toString(36) + rand[1].toString(36);
+  }
+
+  function syncChangeFields() {
+    const type = clean($("[data-change-type]")?.value || "time_change");
+    const showTime = ["time_change", "reschedule"].includes(type);
+    const showDate = ["date_change", "reschedule"].includes(type);
+    const showLocation = ["location_change", "reschedule"].includes(type);
+    const toggles = [
+      ["[data-change-start-wrap]", showTime],
+      ["[data-change-end-wrap]", showTime],
+      ["[data-change-date-wrap]", showDate],
+      ["[data-change-location-wrap]", showLocation],
+      ["[data-change-map-wrap]", showLocation],
+    ];
+    toggles.forEach(([selector, visible]) => { const el = $(selector); if (el) el.hidden = !visible; });
+  }
+
+  function pendingSummary(payload) {
+    const pending = Array.isArray(payload?.pending_change_requests) ? payload.pending_change_requests : [];
+    const box = $("[data-change-pending]");
+    if (!box) return;
+    box.hidden = pending.length === 0;
+    if (!pending.length) return;
+    box.textContent = "MMD ได้รับคำขอแล้ว · รอตรวจสอบ: " + pending.map((item) => item.request_type || "change").join(", ");
+  }
+
+  async function submitChangeRequest() {
+    const type = clean($("[data-change-type]")?.value);
+    const status = $("[data-change-status]");
+    const button = $("[data-change-submit]");
+    if (!token || !type || !button) return;
+    button.disabled = true;
+    if (status) status.textContent = "กำลังส่งคำขอให้ MMD…";
+    const requested = {};
+    const date = clean($("[data-change-date]")?.value);
+    const start = clean($("[data-change-start]")?.value);
+    const end = clean($("[data-change-end]")?.value);
+    const location = clean($("[data-change-location]")?.value);
+    const map = clean($("[data-change-map]")?.value);
+    const remark = clean($("[data-change-remark]")?.value);
+    if (date) requested.job_date = date;
+    if (start) requested.start_time = start;
+    if (end) requested.end_time = end;
+    if (location) {
+      requested.location_name = location;
+      if (/ยังไม่สรุป|pending/i.test(location)) requested.pending = true;
+    }
+    if (map) requested.google_map_url = map;
+
+    try {
+      const response = await fetch(CHANGE_API, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json", "Idempotency-Key": uid("ccr") },
+        credentials: "omit",
+        body: JSON.stringify({ t: token, expected_role: "customer", request_type: type, requested_value: requested, customer_remark: remark }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || "change_request_failed");
+      if (status) status.textContent = "MMD ได้รับคำขอแล้ว · รอตรวจสอบก่อนแก้ข้อมูลจริง";
+      if ($("[data-change-remark]")) $("[data-change-remark]").value = "";
+      pendingSummary({ pending_change_requests: [{ request_type: data.request_type }] });
+    } catch (error) {
+      if (status) status.textContent = "ส่งคำขอไม่สำเร็จ: " + clean(error?.message || error);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function render(payload) {
     lastPayload = payload;
     const session = payload?.customer_session;
@@ -336,6 +437,7 @@
 
     renderTimeline(stage, paymentVerified);
     renderFinalPayment(payload);
+    pendingSummary(payload?.customer_session || payload);
     setBadge(session.source_available === false ? "กำลังเชื่อมต่อ" : "LIVE STATUS", session.source_available === false ? "" : "is-live");
 
     const etaCard = $('[data-session-eta-card]');
@@ -388,6 +490,9 @@
 
   function start() {
     if (!mount()) return;
+    $("[data-change-type]")?.addEventListener("change", syncChangeFields);
+    $("[data-change-submit]")?.addEventListener("click", submitChangeRequest);
+    syncChangeFields();
     load();
     clearInterval(timer);
     timer = window.setInterval(load, POLL_MS);
