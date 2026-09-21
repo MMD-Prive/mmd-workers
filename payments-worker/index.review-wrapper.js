@@ -1,7 +1,7 @@
 import phase1Worker from "./index.phase1.js";
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { PointsPhase1Coordinator } from "./index.phase1.js";
-import { queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
+import { authorityRuntimeHealth, queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
 import { handleReviewedProof, isReviewedProofRequest } from "./reviewed-proof.js";
 import {
@@ -87,6 +87,20 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (method === "GET" && (path === "/health" || path === "/ping")) {
+      const response = await phase1Worker.fetch(request, env, ctx);
+      if (!response?.ok) return response;
+      const payload = await response.clone().json().catch(() => null);
+      if (!payload || typeof payload !== "object") return response;
+      const headers = new Headers(response.headers);
+      headers.set("content-type", "application/json; charset=utf-8");
+      headers.set("cache-control", "no-store");
+      return new Response(JSON.stringify({
+        ...payload,
+        analytics: authorityRuntimeHealth(env, "payments-worker", ctx),
+      }), { status: response.status, headers });
+    }
 
     if (method === "GET" && path === "/v1/pay/slip/evidence/health") {
       const airtableReady = Boolean(String(env.AIRTABLE_BASE_ID || "").trim() && String(env.AIRTABLE_API_KEY || "").trim() && String(env.AIRTABLE_TABLE_PAYMENT_PROOFS || "").trim());
