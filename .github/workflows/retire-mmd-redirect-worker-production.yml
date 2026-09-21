@@ -2,6 +2,11 @@ name: Retire mmd-redirect-worker production routes
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/retire-mmd-redirect-worker-production.yml"
   workflow_run:
     workflows:
       - "Repair admin login routes"
@@ -34,8 +39,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require("node:fs");
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
           const source = fs.readFileSync("mmd-redirect-worker/src/index.js", "utf8");
           const config = fs.readFileSync("mmd-redirect-worker/wrangler.toml", "utf8");
           if (!source.includes("REDIRECT_WORKER_DISABLED = true")) throw new Error("legacy Worker is not hard-disabled");
@@ -82,8 +87,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require("node:fs");
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
           const zone = String(process.env.CLOUDFLARE_ZONE_ID || "").trim();
           const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
           if (!zone || !token) throw new Error("Cloudflare routes credential missing");
@@ -221,7 +226,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
+          node --input-type=module <<'NODE'
           const zone = process.env.CLOUDFLARE_ZONE_ID;
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`, {
@@ -244,8 +249,8 @@ jobs:
             echo "No route snapshot exists; no route mutation needs rollback."
             exit 0
           fi
-          node <<'NODE'
-          const fs = require("node:fs");
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
           const zone = process.env.CLOUDFLARE_ZONE_ID;
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const snapshot = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mmd-redirect-routes.snapshot.json", "utf8"));
