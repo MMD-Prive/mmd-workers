@@ -57,3 +57,50 @@ test("catalog exposes a bounded customer-gender scope and defaults legacy folder
   assert.deepEqual(bySlug.get("legacy").accepted_customer_genders, ["male", "female"]);
   assert.equal(bySlug.get("legacy").customer_scope, "all_genders");
 });
+
+test("catalog fails closed for an approved but unsupported explicit customer scope", () => {
+  const audienceBySlug = new Map([["unsupported", []]]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/MMD Travel Models/Straight/unsupported/card.webp" },
+    { key: "MMD Public Models/MMD Travel Models/Straight/legacy/card.webp" },
+  ], { audienceBySlug });
+  assert.deepEqual(items.map((item) => item.slug), ["legacy"]);
+  assert.deepEqual(items[0].accepted_customer_genders, ["male", "female"]);
+});
+
+test("handler requires both accepted review and approved intake before overriding legacy scope", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    records: [
+      { fields: {
+        fldY8Jf7H70Tn1S93: "rejected-model",
+        fldEkwim5KmCjA4rg: ["ผู้ชาย"],
+        fldInXMklAz53CiCq: "rejected",
+        fldHk2h9Rf6g5UlZw: "approved",
+      } },
+      { fields: {
+        fldY8Jf7H70Tn1S93: "approved-model",
+        fldEkwim5KmCjA4rg: ["ผู้หญิง"],
+        fldInXMklAz53CiCq: "accepted",
+        fldHk2h9Rf6g5UlZw: "approved",
+      } },
+    ],
+  }), { headers: { "content-type": "application/json" } });
+  try {
+    const env = {
+      AIRTABLE_API_KEY: "test",
+      AIRTABLE_BASE_ID: "app-test",
+      MMD_MODEL_ASSETS: { async list() { return { objects: [
+        { key: "MMD Public Models/MMD Travel Models/Straight/rejected-model/card.webp" },
+        { key: "MMD Public Models/MMD Travel Models/Straight/approved-model/card.webp" },
+      ], truncated: false }; } },
+    };
+    const response = await handlePublicProfilesCatalogRequest(new Request("https://sigil.mmdbkk.com/sigil/api/models/search/public-catalog"), env);
+    const payload = await response.json();
+    const bySlug = new Map(payload.items.map((item) => [item.slug, item]));
+    assert.equal(bySlug.get("rejected-model").customer_scope, "all_genders");
+    assert.equal(bySlug.get("approved-model").customer_scope, "female_only");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
