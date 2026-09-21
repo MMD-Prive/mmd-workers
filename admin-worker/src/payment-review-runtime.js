@@ -7,6 +7,7 @@ import {
   resolveOperatorPaymentContext,
 } from "./payment-review-owner-context.js";
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
+import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -86,6 +87,7 @@ async function getPaymentEvidence(request, env) {
     "Content-Disposition": "inline",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "sandbox; default-src 'none'",
   });
   return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
 }
@@ -98,12 +100,20 @@ async function listReviewQueue(request, env) {
     maxRecords: Math.min(Math.max(limit * 4, limit), 100),
     sort: [{ field: "created_at", direction: "desc" }],
   });
-  const items = records
+  let items = records
     .map(safeQueueItem)
     .filter(Boolean)
     .filter((item) => item.reviewable)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
     .slice(0, limit);
+
+  if (url.searchParams.get("include_context") === "1") {
+    items = await enrichPaymentReviewContext(items, records, {
+      list: (table, params) => airtableList(env, table, params),
+      paymentsTable: paymentsTable(env),
+      sessionsTable: clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX"),
+    });
+  }
 
   return json({
     ok: true,
@@ -586,6 +596,7 @@ function safeQueueItem(record) {
     identity_state: safeCode(paymentIntelligence?.identity_state || (linkedMemberPresent ? "canonical_member_linked" : "")),
     pending_member_profile: paymentIntelligence?.pending_member_profile === true,
     evidence_preview_url: previewUrl,
+    evidence_type: /\.pdf$/i.test(note.r2_key || "") ? "pdf" : "image",
     source_context: sourceContext,
     extraction_method: extractionMethod || "not_run",
     extraction_confidence: extractionConfidence,
@@ -846,13 +857,15 @@ function internalEvidenceUrl(proofId, note = {}) {
 
 function safeEvidenceKey(value) {
   const key = safeText(value, 800);
-  if (!/^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i.test(key)) return "";
+  const line = /^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i;
+  const web = /^(?:web-payment-proofs|mmd-shop-payment-proofs)\/\d{4}\/\d{2}\/webproof_[a-f0-9]{24}\/original\.(?:jpe?g|png|webp|pdf)$/i;
+  if (!line.test(key) && !web.test(key)) return "";
   return key;
 }
 
 function safeImageContentType(value) {
   const type = clean(value).toLowerCase();
-  return new Set(["image/jpeg", "image/png", "image/webp"]).has(type) ? type : "";
+  return new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]).has(type) ? type : "";
 }
 
 function safeMembershipWriteThrough(value) {
@@ -943,7 +956,19 @@ function isoOrText(value) {
 }
 
 function parseNote(value) {
-  return parseJson(value);
+  const parsed = parseJson(value);
+  if (Object.keys(parsed).length) return parsed;
+  // Web intake writes a bounded semicolon metadata envelope, LINE writes JSON.
+  // Only consume the known envelope; never treat free-form customer text as keys.
+  const raw = clean(value);
+  if (!/^schema=mmd_(?:web|shop)_payment_proof_v1(?:;|$)/.test(raw)) return {};
+  const note = {};
+  for (const part of raw.split(";")) {
+    const match = /^\s*(schema|r2_key|payment_lane|telegram_delivered)\s*=\s*([^;]+?)\s*$/.exec(part);
+    if (!match || Object.hasOwn(note, match[1])) continue;
+    note[match[1]] = match[2];
+  }
+  return note;
 }
 
 function parseJson(value) {
