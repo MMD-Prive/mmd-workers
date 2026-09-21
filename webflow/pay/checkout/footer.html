@@ -65,6 +65,9 @@
 
   let instructions=null;
   let selected="promptpay";
+  let shopMode=false;
+  let amountDueThb=null;
+  const html=(v)=>String(v==null?"":v).replace(/[&<>"\']/g,(ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","\'":"&#39;"}[ch]));
 
   function setSelected(method){
     selected=method;
@@ -84,7 +87,53 @@
     }
   }
 
-  chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.addEventListener("click",()=>setSelected(btn.dataset.payMethod)));
+  function closeShopModal(){
+    const modal=document.querySelector("[data-shop-payment-modal]");
+    if(modal)modal.remove();
+  }
+
+  function openShopModal(method){
+    if(!shopMode||!instructions)return;
+    closeShopModal();
+    const modal=document.createElement("div");
+    modal.className="spk__dialog-wrap";
+    modal.dataset.shopPaymentModal="1";
+    modal.setAttribute("role","presentation");
+    const amount=money(amountDueThb);
+    if(method==="promptpay"){
+      const pp=instructions.promptpay||{};
+      const qr=safeHttps(pp.qr_url);
+      if(!qr)return;
+      modal.innerHTML='<div class="spk__backdrop" data-shop-modal-close></div><div class="spk__dialog" role="dialog" aria-modal="true" aria-labelledby="shopPayQrTitle"><div class="spk__dialog-check">QR</div><h2 id="shopPayQrTitle">สแกน QR แล้วกรอกยอดเอง</h2><p>กรอกยอดตาม Order นี้ <strong>฿'+html(amount)+'</strong> ในแอปธนาคารของคุณ</p><div class="spkpm__qr"><img src="'+html(qr)+'" alt="QR สำหรับชำระ MMD Shop"><p>QR นี้ไม่ใส่ยอดให้อัตโนมัติ ลูกค้าเป็นผู้กรอกยอดเอง</p></div><div class="spk__dialog-actions"><button type="button" class="spk__primary" data-shop-modal-close>เรียบร้อย</button></div></div>';
+    }else if(method==="bank_transfer"){
+      const bank=instructions.bank_transfer||{};
+      const number=clean(bank.account_number);
+      if(!number)return;
+      const bankName=clean(bank.bank_name_th||bank.bank_name_en||bank.provider)||"ธนาคารกสิกรไทย";
+      const accountName=clean(bank.account_name_th||bank.account_name_en)||"ธัชชะ ป.";
+      modal.innerHTML='<div class="spk__backdrop" data-shop-modal-close></div><div class="spk__dialog" role="dialog" aria-modal="true" aria-labelledby="shopPayBankTitle"><div class="spk__dialog-check">฿</div><h2 id="shopPayBankTitle">โอนเข้าบัญชีธนาคาร</h2><p>กรอกยอดตาม Order นี้ <strong>฿'+html(amount)+'</strong></p><div class="spkpm__bankbody"><div><span>ธนาคาร</span><strong>'+html(bankName)+'</strong></div><div><span>ชื่อบัญชี</span><strong>'+html(accountName)+'</strong></div><div><span>เลขบัญชี</span><strong>'+html(number)+'</strong></div></div><div class="spk__dialog-actions"><button type="button" class="spk__soft" data-shop-bank-copy data-account="'+html(number)+'">คัดลอกเลขบัญชี</button><button type="button" class="spk__primary" data-shop-modal-close>เรียบร้อย</button></div></div>';
+    }else return;
+    document.body.appendChild(modal);
+    const dialog=modal.querySelector('[role="dialog"]');
+    if(dialog){dialog.tabIndex=-1;dialog.focus();}
+  }
+
+  chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.addEventListener("click",()=>{
+    const method=btn.dataset.payMethod;
+    if(shopMode&&(method==="promptpay"||method==="bank_transfer"))openShopModal(method);
+    else setSelected(method);
+  }));
+
+  document.addEventListener("click",async(e)=>{
+    if(e.target.closest("[data-shop-modal-close]")){closeShopModal();return;}
+    const copyBtn=e.target.closest("[data-shop-bank-copy]");
+    if(copyBtn){
+      const value=clean(copyBtn.dataset.account);
+      if(!value)return;
+      try{await navigator.clipboard.writeText(value);copyBtn.textContent="คัดลอกแล้ว";setTimeout(()=>{copyBtn.textContent="คัดลอกเลขบัญชี"},1400)}catch{}
+    }
+  });
+  document.addEventListener("keydown",(e)=>{if(e.key==="Escape")closeShopModal()});
 
   const bankDetails=chooser.querySelector("[data-method-bank]");
   if(bankDetails)bankDetails.addEventListener("toggle",()=>{
@@ -124,6 +173,8 @@
         return;
       }
       instructions=data.instructions||{};
+      shopMode=data.instruction_profile==="mmd_shop_himai_v1";
+      amountDueThb=data.amount_due_thb;
       const pp=instructions.promptpay||{};
       const bank=instructions.bank_transfer||{};
       const card=instructions.paypal_card||{};
@@ -157,8 +208,19 @@
 
       const first=qrUrl?"promptpay":bankEnabled?"bank_transfer":paypalUrl?"paypal_card":"";
       if(!first)throw new Error("payment_destination_missing");
-      setSelected(first);
-      if(status)status.textContent="เลือกวิธีชำระเงินได้จาก 3 ช่องทางที่ MMD เปิดให้รายการนี้";
+      if(shopMode){
+        toggleMethod("paypal_card",false);
+        chooser.querySelectorAll("[data-method-panel]").forEach(panel=>{panel.hidden=true});
+        const ppBtn=chooser.querySelector('[data-pay-method="promptpay"]');
+        const bankBtn=chooser.querySelector('[data-pay-method="bank_transfer"]');
+        if(ppBtn)ppBtn.textContent="QR · กรอกยอดเอง";
+        if(bankBtn)bankBtn.textContent="โอน KBank";
+        chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.setAttribute("aria-selected","false"));
+        if(status)status.textContent="เลือกวิธีชำระเงิน ข้อมูลจะเปิดหลังจากกดเลือก";
+      }else{
+        setSelected(first);
+        if(status)status.textContent="เลือกวิธีชำระเงินที่ MMD เปิดให้รายการนี้";
+      }
     }catch(e){
       chooser.querySelectorAll("[data-pay-method]").forEach(btn=>btn.hidden=true);
       chooser.querySelectorAll("[data-method-panel]").forEach(panel=>panel.hidden=true);
