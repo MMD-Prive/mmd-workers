@@ -124,6 +124,7 @@ jobs:
           node --check member-dashboard-chat-worker/src/front-gate-index.js
           node --check member-dashboard-chat-worker/src/mms-ai-knowledge-v4.js
           node --check member-dashboard-chat-worker/src/mms-ai-line-front-gate.js
+          node --check member-dashboard-chat-worker/src/internal-kenji-recommendation-shadow-smoke.mjs
           npm run test:member-dashboard-liff
           npm run test:member-dashboard-line
           node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
@@ -363,6 +364,76 @@ jobs:
             }, null, 2));
           ' "$response"
 
+      - name: Smoke eligible-client Kenji recommendations
+        id: kenji_eligible_recommendation_shadow_smoke
+        if: steps.kenji_recommendation_shadow_smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AI_SERVICE_SMOKE_TOKEN}"
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"eligible_kenji_recommendation"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const receipt = body.recommendation_receipt || {};
+            const context = body.context_receipt || {};
+            const guard = body.guardrails || {};
+            const recommendations = Array.isArray(receipt.recommendations) ? receipt.recommendations : [];
+            const readyStates = new Set(["available_now", "available_today", "available_soon", "limited"]);
+            const recommendationQuality =
+              recommendations.length >= 1 &&
+              recommendations.length <= 3 &&
+              recommendations.every((item) =>
+                Number.isFinite(Number(item.customer_rate_thb)) &&
+                Number(item.customer_rate_thb) > 0 &&
+                item.price_visible === true &&
+                readyStates.has(item.availability_state)
+              );
+            if (
+              body.ok !== true ||
+              body.mode !== "eligible_kenji_recommendation" ||
+              body.read_only !== true ||
+              body.shadow_only !== true ||
+              body.caller !== "member-dashboard-chat-worker" ||
+              body.canonical_context_real !== true ||
+              body.eligible_client_found !== true ||
+              body.customer_side_effects !== false ||
+              context.identity_state !== "known" ||
+              context.identity_confidence !== "high" ||
+              context.adapter_complete !== true ||
+              context.private_access_active !== true ||
+              (Number(context.reviewed_preference_count || 0) + Number(context.prior_model_touch_count || 0)) < 1 ||
+              context.personalization_allowed !== true ||
+              receipt.upstream_ok !== true ||
+              receipt.deployment_mode !== "shadow" ||
+              receipt.customer_ready !== true ||
+              Number(receipt.recommendation_count || 0) < 1 ||
+              Number(receipt.recommendation_count || 0) > 3 ||
+              recommendationQuality !== true ||
+              guard.auto_send_allowed !== false ||
+              guard.booking_confirmed !== false ||
+              guard.payment_confirmed !== false ||
+              guard.entitlement_mutated !== false ||
+              guard.source_rate_exposed !== false ||
+              guard.raw_notes_exposed !== false
+            ) {
+              throw new Error(`Unexpected eligible-client Kenji recommendation smoke response: ${process.argv[1]}`);
+            }
+            console.log(JSON.stringify({
+              ok: body.ok,
+              mode: body.mode,
+              attempted_eligible_clients: body.attempted_eligible_clients,
+              context_receipt: context,
+              recommendation_receipt: receipt,
+              guardrails: guard,
+              customer_side_effects: body.customer_side_effects,
+            }, null, 2));
+          ' "$response"
+
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -379,6 +450,7 @@ jobs:
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
+          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
           set -euo pipefail
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -402,6 +474,8 @@ jobs:
             stopped="production smoke"
           elif [ "$KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
             stopped="real Kenji recommendation shadow smoke"
+          elif [ "$KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="eligible-client Kenji recommendation shadow smoke"
           else
             stopped="none — live verified"
           fi
