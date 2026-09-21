@@ -3,7 +3,10 @@
 `payment-review-simple.html` is the complete primary embed for `/internal/admin/payments`.
 It replaces the live `money-control-v3` embed and uses a new root so old presentation patches cannot enable its approval controls.
 
-- One searchable queue, using canonical customer names plus model and job context.
+- Two search views: pending slips and the latest 100 created jobs, including jobs without slips. Results are explicitly scoped to the loaded view.
+- Authoritative Per Rename names are joined through exact canonical Client IDs; original names, LINE display names and canonical model aliases remain searchable. No name or amount is used to match money to a job.
+- `view=recent_jobs` is a read-only projection through the existing authenticated queue route. It shows each payment separately and retrieves an exact pending `proof_id` before review, including slips outside the default queue window.
+- Missing alias data is visibly marked as partial; errors never masquerade as an empty list. Ambiguous links fail closed. Confirmation tokens and model payouts never appear in discovery.
 - `include_context=1` adds a read-only canonical Payment/Session projection; no confirmation tokens or model payouts are returned.
 - Show the submitted amount next to the amount due for this payment, not the total job fee.
 - View the evidence and confirm both the job match and money received in the bank before enabling approval.

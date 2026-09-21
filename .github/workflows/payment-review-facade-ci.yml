@@ -6,6 +6,10 @@ on:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
       - "admin-worker/src/payment-review-display-context.js"
+      - "admin-worker/src/payment-review-discovery.js"
+      - "admin-worker/payment-review-discovery.test.mjs"
+      - "admin-worker/src/payment-proof-client-provenance-wrapper.js"
+      - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
       - "admin-worker/payment-review-simple.test.mjs"
       - "admin-worker/src/payment-review-line-recovery.js"
       - "admin-worker/src/payment-review-owner-context.js"
@@ -48,6 +52,7 @@ jobs:
           set -euo pipefail
           node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
+          node --check admin-worker/src/payment-review-discovery.js
           node --check admin-worker/src/payment-review-line-recovery.js
           node --check admin-worker/src/payment-review-owner-context.js
           node --check admin-worker/src/payment-review-auto-context.js
@@ -66,6 +71,7 @@ jobs:
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
           node --test admin-worker/payment-review-simple.test.mjs
+          node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
 
       - name: Manual renewal recovery contract
         run: |
