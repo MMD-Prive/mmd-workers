@@ -214,6 +214,28 @@ test("HYPE V2 conversation context refuses expired, unversioned and unsupported 
   assert.equal(unsupported.reason, "supported_topic_not_found");
 });
 
+test("HYPE V2 conversation context prefers current Matrix intent over a cached payload command", () => {
+  const now = new Date("2026-09-21T10:00:00.000Z");
+  const context = buildHypeConversationContextProjection({
+    fields: {
+      topic: "booking",
+      subtopic: "payment",
+      last_customer_intent: "booking",
+      conversation_stage: "in_progress",
+      state_updated_at: "2026-09-21T09:59:00.000Z",
+      state_expires_at: "2026-09-22T10:00:00.000Z",
+      matrix_status: "active",
+      version: 10,
+      payload_json: JSON.stringify({ command: "payment" }),
+    },
+  }, now);
+
+  assert.equal(context.available, true);
+  assert.equal(context.command, "booking");
+  assert.equal(context.topic, "booking");
+  assert.equal(context.requires_live_truth_refresh, true);
+});
+
 test("HYPE continuity writes a bounded cross-channel Matrix row for a linked canonical client", { concurrency: false }, async () => {
   const originalFetch = globalThis.fetch;
   const writes = [];

@@ -215,6 +215,10 @@ function semanticNormalize(value) {
 }
 
 function approximateSubstring(value, anchor) {
+  if (/^[a-z]+$/.test(anchor)) {
+    return approximateLatinToken(value, anchor);
+  }
+
   const source = Array.from(value);
   const target = Array.from(anchor);
   if (target.length < 5 || source.length > 600) return null;
@@ -235,6 +239,24 @@ function approximateSubstring(value, anchor) {
     before: source.slice(0, best.start).join(""),
     after: source.slice(best.start + best.size).join(""),
   };
+}
+
+function approximateLatinToken(value, anchor) {
+  if (anchor.length < 5 || value.length > 600) return null;
+
+  const tokenPattern = /[a-z]+/g;
+  let match;
+  while ((match = tokenPattern.exec(value)) !== null) {
+    const candidate = match[0];
+    if (candidate[0] !== anchor[0]) continue;
+    if (Math.abs(candidate.length - anchor.length) > 1) continue;
+    if (editDistance(Array.from(candidate), Array.from(anchor), 1) > 1) continue;
+    return {
+      before: value.slice(0, match.index),
+      after: value.slice(match.index + candidate.length),
+    };
+  }
+  return null;
 }
 
 function editDistance(left, right, ceiling = Infinity) {

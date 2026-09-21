@@ -275,10 +275,10 @@ function normalizeConversationContextCommand({ fields = {}, payload = {} } = {})
     handoff_status: "handoff_status",
   };
   const candidates = [
-    payload.command,
     fields[F.LAST_INTENT],
-    fields[F.SUBTOPIC],
     fields[F.TOPIC],
+    fields[F.SUBTOPIC],
+    payload.command,
   ];
   for (const value of candidates) {
     const key = token(value);
