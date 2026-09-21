@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPublicCatalog, handlePublicProfilesCatalogRequest } from "./public-profiles-catalog.js";
+import { buildPublicCatalog, handlePublicProfilesCatalogRequest } from "./src/public-profiles-catalog.js";
 
 test("catalog publishes only images inside Public Model", () => {
   const items = buildPublicCatalog([
