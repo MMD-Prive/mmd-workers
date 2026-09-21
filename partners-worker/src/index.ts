@@ -4276,10 +4276,10 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
   <meta name="theme-color" content="#080807">
   <title>SĪGIL Partner · Private Access</title>
   <style>
-    :root{color-scheme:dark;--bg:#060505;--bg-mid:#090706;--ivory:#fff9f0;--body:#ddd5cb;--muted:#b9b0a6;--placeholder:#91877f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.30);--line2:rgba(255,255,255,.08);--ink:#171006;--green:#06c755;--font:"LINE Seed Sans TH","Noto Sans Thai","DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--display:"Playfair Display","DM Serif Display",Georgia,serif}
+    :root{color-scheme:dark;--bg:#060505;--bg-mid:#090706;--ivory:#fff9f0;--body:#ddd5cb;--muted:#b9b0a6;--placeholder:#91877f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.30);--line2:rgba(255,255,255,.08);--ink:#171006;--green:#06c755;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--bg)}
-    body{min-height:100svh;overflow:hidden;color:var(--body);font-family:var(--font);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+    body{min-height:100svh;overflow:hidden;color:var(--body);font-family:var(--font-th);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
     a{color:inherit}
     .page{position:relative;min-height:100svh;display:grid;isolation:isolate;overflow:hidden;background:linear-gradient(180deg,var(--bg),var(--bg-mid) 52%,#050505)}
     .hero{position:absolute;inset:0;z-index:-2}
@@ -4291,14 +4291,14 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
     .brand-mark{width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(213,174,102,.42);border-radius:9px;background:rgba(8,8,7,.34);backdrop-filter:blur(12px)}
     .brand-copy{display:flex;flex-direction:column;gap:3px}
-    .brand-copy b{color:var(--ivory);font-family:var(--font);font-size:11px;line-height:1;font-weight:850;letter-spacing:.14em}
-    .brand-copy span{color:var(--gold2);font-family:var(--font);font-size:8px;line-height:1.1;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+    .brand-copy b{color:var(--ivory);font-family:var(--font-en);font-size:11px;line-height:1;font-weight:850;letter-spacing:.14em}
+    .brand-copy span{color:var(--gold2);font-family:var(--font-en);font-size:8px;line-height:1.1;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
     .private{padding:8px 10px;border:1px solid rgba(213,174,102,.3);border-radius:999px;background:rgba(8,8,7,.3);backdrop-filter:blur(12px);color:var(--gold2);font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
     .shell{align-self:end;width:min(100% - 24px,1180px);margin:0 auto;padding:0 0 max(14px,env(safe-area-inset-bottom))}
     .card{position:relative;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(20,18,15,.78),rgba(8,8,7,.95));box-shadow:0 24px 80px rgba(0,0,0,.44);backdrop-filter:blur(20px)}
     .card:before{position:absolute;top:0;right:14%;left:14%;height:1px;content:"";background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-    h1{margin:0;max-width:570px;color:var(--ivory);font-family:var(--display);font-size:clamp(36px,10vw,52px);font-weight:600;letter-spacing:-.045em;line-height:1.02;text-wrap:balance}
+    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font-en);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+    h1{margin:0;max-width:570px;color:var(--ivory);font-family:var(--font-th);font-size:clamp(36px,10vw,52px);font-weight:600;letter-spacing:-.045em;line-height:1.02;text-wrap:balance}
     .lead{margin:12px 0 0;max-width:620px;color:var(--body);font-size:13px;line-height:1.68}
     .flow{margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2)}
     .flow li{padding:11px 7px 11px 0;min-width:0}
@@ -4306,7 +4306,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .flow b,.flow span{display:block}
     .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
     .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
-    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:800 14px/1 var(--font);cursor:pointer;transition:transform .2s ease,filter .2s ease}
+    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:800 14px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease}
     #go:hover{transform:translateY(-1px);filter:brightness(1.04)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
     #go:disabled{cursor:wait;opacity:.68;transform:none}
@@ -4315,9 +4315,11 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
     .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
     .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
-    .links a{color:var(--muted);font-family:var(--font);font-size:10px;font-weight:750;text-decoration:none}
+    .links a{color:var(--muted);font-family:var(--font-en);font-size:10px;font-weight:750;text-decoration:none}
     .links a:hover{color:var(--ivory)}
 
+    .flow b,.private{font-family:var(--font-en)}
+    .line-mark{font-family:var(--font-en)}
     /* FINAL PARTNER CONTRAST SAFETY */
     h1,.brand-copy b{color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important;background:none!important;background-image:none!important}
     .eyebrow,.brand-copy span,.private,#state{color:var(--gold2)!important;-webkit-text-fill-color:var(--gold2)!important}
