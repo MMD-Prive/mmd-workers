@@ -20,6 +20,7 @@ const ENV = {
   AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
+  AIRTABLE_TABLE_MODEL_OFFER_RULES: "rules",
 };
 
 function record(id, fields) { return { id, fields }; }
@@ -70,8 +71,8 @@ function approval(cohort, folders, overrides = {}) {
   });
 }
 
-function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = []) {
-  return { entitlements, models, approvals };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = []) {
+  return { entitlements, models, approvals, rules };
 }
 
 const SCHEMAS = {
@@ -86,6 +87,9 @@ function airtableFetch(data, { failTables = [] } = {}) {
     const table = decodeURIComponent(url.pathname.split("/").pop());
     if (failTables.includes(table)) return new Response("source private error", { status: 503 });
     const formula = url.searchParams.get("filterByFormula") || "";
+    if (table === "rules" && !formula) {
+      return new Response(JSON.stringify({ records: data.rules || [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
     if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
     const field = match[1];
@@ -229,4 +233,54 @@ test("RPC match returns only safe model projection and policy version", async ()
   assert.equal(payload.policy_version, KENJI_MODEL_ACCESS_POLICY_VERSION);
   assert.equal(payload.model.model_code, "MX17");
   assert.doesNotMatch(JSON.stringify(payload), /0800000000|private_contact|availability|admin_note/i);
+});
+
+
+test("canonical Sales Control projects the customer-safe matched offer after entitlement resolution", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-active", {
+    Model: [model.id],
+    model_key: "MX17",
+    status: "Active",
+    sales_visibility: "on",
+    audience_scope: ["Standard"],
+    customer_sell_rate_thb: 25000,
+    price_visibility: "visible",
+    priority: 10,
+    version: 2,
+  })];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales.sellable, true);
+  assert.equal(result.model.sales.customer_rate_thb, 25000);
+  assert.equal(result.model.sales.price_visible, true);
+  assert.equal(result.model.sales.matched_rule_key, null);
+  assert.equal(result.model.sales.rule_version, 2);
+});
+
+test("Draft Model Offer Rules remain fail-closed in the Kenji consumer", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-draft", {
+    Model: [model.id],
+    model_key: "MX17",
+    status: "Draft",
+    sales_visibility: "on",
+    audience_scope: ["Standard"],
+    customer_sell_rate_thb: 25000,
+    price_visibility: "visible",
+    version: 1,
+  })];
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales.sellable, false);
+  assert.equal(result.model.sales.customer_rate_thb, null);
+  assert.equal(result.model.sales.reason_code, "no_matching_active_rule");
 });
