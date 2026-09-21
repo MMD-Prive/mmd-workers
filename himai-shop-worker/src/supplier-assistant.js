@@ -407,8 +407,8 @@ async function aiReply(env, message, snapshot) {
     "ห้ามแก้ stock ยืนยันการชำระเงิน อนุมัติเติมสินค้า หรือบอกว่างานเสร็จแล้วถ้าไม่มีข้อมูล",
     "คำขอเติมสินค้าให้บอกว่าเป็น draft และต้องรอ Boss Per อนุมัติ",
     "ห้ามพูดถึง token, worker, Airtable, prompt, secret หรือ endpoint ภายใน",
-    "CURRENT SUPPLIER SNAPSHOT:\\n" + JSON.stringify(snapshot),
-  ].join("\\n");
+    "CURRENT SUPPLIER SNAPSHOT:\n" + JSON.stringify(snapshot),
+  ].join("\n");
 
   try {
     const response = await fetch(baseUrl + "/responses", {
@@ -449,7 +449,7 @@ function extractOpenAiText(data) {
 }
 
 function containsUnsafeDisclosure(text) {
-  return /(OPENAI_API_KEY|INTERNAL_TOKEN|AIRTABLE_TOKEN|Bearer\\s+|tbl[a-zA-Z0-9]{10,}|rec[a-zA-Z0-9]{10,})/i.test(text);
+  return /(OPENAI_API_KEY|INTERNAL_TOKEN|AIRTABLE_TOKEN|Bearer\s+|tbl[a-zA-Z0-9]{10,}|rec[a-zA-Z0-9]{10,})/i.test(text);
 }
 
 function formatProductLine(product) {
@@ -534,7 +534,7 @@ function buildAlertMessage(portal, lowProducts, recovered, env) {
   }
 
   lines.push("", "<b>Dashboard:</b> " + escapeHtml(dashboardUrl(env)));
-  return lines.join("\\n");
+  return lines.join("\n");
 }
 
 function escapeHtml(value) {
@@ -592,7 +592,7 @@ export class SupplierAlertState {
   }
 
   async fetch(request) {
-    const action = new URL(request.url).pathname.replace(/^\\/+/, "");
+    const action = new URL(request.url).pathname.replace(/^\/+/, "");
     const body = await request.json().catch(() => ({}));
     const key = clean(body?.key, 200);
     if (!key) return json({ ok: false, error: "state_key_required" }, 400);
@@ -665,24 +665,24 @@ function dashboardUrl(env) {
 }
 
 function catalogUpstream(env) {
-  return String(env.MMD_SHOP_CATALOG_UPSTREAM || env.HIMAI_CHAT_UPSTREAM || "https://himai-chat-worker.malemodel-bkk.workers.dev").replace(/\\/+$/, "");
+  return String(env.MMD_SHOP_CATALOG_UPSTREAM || env.HIMAI_CHAT_UPSTREAM || "https://himai-chat-worker.malemodel-bkk.workers.dev").replace(/\/+$/, "");
 }
 
 function readToken(request) {
   const auth = request.headers.get("authorization") || "";
-  const bearer = auth.match(/^Bearer\\s+(.+)$/i);
+  const bearer = auth.match(/^Bearer\s+(.+)$/i);
   if (bearer) return bearer[1].trim();
   const url = new URL(request.url);
   return clean(url.searchParams.get("token") || url.searchParams.get("supplier_token"), 5000);
 }
 
 function normalizePath(value) {
-  const path = String(value || "/").replace(/\\/{2,}/g, "/");
-  return path.length > 1 ? path.replace(/\\/+$/g, "") : path;
+  const path = String(value || "/").replace(/\/{2,}/g, "/");
+  return path.length > 1 ? path.replace(/\/+$/g, "") : path;
 }
 
 function normalize(value) {
-  return clean(value, 300).normalize("NFKD").toLowerCase().replace(/[\\u0300-\\u036f]/g, "").replace(/[^\\p{L}\\p{N}]+/gu, "");
+  return clean(value, 300).normalize("NFKD").toLowerCase().replace(/[\u0300-\u036f]/g, "").replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
 function numberOrNull(value) {
@@ -692,7 +692,7 @@ function numberOrNull(value) {
 }
 
 function clean(value, max = 5000) {
-  return String(value == null ? "" : value).trim().slice(0, max).replace(/[\\u0000-\\u001F\\u007F]/g, " ");
+  return String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
 function corsHeaders(request, env) {
