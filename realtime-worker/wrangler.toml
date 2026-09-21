@@ -3,17 +3,11 @@ main = "src/index.js"
 compatibility_date = "2026-01-27"
 
 # Phase 1 route-owner lock: realtime-worker is the canonical production owner
-# for the bounded /v1/rt/* namespace on the public MMD hosts.
+# for /v1/rt/*. Custom-host routes are synchronized by the deploy workflow
+# through the dedicated zone Routes API so Worker code deploy credentials do
+# not need zone-route mutation permission.
 workers_dev = true
 # preview_urls = false
-
-[[routes]]
-pattern = "mmdbkk.com/v1/rt/*"
-zone_name = "mmdbkk.com"
-
-[[routes]]
-pattern = "www.mmdbkk.com/v1/rt/*"
-zone_name = "mmdbkk.com"
 
 [durable_objects]
 bindings = [
