@@ -16,6 +16,7 @@ AIRTABLE_TABLE_CONSOLE_INBOX = "MMD — Console Inbox"
 LINE_ID_TOKEN_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify"
 LINE_LIFF_ID = "2010862595-yT4DCEMc"
 LINE_DASHBOARD_CHANNEL_ID = "2010862595"
+LINE_BACKUP_CHANNEL_ID = "2011691294"
 DRIVE_MEMBERSHIP_OWNER_EMAIL = "malemodel.bkk@gmail.com"
 DRIVE_PREMIUM_PACKAGE_FOLDER_ID = "16DfhOo-DwJedBaTi_pvkxGEnPjWGdxxD"
 DRIVE_STANDARD_PACKAGE_FOLDER_ID = "1Snw1gTJNzkMxHlH-Nt2g1-6mt_3GNkT8"
@@ -79,6 +80,7 @@ new_sqlite_classes = ["PrivatePreviewGate"]
 # Required before deployment:
 # - secret LINE_LOGIN_CHANNEL_ID (existing CARE BACK channel audience)
 # - var LINE_DASHBOARD_CHANNEL_ID (dedicated Member Dashboard audience)
+# - var LINE_BACKUP_CHANNEL_ID (MY MMD Backup LINE Login audience)
 # - secret LIFF_SESSION_SECRET
 # - secret MEMBER_STATUS_RESOLVER_SECRET (same value in mmd-auth-worker)
 # - service binding MEMBER_STATUS_RESOLVER -> mmd-auth-worker
