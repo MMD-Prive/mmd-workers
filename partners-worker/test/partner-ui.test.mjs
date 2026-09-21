@@ -58,18 +58,18 @@ test('native control room executes and switches every operation tab with live fi
   assert.ok(q('[data-model-dialog]').open);
   assert.deepEqual(errors,[]);
 });
-test('Telegram onboarding hides job response controls until the verified bind appears',async t=>{
+test('Telegram stays optional and never hides Dashboard job state in Phase 1',async t=>{
   const {q,w,f,errors}=await ui(t);
-  assert.equal(q('[data-telegram]').dataset.state,'required');
-  assert.match(q('[data-telegram]').textContent,/ขั้นตอนสุดท้าย: เชื่อม Telegram/);
+  assert.equal(q('[data-telegram]').dataset.state,'optional');
+  assert.match(q('[data-telegram]').textContent,/Telegram เชื่อมภายหลังได้/);
   assert.ok(q('[data-connect-telegram]'));
-  assert.ok(q('[data-telegram-job-gate]'));
-  assert.equal(q('[data-job-action]'),null);
+  assert.equal(q('[data-telegram-job-gate]'),null);
+  assert.match(q('[data-jobs]').textContent,/รอ Official Verify/);
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramId]='123456789';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramVerificationStatus]='verified';
   w.dispatchEvent(new w.Event('focus'));
   await settle(()=>q('[data-telegram]').dataset.state==='connected');
-  assert.equal(q('[data-telegram-job-gate]'),null);
+  assert.match(q('[data-telegram]').textContent,/Telegram connected/);
   assert.match(q('[data-jobs]').textContent,/รอ Official Verify/);
   assert.deepEqual(errors,[]);
 });

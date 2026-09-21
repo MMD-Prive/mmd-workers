@@ -41,7 +41,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
         if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_connect_required:"กรุณาเชื่อมและยืนยัน Telegram ก่อนตอบรับงาน",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_connect_required:"Telegram ยังไม่ได้เชื่อม · Dashboard ยังใช้งานต่อได้",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
           throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
@@ -78,9 +78,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function jobCard(job) {
     var note = state.vault && state.vault.travel_notes ? (state.vault.travel_notes[job.session_record_id] || "") : "";
     var finalLabel = job.status === "confirmed" ? "ยืนยันงานแล้ว" : job.status === "declined" ? "แจ้งรับงานไม่ได้แล้ว" : "";
-    var telegramReady = state.data && state.data.partner && state.data.partner.telegram_connected === true;
-    var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>' : !telegramReady
-      ? '<div class="pcr-job-locked" data-telegram-job-gate role="status"><b>เชื่อม Telegram ก่อนตอบรับงาน</b><span>LINE ใช้เข้าดูข้อมูลได้แล้ว · กด Connect Telegram ด้านบนและกด Start ในแชตให้เรียบร้อย</span></div>'
+    var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>'
       : job.confirmation_allowed === true
       ? '<div class="pcr-actions"><button type="button" data-job-action="confirm">Confirm</button><button type="button" data-job-action="changes" class="ghost">ขอแก้ไข</button><button type="button" data-job-action="decline" class="danger">ปฏิเสธ</button></div>'
       : '<div class="pcr-job-locked" role="status"><b>รอ Official Verify</b><span>ยืนยันหรือเปลี่ยนสถานะงานได้หลังระบบตรวจสอบการชำระเงินแล้ว</span></div>';
@@ -129,10 +127,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function renderTelegram(data) {
     var partner = data.partner || {};
     var target = $("[data-telegram]", root);
-    target.dataset.state = partner.telegram_connected ? "connected" : "required";
+    target.dataset.state = partner.telegram_connected ? "connected" : "optional";
     target.innerHTML = partner.telegram_connected
-      ? '<div><small>LINE + TELEGRAM READY</small><b>Telegram connected</b><span>' + esc(partner.telegram_username ? "@" + String(partner.telegram_username).replace(/^@/,"") : "Verified · พร้อมตอบรับงาน") + '</span></div><i aria-hidden="true">✓</i>'
-      : '<div><small>LINE CONNECTED · TELEGRAM REQUIRED</small><b>ขั้นตอนสุดท้าย: เชื่อม Telegram</b><span>ต้องกด Connect Telegram และกด Start ในแชตก่อนตอบรับงาน</span></div><button type="button" data-connect-telegram>Connect Telegram</button>';
+      ? '<div><small>OPTIONAL NOTIFICATION CHANNEL</small><b>Telegram connected</b><span>' + esc(partner.telegram_username ? "@" + String(partner.telegram_username).replace(/^@/,"") : "Verified · พร้อมรับการแจ้งเตือน") + '</span></div><i aria-hidden="true">✓</i>'
+      : '<div><small>LINE READY · TELEGRAM OPTIONAL</small><b>Telegram เชื่อมภายหลังได้</b><span>Dashboard ใช้งานได้ด้วย LINE แล้ว · เชื่อม Telegram เมื่อต้องการรับการแจ้งเตือนเพิ่มเติม</span></div><button type="button" data-connect-telegram>Connect Telegram later</button>';
   }
 
   function hydrate(data) {

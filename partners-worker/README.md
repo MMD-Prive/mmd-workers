@@ -69,6 +69,14 @@ Required secret bindings are `AIRTABLE_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `TOKE
 
 `TOKEN_SECRET` is used for HMAC SHA-256 token signatures. The raw token is never stored in Airtable; only the SHA-256 hash is stored in `Model Partners`.
 
+## Partner Phase 1 access contract
+
+- Verified LINE Partner access is the Dashboard authority for Phase 1.
+- Telegram is optional and may be connected later for notifications; it is not required to open the Dashboard or use Dashboard job actions.
+- Dashboard Confirm / Changes / Decline still requires canonical Payment Truth to reach Official Verify and exact Partner Session scope.
+- The separate Telegram bot callback remains Telegram-identity-bound when that channel is used. Making Telegram optional for Dashboard use does not weaken Telegram callback verification.
+- Telegram never grants Partner authority and never replaces LINE Partner verification.
+
 ## Partner Control Room privacy boundary
 
 - Partner-private notes are encrypted in the browser with AES-GCM using a key derived from the Partner's Vault PIN. The PIN and plaintext are never sent to the Worker.

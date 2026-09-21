@@ -1180,8 +1180,9 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
       id: partnerRecord.id,
       name: fieldText(partnerRecord, MODEL_PARTNERS.partnerName) || fieldText(partnerRecord, MODEL_PARTNERS.displayName) || "SĪGIL Partner",
       telegram_connected: telegramConnected,
-      telegram_required_for_job_response: true,
-      job_response_ready: telegramConnected,
+      telegram_optional: true,
+      telegram_required_for_job_response: false,
+      job_response_ready: true,
       telegram_username: telegramConnected ? fieldText(partnerRecord, MODEL_PARTNERS.telegramUsername) || null : null,
       terms_accepted: Boolean(fieldText(partnerRecord, MODEL_PARTNERS.agreementVersion) && fieldText(partnerRecord, MODEL_PARTNERS.agreementAcceptedAt)),
       terms_version: fieldText(partnerRecord, MODEL_PARTNERS.agreementVersion),
@@ -2736,16 +2737,6 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || "";
   if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
     return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
-  }
-  if (!partnerHasVerifiedTelegram(verified.value.partnerRecord)) {
-    return errorResponse(
-      request,
-      env,
-      "telegram_connect_required",
-      "Connect and verify Telegram before responding to a Partner job.",
-      409,
-      false
-    );
   }
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
