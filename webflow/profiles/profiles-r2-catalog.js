@@ -32,6 +32,8 @@
   }
   function validItem(item) {
     if (!item || item.visibility !== "public" || item.source !== "r2_public_model" || !item.display_name) return false;
+    var accepted = Array.isArray(item.accepted_customer_genders) ? item.accepted_customer_genders.filter(function (value) { return value === "male" || value === "female"; }) : [];
+    if (!accepted.length) return false;
     try {
       var url = new URL(item.image_url);
       return url.protocol === "https:" && url.hostname === "models.mmdbkk.com" && url.pathname.indexOf("/MMD%20Public%20Models/") === 0;
@@ -43,8 +45,7 @@
     article.className = "mp8-profile is-visible";
     article.dataset.profile = "";
     article.dataset.name = item.display_name;
-    var accepted = Array.isArray(item.accepted_customer_genders) ? item.accepted_customer_genders.filter(function (value) { return value === "male" || value === "female"; }) : ["male", "female"];
-    if (!accepted.length) accepted = ["male", "female"];
+    var accepted = item.accepted_customer_genders.filter(function (value) { return value === "male" || value === "female"; });
     article.dataset.travel = accepted.join(",");
     article.dataset.extreme = accepted.join(",");
     article.dataset.customerScope = item.customer_scope || "all_genders";
