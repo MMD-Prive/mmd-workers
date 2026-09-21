@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const targets = [
-            ["payments-worker", "https://payments-worker.malemodel-bkk.workers.dev/health"],
+            ["payments-worker", "https://sigil.mmdbkk.com/v1/pay/slip/evidence/health"],
             ["member-pages-worker", "https://member-pages-worker.malemodel-bkk.workers.dev/health"],
             ["mms-worker", "https://mms-worker.malemodel-bkk.workers.dev/health"],
             ["himai-chat-worker", "https://himai-chat-worker.malemodel-bkk.workers.dev/health"],
@@ -43,7 +43,7 @@ jobs:
 
           async function readHealth(name, url) {
             let last = null;
-            for (let attempt = 1; attempt <= 8; attempt += 1) {
+            for (let attempt = 1; attempt <= 24; attempt += 1) {
               try {
                 const response = await fetch(url, {
                   headers: {
@@ -68,7 +68,7 @@ jobs:
               } catch (error) {
                 last = { error: String(error?.message || error) };
               }
-              await new Promise((resolve) => setTimeout(resolve, 2500));
+              await new Promise((resolve) => setTimeout(resolve, 3000));
             }
             throw new Error(`${name} analytics health failed: ${JSON.stringify(last)}`);
           }
