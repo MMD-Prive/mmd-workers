@@ -1,3 +1,4 @@
+import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
@@ -154,6 +155,7 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async fetch(request, env, ctx) {
+    if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, env, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, env);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, env, ctx);
     scheduleLineOfcContactBackfill(env, ctx);

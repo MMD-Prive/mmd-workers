@@ -1036,3 +1036,24 @@ service = "member-dashboard-chat-worker"
 [[services]]
 binding = "TELEGRAM_ROUTER"
 service = "telegram-worker"
+
+# Partner owner review uses the existing credential-bound admin session.
+[[services]]
+binding = "PARTNERS_WORKER"
+service = "partners-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/partners/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/partners/*"
+zone_name = "mmdbkk.com"
