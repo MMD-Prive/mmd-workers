@@ -11,6 +11,11 @@ import {
   executeKenjiLv5SupervisedAction,
   KENJI_LV5_ACTION_RPC_PATH,
 } from "./kenji-lv5-supervised-action.js";
+import {
+  handleKenjiRecommendationRpc,
+  isKenjiRecommendationRpcRequest,
+  KENJI_RECOMMENDATION_RPC_PATH,
+} from "./kenji-recommendation-rpc.js";
 
 export const KENJI_LV5_OPERATIONAL_RPC_PATH = "/v1/internal/kenji/operational-context";
 export const KENJI_LV5_LIVE_RPC_PATH = "/v1/internal/kenji/operational-context/live";
@@ -23,11 +28,16 @@ const ALLOWED_CALLERS = new Set([
 
 export function isKenjiLv5OperationalRpcRequest(path, method = "") {
   const normalized = normalizePath(path);
+  if (isKenjiRecommendationRpcRequest(normalized, method)) return true;
   return [KENJI_LV5_OPERATIONAL_RPC_PATH, KENJI_LV5_LIVE_RPC_PATH, KENJI_LV5_ACTION_RPC_PATH].includes(normalized)
     && String(method || "").toUpperCase() === "POST";
 }
 
 export async function handleKenjiLv5OperationalRpc(request, env = {}) {
+  const path = normalizePath(new URL(request.url).pathname);
+  if (path === KENJI_RECOMMENDATION_RPC_PATH) {
+    return handleKenjiRecommendationRpc(request, env);
+  }
   if (!authorized(request, env)) return json({ ok: false, error: "not_found" }, 404);
 
   const body = await request.json().catch(() => null);
@@ -35,7 +45,6 @@ export async function handleKenjiLv5OperationalRpc(request, env = {}) {
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const path = normalizePath(new URL(request.url).pathname);
   if (path === KENJI_LV5_ACTION_RPC_PATH) {
     const result = await executeKenjiLv5SupervisedAction(env, body);
     return json({
