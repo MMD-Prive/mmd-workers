@@ -293,7 +293,17 @@ const PARTNER_COMMISSIONS = {
   earnedAt: "fld8d84IpuPIZPMEX",
   approvedAt: "fldZB1fjOdifqUGSV",
   paidAt: "fldwftk7yOwVeJXQ9",
+  heldReason: "fldhD7qxjHXnp5IJC",
+  voidReason: "fldMhwlnc5jJmqmwC",
   payoutStatus: "fldno1EAh01onIVbp",
+  approvalStatus: "fldidxKqqHoOMUPgM",
+  eligibilityStatus: "fldHm8VhVbPrHyvd7",
+  approvedBy: "fldpzzkN73r2cJAag",
+  commissionKey: "fld1BZvS9Z3Q4g9MN",
+  commissionGroupKey: "fld6jiHNimU2kDTUb",
+  splitIndex: "fldPaL3UchvFip1HS",
+  splitPercent: "fldKGAFGPAdNyz55W",
+  auditJson: "fldkqxeWAevskdt4y",
   jobId: "fldUcVyYC37ijCHz8"
 } as const;
 
@@ -324,6 +334,7 @@ const MODEL_OFFER_RULES = {
   status: "fldBpmlW8aO9AhDhX",
   internalOnly: "fldC5I6dm2h3JKkPf",
   reviewedBy: "fldMNxut21hZCdFlR",
+  reviewedAt: "fldzskaZcXGPhr8YT",
   version: "fldCMjmjsPImiCUDY",
   audienceScope: "fldVfrqaEkgI2uf5w",
   partnerSourceRateThb: "fldbgFiaSm4pWY9qU",
@@ -1153,6 +1164,8 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const modelMap = await fetchRecordMap(env, env.AIRTABLE_TABLE_MODELS, [...modelIds]);
   const normalizedReferrals = referrals.map((record) => normalizeReferral(record, modelMap));
   const normalizedCommissions = commissions.map((record) => normalizeCommission(record, modelMap));
+  const finance = buildPartnerFinanceSnapshot(partnerRecord, normalizedCommissions);
+  const financeRows = Array.isArray(finance.rows) ? finance.rows as Array<Record<string, unknown> & { commission: number; status: string }> : normalizedCommissions;
   const salesControls = buildPartnerSalesControls(referrals, modelMap, partnerSalesRules);
   const normalizedChanges = modelChanges.map(normalizePartnerModelChange);
   const normalizedModels = buildPartnerModelProfiles(referrals, modelMap, salesControls, normalizedChanges);
@@ -1166,12 +1179,13 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
       .filter(Boolean)
   ).size;
 
-  const pendingAmount = normalizedCommissions
-    .filter((commission) => ["earned", "approved", "ready", "pending"].includes(commission.status))
-    .reduce((sum, commission) => sum + commission.commission, 0);
-  const paidAmount = normalizedCommissions
-    .filter((commission) => isPaidStatus(commission.status))
-    .reduce((sum, commission) => sum + commission.commission, 0);
+  const canonicalFinanceRows = financeRows.filter((commission) => commission.integrity_state !== "reconciliation_required");
+  const pendingAmount = canonicalFinanceRows
+    .filter((commission) => ["earned", "approved", "ready", "pending"].includes(String(commission.status)))
+    .reduce((sum, commission) => sum + Number(commission.commission || 0), 0);
+  const paidAmount = canonicalFinanceRows
+    .filter((commission) => isPaidStatus(String(commission.status || "")))
+    .reduce((sum, commission) => sum + Number(commission.commission || 0), 0);
 
   return json(request, env, {
     ok: true,
@@ -1197,7 +1211,8 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
     },
     history: { complete: true, generated_at: new Date().toISOString() },
     referrals: normalizedReferrals,
-    commissions: normalizedCommissions,
+    commissions: financeRows,
+    finance,
     models: normalizedModels,
     model_changes: normalizedChanges,
     jobs: normalizedJobs,
@@ -1394,7 +1409,9 @@ async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Pr
 function projectPartnerSalesRule(rule: AirtableRecord): Record<string, unknown> {
   return {
     proposal_id: rule.id,
+    rule_key: fieldText(rule, MODEL_OFFER_RULES.ruleKey),
     status: fieldText(rule, MODEL_OFFER_RULES.status) || "Review",
+    version: fieldNumber(rule, MODEL_OFFER_RULES.version) || 1,
     partner_source_rate_thb: fieldNumber(rule, MODEL_OFFER_RULES.partnerSourceRateThb),
     customer_sell_rate_thb: fieldNumber(rule, MODEL_OFFER_RULES.customerSellRateThb),
     sales_visibility: fieldText(rule, MODEL_OFFER_RULES.salesVisibility) || "off",
@@ -1405,6 +1422,12 @@ function projectPartnerSalesRule(rule: AirtableRecord): Record<string, unknown> 
     days_of_week: fieldMultiText(rule, MODEL_OFFER_RULES.daysOfWeek),
     start_time_local: fieldText(rule, MODEL_OFFER_RULES.startTimeLocal),
     end_time_local: fieldText(rule, MODEL_OFFER_RULES.endTimeLocal),
+    source_actor_type: fieldText(rule, MODEL_OFFER_RULES.sourceActorType) || null,
+    change_reason: fieldText(rule, MODEL_OFFER_RULES.changeReason) || null,
+    reviewed_by: fieldText(rule, MODEL_OFFER_RULES.reviewedBy) || null,
+    reviewed_at: fieldText(rule, MODEL_OFFER_RULES.reviewedAt) || null,
+    updated_by: fieldText(rule, MODEL_OFFER_RULES.updatedBy) || null,
+    notification_status: fieldText(rule, MODEL_OFFER_RULES.notifyStatus) || null,
     updated_at: fieldText(rule, MODEL_OFFER_RULES.updatedAt) || rule.createdTime || null
   };
 }
@@ -1416,8 +1439,9 @@ function buildPartnerSalesControls(
   const modelIds = [...new Set(referrals.flatMap((r) => fieldLinkIds(r, MODEL_REFERRALS.model)).filter(Boolean))];
   return modelIds.map((modelId) => {
     const mine = sorted.filter((r) => fieldLinkIds(r, MODEL_OFFER_RULES.model).includes(modelId));
-    const proposal = mine.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.sourceActorType)) === "partner");
-    const approved = mine.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.status)) === "active" && Boolean(fieldText(r, MODEL_OFFER_RULES.reviewedBy)) && !fieldLinkIds(r, MODEL_OFFER_RULES.client).length && !fieldText(r, MODEL_OFFER_RULES.clientIdentityKey));
+    const partnerScoped = mine.filter((r) => !fieldLinkIds(r, MODEL_OFFER_RULES.client).length && !fieldText(r, MODEL_OFFER_RULES.clientIdentityKey));
+    const proposal = partnerScoped.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.sourceActorType)) === "partner");
+    const approved = partnerScoped.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.status)) === "active" && Boolean(fieldText(r, MODEL_OFFER_RULES.reviewedBy)));
     const model = modelMap.get(modelId);
     return {
       model_record_id: modelId,
@@ -1425,6 +1449,7 @@ function buildPartnerSalesControls(
       proposal: proposal ? projectPartnerSalesRule(proposal) : null,
       // Configuration only. The canonical sales resolver still decides per customer/time.
       approved_policy: approved ? projectPartnerSalesRule(approved) : null,
+      history: partnerScoped.map(projectPartnerSalesRule),
       policy_preview: previewPartnerSalesPolicy(modelId, model ? fieldText(model, MODELS.uniqueKey) || "" : "", mine)
     };
   });
@@ -1488,13 +1513,18 @@ async function listPartnerSessions(env: RuntimeEnv, partnerId: string): Promise<
 
 function normalizePartnerModelChange(record: AirtableRecord): Record<string, unknown> {
   const parsed = parseJson(fieldText(record, PARTNER_MODEL_CHANGES.payloadJson) || "{}");
+  const payload = isRecord(parsed) ? parsed : {};
   return {
     request_id: record.id,
     request_key: fieldText(record, PARTNER_MODEL_CHANGES.requestKey),
     model_record_id: fieldLinkIds(record, PARTNER_MODEL_CHANGES.model)[0] || null,
     action: fieldText(record, PARTNER_MODEL_CHANGES.action) || "update_profile",
     status: fieldText(record, PARTNER_MODEL_CHANGES.status) || "review",
-    payload: isRecord(parsed) ? parsed : {},
+    revision: fieldNumber(record, PARTNER_MODEL_CHANGES.revision) || null,
+    payload,
+    decision_note: readString(payload, "decision_note") || null,
+    decided_at: readString(payload, "decided_at") || null,
+    decided_by: readString(payload, "decided_by") || null,
     shared_with_mmd: record.fields[PARTNER_MODEL_CHANGES.shareWithMmd] === true,
     updated_at: fieldText(record, PARTNER_MODEL_CHANGES.updatedAt) || record.createdTime || null
   };
@@ -3790,25 +3820,114 @@ function normalizeCommission(record: AirtableRecord, modelMap: Map<string, Airta
   const modelId = fieldLinkIds(record, PARTNER_COMMISSIONS.model)[0] || "";
   const modelRecord = modelId ? modelMap.get(modelId) : undefined;
   const ledgerStatus = normalizeStatus(fieldText(record, PARTNER_COMMISSIONS.status));
-  const status = ["void", "voided", "refunded", "cancelled", "reversed", "disputed", "held"].includes(ledgerStatus) ? ledgerStatus : normalizeStatus(fieldText(record, PARTNER_COMMISSIONS.payoutStatus)) || ledgerStatus || "pending";
+  const payoutStatus = normalizeStatus(fieldText(record, PARTNER_COMMISSIONS.payoutStatus));
+  const status = ["void", "voided", "refunded", "cancelled", "reversed", "disputed", "held"].includes(ledgerStatus) ? ledgerStatus : payoutStatus || ledgerStatus || "pending";
   const commission = fieldNumber(record, PARTNER_COMMISSIONS.commissionAmount);
+  const audit = parseJson(fieldText(record, PARTNER_COMMISSIONS.auditJson) || "{}");
 
   return {
+    commission_id: fieldText(record, PARTNER_COMMISSIONS.commissionId) || null,
+    commission_key: fieldText(record, PARTNER_COMMISSIONS.commissionKey) || null,
+    commission_group_key: fieldText(record, PARTNER_COMMISSIONS.commissionGroupKey) || null,
     jobId: fieldText(record, PARTNER_COMMISSIONS.jobId) || fieldText(record, PARTNER_COMMISSIONS.sessionId) || fieldText(record, PARTNER_COMMISSIONS.commissionId) || "-",
     commission_record_id: record.id,
     model_record_id: modelId || null,
     session_id: fieldText(record, PARTNER_COMMISSIONS.sessionId),
+    payment_ref: fieldText(record, PARTNER_COMMISSIONS.paymentRef) || null,
     earnedAt: fieldText(record, PARTNER_COMMISSIONS.earnedAt),
     approvedAt: fieldText(record, PARTNER_COMMISSIONS.approvedAt),
+    paidAt: fieldText(record, PARTNER_COMMISSIONS.paidAt),
+    approved_by: fieldText(record, PARTNER_COMMISSIONS.approvedBy) || null,
     model: modelRecord ? modelName(modelRecord) : "Talent pending",
+    currency: fieldText(record, PARTNER_COMMISSIONS.currency) || "THB",
     basisAmount: fieldNumber(record, PARTNER_COMMISSIONS.basisAmount),
     rate: formatRate(fieldNumber(record, PARTNER_COMMISSIONS.rateSnapshot)),
+    commission_type: fieldText(record, PARTNER_COMMISSIONS.typeSnapshot) || null,
     commission,
     status,
     statusLabel: toLabel(status),
-    included_in_earnings: ["earned", "approved", "ready", "pending", "paid", "settled", "completed"].includes(status),
+    approval_status: fieldText(record, PARTNER_COMMISSIONS.approvalStatus) || null,
+    payout_status: fieldText(record, PARTNER_COMMISSIONS.payoutStatus) || null,
+    eligibility_status: fieldText(record, PARTNER_COMMISSIONS.eligibilityStatus) || null,
+    held_reason: fieldText(record, PARTNER_COMMISSIONS.heldReason) || null,
+    void_reason: fieldText(record, PARTNER_COMMISSIONS.voidReason) || null,
     payout_reference: fieldText(record, PARTNER_COMMISSIONS.payoutReference),
-    paidAt: fieldText(record, PARTNER_COMMISSIONS.paidAt)
+    split_index: fieldNumber(record, PARTNER_COMMISSIONS.splitIndex) || null,
+    split_percent: fieldNumber(record, PARTNER_COMMISSIONS.splitPercent) || null,
+    audit_event_count: isRecord(audit) && Array.isArray(audit.events) ? audit.events.length : null,
+    included_in_earnings: ["earned", "approved", "ready", "pending", "paid", "settled", "completed"].includes(status)
+  };
+}
+
+function maskPayoutAccountRef(value: string | null): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const compact = raw.replace(/\s+/g, "");
+  if (compact.length <= 4) return "••••";
+  return "••••" + compact.slice(-4);
+}
+
+function buildPartnerFinanceSnapshot(
+  partnerRecord: AirtableRecord,
+  commissions: Array<Record<string, unknown> & { commission: number; status: string }>
+): Record<string, unknown> {
+  const ids = new Map<string, number>();
+  for (const row of commissions) {
+    const id = String(row.commission_id || "").trim();
+    if (id) ids.set(id, (ids.get(id) || 0) + 1);
+  }
+  const ambiguous = new Set([...ids.entries()].filter(([, count]) => count > 1).map(([id]) => id));
+  const rows = commissions.map((row) => {
+    const duplicate = Boolean(row.commission_id && ambiguous.has(String(row.commission_id)));
+    return {
+      ...row,
+      integrity_state: duplicate ? "reconciliation_required" : "canonical",
+      included_in_finance_totals: !duplicate && row.included_in_earnings === true
+    };
+  });
+  const canonical = rows.filter((row) => row.integrity_state === "canonical");
+  const amount = (statuses: string[]) => canonical
+    .filter((row) => statuses.includes(normalizeStatus(String(row.status || ""))))
+    .reduce((sum, row) => sum + Number(row.commission || 0), 0);
+  const monthly = new Map<string, { month: string; earned: number; paid: number; rows: number }>();
+  for (const row of canonical) {
+    const date = String(row.paidAt || row.approvedAt || row.earnedAt || "");
+    const parsed = Date.parse(date);
+    if (!Number.isFinite(parsed)) continue;
+    const month = new Date(parsed).toISOString().slice(0, 7);
+    const item = monthly.get(month) || { month, earned: 0, paid: 0, rows: 0 };
+    item.rows += 1;
+    if (row.included_in_earnings === true) item.earned += Number(row.commission || 0);
+    if (isPaidStatus(String(row.status || ""))) item.paid += Number(row.commission || 0);
+    monthly.set(month, item);
+  }
+  return {
+    payout_profile: {
+      configured: Boolean(
+        fieldText(partnerRecord, MODEL_PARTNERS.payoutMethod) &&
+        fieldText(partnerRecord, MODEL_PARTNERS.payoutAccountName) &&
+        fieldText(partnerRecord, MODEL_PARTNERS.payoutAccountRef)
+      ),
+      method: fieldText(partnerRecord, MODEL_PARTNERS.payoutMethod) || null,
+      account_name: fieldText(partnerRecord, MODEL_PARTNERS.payoutAccountName) || null,
+      account_ref_masked: maskPayoutAccountRef(fieldText(partnerRecord, MODEL_PARTNERS.payoutAccountRef))
+    },
+    summary: {
+      pending_amount: amount(["pending", "earned", "ready"]),
+      approved_amount: amount(["approved"]),
+      held_amount: amount(["held", "disputed"]),
+      paid_amount: amount(["paid", "settled", "completed"]),
+      void_amount: amount(["void", "voided", "refunded", "cancelled", "reversed"]),
+      canonical_rows: canonical.length,
+      reconciliation_rows: rows.length - canonical.length
+    },
+    monthly: [...monthly.values()].sort((a, b) => b.month.localeCompare(a.month)),
+    reconciliation: {
+      required: ambiguous.size > 0,
+      duplicate_commission_ids: [...ambiguous],
+      excluded_from_totals: rows.filter((row) => row.integrity_state === "reconciliation_required").map((row) => row.commission_record_id)
+    },
+    rows
   };
 }
 
