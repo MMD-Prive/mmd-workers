@@ -6,7 +6,12 @@ workers_dev = true
 routes = [
   { pattern = "himai-shop-worker.mmdbkk.com", custom_domain = true },
   # Compatibility for the current Webflow embed on /ceo/dashboard.
-  { pattern = "admin-worker.mmdbkk.com", custom_domain = true }
+  { pattern = "admin-worker.mmdbkk.com", custom_domain = true },
+  # Branded supplier portal aliases on the main MMD domain.
+  { pattern = "mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" }
 ]
 
 [vars]
@@ -17,13 +22,13 @@ MMD_SHOP_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev
 HIMAI_SHOP_AI_ENABLED = "true"
 AI_PROVIDER = "openai"
 OPENAI_MODEL = "gpt-4.1-mini"
-SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor"
+SUPPLIER_DASHBOARD_URL = "https://mmdbkk.com/shop/distributor"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
 # INTERNAL_TOKEN                         - shared auth for himai-chat-worker LINE push
 # OPENAI_API_KEY                         - optional natural-language AI layer
-# AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Telegram direct-message service auth
+# AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Service auth for himai-chat-worker LINE push
 # HIMAI_DISTRIBUTOR_PORTAL_TOKENS        - same scoped supplier access map used by portal
 
 [[services]]
