@@ -36,7 +36,7 @@ jobs:
             ["payments-worker", "https://sigil.mmdbkk.com/v1/pay/slip/evidence/health"],
             ["member-pages-worker", "https://member-pages-worker.malemodel-bkk.workers.dev/health"],
             ["mms-worker", "https://mms-worker.malemodel-bkk.workers.dev/health"],
-            ["himai-chat-worker", "https://himai-chat-worker.malemodel-bkk.workers.dev/health"],
+            ["himai-chat-worker", "https://www.mmdbkk.com/mmd-shop/api/health"],
             ["partners-worker", "https://partners-worker.malemodel-bkk.workers.dev/health"],
             ["sigil-booking-worker", "https://sigil-booking-worker.malemodel-bkk.workers.dev/health"],
           ];
