@@ -420,3 +420,44 @@ test("candidate priority keeps reviewed history plus entitlement ahead of legacy
     },
   }));
 });
+
+
+test("paginated candidate discovery finds high-priority eligible candidates after the first Airtable page", async () => {
+  const page1 = Array.from({ length: 100 }, (_, index) => ({
+    id: `recPage1_${index}`,
+    fields: {
+      line_user_id: `U${String(index).padStart(32, "0")}`,
+      "Verification Status": index === 0 ? { name: "Verified" } : undefined,
+      "MMD — Member Entitlements": [],
+      "MMD — Customer History Reviews": [],
+    },
+  }));
+  const eligibleLine = "Uffffffffffffffffffffffffffffffff";
+  const page2 = [{
+    id: "recEligiblePage2",
+    fields: {
+      line_user_id: eligibleLine,
+      "MMD — Member Entitlements": ["recEnt"],
+      "MMD — Customer History Reviews": ["recHistory1", "recHistory2"],
+    },
+  }];
+
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    const parsed = new URL(url);
+    if (!parsed.searchParams.get("offset")) {
+      return Response.json({ records: page1, offset: "page-2" });
+    }
+    return Response.json({ records: page2 });
+  };
+
+  const ids = await REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS.listCanonicalCandidateLineIds({
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+  }, fetchImpl);
+
+  assert.equal(urls.length, 2);
+  assert.equal(new URL(urls[1]).searchParams.get("offset"), "page-2");
+  assert.equal(ids[0], eligibleLine);
+});
