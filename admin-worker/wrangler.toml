@@ -4,6 +4,8 @@
 
 name = "admin-worker"
 main = "src/admin-login-hero-worker.js"
+
+triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 

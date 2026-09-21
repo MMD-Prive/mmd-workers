@@ -5,6 +5,7 @@ import { analyzeProductionPaymentProof } from "./payment-proof-intelligence.mjs"
 import { dispatchOpsNotification, drainOpsNotificationOutbox } from "./line-ops-notification-outbox.mjs";
 import { heldEvidenceAuditRecord, holdUncertainEvidence, reprocessHeldEvidence } from "./line-held-evidence-lane.mjs";
 import { runPaymentObserverHealth } from "./payment-observer-health.mjs";
+import { resolveLineCanonicalPayment, withPaymentEvidenceLock } from "../../shared/canonical-payment-evidence.mjs";
 
 const LINE_WEBHOOK_PATHS = new Set(["/webhooks/line", "/webhooks/line/"]);
 const IMAGE_TYPES = new Map([["image/jpeg", "jpg"], ["image/png", "png"], ["image/webp", "webp"]]);
@@ -150,6 +151,7 @@ async function createPendingProof(env = {}, evidence = {}) {
     mime_type: evidence.mimeType,
     byte_size: evidence.byteSize,
     extraction: {
+      bank_transaction_ref: extraction.payment_ref || null,
       method: extraction.extraction_method || null,
       confidence: extraction.confidence_score || 0,
       provider: extraction.provider || null,
@@ -161,6 +163,7 @@ async function createPendingProof(env = {}, evidence = {}) {
     links,
     payment_intelligence: analysis.payment_intelligence || null,
     job_correlation: analysis.job_correlation || null,
+    canonical_payment: analysis.canonical_payment || null,
     review_summary: analysis.review_summary || null,
     payment_ops_route: { topic: opsRoute.topic, classification: opsRoute.classification, confidence: opsRoute.confidence, reason: opsRoute.reason, should_alert: opsRoute.should_alert === true },
     payment_truth: ownerPolicyVerified ? "verified_by_owner_membership_policy" : "unverified",
@@ -187,15 +190,27 @@ async function createPendingProof(env = {}, evidence = {}) {
   const payerName = asString(extraction.payer_name || analysis.customer?.display_name || evidence.payerName);
   if (payerName) fields.payer_name = payerName;
   if (extraction.amount_thb != null) fields.amount_thb = extraction.amount_thb;
-  if (asString(extraction.payment_ref)) fields.payment_ref = asString(extraction.payment_ref);
+  const paymentRef = asString(analysis.canonical_payment?.payment_ref || extraction.payment_ref);
+  if (paymentRef) fields.payment_ref = paymentRef;
   if (safePaidDate(extraction.paid_at)) fields.paid_at = safePaidDate(extraction.paid_at);
   if (asString(links.member)) fields.member = [asString(links.member)];
   if (asString(links.client)) fields.Client = [asString(links.client)];
   if (asString(links.session)) fields.session = [asString(links.session)];
   if (asString(links.payment)) fields.payment = [asString(links.payment)];
   if (asString(links.renewal)) fields["MMD — LIFF Renewal Sessions"] = [asString(links.renewal)];
-  const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), { method: "POST", body: JSON.stringify({ fields }) });
-  return { id: asString(payload?.id), deduped: false, verified: false, mayExtendMembership, note: noteValue };
+  const create = async () => {
+    if (analysis.canonical_payment?.status === "exact") {
+      const params = new URLSearchParams({ maxRecords: "1", filterByFormula: `{payment_ref}='${formulaValue(paymentRef)}'` });
+      const found = await airtableRequest(env, `${encodeURIComponent(paymentProofsTable(env))}?${params}`);
+      const prior = found.records?.[0];
+      if (prior?.id) return { id: prior.id, proofId: asString(prior.fields?.proof_id), deduped: true, verified: prior.fields?.status === "verified" };
+    }
+    const payload = await airtableRequest(env, encodeURIComponent(paymentProofsTable(env)), { method: "POST", body: JSON.stringify({ fields }) });
+    return { id: asString(payload?.id), deduped: false, verified: false, mayExtendMembership, note: noteValue };
+  };
+  return analysis.canonical_payment?.status === "exact"
+    ? withPaymentEvidenceLock(env.LINE_SLIP_EVIDENCE, paymentRef, create)
+    : create();
 }
 
 async function settleTrackedMembership(env = {}, evidence = {}, proof = {}, lineUserId = "") {
@@ -527,7 +542,14 @@ async function persistCapturedImage(env = {}, event = {}, options = {}) {
 // same correlation, pending-first Payment Proof and settlement contract.
 async function persistAcceptedEvidence(env = {}, input = {}) {
   if (!env.LINE_SLIP_EVIDENCE || typeof env.LINE_SLIP_EVIDENCE.put !== "function") throw new Error("line_slip_r2_binding_missing");
-  const { proofId, image, analysis } = input;
+  const { proofId, image } = input;
+  let analysis = input.analysis;
+  const canonicalPayment = await resolveLineCanonicalPayment(env, analysis)
+    .catch(() => ({ status: "unresolved", reason: "canonical_payment_lookup_failed" }));
+  analysis = { ...analysis, canonical_payment: canonicalPayment };
+  if (canonicalPayment.status === "exact") {
+    analysis.links = { ...analysis.links, payment: canonicalPayment.payment_record_id };
+  }
   const source = asString(input.sourceType);
   const userId = asString(input.lineUserId);
   const now = new Date();

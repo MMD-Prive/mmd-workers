@@ -1,3 +1,5 @@
+import { dispatchPaymentNotification, drainPaymentNotifications, notificationDigest } from "../../shared/payment-notification-outbox.mjs";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
 const DEFAULT_CLIENTS_TABLE = "tblVv58TCbwh5j1fS";
@@ -5,6 +7,7 @@ const DEFAULT_MODELS_TABLE = "tblI4B0bI446vp9GX";
 
 const SESSION_FIELDS = Object.freeze({
   sessionId: "fldLTq2kZbyRv22IA",
+  sessionStatus: "fldmwuvOaiCFdzzRa",
   clientName: "fldMvnQ0BzDfHUYjT",
   modelName: "flddVz6eoWRHrzIQr",
   jobType: "fldjK3U9bghnj7xUe",
@@ -34,6 +37,54 @@ const MODEL_FIELDS = Object.freeze({
 const INITIAL_JOB_PAYMENT_STAGES = new Set(["deposit", "full"]);
 
 export async function dispatchApprovedJobLinks(env, { session_id, payment_stage, payment_ref } = {}) {
+  if (!clean(session_id, 220) || !INITIAL_JOB_PAYMENT_STAGES.has(code(payment_stage))) {
+    return { status: "not_applicable", dispatched: false };
+  }
+  const delivery = await dispatchPaymentNotification({
+    bucket: env.LINE_SLIP_EVIDENCE,
+    lane: "approved-job-links",
+    eventKey: `${clean(session_id, 220)}:${code(payment_stage)}`,
+    payload: { session_id, payment_stage, payment_ref },
+    deliver: (record, checkpoint) => deliverApprovedNotification(env, record, checkpoint),
+  });
+  return {
+    ...(delivery.result || { status: delivery.status, dispatched: false }),
+    delivery_status: delivery.status,
+    retry_queued: delivery.queued === true,
+    delivery_durable: delivery.durable === true,
+  };
+}
+
+export async function drainApprovedJobLinkNotifications(env, options = {}) {
+  return drainPaymentNotifications({
+    ...options,
+    bucket: env.LINE_SLIP_EVIDENCE,
+    lane: "approved-job-links",
+    deliver: (record, checkpoint) => deliverApprovedNotification(env, record, checkpoint),
+  });
+}
+
+async function deliverApprovedNotification(env, record, checkpoint) {
+  const result = await deliverApprovedJobLinks(env, record.payload, async (channel, target, send) => {
+    const digest = await notificationDigest(`${record.id}:${channel}:${JSON.stringify(target)}`);
+    if (record.state?.[digest]) return { ok: true, status: "sent", duplicate: true };
+    // A UUID derived from the exact recipient/content identity remains stable
+    // across uncertain LINE responses and process restarts.
+    const retryKey = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    let outcome;
+    try { outcome = await send(retryKey); }
+    catch { outcome = { ok: false, status: "transport_failed" }; }
+    if (outcome.ok) {
+      const state = { ...record.state, [digest]: true };
+      await checkpoint(state);
+      record.state = state;
+    }
+    return outcome;
+  });
+  return { ok: result.dispatched === true && result.retry_required !== true, retryable: result.retryable !== false, result, error: result.status };
+}
+
+async function deliverApprovedJobLinks(env, { session_id, payment_stage, payment_ref } = {}, once) {
   const sessionId = clean(session_id, 220);
   const stage = code(payment_stage);
   if (!sessionId || !INITIAL_JOB_PAYMENT_STAGES.has(stage)) {
@@ -44,6 +95,9 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
   if (!session?.id) return { status: "session_not_found", dispatched: false };
 
   const f = session.fields || {};
+  if (["cancelled", "canceled", "rejected", "void"].includes(code(f[SESSION_FIELDS.sessionStatus]))) {
+    return { status: "session_cancelled", dispatched: false, retryable: false, manual_delivery_required: true };
+  }
   const memberUrl = clean(f[SESSION_FIELDS.customerConfirmationUrl], 4000);
   const modelUrl = clean(f[SESSION_FIELDS.modelConfirmationUrl], 4000);
   if (!isCanonicalMemberUrl(memberUrl) || !isCanonicalModelUrl(modelUrl)) {
@@ -62,47 +116,36 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
     targets.customer_telegram_user_id === targets.model_telegram_user_id
   );
 
+  const sendLine = (role, lineUserId, name, url) => once("line", { role, lineUserId, name, url },
+    (retryKey) => pushLineConfirmation(env, { lineUserId, role, name, url, retryKey }));
+  const sendDm = (role, telegramUserId, name, url) => once("telegram", { role, telegramUserId, name, url },
+    () => pushTelegramConfirmation(env, { telegramUserId, role, name, url }));
   const [customerLine, modelLine] = lineIdentityCollision
     ? [
         { ok: false, status: "identity_collision" },
         { ok: false, status: "identity_collision" },
       ]
-    : await Promise.all([
-        pushLineConfirmation(env, {
-          lineUserId: targets.customer_line_user_id,
-          role: "customer",
-          name: f[SESSION_FIELDS.clientName],
-          url: memberUrl,
-        }),
-        pushLineConfirmation(env, {
-          lineUserId: targets.model_line_user_id,
-          role: "model",
-          name: f[SESSION_FIELDS.modelName],
-          url: modelUrl,
-        }),
-      ]);
+    : [
+        await sendLine("customer", targets.customer_line_user_id, f[SESSION_FIELDS.clientName], memberUrl),
+        await sendLine("model", targets.model_line_user_id, f[SESSION_FIELDS.modelName], modelUrl),
+      ];
 
   const [customerTelegram, modelTelegram] = telegramIdentityCollision
     ? [
         { ok: false, status: "identity_collision" },
         { ok: false, status: "identity_collision" },
       ]
-    : await Promise.all([
-        pushTelegramConfirmation(env, {
-          telegramUserId: targets.customer_telegram_user_id,
-          role: "customer",
-          name: f[SESSION_FIELDS.clientName],
-          url: memberUrl,
-        }),
-        pushTelegramConfirmation(env, {
-          telegramUserId: targets.model_telegram_user_id,
-          role: "model",
-          name: f[SESSION_FIELDS.modelName],
-          url: modelUrl,
-        }),
-      ]);
+    : [
+        await sendDm("customer", targets.customer_telegram_user_id, f[SESSION_FIELDS.clientName], memberUrl),
+        await sendDm("model", targets.model_telegram_user_id, f[SESSION_FIELDS.modelName], modelUrl),
+      ];
 
-  const sent = await sendTelegram(env, {
+  const opsTarget = {
+    chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120),
+    message_thread_id: Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22),
+    memberUrl, modelUrl,
+  };
+  const sent = await once("telegram_ops", opsTarget, () => sendTelegram(env, {
     chat_id: clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 120),
     message_thread_id: Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22),
     text: [
@@ -127,11 +170,16 @@ export async function dispatchApprovedJobLinks(env, { session_id, payment_stage,
       lineIdentityCollision ? "<b>LINE dispatch held: customer/model identity collision</b>" : "",
       telegramIdentityCollision ? "<b>Telegram dispatch held: customer/model identity collision</b>" : "",
     ].filter(Boolean).join("\n"),
-  });
+  }));
 
+  const retryRequired = !sent.ok
+    || (!lineIdentityCollision && ((targets.customer_line_user_id && !customerLine.ok) || (targets.model_line_user_id && !modelLine.ok)))
+    || (!telegramIdentityCollision && ((targets.customer_telegram_user_id && !customerTelegram.ok) || (targets.model_telegram_user_id && !modelTelegram.ok)));
   return {
-    status: sent.ok ? "sent" : "failed",
+    status: sent.ok ? retryRequired ? "partial" : "sent" : "failed",
     dispatched: sent.ok === true,
+    retry_required: Boolean(retryRequired),
+    manual_delivery_required: !(customerLine.ok || customerTelegram.ok) || !(modelLine.ok || modelTelegram.ok),
     member_url_present: true,
     model_url_present: true,
     telegram_status: sent.status || null,
@@ -182,7 +230,7 @@ async function resolveNotificationTargets(env, sessionFields = {}) {
   };
 }
 
-async function pushLineConfirmation(env, { lineUserId, role, name, url } = {}) {
+async function pushLineConfirmation(env, { lineUserId, role, name, url, retryKey } = {}) {
   const to = canonicalLineUserId(lineUserId);
   if (!to) return { ok: false, status: "line_identity_missing" };
   const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN, 5000);
@@ -213,15 +261,18 @@ async function pushLineConfirmation(env, { lineUserId, role, name, url } = {}) {
     headers: {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
+      "x-line-retry-key": retryKey,
     },
     body: JSON.stringify({
       to,
       messages: [{ type: "text", text }],
     }),
+    signal: AbortSignal.timeout(15000),
   });
+  const accepted = response.ok || (response.status === 409 && Boolean(response.headers.get("x-line-accepted-request-id")));
   return {
-    ok: response.ok,
-    status: response.ok ? "sent" : `line_http_${response.status}`,
+    ok: accepted,
+    status: accepted ? "sent" : `line_http_${response.status}`,
   };
 }
 
@@ -327,6 +378,7 @@ async function sendTelegram(env, payload) {
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
+    signal: AbortSignal.timeout(15000),
   });
   const data = await response.json().catch(() => ({}));
   return { ok: response.ok && data?.ok !== false, status: response.status, data };
