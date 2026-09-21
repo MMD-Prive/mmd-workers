@@ -81,7 +81,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>'
       : job.confirmation_allowed === true
       ? '<div class="pcr-actions"><button type="button" data-job-action="confirm">Confirm</button><button type="button" data-job-action="changes" class="ghost">ขอแก้ไข</button><button type="button" data-job-action="decline" class="danger">ปฏิเสธ</button></div>'
-      : '<div class="pcr-job-locked" role="status"><b>รอ Official Verify</b><span>ยืนยันหรือเปลี่ยนสถานะงานได้หลังระบบตรวจสอบการชำระเงินแล้ว</span></div>';
+      : '<div class="pcr-job-locked" role="status"><b>Official Verify in progress</b><span>ระบบจะเปิดการยืนยันและการเปลี่ยนสถานะงานเมื่อ Payment Truth ตรวจเสร็จ</span></div>';
     return '<article class="pcr-job" data-job="' + esc(job.session_record_id) + '">' +
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div><div><dt>สถานที่</dt><dd>' + esc(job.location) + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div></dl>' +
