@@ -67,31 +67,18 @@ jobs:
             else if ((hit.script || null) !== owner) wrong.push({ pattern, expected: owner, actual: hit.script || null });
           }
 
-          const forbiddenLegacy = new Set([
-            "mmdbkk.com/member/login",
-            "mmdbkk.com/member/login/",
-            "www.mmdbkk.com/member/login",
-            "www.mmdbkk.com/member/login/",
-            "mmdbkk.com/member/dashboard",
-            "mmdbkk.com/member/dashboard/",
-            "www.mmdbkk.com/member/dashboard",
-            "www.mmdbkk.com/member/dashboard/",
-            "mmdbkk.com/sigil/apply",
-            "mmdbkk.com/sigil/apply/",
-            "www.mmdbkk.com/sigil/apply",
-            "www.mmdbkk.com/sigil/apply/",
-          ]);
-          const legacyP0 = routes.filter((route) => route.script === "mmd-redirect-worker" && forbiddenLegacy.has(route.pattern));
-          if (legacyP0.length) throw new Error(`P0 legacy routes remain: ${legacyP0.map(x => x.pattern).join(", ")}`);
+          const legacyRoutes = routes.filter((route) => route.script === "mmd-redirect-worker");
+          if (legacyRoutes.length) {
+            throw new Error(`retired mmd-redirect-worker regained production routes: ${legacyRoutes.map(x => x.pattern).join(", ")}`);
+          }
           if (missing.length || wrong.length) {
             throw new Error(`route ownership mismatch missing=${JSON.stringify(missing)} wrong=${JSON.stringify(wrong)}`);
           }
-          const legacyCatchall = routes.filter((route) => route.script === "mmd-redirect-worker");
           console.log(JSON.stringify({
             ok: true,
             verified: expected.size,
-            migrated_p0_legacy_routes: 0,
-            remaining_legacy_routes_for_phase1_b: legacyCatchall.map(x => x.pattern),
+            mmd_redirect_worker_routes: 0,
+            phase1_route_ownership: "closed",
           }, null, 2));
           NODE
 
@@ -209,7 +196,7 @@ jobs:
           - Partner API: partners-worker
           - Realtime /v1/rt/*: realtime-worker
           - Private Model: sigil-worker
-          - mmd-redirect-worker on migrated P0 surfaces: 0
-          - legacy catch-all/compatibility routes: retained for Phase 1-B cleanup
+          - mmd-redirect-worker production routes: 0
+          - Phase 1 route ownership: CLOSED
           - Customer/business mutations: 0
           EOF
