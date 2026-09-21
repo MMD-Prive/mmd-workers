@@ -2,7 +2,9 @@ const LOCK = "himai-shop-worker-v2026-04-29-shop-routes";
 const DEFAULT_DASHBOARD_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 const DEFAULT_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev";
 
-import { handleSupplierAssistant, runSupplierAlertSweep } from "./supplier-assistant.js";
+import { handleSupplierAssistant, runSupplierAlertSweep, SupplierAlertState } from "./supplier-assistant.js";
+
+export { SupplierAlertState };
 
 export default {
   async fetch(request, env) {
