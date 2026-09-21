@@ -8,10 +8,12 @@ on:
       - "shared/model-sales-control-v1.test.mjs"
       - "admin-worker/src/kenji-recommendation-*.js"
       - "admin-worker/kenji-recommendation-*.mjs"
+      - "admin-worker/src/kenji-lv5-operational-rpc.js"
       - "admin-worker/src/kenji-model-access-rpc.js"
       - "admin-worker/kenji-model-access-rpc.test.mjs"
       - "docs/architecture/KENJI_RECOMMENDATION_LAYER_V1_20260921.md"
       - ".github/workflows/kenji-recommendation-ci.yml"
+      - ".github/workflows/deploy-kenji-recommendation-layer.yml"
   workflow_dispatch:
 
 permissions:
@@ -40,12 +42,13 @@ jobs:
           node --check shared/kenji-recommendation-layer-v1.mjs
           node --test shared/kenji-recommendation-authority.test.mjs shared/kenji-recommendation-personalization.test.mjs
 
-      - name: Validate service-only recommendation adapter
+      - name: Validate service-only recommendation adapter and production mount
         run: |
           node --check admin-worker/src/kenji-recommendation-profile-source.js
           node --check admin-worker/src/kenji-recommendation-context-adapter.js
           node --check admin-worker/src/kenji-recommendation-rpc.js
-          node --test admin-worker/kenji-recommendation-rpc-auth.test.mjs admin-worker/kenji-recommendation-rpc-behavior.test.mjs
+          node --check admin-worker/src/kenji-lv5-operational-rpc.js
+          node --test admin-worker/kenji-recommendation-rpc-auth.test.mjs admin-worker/kenji-recommendation-rpc-behavior.test.mjs admin-worker/kenji-recommendation-entrypoint.test.mjs
 
       - name: Validate existing Model Access and Sales Control authority regressions
         if: matrix.node-version == '22.x'
