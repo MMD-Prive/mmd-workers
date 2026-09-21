@@ -4273,108 +4273,122 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex,nofollow">
-  <meta name="theme-color" content="#070706">
+  <meta name="theme-color" content="#080807">
   <title>SĪGIL Partner · Private Access</title>
   <style>
-    :root{color-scheme:dark;--bg:#070706;--panel:#11100e;--ink:#f8f3e9;--muted:#aaa49a;--soft:#777168;--gold:#d8ad64;--gold-2:#f2d59d;--line:rgba(216,173,100,.22);--green:#06c755}
+    :root{color-scheme:dark;--bg:#080807;--ink:#f7f1e7;--body:#d6cec1;--muted:#978f84;--gold:#d5ae66;--gold2:#efd59f;--line:rgba(213,174,102,.26);--line2:rgba(255,255,255,.08);--green:#06c755}
     *{box-sizing:border-box}
-    html{min-height:100%;background:var(--bg);scroll-behavior:smooth}
-    body{min-height:100svh;margin:0;overflow-x:hidden;background:radial-gradient(circle at 8% -10%,rgba(216,173,100,.15),transparent 30%),radial-gradient(circle at 96% 10%,rgba(72,40,26,.22),transparent 28%),linear-gradient(145deg,#060605 0%,#0b0907 50%,#050504 100%);color:var(--ink);font-family:Inter,Outfit,"Noto Sans Thai",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-    body:before{position:fixed;inset:0;pointer-events:none;content:"";opacity:.24;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:48px 48px;mask-image:linear-gradient(to bottom,black,transparent 82%)}
+    html,body{margin:0;min-height:100%;background:var(--bg)}
+    body{min-height:100svh;overflow:hidden;color:var(--ink);font-family:Inter,Outfit,"Noto Sans Thai",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
     a{color:inherit}
-    .topbar{position:relative;z-index:5;width:min(1240px,calc(100% - 40px));min-height:88px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:18px}
-    .brand{display:flex;align-items:center;gap:13px;text-decoration:none}
-    .brand-word{color:#fff;font-size:25px;font-weight:850;letter-spacing:.18em;line-height:1}
-    .brand-rule{width:1px;height:28px;background:linear-gradient(transparent,var(--gold),transparent)}
-    .brand-division{display:flex;flex-direction:column;color:var(--gold-2);font-size:10px;font-weight:800;letter-spacing:.22em;line-height:1.45;text-transform:uppercase}
-    .private-badge{display:flex;align-items:center;gap:9px;color:#c8c0b3;font-size:10px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
-    .private-badge:before{width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 5px rgba(216,173,100,.1);content:""}
-    .shell{position:relative;z-index:1;width:min(1240px,calc(100% - 40px));min-height:calc(100svh - 116px);margin:0 auto 28px;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(390px,.78fr);gap:18px}
-    .visual,.login-panel{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:32px;background:rgba(15,13,10,.76);box-shadow:0 34px 110px rgba(0,0,0,.34)}
-    .visual{min-height:660px;isolation:isolate}
-    .visual:before,.visual:after{position:absolute;inset:0;z-index:1;pointer-events:none;content:""}
-    .visual:before{background:linear-gradient(180deg,rgba(4,4,3,.05) 28%,rgba(4,4,3,.92) 100%),linear-gradient(90deg,rgba(4,4,3,.34),transparent 58%)}
-    .visual:after{inset:18px;border:1px solid rgba(242,213,157,.16);border-radius:22px}
-    .visual img{width:100%;height:100%;position:absolute;inset:0;object-fit:cover;object-position:center 44%;filter:saturate(.78) contrast(1.04) brightness(.82);transform:scale(1.01)}
-    .visual-top{position:absolute;z-index:2;top:42px;left:42px;display:flex;align-items:center;gap:11px;color:#eee6d8;font-size:10px;font-weight:850;letter-spacing:.2em;text-transform:uppercase}
-    .visual-top i{width:38px;height:1px;background:var(--gold)}
-    .visual-copy{position:absolute;z-index:2;right:42px;bottom:42px;left:42px}
-    .visual-copy p{margin:0 0 13px;color:var(--gold-2);font-size:11px;font-weight:850;letter-spacing:.23em;text-transform:uppercase}
-    .visual-copy h2{max-width:620px;margin:0;color:#fff;font-size:clamp(40px,4.3vw,66px);font-weight:650;letter-spacing:-.045em;line-height:1.08;text-wrap:balance}
-    .capabilities{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}
-    .capabilities span{padding:8px 11px;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(6,6,5,.42);color:#d8d1c6;font-size:10px;font-weight:800;letter-spacing:.12em;backdrop-filter:blur(10px)}
-    .login-panel{display:flex;align-items:center;padding:clamp(30px,4.3vw,58px);background:radial-gradient(circle at 100% 0,rgba(216,173,100,.12),transparent 33%),linear-gradient(155deg,rgba(24,20,15,.96),rgba(10,9,8,.98))}
-    .login-panel:before{position:absolute;top:0;right:11%;left:11%;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);content:""}
-    .login-inner{position:relative;width:100%;max-width:500px;margin:auto}
-    .eyebrow{margin:0 0 20px;color:var(--gold);font-size:10px;font-weight:900;letter-spacing:.25em;text-transform:uppercase}
-    h1{max-width:560px;margin:0;color:#fff;font-size:clamp(42px,4.4vw,62px);font-weight:650;letter-spacing:-.055em;line-height:1.06;text-wrap:balance}
-    .lead{margin:22px 0 0;color:#c5beb2;font-size:16px;line-height:1.8}
-    .access-flow{margin:30px 0 24px;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;border-top:1px solid rgba(255,255,255,.09);border-bottom:1px solid rgba(255,255,255,.09)}
-    .access-flow li{min-width:0;padding:17px 8px 16px 0}
-    .access-flow li+li{padding-left:13px;border-left:1px solid rgba(255,255,255,.09)}
-    .access-flow b,.access-flow span{display:block}
-    .access-flow b{color:var(--gold);font-size:9px;letter-spacing:.12em;text-transform:uppercase}
-    .access-flow span{margin-top:5px;color:#ece5da;font-size:12px;font-weight:700;line-height:1.4}
-    #go{width:100%;min-height:62px;display:flex;align-items:center;justify-content:center;gap:13px;padding:0 20px;border:0;border-radius:15px;background:var(--green);box-shadow:0 16px 42px rgba(6,199,85,.15);color:#fff;font:800 16px/1 Inter,Outfit,"Noto Sans Thai",system-ui,sans-serif;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}
-    #go:hover{transform:translateY(-2px);box-shadow:0 20px 48px rgba(6,199,85,.22);filter:brightness(1.04)}
-    #go:focus-visible{outline:3px solid rgba(242,213,157,.68);outline-offset:4px}
-    #go:disabled{transform:none;cursor:wait;filter:saturate(.52);opacity:.7}
-    .line-mark{width:29px;height:24px;position:relative;display:grid;place-items:center;border-radius:7px;background:#fff;color:#06a947;font-size:7px;font-weight:950;letter-spacing:-.02em}
+    .page{position:relative;min-height:100svh;display:grid;isolation:isolate;overflow:hidden;background:#080807}
+    .hero{position:absolute;inset:0;z-index:-2}
+    .hero picture,.hero img{display:block;width:100%;height:100%}
+    .hero img{object-fit:cover;object-position:center top}
+    .hero:after{position:absolute;inset:0;content:"";background:linear-gradient(180deg,rgba(4,4,3,.04) 0%,rgba(4,4,3,.12) 34%,rgba(4,4,3,.74) 67%,rgba(4,4,3,.98) 100%)}
+    .grain{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
+    .topbar{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px}
+    .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+    .brand-mark{width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(213,174,102,.42);border-radius:9px;background:rgba(8,8,7,.34);backdrop-filter:blur(12px)}
+    .brand-copy{display:flex;flex-direction:column;gap:3px}
+    .brand-copy b{font-size:11px;line-height:1;font-weight:850;letter-spacing:.16em}
+    .brand-copy span{color:var(--gold2);font-size:8px;line-height:1.1;font-weight:800;letter-spacing:.18em;text-transform:uppercase}
+    .private{padding:8px 10px;border:1px solid rgba(213,174,102,.3);border-radius:999px;background:rgba(8,8,7,.3);backdrop-filter:blur(12px);color:var(--gold2);font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
+    .shell{align-self:end;width:min(100% - 24px,1180px);margin:0 auto;padding:0 0 max(14px,env(safe-area-inset-bottom))}
+    .card{position:relative;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(20,18,15,.78),rgba(8,8,7,.95));box-shadow:0 24px 80px rgba(0,0,0,.44);backdrop-filter:blur(20px)}
+    .card:before{position:absolute;top:0;right:14%;left:14%;height:1px;content:"";background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+    .eyebrow{margin:0 0 10px;color:var(--gold2);font-size:9px;font-weight:900;letter-spacing:.2em;text-transform:uppercase}
+    h1{margin:0;max-width:570px;color:#fff;font-family:"Playfair Display","Noto Serif Thai",Georgia,serif;font-size:clamp(36px,10vw,52px);font-weight:500;letter-spacing:-.045em;line-height:1.02;text-wrap:balance}
+    .lead{margin:12px 0 0;max-width:620px;color:var(--body);font-size:13px;line-height:1.68}
+    .flow{margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2)}
+    .flow li{padding:11px 7px 11px 0;min-width:0}
+    .flow li+li{padding-left:9px;border-left:1px solid var(--line2)}
+    .flow b,.flow span{display:block}
+    .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
+    .flow span{margin-top:4px;color:#ebe4da;font-size:9px;font-weight:750;line-height:1.35}
+    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:850 14px/1 Inter,Outfit,"Noto Sans Thai",system-ui,sans-serif;cursor:pointer;transition:transform .2s ease,filter .2s ease}
+    #go:hover{transform:translateY(-1px);filter:brightness(1.04)}
+    #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
+    #go:disabled{cursor:wait;opacity:.68;transform:none}
+    .line-mark{position:relative;width:27px;height:22px;display:grid;place-items:center;border-radius:7px;background:#fff;color:#06a947;font-size:7px;font-weight:950}
     .line-mark:after{position:absolute;right:3px;bottom:-3px;width:7px;height:7px;background:#fff;clip-path:polygon(0 0,100% 0,100% 100%);content:""}
-    .after-login{margin:13px 3px 0;color:#928c83;font-size:12px;line-height:1.65;text-align:center}
-    #state{min-height:46px;margin:12px 0 0;display:flex;align-items:center;justify-content:center;color:var(--gold-2);font-size:13px;line-height:1.55;text-align:center}
-    .privacy{margin:4px 0 0;display:flex;align-items:flex-start;gap:10px;color:#8f8980;font-size:11px;line-height:1.6}
-    .privacy svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px;color:var(--gold)}
-    .links{margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:16px}
-    .links a{color:#b9b1a5;font-size:12px;font-weight:750;text-decoration:none;text-underline-offset:5px}
-    .links a:hover{text-decoration:underline;color:#fff}
-    .links a:last-child:after{margin-left:8px;color:var(--gold);content:"↗"}
-    @media(max-width:900px){.topbar{min-height:74px}.shell{min-height:0;grid-template-columns:1fr;gap:0}.visual{min-height:270px;border-radius:26px 26px 0 0}.visual-copy{right:26px;bottom:72px;left:26px}.visual-copy h2{font-size:clamp(31px,9vw,45px)}.visual-top{top:26px;left:26px}.capabilities{display:none}.login-panel{z-index:2;margin-top:-46px;padding:34px 26px 28px;border-radius:28px}.login-inner{max-width:580px}}
-    @media(max-width:520px){.topbar,.shell{width:min(100% - 24px,1240px)}.brand-word{font-size:19px}.brand-rule{height:23px}.brand-division{font-size:8px}.private-badge{font-size:0}.private-badge:after{font-size:9px;content:"PRIVATE"}.visual{min-height:236px}.visual:after{inset:10px;border-radius:19px}.visual-top{top:21px;left:21px}.visual-copy{right:21px;bottom:61px;left:21px}.visual-copy p{margin-bottom:9px;font-size:9px}.visual-copy h2{font-size:32px}.login-panel{padding:30px 22px 24px}h1{font-size:39px}.lead{margin-top:17px;font-size:14px}.access-flow{margin-top:24px}.access-flow li{padding-top:14px;padding-bottom:14px}.access-flow span{font-size:10px}.links{align-items:flex-start;flex-direction:column;gap:10px}}
-    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}#go{transition:none}}
+    #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
+    .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
+    .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
+    .links a{color:#b8b0a4;font-size:10px;font-weight:750;text-decoration:none}
+    .links a:hover{color:#fff}
+    @media(min-width:768px){
+      body{overflow:hidden}
+      .hero img{object-position:center center}
+      .hero:after{background:linear-gradient(90deg,rgba(4,4,3,.94) 0%,rgba(4,4,3,.72) 35%,rgba(4,4,3,.16) 63%,rgba(4,4,3,.04) 100%),linear-gradient(180deg,rgba(4,4,3,.04),rgba(4,4,3,.24))}
+      .topbar{padding:20px clamp(28px,4vw,56px)}
+      .brand-mark{width:34px;height:34px}
+      .brand-copy b{font-size:12px}.brand-copy span{font-size:9px}.private{font-size:9px;padding:9px 12px}
+      .shell{align-self:center;width:min(1180px,calc(100% - 84px));padding:66px 0}
+      .card{width:min(560px,48vw);padding:30px 32px;border-radius:28px;background:linear-gradient(145deg,rgba(17,16,14,.86),rgba(8,8,7,.93))}
+      h1{font-size:clamp(48px,4.5vw,68px)}
+      .lead{font-size:14px;line-height:1.75}
+      .flow{margin-top:20px}.flow li{padding:13px 9px 13px 0}.flow span{font-size:10px}
+      #go{min-height:56px;font-size:15px}
+    }
+    @media(max-height:690px) and (max-width:767px){
+      .topbar{padding-top:10px}.shell{padding-bottom:8px}.card{padding:16px}h1{font-size:34px}.lead{font-size:12px;line-height:1.55}.flow{margin-top:12px}#go{margin-top:11px;min-height:48px}.micro,.links{display:none}
+    }
+    @media(prefers-reduced-motion:reduce){#go{transition:none}}
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="https://www.mmdbkk.com/partner/dashboard" aria-label="SĪGIL Partner Division">
-      <span class="brand-word">SĪGIL</span><span class="brand-rule" aria-hidden="true"></span><span class="brand-division">Partner<br>Division</span>
-    </a>
-    <span class="private-badge">Private access</span>
-  </header>
-  <main class="shell">
-    <section class="visual" aria-label="SĪGIL Partner Control Room">
-      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab10ad7605c86a6908aff6a_Yuki%20Partner%20Terms.webp" alt="Partner กำลังดูข้อมูลใน SĪGIL Control Room" width="1086" height="1448" fetchpriority="high" decoding="async">
-      <div class="visual-top"><i aria-hidden="true"></i>Partner Control Layer</div>
-      <div class="visual-copy">
-        <p>Private by default · Controlled by you</p>
-        <h2>จัดการโมเดล งาน และรายได้<br>จากพื้นที่เดียว</h2>
-        <div class="capabilities" aria-label="Dashboard sections"><span>MODELS</span><span>JOBS</span><span>AGREEMENTS</span><span>EARNINGS</span><span>PERFORMANCE</span></div>
-      </div>
-    </section>
-    <section class="login-panel" aria-labelledby="login-title">
-      <div class="login-inner">
-        <p class="eyebrow">Recognized Partner Access</p>
-        <h1 id="login-title">กลับเข้าสู่พื้นที่พาร์ทเนอร์ของคุณ</h1>
-        <p class="lead">ใช้ LINE บัญชีเดิมที่ได้รับการรับรอง ระบบจะเปิด Control Room ที่มีเฉพาะข้อมูลและสิทธิ์ของคุณ</p>
-        <ol class="access-flow" aria-label="ขั้นตอนเข้าสู่ระบบ">
+  <main class="page">
+    <div class="hero" aria-hidden="true">
+      <picture>
+        <source media="(max-width:767px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab1323f4e443dd3ce36de09_Yuki%20Dash%20log%20mob.webp">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab1323f7c4d9e972ff1d3ea_Yuki%20Dash%20log%20desk.webp" alt="" fetchpriority="high" decoding="async">
+      </picture>
+    </div>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <a class="brand" href="https://www.mmdbkk.com/partner" aria-label="SĪGIL Partner Division">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="21" height="21"><g fill="#d5ae66"><polygon points="7,21 11.5,17.5 14,17.5 14,22 10,25"/><polygon points="10.5,15.5 14.5,12.5 14.5,7.5 10.5,10.7"/><polygon points="15.8,6.5 20,3 20,14.8 15.8,18"/><polygon points="15.2,18.8 19.3,15.6 25,19.6 25,23.5 21.2,27 21.2,23.2 17.8,20.9"/></g></svg>
+        </span>
+        <span class="brand-copy"><b>SĪGIL SYSTEM</b><span>Partner Division</span></span>
+      </a>
+      <span class="private">Private Access</span>
+    </header>
+
+    <section class="shell">
+      <div class="card">
+        <p class="eyebrow">Recognized Partner Access · Partner Control Layer</p>
+        <h1>กลับเข้าสู่<br>Control Room ของคุณ</h1>
+        <p class="lead">ใช้ LINE บัญชีเดิมที่ MMD รับรองไว้ ระบบจะยืนยันตัวตนก่อนพาเข้าสู่ Dashboard ของบัญชีนี้ครับ</p>
+
+        <ol class="flow" aria-label="ขั้นตอนเข้าสู่ระบบ">
           <li><b>01 · LINE</b><span>ยืนยันตัวตน</span></li>
-          <li><b>02 · Telegram</b><span>เชื่อมเพียงครั้งเดียว</span></li>
-          <li><b>03 · Verify</b><span>จึงตอบรับงานได้</span></li>
+          <li><b>02 · Telegram</b><span>เชื่อมเมื่อระบบขอ</span></li>
+          <li><b>03 · Verify</b><span>พร้อมรับงาน</span></li>
         </ol>
-        <button id="go" type="button" aria-describedby="login-note"><span class="line-mark" aria-hidden="true">LINE</span><span>เข้าสู่ระบบด้วย LINE</span></button>
-        <p class="after-login" id="login-note">เข้า Dashboard ก่อน แล้วระบบจะพาไปเชื่อม Telegram หากยังไม่ได้เชื่อม</p>
+
+        <button id="go" type="button">
+          <span class="line-mark" aria-hidden="true">LINE</span>
+          <span>เข้าสู่ระบบด้วย LINE</span>
+        </button>
         <p id="state" role="status" aria-live="polite"></p>
-        <p class="privacy"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.5 10V7.5a4.5 4.5 0 0 1 9 0V10M6 10h12v10H6z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg><span>ไม่สร้างบัญชีใหม่ และไม่เก็บ access token ไว้ใน localStorage</span></p>
-        <nav class="links" aria-label="Partner links"><a href="https://www.mmdbkk.com/partner/terms">อ่าน Partner Terms</a><a href="https://www.mmdbkk.com/partner/dashboard">กลับหน้าพาร์ทเนอร์</a></nav>
+        <p class="micro">ระบบไม่สร้างบัญชีซ้ำ และยึดสิทธิ์จาก Partner record ที่ผ่าน Recognition แล้วเท่านั้น</p>
+        <nav class="links" aria-label="Partner links">
+          <a href="https://www.mmdbkk.com/partner/terms">Partner Terms</a>
+          <a href="https://www.mmdbkk.com/partner">Partner Home ↗</a>
+        </nav>
       </div>
     </section>
   </main>
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script>
 const go=document.getElementById('go'),state=document.getElementById('state');
 let initialized;
 function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว กำลังเปิดพื้นที่พาร์ทเนอร์';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
-// Initialize on each landing, including the OAuth return, before changing URLs.
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
 if(typeof liff!=='undefined')initialize().catch(()=>{state.textContent='พร้อมแล้ว · กดเข้าสู่ระบบด้วย LINE อีกครั้ง';});
   </script>
 </body>

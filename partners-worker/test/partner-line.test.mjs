@@ -18,6 +18,9 @@ test('LINE entry is private, branded, and requires explicit login',async()=>{
   assert.match(html,/เข้าสู่ระบบด้วย LINE/);
   assert.match(html,/02 · Telegram/);
   assert.match(html,/03 · Verify/);
+  assert.match(html,/6ab1323f4e443dd3ce36de09_Yuki%20Dash%20log%20mob\.webp/);
+  assert.match(html,/6ab1323f7c4d9e972ff1d3ea_Yuki%20Dash%20log%20desk\.webp/);
+  assert.match(html,/<picture>/);
   assert.match(html,/<meta name="robots" content="noindex,nofollow">/);
   assert.match(html,/aria-live="polite"/);
   const inlineScript=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];
