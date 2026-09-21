@@ -8,6 +8,9 @@ const CLIENTS_TABLE_FALLBACK = "tblVv58TCbwh5j1fS";
 const RECOMMENDATION_URL = "https://admin-worker.local/v1/internal/kenji/recommendations";
 const MATRIX_SCHEMA = "mmd.kenji_conversation_matrix.v1";
 const MAX_CLIENT_CANDIDATES = 24;
+const MAX_CLIENT_SCAN_RECORDS = 500;
+const CLIENT_PAGE_SIZE = 100;
+const MAX_CLIENT_SCAN_PAGES = 5;
 const MAX_ELIGIBLE_ATTEMPTS = 8;
 const CONTEXT_CONCURRENCY = 4;
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -45,29 +48,41 @@ async function listCanonicalCandidateLineIds(env = {}, fetchImpl = fetch) {
   const table = clientsTable(env);
   if (!apiKey || !baseId || !table) return [];
 
-  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("maxRecords", "100");
-  url.searchParams.set("pageSize", "100");
-  url.searchParams.set("filterByFormula", 'LEN({line_user_id}&"")=33');
-  url.searchParams.append("fields[]", "line_user_id");
-  url.searchParams.append("fields[]", "Verification Status");
-  url.searchParams.append("fields[]", "MMD — Member Entitlements");
-  url.searchParams.append("fields[]", "MMD — Customer History Reviews");
+  const rows = [];
+  const seen = new Set();
+  let offset = "";
+  let scanned = 0;
 
   try {
-    const response = await fetchImpl(url.toString(), {
-      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
-    });
-    if (!response.ok) return [];
-    const payload = await response.json().catch(() => ({}));
-    const rows = [];
-    const seen = new Set();
-    for (const record of Array.isArray(payload?.records) ? payload.records : []) {
-      const lineUserId = text(record?.fields?.line_user_id);
-      if (!isLineUserId(lineUserId) || seen.has(lineUserId)) continue;
-      seen.add(lineUserId);
-      rows.push({ lineUserId, priority: candidatePriority(record) });
+    for (let page = 0; page < MAX_CLIENT_SCAN_PAGES && scanned < MAX_CLIENT_SCAN_RECORDS; page += 1) {
+      const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("pageSize", String(CLIENT_PAGE_SIZE));
+      url.searchParams.set("filterByFormula", 'LEN({line_user_id}&"")=33');
+      url.searchParams.append("fields[]", "line_user_id");
+      url.searchParams.append("fields[]", "Verification Status");
+      url.searchParams.append("fields[]", "MMD — Member Entitlements");
+      url.searchParams.append("fields[]", "MMD — Customer History Reviews");
+      if (offset) url.searchParams.set("offset", offset);
+
+      const response = await fetchImpl(url.toString(), {
+        headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      });
+      if (!response.ok) return [];
+      const payload = await response.json().catch(() => ({}));
+      const records = Array.isArray(payload?.records) ? payload.records : [];
+      scanned += records.length;
+
+      for (const record of records) {
+        const lineUserId = text(record?.fields?.line_user_id);
+        if (!isLineUserId(lineUserId) || seen.has(lineUserId)) continue;
+        seen.add(lineUserId);
+        rows.push({ lineUserId, priority: candidatePriority(record) });
+      }
+
+      offset = text(payload?.offset);
+      if (!offset || records.length === 0) break;
     }
+
     return rows
       .sort((left, right) => right.priority - left.priority)
       .slice(0, MAX_CLIENT_CANDIDATES)
