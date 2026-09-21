@@ -11,7 +11,7 @@ const tick = () => new Promise(resolve=>setImmediate(resolve));
 function setup(options={}) {
   const calls=[];
   const dom=new JSDOM(html,{url:'https://example.test/internal/admin/payments',runScripts:'dangerously',beforeParse(w){
-    w.matchMedia=()=>({matches:false});w.HTMLElement.prototype.scrollIntoView=function(){};
+    w.matchMedia=()=>({matches:options.mobile===true});w.HTMLElement.prototype.scrollIntoView=function(){};
     w.fetch=async(url,opts={})=>{calls.push({url,opts});if(options.fetch){const override=await options.fetch(url,opts);if(override)return override;}
       const data=url.includes('view=recent_jobs')?{ok:true,items:[],jobs:options.jobs||[job,waiting]}:url.includes('proof_id=')?{ok:true,items:options.exact??[proof]}:{ok:true,items:options.items??[proof]};
       return {ok:true,status:200,json:async()=>data};
@@ -60,4 +60,9 @@ test('auth and partial data failures never masquerade as a complete empty queue'
 
 test('issue/reject remain audit-only and do not show a paid receipt',async()=>{
  const h=setup({fetch:async(_url,opts)=>{if(opts.method==='POST')return{ok:true,status:200,json:async()=>({ok:true,money_truth_changed:false})}}});try{await tick();await tick();await h.open();h.q('[data-pf-note]').value='ขอหลักฐานที่ชัดเจน';h.q('[data-pf-decision="issue"]').click();await tick();assert.match(h.q('[data-pf-message]').textContent,/ยังไม่ยืนยันเงินเข้า/);assert.equal(h.q('[data-pf-receipt]').hidden,true);}finally{h.dom.window.close()}
+});
+
+
+test('mobile selection opens one task and back returns to the same search',async()=>{
+ const h=setup({mobile:true});try{await tick();await tick();h.search('Que');await h.open();assert.equal(h.q('#mmd-payment-review').classList.contains('pf-has-selection'),true);h.q('[data-pf-back]').click();assert.equal(h.q('#mmd-payment-review').classList.contains('pf-has-selection'),false);assert.equal(h.q('[data-pf-search]').value,'Que');assert.equal(h.qa('[data-pf-select]').length,1);}finally{h.dom.window.close()}
 });
