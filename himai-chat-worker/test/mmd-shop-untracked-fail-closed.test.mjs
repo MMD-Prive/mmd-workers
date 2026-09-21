@@ -212,3 +212,31 @@ test("stock health exposes untracked checkout products as actionable", { concurr
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("Himai checkout prices from Himai field while sharing the same stock map", () => {
+  const product = checkoutProduct();
+  product.fields.fldve5nrQmymoZgiX = ["Himai Shop", "MMD Shop"];
+  product.fields.fldo4N9GRq6rHPiCh = 900;
+  product.fields.fldD6Q5yido7pTlU0 = 1000;
+  const products = new Map([[PRODUCT_ID, product]]);
+  const stock = new Map([[PRODUCT_ID, { available: 2, low: false, active_batches: 1 }]]);
+
+  const himai = validateAndPriceCart(
+    [{ product_id: PRODUCT_ID, quantity: 1 }],
+    products,
+    stock,
+    { key:"shop", publicName:"Himai Shop", priceField:"fldo4N9GRq6rHPiCh", brandToken:"himai" },
+  );
+  const mmd = validateAndPriceCart(
+    [{ product_id: PRODUCT_ID, quantity: 1 }],
+    products,
+    stock,
+    { key:"mmd-shop", publicName:"MMD Shop", priceField:"fldD6Q5yido7pTlU0", brandToken:"mmd" },
+  );
+
+  assert.equal(himai[0].available, 2);
+  assert.equal(mmd[0].available, 2);
+  assert.equal(himai[0].unit_price_thb, 900);
+  assert.equal(mmd[0].unit_price_thb, 1000);
+});
