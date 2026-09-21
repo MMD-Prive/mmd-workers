@@ -25,6 +25,7 @@ jobs:
         working-directory: realtime-worker
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
       CLOUDFLARE_ZONE_ID: 2d62396174fa2ddadbbcd0e8cf0f3367
       REALTIME_WORKERS_DEV_URL: https://realtime-worker.malemodel-bkk.workers.dev
@@ -86,7 +87,8 @@ jobs:
           set -euo pipefail
           node <<'NODE'
           const zone = process.env.CLOUDFLARE_ZONE_ID;
-          const token = process.env.CLOUDFLARE_API_TOKEN;
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN || "").trim();
+          if (!token) throw new Error("Cloudflare routes credential missing");
           const desired = [
             "mmdbkk.com/v1/rt/*",
             "www.mmdbkk.com/v1/rt/*",
