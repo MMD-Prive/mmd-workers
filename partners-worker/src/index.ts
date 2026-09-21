@@ -376,8 +376,13 @@ export default {
         return javascriptResponse(WEBFLOW_SIGIL_PARTNER_FORM_JS);
       }
 
-      if (request.method === "POST" && url.pathname === "/v1/partner/line/exchange") return handlePartnerLineExchange(request, runtimeEnv);
-      if (request.method === "GET" && url.pathname === "/v1/partner/line/login") return new Response(PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      if (request.method === "POST" && url.pathname === "/v1/partner/line/exchange") return await handlePartnerLineExchange(request, runtimeEnv);
+      if (["GET", "HEAD"].includes(request.method) && url.pathname === "/v1/partner/line/login") {
+        return new Response(null, { status: 302, headers: { Location: PARTNER_LINE_LOGIN_URL, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      }
+      if (["GET", "HEAD"].includes(request.method) && url.pathname === "/sigil/model/dashboard/partner-login") {
+        return new Response(request.method === "HEAD" ? null : PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY" } });
+      }
       if (request.method === "POST" && url.pathname === "/v1/partner/upload") {
         return await handlePartnerUpload(request, runtimeEnv);
       }
@@ -1103,7 +1108,8 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const salesControls = buildPartnerSalesControls(referrals, modelMap, partnerSalesRules);
   const normalizedChanges = modelChanges.map(normalizePartnerModelChange);
   const normalizedModels = buildPartnerModelProfiles(referrals, modelMap, salesControls, normalizedChanges);
-  const normalizedJobs = sessions.map(normalizePartnerSession);
+  const verifiedSessionIds = await officiallyVerifiedPartnerSessions(env, sessions);
+  const normalizedJobs = sessions.map((session) => normalizePartnerSession(session, verifiedSessionIds.has(fieldText(session, SESSION_FIELDS.sessionId) || "")));
 
   const activeModels = new Set(
     referrals
@@ -1431,7 +1437,7 @@ function normalizePartnerModelChange(record: AirtableRecord): Record<string, unk
   };
 }
 
-function normalizePartnerSession(record: AirtableRecord): Record<string, unknown> {
+function normalizePartnerSession(record: AirtableRecord, officiallyVerified = false): Record<string, unknown> {
   const partnerStatus = normalizeStatus(fieldText(record, SESSION_FIELDS.partnerConfirmationStatus)) || "pending";
   const paymentStatus = normalizeStatus(fieldText(record, SESSION_FIELDS.paymentStatus)) || "unavailable";
   return {
@@ -1448,7 +1454,7 @@ function normalizePartnerSession(record: AirtableRecord): Record<string, unknown
     work_type: fieldText(record, SESSION_FIELDS.workType),
     status: partnerStatus,
     payment_status: paymentStatus,
-    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus),
+    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus) && officiallyVerified && !["confirmed", "declined"].includes(partnerStatus),
     confirmation_note: fieldText(record, SESSION_FIELDS.partnerConfirmationNote),
     confirmation_revision: fieldNumber(record, SESSION_FIELDS.partnerConfirmationRevision),
     notification_status: fieldText(record, SESSION_FIELDS.partnerNotificationStatus) || "pending"
@@ -2218,7 +2224,7 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
   const paymentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.paymentStatus));
-  if (!isOfficiallyVerifiedPaymentStatus(paymentStatus)) {
+  if (!isOfficiallyVerifiedPaymentStatus(paymentStatus) || !(await officiallyVerifiedPartnerSessions(env, [session])).has(fieldText(session, SESSION_FIELDS.sessionId) || "")) {
     return errorResponse(
       request,
       env,
@@ -2451,6 +2457,12 @@ async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv
   }
   if (bindStatus !== "verified" || boundTelegramId !== telegramUserId) {
     return json(request, env, { ok:false, error:"partner_telegram_identity_mismatch" }, 403);
+  }
+
+  // Recheck canonical Payment Truth when the button is pressed. A previously
+  // delivered Telegram message must never become independent payment authority.
+  if (!(await officiallyVerifiedPartnerSessions(env, [session])).has(fieldText(session, SESSION_FIELDS.sessionId) || "")) {
+    return json(request, env, { ok:false, error:"official_verify_required" }, 409);
   }
 
   const currentStatus = normalizeStatus(String(sf[SESSION_FIELDS.partnerConfirmationStatus] || sf.partner_confirmation_status || ""));
@@ -2998,6 +3010,10 @@ async function verifyPartnerToken(
     };
   }
 
+  if (normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.status)) !== "active") {
+    return { ok: false, response: errorResponse(request, env, "partner_not_active", "This Partner account is awaiting review.", 403, false) };
+  }
+
   return {
     ok: true,
     value: { token, tokenHash, payload: parsed.payload, partnerRecord }
@@ -3475,7 +3491,27 @@ function isPaidStatus(value: string): boolean {
 }
 
 function isOfficiallyVerifiedPaymentStatus(value: string): boolean {
-  return ["verified", "paid", "settled", "complete", "completed", "success"].includes(normalizeStatus(value));
+  return ["verified", "deposit_paid", "paid", "settled", "complete", "completed", "success"].includes(normalizeStatus(value));
+}
+
+async function officiallyVerifiedPartnerSessions(env: RuntimeEnv, sessions: AirtableRecord[]): Promise<Set<string>> {
+  const candidates = new Set(sessions
+    .filter((session) => isOfficiallyVerifiedPaymentStatus(fieldText(session, SESSION_FIELDS.paymentStatus) || ""))
+    .map((session) => fieldText(session, SESSION_FIELDS.sessionId) || "")
+    .filter(Boolean));
+  if (!candidates.size) return new Set();
+  const table = String((env as RuntimeEnv & { AIRTABLE_TABLE_PAYMENTS?: string }).AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ");
+  const sessionFilter = [...candidates].map((id) => `{${PAYMENT_FIELDS.sessionId}}='${escapeFormulaString(id)}'`).join(",");
+  const payments = await listAirtableRecords(env, table, {
+    filterByFormula: `AND(OR(${sessionFilter}),{${PAYMENT_FIELDS.verification}}='verified',OR({${PAYMENT_FIELDS.stage}}='deposit',{${PAYMENT_FIELDS.stage}}='full'))`,
+    maxRecords: 100
+  });
+  return new Set(payments.filter((payment) =>
+    candidates.has(fieldText(payment, PAYMENT_FIELDS.sessionId) || "") &&
+    normalizeStatus(fieldText(payment, PAYMENT_FIELDS.verification)) === "verified" &&
+    ["deposit", "full"].includes(normalizeStatus(fieldText(payment, PAYMENT_FIELDS.stage))) &&
+    fieldNumber(payment, PAYMENT_FIELDS.amount) > 0
+  ).map((payment) => fieldText(payment, PAYMENT_FIELDS.sessionId)!));
 }
 
 function toLabel(value: string): string {
@@ -3668,7 +3704,7 @@ const WEBFLOW_SIGIL_PARTNER_FORM_JS = `
 `;
 
 async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Promise<Response> {
-  if (request.headers.get("Origin") !== "https://www.mmdbkk.com") return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
+  if (!["https://www.mmdbkk.com", "https://mmdbkk.com"].includes(request.headers.get("Origin") || "")) return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
   const body = await readJsonObject(request);
   if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
   const token = readString(body.value, "id_token");
@@ -3686,11 +3722,16 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   if (links.length !== 1 || links[0] !== claim.id || normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== "active" || normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return errorResponse(request, env, "partner_not_recognized", "Partner is not active.", 403, false);
   const access = await generatePartnerToken(env, partner.id);
   await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, { [MODEL_PARTNERS.accessTokenHash]: await sha256Hex(access) }, false);
-  const result = json(request, env, { ok: true, dashboard_url: `https://sigil-partner.lovable.app/?t=${encodeURIComponent(access)}` });
+  const result = json(request, env, { ok: true, dashboard_url: `https://www.mmdbkk.com/partner/dashboard?t=${encodeURIComponent(access)}` });
   result.headers.set("Cache-Control", "no-store");
   return result;
 }
-const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner LINE</title><style>body{background:#10110f;color:#f5f1e7;font:18px system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}button{padding:16px;background:#06c755;color:white;border:0;border-radius:8px;font:inherit;width:100%}</style><main><h1>SĪGIL Partner</h1><p>ใช้ LINE บัญชีเดิมเพื่อเข้าสู่พื้นที่พาร์ทเนอร์</p><button id="go">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status"></p></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
+const PARTNER_LINE_LOGIN_URL = "https://mmdbkk.com/sigil/model/dashboard/partner-login";
+const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner · LINE</title><style>*{box-sizing:border-box}body{margin:0;background:#10110f;color:#f5f1e7;font:17px/1.65 system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}small{color:#c0b69d;letter-spacing:.2em}h1{font-size:36px;line-height:1.2;margin:18px 0}button{min-height:54px;padding:14px;background:#06c755;color:#fff;border:0;border-radius:8px;font:inherit;width:100%;cursor:pointer}button:disabled{opacity:.6}#state{min-height:56px;color:#ddd4c1}a{color:#ddd4c1}</style></head><body><main><small>SĪGIL · PARTNER</small><h1>พื้นที่พาร์ทเนอร์ของคุณ</h1><p>ใช้ LINE บัญชีเดิมที่เชื่อมกับ Partner เพื่อเข้าดูตารางงานและเชื่อม Telegram</p><button id="go" type="button">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status" aria-live="polite"></p><a href="https://www.mmdbkk.com/partner/dashboard">กลับหน้าพาร์ทเนอร์</a></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
 const go=document.getElementById('go'),state=document.getElementById('state');
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await liff.init({liffId:'2010864854-N34SgCqq'});if(!liff.isLoggedIn()){liff.login({redirectUri:'https://www.mmdbkk.com/v1/partner/line/login'});return;}const r=await fetch('/v1/partner/line/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:liff.getIDToken()})});const d=await r.json();if(!r.ok||!d.ok){state.textContent='กรุณาให้ MMD ตรวจการเชื่อมบัญชี Partner';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://sigil-partner.lovable.app')throw Error();location.replace(target.href);}catch{state.textContent='เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง';go.disabled=false;}};
-</script></html>`;
+let initialized;
+function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว กำลังเปิดพื้นที่พาร์ทเนอร์';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
+// Initialize on each landing, including the OAuth return, before changing URLs.
+if(typeof liff!=='undefined')initialize().catch(()=>{state.textContent='พร้อมแล้วกดเข้าสู่ระบบด้วย LINE อีกครั้ง';});
+</script></body></html>`;

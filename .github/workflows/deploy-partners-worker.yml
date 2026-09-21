@@ -24,10 +24,6 @@ jobs:
       CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
       CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
-      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
-      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
-      KENDO_RECORD_ID: "recjegeHuesDmm7QP"
-      KENDO_NOTES_FIELD_ID: "fldiPJbsdnuxYQAl5"
 
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +41,7 @@ jobs:
           node <<'NODE'
           const fs = require("node:fs");
           const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
-          for (const key of ["CLOUDFLARE_API_TOKEN","CLOUDFLARE_ROUTES_API_TOKEN","AIRTABLE_API_KEY"]) {
+          for (const key of ["CLOUDFLARE_API_TOKEN","CLOUDFLARE_ROUTES_API_TOKEN"]) {
             const value = clean(process.env[key]);
             if (!value) throw new Error(`Missing required secret: ${key}`);
             fs.appendFileSync(process.env.GITHUB_ENV, `${key}=${value}\n`);
@@ -53,34 +49,6 @@ jobs:
           NODE
           echo "::add-mask::$CLOUDFLARE_API_TOKEN"
           echo "::add-mask::$CLOUDFLARE_ROUTES_API_TOKEN"
-          echo "::add-mask::$AIRTABLE_API_KEY"
-
-      - name: Load optional Kendo smoke token
-        shell: bash
-        run: |
-          set -euo pipefail
-          record="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields["Notes Internal"] // .fields[$f] // ""' <<<"$record")"
-          dashboard_url="$(printf '%s\n' "$notes" | sed -n 's/^Dashboard: //p' | tail -n 1)"
-          token=""
-          if [ -n "$dashboard_url" ]; then
-            token="$(python3 -c 'import sys,urllib.parse; print(urllib.parse.parse_qs(urllib.parse.urlparse(sys.argv[1]).query).get("t",[""])[0])' "$dashboard_url")"
-          fi
-
-          if [ -n "$token" ]; then
-            echo "::add-mask::$token"
-            echo "::add-mask::$dashboard_url"
-            echo "KENDO_TOKEN=$token" >> "$GITHUB_ENV"
-            echo "KENDO_TOKEN_AVAILABLE=true" >> "$GITHUB_ENV"
-          else
-            echo "KENDO_TOKEN=" >> "$GITHUB_ENV"
-            echo "KENDO_TOKEN_AVAILABLE=false" >> "$GITHUB_ENV"
-            echo "Kendo raw token is intentionally absent; continuing with deploy and unauthenticated route checks."
-          fi
 
       - name: Install
         working-directory: partners-worker
@@ -90,28 +58,15 @@ jobs:
         working-directory: partners-worker
         run: npm test && npm run typecheck
 
-      - name: Rotate Partners-to-Telegram service secret
+      - name: Verify existing service secret bindings without rotation
         shell: bash
         run: |
           set -euo pipefail
-          service_secret="$(openssl rand -hex 32)"
-          echo "::add-mask::$service_secret"
-          printf 'PARTNERS_TELEGRAM_ROUTER_SECRET=%s\n' "$service_secret" >> "$GITHUB_ENV"
-          router_secret_log="$RUNNER_TEMP/telegram-worker-partners-secret-version.log"
-          printf '%s' "$service_secret" | npx --yes wrangler@4 versions secret put AUTH_SERVICE_PARTNERS_TO_TELEGRAM \
-            --config telegram-worker/wrangler.toml \
-            --tag "router-partners-${GITHUB_SHA:0:12}-${GITHUB_RUN_ATTEMPT}" \
-            --message "Rotate AUTH_SERVICE_PARTNERS_TO_TELEGRAM from ${GITHUB_SHA}" \
-            2>&1 | tee "$router_secret_log"
-          router_version_id="$(sed -n -e 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' -e 's/.*Created version[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$router_secret_log" | tail -n 1)"
-          if [ -z "$router_version_id" ]; then
-            echo "Unable to resolve telegram-worker secret version id for AUTH_SERVICE_PARTNERS_TO_TELEGRAM" >&2
-            cat "$router_secret_log" >&2
-            exit 1
-          fi
-          npx --yes wrangler@4 versions deploy "${router_version_id}@100%" -y --config telegram-worker/wrangler.toml
-          printf 'AUTH_SERVICE_PARTNERS_TO_TELEGRAM=%s\n' "$service_secret" > "$RUNNER_TEMP/partners-worker-router.env"
-          chmod 600 "$RUNNER_TEMP/partners-worker-router.env"
+          for config in partners-worker/wrangler.toml telegram-worker/wrangler.toml; do
+            partners-worker/node_modules/.bin/wrangler secret list --config "$config" > "$RUNNER_TEMP/partner-router-secret-names.json"
+            jq -e 'any(.[]; .name == "AUTH_SERVICE_PARTNERS_TO_TELEGRAM")' "$RUNNER_TEMP/partner-router-secret-names.json" >/dev/null
+          done
+          rm -f "$RUNNER_TEMP/partner-router-secret-names.json"
 
       - name: Build route-free deploy config
         working-directory: partners-worker
@@ -145,7 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler deploy --keep-vars --secrets-file "$RUNNER_TEMP/partners-worker-router.env" --config .wrangler-no-routes.toml
+          npx wrangler deploy --keep-vars --config .wrangler-no-routes.toml
 
       - name: Verify Cloudflare routes token
         shell: bash
@@ -167,6 +122,8 @@ jobs:
           const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
           const worker = "partners-worker";
           const desired = [
+            "mmdbkk.com/sigil/model/dashboard/partner-login*",
+            "www.mmdbkk.com/sigil/model/dashboard/partner-login*",
             "mmdbkk.com/v1/partner/*",
             "www.mmdbkk.com/v1/partner/*",
             "mmdbkk.com/partner/dashboard*",
@@ -220,34 +177,6 @@ jobs:
           console.log(`Verified ${desired.length}/${desired.length}; created ${missing.length}`);
           NODE
 
-      - name: Smoke Kendo on bound partner API
-        if: env.KENDO_TOKEN_AVAILABLE == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          sleep 6
-          encoded="$(python3 -c 'import urllib.parse,os; print(urllib.parse.quote(os.environ["KENDO_TOKEN"], safe=""))')"
-
-          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
-            verify="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/v1/partner/verify?t=$encoded")"
-            dashboard="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/v1/partner/dashboard?t=$encoded")"
-
-            test "$(jq -r '.ok // false' <<<"$verify")" = "true"
-            test "$(jq -r '.partner_id // empty' <<<"$verify")" = "$KENDO_RECORD_ID"
-            test "$(jq -r '.ok // false' <<<"$dashboard")" = "true"
-            test "$(jq -r '.partner.id // empty' <<<"$dashboard")" = "$KENDO_RECORD_ID"
-
-            approval_body="$(mktemp)"
-            approval_code="$(curl --silent --show-error -o "$approval_body" -w "%{http_code}" \
-              -X POST -H "Content-Type: application/json" \
-              --data '{"partner_record_id":"'"$KENDO_RECORD_ID"'","action":"recognized"}' \
-              "$origin/v1/partner/approve")"
-            case "$approval_code" in
-              401|403|503) ;;
-              *) cat "$approval_body"; echo "Approval endpoint did not fail closed: HTTP $approval_code" >&2; exit 1 ;;
-            esac
-          done
-
       - name: Smoke Partner Control Room and fail-closed routes
         shell: bash
         run: |
@@ -272,6 +201,7 @@ jobs:
               /v1/partner/models/change \
               /v1/partner/models/upload \
               /v1/partner/jobs/action \
+              /v1/partner/telegram/connect \
               /v1/partner/sales/proposal; do
               body="$(mktemp)"
               code="$(curl --silent --show-error -o "$body" -w "%{http_code}" -X POST "$origin$path")"
@@ -280,35 +210,24 @@ jobs:
             done
           done
 
-      - name: Clean raw Kendo token from Airtable notes
-        if: env.KENDO_TOKEN_AVAILABLE == 'true'
+      - name: Smoke native Partner LINE entry
         shell: bash
         run: |
           set -euo pipefail
-          record="$(
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-              "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID"
-          )"
-          notes="$(jq -r --arg f "$KENDO_NOTES_FIELD_ID" '.fields["Notes Internal"] // .fields[$f] // ""' <<<"$record")"
-          cleaned="$(NOTES="$notes" node <<'NODE'
-          const notes = process.env.NOTES || "";
-          const without = notes
-            .replace(/\n?\[TEMP_KENDO_REISSUE 2026-09-20\][\s\S]*?(?:Smoke: pending|Smoke: PASS[^\n]*)/, "")
-            .trim();
-          const audit = "[2026-09-20] Kendo partner access reissued; custom-domain verify/dashboard smoke PASS. Raw token not retained.";
-          process.stdout.write(without ? without+"\n\n"+audit : audit);
-          NODE
-          )"
-          payload="$(jq -n --arg f "$KENDO_NOTES_FIELD_ID" --arg v "$cleaned" '{fields:{($f):$v}}')"
-          curl --fail --silent --show-error \
-            -X PATCH \
-            -H "Authorization: Bearer $AIRTABLE_API_KEY" \
-            -H "Content-Type: application/json" \
-            --data "$payload" \
-            "https://api.airtable.com/v0/$AIRTABLE_BASE_ID/tbl1ksDlsTiiGEHWe/$KENDO_RECORD_ID" >/dev/null
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            page="$(curl --retry 3 --retry-delay 2 --fail --silent --show-error "$origin/sigil/model/dashboard/partner-login")"
+            grep -Fq '2010864854-N34SgCqq' <<<"$page"
+            grep -Fq 'เข้าสู่ระบบด้วย LINE' <<<"$page"
+            if grep -Fq 'lovable.app' <<<"$page"; then exit 1; fi
+            headers="$(curl --silent --show-error --head "$origin/v1/partner/line/login")"
+            grep -Fiq 'location: https://mmdbkk.com/sigil/model/dashboard/partner-login' <<<"$headers"
+            body="$(mktemp)"
+            code="$(curl --silent --show-error -o "$body" -w "%{http_code}" -X POST -H "Origin: $origin" -H 'Content-Type: application/json' --data '{}' "$origin/v1/partner/line/exchange")"
+            test "$code" = "401"
+            test "$(jq -r '.error.code' "$body")" = "id_token_required"
+          done
 
       - name: Clean temporary config
         if: always()
         working-directory: partners-worker
-        run: rm -f .wrangler-no-routes.toml "$RUNNER_TEMP/partners-worker-router.env"
+        run: rm -f .wrangler-no-routes.toml

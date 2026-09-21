@@ -16,9 +16,15 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   function api(path, options) {
     var joiner = path.indexOf("?") === -1 ? "?" : "&";
-    return fetch(path + joiner + "t=" + encodeURIComponent(token), options || {}).then(function (response) {
+    return fetch(path + joiner + "t=" + encodeURIComponent(token), Object.assign({}, options || {}, {referrerPolicy:"no-referrer",cache:"no-store",credentials:"omit"})).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
-        if (!response.ok || !payload.ok) throw new Error(payload.message || payload.error || "ระบบยังบันทึกข้อมูลไม่ได้");
+        if (!response.ok || !payload.ok) {
+          var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
+          var reconnect = $("[data-reconnect-line]", root);
+          if (response.status === 401 && reconnect) reconnect.hidden = false;
+          var messages = {official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          throw new Error(response.status === 401 ? "เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์" : messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
+        }
         return payload;
       });
     });
@@ -51,7 +57,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   function jobCard(job) {
     var note = state.vault && state.vault.travel_notes ? (state.vault.travel_notes[job.session_record_id] || "") : "";
-    var actions = job.confirmation_allowed === true
+    var finalLabel = job.status === "confirmed" ? "ยืนยันงานแล้ว" : job.status === "declined" ? "แจ้งรับงานไม่ได้แล้ว" : "";
+    var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>' : job.confirmation_allowed === true
       ? '<div class="pcr-actions"><button type="button" data-job-action="confirm">Confirm</button><button type="button" data-job-action="changes" class="ghost">ขอแก้ไข</button><button type="button" data-job-action="decline" class="danger">ปฏิเสธ</button></div>'
       : '<div class="pcr-job-locked" role="status"><b>รอ Official Verify</b><span>ยืนยันหรือเปลี่ยนสถานะงานได้หลังระบบตรวจสอบการชำระเงินแล้ว</span></div>';
     return '<article class="pcr-job" data-job="' + esc(job.session_record_id) + '">' +
@@ -100,7 +107,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var target = $("[data-telegram]", root);
     target.innerHTML = partner.telegram_connected
       ? '<div><b>Telegram connected</b><span>' + esc(partner.telegram_username ? "@" + String(partner.telegram_username).replace(/^@/,"") : "Verified") + '</span></div><i aria-hidden="true">✓</i>'
-      : '<div><b>Telegram ยังไม่เชื่อม</b><span>เชื่อมเพื่อรับ revision และยืนยันงาน</span></div><button type="button" data-connect-telegram>Connect</button>';
+      : '<div><b>เชื่อม Telegram เพื่อรับงาน</b><span>กด Connect Telegram แล้วกด Start ในแชต จากนั้นกลับมาหน้านี้</span></div><button type="button" data-connect-telegram>Connect Telegram</button>';
   }
 
   function hydrate(data) {
@@ -124,7 +131,9 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     api("/v1/partner/telegram/connect", { method:"POST", headers:{"content-type":"application/json"}, body:"{}" }).then(function (payload) {
       if (payload.telegram_connected) return load();
       if (!payload.connect_url) throw new Error("Telegram link unavailable");
-      window.location.href = payload.connect_url;
+      var target = new URL(payload.connect_url);
+      if (target.protocol !== "https:" || target.hostname !== "t.me" || target.username || target.password || !target.searchParams.get("start")) throw new Error("กรุณาลองเชื่อม Telegram อีกครั้ง");
+      window.location.href = target.href;
     }).catch(function (error) { button.disabled = false; setFlash(error.message,"error"); });
   }
 
@@ -236,7 +245,11 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   $("[data-add-form]",root).onsubmit=addModel;
   $("[data-unlock-vault]",root).onclick=unlockVault;
   $("[data-save-vault]",root).onclick=saveVault;
-  loadVaultEnvelope().then(load);
+  function refreshTelegram(){if(state.data && !state.data.partner.telegram_connected && !document.hidden)load();}
+  window.addEventListener("focus", refreshTelegram);
+  document.addEventListener("visibilitychange", refreshTelegram);
+  load();
+  loadVaultEnvelope().catch(function(){setFlash("Private Vault พร้อมให้ลองเปิดอีกครั้ง ตารางงานยังใช้งานได้","error");});
 })();
 `;
 
