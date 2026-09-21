@@ -73,7 +73,7 @@ test("Partner Private Vault stores ciphertext only and never receives the PIN", 
 });
 
 test("dashboard copy states the Partner privacy boundary", () => {
-  assert.match(pageSource, /MMD ไม่มีสิทธิ์อ่าน/);
+  assert.match(pageSource, /อยู่ภายใต้การควบคุมของ Partner/);
   assert.match(pageSource, /Share with MMD/);
   assert.match(pageSource, /Private Vault/);
   assert.match(pageSource, /meta name=\\"referrer\\" content=\\"no-referrer\\"/);
@@ -114,6 +114,19 @@ test("Lovable uses the canonical Worker contract without widening authority", ()
   assert.match(indexSource, /confirmation_allowed: isOfficiallyVerifiedPaymentStatus\(paymentStatus\)/);
   assert.match(indexSource, /official_verify_required/);
   assert.match(uiSource, /job\.confirmation_allowed === true/);
-  assert.match(uiSource, /รอ Official Verify/);
+  assert.match(uiSource, /Official Verify/);
   assert.match(indexSource, /requested_customer_sell_rate_thb: fieldNumber\(existingRecord/);
+});
+
+
+test("Partner system pages use positive copy and canonical CTA routing", () => {
+  assert.doesNotMatch(pageSource, /Review Status/);
+  assert.match(pageSource, /Partner Home/);
+  assert.match(pageSource, /Partner Terms/);
+  assert.match(pageSource, /\/partner\/apply\?partner_type=modeling/);
+  assert.match(pageSource, /MMD PRIVÉ · BANGKOK/);
+  assert.match(pageSource, /Private by design\./);
+  for (const phrase of ["ยังไม่ใช่การอนุมัติ", "MMD ไม่มีสิทธิ์อ่าน", "รหัสถอดข้อมูลอยู่กับ Partner และไม่ถูกส่งให้ MMD"]) {
+    assert.doesNotMatch(pageSource, new RegExp(phrase));
+  }
 });
