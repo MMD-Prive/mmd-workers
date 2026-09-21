@@ -3009,6 +3009,7 @@ function renderHypeOwnerSummary(result = {}) {
   const observer = result.observer_health && typeof result.observer_health === "object" ? result.observer_health : {};
   const router = result.telegram_router_health && typeof result.telegram_router_health === "object" ? result.telegram_router_health : {};
   const digest = result.incident_digest && typeof result.incident_digest === "object" ? result.incident_digest : {};
+  const stuck = result.stuck_sla_watch && typeof result.stuck_sla_watch === "object" ? result.stuck_sla_watch : {};
   const lines = [
     "<b>HYPE · PER OWNER SUMMARY</b>",
     escapeHtml(clean(result.bangkok_date) || "วันนี้"),
@@ -3065,6 +3066,32 @@ function renderHypeOwnerSummary(result = {}) {
     if (clean(digest.primary.owner_action?.title)) lines.push("• Owner action: " + escapeHtml(digest.primary.owner_action.title));
   } else {
     lines.push("• Incident digest unavailable · ไม่มีการเดา root cause");
+  }
+
+  lines.push("");
+  lines.push("<b>STUCK / NEEDS ATTENTION</b>");
+  if (stuck.available === true) {
+    lines.push(`• Status: ${escapeHtml((clean(stuck.status) || "unknown").toUpperCase())} · overdue ${Number(stuck.counts?.overdue || 0)} · watch ${Number(stuck.counts?.watch || 0)}`);
+    if (Number(stuck.counts?.unavailable_sources || 0) > 0) {
+      lines.push(`• Sources unavailable: ${Number(stuck.counts.unavailable_sources || 0)} · HYPE จะไม่ถือว่าส่วนที่อ่านไม่ได้เป็นปกติ`);
+    }
+    const stuckItems = Array.isArray(stuck.items) ? stuck.items.slice(0, 4) : [];
+    if (stuckItems.length) {
+      for (const item of stuckItems) {
+        lines.push(`• ${escapeHtml(compactOwnerText([
+          ownerStuckKindLabel(item.kind),
+          item.label,
+          item.sla_status,
+          ownerAgeText(item.age_minutes),
+          item.detail,
+        ]))}`);
+      }
+    } else {
+      lines.push("• ไม่มีรายการค้างใน SLA window ที่อ่านได้ตอนนี้");
+    }
+    lines.push("Read-only operational watch · ไม่ยืนยันเงิน สิทธิ์ งาน คูปอง หรือ identity แทน authority ต้นทาง");
+  } else {
+    lines.push("• Watch source unavailable · HYPE จะไม่เดาว่าไม่มีงานค้าง");
   }
 
   if (recovery.available === true) {
@@ -3172,6 +3199,17 @@ function ownerAgeText(value) {
   if (minutes < 60) return minutes + "m since update";
   if (minutes < 1440) return Math.floor(minutes / 60) + "h " + (minutes % 60) + "m since update";
   return Math.floor(minutes / 1440) + "d " + Math.floor((minutes % 1440) / 60) + "h since update";
+}
+
+function ownerStuckKindLabel(value) {
+  const key = clean(value).toLowerCase();
+  if (key === "payment_proof_pending") return "Payment Proof";
+  if (key === "entitlement_notification_incomplete") return "Entitlement notification";
+  if (key === "job_confirmation_pending") return "Job confirmation";
+  if (key === "recovery_unassigned") return "Recovery unassigned";
+  if (key === "coupon_manual_review") return "Coupon manual review";
+  if (key === "telegram_bind_unconsumed") return "Telegram bind";
+  return "Cross-system watch";
 }
 
 function ownerRecoveryPickerLabel(item = {}) {
