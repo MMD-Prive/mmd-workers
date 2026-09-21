@@ -41,6 +41,7 @@ tag = "points-phase1-v1"
 new_sqlite_classes = ["PointsPhase1Coordinator"]
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "\"https://mmdprive.com,https://mmdprive.webflow.io,https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com\""
 
 WEB_BASE_URL = "https://mmdbkk.com"
