@@ -8,6 +8,7 @@ on:
     branches:
       - main
     paths:
+      - "shared/shop-checkout-once.mjs"
       - "shared/posthog-authority-events.mjs"
       - "himai-chat-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
