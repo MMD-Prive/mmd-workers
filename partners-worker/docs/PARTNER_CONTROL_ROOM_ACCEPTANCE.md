@@ -1,6 +1,8 @@
 # Partner Control Room acceptance — HOLD
 
-This is a draft extension of #1427 and #1429 after #1500. It is **not a complete Partner handoff**. Keep Lovable paused and do not invite or notify the pilot Partner from this work. Passing fixture tests is not production acceptance.
+PR #1504 was owner-merged at `565f1d944e8a6e94a03da64035bd179612d3082c`. The Partner and Admin deployment workflows and HYPE production smoke succeeded on 2026-09-21. This increment extends #1427 and #1429 after #1500, but is **not a complete Partner handoff**. Keep Lovable paused and do not invite or notify the pilot Partner until the open acceptance items below are resolved.
+
+Deployment receipts: [Partner](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165254), [Admin](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165237), [HYPE smoke](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165123). Independent anonymous checks on apex and www confirmed the new page assets, API authentication rejection, and owner-page login redirect. These are not authenticated pilot acceptance.
 
 ## Scope and current evidence
 
@@ -60,6 +62,6 @@ The amounts and identifiers above are illustrative, not pilot facts. Bridge uses
 - `npm run typecheck` in `partners-worker`: passed.
 - `node --test admin-worker/partner-owner-console.test.mjs`: two tests passed; existing credential-bound session, exact-origin write checks, fixed service destinations, no browser-controlled owner identity.
 - `git diff --check`: passed.
-- No visual browser sign-off, production deployment of this draft, or genuine pilot end-to-end acceptance is claimed.
+- The initial draft tests did not establish visual or genuine pilot acceptance. Deployment of #1504 is now verified by the receipts above; the financial producer and other open acceptance items remain incomplete.
 
 Final handoff requires every release blocker to have evidence. Do not equate the earlier narrow P1/P2 completion with the complete Partner Control Room scope.
