@@ -292,7 +292,11 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   if (authorized.length > 1) return { status: "clarification" };
   if (authorized.length === 1) {
     const authorizedRecord = authorized[0];
-    const offerRulesTable = clean(env.AIRTABLE_TABLE_MODEL_OFFER_RULES || env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || MODEL_OFFER_RULES_TABLE_FALLBACK);
+    const configuredOfferRulesTable = clean(env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES, 200);
+    if (!configuredOfferRulesTable) {
+      return { status: "match", model: authorizedRecord.safeModel };
+    }
+    const offerRulesTable = configuredOfferRulesTable || MODEL_OFFER_RULES_TABLE_FALLBACK;
     const rules = await airtableListRecords(env, offerRulesTable, fetchImpl, 500);
     const modelId = authorizedRecord.record?.id || "";
     const modelKey = clean(authorizedRecord.safeModel?.model_code, 160).toLowerCase();
