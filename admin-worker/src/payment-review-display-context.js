@@ -5,13 +5,13 @@ const ids = (value) => Array.isArray(value) ? value.map(text).filter(Boolean) : 
 const amount = (value) => value !== null && value !== undefined && text(value) !== "" && Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : null;
 const serviceStages = new Set(["deposit", "full", "final", "tips"]);
 
-async function exactRows(list, table, field, values) {
+export async function exactRows(list, table, field, values) {
   const unique = [...new Set(values.filter(Boolean))];
   const rows = [];
   // Bounded batches avoid one Airtable request per slip and preserve ambiguity.
   for (let index = 0; index < unique.length; index += 20) {
-    const terms = unique.slice(index, index + 20).map(value => `{${field}}=${quote(value)}`);
-    rows.push(...await list(table, { filterByFormula: `OR(${terms.join(",")})`, maxRecords: 100 }));
+    const terms = unique.slice(index, index + 20).map(value => `${field === "RECORD_ID()" ? field : `{${field}}`}=${quote(value)}`);
+    rows.push(...await list(table, { filterByFormula: `OR(${terms.join(",")})`, maxRecords: 1000, requireComplete: true }));
   }
   return rows;
 }
@@ -37,8 +37,10 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
     const session = sessionMatches.length === 1 ? sessionMatches[0] : null;
     const s = session?.fields || {};
     const linkedSessions = ids(proof.session || proof.Session);
+    const clientIds = [...new Set([...ids(proof.client || proof.Client), ...ids(p.Client), ...ids(s.Client)])];
     const expected = amount(p.amount_thb ?? p.Amount);
     const issues = [];
+    if (clientIds.length > 1) issues.push("canonical_client_link_ambiguous");
     if (!stage) issues.push("canonical_payment_stage_missing");
     if (expected === null) issues.push("canonical_payment_amount_missing");
     else if (item.evidence_amount_thb != null && Math.abs(expected - item.evidence_amount_thb) > 0.009) issues.push("payment_amount_mismatch");
@@ -50,6 +52,9 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
     const result = {
       ...item,
       customer_name: item.customer_name || text(s.client_name),
+      client_record_id: clientIds.length === 1 ? clientIds[0] : null,
+      customer_aliases: [...new Set([item.customer_name, text(s.client_name)].filter(Boolean))],
+      model_record_id: ids(s["Canonical Model"]).length === 1 ? ids(s["Canonical Model"])[0] : null,
       model_name: text(s.model_name),
       job_type: text(s.job_type),
       job_date: text(s.job_date),

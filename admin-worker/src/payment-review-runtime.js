@@ -8,6 +8,7 @@ import {
 } from "./payment-review-owner-context.js";
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
 import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
+import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -95,8 +96,18 @@ async function getPaymentEvidence(request, env) {
 async function listReviewQueue(request, env) {
   const url = new URL(request.url);
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
+  const discovery = {
+    list: (table, params) => airtableList(env, table, params),
+    page: (table, params) => airtablePage(env, table, params),
+    tables: discoveryTables(env),
+  };
+  if (url.searchParams.get("view") === "recent_jobs") {
+    const jobs = await recentPaymentJobs({ ...discovery, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env), limit });
+    return json({ ok: true, authority: "payments-worker", source: "sessions", ordering: "created_at_desc", limit, items: [], jobs });
+  }
+  const proofId = safeText(url.searchParams.get("proof_id"), 120);
   const records = await airtableList(env, paymentProofTable(env), {
-    filterByFormula: reviewablePaymentProofFormula(),
+    filterByFormula: proofId ? `AND(${reviewablePaymentProofFormula()},{proof_id}='${formulaValue(proofId)}')` : reviewablePaymentProofFormula(),
     maxRecords: Math.min(Math.max(limit * 4, limit), 100),
     sort: [{ field: "created_at", direction: "desc" }],
   });
@@ -104,6 +115,7 @@ async function listReviewQueue(request, env) {
     .map(safeQueueItem)
     .filter(Boolean)
     .filter((item) => item.reviewable)
+    .filter((item) => !proofId || item.proof_id === proofId)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
     .slice(0, limit);
 
@@ -113,6 +125,7 @@ async function listReviewQueue(request, env) {
       paymentsTable: paymentsTable(env),
       sessionsTable: clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX"),
     });
+    items = await enrichDiscoveryNames(items, discovery);
   }
 
   return json({
@@ -576,6 +589,7 @@ function safeQueueItem(record) {
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
+    client_record_id: linkedRecordIds(fields.client || fields.Client).length === 1 ? linkedRecordId(fields.client || fields.Client) : null,
     customer_name: safeText(note.sender_display_name || fields.client_name || fields.member_name, 180),
     payer_name: safeText(fields.payer_name || fields.member_name || fields.client_name || fields.name, 180),
     payment_ref: paymentRef,
@@ -702,9 +716,25 @@ async function writeAudit(env, input) {
 }
 
 async function airtableList(env, tableName, params = {}) {
+  const records = [];
+  let offset;
+  const limit = Math.min(Math.max(params.maxRecords || 100, 1), 1000);
+  do {
+    const payload = await airtablePage(env, tableName, { ...params, maxRecords: limit - records.length, offset });
+    records.push(...payload.records);
+    offset = payload.offset;
+  } while (offset && records.length < limit);
+  if (offset && params.requireComplete) throw httpError(503, "review_context_limit_exceeded");
+  return records.slice(0, limit);
+}
+
+async function airtablePage(env, tableName, params = {}) {
   const url = airtableUrl(env, tableName);
   if (params.filterByFormula) url.searchParams.set("filterByFormula", params.filterByFormula);
   if (params.maxRecords) url.searchParams.set("maxRecords", String(params.maxRecords));
+  if (params.pageSize) url.searchParams.set("pageSize", String(params.pageSize));
+  if (params.offset) url.searchParams.set("offset", params.offset);
+  for (const field of params.fields || []) url.searchParams.append("fields[]", field);
   if (Array.isArray(params.sort)) {
     params.sort.slice(0, 3).forEach((entry, index) => {
       const field = safeText(entry?.field, 120);
@@ -717,7 +747,7 @@ async function airtableList(env, tableName, params = {}) {
   const response = await airtableFetch(env, new Request(url.toString(), { headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}` } }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(payload.records)) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
-  return payload.records;
+  return payload;
 }
 
 async function airtableGet(env, tableName, recordId) {
