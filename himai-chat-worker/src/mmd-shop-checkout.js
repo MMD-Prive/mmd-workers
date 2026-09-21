@@ -49,6 +49,7 @@ const ORDER_FIELDS = Object.freeze({
   notes: "fldWG0u77XQ5W0wpT",
   source: "fldSMKdkzwFY6UyzQ",
   telegramSent: "flda0AwcOFAYSy2kB",
+  shopBrand: "fld97aHqq3IbPam84",
 });
 
 const ITEM_FIELDS = Object.freeze({
@@ -490,6 +491,7 @@ async function createOrder(env, input) {
     [ORDER_FIELDS.notes]: notes,
     [ORDER_FIELDS.source]: "web",
     [ORDER_FIELDS.telegramSent]: false,
+    [ORDER_FIELDS.shopBrand]: input.shop?.publicName || "MMD Shop",
   });
 }
 
