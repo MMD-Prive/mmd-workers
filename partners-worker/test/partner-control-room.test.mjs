@@ -73,7 +73,7 @@ test("Partner Private Vault stores ciphertext only and never receives the PIN", 
 });
 
 test("dashboard copy states the Partner privacy boundary", () => {
-  assert.match(pageSource, /อยู่ภายใต้การควบคุมของ Partner/);
+  assert.match(pageSource, /Partner เป็นผู้ควบคุมข้อมูลส่วนตัวและโน้ตภายใน/);
   assert.match(pageSource, /Share with MMD/);
   assert.match(pageSource, /Private Vault/);
   assert.match(pageSource, /meta name=\\"referrer\\" content=\\"no-referrer\\"/);
