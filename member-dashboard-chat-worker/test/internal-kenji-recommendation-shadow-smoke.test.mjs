@@ -6,6 +6,7 @@ import {
   REAL_RECOMMENDATION_SHADOW_SMOKE_MODE,
   runEligibleKenjiRecommendationShadowSmoke,
   runRealKenjiRecommendationShadowSmoke,
+  REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS,
 } from "../src/internal-kenji-recommendation-shadow-smoke.mjs";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
@@ -360,4 +361,62 @@ test("eligible shadow smoke does not accept a canonical client without reviewed 
   assert.equal(result.payload.ok, false);
   assert.equal(result.payload.eligible_client_found, false);
   assert.equal(result.payload.error, "eligible_private_client_with_reviewed_history_unavailable");
+});
+
+
+test("resolver-first candidate discovery prioritizes linked reviewed history and entitlement even when Clients verification field is blank", async () => {
+  const unverifiedEligibleLine = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const verifiedOnlyLine = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const seenUrls = [];
+  const fetchImpl = async (url) => {
+    seenUrls.push(url);
+    return Response.json({
+      records: [
+        {
+          id: "recVerifiedOnly",
+          fields: {
+            line_user_id: verifiedOnlyLine,
+            "Verification Status": { name: "Verified" },
+            "MMD — Member Entitlements": [],
+            "MMD — Customer History Reviews": [],
+          },
+        },
+        {
+          id: "recResolverEligible",
+          fields: {
+            line_user_id: unverifiedEligibleLine,
+            "MMD — Member Entitlements": ["recEntitlement"],
+            "MMD — Customer History Reviews": ["recHistory1", "recHistory2"],
+          },
+        },
+      ],
+    });
+  };
+
+  const ids = await REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS.listCanonicalCandidateLineIds({
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+  }, fetchImpl);
+
+  assert.deepEqual(ids.slice(0, 2), [unverifiedEligibleLine, verifiedOnlyLine]);
+  assert.equal(seenUrls.length, 1);
+  const requestUrl = new URL(seenUrls[0]);
+  assert.equal(requestUrl.searchParams.get("filterByFormula"), 'LEN({line_user_id}&"")=33');
+  assert.ok(requestUrl.searchParams.getAll("fields[]").includes("MMD — Member Entitlements"));
+  assert.ok(requestUrl.searchParams.getAll("fields[]").includes("MMD — Customer History Reviews"));
+  assert.doesNotMatch(requestUrl.searchParams.get("filterByFormula"), /Verification Status/i);
+});
+
+test("candidate priority keeps reviewed history plus entitlement ahead of legacy verified-only rows", () => {
+  const priority = REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS.candidatePriority;
+  assert.ok(priority({
+    fields: {
+      "MMD — Member Entitlements": ["recEnt"],
+      "MMD — Customer History Reviews": ["recHistory"],
+    },
+  }) > priority({
+    fields: {
+      "Verification Status": { name: "Verified" },
+    },
+  }));
 });
