@@ -1,0 +1,104 @@
+name: Shop Phase 1 source handoff
+on:
+  push:
+    branches: [codex/shop-phase1-trusted-checkout-20260922]
+    paths: [ops/shop-phase1-source-recipe-2.b64]
+permissions:
+  contents: write
+concurrency:
+  group: shop-phase1-source-handoff-1545
+  cancel-in-progress: false
+jobs:
+  apply-tested-source:
+    if: github.repository == 'MMD-Prive/mmd-workers' && github.ref == 'refs/heads/codex/shop-phase1-trusted-checkout-20260922'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify baseline, payload and every input/output blob before applying
+        env:
+          EXPECTED_EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_EVENT_SHA"
+          git merge-base --is-ancestor dae1560cc1342d5110259fbb4f4fa0485d71bb00 HEAD
+          python3 <<'PY'
+          from pathlib import Path
+          import base64, hashlib, json, lzma, subprocess
+          allowed = set('''docs/architecture/SHOP_PHASE1_TRUSTED_CHECKOUT_20260922.md
+          himai-chat-worker/src/entry.js
+          himai-chat-worker/src/mmd-shop-checkout.js
+          himai-chat-worker/src/mmd-shop-stock-coordinator.js
+          himai-chat-worker/src/shop-catalog.js
+          himai-chat-worker/src/shop-checkout-idempotency.js
+          himai-chat-worker/test/mmd-shop-webflow-checkout-gate.test.mjs
+          himai-chat-worker/test/shop-phase1-integration.test.mjs
+          payments-worker/shop-payment-v1.js
+          payments-worker/shop-phase1-brand.test.mjs
+          payments-worker/unified-payment-proof.js
+          scripts/test-shop-phase1-browser.py
+          scripts/test-shop-phase1.mjs
+          shared/shop-brand-context.mjs
+          shared/shop-checkout-once.mjs
+          shared/shop-phase1-safety.test.mjs
+          telegram-worker/src/index.js
+          telegram-worker/test/shop-phase1-proof-routing.test.mjs
+          webflow/himai-shop/shop-v3.html
+          webflow/mmd-shop/mmd-shop-commerce-footer.html
+          webflow/pay/checkout/footer.html
+          webflow/shared/shop-checkout-safety.head.html
+          webflow/shared/shop-checkout-safety.js'''.splitlines())
+          encoded = ''.join(Path('ops/shop-phase1-source-recipe-'+str(n)+'.b64').read_text().strip() for n in [1,2])
+          payload = lzma.decompress(base64.b64decode(encoded, validate=True))
+          assert hashlib.sha256(payload).hexdigest() == '8361bd159f9dcd608c46c69d98dfbb674220f7ef4459fd59fab1e61ba5d91bfb'
+          rows = json.loads(payload)
+          assert len(rows) == 23 and {r['path'] for r in rows} == allowed
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          prepared = {}
+          for row in rows:
+              path = Path(row['path'])
+              assert path.resolve().is_relative_to(Path.cwd()) and not path.is_symlink()
+              exists = subprocess.run(['git','cat-file','-e','HEAD:'+str(path)],capture_output=True).returncode == 0
+              if row['old'] == '0'*40:
+                  assert not exists and not path.exists(), str(path)
+                  text = ''
+              else:
+                  assert exists and path.is_file(), str(path)
+                  source = path.read_bytes()
+                  assert blob(source) == row['old'], str(path)+' baseline mismatch'
+                  text = source.decode('utf-8')
+              last = len(text)
+              for start,end,replacement in reversed(row['edits']):
+                  assert 0 <= start <= end <= last
+                  text = text[:start]+replacement+text[end:]
+                  last = start
+              result = text.encode('utf-8')
+              assert blob(result) == row['new'], str(path)+' output mismatch'
+              prepared[path] = result
+          for path, data in prepared.items():
+              path.parent.mkdir(parents=True,exist_ok=True)
+              path.write_bytes(data)
+          subprocess.run(['git','add','--',*sorted(allowed)],check=True)
+          print('Verified and staged exactly 23 Phase 1 source files; no production mutations.')
+          PY
+      - name: Run isolated Phase 1 and existing shop regressions
+        run: |
+          set -euo pipefail
+          git diff --cached --check
+          node scripts/test-shop-phase1.mjs
+      - name: Commit only to the existing Phase 1 feature branch
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = 'refs/heads/codex/shop-phase1-trusted-checkout-20260922'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(shop): implement tested Phase 1 cart, payment-brand and durable checkout safeguards'
+          git push origin HEAD:refs/heads/codex/shop-phase1-trusted-checkout-20260922
+          git rev-parse HEAD
