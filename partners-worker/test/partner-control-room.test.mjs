@@ -33,6 +33,29 @@ test("working systems are per-model, versioned and remain server-authoritative",
   ]) assert.match(indexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
+test("Boss Per approval activates canonical agreements and supersedes old versions", () => {
+  for (const marker of [
+    "/v1/partner/admin/working-systems",
+    "/v1/partner/admin/working-systems/decision",
+    'authority: "boss_per"',
+    '[PARTNER_MODEL_CHANGES.status]: "superseded"',
+    'canonical_agreement_mutated: true'
+  ]) assert.match(indexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("Partner ledger uses verified Payment Truth and idempotent canonical snapshots", () => {
+  for (const marker of [
+    "/v1/partner/admin/ledger/materialize",
+    'normalizeStatus(fieldText(entry, PAYMENT_FIELDS.verification)) === "verified"',
+    "commission_idempotency_conflict",
+    "rateSnapshot",
+    "typeSnapshot",
+    "ledger_mutated: true",
+    "/v1/partner/admin/ledger/action",
+    "payout_reference_required"
+  ]) assert.match(indexSource, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
 test("shared model mutations require explicit consent and remain review-gated", () => {
   assert.match(indexSource, /body\.value\.share_with_mmd !== true/);
   assert.match(indexSource, /canonical_model_mutated: false/);
