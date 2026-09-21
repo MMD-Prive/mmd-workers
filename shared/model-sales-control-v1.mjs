@@ -9,6 +9,7 @@ const PRICE_VISIBLE_STATES = new Set([
   "customer visible",
   "approved",
   "public",
+  "eligible scope only",
 ]);
 const DAY_KEYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
