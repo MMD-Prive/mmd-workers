@@ -47,7 +47,7 @@ export default {
     if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
 
     try {
-      const checkoutResponse = await handleMmdShopCheckout(request, env);
+      const checkoutResponse = await handleMmdShopCheckout(request, env, ctx);
       if (checkoutResponse) return checkoutResponse;
     } catch (error) {
       console.error("MMD Shop checkout route error:", error);

@@ -1,6 +1,7 @@
 import phase1Worker from "./index.phase1.js";
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { PointsPhase1Coordinator } from "./index.phase1.js";
+import { queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
 import { awardBasePointsPhase1 } from "./points-phase1.js";
 import { handleReviewedProof, isReviewedProofRequest } from "./reviewed-proof.js";
 import {
@@ -173,6 +174,7 @@ export default {
     }
 
     if (isReviewedProofRequest(path, method)) {
+      const analyticsRequest = request.clone();
       const reconcileRequest = request.clone();
       const shopRequest = request.clone();
       const doubleMomentRequest = request.clone();
@@ -218,12 +220,75 @@ export default {
       const termResponse = await reconcilePremiumReviewedMembershipTerm(reconcileRequest.clone(), shopResponse, env);
       const entitlementResponse = await reconcileReviewedMembershipEntitlement(reconcileRequest, termResponse, env);
       const doubleMomentResponse = await reconcileDoubleMomentReviewedProof(doubleMomentRequest, entitlementResponse, env);
-      return reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      const finalResponse = await reconcileReviewedFinalPayment(finalPaymentRequest, doubleMomentResponse, env);
+      queueReviewedPaymentAuthorityEvents(ctx, env, analyticsRequest, finalResponse);
+      return finalResponse;
     }
 
     return phase1Worker.fetch(request, env, ctx);
   },
 };
+
+function queueReviewedPaymentAuthorityEvents(ctx, env, request, response) {
+  if (!response?.ok) return;
+  const task = Promise.all([
+    request.clone().json().catch(() => null),
+    response.clone().json().catch(() => null),
+  ]).then(([body, payload]) => {
+    if (!body || !payload?.ok) return;
+    const decision = String(body.decision || "").trim().toLowerCase();
+    if (decision !== "approved") return;
+
+    const paymentRef = String(body.payment_ref || body.transaction_ref || "").trim();
+    if (!paymentRef) return;
+
+    const paymentStage = String(body.payment_stage || body.stage || body.payment_type || "").trim().toLowerCase();
+    const amount = Number(body.amount_thb ?? body.amount);
+    queueAuthorityEvent(ctx, env, {
+      event: "payment_verified",
+      authority: "payments-worker",
+      scope: "payment",
+      distinctValue: paymentRef,
+      insertValue: `${paymentRef}:${paymentStage || "unknown"}`,
+      properties: {
+        surface: "payment",
+        world: paymentStage === "shop" ? "shop" : "member",
+        payment_stage: paymentStage || "unknown",
+        amount_thb: Number.isFinite(amount) ? amount : undefined,
+        currency: "THB",
+        verification: "official",
+        decision: "approved",
+        status: "verified",
+        duplicate: payload.duplicate === true,
+      },
+    });
+
+    const materialized = payload.entitlement_materialized === true
+      || payload.membership_write_through?.status === "materialized";
+    if (paymentStage === "membership" && materialized) {
+      const memberCorrelation = String(body.member_id || body.member_record_id || paymentRef).trim();
+      queueAuthorityEvent(ctx, env, {
+        event: "membership_activated",
+        authority: "payments-worker",
+        scope: "membership",
+        distinctValue: memberCorrelation,
+        insertValue: `${paymentRef}:membership_activated`,
+        properties: {
+          surface: "membership",
+          world: "member",
+          payment_stage: "membership",
+          package_code: String(body.package_code || body.package || payload.membership_write_through?.package_code || "").trim(),
+          status: "active",
+          materialized: true,
+          duplicate: payload.duplicate === true,
+        },
+      });
+    }
+  }).catch(() => null);
+
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(task);
+  else void task;
+}
 
 async function runSigilCombinedReviewedNotify(request, env, ctx, body, components) {
   const notifyRequest = new Request(new URL(NOTIFY_PATH, request.url), {

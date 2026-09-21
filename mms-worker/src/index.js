@@ -12,6 +12,7 @@ import {
 } from "./core.mjs";
 import { mmsApplicationThreadId } from "./application-telegram-routing.mjs";
 import { handleMmsLineWebhook, lineBotStatus } from "./line-bot.mjs";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 
 const WORKER_NAME = "mms-worker";
 const JSON_LIMIT_BYTES = 64 * 1024;
@@ -273,7 +274,7 @@ export default {
 
       if (path === "/mms/api/prebookings" && request.method === "POST") {
         await requireInternalRequest(request, env);
-        return await handlePrebooking(request, env, cors, requestId);
+        return await handlePrebooking(request, env, cors, requestId, ctx);
       }
 
       const applicationReadMatch = path.match(/^\/internal\/mms\/applications\/(mmsapp_[a-f0-9]{24})$/);
@@ -456,7 +457,7 @@ async function handleMatching(request, env, cors, requestId) {
   return json({ ok: true, data: result }, 200, cors, requestId);
 }
 
-async function handlePrebooking(request, env, cors, requestId) {
+async function handlePrebooking(request, env, cors, requestId, ctx) {
   const payload = prebookingPayload(await readJsonLimited(request));
   const prebookingId = `mmspre_${(await sha256Hex(`prebooking:${payload.idempotency_key}`)).slice(0, 24)}`;
   const now = new Date().toISOString();
@@ -493,6 +494,20 @@ async function handlePrebooking(request, env, cors, requestId) {
     sync_status: sync.status,
     status,
   }, new Date().toISOString());
+  queueAuthorityEvent(ctx, env, {
+    event: "mms_prebooking_received",
+    authority: "mms-worker",
+    scope: "mms",
+    distinctValue: prebookingId,
+    insertValue: prebookingId,
+    properties: {
+      surface: "mms",
+      world: "mms",
+      status,
+      sync_status: sync.status,
+      duplicate: false,
+    },
+  });
   return json({
     ok: true,
     prebooking: publicPrebooking(record),

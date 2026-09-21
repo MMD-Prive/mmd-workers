@@ -48,6 +48,32 @@ import {
 import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
 import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
 import { handleMemberTelegramBind, isMemberTelegramBindPath } from "./member-telegram-bind.js";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+
+function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
+  if (request.method !== "POST" || !response?.ok) return;
+  const path = new URL(request.url).pathname.replace(/\/+$/, "");
+  if (path !== "/member/api/liff/start") return;
+
+  const setCookie = response.headers.get("set-cookie") || "";
+  const match = setCookie.match(/(?:^|[,;]\s*)__Host-mmd_liff_session=([^;,s]+)/i);
+  const sessionToken = String(match?.[1] || "").trim();
+  if (!sessionToken) return;
+
+  queueAuthorityEvent(ctx, env, {
+    event: "my_mmd_session_started",
+    authority: "member-pages-worker",
+    scope: "my_mmd",
+    distinctValue: sessionToken,
+    insertValue: sessionToken,
+    properties: {
+      surface: "my_mmd",
+      world: "member",
+      status: "verified",
+      route: "/member/api/liff/start",
+    },
+  });
+}
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-coordinator.js";
@@ -124,6 +150,7 @@ export default {
     if (isLiffHistoryRecoveryStartPath(url)) {
       const response = await liffFoundation.fetch(request, env, ctx);
       scheduleMemberHistoryRecoveryFromLiffResponse(response, env, ctx);
+      queueVerifiedLiffSessionEvent(request, response, env, ctx);
       return finish(response);
     }
     if (isMemberHistoryOnAccessPath(url)) {
