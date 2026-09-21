@@ -122,6 +122,7 @@ export default {
           telegram: telegramReady,
           confirmation_token: tokenReady,
         },
+        analytics: authorityRuntimeHealth(env, "payments-worker", ctx),
         ready: airtableReady && r2Ready && telegramReady && tokenReady && telegramThreadId === 22,
       }, 200);
     }
