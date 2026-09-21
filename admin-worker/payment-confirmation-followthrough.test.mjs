@@ -5,10 +5,10 @@ import { dispatchPaymentNotification } from '../shared/payment-notification-outb
 import { memoryR2 } from '../shared/test/payment-memory-r2.mjs';
 
 const context={session_id:'sess-1',payment_ref:'pay-1',payment_stage:'deposit'};
-function fixture() {
+function fixture(options={}) {
  const tables={Payments:[{id:'recPay',fields:{'Payment Reference':'pay-1','Payment Status':'Paid',session_id:'sess-1',payment_stage:'deposit',Client:['recClient']}}],Sessions:[{id:'recSession',fields:{session_id:'sess-1',fldmwuvOaiCFdzzRa:'Confirmed',fld6P6if0vDZCeV0C:['recClient'],fldJSS5GNN7quJwa8:'2026-09-21T09:00:00Z',fldi9ZdoiUXzSv1rI:'https://www.mmdbkk.com/sigil/confirm/job-confirmation?t=secret-customer',fld0mFma9J9yfEaKb:'https://www.mmdbkk.com/sigil/confirm/job-model?t=secret-model'}}]};
  const reads=[];
- const env={AIRTABLE_BASE_ID:'app-test',AIRTABLE_API_KEY:'test',AIRTABLE_TABLE_PAYMENTS:'Payments',AIRTABLE_TABLE_SESSIONS:'Sessions',LINE_SLIP_EVIDENCE:memoryR2(),PAYMENTS_WORKER:{fetch(){assert.fail('delivery follow-through must not settle money')}},AIRTABLE_HTTP:{async fetch(request){assert.equal(request.method,'GET','no Airtable writes');const url=new URL(request.url);reads.push(url);const table=decodeURIComponent(url.pathname).split('/')[3];return Response.json({records:tables[table]||[]});}}};
+ const env={AIRTABLE_BASE_ID:'app-test',AIRTABLE_API_KEY:'test',AIRTABLE_TABLE_PAYMENTS:'Payments',AIRTABLE_TABLE_SESSIONS:'Sessions',LINE_SLIP_EVIDENCE:memoryR2(),PAYMENTS_WORKER:{fetch(){assert.fail('delivery follow-through must not settle money')}},AIRTABLE_HTTP:{async fetch(request){assert.equal(request.method,'GET','no Airtable writes');const url=new URL(request.url);reads.push(url);const table=decodeURIComponent(url.pathname).split('/')[3];if(table==='tblhQGfJc4GgiteZr'){if(options.changeFailure)return Response.json({error:'unavailable'},{status:503});if(options.changePages)return Response.json(url.searchParams.has('offset')?{records:options.changePages[1]}:{records:options.changePages[0],offset:'next-page'});}return Response.json({records:tables[table]||[]});}}};
  return {env,tables,reads,async seed(options={}){return dispatchPaymentNotification({bucket:env.LINE_SLIP_EVIDENCE,lane:'approved-job-links',eventKey:'sess-1:deposit',payload:options.payload||context,now:options.now||Date.now(),deliver:async()=>({ok:options.done!==false,result:{dispatched:true,customer_line_sent:true,model_line_sent:false,manual_delivery_required:true,private_url:'secret-ignored'}})});},async request(retry=false,overrides={},actor={id:'per',role:'admin'}){return handlePaymentReviewRequest(new Request('https://www.mmdbkk.com/v1/admin/payments/'+(retry?'review':'review-queue?'+new URLSearchParams({view:'confirmation',...context,...overrides})),retry?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'retry_confirmation',...context,...overrides})}:{}),env,actor);}};
 }
 
@@ -40,4 +40,15 @@ test('delivery-only retry respects terminal receipt, backoff and expiry',async()
 
 test('due delivery retry survives page restart and leaves money untouched',async()=>{
  const h=fixture();await h.seed({done:false,now:Date.now()-120000});h.env.TELEGRAM_INTERNAL_SEND_URL='https://telegram.example/internal/send';h.env.INTERNAL_TOKEN='test';const original=globalThis.fetch;let sends=0;globalThis.fetch=async()=>{sends++;return Response.json({ok:true})};try{const r=await h.request(true);assert.equal(r.status,200);const d=await r.json();assert.equal(d.money_truth_changed,false);assert.equal(d.confirmation.dispatched,true);assert.equal(d.confirmation.delivery_status,'delivered');assert.equal(d.confirmation.model_acknowledged_at,null);assert.equal(sends,1);await h.request(true);assert.equal(sends,1,'terminal replay cannot resend');}finally{globalThis.fetch=original;}
+});
+
+
+test('authenticated projection reads every request page and does not silently clear a source outage',async()=>{
+ const requestRow=(id)=>({id,fields:{fldWMwebmHhyVQLzW:id,fldbL2Ya44l6xEYe1:['recSession'],fldMD3Fhu0ibDmjk0:'sess-1',fldxg0WIVCmxtdRCF:'location_change',fldcBkBS70bWBgI8A:'pending_review',fld9W8UEOXpsfJT5P:'{}',fld8DqBrOmY6lQzGA:'{"location_name":"New Hotel"}',fldU2e6BO3fVdGyFF:'2026-09-22T03:00:00Z'}});
+ const h=fixture({changePages:[[requestRow('r1')],[requestRow('r2')]]});await h.seed();const d=await(await h.request()).json();assert.equal(d.readiness.change_requests.open_count,2);assert.equal(d.readiness.checklist_complete,false);assert.equal(h.reads.filter(u=>u.pathname.endsWith('tblhQGfJc4GgiteZr')).length,2);
+ const failed=fixture({changeFailure:true});await failed.seed();const out=await(await failed.request()).json();assert.equal(out.confirmation.dispatched,true);assert.equal(out.readiness.change_requests.source_status,'unavailable');assert.equal(out.readiness.change_requests.open_count,null);assert.equal(out.money_truth_changed,false);
+});
+
+test('request pagination cap degrades the checklist instead of hiding pending requests',async()=>{
+ const rows=Array.from({length:100},(_,i)=>({id:'r'+i,fields:{}}));const h=fixture({changePages:[rows,[]]});await h.seed();const d=await(await h.request()).json();assert.equal(d.readiness.change_requests.source_status,'unavailable');assert.equal(d.readiness.checklist_complete,false);assert.equal(d.readiness.change_requests.open_count,null);
 });
