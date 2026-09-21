@@ -41,7 +41,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
         if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_connect_required:"Telegram ยังไม่ได้เชื่อม · Dashboard ยังใช้งานต่อได้",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
           throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
@@ -77,7 +77,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 
   function jobCard(job) {
     var note = state.vault && state.vault.travel_notes ? (state.vault.travel_notes[job.session_record_id] || "") : "";
-    var finalLabel = job.status === "confirmed" ? "ยืนยันงานแล้ว" : job.status === "declined" ? "แจ้งรับงานไม่ได้แล้ว" : "";
+    var finalLabel = job.status === "confirmed" ? "ยืนยันงานแล้ว" : job.status === "declined" ? "ปิดการตอบรับงานแล้ว" : "";
     var actions = finalLabel ? '<div class="pcr-job-locked" role="status"><b>' + finalLabel + '</b></div>'
       : job.confirmation_allowed === true
       ? '<div class="pcr-actions"><button type="button" data-job-action="confirm">Confirm</button><button type="button" data-job-action="changes" class="ghost">ขอแก้ไข</button><button type="button" data-job-action="decline" class="danger">ปฏิเสธ</button></div>'
@@ -86,14 +86,14 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       '<div class="pcr-job-main"><div><span class="pcr-status">' + esc(job.status || "pending") + '</span><h3>' + esc(job.model_name) + '</h3></div><strong>' + dateTime(job.start_at || job.date) + '</strong></div>' +
       '<dl><div><dt>งาน</dt><dd>' + esc(job.work_type || job.work_lane || "MMD assignment") + '</dd></div><div><dt>สถานที่</dt><dd>' + esc(job.location) + '</dd></div><div><dt>ลูกค้า</dt><dd>' + esc(job.client_alias) + '</dd></div></dl>' +
       actions +
-      '<label class="pcr-private-field"><span>Private travel note · MMD อ่านไม่ได้</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
+      '<label class="pcr-private-field"><span>Private travel note · Partner-only encrypted</span><textarea data-private-travel placeholder="เช่น เดินทางถึงกรุงเทพฯ วันที่…" ' + (state.vault ? "" : "disabled") + '>' + esc(note) + '</textarea></label>' +
       '</article>';
   }
 
   function renderJobs(data) {
     var jobs = data.jobs || [];
     var target = $("[data-jobs]", root);
-    target.innerHTML = jobs.length ? jobs.map(jobCard).join("") : '<div class="pcr-empty">ยังไม่มีงานที่ผูกกับ Partner นี้</div>';
+    target.innerHTML = jobs.length ? jobs.map(jobCard).join("") : '<div class="pcr-empty">งานใหม่ที่เชื่อมกับ Partner นี้จะแสดงที่นี่</div>';
   }
 
   function modelCard(model) {
@@ -102,8 +102,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var approved = model.sales_control && model.sales_control.approved_policy;
     var visibility = approved ? approved.sales_visibility : "off";
     return '<article class="pcr-model" data-model="' + esc(model.model_record_id) + '">' +
-      '<div class="pcr-model-image">' + image + '</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><h3>' + esc(model.display_name) + '</h3><p>' + esc(model.height_cm || "—") + ' cm · ' + esc(model.weight_kg || "—") + ' kg</p></div><span class="pcr-switch is-' + esc(visibility) + '">' + (approved ? (visibility === "on" ? "ON · ตามตารางที่อนุมัติ" : "OFF · ตามตารางที่อนุมัติ") : "รอตรวจ / ยังไม่เปิดขาย") + '</span></div>' +
-      '<p>' + esc(model.sales_copy || model.profile_summary || model.skills_summary || "ยังไม่มีข้อความแนะนำตัว") + '</p>' +
+      '<div class="pcr-model-image">' + image + '</div><div class="pcr-model-copy"><div class="pcr-model-title"><div><h3>' + esc(model.display_name) + '</h3><p>' + esc(model.height_cm || "—") + ' cm · ' + esc(model.weight_kg || "—") + ' kg</p></div><span class="pcr-switch is-' + esc(visibility) + '">' + (approved ? (visibility === "on" ? "ON · ตามตารางที่อนุมัติ" : "OFF · ตามตารางที่อนุมัติ") : "กำลังตรวจเรทและ Visibility") + '</span></div>' +
+      '<p>' + esc(model.sales_copy || model.profile_summary || model.skills_summary || "เพิ่มข้อความแนะนำตัวเพื่อใช้ในโปรไฟล์") + '</p>' +
       '<div class="pcr-meta"><span>' + esc(model.referral_status) + '</span><span>' + esc(model.availability_status) + '</span>' + (model.profile_request_status ? '<span>Profile: ' + esc(model.profile_request_status) + '</span>' : '') + '</div>' +
       (proposal ? '<p>เรทถึงตัว '+esc(money(proposal.partner_source_rate_thb))+' · เรทขายที่เสนอ '+esc(money(proposal.customer_sell_rate_thb))+' · '+esc(proposal.status)+'</p>' : '') + '<button type="button" data-edit-model>Edit model & sales control</button></div></article>';
   }
@@ -114,14 +114,14 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var pending = (data.model_changes || []).filter(function (item) { return item.action === "add_model" && item.status === "review"; });
     target.innerHTML = models.map(modelCard).join("") + pending.map(function (item) {
       return '<article class="pcr-model pending"><div class="pcr-model-image"><span>+</span></div><div class="pcr-model-copy"><h3>' + esc(item.payload.display_name || "New model") + '</h3><p>กำลังรอการตรวจจาก MMD</p><div class="pcr-meta"><span>Review</span></div></div></article>';
-    }).join("") || '<div class="pcr-empty">ยังไม่มีโมเดลในสังกัด</div>';
+    }).join("") || '<div class="pcr-empty">Model ที่เชื่อมกับ Partner จะปรากฏที่นี่</div>';
   }
 
   function renderEarnings(data) {
     var rows = data.commissions || [];
     $("[data-earnings]", root).innerHTML = rows.length ? '<div class="pcr-table"><table><thead><tr><th>Job</th><th>Model</th><th>ฐาน</th><th>Commission</th><th>Status</th></tr></thead><tbody>' + rows.map(function (row) {
       return '<tr><td>' + esc(row.jobId) + '</td><td>' + esc(row.model) + '</td><td>' + esc(money(row.basisAmount)) + '</td><td>' + esc(money(row.commission)) + '</td><td>' + esc(row.statusLabel) + '</td></tr>';
-    }).join("") + '</tbody></table></div>' : '<div class="pcr-empty">ยังไม่มีรายการรายได้</div>';
+    }).join("") + '</tbody></table></div>' : '<div class="pcr-empty">รายการรายได้จากงานจริงจะปรากฏที่นี่</div>';
   }
 
   function renderTelegram(data) {
@@ -167,7 +167,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     var card = button.closest('[data-job]');
     var job = (state.data.jobs || []).find(function (item) { return item.session_record_id === card.dataset.job; });
     if (!state.data.partner || state.data.partner.telegram_connected !== true) return setFlash("กรุณาเชื่อมและยืนยัน Telegram ก่อนตอบรับงาน","error");
-    if (!job || job.confirmation_allowed !== true) return setFlash("งานนี้ยังรอ Official Verify จึงยังยืนยันไม่ได้","error");
+    if (!job || job.confirmation_allowed !== true) return setFlash("งานนี้อยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ","error");
     var action = button.dataset.jobAction;
     if(action === "confirm" && state.vaultEnvelope && !state.vault)return ensurePrivate();
     if(action === "confirm" && conflictFor(job).length)return setFlash("คิวชนกับรายการอื่น กรุณาจัดการคิวก่อนยืนยันงาน","error");
@@ -269,7 +269,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
       return vaultKey(pin,salt).then(function(key){return crypto.subtle.encrypt({name:"AES-GCM",iv:iv},key,new TextEncoder().encode(snapshot));}).then(function(cipher){
         var envelope={version:1,salt:b64(salt),iv:b64(iv),ciphertext:b64(new Uint8Array(cipher))};
         if(state.authBlocked)throw new Error("เข้าสู่ระบบอีกครั้ง");
-        return api("/v1/partner/private-vault",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.vaultRevision,envelope:envelope})}).then(function(payload){state.vaultEnvelope=envelope;state.vaultRevision=payload.revision;state.vaultSalt=salt;setFlash("บันทึก Private Vault แล้ว · MMD อ่านไม่ได้","success");});
+        return api("/v1/partner/private-vault",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.vaultRevision,envelope:envelope})}).then(function(payload){state.vaultEnvelope=envelope;state.vaultRevision=payload.revision;state.vaultSalt=salt;setFlash("บันทึก Private Vault แล้ว · Partner-only encryption active","success");});
       }).catch(function(error){state.vaultConflict=true;setFlash("ยังไม่บันทึก Vault: "+error.message+" · สำรองข้อมูลที่แก้ไว้ก่อนล็อกและโหลดใหม่","error");throw error;});
     });state.vaultQueue=save;return save;
   }
