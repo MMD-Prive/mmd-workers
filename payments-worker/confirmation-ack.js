@@ -556,7 +556,7 @@ function errorStatus(error) {
   return 401;
 }
 
-async function parseAuthorizedConfirmationRequest(request, env) {
+export async function authorizeConfirmationRequest(request, env) {
   if (!isAllowedOrigin(request, env)) return { response: withCors(request, env, json({ ok: false, error: "origin_not_allowed" }, 403)) };
   const body = await request.json().catch(() => null);
   const token = clean(body?.t || body?.token, 12000);
@@ -570,7 +570,7 @@ async function parseAuthorizedConfirmationRequest(request, env) {
     const session = await findSession(env, claims.session_id);
     if (!session?.id) return { response: withCors(request, env, json({ ok: false, error: "session_not_found" }, 404)) };
     assertSessionMatchesClaims(env, session, claims);
-    return { claims, session, expectedRole };
+    return { claims, session, expectedRole, body };
   } catch (error) {
     return {
       response: withCors(request, env, json({ ok: false, error: clean(error?.message || "confirmation_authorization_failed", 200) }, errorStatus(error))),
@@ -582,7 +582,7 @@ export async function handleConfirmationContext(request, env = {}) {
   if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
   if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
 
-  const authorized = await parseAuthorizedConfirmationRequest(request, env);
+  const authorized = await authorizeConfirmationRequest(request, env);
   if (authorized.response) return authorized.response;
 
   return withCors(request, env, json({
@@ -628,7 +628,7 @@ export async function handleConfirmationAck(request, env = {}) {
   if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
   if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
 
-  const authorized = await parseAuthorizedConfirmationRequest(request, env);
+  const authorized = await authorizeConfirmationRequest(request, env);
   if (authorized.response) return authorized.response;
 
   try {

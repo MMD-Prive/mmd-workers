@@ -352,17 +352,34 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
 <script>
 (function(){
 "use strict";
-var root=document.getElementById("mmdshop-final"); if(!root)return;
+var root=document.getElementById("mmdshop-final");if(!root||root.dataset.phase1Bound==="1")return;root.dataset.phase1Bound="1";
 var API=location.origin;
 var CATALOG=API+"/mmd-shop/api/products";
 var CHECKOUT=API+"/mmd-shop/api/checkout";
 var KEY="mmd_shop_cart";
-var grid=document.getElementById("mmdGrid");
-var bubble=document.getElementById("mmdCartBubble");
-var list=document.getElementById("mmdCartList");
-var total=document.getElementById("mmdCartTotal");
+var grid=root.querySelector("#mmdGrid");
+var bubble=root.querySelector("#mmdCartBubble");
+var list=root.querySelector("#mmdCartList");
+var total=root.querySelector("#mmdCartTotal");
 var panel=root.querySelector("#mmdCartDrawer .mmd-panel");
 var products=[];
+var safety=window.MMDShopCheckoutSafety;
+if(!safety){var missing=root.querySelector("#mmdGrid");if(missing)missing.textContent="Shop loading unavailable. Please reload.";return}
+var cartStorage=safety.cartStore(KEY),catalogLoaded=false,catalogRequest=null;
+var flow=safety.bindFlow({root:root,shop:"mmd-shop",endpoint:CHECKOUT,ids:{"name":"mmdShopName","phone":"mmdShopPhone","email":"mmdShopEmail","method":"mmdShopDeliveryMethod","note":"mmdShopDeliveryNote","address1":"mmdShopAddress1","address2":"mmdShopAddress2","subdistrict":"mmdShopSubdistrict","district":"mmdShopDistrict","province":"mmdShopProvince","postal":"mmdShopPostal","button":"mmdShopCheckoutBtn","status":"mmdShopCheckoutStatus"},lang:function(){return (window.MMDShopI18n?window.MMDShopI18n.lang:"th")},message:function(key){return window.MMDShopI18n.t(({opening:"openingOrder",needCart:"cartNeedItem",contactReq:"contactRequired",addressReq:"addressRequired",failed:"checkoutFailed"})[key]||key)},refresh:refreshCatalog,reconcile:reconcileCart,cart:cart,clearCart:function(){save([])}});
+function showCatalogError(){if(!grid)return;var p=document.createElement("p"),b=document.createElement("button");p.className="mmd-copy";p.textContent=window.MMDShopI18n.t("checkoutFailed");b.type="button";b.className="mmd-shop-detail";b.textContent=safety.extra("retry",(window.MMDShopI18n?window.MMDShopI18n.lang:"th"));b.addEventListener("click",function(){refreshCatalog().catch(showCatalogError)});grid.replaceChildren(p,b)}
+async function refreshCatalog(){
+ if(catalogRequest)return catalogRequest;
+ catalogRequest=(async function(){
+  var data=await safety.jsonRequest(CATALOG,{cache:"no-store"},15000);
+  if(data.shop!=="mmd-shop"||data.pricing_source!=="MMD Shop Selling Price THB"||!Array.isArray(data.products))throw new Error("catalog_brand_mismatch");
+  products=data.products.filter(function(p){return String(p.status||"").toLowerCase()==="active"});catalogLoaded=true;
+
+  var changed=reconcileCart();renderProducts();renderCart();injectCheckout();return changed;
+ })();
+ try{return await catalogRequest}finally{catalogRequest=null}
+}
+
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
 function money(v){var i=window.MMDShopI18n;if(i&&typeof i.money==="function")return i.money(v);var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"สอบถามราคา"}
 function restricted(p){var t=[p&&p.sku,p&&p.product_name,p&&p.description,p&&p.curator_note].join(" ").toLowerCase();return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(t)}
@@ -431,30 +448,16 @@ function checkoutStatusText(p){
  if(s==="restricted")return "สินค้ากลุ่มนี้สั่งผ่าน MMD ได้โดยตรง";
  return "กำลังเตรียมเปิดรับรายการออนไลน์";
 }
-function toast(msg){var t=document.getElementById("mmdToast");if(t){t.textContent=msg;t.classList.add("show");setTimeout(function(){t.classList.remove("show")},1400)}}
-function reconcileCart(){
- var current=cart().filter(function(x){return x&&x.product_id}),next=[],changed=false;
- current.forEach(function(x){
-  var p=products.find(function(v){return v.id===x.product_id});
-  if(!p||p.checkout_eligible!==true||restricted(p)){changed=true;return}
-  var qty=Math.max(1,Math.floor(Number(x.qty)||1));
-  if(String(p.stock_status||"").toLowerCase()==="tracked"){
-   var available=Math.max(0,Math.floor(Number(p.available)||0));
-   if(available<=0){changed=true;return}
-   if(qty>available){qty=available;changed=true}
-  }
-  next.push(Object.assign({},x,{qty:qty}));
- });
- if(changed)localStorage.setItem(KEY,JSON.stringify(next));
- return changed;
-}
+function toast(msg){var t=root.querySelector("#mmdToast");if(t){t.textContent=msg;t.classList.add("show");setTimeout(function(){t.classList.remove("show")},1400)}}
+function reconcileCart(){if(flow.pending())return false;var result=safety.reconcile(cart(),products,catalogLoaded,money);if(result.changed)save(result.items);return result.changed}
 function img(p){var s=(p.sku||"").toUpperCase();if(s.indexOf("WGG-")===0)return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2bc2521dbd91c40072a0_GG%20Water%2003.webp";if(s.indexOf("PPP25-")===0)return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c2de261bf62d20a6d4a9e_Pod%20Plus%20MMD.webp";if(s.indexOf("GLEN-POP")===0)return "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a8a7881b18c863ef26b9b64_Shop%20Pop%20Plus.webp";return "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8c1e2f03656a00250f4531_MMD%20Shop%20Luxury%20Gift%20Box.webp"}
-function cart(){try{var c=JSON.parse(localStorage.getItem(KEY)||"[]");return Array.isArray(c)?c:[]}catch(e){return[]}}
-function save(c){localStorage.setItem(KEY,JSON.stringify(c));renderCart()}
+function cart(){return cartStorage.read()}
+function save(c){cartStorage.write(c);renderCart()}
 function renderProducts(){
  if(!grid)return;
  var active=products.filter(function(p){return String(p.status||"").toLowerCase()==="active"});
  var items=groupProducts(active);
+ if(catalogLoaded&&!items.length){grid.textContent=safety.extra("empty",window.MMDShopI18n.lang);return}
  grid.innerHTML="";
  items.forEach(function(item){
   var card=document.createElement("article");card.className="mmd-card";
@@ -475,12 +478,13 @@ function renderProducts(){
 function renderCart(){
  var c=cart().filter(function(x){return x&&x.product_id});
  var q=c.reduce(function(s,x){return s+(Number(x.qty)||0)},0);
- var count=document.getElementById("mmdCartCount");if(count)count.textContent=q;
+ var count=root.querySelector("#mmdCartCount");if(count)count.textContent=q;
  if(list)list.innerHTML=c.length?c.map(function(x,i){return '<div class="mmd-cartitem"><div><strong>'+esc(x.name)+'</strong><small>'+x.qty+' ชิ้น · '+money(x.unit_price_thb)+'</small></div><button type="button" data-shop-remove="'+i+'">ลบ</button></div>'}).join(""):'<p class="mmd-dtext">เริ่มเลือกสินค้าใส่ Cart ได้เลย</p>';
  var sum=c.reduce(function(s,x){return s+(Number(x.unit_price_thb)||0)*(Number(x.qty)||0)},0);
  if(total)total.textContent=money(sum);
 }
 function add(id){
+ if(flow.locked()){toast(safety.extra("unknown",window.MMDShopI18n.lang));return}if(!cart().length)flow.beginNewCart();
  var p=products.find(function(x){return x.id===id});
  if(!p||p.checkout_eligible!==true||restricted(p)||!(Number(p.selling_price_thb)>0)){toast(p?checkoutStatusText(p):"สินค้านี้จะเพิ่มลง Cart ได้ทันทีเมื่อสถานะพร้อม");return}
  var c=cart().filter(function(x){return x&&x.product_id});var found=c.find(function(x){return x.product_id===id});
@@ -492,57 +496,23 @@ function add(id){
  save(c);toast("เพิ่มลง Cart แล้ว");
 }
 function syncShippingVisibility(){
- var method=document.getElementById("mmdShopDeliveryMethod"),fields=document.getElementById("mmdShopShippingFields");
+ var method=root.querySelector("#mmdShopDeliveryMethod"),fields=root.querySelector("#mmdShopShippingFields");
  if(fields)fields.hidden=!!(method&&method.value==="pickup");
 }
 function injectCheckout(){
- if(!panel||document.getElementById("mmdShopCheckoutBox"))return;
+ if(!panel||root.querySelector("#mmdShopCheckoutBox"))return;
  var box=document.createElement("div");box.id="mmdShopCheckoutBox";box.className="mmd-checkoutbox";
  box.innerHTML='<h4>ข้อมูลสำหรับสั่งซื้อ</h4><p>ก่อนเปิด Order ผมให้ MMD เช็กราคา สต๊อก และข้อมูลจัดส่งอีกครั้งครับ</p><input id="mmdShopName" autocomplete="name" placeholder="ชื่อผู้สั่งซื้อ *"><input id="mmdShopPhone" inputmode="tel" autocomplete="tel" placeholder="เบอร์โทร *"><input id="mmdShopEmail" inputmode="email" autocomplete="email" placeholder="อีเมล (ถ้ามี)"><label><span>วิธีรับสินค้า</span><select id="mmdShopDeliveryMethod"><option value="delivery">จัดส่ง</option><option value="pickup">รับสินค้าเอง / Pickup</option></select></label><div class="mmd-shipping-grid" id="mmdShopShippingFields"><input id="mmdShopAddress1" autocomplete="address-line1" placeholder="ที่อยู่จัดส่ง *"><input id="mmdShopAddress2" autocomplete="address-line2" placeholder="อาคาร / ชั้น / ห้อง (ถ้ามี)"><div class="mmd-shipping-two"><input id="mmdShopSubdistrict" placeholder="แขวง / ตำบล"><input id="mmdShopDistrict" placeholder="เขต / อำเภอ *"></div><div class="mmd-shipping-two"><input id="mmdShopProvince" autocomplete="address-level1" placeholder="จังหวัด *"><input id="mmdShopPostal" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="รหัสไปรษณีย์ *"></div></div><textarea id="mmdShopDeliveryNote" rows="2" placeholder="หมายเหตุการจัดส่ง (ถ้ามี)"></textarea><button class="mmd-shop-buy" id="mmdShopCheckoutBtn" type="button">สั่งซื้อและชำระเงิน</button><div class="mmd-checkout-status" id="mmdShopCheckoutStatus" aria-live="polite"></div>';
  var actions=panel.querySelector(".mmd-cartactions");panel.insertBefore(box,actions||null);
- document.getElementById("mmdShopDeliveryMethod").addEventListener("change",syncShippingVisibility);
- document.getElementById("mmdShopCheckoutBtn").addEventListener("click",checkout);
+ root.querySelector("#mmdShopDeliveryMethod").addEventListener("change",syncShippingVisibility);
+ root.querySelector("#mmdShopCheckoutBtn").addEventListener("click",checkout);
  syncShippingVisibility();
 }
-async function checkout(){
- var btn=document.getElementById("mmdShopCheckoutBtn"),status=document.getElementById("mmdShopCheckoutStatus");
- var name=(document.getElementById("mmdShopName").value||"").trim(),phone=(document.getElementById("mmdShopPhone").value||"").trim(),email=(document.getElementById("mmdShopEmail").value||"").trim();
- var method=(document.getElementById("mmdShopDeliveryMethod").value||"delivery").trim();
- var shipping={delivery_method:method,recipient_name:name,phone:phone,delivery_note:(document.getElementById("mmdShopDeliveryNote").value||"").trim()};
- if(method==="delivery"){
-  shipping.address_line1=(document.getElementById("mmdShopAddress1").value||"").trim();
-  shipping.address_line2=(document.getElementById("mmdShopAddress2").value||"").trim();
-  shipping.subdistrict=(document.getElementById("mmdShopSubdistrict").value||"").trim();
-  shipping.district=(document.getElementById("mmdShopDistrict").value||"").trim();
-  shipping.province=(document.getElementById("mmdShopProvince").value||"").trim();
-  shipping.postal_code=(document.getElementById("mmdShopPostal").value||"").replace(/\D/g,"").slice(0,5);
- }
- var c=cart().filter(function(x){return x&&x.product_id});
- if(!c.length){status.textContent="กรุณาเพิ่มสินค้าลง Cart ก่อน";return}
- if(reconcileCart()){
-  renderCart();
-  status.textContent="ผมอัปเดต Cart ตามสต๊อกล่าสุดแล้ว ลองดูรายการอีกครั้งครับ";
-  return
- }
- var blocked=c.find(function(x){var p=products.find(function(v){return v.id===x.product_id});return !p||p.checkout_eligible!==true||restricted(p)});
- if(blocked){status.textContent="Cart มีรายการที่รอความพร้อม กรุณาเลือกเฉพาะรายการที่พร้อมสั่งซื้อ";return}
- if(name.length<2||phone.replace(/\D/g,"").length<8){status.textContent="กรุณากรอกชื่อและเบอร์โทรให้ครบ";return}
- if(method==="delivery"&&(shipping.address_line1.length<5||!shipping.district||!shipping.province||shipping.postal_code.length!==5)){status.textContent="กรุณากรอกที่อยู่ เขต/อำเภอ จังหวัด และรหัสไปรษณีย์ให้ครบ";return}
- btn.disabled=true;status.textContent="กำลังเปิด Order ให้ครับ…";
- try{
-  var res=await fetch(CHECKOUT,{method:"POST",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({customer:{name:name,phone:phone,email:email},shipping:shipping,source_path:"/mmd-shop",items:c.map(function(x){return{product_id:x.product_id,quantity:Number(x.qty)||1}})})});
-  var data=await res.json().catch(function(){return{}});
-  if(!res.ok||data.ok!==true||!data.payment_url)throw new Error(data.error||"checkout_failed");
-  localStorage.removeItem(KEY);location.href=data.payment_url;
- }catch(e){
-  var messages={shipping_address_required:"กรุณากรอกที่อยู่จัดส่ง",shipping_district_required:"กรุณากรอกเขต / อำเภอ",shipping_province_required:"กรุณากรอกจังหวัด",shipping_postal_code_required:"กรุณากรอกรหัสไปรษณีย์ 5 หลัก",product_not_eligible_for_online_checkout:"Cart มีรายการสำหรับช่องทางอื่น กรุณาเลือกเฉพาะรายการที่พร้อม Online Checkout"};
-  status.textContent=messages[e.message]||"ระบบกำลังเตรียมรายการชำระเงิน กรุณาลองอีกครั้ง";btn.disabled=false
- }
-}
+async function checkout(){return flow.run()}
 grid&&grid.addEventListener("click",function(e){var b=e.target.closest("[data-shop-add]");if(b)add(b.getAttribute("data-shop-add"))});
-list&&list.addEventListener("click",function(e){var b=e.target.closest("[data-shop-remove]");if(!b)return;var c=cart().filter(function(x){return x&&x.product_id});c.splice(Number(b.getAttribute("data-shop-remove")),1);save(c)});
+list&&list.addEventListener("click",function(e){if(flow.locked()){toast(safety.extra("unknown",window.MMDShopI18n.lang));return}var b=e.target.closest("[data-shop-remove]");if(!b)return;var c=cart().filter(function(x){return x&&x.product_id});c.splice(Number(b.getAttribute("data-shop-remove")),1);save(c)});
 function setCartOpen(open){
- var drawer=document.getElementById("mmdCartDrawer");if(!drawer)return;
+ var drawer=root.querySelector("#mmdCartDrawer");if(!drawer)return;
  drawer.classList.toggle("is-open",!!open);
  document.body.style.overflow=open?"hidden":"";
  if(open){injectCheckout();renderCart()}
@@ -550,9 +520,9 @@ function setCartOpen(open){
 bubble&&bubble.addEventListener("click",function(){setCartOpen(true)});
 document.addEventListener("click",function(e){if(e.target.closest("[data-cart-close]"))setCartOpen(false)});
 document.addEventListener("keydown",function(e){if(e.key==="Escape")setCartOpen(false)});
-var clearBtn=document.getElementById("mmdClearCart");
-clearBtn&&clearBtn.addEventListener("click",function(){localStorage.removeItem(KEY);renderCart();toast("ล้าง Cart แล้ว")});
-var copyBtn=document.getElementById("mmdCopyCart");
+var clearBtn=root.querySelector("#mmdClearCart");
+clearBtn&&clearBtn.addEventListener("click",function(){if(flow.locked()){toast(safety.extra("unknown",window.MMDShopI18n.lang));return}flow.beginNewCart();save([]);toast("ล้าง Cart แล้ว")});
+var copyBtn=root.querySelector("#mmdCopyCart");
 copyBtn&&copyBtn.addEventListener("click",function(){
  var c=cart().filter(function(x){return x&&x.product_id});
  var txt=c.length?c.map(function(x){return (x.name||x.sku||"สินค้า")+" × "+(Number(x.qty)||1)+" — "+money((Number(x.unit_price_thb)||0)*(Number(x.qty)||1))}).join("\n"):"เริ่มเลือกสินค้าใส่ Cart ได้เลย";
@@ -560,6 +530,6 @@ copyBtn&&copyBtn.addEventListener("click",function(){
  else{toast("อุปกรณ์นี้ใช้การเลือกข้อความเพื่อคัดลอก")}
 });
 document.addEventListener("mmd:shop-language-change",function(){renderProducts();renderCart();if(window.MMDShopI18n)window.MMDShopI18n.apply(root)});
-fetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw 0;products=data.products||[];var cartChanged=reconcileCart();renderProducts();renderCart();injectCheckout();if(cartChanged)toast("Cart อัปเดตตามสต๊อกล่าสุดแล้ว");if(location.hash==="#cart"&&bubble){window.setTimeout(function(){bubble.click()},60)}}).catch(function(){if(grid)grid.innerHTML='<p class="mmd-copy">กำลังโหลดรายการสินค้า กรุณาลองอีกครั้ง</p>'});
+refreshCatalog().then(function(){if(location.hash==="#cart"&&bubble)window.setTimeout(function(){bubble.click()},60)}).catch(showCatalogError);
 })();
 </script>

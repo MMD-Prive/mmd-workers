@@ -28,6 +28,7 @@
   let lastPayload = null;
   let instructionsRef = "";
   let instructionsLoading = false;
+  let changeRequestBusy = false;
 
   const $ = (selector) => root?.querySelector(selector) || null;
   const clean = (value) => String(value == null ? "" : value).trim();
@@ -69,6 +70,25 @@
 #${ROOT_ID} .mjc16__privacy{display:flex;gap:10px;align-items:flex-start;margin-top:11px;padding:12px 13px;border:1px solid rgba(255,255,255,.08);border-radius:15px;background:rgba(255,255,255,.015)}
 #${ROOT_ID} .mjc16__privacy strong{flex:0 0 auto;color:#f0d78f;font-size:10px;font-weight:900}
 #${ROOT_ID} .mjc16__privacy span{color:#aaa29a;font-size:10px;font-weight:650;line-height:1.55}
+#${ROOT_ID} .mjc16__changes{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.24);border-radius:24px;background:linear-gradient(180deg,rgba(217,185,105,.055),rgba(255,255,255,.012)),#0d0d11}
+#${ROOT_ID} .mjc16__changes-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+#${ROOT_ID} .mjc16__changes-head h3{margin:5px 0 0;color:#fff5b1;font-size:clamp(19px,5vw,27px);line-height:1.2}
+#${ROOT_ID} .mjc16__changes-head p{max-width:620px;margin:7px 0 0;color:#d7d0c7;font-size:12px;font-weight:600;line-height:1.65}
+#${ROOT_ID} .mjc16__change-grid{display:grid;gap:10px;margin-top:16px}
+#${ROOT_ID} .mjc16__change-card{display:grid;gap:9px;padding:14px;border:1px solid rgba(255,255,255,.09);border-radius:17px;background:rgba(0,0,0,.16)}
+#${ROOT_ID} .mjc16__change-card label,#${ROOT_ID} .mjc16__change-more label{color:#f0d78f;font-size:10px;font-weight:800;letter-spacing:.06em}
+#${ROOT_ID} .mjc16__change-card input,#${ROOT_ID} .mjc16__change-more input,#${ROOT_ID} .mjc16__change-more select,#${ROOT_ID} .mjc16__change-more textarea{width:100%;box-sizing:border-box;border:1px solid rgba(255,255,255,.11);border-radius:13px;background:#09090c;color:#f7f2ea;padding:11px 12px;font:600 13px/1.45 inherit;outline:none}
+#${ROOT_ID} .mjc16__change-more textarea{min-height:90px;resize:vertical}
+#${ROOT_ID} .mjc16__change-card input:focus,#${ROOT_ID} .mjc16__change-more input:focus,#${ROOT_ID} .mjc16__change-more select:focus,#${ROOT_ID} .mjc16__change-more textarea:focus{border-color:rgba(240,215,143,.48);box-shadow:0 0 0 3px rgba(240,215,143,.06)}
+#${ROOT_ID} .mjc16__change-btn{min-height:44px;border:1px solid rgba(240,215,143,.32);border-radius:13px;background:rgba(240,215,143,.08);color:#fff5b1;font-size:12px;font-weight:850;cursor:pointer}
+#${ROOT_ID} .mjc16__change-btn.is-primary{min-height:50px;border:0;background:linear-gradient(135deg,#f0d78f,#c99f4d);color:#171108}
+#${ROOT_ID} .mjc16__change-btn:disabled{opacity:.55;cursor:wait}
+#${ROOT_ID} .mjc16__change-more{display:grid;gap:10px;margin-top:12px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08)}
+#${ROOT_ID} .mjc16__change-row{display:grid;gap:8px}
+#${ROOT_ID} .mjc16__change-status{margin:10px 0 0;padding:11px 12px;border-radius:13px;background:rgba(255,255,255,.025);color:#d7d0c7;font-size:11px;font-weight:700;line-height:1.55}
+#${ROOT_ID} .mjc16__change-status.is-ok{border:1px solid rgba(156,227,185,.22);color:#9ce3b9}
+#${ROOT_ID} .mjc16__change-status.is-error{border:1px solid rgba(255,180,168,.22);color:#ffb4a8}
+@media(min-width:760px){#${ROOT_ID} .mjc16__change-grid{grid-template-columns:.72fr 1.28fr}#${ROOT_ID} .mjc16__change-row.two{grid-template-columns:.7fr 1.3fr}}
 #${ROOT_ID} .mjc16__final-pay{margin-top:14px;padding:20px;border:1px solid rgba(217,185,105,.34);border-radius:24px;background:linear-gradient(155deg,rgba(217,185,105,.09),rgba(255,255,255,.018) 46%),#0c0c10}
 #${ROOT_ID} .mjc16__final-pay[hidden]{display:none!important}
 #${ROOT_ID} .mjc16__final-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
@@ -141,6 +161,44 @@
     <strong>PRIVACY BY DESIGN</strong>
     <span>แสดงเฉพาะ ETA ที่ Model ส่ง · ไม่มี GPS live · ไม่มีแผนที่ติดตามตำแหน่ง · Browser ไม่อ่าน event log ดิบ</span>
   </div>
+  <section class="mjc16__changes" data-customer-change-panel>
+    <div class="mjc16__changes-head">
+      <div><div class="mjc16__section-kicker">UPDATE REQUEST</div><h3>ต้องการปรับรายละเอียดงาน?</h3><p>แก้เวลาและสถานที่ หรือส่งคำขอเรื่องวัน เลื่อนงาน ยกเลิก และรายละเอียดเพิ่มเติมให้ MMD ตรวจสอบได้จากหน้านี้</p></div>
+    </div>
+    <div class="mjc16__change-grid">
+      <div class="mjc16__change-card">
+        <label for="mjc16ChangeTime">เวลาที่ต้องการ</label>
+        <input id="mjc16ChangeTime" data-change-time type="time">
+        <button class="mjc16__change-btn" data-change-time-submit type="button">ส่งเวลาใหม่ให้ MMD</button>
+      </div>
+      <div class="mjc16__change-card">
+        <label for="mjc16ChangeLocation">สถานที่ที่ต้องการ</label>
+        <input id="mjc16ChangeLocation" data-change-location type="text" maxlength="360" placeholder="ชื่อโรงแรม / สถานที่ / Area">
+        <input data-change-map type="url" inputmode="url" placeholder="Google Maps URL (ถ้ามี)">
+        <button class="mjc16__change-btn" data-change-location-submit type="button">ส่งสถานที่ใหม่ให้ MMD</button>
+      </div>
+    </div>
+    <div class="mjc16__change-more">
+      <div class="mjc16__change-row two">
+        <label>แจ้งเพิ่มเติมเกี่ยวกับงานนี้
+          <select data-change-type>
+            <option value="date_change">ขอเปลี่ยนวัน</option>
+            <option value="reschedule">ขอเลื่อนงาน</option>
+            <option value="cancellation">ต้องการยกเลิก</option>
+            <option value="remark">แจ้งรายละเอียดเพิ่มเติม</option>
+          </select>
+        </label>
+        <label data-change-date-wrap>วันที่ต้องการ
+          <input data-change-date type="date">
+        </label>
+      </div>
+      <label>Remark / เหตุผลหรือรายละเอียด
+        <textarea data-change-remark maxlength="2000" placeholder="เช่น เที่ยวบินเลื่อน / ต้องเปลี่ยนวัน / ขอแจ้งรายละเอียดเพิ่มเติม"></textarea>
+      </label>
+      <button class="mjc16__change-btn is-primary" data-change-submit type="button">ส่งคำขอให้ MMD</button>
+    </div>
+    <p class="mjc16__change-status" data-change-status>การส่งคำขอจะเข้า MMD Review และเก็บรายละเอียดงานเดิมไว้จนกว่าจะตรวจสอบเสร็จ</p>
+  </section>
   <section class="mjc16__final-pay" data-final-payment hidden aria-live="polite">
     <div class="mjc16__final-head">
       <div><div class="mjc16__section-kicker">FINAL PAYMENT</div><h3 data-final-title>Model ถึงแล้ว</h3></div>
@@ -186,7 +244,134 @@
       else root.querySelector(".mjc16__wrap")?.appendChild(tracker);
     }
     mounted = Boolean($('[data-session-tracker]'));
+    if (mounted) wireChangePanel();
     return mounted;
+  }
+
+  function timeInputValue(value) {
+    const raw = clean(value);
+    const direct = /^([01]\d|2[0-3]):[0-5]\d$/.exec(raw);
+    if (direct) return direct[0];
+    const iso = /T([0-2]\d:[0-5]\d)/.exec(raw);
+    return iso ? iso[1] : "";
+  }
+
+  function setChangeStatus(message, mode = "") {
+    const el = $('[data-change-status]');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.remove("is-ok", "is-error");
+    if (mode) el.classList.add(mode);
+  }
+
+  function changeButtonsDisabled(value) {
+    root.querySelectorAll("[data-change-time-submit],[data-change-location-submit],[data-change-submit]").forEach((button) => {
+      button.disabled = Boolean(value);
+    });
+  }
+
+  function syncChangeType() {
+    const type = clean($('[data-change-type]')?.value);
+    const dateWrap = $('[data-change-date-wrap]');
+    if (dateWrap) dateWrap.hidden = !["date_change", "reschedule"].includes(type);
+  }
+
+  async function submitChangeRequest(payload) {
+    if (changeRequestBusy || !token) return;
+    changeRequestBusy = true;
+    changeButtonsDisabled(true);
+    setChangeStatus("กำลังส่งคำขอให้ MMD…");
+    try {
+      const response = await fetch(`${API}/v1/confirm/change-request`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        credentials: "omit",
+        body: JSON.stringify({ t: token, expected_role: "customer", ...payload }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${response.status}`);
+      setChangeStatus(data?.message || "MMD ได้รับคำขอแล้ว · รอตรวจสอบ", "is-ok");
+    } catch {
+      setChangeStatus("ส่งคำขอไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อ MMD", "is-error");
+    } finally {
+      changeRequestBusy = false;
+      changeButtonsDisabled(false);
+    }
+  }
+
+  function wireChangePanel() {
+    const type = $('[data-change-type]');
+    if (type && !type.dataset.wired) {
+      type.dataset.wired = "1";
+      type.addEventListener("change", syncChangeType);
+      syncChangeType();
+    }
+
+    const timeButton = $('[data-change-time-submit]');
+    if (timeButton && !timeButton.dataset.wired) {
+      timeButton.dataset.wired = "1";
+      timeButton.addEventListener("click", () => {
+        const value = clean($('[data-change-time]')?.value);
+        if (!value) return setChangeStatus("กรุณาเลือกเวลาที่ต้องการ", "is-error");
+        submitChangeRequest({
+          request_type: "time_change",
+          requested_start_time: value,
+          remark: clean($('[data-change-remark]')?.value),
+        });
+      });
+    }
+
+    const locationButton = $('[data-change-location-submit]');
+    if (locationButton && !locationButton.dataset.wired) {
+      locationButton.dataset.wired = "1";
+      locationButton.addEventListener("click", () => {
+        const location = clean($('[data-change-location]')?.value);
+        const map = clean($('[data-change-map]')?.value);
+        if (!location && !map) return setChangeStatus("กรุณาระบุสถานที่หรือ Google Maps URL", "is-error");
+        submitChangeRequest({
+          request_type: "location_change",
+          requested_location_name: location,
+          requested_google_map_url: map,
+          remark: clean($('[data-change-remark]')?.value),
+        });
+      });
+    }
+
+    const submit = $('[data-change-submit]');
+    if (submit && !submit.dataset.wired) {
+      submit.dataset.wired = "1";
+      submit.addEventListener("click", () => {
+        const requestType = clean($('[data-change-type]')?.value);
+        const remark = clean($('[data-change-remark]')?.value);
+        const date = clean($('[data-change-date]')?.value);
+        if (requestType === "cancellation" && remark.length < 3) return setChangeStatus("กรุณาแจ้งเหตุผลสำหรับการยกเลิก", "is-error");
+        if (requestType === "remark" && remark.length < 2) return setChangeStatus("กรุณาใส่รายละเอียดที่ต้องการแจ้ง", "is-error");
+        if (requestType === "date_change" && !date) return setChangeStatus("กรุณาเลือกวันที่ต้องการ", "is-error");
+        submitChangeRequest({
+          request_type: requestType,
+          requested_date: date,
+          remark,
+        });
+      });
+    }
+  }
+
+  function seedChangeFields(payload) {
+    const time = $('[data-change-time]');
+    const location = $('[data-change-location]');
+    const map = $('[data-change-map]');
+    if (time && !time.dataset.seeded) {
+      time.value = timeInputValue(payload?.start_time);
+      time.dataset.seeded = "1";
+    }
+    if (location && !location.dataset.seeded) {
+      location.value = clean(payload?.location_name);
+      location.dataset.seeded = "1";
+    }
+    if (map && !map.dataset.seeded) {
+      map.value = clean(payload?.google_map_url);
+      map.dataset.seeded = "1";
+    }
   }
 
   function money(value) {
@@ -415,6 +600,7 @@
 
   function render(payload) {
     lastPayload = payload;
+    seedChangeFields(payload);
     const session = payload?.customer_session;
     if (!session || session.schema !== "customer_session_v2") {
       setBadge("รอ Session", "");

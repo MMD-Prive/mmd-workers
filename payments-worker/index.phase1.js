@@ -9,6 +9,10 @@ import {
   handleCustomerChangeRequest,
 } from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
+import {
+  CUSTOMER_CHANGE_REQUEST_PATH,
+  handleCustomerChangeRequest,
+} from "./customer-change-request.js";
 import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
 export { PointsPhase1Coordinator } from "./points-phase1.js";
 
@@ -35,6 +39,10 @@ export default {
       return handleConfirmationContext(request, env);
     }
     if (path === CONFIRM_CHANGE_REQUEST_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleCustomerChangeRequest(request, env);
+    }
+
+    if (path === CUSTOMER_CHANGE_REQUEST_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleCustomerChangeRequest(request, env);
     }
 
