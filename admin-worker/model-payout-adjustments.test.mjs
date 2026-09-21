@@ -4,6 +4,7 @@ import {
   MODEL_PAYOUT_ADJUSTMENTS_PATH,
   handleModelPayoutAdjustments,
   isModelPayoutAdjustmentRequest,
+  readModelPayoutAdjustmentAudit,
 } from "./src/model-payout-adjustments.js";
 
 const BASE = "appsV1ILPRfIjkaYg";
@@ -317,6 +318,85 @@ test("POST is credential-bound and same-origin only", async () => {
     );
     assert.equal(crossOrigin.status, 403);
     assert.equal((await crossOrigin.json()).error, "forbidden_origin");
+  } finally {
+    mock.restore();
+  }
+});
+
+
+test("read-only payout audit proves the adjustment chain and flags a mismatched current total", async () => {
+  const existing = {
+    id: "recExistingAdjust2",
+    fields: {
+      adjustment_id: "mpa_audit",
+      Session: [SESSION_RECORD],
+      Model: [MODEL],
+      session_id: "sess_simba_001",
+      model_name: "Simba",
+      direction: "add",
+      adjustment_type: "travel",
+      amount_thb: 1000,
+      signed_amount_thb: 1000,
+      payout_before_thb: 9000,
+      payout_after_thb: 10000,
+      note: "travel",
+      created_by: "per",
+      created_at: "2026-09-18T12:00:00.000Z",
+      source: "mmd_owner_model_payout_adjustment_v1",
+      idempotency_key: "audit-chain-001",
+    },
+  };
+  const mock = installFetchMock({
+    session: sessionFields({ pay_model_thb: 10500, created_at: "2026-09-18T10:00:00.000Z" }),
+    existingAdjustment: existing,
+  });
+  try {
+    const result = await readModelPayoutAdjustmentAudit(ENV, "sess_simba_001");
+    assert.equal(result.status, 200);
+    assert.equal(result.body.ok, true);
+    assert.equal(result.body.session.current_payout_thb, 10500);
+    assert.equal(result.body.integrity.starting_payout_thb, 9000);
+    assert.equal(result.body.integrity.adjustment_net_thb, 1000);
+    assert.equal(result.body.integrity.expected_current_payout_thb, 10000);
+    assert.equal(result.body.integrity.actual_current_payout_thb, 10500);
+    assert.equal(result.body.integrity.needs_reconciliation, true);
+    assert.equal(result.body.integrity.issues[0].code, "model_payout_current_total_mismatch");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("read-only payout audit passes a continuous immutable adjustment chain", async () => {
+  const existing = {
+    id: "recExistingAdjust3",
+    fields: {
+      adjustment_id: "mpa_clean",
+      Session: [SESSION_RECORD],
+      Model: [MODEL],
+      session_id: "sess_simba_001",
+      model_name: "Simba",
+      direction: "add",
+      adjustment_type: "bonus",
+      amount_thb: 500,
+      signed_amount_thb: 500,
+      payout_before_thb: 9000,
+      payout_after_thb: 9500,
+      created_by: "per",
+      created_at: "2026-09-18T12:00:00.000Z",
+      source: "mmd_owner_model_payout_adjustment_v1",
+      idempotency_key: "audit-clean-001",
+    },
+  };
+  const mock = installFetchMock({
+    session: sessionFields({ pay_model_thb: 9500 }),
+    existingAdjustment: existing,
+  });
+  try {
+    const result = await readModelPayoutAdjustmentAudit(ENV, "sess_simba_001");
+    assert.equal(result.status, 200);
+    assert.equal(result.body.integrity.ok, true);
+    assert.equal(result.body.integrity.issue_count, 0);
+    assert.equal(result.body.policy.immutable_ledger, true);
   } finally {
     mock.restore();
   }
