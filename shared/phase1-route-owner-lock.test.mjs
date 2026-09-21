@@ -46,13 +46,26 @@ test("Partner API namespace is owned by partners-worker", async () => {
   assert.match(config, /www\.mmdbkk\.com\/v1\/partner\/\*/);
 });
 
-test("Realtime production namespace is exact and Worker-owned", async () => {
+test("Realtime production namespace is synchronized by the dedicated zone Routes API", async () => {
   const config = await source("realtime-worker/wrangler.toml");
   const runtime = await source("realtime-worker/src/index.js");
-  assert.match(config, /mmdbkk\.com\/v1\/rt\/\*/);
-  assert.match(config, /www\.mmdbkk\.com\/v1\/rt\/\*/);
+  const workflow = await source(".github/workflows/deploy-realtime-worker.yml");
+  assert.doesNotMatch(config, /\[\[routes\]\]/);
+  assert.match(workflow, /Sync canonical realtime routes through zone API/);
+  assert.match(workflow, /mmdbkk\.com\/v1\/rt\/\*/);
+  assert.match(workflow, /www\.mmdbkk\.com\/v1\/rt\/\*/);
   assert.match(runtime, /\/v1\/rt\/health/);
   assert.match(runtime, /X-MMD-Route-Owner/);
+});
+
+test("Member Webflow pages bypass the legacy catch-all with no-script routes", async () => {
+  const workflow = await source(".github/workflows/phase1-webflow-route-exclusions.yml");
+  assert.match(workflow, /mmdbkk\.com\/member\/login\*/);
+  assert.match(workflow, /www\.mmdbkk\.com\/member\/login\*/);
+  assert.match(workflow, /mmdbkk\.com\/member\/dashboard\*/);
+  assert.match(workflow, /www\.mmdbkk\.com\/member\/dashboard\*/);
+  assert.match(workflow, /JSON\.stringify\(\{ pattern \}\)/);
+  assert.match(workflow, /legacy global catch-all: intentionally retained for Phase 1-B/);
 });
 
 test("Private Model handler exists and production workflow refuses route takeover", async () => {

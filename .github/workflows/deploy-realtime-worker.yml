@@ -104,11 +104,55 @@ jobs:
           }
           NODE
 
-      - name: Deploy realtime-worker with canonical custom routes
+      - name: Deploy realtime-worker code
         shell: bash
         run: |
           set -euo pipefail
           npx --yes wrangler@4 deploy --config wrangler.toml --keep-vars
+
+      - name: Sync canonical realtime routes through zone API
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const zone = process.env.CLOUDFLARE_ZONE_ID;
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
+          if (!token) throw new Error("Cloudflare routes credential missing");
+          const worker = "realtime-worker";
+          const desired = [
+            "mmdbkk.com/v1/rt/*",
+            "www.mmdbkk.com/v1/rt/*",
+          ];
+          const base = `https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`;
+          const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+          async function list() {
+            const response = await fetch(base, { headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) throw new Error("unable to inspect Cloudflare worker routes");
+            return payload.result || [];
+          }
+          let routes = await list();
+          for (const pattern of desired) {
+            const conflict = routes.find((route) => route.pattern === pattern && route.script && route.script !== worker);
+            if (conflict) throw new Error(`refusing route takeover: ${pattern} is owned by ${conflict.script}`);
+          }
+          for (const pattern of desired) {
+            if (routes.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            const response = await fetch(base, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ pattern, script: worker }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`failed to create realtime route ${pattern}: ${JSON.stringify(payload)}`);
+            }
+          }
+          routes = await list();
+          const missing = desired.filter((pattern) => !routes.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing realtime routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} realtime routes -> ${worker}`);
+          NODE
 
       - name: Smoke health
         shell: bash
