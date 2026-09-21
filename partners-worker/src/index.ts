@@ -1136,11 +1136,15 @@ async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Pr
     maxRecords: 2
   });
   if (existing.length === 1) {
+    const existingRecord = existing[0];
+    if (!existingRecord) {
+      return errorResponse(request, env, "proposal_idempotency_lookup_failed", "Proposal lookup could not be resolved safely.", 503, false);
+    }
     return json(request, env, {
       ok: true,
       idempotent: true,
-      proposal_id: existing[0].id,
-      status: fieldText(existing[0], MODEL_OFFER_RULES.status) || "Review",
+      proposal_id: existingRecord.id,
+      status: fieldText(existingRecord, MODEL_OFFER_RULES.status) || "Review",
       sellability_mutated: false
     });
   }
