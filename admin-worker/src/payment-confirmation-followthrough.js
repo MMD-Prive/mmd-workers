@@ -1,5 +1,6 @@
 import { readPaymentNotification } from "../../shared/payment-notification-outbox.mjs";
 import { retryExistingApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
+import { jobReadinessFollowthrough } from "./job-readiness-followthrough.js";
 
 const text = value => String(value ?? "").trim().slice(0, 180);
 const code = value => text(value).toLowerCase();
@@ -41,6 +42,7 @@ export async function paymentConfirmationFollowthrough(env, input, { list, payme
   for (const key of ["dispatched", "customer_line_sent", "customer_telegram_sent", "model_line_sent", "model_telegram_sent", "manual_delivery_required"]) delivery[key] = result[key] === true;
   return {
     ok: true, ...context, money_truth_changed: false,
+    readiness: await jobReadinessFollowthrough(env, { session: sessions[0], sessionId: context.session_id, list }),
     confirmation: {
       delivery_status: record?.status || "not_recorded", ...delivery,
       retry_available: retryable, retry_queued: retryable,

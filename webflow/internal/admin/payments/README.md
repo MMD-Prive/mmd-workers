@@ -1,3 +1,16 @@
+## Before-job follow-through — 2026-09-22
+
+Build `payment-job-readiness-20260922` continues the paid-job panel into preparation and day-of-work tracking.
+
+- The authenticated confirmation read adds `readiness` from the exact canonical Session and Customer Change Requests table (`tblhQGfJc4GgiteZr`). It shows current date/time/location, missing details, customer/model acknowledgement checks, unresolved customer requests and the model's canonical session state.
+- Pending and approved-but-not-applied requests remain outstanding. Applied/rejected/withdrawn requests are retained in expandable history. Before/requested snapshots are separate from current job details; a request never changes the displayed canonical location by itself.
+- Both acknowledgements cannot produce the completed-checklist heading while a request or required detail is outstanding. Merely storing a hotel does not imply the customer agreed to it.
+- A failed, truncated, malformed or conflicting request query produces an unknown/incomplete state, never a zero-outstanding claim. Exact Session ID plus a single canonical Session link are required before any request details are projected.
+- The model lifecycle comes from `model_session_contract_v1`; time passing and payment receipt cannot advance it. The checklist does not authorize service start, approve amendments or alter Sessions, payments, calendar holds or payouts. Existing job management remains responsible for resolving changes; this release surfaces that work in the paid-job view.
+- Production still uses the two derived CSS / HTML+JS Webflow embeds described below. No independent generated asset or new public API route is introduced.
+
+Validation includes DOM behaviour for changed-location requests after both acknowledgements, safe rendering of customer text, missing readiness, API pagination and failure handling, plus existing payment-delivery regression suites. Authenticated production interactions require the owner browser session; no real change request or payment is submitted by these tests.
+
 ## Confirmation follow-through — 2026-09-21
 
 Build `payment-confirmation-20260921` adds persistent follow-through to the paid-job view.
