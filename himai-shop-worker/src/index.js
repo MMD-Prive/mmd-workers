@@ -2,6 +2,10 @@ const LOCK = "himai-shop-worker-v2026-04-29-shop-routes";
 const DEFAULT_DASHBOARD_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 const DEFAULT_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev";
 
+import { handleSupplierAssistant, runSupplierAlertSweep, SupplierAlertState } from "./supplier-assistant.js";
+
+export { SupplierAlertState };
+
 export default {
   async fetch(request, env) {
     try {
@@ -9,7 +13,16 @@ export default {
       const method = request.method.toUpperCase();
 
       if (method === "OPTIONS") {
+        const assistantOptions = await handleSupplierAssistant(request, env);
+        if (assistantOptions) return assistantOptions;
         return new Response(null, { status: 204, headers: corsHeaders(request, env) });
+      }
+
+      const assistantResponse = await handleSupplierAssistant(request, env);
+      if (assistantResponse) return assistantResponse;
+
+      if (method === "GET" && url.pathname === "/shop/distributor") {
+        return await proxyCanonicalPath(request, env, "/shop/distributor");
       }
 
       if (method === "GET" && (url.pathname === "/health" || url.pathname === "/ping")) {
@@ -29,6 +42,11 @@ export default {
               "GET /mmd-shop",
               "GET /mmd-shop/catalog",
               "GET /api/mmd-shop/catalog",
+              "GET /shop/distributor",
+              "GET /shop/api/distributor/portal",
+              "POST /shop/api/distributor/assistant",
+              "GET,POST /shop/api/distributor/notification-preference",
+              "POST /shop/api/distributor/refill-draft",
               "GET /v1/admin/dashboard/ceo",
               "ANY /internal/admin/*",
               "ANY /v1/admin/*",
@@ -76,7 +94,29 @@ export default {
       );
     }
   },
+  async scheduled(_controller, env, ctx) {
+    const task = runSupplierAlertSweep(env)
+      .then((result) => console.log(JSON.stringify({ event: "himai_supplier_alert_sweep", ...result })))
+      .catch((error) => console.error("Himai supplier alert sweep failed:", error));
+    if (ctx?.waitUntil) ctx.waitUntil(task);
+    else await task;
+  }
+
 };
+
+async function proxyCanonicalPath(request, env, pathname) {
+  const incomingUrl = new URL(request.url);
+  const upstreamUrl = new URL(pathname + incomingUrl.search, getCatalogUpstream(env));
+  const upstreamRequest = new Request(upstreamUrl.toString(), {
+    method: request.method,
+    headers: request.headers,
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
+  });
+  const response = env.HIMAI_CHAT_WORKER
+    ? await env.HIMAI_CHAT_WORKER.fetch(upstreamRequest)
+    : await fetch(upstreamRequest);
+  return proxyResponse(request, env, response);
+}
 
 async function proxyShopSignup(request, env) {
   const incomingUrl = new URL(request.url);

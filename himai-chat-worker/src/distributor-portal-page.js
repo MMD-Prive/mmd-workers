@@ -187,6 +187,26 @@ input:focus{border-color:var(--mint);background:rgba(11,3,6,.82);box-shadow:0 0 
     <div class="stat"><span>Sold</span><strong id="sold-total">—</strong></div>
     <div class="stat"><span>Reserved</span><strong id="reserved-total">—</strong></div>
   </div>
+
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div><h2>Supplier Assistant</h2><p class="muted">ถาม stock, ขายแล้ว, จอง, เติมสินค้า หรือเปิดทางไป Dashboard ได้จากข้อมูลของคุณเท่านั้น</p></div>
+      <span id="notify-channel" class="pill">แจ้งเตือน: ยังไม่เลือก</span>
+    </div>
+    <form id="assistant-form" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+      <input id="assistant-message" type="text" maxlength="1600" placeholder="เช่น stock เหลือเท่าไหร่ หรือมีอะไรควรเติม" style="flex:1;min-width:220px">
+      <button class="primary" type="submit">ถาม Assistant ↗</button>
+    </form>
+    <div id="assistant-reply" class="status" role="status" aria-live="polite" style="white-space:pre-line;margin-top:12px"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px">
+      <span class="muted">เลือกช่องทางแจ้งเตือน stock:</span>
+      <button class="secondary notify-button" data-channel="line" type="button">LINE</button>
+      <button class="secondary notify-button" data-channel="telegram" type="button">Telegram</button>
+      <button class="secondary notify-button" data-channel="none" type="button">ปิดแจ้งเตือน</button>
+      <span id="notify-status" class="muted" role="status"></span>
+    </div>
+  </div>
+
   <div class="panel"><h2>สินค้าที่ดูแล</h2><div id="products" class="products"></div></div>
 </section>
 <div class="footer">HIMAI SHOP · MMD PRIVATE COMMERCE SYSTEM</div>
@@ -195,6 +215,9 @@ input:focus{border-color:var(--mint);background:rgba(11,3,6,.82);box-shadow:0 0 
 (function(){
   var key="himai_distributor_token";
   var login=document.getElementById("login"),app=document.getElementById("app"),form=document.getElementById("login-form"),input=document.getElementById("token"),status=document.getElementById("login-status");
+  var currentToken="";
+  var assistantForm=document.getElementById("assistant-form"),assistantMessage=document.getElementById("assistant-message"),assistantReply=document.getElementById("assistant-reply");
+  var notifyChannel=document.getElementById("notify-channel"),notifyStatus=document.getElementById("notify-status");
   var token=sessionStorage.getItem(key)||new URLSearchParams(location.search).get("token")||"";
   if(token){sessionStorage.setItem(key,token);history.replaceState({},document.title,location.pathname);}
   function esc(value){return String(value==null?"":value).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -209,8 +232,10 @@ input:focus{border-color:var(--mint);background:rgba(11,3,6,.82);box-shadow:0 0 
     document.getElementById("products").innerHTML=products.length?products.map(function(p){
       return "<article class='product'><h3>"+esc(p.product_name||"Product")+"</h3><div class='muted'>"+esc(p.sku||"")+"</div><p>"+(p.low_stock?"<span class='danger'>Low stock · "+esc(p.refill_signal)+"</span>":"<span class='pill'>"+esc(p.refill_signal||"stock")+"</span>")+"</p><div>คงเหลือ: <strong>"+esc(p.available==null?"—":p.available)+"</strong></div><div>ราคาขาย: "+esc(money(p.selling_price_thb))+"</div><div class='muted'>ขายแล้ว "+esc(p.sold_total||0)+" · จอง "+esc(p.reserved_total||0)+"</div></article>";
     }).join(""):"<div class='muted'>ยังไม่มีสินค้าที่ได้รับสิทธิ์</div>";
+    refreshPreference();
   }
   async function load(value){
+    currentToken=value;
     status.textContent="กำลังตรวจสอบสิทธิ์…";
     try{
       var response=await fetch("/shop/api/distributor/portal",{headers:{Authorization:"Bearer "+value}});
@@ -222,6 +247,36 @@ input:focus{border-color:var(--mint);background:rgba(11,3,6,.82);box-shadow:0 0 
       status.textContent="ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบ Access token";input.value="";
     }
   }
+  async function askAssistant(message){
+    assistantReply.textContent="กำลังตรวจสอบข้อมูลล่าสุด…";
+    try{
+      var response=await fetch("/shop/api/distributor/assistant",{method:"POST",headers:{"Authorization":"Bearer "+currentToken,"Content-Type":"application/json"},body:JSON.stringify({message:message})});
+      var data=await response.json().catch(function(){return {};});
+      if(!response.ok)throw new Error(data.error||"assistant_unavailable");
+      assistantReply.textContent=data.reply||"ยังไม่มีคำตอบจาก Assistant";
+    }catch(error){assistantReply.textContent="Assistant ยังใช้งานไม่ได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง";}
+  }
+  async function refreshPreference(){
+    try{
+      var response=await fetch("/shop/api/distributor/notification-preference",{headers:{"Authorization":"Bearer "+currentToken}});
+      var data=await response.json().catch(function(){return {};});
+      if(!response.ok)throw new Error(data.error||"preference_unavailable");
+      var label=data.channel==="none"?"ยังไม่เลือก":data.channel.toUpperCase();
+      notifyChannel.textContent="แจ้งเตือน: "+label;
+    }catch(error){notifyChannel.textContent="แจ้งเตือน: ตั้งค่าภายหลัง";}
+  }
+  async function setPreference(channel){
+    notifyStatus.textContent="กำลังบันทึก…";
+    try{
+      var response=await fetch("/shop/api/distributor/notification-preference",{method:"POST",headers:{"Authorization":"Bearer "+currentToken,"Content-Type":"application/json"},body:JSON.stringify({channel:channel})});
+      var data=await response.json().catch(function(){return {};});
+      if(!response.ok)throw new Error(data.error||"preference_failed");
+      notifyStatus.textContent=data.message||"บันทึกแล้ว";
+      refreshPreference();
+    }catch(error){notifyStatus.textContent="ช่องทางนี้ยังไม่ได้เชื่อมกับบัญชี supplier";}
+  }
+  assistantForm.addEventListener("submit",function(event){event.preventDefault();var message=assistantMessage.value.trim();if(message)askAssistant(message);});
+  document.querySelectorAll(".notify-button").forEach(function(button){button.addEventListener("click",function(){setPreference(button.getAttribute("data-channel"));});});
   form.addEventListener("submit",function(event){event.preventDefault();var value=input.value.trim();if(value){sessionStorage.setItem(key,value);load(value);}});
   document.getElementById("logout").addEventListener("click",function(){sessionStorage.removeItem(key);location.reload();});
   if(token)load(token);
