@@ -1,6 +1,6 @@
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
-// @ts-expect-error Shared runtime helper is plain ESM outside the partners TS package.\nimport { queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
