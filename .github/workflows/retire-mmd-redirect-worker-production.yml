@@ -1,0 +1,291 @@
+name: Retire mmd-redirect-worker production routes
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/retire-mmd-redirect-worker-production.yml"
+
+concurrency:
+  group: retire-mmd-redirect-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Verify legacy Worker is hard-disabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("mmd-redirect-worker/src/index.js", "utf8");
+          const config = fs.readFileSync("mmd-redirect-worker/wrangler.toml", "utf8");
+          if (!source.includes("REDIRECT_WORKER_DISABLED = true")) throw new Error("legacy Worker is not hard-disabled");
+          if (!source.includes("return fetch(request)")) throw new Error("legacy Worker is not transparent pass-through");
+          if (/^\s*\[\[routes\]\]/m.test(config)) throw new Error("legacy Worker repo config still declares routes");
+          NODE
+
+      - name: Preflight replacement surfaces before route mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          check_200() {
+            local url="$1"
+            local marker="$2"
+            local body
+            body="$(mktemp)"
+            local code
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -L -o "$body" -w '%{http_code}' "$url")"
+            echo "$url -> $code"
+            test "$code" = "200"
+            if [ -n "$marker" ]; then grep -qi "$marker" "$body"; fi
+          }
+
+          check_200 "https://www.mmdbkk.com/" "<html"
+          check_200 "https://www.mmdbkk.com/profiles" "<html"
+          check_200 "https://www.mmdbkk.com/public/access" "<html"
+          check_200 "https://www.mmdbkk.com/member/membership" "<html"
+          check_200 "https://www.mmdbkk.com/member/promotion" "<html"
+          check_200 "https://www.mmdbkk.com/blackcard" "<html"
+          check_200 "https://www.mmdbkk.com/blackcard/black-card" "<html"
+          check_200 "https://www.mmdbkk.com/sigil/admin" "<html"
+
+          admin_headers="$(mktemp)"
+          admin_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$admin_headers" -o /dev/null -w '%{http_code}' \
+            'https://www.mmdbkk.com/sigil/admin/login?phase1=retire')"
+          echo "/sigil/admin/login -> $admin_code"
+          test "$admin_code" = "308"
+          grep -qi '^location: /internal/admin/login' "$admin_headers"
+
+      - name: Snapshot and retire every mmd-redirect-worker route
+        id: retire_routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const zone = String(process.env.CLOUDFLARE_ZONE_ID || "").trim();
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
+          if (!zone || !token) throw new Error("Cloudflare routes credential missing");
+
+          const base = `https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`;
+          const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+          async function list() {
+            const response = await fetch(base, { headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable");
+            return payload.result || [];
+          }
+
+          const routes = await list();
+          const legacy = routes.filter((route) => route.script === "mmd-redirect-worker");
+          const snapshot = legacy.map(({ id, pattern, script }) => ({ id, pattern, script }));
+          const snapshotPath = process.env.RUNNER_TEMP + "/mmd-redirect-routes.snapshot.json";
+          fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+
+          console.log(`retiring ${legacy.length} mmd-redirect-worker route(s)`);
+          for (const route of legacy) {
+            const response = await fetch(`${base}/${route.id}`, { method: "DELETE", headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`failed to delete ${route.pattern}: ${JSON.stringify(payload)}`);
+            }
+            console.log(`retired ${route.pattern}`);
+          }
+
+          const after = await list();
+          const residual = after.filter((route) => route.script === "mmd-redirect-worker");
+          if (residual.length) throw new Error(`legacy routes remain: ${residual.map(x => x.pattern).join(", ")}`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `retired_count=${legacy.length}\n`);
+          NODE
+
+      - name: Production acceptance after retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          check_page() {
+            local path="$1"
+            local body headers code
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -L -D "$headers" -o "$body" -w '%{http_code}' "https://www.mmdbkk.com$path")"
+            echo "$path -> $code"
+            test "$code" = "200"
+            if grep -qi '^x-mmd-worker: mmd-redirect-worker' "$headers"; then
+              echo "$path is still intercepted by mmd-redirect-worker" >&2
+              exit 1
+            fi
+          }
+
+          for path in \
+            / \
+            /profiles \
+            /public/access \
+            /member/login \
+            /member/dashboard \
+            /member/membership \
+            /member/promotion \
+            /blackcard \
+            /blackcard/black-card \
+            /sigil/admin; do
+            check_page "$path"
+          done
+
+          dashboard_headers="$(mktemp)"
+          dashboard_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$dashboard_headers" -o /dev/null -w '%{http_code}' \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/api/member/dashboard || true)"
+          case "$dashboard_code" in 200|401|403) ;; *) exit 1 ;; esac
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$dashboard_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$dashboard_headers"
+
+          realtime_ok=0
+          for attempt in $(seq 1 20); do
+            rt_headers="$(mktemp)"
+            rt_body="$(mktemp)"
+            rt_code="$(curl -sS -D "$rt_headers" -o "$rt_body" -w '%{http_code}' \
+              -H 'Origin: https://www.mmdbkk.com' \
+              https://www.mmdbkk.com/v1/rt/health || true)"
+            if [ "$rt_code" = "200" ] \
+              && grep -qi '^x-mmd-route-owner: realtime-worker' "$rt_headers" \
+              && grep -q '"route_owner":"realtime-worker"' "$rt_body"; then
+              realtime_ok=1
+              break
+            fi
+            sleep 2
+          done
+          test "$realtime_ok" = "1"
+
+          booking_headers="$(mktemp)"
+          booking_code="$(curl -sS -D "$booking_headers" -o /dev/null -w '%{http_code}' \
+            -X OPTIONS \
+            -H 'Origin: https://www.mmdbkk.com' \
+            -H 'Access-Control-Request-Method: POST' \
+            https://sigil.mmdbkk.com/sigil/api/booking/intake || true)"
+          test "$booking_code" = "204"
+          grep -qi '^x-mmd-route-owner: sigil-booking-worker' "$booking_headers"
+
+          private_headers="$(mktemp)"
+          private_body="$(mktemp)"
+          private_code="$(curl -sS -D "$private_headers" -o "$private_body" -w '%{http_code}' \
+            'https://www.mmdbkk.com/sigil/apply?phase1=retired')"
+          test "$private_code" = "200"
+          grep -qi '^x-mmd-route-owner: sigil-worker' "$private_headers"
+          grep -q 'Private Model Application' "$private_body"
+
+          partner_headers="$(mktemp)"
+          partner_code="$(curl -sS -D "$partner_headers" -o /dev/null -w '%{http_code}' \
+            https://www.mmdbkk.com/v1/partner/line/login || true)"
+          test "$partner_code" = "302"
+          grep -qi '^location: https://mmdbkk.com/sigil/model/dashboard/partner-login' "$partner_headers"
+
+          admin_headers="$(mktemp)"
+          admin_code="$(curl -sS -D "$admin_headers" -o /dev/null -w '%{http_code}' \
+            'https://www.mmdbkk.com/sigil/admin/login?phase1=retired')"
+          test "$admin_code" = "308"
+          grep -qi '^location: /internal/admin/login' "$admin_headers"
+
+          unknown_headers="$(mktemp)"
+          unknown_code="$(curl -sS -D "$unknown_headers" -o /dev/null -w '%{http_code}' \
+            https://www.mmdbkk.com/__phase1_route_owner_unknown_404__ || true)"
+          case "$unknown_code" in 200|301|302|307|308|404) ;; *) exit 1 ;; esac
+          if grep -qiE '^x-mmd-(worker|front-gate): mmd-redirect-worker' "$unknown_headers"; then
+            echo "unknown public route still intercepted by retired Worker" >&2
+            exit 1
+          fi
+
+      - name: Verify legacy route table is empty
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const zone = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`, {
+            headers: { authorization: `Bearer ${token}` },
+          });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable");
+          const legacy = (payload.result || []).filter((route) => route.script === "mmd-redirect-worker");
+          if (legacy.length) throw new Error(`mmd-redirect-worker still owns ${legacy.length} route(s)`);
+          console.log("mmd-redirect-worker production routes = 0");
+          NODE
+
+      - name: Roll back legacy routes if acceptance fails
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          snapshot="$RUNNER_TEMP/mmd-redirect-routes.snapshot.json"
+          if [ ! -s "$snapshot" ]; then
+            echo "No route snapshot exists; no route mutation needs rollback."
+            exit 0
+          fi
+          node <<'NODE'
+          const fs = require("node:fs");
+          const zone = process.env.CLOUDFLARE_ZONE_ID;
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const snapshot = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + "/mmd-redirect-routes.snapshot.json", "utf8"));
+          const base = `https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`;
+          const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+          async function list() {
+            const response = await fetch(base, { headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable during rollback");
+            return payload.result || [];
+          }
+          let routes = await list();
+          for (const route of snapshot) {
+            const occupied = routes.find((item) => item.pattern === route.pattern);
+            if (occupied) {
+              if (occupied.script === "mmd-redirect-worker") continue;
+              console.error(`rollback skipped occupied pattern ${route.pattern} owner=${occupied.script || "no-script"}`);
+              continue;
+            }
+            const response = await fetch(base, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ pattern: route.pattern, script: "mmd-redirect-worker" }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              console.error(`rollback failed for ${route.pattern}: ${JSON.stringify(payload)}`);
+            }
+            routes = await list();
+          }
+          console.log("legacy route rollback attempt complete");
+          NODE
+
+      - name: Retirement receipt
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Phase 1 route-owner retirement
+          - mmd-redirect-worker production routes retired: ${{ steps.retire_routes.outputs.retired_count }}
+          - remaining mmd-redirect-worker routes: 0
+          - Webflow public/member/Black Card presentation smoke: passed
+          - Member Dashboard API owner: member-dashboard-chat-worker -> member-pages-worker
+          - SIGIL Booking API owner: sigil-booking-worker
+          - Private Model owner: sigil-worker
+          - Realtime owner: realtime-worker
+          - Partner API owner: partners-worker
+          - Admin legacy login redirect: preserved
+          - automatic rollback: armed for failed acceptance
+          EOF
