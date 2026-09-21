@@ -294,13 +294,24 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     const authorizedRecord = authorized[0];
     const offerRulesTable = clean(env.AIRTABLE_TABLE_MODEL_OFFER_RULES || env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || MODEL_OFFER_RULES_TABLE_FALLBACK);
     const rules = await airtableListRecords(env, offerRulesTable, fetchImpl, 500);
+    const modelId = authorizedRecord.record?.id || "";
+    const modelKey = clean(authorizedRecord.safeModel?.model_code, 160).toLowerCase();
+    const relevantRules = rules.filter((record) => {
+      const fields = record?.fields || {};
+      const linked = Array.isArray(fields.Model) ? fields.Model.map((value) => clean(value?.id || value, 100)) : [];
+      const key = clean(fields.model_key, 160).toLowerCase();
+      return Boolean((modelId && linked.includes(modelId)) || (modelKey && key && key === modelKey));
+    });
+    if (!relevantRules.length) {
+      return { status: "match", model: authorizedRecord.safeModel };
+    }
     const salesOffer = resolveModelSalesOffer({
-      model_id: authorizedRecord.record?.id || "",
-      model_key: authorizedRecord.safeModel?.model_code || "",
+      model_id: modelId,
+      model_key: modelKey,
       requested_at: input.requested_at || input.requestedAt || new Date().toISOString(),
       work_lane: input.work_lane || input.workLane || "",
       entitlement_snapshot: access.snapshot,
-      rules,
+      rules: relevantRules,
     });
     return {
       status: "match",
