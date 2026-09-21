@@ -1,4 +1,18 @@
-## Simple daily payment review — 2026-09-21
+## Payment workspace — 2026-09-21
+
+Build `payment-flow-20260921` replaces the separate job/slip tabs with one search and a list/detail workspace. The visible flow is customer/job → evidence from web or LINE → verified money → confirmation delivery. Desktop keeps the selected job and evidence beside the list; mobile opens one task at a time with a back button.
+
+- Search spans the latest 100 jobs and latest 100 pending proofs. Exact payment/session links deduplicate the same item. Membership or otherwise unmatched proofs remain visible.
+- Pending evidence, waiting for evidence, and paid amounts have plain-language filters. Searching automatically includes every status.
+- Each selected proof is re-read by exact ID before displaying the review controls. A stale response cannot replace the user's next selection.
+- Viewing the evidence and confirming both the match and real bank receipt remain mandatory. Unknown outcomes preserve the same request/key across leaving and reopening an item.
+- Payment success and Telegram/customer/model delivery are shown separately. Existing paid jobs do not claim that confirmation delivery is complete. Issue/reject remain audit-only.
+- The obsolete global technical banner and owner-mode pill are hidden only on this page. Scoped light work panels, explicit contrast, compact headings, and a four-step strip replace the oversized dark layout.
+- Existing pending-job payment URLs remain available from the original job creation notification; this frontend does not mint or release signed URLs.
+
+Interaction checks: `MMD_UI_TEST_MODULES=/path/to/node_modules node --test admin-worker/payment-review-flow-ui.test.cjs` with jsdom 30.0.1. The payment review CI installs its isolated test dependency under the runner temporary directory.
+
+## Previous simple daily payment review
 
 `payment-review-simple.html` is the complete primary embed for `/internal/admin/payments`.
 It replaces the live `money-control-v3` embed and uses a new root so old presentation patches cannot enable its approval controls.
