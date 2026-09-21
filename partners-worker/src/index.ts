@@ -3891,7 +3891,7 @@ function buildPartnerFinanceSnapshot(
     if (key) ids.set(key, (ids.get(key) || 0) + 1);
   }
   const ambiguous = new Set([...ids.entries()].filter(([, count]) => count > 1).map(([id]) => id));
-  const rows = commissions.map((row) => {
+  const rows: Array<Record<string, unknown> & { commission: number; status: string; integrity_state: string; included_in_finance_totals: boolean }> = commissions.map((row) => {
     const id = String(row.commission_id || "").trim();
     const split = row.split_index == null ? "" : String(row.split_index);
     const duplicateKey = id ? id + "#" + split : "";
