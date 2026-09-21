@@ -172,3 +172,25 @@ Decision:
 - production ingress and authenticated acceptance remain pending until deploy/smoke;
 - legacy admin delegation must remain until those acceptance checks pass;
 - no browser-selected identity, amount, payment_ref, payment lane, verification or entitlement is accepted.
+
+
+## Phase 1 Route Ownership Cleanup — Production Superseding Snapshot (2026-09-22)
+
+This section supersedes older Phase 1 `UNRESOLVED` / `PARTIAL` labels for the routes listed below. Older rows are retained as historical evidence only.
+
+| Surface | Canonical production owner | Production acceptance |
+| --- | --- | --- |
+| `/member/login` | Webflow presentation; My MMD/LIFF Worker remains identity authority | Webflow no-script route exclusion + live page smoke |
+| `/member/dashboard` | Webflow presentation | Webflow no-script route exclusion + live page smoke |
+| `/api/member/dashboard` | `member-dashboard-chat-worker` → `member-pages-worker` | owner/upstream headers + unauth boundary smoke |
+| `/pay/renewal`, `/sigil/pay/renewal` | `member-dashboard-chat-worker` redirect-only compatibility | 307 + canonical renewal target smoke |
+| SIGIL booking API subset | `sigil-booking-worker` | exact custom-host routes + owner header/CORS smoke |
+| `/v1/partner/*` | `partners-worker` | production route + login boundary smoke |
+| `/v1/rt/*` | `realtime-worker` | dedicated zone route sync + owner health + fail-closed room smoke |
+| `/sigil/apply*`, `/sigil/api/private-model/*` | `sigil-worker` | custom-host route sync + GET/HEAD/OPTIONS/invalid-POST smoke |
+| `/blackcard/black-card` | Webflow compatibility page for canonical `/blackcard` surface | compatibility page created outside sitemap; publish required before final route retirement |
+| `mmd-redirect-worker` | no canonical ownership | source is HARD DISABLED/pass-through only; final production target is zero Cloudflare routes |
+
+Final Phase 1 retirement gate: `.github/workflows/retire-mmd-redirect-worker-production.yml` snapshots every production route still attached to `mmd-redirect-worker`, verifies replacement surfaces, retires only those legacy routes, runs production acceptance, and restores the snapshot automatically if acceptance fails.
+
+Control Room V2 must not treat an older historical `UNRESOLVED` row as current truth when the same surface appears in this superseding snapshot.
