@@ -6,12 +6,7 @@ workers_dev = true
 routes = [
   { pattern = "himai-shop-worker.mmdbkk.com", custom_domain = true },
   # Compatibility for the current Webflow embed on /ceo/dashboard.
-  { pattern = "admin-worker.mmdbkk.com", custom_domain = true },
-  # Branded supplier portal aliases on the main MMD domain.
-  { pattern = "mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" }
+  { pattern = "admin-worker.mmdbkk.com", custom_domain = true }
 ]
 
 [vars]
@@ -22,7 +17,7 @@ MMD_SHOP_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev
 HIMAI_SHOP_AI_ENABLED = "true"
 AI_PROVIDER = "openai"
 OPENAI_MODEL = "gpt-4.1-mini"
-SUPPLIER_DASHBOARD_URL = "https://mmdbkk.com/shop/distributor"
+SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
