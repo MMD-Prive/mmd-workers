@@ -2,6 +2,7 @@ import {
   handleKenjiControlRequest,
   KENJI_CONTROL_ENDPOINTS,
 } from "./kenji-control-endpoints.js";
+import { buildKenjiContinuityOperatorDraft } from "../../shared/kenji-continuity-operator-draft.mjs";
 
 export const CLIENT_INTELLIGENCE_PATH = "/v1/admin/clients/intelligence";
 
@@ -51,7 +52,7 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
         relationship_state: "unknown",
       },
       current_state: emptyCurrentState(),
-      ai: emptyAdvisory("canonical_client_not_resolved"),
+      ai: emptyAdvisory("canonical_client_not_resolved", env.KENJI_CONTINUITY_PHASE4_MODE),
       unresolved: ["canonical_client_not_resolved"],
       sources: sourceSummary(memorySource, matrixSource, conversationsSource),
       authority: authorityProjection(),
@@ -64,6 +65,7 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
     matrixPayload: matrixSource.payload || {},
     conversationsPayload: conversationsSource.payload || {},
     generatedAt: new Date().toISOString(),
+    continuityMode: env.KENJI_CONTINUITY_PHASE4_MODE,
   });
 
   const degraded = [memorySource, matrixSource, conversationsSource].some((item) => item.status === "error");
@@ -80,6 +82,7 @@ export function buildClientIntelligenceProjection({
   matrixPayload = {},
   conversationsPayload = {},
   generatedAt = new Date().toISOString(),
+  continuityMode = "off",
 } = {}) {
   const memory = memoryPayload?.data_status === "live" ? memoryPayload.memory || {} : {};
   const matrix = matrixPayload?.data_status === "live" ? matrixPayload.matrix || {} : {};
@@ -146,6 +149,16 @@ export function buildClientIntelligenceProjection({
     matrix.relationship_context,
     buildDeterministicSummary(memory, matrix),
   );
+  const suggestedReply = buildContinuityOperatorDraft({
+    canonicalClientId,
+    memory,
+    matrix,
+    matrixPayload,
+    generatedAt,
+    continuityMode,
+    openLoops,
+    liveTruthDomains,
+  });
 
   return {
     ok: true,
@@ -166,13 +179,7 @@ export function buildClientIntelligenceProjection({
       summary: aiSummary,
       notices,
       next_best_action: nextBestAction,
-      suggested_reply: {
-        available: false,
-        text: null,
-        channel: firstText(matrix.channel, memory.primary_channel),
-        send_allowed: false,
-        reason: "reply_generation_not_connected",
-      },
+      suggested_reply: suggestedReply,
       follow_up: followUp,
       advisory_only: true,
       analysis_basis: "deterministic_context_v1",
@@ -181,6 +188,65 @@ export function buildClientIntelligenceProjection({
     sources: [],
     authority: authorityProjection(),
   };
+}
+
+function buildContinuityOperatorDraft({
+  canonicalClientId = "",
+  memory = {},
+  matrix = {},
+  matrixPayload = {},
+  generatedAt = "",
+  continuityMode = "off",
+  openLoops = [],
+  liveTruthDomains = [],
+} = {}) {
+  const matrixStatus = clean(matrix.matrix_status).toLowerCase();
+  const conversationStage = clean(matrix.conversation_stage).toLowerCase();
+  const hasOpenThreadEvidence = Boolean(
+    clean(matrix.topic)
+    || clean(matrix.pending_action)
+    || openLoops.length,
+  );
+  const verifiedIdentity = clean(memory.verification_status).toLowerCase() === "verified";
+
+  return buildKenjiContinuityOperatorDraft({
+    evaluated_at: generatedAt,
+    channel: firstText(matrix.channel, memory.primary_channel),
+    identity: {
+      state: isRecordId(canonicalClientId) ? "known" : "review_required",
+      confidence: verifiedIdentity ? "high" : "low",
+      verified: verifiedIdentity,
+      preferred_name: clean(memory.display_name),
+    },
+    relationship: {
+      context: clean(matrix.relationship_context),
+      returning_customer: false,
+    },
+    continuity: {
+      decision: matrixStatus === "active" && hasOpenThreadEvidence ? "continuation" : "unknown",
+      confidence: matrixStatus === "active" && hasOpenThreadEvidence ? 0.95 : 0,
+      topic: clean(matrix.topic),
+      conversation_stage: conversationStage,
+      matrix_status: matrixStatus,
+      matrix_version: Number(matrix.version) || 0,
+      updated_at: firstText(matrix.state_updated_at, matrix.last_interaction_at),
+      expires_at: clean(matrix.state_expires_at),
+      live_truth_domains: liveTruthDomains,
+      context_only: matrixPayload.context_only === true,
+      live_truth_wins: matrixPayload.live_truth_wins === true,
+    },
+    safety: {
+      review_required: matrixStatus === "review_required"
+        || matrixStatus === "ambiguous"
+        || conversationStage === "awaiting_review",
+      stale: matrixStatus === "stale" || conversationStage === "stale_needs_refresh",
+      handoff_required: boolish(matrix.handoff_required),
+      live_truth_required: boolish(matrix.live_truth_required),
+    },
+  }, {
+    mode: continuityMode,
+    now: generatedAt,
+  });
 }
 
 function buildNotices({ memory = {}, matrix = {}, openLoops = [], liveTruthDomains = [] } = {}) {
@@ -446,18 +512,16 @@ function emptyCurrentState() {
   };
 }
 
-function emptyAdvisory(reason) {
+function emptyAdvisory(reason, continuityMode = "off") {
+  const suggestedReply = {
+    ...buildKenjiContinuityOperatorDraft({}, { mode: continuityMode }),
+    reason,
+  };
   return {
     summary: "",
     notices: [],
     next_best_action: null,
-    suggested_reply: {
-      available: false,
-      text: null,
-      channel: "",
-      send_allowed: false,
-      reason,
-    },
+    suggested_reply: suggestedReply,
     follow_up: {
       recommended: false,
       reason,
