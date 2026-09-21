@@ -35,6 +35,10 @@ jobs:
           if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable");
           const routes = payload.result || [];
           const expected = new Map([
+            ["mmdbkk.com/member/login*", null],
+            ["www.mmdbkk.com/member/login*", null],
+            ["mmdbkk.com/member/dashboard*", null],
+            ["www.mmdbkk.com/member/dashboard*", null],
             ["mmdbkk.com/api/member/dashboard*", "member-dashboard-chat-worker"],
             ["www.mmdbkk.com/api/member/dashboard*", "member-dashboard-chat-worker"],
             ["mmdbkk.com/pay/renewal*", "member-dashboard-chat-worker"],
@@ -60,14 +64,35 @@ jobs:
           for (const [pattern, owner] of expected) {
             const hit = routes.find((route) => route.pattern === pattern);
             if (!hit) missing.push(pattern);
-            else if (hit.script !== owner) wrong.push({ pattern, expected: owner, actual: hit.script || null });
+            else if ((hit.script || null) !== owner) wrong.push({ pattern, expected: owner, actual: hit.script || null });
           }
-          const legacy = routes.filter((route) => route.script === "mmd-redirect-worker");
-          if (legacy.length) throw new Error(`mmd-redirect-worker still owns routes: ${legacy.map(x => x.pattern).join(", ")}`);
+
+          const forbiddenLegacy = new Set([
+            "mmdbkk.com/member/login",
+            "mmdbkk.com/member/login/",
+            "www.mmdbkk.com/member/login",
+            "www.mmdbkk.com/member/login/",
+            "mmdbkk.com/member/dashboard",
+            "mmdbkk.com/member/dashboard/",
+            "www.mmdbkk.com/member/dashboard",
+            "www.mmdbkk.com/member/dashboard/",
+            "mmdbkk.com/sigil/apply",
+            "mmdbkk.com/sigil/apply/",
+            "www.mmdbkk.com/sigil/apply",
+            "www.mmdbkk.com/sigil/apply/",
+          ]);
+          const legacyP0 = routes.filter((route) => route.script === "mmd-redirect-worker" && forbiddenLegacy.has(route.pattern));
+          if (legacyP0.length) throw new Error(`P0 legacy routes remain: ${legacyP0.map(x => x.pattern).join(", ")}`);
           if (missing.length || wrong.length) {
             throw new Error(`route ownership mismatch missing=${JSON.stringify(missing)} wrong=${JSON.stringify(wrong)}`);
           }
-          console.log(JSON.stringify({ ok: true, verified: expected.size, legacy_redirect_routes: 0 }, null, 2));
+          const legacyCatchall = routes.filter((route) => route.script === "mmd-redirect-worker");
+          console.log(JSON.stringify({
+            ok: true,
+            verified: expected.size,
+            migrated_p0_legacy_routes: 0,
+            remaining_legacy_routes_for_phase1_b: legacyCatchall.map(x => x.pattern),
+          }, null, 2));
           NODE
 
       - name: Verify Webflow member entry and dashboard pages
@@ -184,6 +209,7 @@ jobs:
           - Partner API: partners-worker
           - Realtime /v1/rt/*: realtime-worker
           - Private Model: sigil-worker
-          - mmd-redirect-worker routes: 0
+          - mmd-redirect-worker on migrated P0 surfaces: 0
+          - legacy catch-all/compatibility routes: retained for Phase 1-B cleanup
           - Customer/business mutations: 0
           EOF
