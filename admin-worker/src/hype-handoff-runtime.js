@@ -15,6 +15,7 @@ import {
 } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
 
 export const HYPE_CONTINUITY_PATH = "/__internal/hype/continuity";
+export const HYPE_CONVERSATION_CONTEXT_PATH = "/__internal/hype/conversation-context";
 export const HYPE_HANDOFF_PATH = "/__internal/hype/handoff";
 export const HYPE_HANDOFF_STATUS_PATH = "/__internal/hype/handoff-status";
 export const HYPE_TRANSACTION_INTAKE_PATH = "/__internal/hype/transaction-intake";
@@ -109,6 +110,235 @@ export async function handleHypeContinuityRpc(request, env = {}) {
     line_continuity_ready: true,
     error: result.ok ? undefined : result.error,
   }, result.ok ? 200 : 503);
+}
+
+export async function handleHypeConversationContextRpc(request, env = {}) {
+  const gate = validateRequest(request, HYPE_CONVERSATION_CONTEXT_PATH);
+  if (gate) return gate;
+
+  const body = await readBody(request);
+  if (!body) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const telegramUserId = telegramId(body.telegram_user_id);
+  if (!telegramUserId) return json({ ok: false, error: "telegram_identity_invalid" }, 400);
+
+  const identity = await resolveLiveCanonicalClient(env, { telegram_user_id: telegramUserId }).catch(() => null);
+  if (identity?.status !== "resolved" || !recordId(identity?.client?.canonical_client_id)) {
+    return json({ ok: false, state: "connect_required", error: "canonical_client_unresolved" }, 404);
+  }
+
+  const lineUserId = lineId(identity.client.line_user_id);
+  if (!lineUserId) {
+    return json({
+      ok: true,
+      state: "none",
+      context: buildHypeConversationContextProjection(null),
+      reason: "line_identity_not_linked",
+      guardrails: conversationContextGuardrails(),
+    });
+  }
+
+  const hash = await sha256Hex(`line_ofc:${lineUserId}`);
+  const matrix = await findMatrix(env, hash);
+  if (!matrix.ok) {
+    return json({
+      ok: false,
+      state: "storage_unavailable",
+      error: matrix.error || "matrix_read_failed",
+      guardrails: conversationContextGuardrails(),
+    }, 503);
+  }
+  if (!matrix.record) {
+    return json({
+      ok: true,
+      state: "none",
+      context: buildHypeConversationContextProjection(null),
+      guardrails: conversationContextGuardrails(),
+    });
+  }
+
+  const context = buildHypeConversationContextProjection(matrix.record);
+  return json({
+    ok: true,
+    state: context.available ? "ready" : context.stale ? "stale" : "none",
+    context,
+    guardrails: conversationContextGuardrails(),
+  });
+}
+
+export function buildHypeConversationContextProjection(record, now = new Date()) {
+  const fields = record?.fields && typeof record.fields === "object" ? record.fields : {};
+  if (!Object.keys(fields).length) {
+    return {
+      schema: "mmd.hype_conversation_context.v2",
+      available: false,
+      stale: false,
+      reason: "conversation_context_not_found",
+      command: "",
+      topic: "",
+      open_thread: false,
+      matrix_version: 0,
+      requires_live_truth_refresh: true,
+    };
+  }
+
+  const payload = parseObject(fields[F.PAYLOAD]);
+  const command = normalizeConversationContextCommand({ fields, payload });
+  const topic = normalizeConversationContextTopic(fields[F.TOPIC], command);
+  const stage = token(fields[F.STAGE]);
+  const matrixStatus = token(fields[F.STATUS]);
+  const version = Math.max(0, Math.floor(Number(fields[F.VERSION]) || 0));
+  const nowMs = now instanceof Date ? now.getTime() : Date.parse(clean(now, 80));
+  const updatedMs = Date.parse(clean(fields[F.UPDATED_AT] || fields[F.LAST_INTERACTION], 80));
+  const expiresMs = Date.parse(clean(fields[F.EXPIRES_AT], 80));
+  const freshnessKnown = Number.isFinite(nowMs) && Number.isFinite(updatedMs) && Number.isFinite(expiresMs);
+  const stale = matrixStatus !== "active"
+    || !freshnessKnown
+    || updatedMs > nowMs + 60_000
+    || nowMs - updatedMs > 30 * 24 * 60 * 60 * 1000
+    || expiresMs < nowMs;
+  const stageSupported = /^(?:active|new_topic|in_progress|transaction_intake|awaiting_[a-z0-9_]+|handoff(?:_[a-z0-9_]+)?|resolved)$/.test(stage);
+  const openThread = !/(?:resolved|customer_notified|closed|cancelled|stale)/.test(stage);
+  const available = Boolean(command && version >= 1 && stageSupported && !stale);
+
+  return {
+    schema: "mmd.hype_conversation_context.v2",
+    available,
+    stale,
+    reason: available
+      ? "bounded_context_ready"
+      : stale
+        ? "conversation_context_stale"
+        : !command
+          ? "supported_topic_not_found"
+          : version < 1
+            ? "matrix_version_required"
+            : "conversation_stage_unsupported",
+    command: available ? command : "",
+    topic: available ? topic : "",
+    conversation_stage: available ? stage : "",
+    open_thread: available && openThread,
+    matrix_version: available ? version : 0,
+    updated_at: available ? clean(fields[F.UPDATED_AT] || fields[F.LAST_INTERACTION], 80) : "",
+    expires_at: available ? clean(fields[F.EXPIRES_AT], 80) : "",
+    requires_live_truth_refresh: true,
+  };
+}
+
+function normalizeConversationContextCommand({ fields = {}, payload = {} } = {}) {
+  const transactionMode = token(payload?.transaction_intake?.mode);
+  const currentStage = token(fields[F.STAGE]);
+  const currentIntent = token(fields[F.LAST_INTENT]);
+  const transactionIsCurrent = payload?.transaction_intake?.submitted !== true
+    && (currentStage === "transaction_intake" || currentIntent.startsWith("transaction_intake_"));
+  if (transactionIsCurrent && transactionMode === "booking") return "booking";
+  if (transactionIsCurrent && transactionMode === "payment_proof") return "payment";
+  if (transactionIsCurrent && transactionMode === "renewal") return "membership";
+  if (transactionIsCurrent && transactionMode === "mms") return "mms_options";
+
+  const aliases = {
+    status: "status",
+    general: "status",
+    account_status: "status",
+    next: "next",
+    next_action: "next",
+    booking: "booking",
+    booking_status: "booking",
+    create_session: "booking",
+    availability_request: "booking",
+    payment: "payment",
+    payment_status: "payment",
+    payment_slip: "payment",
+    payment_proof: "payment",
+    membership: "membership",
+    membership_status: "membership",
+    renewal: "membership",
+    membership_renewal: "membership",
+    points: "points",
+    points_status: "points",
+    coupons: "coupons",
+    coupon: "coupons",
+    careback: "careback",
+    care_back: "careback",
+    orders: "orders",
+    order: "orders",
+    shop_orders: "orders",
+    mmd_shop: "orders",
+    mms_options: "mms_options",
+    mms: "mms_options",
+    recovery: "handoff_status",
+    service_recovery: "handoff_status",
+    handoff: "handoff_status",
+    human_handoff: "handoff_status",
+    handoff_per: "handoff_status",
+    handoff_kenji: "handoff_status",
+    handoff_status: "handoff_status",
+  };
+  const candidates = [
+    payload.command,
+    fields[F.LAST_INTENT],
+    fields[F.SUBTOPIC],
+    fields[F.TOPIC],
+  ];
+  for (const value of candidates) {
+    const key = token(value);
+    if (aliases[key]) return aliases[key];
+    if (key.startsWith("transaction_intake_")) {
+      const mode = key.slice("transaction_intake_".length);
+      if (mode === "booking") return "booking";
+      if (mode === "payment_proof") return "payment";
+      if (mode === "renewal") return "membership";
+      if (mode === "mms") return "mms_options";
+    }
+  }
+  return "";
+}
+
+function normalizeConversationContextTopic(value, command) {
+  const topic = token(value);
+  const allowed = new Set([
+    "account_status",
+    "next_action",
+    "booking",
+    "payment",
+    "membership",
+    "points",
+    "coupon",
+    "care_back",
+    "shop_orders",
+    "mms",
+    "service_recovery",
+    "human_handoff",
+  ]);
+  if (allowed.has(topic)) return topic;
+  return ({
+    status: "account_status",
+    next: "next_action",
+    booking: "booking",
+    payment: "payment",
+    membership: "membership",
+    points: "points",
+    coupons: "coupon",
+    careback: "care_back",
+    orders: "shop_orders",
+    mms_options: "mms",
+    handoff_status: "service_recovery",
+  })[command] || "";
+}
+
+function conversationContextGuardrails() {
+  return {
+    read_only: true,
+    matrix_context_only: true,
+    raw_matrix_fields_exposed: false,
+    canonical_client_id_exposed: false,
+    business_truth_included: false,
+    live_truth_refresh_required: true,
+    payment_mutated: false,
+    entitlement_mutated: false,
+    booking_mutated: false,
+    coupon_mutated: false,
+  };
 }
 
 export async function handleHypeHandoffRpc(request, env = {}) {
