@@ -322,6 +322,9 @@ const PARTNER_SALES_SCHEDULES = new Set(["Always", "Date range", "Date + time ra
 const PARTNER_SALES_VISIBILITY = new Set(["on", "off"]);
 const PARTNER_SALES_DAYS = new Set(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
 
+const PARTNER_WORKING_SYSTEMS = new Set(["bridge", "co_partner", "profit_share"]);
+type PartnerWorkingSystem = "bridge" | "co_partner" | "profit_share";
+
 const WEBFLOW_PARTNER_FORM_ORIGIN = "https://mmdprive.webflow.io";
 const WEBFLOW_PARTNER_FORM_SCRIPT_URL =
   "https://partners-worker.malemodel-bkk.workers.dev/webflow-sigil-partner-form.js";
@@ -396,6 +399,10 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/models/change") {
         return await handlePartnerModelChange(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/working-system") {
+        return await handlePartnerWorkingSystemChange(request, runtimeEnv);
       }
 
       if (request.method === "POST" && url.pathname === "/v1/partner/models/upload") {
@@ -1424,10 +1431,16 @@ function buildPartnerModelProfiles(
 ): Array<Record<string, unknown>> {
   const controlByModel = new Map(salesControls.map((control) => [String(control.model_record_id || ""), control]));
   const latestProfileChange = new Map<string, Record<string, unknown>>();
+  const workingSystemHistory = new Map<string, Array<Record<string, unknown>>>();
   for (const change of changes) {
     const modelId = String(change.model_record_id || "");
-    if (!modelId || latestProfileChange.has(modelId) || change.action !== "update_profile") continue;
-    latestProfileChange.set(modelId, change);
+    if (!modelId) continue;
+    if (!latestProfileChange.has(modelId) && change.action === "update_profile") latestProfileChange.set(modelId, change);
+    if (change.action === "update_working_system") {
+      const entries = workingSystemHistory.get(modelId) || [];
+      entries.push(change);
+      workingSystemHistory.set(modelId, entries);
+    }
   }
 
   const models: Array<Record<string, unknown>> = [];
@@ -1438,6 +1451,9 @@ function buildPartnerModelProfiles(
     if (!model) continue;
     const profileChange = latestProfileChange.get(modelId);
     const draft = isRecord(profileChange?.payload) ? profileChange.payload : {};
+    const systemHistory = workingSystemHistory.get(modelId) || [];
+    const pendingSystem = systemHistory[0];
+    const workingSystem = canonicalWorkingSystem(referral, pendingSystem);
     models.push({
       model_record_id: modelId,
       referral_record_id: referral.id,
@@ -1456,10 +1472,138 @@ function buildPartnerModelProfiles(
       available_now: model.fields[MODELS.availableNow] === true,
       canonical_status: fieldText(model, MODELS.status) || "pending",
       profile_request_status: profileChange?.status || null,
+      working_system: workingSystem,
+      working_system_history: systemHistory.map((entry) => ({
+        request_id: entry.request_id,
+        version: isRecord(entry.payload) ? readFiniteNumber(entry.payload.version) : null,
+        system: isRecord(entry.payload) ? readString(entry.payload, "system") : "",
+        status: entry.status,
+        updated_at: entry.updated_at
+      })),
       sales_control: controlByModel.get(modelId) || null
     });
   }
   return models;
+}
+
+function canonicalWorkingSystem(
+  referral: AirtableRecord,
+  pendingChange?: Record<string, unknown>
+): Record<string, unknown> {
+  const rawType = normalizeStatus(fieldText(referral, MODEL_REFERRALS.commissionType));
+  const system: PartnerWorkingSystem = rawType.includes("profit")
+    ? "profit_share"
+    : rawType.includes("co_partner") || rawType.includes("one_price") || rawType.includes("flat")
+      ? "co_partner"
+      : "bridge";
+  const pendingPayload = isRecord(pendingChange?.payload) ? pendingChange.payload : null;
+  return {
+    system,
+    label: system === "bridge" ? "System 1 · Bridge" : system === "co_partner" ? "System 2 · Co-Partner" : "System 3 · Profit Share",
+    commission_percent: system === "bridge" ? fieldNumber(referral, MODEL_REFERRALS.commissionRate) : null,
+    source_rate_thb: system === "co_partner" ? fieldNumber(referral, MODEL_REFERRALS.flatAmountThb) : null,
+    partner_share_percent: system === "profit_share" ? fieldNumber(referral, MODEL_REFERRALS.commissionRate) : null,
+    basis_rule: fieldText(referral, MODEL_REFERRALS.basisRule) || "payment_truth_net_basis",
+    effective_from: fieldText(referral, MODEL_REFERRALS.effectiveFrom) || null,
+    effective_until: fieldText(referral, MODEL_REFERRALS.effectiveUntil) || null,
+    version: 1,
+    authority: "server_canonical",
+    pending_change: pendingPayload ? {
+      request_id: pendingChange?.request_id || null,
+      status: pendingChange?.status || "review",
+      version: readFiniteNumber(pendingPayload.version),
+      system: readString(pendingPayload, "system")
+    } : null
+  };
+}
+
+async function handlePartnerWorkingSystemChange(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  if (body.value.share_with_mmd !== true) {
+    return errorResponse(request, env, "explicit_share_required", "Confirm the agreement proposal before submitting it to MMD.", 400, false);
+  }
+  const modelRecordId = readString(body.value, "model_record_id");
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+    return errorResponse(request, env, "model_record_id_invalid", "A canonical linked model is required.", 400, false);
+  }
+  const referrals = await listLinkedRecordsForPartner(
+    env,
+    env.AIRTABLE_TABLE_MODEL_REFERRALS,
+    MODEL_REFERRALS.partner,
+    verified.value.partnerRecord.id,
+    fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || ""
+  );
+  if (!referrals.some((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId))) {
+    return errorResponse(request, env, "partner_model_scope_forbidden", "This model is outside the Partner relationship scope.", 403, false);
+  }
+  const system = readString(body.value, "system") as PartnerWorkingSystem;
+  if (!PARTNER_WORKING_SYSTEMS.has(system)) {
+    return errorResponse(request, env, "working_system_invalid", "Choose Bridge, Co-Partner, or Profit Share.", 400, false);
+  }
+  const commissionPercent = readFiniteNumber(body.value.commission_percent);
+  const sourceRateThb = readFiniteNumber(body.value.source_rate_thb);
+  const partnerSharePercent = readFiniteNumber(body.value.partner_share_percent);
+  if (system === "bridge" && (commissionPercent === null || commissionPercent < 5 || commissionPercent > 10)) {
+    return errorResponse(request, env, "bridge_commission_invalid", "Bridge commission must be between 5% and 10%.", 400, false);
+  }
+  if (system === "co_partner" && (sourceRateThb === null || sourceRateThb < 0 || sourceRateThb > 1000000)) {
+    return errorResponse(request, env, "co_partner_source_rate_invalid", "Co-Partner source rate must be a valid THB amount.", 400, false);
+  }
+  if (system === "profit_share" && (partnerSharePercent === null || partnerSharePercent <= 0 || partnerSharePercent >= 100)) {
+    return errorResponse(request, env, "profit_share_invalid", "Partner share must be greater than 0% and less than 100%.", 400, false);
+  }
+  const idempotencyKey = String(request.headers.get("Idempotency-Key") || "").trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 180) {
+    return errorResponse(request, env, "idempotency_key_required", "A stable Idempotency-Key is required.", 400, false);
+  }
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || verified.value.partnerRecord.id;
+  const existingChanges = await listPartnerModelChanges(env, verified.value.partnerRecord.id, partnerId);
+  const version = existingChanges.filter((record) =>
+    fieldLinkIds(record, PARTNER_MODEL_CHANGES.model).includes(modelRecordId) &&
+    fieldText(record, PARTNER_MODEL_CHANGES.action) === "update_working_system"
+  ).length + 2;
+  const digest = await sha256Hex(`${verified.value.partnerRecord.id}:working-system:${modelRecordId}:${idempotencyKey}`);
+  const requestKey = `pws_${digest.slice(0, 28)}`;
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_PARTNER_MODEL_CHANGES?: string }).AIRTABLE_TABLE_PARTNER_MODEL_CHANGES || "tbl8kxhjKzGU0xx4L");
+  const duplicates = await listAirtableRecords(env, tableId, { filterByFormula: `{${PARTNER_MODEL_CHANGES.requestKey}}='${escapeFormulaString(requestKey)}'`, maxRecords: 2 });
+  if (duplicates.length === 1) return json(request, env, { ok: true, idempotent: true, request_id: duplicates[0]?.id, status: "review" });
+  if (duplicates.length > 1) return errorResponse(request, env, "working_system_idempotency_conflict", "Duplicate agreement request requires review.", 409, false);
+  const now = new Date().toISOString();
+  const payload = compactObject({
+    system,
+    version,
+    commission_percent: system === "bridge" ? commissionPercent : null,
+    source_rate_thb: system === "co_partner" ? sourceRateThb : null,
+    partner_share_percent: system === "profit_share" ? partnerSharePercent : null,
+    mmd_share_percent: system === "profit_share" && partnerSharePercent !== null ? 100 - partnerSharePercent : null,
+    basis_rule: "payment_truth_net_basis",
+    effective_from: normalizeIsoDate(readString(body.value, "effective_from")) || now,
+    change_reason: readString(body.value, "change_reason").slice(0, 1200)
+  });
+  const created = await createAirtableRecord(env, tableId, {
+    [PARTNER_MODEL_CHANGES.requestKey]: requestKey,
+    [PARTNER_MODEL_CHANGES.partner]: [verified.value.partnerRecord.id],
+    [PARTNER_MODEL_CHANGES.model]: [modelRecordId],
+    [PARTNER_MODEL_CHANGES.action]: "update_working_system",
+    [PARTNER_MODEL_CHANGES.status]: "review",
+    [PARTNER_MODEL_CHANGES.payloadJson]: JSON.stringify(payload),
+    [PARTNER_MODEL_CHANGES.shareWithMmd]: true,
+    [PARTNER_MODEL_CHANGES.idempotencyKey]: digest,
+    [PARTNER_MODEL_CHANGES.revision]: version,
+    [PARTNER_MODEL_CHANGES.submittedAt]: now,
+    [PARTNER_MODEL_CHANGES.updatedAt]: now,
+    [PARTNER_MODEL_CHANGES.actorRef]: `partner:${verified.value.partnerRecord.id}`,
+    [PARTNER_MODEL_CHANGES.partnerId]: partnerId
+  }, true);
+  try {
+    await sendTelegramMessage(env, ["PARTNER WORKING SYSTEM V2", "", `Partner: ${partnerId}`, `Model: ${modelRecordId}`, `System: ${system}`, `Version: ${version}`, `Request: ${created.id}`, "Authority: pending Boss Per review; no ledger mutation"].join("\n"), "partner_confirm");
+  } catch (error) {
+    console.error("partner working system telegram alert failed", error);
+  }
+  return json(request, env, { ok: true, request_id: created.id, status: "review", version, system, canonical_agreement_mutated: false, ledger_mutated: false, requires_per_approval: true }, 201);
 }
 
 async function handlePartnerModelChange(request: Request, env: RuntimeEnv): Promise<Response> {
