@@ -29,6 +29,7 @@ pattern = "sigil.mmdbkk.com/__internal/booking/confirm*"
 zone_name = "mmdbkk.com"
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 WEB_BASE_URL = "https://mmdbkk.com"
