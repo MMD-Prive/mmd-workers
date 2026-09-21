@@ -33,10 +33,10 @@ export function isKenjiLv5OperationalRpcRequest(path, method = "") {
     && String(method || "").toUpperCase() === "POST";
 }
 
-export async function handleKenjiLv5OperationalRpc(request, env = {}) {
+export async function handleKenjiLv5OperationalRpc(request, env = {}, options = {}) {
   const path = normalizePath(new URL(request.url).pathname);
   if (path === KENJI_RECOMMENDATION_RPC_PATH) {
-    return handleKenjiRecommendationRpc(request, env);
+    return handleKenjiRecommendationRpc(request, env, options.recommendation || options);
   }
   if (!authorized(request, env)) return json({ ok: false, error: "not_found" }, 404);
 
