@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import ts from 'typescript';
+import {build} from 'esbuild';
 const source=await readFile(new URL('../src/index.ts',import.meta.url),'utf8');
-const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const js=(await build({stdin:{contents:source,loader:'ts',resolveDir:new URL('../src/',import.meta.url).pathname},bundle:true,write:false,format:'esm',platform:'neutral'})).outputFiles[0].text;
 const worker=(await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'))).default;
 const env={ALLOWED_ORIGINS:'https://www.mmdbkk.com'};
 const req=(body,origin='https://www.mmdbkk.com')=>new Request('https://www.mmdbkk.com/v1/partner/line/exchange',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(body)});

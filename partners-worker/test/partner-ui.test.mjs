@@ -78,3 +78,24 @@ test('private schedule encrypts locally, refuses overlap, survives relock, and n
   assert.match(q('[data-private-events]').textContent,/PRIVATE QA NOTE/);
   assert.deepEqual(errors,[]);
 });
+
+async function encryptedBackup(partnerId,note,pin='backup-password'){
+ const salt=webcrypto.getRandomValues(new Uint8Array(16)),iv=webcrypto.getRandomValues(new Uint8Array(12));
+ const base=await webcrypto.subtle.importKey('raw',new TextEncoder().encode(pin),'PBKDF2',false,['deriveKey']);
+ const key=await webcrypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt']);
+ const cipher=await webcrypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(JSON.stringify({_partner_record_id:partnerId,travel_notes:{},model_notes:{},general_note:note,events:[]})));
+ return JSON.stringify({version:1,salt:Buffer.from(salt).toString('base64url'),iv:Buffer.from(iv).toString('base64url'),ciphertext:Buffer.from(cipher).toString('base64url')});
+}
+test('backup import rejects another Partner, decrypts locally, and persists with current PIN',async t=>{
+ const {q,w,f,errors}=await ui(t);q('[data-vault-pin]').value='current-password';q('[data-unlock-vault]').click();await settle(()=>!q('[data-vault-open]').hidden);
+ async function importFile(id){const file=new w.File([await encryptedBackup(id,'RECOVERED PRIVATE NOTE')],'backup.json',{type:'application/json'});Object.defineProperty(q('[data-import-vault-file]'),'files',{value:[file],configurable:true});q('[data-import-vault-pin]').value='backup-password';q('[data-import-vault]').click();await settle(()=>!q('[data-import-vault]').disabled);}
+ await importFile('recOTHERPARTNER00');assert.match(q('[data-flash]').textContent,/ไม่ตรงกับ Partner/);assert.equal(f.objects.size,0);
+ await importFile(f.db.Partners[0].id);assert.equal(q('[data-general-note]').value,'RECOVERED PRIVATE NOTE');assert.doesNotMatch(JSON.stringify([...f.objects.values()]),/RECOVERED PRIVATE NOTE|backup-password|current-password/);
+ q('[data-lock-vault]').click();q('[data-vault-pin]').value='current-password';q('[data-unlock-vault]').click();await settle(()=>!q('[data-vault-open]').hidden);assert.equal(q('[data-general-note]').value,'RECOVERED PRIVATE NOTE');assert.deepEqual(errors,[]);
+});
+test('failed encrypted save blocks queued overwrites and preserves the unsaved note for backup',async t=>{
+ const {q,f,errors}=await ui(t);q('[data-vault-pin]').value='current-password';q('[data-unlock-vault]').click();await settle(()=>!q('[data-vault-open]').hidden);
+ const original=f.env.PARTNER_ASSETS.put;let attempts=0;f.env.PARTNER_ASSETS.put=async()=>{attempts++;return null;};
+ q('[data-general-note]').value='UNSAVED LOCAL NOTE';q('[data-save-vault]').click();q('[data-save-vault]').click();await settle(()=>attempts===1&&q('[data-flash]').textContent.includes('อีกอุปกรณ์'));
+ assert.equal(attempts,1);assert.equal(q('[data-general-note]').value,'UNSAVED LOCAL NOTE');assert.equal(f.objects.size,0);f.env.PARTNER_ASSETS.put=original;assert.deepEqual(errors,[]);
+});

@@ -28,3 +28,12 @@ test('owner writes require exact origin and fixed route; browser spoofed actor i
   assert.equal(f.calls[0].headers.get('x-mmd-owner-id'),'owner-fixture');
   assert.equal(f.calls[0].headers.get('cookie'),null);
 });
+
+test('owner preview forwards only the validated request ID and all new financial routes stay fixed',async()=>{
+ const f=await fixture();await handlePartnerOwnerConsole(f.request('/v1/admin/partners/asset-preview?request_id=recAAAAAAAAAAAAAA&url=https://evil.invalid'),f.env,{});
+ assert.equal(f.calls[0].url,'https://partners-worker.internal/v1/partner/admin/model-changes/asset?request_id=recAAAAAAAAAAAAAA');
+ const page=await handlePartnerOwnerConsole(f.request('/internal/admin/partners'),f.env,{}),html=await page.text();
+ const script=html.match(/<script>([\s\S]*?)<\/script>/)[1];assert.doesNotThrow(()=>new Function(script));
+ assert.match(html,/approve_public_image/);assert.match(html,/reviewed_total_thb/);
+ for(const route of ['capture','settlement-approve','materialize']){const r=await handlePartnerOwnerConsole(f.request('/v1/admin/partners/'+route,{method:'POST',headers:{origin,'content-type':'application/json'},body:'{}'}),f.env,{});assert.equal(r.status,200);}
+});
