@@ -8,7 +8,11 @@ on:
       - "shared/shop-*.mjs"
       - "webflow/himai-shop/**"
       - "webflow/mmd-shop/**"
+      - "webflow/shared/**"
+      - "webflow/pay/checkout/**"
       - "telegram-worker/**"
+      - "scripts/test-shop-phase1*"
+      - "docs/architecture/SHOP_PHASE1_TRUSTED_CHECKOUT_20260922.md"
       - ".github/workflows/shop-phase1-safety-ci.yml"
 
 permissions:
@@ -25,23 +29,36 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Archive tracked source for reproducible verification
+      - name: Phase 1 and existing commerce regressions
         run: |
-          git rev-parse HEAD > "$RUNNER_TEMP/shop-phase1-source-sha.txt"
-          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/shop-phase1-source.tar.gz"
-      - uses: actions/upload-artifact@v4
+          set -euo pipefail
+          node scripts/test-shop-phase1.mjs | tee "$RUNNER_TEMP/shop-phase1-tests.txt"
+      - name: Secret-free Worker bundle validation
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4 deploy --dry-run --config himai-chat-worker/wrangler.toml
+          npx --yes wrangler@4 deploy --dry-run --config payments-worker/wrangler.merged.toml
+          npx --yes wrangler@4 deploy --dry-run --config telegram-worker/wrangler.toml
+      - uses: actions/setup-python@v5
         with:
-          name: shop-phase1-source
-          path: |
-            ${{ runner.temp }}/shop-phase1-source.tar.gz
-            ${{ runner.temp }}/shop-phase1-source-sha.txt
-          retention-days: 3
-      - name: Existing commerce regression baseline
-        run: node --experimental-default-type=module --test himai-chat-worker/test/*.test.mjs
-      - name: Phase 1 isolated safety suite
+          python-version: "3.12"
+      - name: Install isolated browser test tools
         run: |
-          if test -f scripts/test-shop-phase1.mjs; then
-            node scripts/test-shop-phase1.mjs
-          else
-            echo "Phase 1 source preparation: dedicated suite not added yet."
-          fi
+          python -m pip install playwright==1.58.0
+          python -m playwright install --with-deps chromium
+      - name: Browser scripts on generated fixture documents, no live transactions
+        env:
+          SHOP_BROWSER_REPORT: ${{ runner.temp }}/shop-phase1-browser-report.json
+        run: python scripts/test-shop-phase1-browser.py
+      - name: Write tested source receipt
+        if: always()
+        run: git rev-parse HEAD > "$RUNNER_TEMP/shop-phase1-source-sha.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shop-phase1-verification
+          path: |
+            ${{ runner.temp }}/shop-phase1-tests.txt
+            ${{ runner.temp }}/shop-phase1-browser-report.json
+            ${{ runner.temp }}/shop-phase1-source-sha.txt
+          retention-days: 14
