@@ -1,4 +1,5 @@
 import himaiChatWorker from "./index.js";
+import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { handleShopCatalog } from "./shop-catalog.js";
 import { handleShopMovements } from "./shop-movements.js";
 import { handleShopAlert } from "./shop-alerts.js";
@@ -25,6 +26,17 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
+
+    if (request.method.toUpperCase() === "GET" && path === "/health") {
+      const response = await himaiChatWorker.fetch(request, env, ctx);
+      if (!response?.ok) return response;
+      const payload = await response.clone().json().catch(() => null);
+      if (!payload || typeof payload !== "object") return response;
+      return json({
+        ...payload,
+        analytics: authorityRuntimeHealth(env, "himai-chat-worker", ctx),
+      }, response.status);
+    }
 
     if (path === "/mmd-shop/internal/reservation/release" && request.method.toUpperCase() === "POST") {
       return handleInternalReservationMutation(request, env, "release");
