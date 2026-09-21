@@ -5,6 +5,8 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/payment-confirmation-followthrough.js"
+      - "admin-worker/payment-confirmation-followthrough.test.mjs"
       - "admin-worker/src/payment-review-display-context.js"
       - "admin-worker/src/payment-review-discovery.js"
       - "admin-worker/payment-review-discovery.test.mjs"
@@ -71,7 +73,7 @@ jobs:
           set -euo pipefail
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
-          node --test admin-worker/payment-review-simple.test.mjs
+          node --test admin-worker/payment-review-simple.test.mjs admin-worker/payment-confirmation-followthrough.test.mjs
           node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
 
       - name: Payment workspace interaction guards

@@ -16,6 +16,26 @@ const prefix = (lane) => `${ROOT}${lane}/records/`;
 const keyOf = (lane, id) => `${prefix(lane)}${id}.json`;
 const receiptKey = (lane, id) => `${ROOT}${lane}/receipts/${id}.json`;
 
+// Internal journal access only. HTTP callers must project a safe subset and
+// authorize the exact canonical payment before using the delivery-only retry.
+export async function readPaymentNotification({ bucket, lane, eventKey }) {
+  if (!bucket?.get) throw new Error("notification_storage_unavailable");
+  const id = await notificationDigest(`${lane}:${eventKey}`);
+  return (await read(bucket, receiptKey(lane, id)) || await read(bucket, keyOf(lane, id)))?.record || null;
+}
+
+export async function retryPaymentNotification({ bucket, lane, eventKey, expectedPayload, deliver, now = Date.now() }) {
+  if (!bucket?.get || !bucket?.put) throw new Error("notification_storage_unavailable");
+  const id = await notificationDigest(`${lane}:${eventKey}`);
+  const envelope = await read(bucket, receiptKey(lane, id)) || await read(bucket, keyOf(lane, id));
+  if (!envelope) throw new Error("notification_not_found");
+  if (Object.entries(expectedPayload).some(([key, value]) => envelope.record.payload?.[key] !== value)) {
+    throw new Error("notification_context_mismatch");
+  }
+  // Never enqueue, reset an expired receipt, bypass backoff, or change money.
+  return attempt({ bucket, lane, envelope, deliver, now });
+}
+
 async function read(bucket, key) {
   const object = await bucket.get(key);
   if (!object) return null;

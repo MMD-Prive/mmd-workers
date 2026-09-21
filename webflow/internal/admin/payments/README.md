@@ -1,3 +1,17 @@
+## Confirmation follow-through — 2026-09-21
+
+Build `payment-confirmation-20260921` adds persistent follow-through to the paid-job view.
+
+- Open a paid deposit/full payment to read the private delivery journal and canonical Session acknowledgement timestamps. Delivery acceptance and clicking Confirm remain separate statuses for each recipient.
+- `GET review-queue?view=confirmation&session_id=…&payment_ref=…&payment_stage=…` is read-only. The response allows only delivery booleans, timestamps and bounded state; signed links and recipient identities stay server-side.
+- `POST review` with `action: retry_confirmation` revisits an existing delivery event only. It requires owner/admin, an exact canonical Paid payment/session/stage/client match, an active job and an exact journal subject. It never creates a delivery event or calls money settlement. Existing per-recipient checkpoints, retry lease, backoff and expiry remain authoritative.
+- Missing history stays unknown. Missing recipient bindings require team forwarding from the existing Telegram message. Sending a link never implies recipient acknowledgement; manual forwarding itself is not tracked as an automatic delivery.
+- Final payments, tips, membership and shop payments cannot re-release initial job links.
+
+Webflow deployment: the source remains a self-contained HTML file for local validation. It now exceeds Webflow's 50,000-character embed limit: publish its `<style>…</style>` block to the secondary HtmlEmbed `a52fc9d7-80a2-6244-30e4-5209520328d3`, and the remaining HTML/JS to primary HtmlEmbed `5a2aa67e-dc32-3826-e2d8-3708b2a4f124`. Do not keep the obsolete secondary override. Both parts derive from this same source.
+
+Validation: 7 follow-through API tests, 10 UI interaction tests, 89 delivery/evidence regressions and 17 review/discovery/provenance tests. Live production queue checks require an authenticated admin session; no real approval or notification is sent during validation.
+
 ## Payment workspace — 2026-09-21
 
 Build `payment-flow-20260921` replaces the separate job/slip tabs with one search and a list/detail workspace. The visible flow is customer/job → evidence from web or LINE → verified money → confirmation delivery. Desktop keeps the selected job and evidence beside the list; mobile opens one task at a time with a back button.

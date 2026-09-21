@@ -1,4 +1,4 @@
-import { dispatchPaymentNotification, drainPaymentNotifications, notificationDigest } from "../../shared/payment-notification-outbox.mjs";
+import { dispatchPaymentNotification, drainPaymentNotifications, notificationDigest, retryPaymentNotification } from "../../shared/payment-notification-outbox.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
@@ -35,6 +35,14 @@ const MODEL_FIELDS = Object.freeze({
 });
 
 const INITIAL_JOB_PAYMENT_STAGES = new Set(["deposit", "full"]);
+
+export async function retryExistingApprovedJobLinks(env, context) {
+  return retryPaymentNotification({
+    bucket: env.LINE_SLIP_EVIDENCE, lane: "approved-job-links",
+    eventKey: `${context.session_id}:${context.payment_stage}`, expectedPayload: context,
+    deliver: (record, checkpoint) => deliverApprovedNotification(env, record, checkpoint),
+  });
+}
 
 export async function dispatchApprovedJobLinks(env, { session_id, payment_stage, payment_ref } = {}) {
   if (!clean(session_id, 220) || !INITIAL_JOB_PAYMENT_STAGES.has(code(payment_stage))) {
