@@ -1117,9 +1117,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
 
   const partnerRecord = verified.value.partnerRecord;
   const partnerId = fieldText(partnerRecord, MODEL_PARTNERS.partnerId) || "";
-  const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
-  const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
-  const telegramConnected = telegramStatus === "verified" && typeof telegramId === "string" && /^\d{5,20}$/.test(telegramId);
+  const telegramConnected = partnerHasVerifiedTelegram(partnerRecord);
   const [referrals, commissions, partnerSalesRules, modelChanges, sessions] = await Promise.all([
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id, partnerId),
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id, partnerId),
@@ -1166,6 +1164,8 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
       id: partnerRecord.id,
       name: fieldText(partnerRecord, MODEL_PARTNERS.partnerName) || fieldText(partnerRecord, MODEL_PARTNERS.displayName) || "SĪGIL Partner",
       telegram_connected: telegramConnected,
+      telegram_required_for_job_response: true,
+      job_response_ready: telegramConnected,
       telegram_username: telegramConnected ? fieldText(partnerRecord, MODEL_PARTNERS.telegramUsername) || null : null,
       terms_accepted: Boolean(fieldText(partnerRecord, MODEL_PARTNERS.agreementVersion) && fieldText(partnerRecord, MODEL_PARTNERS.agreementAcceptedAt)),
       terms_version: fieldText(partnerRecord, MODEL_PARTNERS.agreementVersion),
@@ -2721,6 +2721,16 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
     return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
   }
+  if (!partnerHasVerifiedTelegram(verified.value.partnerRecord)) {
+    return errorResponse(
+      request,
+      env,
+      "telegram_connect_required",
+      "Connect and verify Telegram before responding to a Partner job.",
+      409,
+      false
+    );
+  }
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
   const paymentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.paymentStatus));
@@ -4006,6 +4016,11 @@ function normalizeStatus(value: string | null): string {
   return String(value || "").trim().toLowerCase();
 }
 
+function partnerHasVerifiedTelegram(record: AirtableRecord): boolean {
+  const telegramId = fieldText(record, MODEL_PARTNERS.telegramId);
+  return normalizeStatus(fieldText(record, MODEL_PARTNERS.telegramVerificationStatus)) === "verified" && /^\d{5,20}$/.test(telegramId || "");
+}
+
 function isPaidStatus(value: string): boolean {
   const status = normalizeStatus(value);
   return ["paid", "settled", "complete", "completed"].includes(status);
@@ -4251,7 +4266,7 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
   return result;
 }
 const PARTNER_LINE_LOGIN_URL = "https://mmdbkk.com/sigil/model/dashboard/partner-login";
-const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner · LINE</title><style>*{box-sizing:border-box}body{margin:0;background:#10110f;color:#f5f1e7;font:17px/1.65 system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}small{color:#c0b69d;letter-spacing:.2em}h1{font-size:36px;line-height:1.2;margin:18px 0}button{min-height:54px;padding:14px;background:#06c755;color:#fff;border:0;border-radius:8px;font:inherit;width:100%;cursor:pointer}button:disabled{opacity:.6}#state{min-height:56px;color:#ddd4c1}a{color:#ddd4c1}</style></head><body><main><small>SĪGIL · PARTNER</small><h1>พื้นที่พาร์ทเนอร์ของคุณ</h1><p>ใช้ LINE บัญชีเดิมที่เชื่อมกับ Partner เพื่อเข้าดูตารางงานและเชื่อม Telegram</p><button id="go" type="button">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status" aria-live="polite"></p><a href="https://www.mmdbkk.com/partner/dashboard">กลับหน้าพาร์ทเนอร์</a></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
+const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner · LINE</title><style>*{box-sizing:border-box}body{margin:0;background:#10110f;color:#f5f1e7;font:17px/1.65 system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}small{color:#c0b69d;letter-spacing:.2em}h1{font-size:36px;line-height:1.2;margin:18px 0}button{min-height:54px;padding:14px;background:#06c755;color:#fff;border:0;border-radius:8px;font:inherit;width:100%;cursor:pointer}button:disabled{opacity:.6}#state{min-height:56px;color:#ddd4c1}a{color:#ddd4c1}</style></head><body><main><small>SĪGIL · PARTNER</small><h1>พื้นที่พาร์ทเนอร์ของคุณ</h1><p>ใช้ LINE บัญชีเดิมเพื่อเข้าดูข้อมูล จากนั้นเชื่อม Telegram ให้เรียบร้อยก่อนตอบรับงาน</p><button id="go" type="button">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status" aria-live="polite"></p><a href="https://www.mmdbkk.com/partner/dashboard">กลับหน้าพาร์ทเนอร์</a></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
 const go=document.getElementById('go'),state=document.getElementById('state');
 let initialized;
 function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}

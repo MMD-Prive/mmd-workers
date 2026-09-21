@@ -87,6 +87,15 @@ test("Control Room includes jobs, models, earnings, Telegram and mobile layout",
   assert.match(uiSource, /@media\(max-width:520px\)/);
 });
 
+test("Telegram verification is a server-enforced onboarding gate for job responses", () => {
+  assert.match(indexSource, /partnerHasVerifiedTelegram\(verified\.value\.partnerRecord\)/);
+  assert.match(indexSource, /telegram_connect_required/);
+  assert.match(indexSource, /telegram_required_for_job_response: true/);
+  assert.match(indexSource, /job_response_ready: telegramConnected/);
+  assert.match(uiSource, /data-telegram-job-gate/);
+  assert.match(uiSource, /LINE CONNECTED · TELEGRAM REQUIRED/);
+});
+
 test("production routing binds the Partner Control Room page and follows the apex redirect", () => {
   for (const route of ["mmdbkk.com/partner/dashboard*", "www.mmdbkk.com/partner/dashboard*"]) {
     assert.match(wranglerSource, new RegExp(route.replaceAll("/", "\\/")));
