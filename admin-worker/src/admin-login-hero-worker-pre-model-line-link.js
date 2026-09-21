@@ -109,7 +109,7 @@ export default {
     // verification remains the materialization boundary.
     let membershipActionContext = null;
     if (isSigilJobMembershipActionRequest(path, request.method)) {
-      const prepared = await prepareSigilJobCreateRequest(request);
+      const prepared = await prepareSigilJobCreateRequest(request, env);
       if (prepared.response) return prepared.response;
       request = prepared.request;
       membershipActionContext = prepared;

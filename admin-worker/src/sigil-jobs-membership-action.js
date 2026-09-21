@@ -1,4 +1,6 @@
 import { normalizeJobCreateBody } from "./job-create-contract.js";
+import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 export const SIGIL_JOB_CREATE_PATH = "/v1/admin/job/create";
 export const MEMBERSHIP_ACTION_VERSION = "membership_action_v1";
 export const MEMBERSHIP_ACTION_NOTE_MARKER = "[MMD_MEMBERSHIP_ACTION_V1]";
@@ -123,7 +125,7 @@ export function canonicalizeSigilJobBody(input = {}) {
   };
 }
 
-export async function prepareSigilJobCreateRequest(request) {
+export async function prepareSigilJobCreateRequest(request, env = {}) {
   let parsed;
   try {
     parsed = await request.clone().json();
@@ -135,6 +137,32 @@ export async function prepareSigilJobCreateRequest(request) {
 
   try {
     const canonical = canonicalizeSigilJobBody(parsed);
+    const salesControl = await resolveCreateJobSalesControl(env, canonical.body);
+    if (salesControl.enforced && salesControl.offer?.sellable !== true) {
+      return {
+        response: json({
+          ok: false,
+          error: "model_sales_control_blocked",
+          reason_code: salesControl.offer?.reason_code || "sales_control_unavailable",
+          matched_rule_key: salesControl.offer?.matched_rule_key || null,
+        }, salesControl.unavailable ? 503 : 409),
+      };
+    }
+    if (salesControl.enforced) {
+      canonical.body.model_sales_control = {
+        policy_version: salesControl.offer.policy_version,
+        matched_rule_key: salesControl.offer.matched_rule_key || null,
+        rule_version: salesControl.offer.rule_version ?? null,
+        sellable: true,
+        customer_rate_thb: Number.isFinite(salesControl.offer.customer_rate_thb)
+          ? salesControl.offer.customer_rate_thb
+          : null,
+        price_visible: salesControl.offer.price_visible === true,
+        requires_per_approval: salesControl.offer.requires_per_approval === true,
+        term_summary: text(salesControl.offer.term_summary, 240) || null,
+        resolved_at: new Date().toISOString(),
+      };
+    }
     const headers = new Headers(request.headers);
     headers.set("Content-Type", "application/json");
     headers.delete("Content-Length");
@@ -185,6 +213,110 @@ export async function augmentSigilJobCreateResponse(response, context = {}) {
     statusText: response.statusText,
     headers,
   });
+}
+
+
+async function resolveCreateJobSalesControl(env, body) {
+  const apiKey = text(env?.AIRTABLE_API_KEY, 1200);
+  const baseId = text(env?.AIRTABLE_BASE_ID, 200);
+  if (!apiKey || !baseId) return { enforced: false, state: "sales_control_env_unavailable" };
+
+  const model = body?.model && typeof body.model === "object" ? body.model : {};
+  const modelId = text(
+    body?.model_record_id || body?.model_id || model?.model_record_id || model?.record_id || model?.id,
+    100,
+  );
+  const modelKey = text(
+    model?.model_lookup_key || model?.lookup_key || model?.unique_key || body?.model_lookup_key || body?.model_name,
+    180,
+  ).toLowerCase();
+  if (!modelId && !modelKey) return { enforced: false, state: "model_identity_unavailable" };
+
+  const rulesTable = text(env.AIRTABLE_TABLE_MODEL_OFFER_RULES_ID || env.AIRTABLE_TABLE_MODEL_OFFER_RULES, 200) || "MMD — Model Offer Rules";
+  let rules;
+  try {
+    rules = await salesAirtableList(env, rulesTable, "");
+  } catch (_) {
+    return { enforced: true, unavailable: true, offer: { sellable: false, reason_code: "model_offer_rules_unavailable" } };
+  }
+
+  const relevantRules = rules.filter((record) => {
+    const fields = record?.fields || {};
+    const linked = Array.isArray(fields.Model) ? fields.Model.map((value) => text(value?.id || value, 100)) : [];
+    const key = text(fields.model_key, 180).toLowerCase();
+    return Boolean((modelId && linked.includes(modelId)) || (modelKey && key && key === modelKey));
+  });
+  if (!relevantRules.length) return { enforced: false, state: "legacy_unconfigured" };
+
+  const clientId = text(body?.client_record_id || body?.client_id || body?.client_lineage?.client_id, 100);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(clientId)) {
+    return { enforced: true, offer: { sellable: false, reason_code: "canonical_client_required" } };
+  }
+
+  const entitlementTable = text(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS, 200) || "MMD — Member Entitlements";
+  let entitlementRows;
+  try {
+    entitlementRows = await salesAirtableList(
+      env,
+      entitlementTable,
+      `FIND("${salesFormulaValue(clientId)}",ARRAYJOIN({client}))`,
+    );
+  } catch (_) {
+    return { enforced: true, unavailable: true, offer: { sellable: false, reason_code: "entitlement_source_unavailable" } };
+  }
+  const snapshot = resolveMemberEntitlements(entitlementRows);
+  if (snapshot?.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot?.fail_closed !== true) {
+    return { enforced: true, unavailable: true, offer: { sellable: false, reason_code: "entitlement_snapshot_invalid" } };
+  }
+
+  const offer = resolveModelSalesOffer({
+    model_id: modelId,
+    model_key: modelKey,
+    client_id: clientId,
+    requested_at: createJobRequestedAt(body),
+    work_lane: body?.job_type || body?.work?.job_lane || body?.work?.work_type || "",
+    entitlement_snapshot: snapshot,
+    rules: relevantRules,
+  });
+  return { enforced: true, state: "resolved", offer };
+}
+
+async function salesAirtableList(env, table, filterByFormula) {
+  const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(text(env.AIRTABLE_BASE_ID, 200))}/${encodeURIComponent(table)}`);
+  url.searchParams.set("pageSize", "100");
+  if (filterByFormula) url.searchParams.set("filterByFormula", filterByFormula);
+  const records = [];
+  let offset = "";
+  do {
+    if (offset) url.searchParams.set("offset", offset);
+    else url.searchParams.delete("offset");
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        authorization: `Bearer ${text(env.AIRTABLE_API_KEY, 1200)}`,
+        accept: "application/json",
+      },
+    });
+    if (!response.ok) throw new Error("sales_airtable_unavailable");
+    const payload = await response.json().catch(() => ({}));
+    records.push(...(Array.isArray(payload?.records) ? payload.records : []));
+    offset = text(payload?.offset, 200);
+  } while (offset && records.length < 500);
+  return records.slice(0, 500);
+}
+
+function salesFormulaValue(value) {
+  return text(value, 200).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function createJobRequestedAt(body) {
+  const raw = text(body?.start_time || body?.job_details?.start_time || body?.schedule?.start, 100);
+  if (raw && Number.isFinite(Date.parse(raw))) return new Date(raw).toISOString();
+  const date = text(body?.job_date || body?.job_details?.job_date || body?.schedule?.date, 20);
+  const time = raw.match(/^([01]\d|2[0-3]):[0-5]\d$/) ? raw : "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && time) return `${date}T${time}:00+07:00`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return `${date}T12:00:00+07:00`;
+  return new Date().toISOString();
 }
 
 function promotionForRenewal(tierHint) {

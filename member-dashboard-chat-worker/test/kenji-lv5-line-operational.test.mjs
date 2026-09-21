@@ -129,6 +129,36 @@ test("model access silent state does not reveal private model existence or sched
   assert.doesNotMatch(reply, /ว่าง|ไม่ว่าง|มีนายแบบ|ไม่มีนายแบบ/);
 });
 
+test("matched Model with Sales Control off stops booking progression without exposing a price", () => {
+  const reply = renderKenjiLv5ModelGateReply({
+    required: true,
+    status: "match",
+    model: {
+      model_code: "EMs21",
+      working_name: "J Dye",
+      sales: {
+        sellable: false,
+        visibility: "off",
+        customer_rate_thb: null,
+        price_visible: false,
+        reason_code: "sales_visibility_off",
+      },
+    },
+  });
+  assert.match(reply, /เงื่อนไขการขาย/);
+  assert.match(reply, /ยังไม่เสนอราคา/);
+  assert.doesNotMatch(reply, /\d[\d,]*\s*(?:บาท|THB)/i);
+});
+
+test("matched Model with an allowed Sales Control offer continues the existing booking lane", () => {
+  const reply = renderKenjiLv5ModelGateReply({
+    required: true,
+    status: "match",
+    model: { sales: { sellable: true, price_visible: true, customer_rate_thb: 25000 } },
+  });
+  assert.equal(reply, "");
+});
+
 test("verified model code maps to canonical Calendar name while an unverified alias still blocks", () => {
   const same = KENJI_LV5_LINE_REQUEST_INTERNALS.needsCanonicalCalendarMapping({
     required: true,

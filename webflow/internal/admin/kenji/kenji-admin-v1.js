@@ -7,7 +7,7 @@
 
   var API = "/v1/admin/kenji/knowledge";
   var MODEL_API = "/v1/admin/kenji/models";
-  var MODEL_SALES_API = MODEL_API + "/sales/rule";
+  var MODEL_SALES_API = MODEL_API + "/sales/rules";
   var state = {
     cards: [],
     selected: null,
@@ -22,6 +22,10 @@
     modelSearchSeq: 0,
     modelDraftKey: "",
     modelDraftFingerprint: "",
+    modelSalesRules: [],
+    modelSalesLoading: false,
+    modelSalesKey: "",
+    modelSalesFingerprint: "",
   };
   root.innerHTML = shell();
   bind();
@@ -202,8 +206,11 @@
 
   function selectModel(id) {
     state.selectedModel=state.models.find(function(model){return (model.model_id||model.keyword_profile_id||model.model_key)===id;})||null;
+    state.modelSalesRules=[];
+    state.modelSalesLoading=!!(state.selectedModel&&state.selectedModel.model_id);
     renderModelList();
     renderModelEditor();
+    if(state.selectedModel&&state.selectedModel.model_id) loadModelSales();
   }
 
   function newModel() {
@@ -294,6 +301,37 @@
     var adminMedia=model.has_admin_preview&&model.admin_preview_url
       ? '<div class="ka__modelPreview"><span>ADMIN MEDIA PREVIEW</span><img src="'+attr(model.admin_preview_url)+'" alt="'+attr((model.working_name||model.model_key||"Model")+" primary media")+'" loading="lazy" decoding="async" style="display:block;width:100%;max-height:440px;object-fit:cover;border-radius:16px;margin-top:10px"><small>Admin only · Worker-resolved primary media · customer exposure remains controlled by review/access policy</small></div>'
       : '<div class="ka__notice"><b>Admin media preview</b><br>ยังไม่มี primary image ที่ Worker อนุญาตให้ preview.</div>';
+    var salesRule=state.modelSalesRules[0]||{};
+    var salesAudiences=Array.isArray(salesRule.audience_scope)?salesRule.audience_scope:[];
+    var salesVisibility=salesRule.sales_visibility||"off";
+    var salesSchedule=salesRule.schedule_type||"Always";
+    var salesPriceVisibility=(salesRule.price_visibility||"Per approval only").toLowerCase()==="visible"?"visible":"Per approval only";
+    var salesDays=Array.isArray(salesRule.days_of_week)?salesRule.days_of_week:[];
+    var salesPanel=model.model_id
+      ? '<div class="ka__scopeBlock"><div class="ka__subhead"><div><span>MODEL SALES CONTROL</span><h3>Pricing · Audience · Schedule</h3></div><b>'+esc(state.modelSalesLoading?"Loading":(salesRule.status||"Ready"))+'</b></div>'
+        +'<div class="ka__notice"><b>Authority</b><br>Customer sell rate และเงื่อนไขขายมาจาก Model Sales Control เท่านั้น · Partner source rate เป็นข้อมูลภายใน · Activate จะมีผลกับ Booking / Kenji / Create Job ตาม canonical resolver.</div>'
+        +'<div class="ka__modelGrid"><label>Customer Sell Rate · THB<input id="kaSalesCustomerRate" inputmode="numeric" value="'+attr(salesRule.customer_sell_rate_thb==null?"":salesRule.customer_sell_rate_thb)+'" placeholder="25000"></label><label>Partner / Source Rate · THB<input id="kaSalesSourceRate" inputmode="numeric" value="'+attr(salesRule.partner_source_rate_thb==null?"":salesRule.partner_source_rate_thb)+'" placeholder="internal only"></label></div>'
+        +'<div class="ka__modelGrid"><label>Sales Visibility<select id="kaSalesVisibility">'+option("on","On",salesVisibility)+option("off","Off",salesVisibility)+'</select></label><label>Customer Price Visibility<select id="kaSalesPriceVisibility">'+option("visible","Approved rate visible",salesPriceVisibility)+option("Per approval only","Per approval only",salesPriceVisibility)+'</select></label></div>'
+        +'<div class="ka__scopeBlock"><b>Customer Audience</b><div class="ka__chips">'
+          +chip("kaSalesAudience","Public Member","Public Member",salesAudiences.includes("Public Member"))
+          +chip("kaSalesAudience","Elite","Elite",salesAudiences.includes("Elite"))
+          +chip("kaSalesAudience","Red Card","Red Card",salesAudiences.includes("Red Card"))
+          +chip("kaSalesAudience","Standard","Standard",salesAudiences.includes("Standard"))
+          +chip("kaSalesAudience","Premium","Premium",salesAudiences.includes("Premium"))
+          +chip("kaSalesAudience","VIP / Black Card","VIP / Black Card",salesAudiences.includes("VIP / Black Card"))
+          +chip("kaSalesAudience","SVIP","SVIP",salesAudiences.includes("SVIP"))
+          +chip("kaSalesAudience","Per Review","Per Review",salesAudiences.includes("Per Review"))
+        +'</div></div>'
+        +'<div class="ka__modelGrid"><label>Schedule<select id="kaSalesSchedule">'+option("Always","Always",salesSchedule)+option("Date range","Date range",salesSchedule)+option("Date + time range","Date + time range",salesSchedule)+option("Weekly recurring","Weekly recurring",salesSchedule)+'</select></label><label>Priority<input id="kaSalesPriority" inputmode="numeric" value="'+attr(salesRule.priority==null?0:salesRule.priority)+'"></label></div>'
+        +'<div class="ka__modelGrid"><label>Effective From · Bangkok<input id="kaSalesFrom" type="datetime-local" value="'+attr(datetimeLocal(salesRule.effective_from_at))+'"></label><label>Effective Until · Bangkok<input id="kaSalesUntil" type="datetime-local" value="'+attr(datetimeLocal(salesRule.effective_until_at))+'"></label></div>'
+        +'<div class="ka__scopeBlock"><b>Weekly Days</b><div class="ka__chips">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(day){return chip("kaSalesDay",day,day,salesDays.includes(day));}).join("")+'</div></div>'
+        +'<div class="ka__modelGrid"><label>Start Time<input id="kaSalesStart" type="time" value="'+attr(salesRule.start_time_local||"")+'"></label><label>End Time<input id="kaSalesEnd" type="time" value="'+attr(salesRule.end_time_local||"")+'"></label></div>'
+        +'<label>Change Reason<textarea id="kaSalesReason" placeholder="เหตุผลสำหรับ audit">'+esc(salesRule.change_reason||"")+'</textarea></label>'
+        +'<div class="ka__chips">'+chip("kaSalesApproval","yes","Require Per approval at use time",!!salesRule.requires_per_approval)+'</div>'
+        +'<div class="ka__actions"><button data-model-action="sales-review">Save → Review</button><button class="is-primary" data-model-action="sales-activate">Activate Sales Rule</button></div>'
+        +(state.modelSalesRules.length?'<small>Latest '+esc(salesRule.offer_rule_key||salesRule.rule_id||"rule")+' · v'+esc(salesRule.version||1)+' · '+esc(salesRule.updated_at||"")+'</small>':'<small>ยังไม่มี Sales Rule · การสร้างครั้งแรกจะเริ่มจากค่าในฟอร์มนี้</small>')
+      +'</div>'
+      : '<div class="ka__notice"><b>Model Sales Control</b><br>บันทึก Model identity ก่อน แล้ว Sales Control จะพร้อมตั้งค่าใน record เดียวกัน.</div>';
     node.innerHTML='<div class="ka__recordHead"><span>MODEL KEYWORD PROFILE</span><h3>'+esc(model.working_name||"New Model Draft")+'</h3><p>'+(model.keyword_profile_id?'Profile '+esc(model.keyword_profile_id)+' · ':'')+(model.model_id?'Model '+esc(model.model_id)+' · ':'')+esc(profileState)+' · v'+esc(model.profile_version||1)+' · ทุกการแก้ไขจะเข้า Review ก่อน</p></div>'
       +adminMedia
       +'<div class="ka__modelGrid"><label>Model Key<input id="kaModelKey" value="'+attr(model.model_key)+'" placeholder="ems04-sin-m" autocomplete="off"></label><label>Working Name<input id="kaModelName" value="'+attr(model.working_name)+'" placeholder="ชื่อที่ใช้ภายใน"></label></div>'
@@ -322,6 +360,7 @@
       +'<div class="ka__actions"><button class="is-primary" data-model-action="save-sales">Save Sales Control</button></div>'
       +'<div class="ka__notice"><b>Sales authority</b><br>Booking, Kenji, Create Job และ Partner Dashboard จะอ่าน rule ชุดนี้ผ่าน resolver เดียวกัน โดย source rate อยู่ภายใน MMD.</div>'
       +'<div class="ka__notice"><b>Media / Compcard</b><br>ภาพและ Compcard ยังใช้ Model Console media review เดิม ไม่อัปโหลดตรงจาก browser ใน Model Keyword Studio.</div>'
+      +salesPanel
       +'<div class="ka__modelPreview" id="kaModelPreview"><span>SAFE PREVIEW</span><p>กด Preview เพื่อดูเฉพาะ Customer-safe Info/Remark ที่กำลังเตรียมส่งเข้า Review</p></div>'
       +'<div class="ka__actions"><button data-model-action="preview">Preview Safe Reply</button><span class="ka__button" title="เก็บหน้าเดิมไว้ใน Webflow โดยไม่ลิงก์จาก Production">Legacy Backup · /kenji-model-keyword-copy</span><button class="is-primary" data-model-action="save-draft">Save Draft → Review</button></div>';
   }
@@ -361,7 +400,8 @@
     if(action==="reload")return loadModels();
     if(action==="preview")return previewModelDraft();
     if(action==="save-draft")return saveModelDraft();
-    if(action==="save-sales")return saveModelSales();
+    if(action==="sales-review")return saveModelSales(false);
+    if(action==="sales-activate")return saveModelSales(true);
   }
 
   function previewModelDraft() {
@@ -395,54 +435,76 @@
     }).catch(handleError).finally(function(){state.modelBusy=false;setModelActionsDisabled(false);});
   }
 
-  function numberValueOf(id) {
-    var raw=valueOf(id);
-    if(raw==="")return null;
-    var n=Number(raw);
-    return Number.isFinite(n)?n:null;
+
+  function datetimeLocal(value) {
+    if(!value)return "";
+    var date=new Date(value); if(Number.isNaN(date.getTime()))return "";
+    var parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(date);
+    var get=function(type){var part=parts.find(function(x){return x.type===type;});return part?part.value:"";};
+    return get("year")+"-"+get("month")+"-"+get("day")+"T"+get("hour")+":"+get("minute");
   }
 
-  function modelSalesPayload() {
+  function bangkokIsoFromLocal(value) {
+    var v=String(value||"").trim();
+    if(!v)return null;
+    return v.length===16?v+":00+07:00":v;
+  }
+
+  function loadModelSales() {
+    var model=state.selectedModel;
+    if(!model||!model.model_id)return Promise.resolve();
+    state.modelSalesLoading=true;
+    return request(MODEL_SALES_API+"?model_id="+encodeURIComponent(model.model_id)+"&model_key="+encodeURIComponent(model.model_key||""))
+      .then(function(data){state.modelSalesRules=data.items||[];})
+      .catch(function(error){state.modelSalesRules=[];toast("Sales Control พร้อมให้ลองโหลดใหม่ · "+(error.message||"source_unavailable"),true);})
+      .finally(function(){state.modelSalesLoading=false;renderModelEditor();});
+  }
+
+  function modelSalesPayload(activate) {
     var model=state.selectedModel||{};
     return {
-      model_id:model.model_id||null,
-      model_key:valueOf("kaModelKey")||model.model_key||"",
-      offer_type:valueOf("kaSalesOfferType"),
-      customer_sell_rate_thb:numberValueOf("kaSalesCustomerRate"),
-      partner_source_rate_thb:numberValueOf("kaSalesSourceRate"),
-      sales_visibility:valueOf("kaSalesVisibility"),
-      status:valueOf("kaSalesStatus"),
-      price_visibility:valueOf("kaSalesPriceVisibility"),
+      model_id:model.model_id||"",
+      model_key:model.model_key||valueOf("kaModelKey"),
+      customer_sell_rate_thb:Number(valueOf("kaSalesCustomerRate")),
+      partner_source_rate_thb:valueOf("kaSalesSourceRate")===""?null:Number(valueOf("kaSalesSourceRate")),
+      sales_visibility:valueOf("kaSalesVisibility")||"off",
+      price_visibility:valueOf("kaSalesPriceVisibility")||"Per approval only",
       audience_scope:checkedValues("kaSalesAudience"),
-      schedule_type:valueOf("kaSalesSchedule"),
-      effective_from_at:valueOf("kaSalesFrom"),
-      effective_until_at:valueOf("kaSalesUntil"),
+      schedule_type:valueOf("kaSalesSchedule")||"Always",
+      effective_from_at:bangkokIsoFromLocal(valueOf("kaSalesFrom")),
+      effective_until_at:bangkokIsoFromLocal(valueOf("kaSalesUntil")),
       days_of_week:checkedValues("kaSalesDay"),
-      start_time_local:valueOf("kaSalesStart"),
-      end_time_local:valueOf("kaSalesEnd"),
-      priority:numberValueOf("kaSalesPriority"),
-      requires_per_approval:checkedValues("kaSalesApproval").includes("required"),
-      change_reason:valueOf("kaSalesReason")||"Owner Sales Control update",
+      start_time_local:valueOf("kaSalesStart")||null,
+      end_time_local:valueOf("kaSalesEnd")||null,
+      priority:Number(valueOf("kaSalesPriority")||0),
+      requires_per_approval:checkedValues("kaSalesApproval").includes("yes"),
+      activate:activate===true,
+      change_reason:valueOf("kaSalesReason"),
     };
   }
 
-  function saveModelSales() {
-    if(state.modelBusy||!state.selectedModel)return;
-    if(!state.selectedModel.model_id&&!valueOf("kaModelKey"))return toast("เลือก Model identity ก่อนบันทึก Sales Control",true);
-    var payload=modelSalesPayload();
+  function saveModelSales(activate) {
+    if(state.modelBusy||!state.selectedModel||!state.selectedModel.model_id)return;
+    var payload=modelSalesPayload(activate);
+    if(!Number.isFinite(payload.customer_sell_rate_thb)||payload.customer_sell_rate_thb<0){toast("ใส่ Customer Sell Rate ให้ครบก่อนบันทึก",true);return;}
+    if(!payload.audience_scope.length){toast("เลือก Customer Audience อย่างน้อย 1 กลุ่ม",true);return;}
+    var fingerprint=JSON.stringify(payload);
+    if(!state.modelSalesKey||state.modelSalesFingerprint!==fingerprint){
+      state.modelSalesKey=crypto.randomUUID();
+      state.modelSalesFingerprint=fingerprint;
+    }
     state.modelBusy=true;
     setModelActionsDisabled(true);
-    toast("กำลังบันทึก Model Sales Control…");
+    toast(activate?"กำลัง Activate Sales Rule…":"กำลังส่ง Sales Rule เข้า Review…");
     return request(MODEL_SALES_API,{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","Idempotency-Key":state.modelSalesKey},
       body:JSON.stringify(payload),
     }).then(function(data){
-      toast("Sales Control บันทึกแล้ว · v"+esc((data.record&&data.record.version)||""));
-      return loadModels(valueOf("kaModelSearch"),false).then(function(){
-        var id=(state.selectedModel&&state.selectedModel.model_id)||payload.model_id||payload.model_key;
-        selectModel(id);
-      });
+      state.modelSalesKey="";
+      state.modelSalesFingerprint="";
+      toast(activate?"Sales Rule Active แล้ว":"Sales Rule เข้า Review แล้ว");
+      return loadModelSales();
     }).catch(handleError).finally(function(){state.modelBusy=false;setModelActionsDisabled(false);});
   }
 

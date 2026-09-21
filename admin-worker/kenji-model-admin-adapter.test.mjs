@@ -7,7 +7,7 @@ import {
   KENJI_MODEL_ADMIN_BASE_PATH,
   KENJI_MODEL_ADMIN_DRAFT_PATH,
   KENJI_MODEL_SALES_RESOLVE_PATH,
-  KENJI_MODEL_SALES_RULE_PATH,
+  KENJI_MODEL_SALES_RULES_PATH,
   projectKenjiAdminModelRecord,
   projectKenjiKeywordProfileRecord,
 } from "./src/kenji-model-admin-adapter.js";
@@ -36,7 +36,8 @@ test("recognizes only the exact Kenji model admin routes", () => {
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_ADMIN_BASE_PATH, "GET"), true);
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_ADMIN_DRAFT_PATH, "POST"), true);
   assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RESOLVE_PATH, "POST"), true);
-  assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RULE_PATH, "POST"), true);
+  assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RULES_PATH, "GET"), true);
+  assert.equal(isKenjiModelAdminRequest(KENJI_MODEL_SALES_RULES_PATH, "POST"), true);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/kenji/models/publish", "POST"), false);
   assert.equal(isKenjiModelAdminRequest("/v1/admin/models/upsert", "POST"), false);
 });
@@ -444,72 +445,93 @@ test("sales resolver keeps Draft legacy rules fail closed", async () => {
 });
 
 
-test("owner sales rule mutation writes canonical Model Offer Rules with audit fields", async () => {
+test("Owner Sales Control API lists only rules for the selected Model", async () => {
+  const fetchImpl = async (url) => {
+    assert.ok(decodeURIComponent(url).includes("tblModelOfferRulesCanonical"));
+    return response({
+      records: [
+        { id: "recRuleSelected0001", createdTime: "2026-09-21T00:00:00.000Z", fields: { Model: ["rec12345678901234"], model_key: "ems21-jdye", status: "Active", audience_scope: ["Premium"], sales_visibility: "on", customer_sell_rate_thb: 25000, price_visibility: "visible", version: 2 } },
+        { id: "recRuleOther000001", fields: { Model: ["recOther123456789"], model_key: "other", status: "Active" } },
+      ],
+    });
+  };
+  const result = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rules?model_id=rec12345678901234"),
+    ENV,
+    { fetchImpl }
+  );
+  const body = await bodyOf(result);
+  assert.equal(result.status, 200);
+  assert.equal(body.count, 1);
+  assert.equal(body.items[0].rule_id, "recRuleSelected0001");
+  assert.equal(body.items[0].customer_sell_rate_thb, 25000);
+  assert.deepEqual(body.items[0].audience_scope, ["Premium"]);
+});
+
+test("Owner can create an Active canonical Sales Control rule without exposing Partner proposal authority", async () => {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push({ url, init });
     if ((init.method || "GET") === "GET") return response({ records: [] });
-    return response({
-      records: [{
-        id: "recSalesCreated1234",
-        fields: JSON.parse(init.body).records[0].fields,
-      }],
-    }, 201);
+    const payload = JSON.parse(init.body);
+    return response({ records: [{ id: "recOwnerRule123456", createdTime: "2026-09-21T00:00:00.000Z", fields: payload.records[0].fields }] }, 201);
   };
   const result = await handleKenjiModelAdminRequest(
-    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rule", {
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rules", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": "owner-sales-ems21-001" },
       body: JSON.stringify({
         model_id: "rec12345678901234",
         model_key: "ems21-jdye",
         customer_sell_rate_thb: 25000,
         partner_source_rate_thb: 18000,
         sales_visibility: "on",
-        status: "Active",
-        price_visibility: "Eligible scope only",
+        price_visibility: "visible",
         audience_scope: ["Premium", "VIP / Black Card"],
         schedule_type: "Always",
-        priority: 100,
-        requires_per_approval: true,
-        change_reason: "Owner approved rate setup",
+        priority: 20,
+        activate: true,
+        change_reason: "Owner approved launch rule",
       }),
     }),
     ENV,
-    { actor: { id: "boss-per", role: "owner" }, fetchImpl }
+    { actor: { id: "per", role: "admin" }, fetchImpl }
   );
   const body = await bodyOf(result);
   assert.equal(result.status, 201);
-  assert.equal(body.ok, true);
-  assert.equal(body.production_mutated, true);
-  assert.equal(body.record.customer_sell_rate_thb, 25000);
-  assert.equal(body.record.partner_source_rate_thb, 18000);
-  const write = JSON.parse(calls[1].init.body).records[0].fields;
-  assert.equal(write.source_actor_type, "owner");
-  assert.equal(write.updated_by, "boss-per");
-  assert.equal(write.notify_status, "pending");
-  assert.equal(write.version, 1);
+  assert.equal(body.status, "Active");
+  assert.equal(body.sellability_mutated, true);
+  const written = JSON.parse(calls[1].init.body).records[0].fields;
+  assert.equal(written.status, "Active");
+  assert.equal(written.source_actor_type, "owner");
+  assert.equal(written.customer_sell_rate_thb, 25000);
+  assert.equal(written.partner_source_rate_thb, 18000);
+  assert.equal(written.updated_by, "per");
+  assert.equal(written.internal_only, "Yes");
 });
 
-test("owner sales rule mutation refuses visible sale without customer rate", async () => {
-  const result = await handleKenjiModelAdminRequest(
-    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rule", {
+test("Owner Sales Control POST requires audience and an idempotency key", async () => {
+  const missingKey = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rules", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model_id: "rec12345678901234",
-        model_key: "ems21-jdye",
-        sales_visibility: "on",
-        status: "Active",
-        price_visibility: "Eligible scope only",
-        audience_scope: ["Premium"],
-        schedule_type: "Always",
-        change_reason: "Missing rate guard",
-      }),
+      body: JSON.stringify({ model_id: "rec12345678901234", model_key: "ems21", customer_sell_rate_thb: 25000, audience_scope: ["Premium"] }),
     }),
     ENV,
-    { actor: { id: "boss-per", role: "owner" }, fetchImpl: async () => response({ records: [] }) }
+    { fetchImpl: async () => response({ records: [] }) }
   );
-  assert.equal(result.status, 400);
-  assert.equal((await bodyOf(result)).error, "customer_sell_rate_required");
+  assert.equal(missingKey.status, 400);
+  assert.equal((await bodyOf(missingKey)).error, "idempotency_key_required");
+
+  const noAudience = await handleKenjiModelAdminRequest(
+    new Request("https://mmdbkk.com/v1/admin/kenji/models/sales/rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": "owner-sales-no-audience" },
+      body: JSON.stringify({ model_id: "rec12345678901234", model_key: "ems21", customer_sell_rate_thb: 25000, audience_scope: [] }),
+    }),
+    ENV,
+    { fetchImpl: async () => response({ records: [] }) }
+  );
+  assert.equal(noAudience.status, 400);
+  assert.equal((await bodyOf(noAudience)).error, "invalid_audience_scope");
 });

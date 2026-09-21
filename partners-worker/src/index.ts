@@ -169,6 +169,22 @@ const SESSION_FIELDS = {
   partnerNotificationError: "fldGLKYcQVPZelwue"
 } as const;
 
+const PARTNER_MODEL_CHANGES = {
+  requestKey: "fldOMAnz49TkPbbpI",
+  partner: "fldn8qMa6MrehyJs0",
+  model: "fldyOGhF8vPskWv60",
+  action: "fldRNYS8yVF0TbSR9",
+  status: "fldyfqdakvtibCrh1",
+  payloadJson: "fldflEribxl5pm4Cc",
+  shareWithMmd: "fldal8U4rg41RPbrR",
+  idempotencyKey: "fldIwYPeVpMcJ4ba4",
+  revision: "fld0J2r0fMxx9O4n0",
+  submittedAt: "fld9vT5vQIhnl48wT",
+  updatedAt: "fld3gpwvBl09LHGC1",
+  actorRef: "fld6ukOGZ5atMjppP",
+  partnerId: "fldjejXbPKCubhx1r"
+} as const;
+
 const PARTNER_ASSETS = {
   assetId: "fld3NklN2iKsZfyx2",
   requestId: "fldeqzo5t3Rn80Cxi",
@@ -288,8 +304,55 @@ const MODEL_OFFER_RULES = {
 const MODELS = {
   workingName: "fldShiT60bmCxFxRu",
   nickname: "fld0maFkh4NHpsPxA",
-  status: "fldRcAE3bL8dKmURH"
+  uniqueKey: "fldYvAbkENGQ4NaaI",
+  status: "fldRcAE3bL8dKmURH",
+  profilePhoto: "fldXWXqa3bnAgxN4Y",
+  publicImageUrl: "fldC94pnSJxBsyAqS",
+  heightCm: "fldIPz4nPoPvkIoK9",
+  weightKg: "fldg1pTc20guk9WSY",
+  skillsSummary: "fld8J3iaSiUfcBEwa",
+  experienceSummary: "fldBfRNcEArZ7ninU",
+  availabilityStatus: "fld6RuUDmGcGDc34i",
+  availableNow: "fldwMpYGpA5RvC76m"
 } as const;
+
+const MODEL_OFFER_RULES = {
+  ruleKey: "fld0GTefOf9VSdTpU",
+  model: "fldrvoIfq0sMWR70V",
+  modelKey: "fldHlkHRqPr5e8pkn",
+  offerType: "fldt5djzxVFQz43za",
+  requiresPerApproval: "fldlqnCByGm0rRypA",
+  priceVisibility: "fldiLyM0oyHVR6e2j",
+  status: "fldBpmlW8aO9AhDhX",
+  internalOnly: "fldC5I6dm2h3JKkPf",
+  reviewedBy: "fldMNxut21hZCdFlR",
+  version: "fldCMjmjsPImiCUDY",
+  audienceScope: "fldVfrqaEkgI2uf5w",
+  partnerSourceRateThb: "fldbgFiaSm4pWY9qU",
+  customerSellRateThb: "fldSL0hGadzsxxvRu",
+  salesVisibility: "fldgc3dV6wWVTcu7c",
+  scheduleType: "fldugUjwgRWbJGkpV",
+  effectiveFromAt: "fldeJNUOSiHlEjUSh",
+  effectiveUntilAt: "fldA4RxTfDNGlvgoe",
+  daysOfWeek: "fldAFAhdX7YiiDDbg",
+  startTimeLocal: "fldq1INJTObcAWVJl",
+  endTimeLocal: "fldLed5vuLGmew0g4",
+  priority: "flddWP3oD26iyic5d",
+  sourceActorType: "fldlSuF1vNPbZzqXW",
+  sourcePartnerRef: "fldddYtvJbLgGSp8k",
+  changeReason: "fldfcGGnnfgneFXCi",
+  updatedBy: "fldElUophZssF3426",
+  updatedAt: "fldexo1B74IGqbppn",
+  notifyStatus: "fldpO3fYqBuM4rXY9",
+  notifyError: "fldTaTet5ErLVe50L"
+} as const;
+
+const PARTNER_SALES_AUDIENCES = new Set([
+  "Public Member", "Elite", "Red Card", "Standard", "Premium", "VIP / Black Card", "SVIP", "Per Review"
+]);
+const PARTNER_SALES_SCHEDULES = new Set(["Always", "Date range", "Date + time range", "Weekly recurring"]);
+const PARTNER_SALES_VISIBILITY = new Set(["on", "off"]);
+const PARTNER_SALES_DAYS = new Set(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
 
 const WEBFLOW_PARTNER_FORM_ORIGIN = "https://mmdprive.webflow.io";
 const WEBFLOW_PARTNER_FORM_SCRIPT_URL =
@@ -359,8 +422,28 @@ export default {
         return await handlePartnerTelegramConnect(request, runtimeEnv);
       }
 
-      if (request.method === "POST" && url.pathname === "/v1/partner/models/sales-control") {
-        return await handlePartnerSalesControl(request, runtimeEnv, ctx);
+      if (request.method === "POST" && url.pathname === "/v1/partner/sales/proposal") {
+        return await handlePartnerSalesProposal(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/models/change") {
+        return await handlePartnerModelChange(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/models/upload") {
+        return await handlePartnerModelUpload(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/jobs/action") {
+        return await handlePartnerJobAction(request, runtimeEnv);
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/partner/private-vault") {
+        return await handlePartnerPrivateVaultGet(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/private-vault") {
+        return await handlePartnerPrivateVaultPut(request, runtimeEnv);
       }
 
       if (request.method === "POST" && url.pathname === "/__internal/partner-job-confirm") {
@@ -987,12 +1070,16 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   if (!verified.ok) return verified.response;
 
   const partnerRecord = verified.value.partnerRecord;
+  const partnerId = fieldText(partnerRecord, MODEL_PARTNERS.partnerId) || "";
   const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
   const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
-  const telegramConnected = telegramStatus === "verified" && typeof telegramId === "string" && /^\\d{5,20}$/.test(telegramId);
-  const [referrals, commissions] = await Promise.all([
-    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id),
-    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id)
+  const telegramConnected = telegramStatus === "verified" && typeof telegramId === "string" && /^\d{5,20}$/.test(telegramId);
+  const [referrals, commissions, partnerSalesRules, modelChanges, sessions] = await Promise.all([
+    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id, partnerId),
+    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id, partnerId),
+    listPartnerSalesRules(env, partnerRecord.id),
+    listPartnerModelChanges(env, partnerRecord.id, partnerId),
+    listPartnerSessions(env, partnerId)
   ]);
 
   const modelIds = new Set<string>();
@@ -1006,51 +1093,14 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const modelMap = await fetchRecordMap(env, env.AIRTABLE_TABLE_MODELS, [...modelIds]);
   const normalizedReferrals = referrals.map((record) => normalizeReferral(record, modelMap));
   const normalizedCommissions = commissions.map((record) => normalizeCommission(record, modelMap));
-  const partnerId = fieldText(partnerRecord, MODEL_PARTNERS.partnerId);
-  let salesRules: AirtableRecord[] = [];
-  try {
-    salesRules = await loadModelSalesRules(env) as AirtableRecord[];
-  } catch (error) {
-    console.warn("partner sales rules unavailable", getErrorMessage(error));
-  }
-  const salesModels = [...modelIds].map((modelId) => {
-    const modelRecord = modelMap.get(modelId);
-    const partnerRules = salesRules
-      .filter((record) => {
-        const fields = record.fields || {};
-        const linked = Array.isArray(fields.Model) ? fields.Model.map((item) => cleanText(item)) : [];
-        return linked.includes(modelId) && cleanText(fields.source_partner_ref) === partnerId;
-      })
-      .map((record, index) => {
-        const normalized = normalizeModelSalesRule(record, index);
-        const fields = record.fields || {};
-        return normalized ? {
-          rule_key: normalized.offer_rule_key,
-          source_rate_thb: fieldNumber(record, "partner_source_rate_thb"),
-          sales_visibility: normalized.sales_visibility,
-          audience_scope: normalized.audience_scope,
-          schedule_type: normalized.schedule_type,
-          effective_from: normalized.effective_from,
-          effective_until: normalized.effective_until,
-          days_of_week: normalized.days_of_week,
-          start_time_local: normalized.start_time_local,
-          end_time_local: normalized.end_time_local,
-          status: cleanText(fields.status) || normalized.status,
-          version: normalized.version,
-          change_reason: cleanText(fields.change_reason)
-        } : null;
-      })
-      .filter(Boolean);
-    return {
-      model_id: modelId,
-      model_name: modelRecord ? modelName(modelRecord) : modelId,
-      model_status: modelRecord ? fieldText(modelRecord, MODELS.status) : "",
-      proposal: partnerRules[0] || null
-    };
-  });
+  const salesControls = buildPartnerSalesControls(referrals, modelMap, partnerSalesRules);
+  const normalizedChanges = modelChanges.map(normalizePartnerModelChange);
+  const normalizedModels = buildPartnerModelProfiles(referrals, modelMap, salesControls, normalizedChanges);
+  const normalizedJobs = sessions.map(normalizePartnerSession);
 
   const activeModels = new Set(
     referrals
+      .filter((record) => !["inactive", "revoked", "transferred"].includes(normalizeStatus(fieldText(record, MODEL_REFERRALS.ownershipStatus))))
       .flatMap((record) => fieldLinkIds(record, MODEL_REFERRALS.model))
       .filter(Boolean)
   ).size;
@@ -1074,20 +1124,718 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
     summary: {
       tier: fieldText(partnerRecord, MODEL_PARTNERS.tier) || "Trusted",
       activeModels,
+      upcomingJobs: normalizedJobs.filter((job) => !["completed", "cancelled", "declined"].includes(normalizeStatus(String(job.status || "")))).length,
       pendingAmount,
       paidAmount
     },
     referrals: normalizedReferrals,
     commissions: normalizedCommissions,
-    models: salesModels,
-    sales_control: {
-      authority: "model_sales_control_v1",
-      partner_mode: "proposal_only",
-      requires_per_approval: true
+    models: normalizedModels,
+    model_changes: normalizedChanges,
+    jobs: normalizedJobs,
+    sales_controls: salesControls,
+    privacy: {
+      default_scope: "partner_private",
+      partner_private_storage: "client_side_encrypted_vault",
+      mmd_plaintext_access: false,
+      shared_with_mmd_requires_explicit_consent: true
     }
   });
 }
 
+
+async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+
+  const modelRecordId = readString(body.value, "model_record_id");
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+    return errorResponse(request, env, "model_record_id_invalid", "A canonical linked model is required.", 400, false);
+  }
+
+  const referrals = await listLinkedRecordsForPartner(
+    env,
+    env.AIRTABLE_TABLE_MODEL_REFERRALS,
+    MODEL_REFERRALS.partner,
+    verified.value.partnerRecord.id,
+    fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || ""
+  );
+  const ownsModel = referrals.some((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId));
+  if (!ownsModel) {
+    return errorResponse(request, env, "partner_model_scope_forbidden", "This model is outside the Partner relationship scope.", 403, false);
+  }
+
+  const model = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODELS, modelRecordId);
+  const modelName = fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || modelRecordId;
+  const modelKey = fieldText(model, MODELS.uniqueKey) || modelRecordId;
+  const partnerSourceRate = Number(body.value.partner_source_rate_thb);
+  if (!Number.isFinite(partnerSourceRate) || partnerSourceRate < 0 || partnerSourceRate > 1000000) {
+    return errorResponse(request, env, "partner_source_rate_invalid", "Partner source rate must be a valid THB amount.", 400, false);
+  }
+  const customerSellRate = Number(body.value.customer_sell_rate_thb);
+  if (!Number.isFinite(customerSellRate) || customerSellRate < 0 || customerSellRate > 2000000) {
+    return errorResponse(request, env, "customer_sell_rate_invalid", "Requested customer sell rate must be a valid THB amount.", 400, false);
+  }
+  if (customerSellRate < partnerSourceRate) {
+    return errorResponse(request, env, "sell_rate_below_source_rate", "Requested customer sell rate cannot be below the Partner source rate.", 400, false);
+  }
+
+  const salesVisibility = readString(body.value, "sales_visibility").toLowerCase() || "off";
+  if (!PARTNER_SALES_VISIBILITY.has(salesVisibility)) {
+    return errorResponse(request, env, "sales_visibility_invalid", "Unsupported sales visibility.", 400, false);
+  }
+
+  const rawAudiences = Array.isArray(body.value.audience_scope) ? body.value.audience_scope : [];
+  const audiences = [...new Set(rawAudiences.map((value) => String(value || "").trim()).filter(Boolean))];
+  if (!audiences.length || audiences.some((value) => !PARTNER_SALES_AUDIENCES.has(value))) {
+    return errorResponse(request, env, "audience_scope_invalid", "Choose one or more approved customer audiences.", 400, false);
+  }
+
+  const scheduleType = readString(body.value, "schedule_type") || "Always";
+  if (!PARTNER_SALES_SCHEDULES.has(scheduleType)) {
+    return errorResponse(request, env, "schedule_type_invalid", "Unsupported schedule type.", 400, false);
+  }
+
+  const rawDays = Array.isArray(body.value.days_of_week) ? body.value.days_of_week : [];
+  const days = [...new Set(rawDays.map((value) => String(value || "").trim()).filter(Boolean))];
+  if (days.some((value) => !PARTNER_SALES_DAYS.has(value))) {
+    return errorResponse(request, env, "days_of_week_invalid", "Unsupported schedule day.", 400, false);
+  }
+  if (scheduleType === "Weekly recurring" && !days.length) {
+    return errorResponse(request, env, "days_of_week_required", "Weekly recurring rules require at least one day.", 400, false);
+  }
+
+  const startTimeLocal = readString(body.value, "start_time_local");
+  const endTimeLocal = readString(body.value, "end_time_local");
+  if ((startTimeLocal && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTimeLocal)) ||
+      (endTimeLocal && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTimeLocal))) {
+    return errorResponse(request, env, "local_time_invalid", "Schedule time must use HH:mm Bangkok time.", 400, false);
+  }
+
+  const effectiveFrom = normalizeIsoDate(readString(body.value, "effective_from_at"));
+  const effectiveUntil = normalizeIsoDate(readString(body.value, "effective_until_at"));
+  if (scheduleType !== "Always" && readString(body.value, "effective_from_at") && !effectiveFrom) {
+    return errorResponse(request, env, "effective_from_invalid", "Invalid effective-from timestamp.", 400, false);
+  }
+  if (readString(body.value, "effective_until_at") && !effectiveUntil) {
+    return errorResponse(request, env, "effective_until_invalid", "Invalid effective-until timestamp.", 400, false);
+  }
+  if (effectiveFrom && effectiveUntil && Date.parse(effectiveUntil) <= Date.parse(effectiveFrom)) {
+    return errorResponse(request, env, "schedule_window_invalid", "Schedule end must be later than schedule start.", 400, false);
+  }
+
+  const idempotencyKey = String(request.headers.get("Idempotency-Key") || "").trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 180) {
+    return errorResponse(request, env, "idempotency_key_required", "A stable Idempotency-Key is required.", 400, false);
+  }
+  const digest = await sha256Hex(`${verified.value.partnerRecord.id}:${idempotencyKey}`);
+  const ruleKey = `partner-proposal-${digest.slice(0, 24)}`;
+  const offerRulesTable = String((env as RuntimeEnv & { AIRTABLE_TABLE_MODEL_OFFER_RULES?: string }).AIRTABLE_TABLE_MODEL_OFFER_RULES || "tblSbxUGTFqd2CgPy");
+
+  const existing = await listAirtableRecords(env, offerRulesTable, {
+    filterByFormula: `{${MODEL_OFFER_RULES.ruleKey}}='${escapeFormulaString(ruleKey)}'`,
+    maxRecords: 2
+  });
+  if (existing.length === 1) {
+    const existingRecord = existing[0];
+    if (!existingRecord) {
+      return errorResponse(request, env, "proposal_idempotency_lookup_failed", "Proposal lookup could not be resolved safely.", 503, false);
+    }
+    return json(request, env, {
+      ok: true,
+      idempotent: true,
+      proposal_id: existingRecord.id,
+      status: fieldText(existingRecord, MODEL_OFFER_RULES.status) || "Review",
+      sellability_mutated: false
+    });
+  }
+  if (existing.length > 1) {
+    return errorResponse(request, env, "proposal_idempotency_conflict", "Duplicate proposal key requires review.", 409, false);
+  }
+
+  const now = new Date().toISOString();
+  const fields: AirtableFields = {
+    [MODEL_OFFER_RULES.ruleKey]: ruleKey,
+    [MODEL_OFFER_RULES.model]: [modelRecordId],
+    [MODEL_OFFER_RULES.modelKey]: modelKey,
+    [MODEL_OFFER_RULES.partnerSourceRateThb]: partnerSourceRate,
+    [MODEL_OFFER_RULES.customerSellRateThb]: customerSellRate,
+    [MODEL_OFFER_RULES.audienceScope]: audiences,
+    [MODEL_OFFER_RULES.salesVisibility]: salesVisibility,
+    [MODEL_OFFER_RULES.scheduleType]: scheduleType,
+    [MODEL_OFFER_RULES.daysOfWeek]: days,
+    [MODEL_OFFER_RULES.startTimeLocal]: startTimeLocal || null,
+    [MODEL_OFFER_RULES.endTimeLocal]: endTimeLocal || null,
+    [MODEL_OFFER_RULES.effectiveFromAt]: effectiveFrom,
+    [MODEL_OFFER_RULES.effectiveUntilAt]: effectiveUntil,
+    [MODEL_OFFER_RULES.priority]: 0,
+    [MODEL_OFFER_RULES.requiresPerApproval]: "Yes",
+    [MODEL_OFFER_RULES.priceVisibility]: "Per approval only",
+    [MODEL_OFFER_RULES.status]: "Review",
+    [MODEL_OFFER_RULES.internalOnly]: "Yes",
+    [MODEL_OFFER_RULES.sourceActorType]: "partner",
+    [MODEL_OFFER_RULES.sourcePartnerRef]: verified.value.partnerRecord.id,
+    [MODEL_OFFER_RULES.changeReason]: readString(body.value, "change_reason").slice(0, 1200) || "Partner Dashboard sales-control proposal.",
+    [MODEL_OFFER_RULES.updatedBy]: `partner:${verified.value.partnerRecord.id}`,
+    [MODEL_OFFER_RULES.updatedAt]: now,
+    [MODEL_OFFER_RULES.notifyStatus]: "pending",
+    [MODEL_OFFER_RULES.version]: 1
+  };
+
+  const created = await createAirtableRecord(env, offerRulesTable, fields, true);
+  try {
+    await sendTelegramMessage(env, [
+      "PARTNER SALES CONTROL PROPOSAL",
+      "",
+      `Partner: ${fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || verified.value.partnerRecord.id}`,
+      `Model: ${modelName}`,
+      `Source Rate: ${Math.round(partnerSourceRate).toLocaleString("en-US")} THB`,
+      `Requested Sell Rate: ${Math.round(customerSellRate).toLocaleString("en-US")} THB`,
+      `Visibility Request: ${salesVisibility}`,
+      `Audience: ${audiences.join(", ")}`,
+      `Schedule: ${scheduleType}`,
+      `Proposal: ${created.id}`
+    ].join("\n"), "partner_confirm");
+  } catch (error) {
+    console.error("partner sales proposal telegram alert failed", error);
+  }
+
+  return json(request, env, {
+    ok: true,
+    proposal_id: created.id,
+    status: "Review",
+    model_record_id: modelRecordId,
+    model_name: modelName,
+    requested_customer_sell_rate_thb: customerSellRate,
+    sellability_mutated: false,
+    customer_sell_rate_mutated: false,
+    requires_per_approval: true
+  }, 201);
+}
+
+function buildPartnerSalesControls(
+  referrals: AirtableRecord[],
+  modelMap: Map<string, AirtableRecord>,
+  rules: AirtableRecord[]
+): Array<Record<string, unknown>> {
+  const latestByModel = new Map<string, AirtableRecord>();
+  const sorted = [...rules].sort((a, b) => {
+    const at = Date.parse(fieldText(a, MODEL_OFFER_RULES.updatedAt) || a.createdTime || "") || 0;
+    const bt = Date.parse(fieldText(b, MODEL_OFFER_RULES.updatedAt) || b.createdTime || "") || 0;
+    return bt - at;
+  });
+  for (const rule of sorted) {
+    for (const modelId of fieldLinkIds(rule, MODEL_OFFER_RULES.model)) {
+      if (!latestByModel.has(modelId)) latestByModel.set(modelId, rule);
+    }
+  }
+
+  const modelIds = [...new Set(referrals.flatMap((record) => fieldLinkIds(record, MODEL_REFERRALS.model)).filter(Boolean))];
+  return modelIds.map((modelId) => {
+    const model = modelMap.get(modelId);
+    const rule = latestByModel.get(modelId);
+    return {
+      model_record_id: modelId,
+      model_name: model ? (fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || "Model") : "Model",
+      proposal: rule ? {
+        proposal_id: rule.id,
+        status: fieldText(rule, MODEL_OFFER_RULES.status) || "Review",
+        partner_source_rate_thb: fieldNumber(rule, MODEL_OFFER_RULES.partnerSourceRateThb),
+        customer_sell_rate_thb: fieldNumber(rule, MODEL_OFFER_RULES.customerSellRateThb),
+        sales_visibility: fieldText(rule, MODEL_OFFER_RULES.salesVisibility) || "off",
+        audience_scope: fieldMultiText(rule, MODEL_OFFER_RULES.audienceScope),
+        schedule_type: fieldText(rule, MODEL_OFFER_RULES.scheduleType) || "Always",
+        effective_from_at: fieldText(rule, MODEL_OFFER_RULES.effectiveFromAt),
+        effective_until_at: fieldText(rule, MODEL_OFFER_RULES.effectiveUntilAt),
+        days_of_week: fieldMultiText(rule, MODEL_OFFER_RULES.daysOfWeek),
+        start_time_local: fieldText(rule, MODEL_OFFER_RULES.startTimeLocal),
+        end_time_local: fieldText(rule, MODEL_OFFER_RULES.endTimeLocal),
+        updated_at: fieldText(rule, MODEL_OFFER_RULES.updatedAt) || rule.createdTime || null
+      } : null
+    };
+  });
+}
+
+async function listPartnerSalesRules(env: RuntimeEnv, partnerRecordId: string): Promise<AirtableRecord[]> {
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_MODEL_OFFER_RULES?: string }).AIRTABLE_TABLE_MODEL_OFFER_RULES || "tblSbxUGTFqd2CgPy");
+  try {
+    return await listAirtableRecords(env, tableId, {
+      filterByFormula: `{${MODEL_OFFER_RULES.sourcePartnerRef}}='${escapeFormulaString(partnerRecordId)}'`,
+      maxRecords: 100,
+      sort: [{ field: MODEL_OFFER_RULES.updatedAt, direction: "desc" }]
+    });
+  } catch (error) {
+    console.warn("Partner sales rules lookup failed", getErrorMessage(error));
+    return [];
+  }
+}
+
+async function listPartnerModelChanges(env: RuntimeEnv, partnerRecordId: string, partnerId: string): Promise<AirtableRecord[]> {
+  const tableId = String(
+    (env as RuntimeEnv & { AIRTABLE_TABLE_PARTNER_MODEL_CHANGES?: string }).AIRTABLE_TABLE_PARTNER_MODEL_CHANGES ||
+    "tbl8kxhjKzGU0xx4L"
+  );
+  let records: AirtableRecord[] = [];
+  if (partnerId) {
+    records = await listAirtableRecords(env, tableId, {
+      filterByFormula: `{${PARTNER_MODEL_CHANGES.partnerId}}='${escapeFormulaString(partnerId)}'`,
+      maxRecords: 100
+    });
+  }
+  if (!records.length) {
+    records = await listLinkedRecordsForPartner(env, tableId, PARTNER_MODEL_CHANGES.partner, partnerRecordId, partnerId);
+  }
+  return records.sort((a, b) => {
+    const at = Date.parse(fieldText(a, PARTNER_MODEL_CHANGES.updatedAt) || a.createdTime || "") || 0;
+    const bt = Date.parse(fieldText(b, PARTNER_MODEL_CHANGES.updatedAt) || b.createdTime || "") || 0;
+    return bt - at;
+  });
+}
+
+async function listPartnerSessions(env: RuntimeEnv, partnerId: string): Promise<AirtableRecord[]> {
+  if (!partnerId) return [];
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_SESSIONS?: string }).AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  return await listAirtableRecords(env, tableId, {
+    filterByFormula: `{${SESSION_FIELDS.partnerIdSnapshot}}='${escapeFormulaString(partnerId)}'`,
+    maxRecords: 100,
+    sort: [{ field: SESSION_FIELDS.startTime, direction: "desc" }]
+  });
+}
+
+function normalizePartnerModelChange(record: AirtableRecord): Record<string, unknown> {
+  const parsed = parseJson(fieldText(record, PARTNER_MODEL_CHANGES.payloadJson) || "{}");
+  return {
+    request_id: record.id,
+    request_key: fieldText(record, PARTNER_MODEL_CHANGES.requestKey),
+    model_record_id: fieldLinkIds(record, PARTNER_MODEL_CHANGES.model)[0] || null,
+    action: fieldText(record, PARTNER_MODEL_CHANGES.action) || "update_profile",
+    status: fieldText(record, PARTNER_MODEL_CHANGES.status) || "review",
+    payload: isRecord(parsed) ? parsed : {},
+    shared_with_mmd: record.fields[PARTNER_MODEL_CHANGES.shareWithMmd] === true,
+    updated_at: fieldText(record, PARTNER_MODEL_CHANGES.updatedAt) || record.createdTime || null
+  };
+}
+
+function normalizePartnerSession(record: AirtableRecord): Record<string, unknown> {
+  const partnerStatus = normalizeStatus(fieldText(record, SESSION_FIELDS.partnerConfirmationStatus)) || "pending";
+  return {
+    session_record_id: record.id,
+    session_id: fieldText(record, SESSION_FIELDS.sessionId) || record.id,
+    job_id: fieldText(record, "fldHw5HdDDdkHXMhG") || null,
+    model_name: fieldText(record, SESSION_FIELDS.modelName) || "Model",
+    client_alias: fieldText(record, SESSION_FIELDS.clientName) || "MMD Client",
+    date: fieldText(record, SESSION_FIELDS.jobDate),
+    start_at: fieldText(record, SESSION_FIELDS.startTime),
+    end_at: fieldText(record, SESSION_FIELDS.endTime),
+    location: fieldText(record, SESSION_FIELDS.locationName) || "Location shared after confirmation",
+    work_lane: fieldText(record, SESSION_FIELDS.workLane),
+    work_type: fieldText(record, SESSION_FIELDS.workType),
+    status: partnerStatus,
+    confirmation_note: fieldText(record, SESSION_FIELDS.partnerConfirmationNote),
+    confirmation_revision: fieldNumber(record, SESSION_FIELDS.partnerConfirmationRevision),
+    notification_status: fieldText(record, SESSION_FIELDS.partnerNotificationStatus) || "pending"
+  };
+}
+
+function buildPartnerModelProfiles(
+  referrals: AirtableRecord[],
+  modelMap: Map<string, AirtableRecord>,
+  salesControls: Array<Record<string, unknown>>,
+  changes: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const controlByModel = new Map(salesControls.map((control) => [String(control.model_record_id || ""), control]));
+  const latestProfileChange = new Map<string, Record<string, unknown>>();
+  for (const change of changes) {
+    const modelId = String(change.model_record_id || "");
+    if (!modelId || latestProfileChange.has(modelId) || change.action !== "update_profile") continue;
+    latestProfileChange.set(modelId, change);
+  }
+
+  const models: Array<Record<string, unknown>> = [];
+  for (const referral of referrals) {
+    const modelId = fieldLinkIds(referral, MODEL_REFERRALS.model)[0] || "";
+    if (!modelId) continue;
+    const model = modelMap.get(modelId);
+    if (!model) continue;
+    const profileChange = latestProfileChange.get(modelId);
+    const draft = isRecord(profileChange?.payload) ? profileChange.payload : {};
+    models.push({
+      model_record_id: modelId,
+      referral_record_id: referral.id,
+      referral_status: fieldText(referral, MODEL_REFERRALS.ownershipStatus) || "pending",
+      display_name: readString(draft, "display_name") || modelName(model),
+      age: readFiniteNumber(draft.age),
+      height_cm: readFiniteNumber(draft.height_cm) ?? (fieldNumber(model, MODELS.heightCm) || null),
+      weight_kg: readFiniteNumber(draft.weight_kg) ?? (fieldNumber(model, MODELS.weightKg) || null),
+      profile_summary: readString(draft, "profile_summary"),
+      skills_summary: readString(draft, "skills_summary") || fieldText(model, MODELS.skillsSummary),
+      experience_summary: readString(draft, "experience_summary") || fieldText(model, MODELS.experienceSummary),
+      sales_copy: readString(draft, "sales_copy"),
+      portfolio_urls: Array.isArray(draft.portfolio_urls) ? draft.portfolio_urls : [],
+      image_url: fieldText(model, MODELS.publicImageUrl) || fieldAttachmentUrl(model, MODELS.profilePhoto),
+      availability_status: fieldText(model, MODELS.availabilityStatus) || "available",
+      available_now: model.fields[MODELS.availableNow] === true,
+      canonical_status: fieldText(model, MODELS.status) || "pending",
+      profile_request_status: profileChange?.status || null,
+      sales_control: controlByModel.get(modelId) || null
+    });
+  }
+  return models;
+}
+
+async function handlePartnerModelChange(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  if (body.value.share_with_mmd !== true) {
+    return errorResponse(request, env, "explicit_share_required", "Select Share with MMD before submitting shared profile data.", 400, false);
+  }
+
+  const action = readString(body.value, "action");
+  if (!new Set(["add_model", "update_profile", "remove_model"]).has(action)) {
+    return errorResponse(request, env, "model_change_action_invalid", "Unsupported model change action.", 400, false);
+  }
+  const modelRecordId = readString(body.value, "model_record_id");
+  let ownedReferral: AirtableRecord | null = null;
+  if (action !== "add_model") {
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+      return errorResponse(request, env, "model_record_id_invalid", "A canonical linked model is required.", 400, false);
+    }
+    const referrals = await listLinkedRecordsForPartner(
+      env,
+      env.AIRTABLE_TABLE_MODEL_REFERRALS,
+      MODEL_REFERRALS.partner,
+      verified.value.partnerRecord.id,
+      fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || ""
+    );
+    ownedReferral = referrals.find((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId)) || null;
+    if (!ownedReferral) {
+      return errorResponse(request, env, "partner_model_scope_forbidden", "This model is outside the Partner relationship scope.", 403, false);
+    }
+  }
+
+  const payload = buildSharedPartnerModelPayload(body.value, action);
+  if (!payload.ok) return errorResponse(request, env, payload.error, payload.message, 400, false);
+
+  const idempotencyKey = String(request.headers.get("Idempotency-Key") || "").trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 180) {
+    return errorResponse(request, env, "idempotency_key_required", "A stable Idempotency-Key is required.", 400, false);
+  }
+  const digest = await sha256Hex(`${verified.value.partnerRecord.id}:${action}:${modelRecordId}:${idempotencyKey}`);
+  const requestKey = `pmc_${digest.slice(0, 28)}`;
+  const tableId = String(
+    (env as RuntimeEnv & { AIRTABLE_TABLE_PARTNER_MODEL_CHANGES?: string }).AIRTABLE_TABLE_PARTNER_MODEL_CHANGES ||
+    "tbl8kxhjKzGU0xx4L"
+  );
+  const existing = await listAirtableRecords(env, tableId, {
+    filterByFormula: `{${PARTNER_MODEL_CHANGES.requestKey}}='${escapeFormulaString(requestKey)}'`,
+    maxRecords: 2
+  });
+  if (existing.length === 1) {
+    return json(request, env, { ok: true, idempotent: true, request_id: existing[0]?.id, status: "review" });
+  }
+  if (existing.length > 1) {
+    return errorResponse(request, env, "model_change_idempotency_conflict", "Duplicate change request requires review.", 409, false);
+  }
+
+  const now = new Date().toISOString();
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || verified.value.partnerRecord.id;
+  const fields: AirtableFields = {
+    [PARTNER_MODEL_CHANGES.requestKey]: requestKey,
+    [PARTNER_MODEL_CHANGES.partner]: [verified.value.partnerRecord.id],
+    [PARTNER_MODEL_CHANGES.action]: action,
+    [PARTNER_MODEL_CHANGES.status]: "review",
+    [PARTNER_MODEL_CHANGES.payloadJson]: JSON.stringify(payload.value),
+    [PARTNER_MODEL_CHANGES.shareWithMmd]: true,
+    [PARTNER_MODEL_CHANGES.idempotencyKey]: digest,
+    [PARTNER_MODEL_CHANGES.revision]: 1,
+    [PARTNER_MODEL_CHANGES.submittedAt]: now,
+    [PARTNER_MODEL_CHANGES.updatedAt]: now,
+    [PARTNER_MODEL_CHANGES.actorRef]: `partner:${verified.value.partnerRecord.id}`,
+    [PARTNER_MODEL_CHANGES.partnerId]: partnerId
+  };
+  if (modelRecordId) fields[PARTNER_MODEL_CHANGES.model] = [modelRecordId];
+  const created = await createAirtableRecord(env, tableId, fields, true);
+
+  try {
+    await sendTelegramMessage(env, [
+      "PARTNER MODEL CHANGE",
+      "",
+      `Partner: ${fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || verified.value.partnerRecord.id}`,
+      `Action: ${action}`,
+      `Model: ${modelRecordId || readString(payload.value, "display_name") || "New model"}`,
+      `Request: ${created.id}`,
+      "Privacy: explicitly shared with MMD"
+    ].join("\n"), "partner_confirm");
+  } catch (error) {
+    console.error("partner model change telegram alert failed", error);
+  }
+
+  return json(request, env, {
+    ok: true,
+    request_id: created.id,
+    status: "review",
+    action,
+    canonical_model_mutated: false,
+    shared_with_mmd: true
+  }, 201);
+}
+
+function buildSharedPartnerModelPayload(
+  body: Record<string, unknown>,
+  action: string
+): { ok: true; value: Record<string, unknown> } | { ok: false; error: string; message: string } {
+  if (action === "remove_model") {
+    return { ok: true, value: { reason: readString(body, "reason").slice(0, 1200) } };
+  }
+  const displayName = readString(body, "display_name").slice(0, 120);
+  if (action === "add_model" && !displayName) {
+    return { ok: false, error: "display_name_required", message: "Model display name is required." };
+  }
+  const age = readBoundedNumber(body.age, 18, 70);
+  const height = readBoundedNumber(body.height_cm, 120, 230);
+  const weight = readBoundedNumber(body.weight_kg, 35, 250);
+  if (hasSubmittedValue(body.age) && age === null) return { ok: false, error: "age_invalid", message: "Age must be between 18 and 70." };
+  if (hasSubmittedValue(body.height_cm) && height === null) return { ok: false, error: "height_invalid", message: "Height must be between 120 and 230 cm." };
+  if (hasSubmittedValue(body.weight_kg) && weight === null) return { ok: false, error: "weight_invalid", message: "Weight must be between 35 and 250 kg." };
+  const urls = normalizeHttpsUrls(body.portfolio_urls, 3);
+  if (Array.isArray(body.portfolio_urls) && urls.length !== body.portfolio_urls.filter((entry) => String(entry || "").trim()).length) {
+    return { ok: false, error: "portfolio_url_invalid", message: "Portfolio links must be valid HTTPS URLs." };
+  }
+  return {
+    ok: true,
+    value: compactObject({
+      display_name: displayName,
+      age,
+      height_cm: height,
+      weight_kg: weight,
+      profile_summary: readString(body, "profile_summary").slice(0, 4000),
+      skills_summary: readString(body, "skills_summary").slice(0, 5000),
+      experience_summary: readString(body, "experience_summary").slice(0, 5000),
+      sales_copy: readString(body, "sales_copy").slice(0, 5000),
+      portfolio_urls: urls,
+      availability_note: readString(body, "availability_note").slice(0, 1200)
+    })
+  };
+}
+
+async function handlePartnerModelUpload(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const bucket = (env as RuntimeEnv & { PARTNER_ASSETS?: R2Bucket }).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "uploads_unavailable", "File uploads are not enabled right now.", 503, true);
+  if (!request.headers.get("Content-Type")?.includes("multipart/form-data")) {
+    return errorResponse(request, env, "invalid_content_type", "Expected multipart FormData.", 400, false);
+  }
+  const form = await request.formData();
+  if (stringFromForm(form.get("share_with_mmd")) !== "true") {
+    return errorResponse(request, env, "explicit_share_required", "Select Share with MMD before uploading profile media.", 400, false);
+  }
+  const modelRecordId = stringFromForm(form.get("model_record_id"));
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+    return errorResponse(request, env, "model_record_id_invalid", "A canonical linked model is required.", 400, false);
+  }
+  const referrals = await listLinkedRecordsForPartner(
+    env,
+    env.AIRTABLE_TABLE_MODEL_REFERRALS,
+    MODEL_REFERRALS.partner,
+    verified.value.partnerRecord.id,
+    fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || ""
+  );
+  const referral = referrals.find((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId));
+  if (!referral) return errorResponse(request, env, "partner_model_scope_forbidden", "This model is outside the Partner relationship scope.", 403, false);
+
+  const file = form.get("file");
+  if (!(file instanceof File)) return errorResponse(request, env, "file_missing", "A file field is required.", 400, false);
+  if (!ALLOWED_MIME_TYPES.has(file.type)) return errorResponse(request, env, "unsupported_file_type", "Only JPG, PNG, WebP, and PDF files are allowed.", 415, false);
+  if (file.size > MAX_UPLOAD_SIZE) return errorResponse(request, env, "file_too_large", "Maximum upload size is 20MB per file.", 413, false);
+  const category = parseFileCategory(stringFromForm(form.get("file_category")) || "photo");
+  if (!category || !new Set(["photo", "portfolio", "comp_card"]).has(category)) {
+    return errorResponse(request, env, "invalid_file_category", "Choose photo, portfolio, or comp_card.", 400, false);
+  }
+
+  const requestId = generateRequestId();
+  const partnerHash = (await sha256Hex(verified.value.partnerRecord.id)).slice(0, 20);
+  const r2Key = `partner-shared/${partnerHash}/${modelRecordId}/${compactTimestamp()}-${safeFilename(file.name)}`;
+  await bucket.put(r2Key, file.stream(), {
+    httpMetadata: { contentType: file.type },
+    customMetadata: { scope: "shared_with_mmd", category, model_record_id: modelRecordId }
+  });
+  const now = new Date().toISOString();
+  const metadata: UploadedFileMetadata = {
+    r2_key: r2Key,
+    file_name: file.name,
+    file_type: file.type,
+    file_size: file.size,
+    file_category: category
+  };
+  const fields = buildAssetFields({
+    requestId,
+    index: 0,
+    file: metadata,
+    partnerRecordId: verified.value.partnerRecord.id,
+    referralRecordId: referral.id,
+    modelApplicationRecordId: null,
+    talentName: "",
+    talentType: "model",
+    portfolioUrl: "",
+    sourcePath: "/partner/dashboard",
+    now,
+    bucketName: env.PARTNER_ASSETS_BUCKET_NAME
+  });
+  fields[PARTNER_ASSETS.model] = [modelRecordId];
+  fields[PARTNER_ASSETS.payloadJson] = JSON.stringify({ ...metadata, scope: "shared_with_mmd" });
+  const asset = await createAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_ASSETS, fields, true);
+  return json(request, env, { ok: true, asset_id: asset.id, review_status: "pending_review", shared_with_mmd: true }, 201);
+}
+
+async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const sessionRecordId = readString(body.value, "session_record_id");
+  const action = normalizeStatus(readString(body.value, "action"));
+  const note = readString(body.value, "note").slice(0, 600);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return errorResponse(request, env, "session_record_id_invalid", "Invalid session.", 400, false);
+  const nextStatus = ({ confirm: "confirmed", changes: "changes_requested", decline: "declined" } as Record<string, string>)[action];
+  if (!nextStatus) return errorResponse(request, env, "partner_confirmation_action_invalid", "Choose confirm, changes, or decline.", 400, false);
+
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_SESSIONS?: string }).AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  const session = await getAirtableRecord(env, tableId, sessionRecordId);
+  const partnerId = fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerId) || "";
+  if (!partnerId || fieldText(session, SESSION_FIELDS.partnerIdSnapshot) !== partnerId) {
+    return errorResponse(request, env, "partner_session_scope_forbidden", "This job is outside the Partner relationship scope.", 403, false);
+  }
+  const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
+  const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
+  if (currentStatus === nextStatus) return json(request, env, { ok: true, idempotent: true, status: nextStatus, revision: currentRevision });
+  if (["confirmed", "declined"].includes(currentStatus)) {
+    return errorResponse(request, env, "partner_confirmation_already_final", `Job response is already ${currentStatus}.`, 409, false);
+  }
+  const now = new Date().toISOString();
+  const revision = currentRevision + 1;
+  await updateAirtableRecord(env, tableId, sessionRecordId, {
+    [SESSION_FIELDS.partnerConfirmationStatus]: nextStatus,
+    [SESSION_FIELDS.partnerConfirmedAt]: now,
+    [SESSION_FIELDS.partnerConfirmationRevision]: revision,
+    [SESSION_FIELDS.partnerConfirmationNote]: note || `Partner selected ${nextStatus} in Partner Dashboard.`
+  }, true);
+  try {
+    await sendTelegramMessage(env, [
+      "PARTNER DASHBOARD JOB RESPONSE",
+      "",
+      `Partner: ${fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || partnerId}`,
+      `Session: ${fieldText(session, SESSION_FIELDS.sessionId) || sessionRecordId}`,
+      `Model: ${fieldText(session, SESSION_FIELDS.modelName) || "Model"}`,
+      `Response: ${nextStatus}`,
+      `Revision: ${revision}`
+    ].join("\n"), "partner_confirm");
+  } catch (error) {
+    console.error("partner dashboard job response telegram alert failed", error);
+  }
+  return json(request, env, { ok: true, status: nextStatus, revision, confirmed_at: now });
+}
+
+async function handlePartnerPrivateVaultGet(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const bucket = (env as RuntimeEnv & { PARTNER_ASSETS?: R2Bucket }).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "private_vault_unavailable", "Private Vault is temporarily unavailable.", 503, true);
+  const key = await partnerPrivateVaultKey(verified.value.partnerRecord.id);
+  const stored = await bucket.get(key);
+  const response = stored
+    ? json(request, env, { ok: true, exists: true, envelope: parseJson(await stored.text()) })
+    : json(request, env, { ok: true, exists: false, envelope: null });
+  response.headers.set("Cache-Control", "no-store, private");
+  response.headers.set("X-MMD-Privacy", "client-side-encrypted");
+  return response;
+}
+
+async function handlePartnerPrivateVaultPut(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+  const bucket = (env as RuntimeEnv & { PARTNER_ASSETS?: R2Bucket }).PARTNER_ASSETS;
+  if (!bucket) return errorResponse(request, env, "private_vault_unavailable", "Private Vault is temporarily unavailable.", 503, true);
+  const body = await readJsonObject(request);
+  if (!body.ok || !isRecord(body.value.envelope)) return errorResponse(request, env, "vault_envelope_invalid", "Encrypted vault envelope is required.", 400, false);
+  const envelope = body.value.envelope;
+  const version = Number(envelope.version || 0);
+  const salt = readString(envelope, "salt");
+  const iv = readString(envelope, "iv");
+  const ciphertext = readString(envelope, "ciphertext");
+  if (version !== 1 || !isBoundedBase64Url(salt, 16, 256) || !isBoundedBase64Url(iv, 12, 64) || !isBoundedBase64Url(ciphertext, 16, 900000)) {
+    return errorResponse(request, env, "vault_envelope_invalid", "Encrypted vault envelope is invalid or too large.", 400, false);
+  }
+  const storedEnvelope = { version: 1, kdf: "PBKDF2-SHA256-310000", cipher: "AES-GCM-256", salt, iv, ciphertext, updated_at: new Date().toISOString() };
+  const key = await partnerPrivateVaultKey(verified.value.partnerRecord.id);
+  await bucket.put(key, JSON.stringify(storedEnvelope), {
+    httpMetadata: { contentType: "application/json" },
+    customMetadata: { scope: "partner_private_ciphertext", version: "1" }
+  });
+  const response = json(request, env, { ok: true, stored: true, plaintext_received: false, updated_at: storedEnvelope.updated_at });
+  response.headers.set("Cache-Control", "no-store, private");
+  response.headers.set("X-MMD-Privacy", "client-side-encrypted");
+  return response;
+}
+
+async function partnerPrivateVaultKey(partnerRecordId: string): Promise<string> {
+  const digest = await sha256Hex(`partner-private-vault:${partnerRecordId}`);
+  return `partner-private-vault/v1/${digest.slice(0, 40)}.json`;
+}
+
+function isBoundedBase64Url(value: string, min: number, max: number): boolean {
+  return value.length >= min && value.length <= max && /^[A-Za-z0-9_-]+$/.test(value);
+}
+
+function normalizeHttpsUrls(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const urls: string[] = [];
+  for (const item of value) {
+    const raw = String(item || "").trim();
+    if (!raw) continue;
+    try {
+      const parsed = new URL(raw);
+      if (parsed.protocol !== "https:") continue;
+      urls.push(parsed.toString().slice(0, 1000));
+    } catch {}
+  }
+  return [...new Set(urls)].slice(0, limit);
+}
+
+function readBoundedNumber(value: unknown, min: number, max: number): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= min && number <= max ? number : null;
+}
+
+function hasSubmittedValue(value: unknown): boolean {
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  const number = Number(value);
+  return value !== undefined && value !== null && value !== "" && Number.isFinite(number) ? number : null;
+}
+
+function compactObject(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => {
+    if (item === undefined || item === null || item === "") return false;
+    if (Array.isArray(item) && item.length === 0) return false;
+    return true;
+  }));
+}
+
+function fieldAttachmentUrl(record: AirtableRecord, key: string): string | null {
+  const value = record.fields[key];
+  if (!Array.isArray(value)) return null;
+  const first = value.find((entry) => isRecord(entry) && typeof entry.url === "string");
+  return isRecord(first) && typeof first.url === "string" ? first.url : null;
+}
 
 const PARTNER_SALES_AUDIENCE = new Set(["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"]);
 const PARTNER_SALES_SCHEDULE = new Set(["Always","Date range","Date + time range","Weekly recurring"]);
@@ -1244,7 +1992,7 @@ async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv
   const action = normalizeStatus(readString(body.value, "action"));
   const note = readString(body.value, "note").slice(0, 600);
   if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) return json(request, env, { ok:false, error:"session_record_id_invalid" }, 400);
-  if (!/^\\d{5,20}$/.test(telegramUserId)) return json(request, env, { ok:false, error:"telegram_identity_invalid" }, 400);
+  if (!/^\d{5,20}$/.test(telegramUserId)) return json(request, env, { ok:false, error:"telegram_identity_invalid" }, 400);
   const statusByAction: Record<string,string> = {
     confirm: "confirmed",
     changes: "changes_requested",
@@ -1750,9 +2498,11 @@ async function listLinkedRecordsForPartner(
   env: RuntimeEnv,
   tableId: string,
   partnerFieldId: string,
-  partnerRecordId: string
+  partnerRecordId: string,
+  partnerPrimaryValue = ""
 ): Promise<AirtableRecord[]> {
-  const formula = `FIND('${escapeFormulaString(partnerRecordId)}', ARRAYJOIN({${partnerFieldId}}))`;
+  const formulaValue = partnerPrimaryValue || partnerRecordId;
+  const formula = `FIND('${escapeFormulaString(formulaValue)}', ARRAYJOIN({${partnerFieldId}}))`;
   try {
     const records = await listAirtableRecords(env, tableId, { filterByFormula: formula, maxRecords: 100 });
     if (records.length) return records;
@@ -2290,6 +3040,12 @@ function fieldLinkIds(record: AirtableRecord, key: string): string[] {
   const value = record.fields[key];
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string" && entry.startsWith("rec"));
+}
+
+function fieldMultiText(record: AirtableRecord, key: string): string[] {
+  const value = record.fields[key];
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry || "").trim()).filter(Boolean);
 }
 
 function normalizeStatus(value: string | null): string {

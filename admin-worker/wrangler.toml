@@ -563,6 +563,22 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/resolve"
 zone_name = "mmdbkk.com"
 
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/rules"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/rules"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/models/sales/rules*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/models/sales/rules*"
+zone_name = "mmdbkk.com"
+
 # Kenji CEO Control read APIs. Keep exact routes plus narrow query-safe companions; no broad /v1/admin/kenji/control/* ownership.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/kenji/control/memory"
@@ -826,6 +842,7 @@ AIRTABLE_TABLE_MODEL_MEDIA = "tblrpQXhHnbTU9RhW"
 AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 AIRTABLE_CLIENT_NAME_FIELD = "Client Name"
 AIRTABLE_TABLE_MODELS = "models"
+AIRTABLE_TABLE_MODEL_OFFER_RULES_ID = "tblSbxUGTFqd2CgPy"
 AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AT_SESSIONS__SESSION_ID = "session_id"
 AT_SESSIONS__PAYMENT_REF = "payment_ref"
