@@ -15,15 +15,15 @@ export interface AuthorityCaptureResult {
   error?: string;
 }
 
-export function posthogAuthorityReady(env?: Record<string, unknown>): boolean;
+export function posthogAuthorityReady(env?: unknown): boolean;
 
 export function captureAuthorityEvent(
-  env: Record<string, unknown> | undefined,
+  env: unknown,
   input: AuthorityEventInput,
 ): Promise<AuthorityCaptureResult>;
 
 export function queueAuthorityEvent(
   ctx: { waitUntil(promise: Promise<unknown>): void } | null | undefined,
-  env: Record<string, unknown> | undefined,
+  env: unknown,
   input: AuthorityEventInput,
 ): void;
