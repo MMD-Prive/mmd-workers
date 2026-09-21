@@ -376,6 +376,8 @@ export default {
         return javascriptResponse(WEBFLOW_SIGIL_PARTNER_FORM_JS);
       }
 
+      if (request.method === "POST" && url.pathname === "/v1/partner/line/exchange") return handlePartnerLineExchange(request, runtimeEnv);
+      if (request.method === "GET" && url.pathname === "/v1/partner/line/login") return new Response(PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
       if (request.method === "POST" && url.pathname === "/v1/partner/upload") {
         return await handlePartnerUpload(request, runtimeEnv);
       }
@@ -3664,3 +3666,31 @@ const WEBFLOW_SIGIL_PARTNER_FORM_JS = `
   }, true);
 })();
 `;
+
+async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Promise<Response> {
+  if (request.headers.get("Origin") !== "https://www.mmdbkk.com") return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const token = readString(body.value, "id_token");
+  if (!token || token.length > 10000) return errorResponse(request, env, "id_token_required", "Verify LINE first.", 401, false);
+  const response = await fetch("https://api.line.me/oauth2/v2.1/verify", { method: "POST", body: new URLSearchParams({ id_token: token, client_id: "2010864854" }) });
+  const identity = await response.json() as Record<string, unknown>;
+  if (!response.ok || identity.aud !== "2010864854" || identity.iss !== "https://access.line.me" || typeof identity.exp !== "number" || identity.exp * 1000 <= Date.now() || typeof identity.sub !== "string" || !/^U[a-f0-9]{32}$/i.test(identity.sub)) return errorResponse(request, env, "line_identity_invalid", "LINE verification failed.", 401, false);
+  const claims = await listAirtableRecords(env, "tbluoZ5JiRcoUP6WT", { filterByFormula: `{line_user_id}='${escapeFormulaString(identity.sub)}'`, maxRecords: 2 });
+  const claim = claims[0];
+  if (claims.length !== 1 || !claim || fieldText(claim, "fld6PAywOhvDeelDJ") !== "verified_unlinked" || fieldText(claim, "fldGB7Raqm6O1NIhh") !== "published") return errorResponse(request, env, "partner_line_review_required", "LINE claim requires review.", 403, false);
+  const ids = fieldLinkIds(claim, "fldaMlO1fRoazxfHg");
+  if (ids.length !== 1) return errorResponse(request, env, "partner_line_review_required", "Partner link requires review.", 403, false);
+  const partner = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, ids[0]!);
+  const links = fieldLinkIds(partner, "fldXs6VyfXIHxBMpQ");
+  if (links.length !== 1 || links[0] !== claim.id || normalizeStatus(fieldText(partner, MODEL_PARTNERS.status)) !== "active" || normalizeStatus(fieldText(partner, MODEL_PARTNERS.approvalStatus)) !== "recognized") return errorResponse(request, env, "partner_not_recognized", "Partner is not active.", 403, false);
+  const access = await generatePartnerToken(env, partner.id);
+  await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, partner.id, { [MODEL_PARTNERS.accessTokenHash]: await sha256Hex(access) }, false);
+  const result = json(request, env, { ok: true, dashboard_url: `https://sigil-partner.lovable.app/?t=${encodeURIComponent(access)}` });
+  result.headers.set("Cache-Control", "no-store");
+  return result;
+}
+const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner LINE</title><style>body{background:#10110f;color:#f5f1e7;font:18px system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}button{padding:16px;background:#06c755;color:white;border:0;border-radius:8px;font:inherit;width:100%}</style><main><h1>SĪGIL Partner</h1><p>ใช้ LINE บัญชีเดิมเพื่อเข้าสู่พื้นที่พาร์ทเนอร์</p><button id="go">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status"></p></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
+const go=document.getElementById('go'),state=document.getElementById('state');
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await liff.init({liffId:'2010864854-N34SgCqq'});if(!liff.isLoggedIn()){liff.login({redirectUri:'https://www.mmdbkk.com/v1/partner/line/login'});return;}const r=await fetch('/v1/partner/line/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:liff.getIDToken()})});const d=await r.json();if(!r.ok||!d.ok){state.textContent='กรุณาให้ MMD ตรวจการเชื่อมบัญชี Partner';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://sigil-partner.lovable.app')throw Error();location.replace(target.href);}catch{state.textContent='เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง';go.disabled=false;}};
+</script></html>`;
