@@ -2,6 +2,15 @@ name: Deploy Kenji Recommendation Layer
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-kenji-recommendation-layer.yml"
+      - "shared/kenji-recommendation-*.mjs"
+      - "admin-worker/src/kenji-recommendation-*.js"
+      - "admin-worker/src/kenji-lv5-operational-rpc.js"
+      - "admin-worker/kenji-recommendation-*.mjs"
   workflow_run:
     workflows: ["Deploy admin-worker"]
     types: [completed]
@@ -17,6 +26,7 @@ jobs:
   deploy:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
