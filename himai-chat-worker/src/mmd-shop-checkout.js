@@ -1,3 +1,4 @@
+import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 import { publicMmdShopReservation, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 import { releaseViaMmdShopCoordinator, reserveViaMmdShopCoordinator } from "./mmd-shop-stock-coordinator.js";
@@ -101,7 +102,7 @@ function checkoutConfigForPath(pathname) {
 }
 
 
-export async function handleMmdShopCheckout(request, env) {
+export async function handleMmdShopCheckout(request, env, ctx = null) {
   const url = new URL(request.url);
   const shop = checkoutConfigForPath(url.pathname);
   if (!shop) return null;
@@ -198,6 +199,24 @@ export async function handleMmdShopCheckout(request, env) {
       "money_truth=payments-worker",
       `reservation_expires_at=${clean(reservation?.expires_at, 80)}`,
     ].join("; ")).catch(() => null);
+
+    queueAuthorityEvent(ctx, env, {
+      event: "shop_order_created",
+      authority: "himai-chat-worker",
+      scope: "shop",
+      distinctValue: orderId,
+      insertValue: orderId,
+      properties: {
+        surface: "shop",
+        world: "shop",
+        shop: shop.key,
+        status: "draft",
+        payment_stage: "shop",
+        amount_thb: total,
+        currency: "THB",
+        stock_confirmation_required: stockConfirmationRequired,
+      },
+    });
 
     return json({
       ok: true,
