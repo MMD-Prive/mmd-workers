@@ -29,7 +29,6 @@ SUPPLIER_DASHBOARD_URL = "https://mmdbkk.com/shop/distributor"
 # INTERNAL_TOKEN                         - shared auth for himai-chat-worker LINE push
 # OPENAI_API_KEY                         - optional natural-language AI layer
 # AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Service auth for himai-chat-worker LINE push
-# AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Service auth for himai-chat-worker LINE push
 # HIMAI_DISTRIBUTOR_PORTAL_TOKENS        - same scoped supplier access map used by portal
 
 [[services]]
