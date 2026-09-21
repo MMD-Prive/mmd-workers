@@ -31,6 +31,7 @@ enabled = true
 head_sampling_rate = 1
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_MODEL_PARTNERS = "tbl1ksDlsTiiGEHWe"
 AIRTABLE_TABLE_MODEL_REFERRALS = "tblrmSsCZxJSCQR9n"
