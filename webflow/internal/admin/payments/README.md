@@ -1,3 +1,20 @@
+## Simple daily payment review — 2026-09-21
+
+`payment-review-simple.html` is the complete primary embed for `/internal/admin/payments`.
+It replaces the live `money-control-v3` embed and uses a new root so old presentation patches cannot enable its approval controls.
+
+- One searchable queue, using canonical customer names plus model and job context.
+- `include_context=1` adds a read-only canonical Payment/Session projection; no confirmation tokens or model payouts are returned.
+- Show the submitted amount next to the amount due for this payment, not the total job fee.
+- View the evidence and confirm both the job match and money received in the bank before enabling approval.
+- An uncertain response retains the exact request and idempotency key in session storage; only an explicit retry replays it.
+- The result separately reports money recorded, internal Telegram handoff, customer/model delivery, and membership write-through when relevant.
+- Issue/reject record the review audit only. The UI says the item remains in the queue, matching the existing API contract.
+- The CEO inbox remains available under additional tools for exceptional identity/context matching. Historical imports remain separate.
+- Web proofs use semicolon metadata and private `web-payment-proofs`/`mmd-shop-payment-proofs` objects; LINE proofs retain their JSON metadata and private prefix. Images and sandboxed PDFs are served only after the existing admin session check.
+
+Validation: `node --test admin-worker/payment-review-simple.test.mjs` plus existing review/auth/delivery suites. The UI was also exercised with a DOM harness for evidence-load failure, both approval checks, persistent same-key retry, and a failed-delivery receipt after successful payment.
+
 # `/internal/admin/payments` — Money Control V3
 
 Build: `money-control-v3-evidence-context-20260912`
