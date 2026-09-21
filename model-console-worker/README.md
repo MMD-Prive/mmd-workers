@@ -20,6 +20,7 @@ Operator surface only. Canonical operational state remains owned by downstream w
 - `GET /v1/console/models/:id/access`
 - `GET /v1/console/models/:id/alerts`
 - `POST /v1/console/models/upsert`
+- `POST /v1/console/models/:id/availability-snapshot` — operator-confirmed, sanitized SIGIL availability producer
 - `GET /v1/console/workers/health` — contract-aware health
 
 Model 360 aggregates downstream responses and labels unavailable sections; it does not synthesize or persist canonical identity/status.
@@ -33,3 +34,10 @@ Model 360 aggregates downstream responses and labels unavailable sections; it do
 ## Required configuration
 
 Canonical production values are `SESSION_VALIDATOR_BASE_URL=https://mmdbkk.com`, `SESSION_VALIDATOR_PATH=/v1/admin/auth/me`, and `ADMIN_EVENT_LOG_PATH=/v1/admin/model-console/audit`. `ADMIN_EVENT_LOG_BASE_URL` may be the verified admin-worker hostname or an `ADMIN_WORKER` service binding. Configure the remaining verified downstream worker base URLs and the `MMD_MODEL_CONSOLE_MEMORY` KV binding. Keep downstream credentials as Worker secrets.
+
+
+## SIGIL availability producer
+
+Model Console never writes raw operational context into Kenji's recommendation storage. The availability producer resolves the canonical Model first, forwards only the safe availability state, city, coarse zones, and `burn/mk/live` booleans through the service-only Admin Worker boundary, and stores `sigil_availability_snapshot_v1` in the shared availability KV.
+
+Forbidden values such as customer identity, hotel/room, exact GPS, payment data, contacts, and operator/private notes are not forwarded. `available_now` expires within 15 minutes; other states are TTL-bounded by the SIGIL Availability Snapshot contract.
