@@ -4,6 +4,7 @@
   const DASHBOARD = "/member/dashboard";
   const MY_MMD = "/member/my-mmd";
   const MY_MMD_CANONICAL = "/my-mmd/";
+  const CARE_BACK_COUPONS = "/my-mmd/coupons";
   const COUPON_ENTRY = "/coupon";
   const LIFF_STATUS = "https://miniapp.line.me/2010862595-yT4DCEMc/?intent=status";
   const CARE_BACK_WISH = "/promotion/6-years-care-back/wish";
@@ -250,8 +251,8 @@
     if (path === "/promotion/6-years-care-back/wish") {
       root = document.getElementById("mmd-wish");
       if (root) {
-        root.dataset.dashboardUrl = MY_MMD;
-        setLinks('a[href*="/member/liff"],a[href*="miniapp.line.me"]', MY_MMD, root);
+        root.dataset.dashboardUrl = CARE_BACK_COUPONS;
+        setLinks('a[href*="/member/liff"],a[href*="miniapp.line.me"],a[href*="/member/my-mmd"],a[href="/my-mmd/"],a[href="/my-mmd"]', CARE_BACK_COUPONS, root);
       }
     }
 
