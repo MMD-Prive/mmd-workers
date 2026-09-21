@@ -8,24 +8,41 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   var root = document.querySelector("[data-partner-control-room]");
   if (!root || !token) return;
 
-  var state = { data:null, model:null, vault:null, vaultEnvelope:null, vaultPin:"", vaultRevision:null, vaultReady:false, vaultQueue:Promise.resolve(), vaultConflict:false, view:"home" };
+  var state = { data:null, model:null, vault:null, vaultEnvelope:null, vaultPin:"", vaultRevision:null, vaultReady:false, vaultQueue:Promise.resolve(), vaultConflict:false, authBlocked:false, view:"home" };
   var $ = function (selector, parent) { return (parent || document).querySelector(selector); };
   var $$ = function (selector, parent) { return Array.prototype.slice.call((parent || document).querySelectorAll(selector)); };
   var esc = function (value) { return String(value == null ? "" : value).replace(/[&<>\"']/g, function (c) { return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]; }); };
   var money = function (value) { return Number(value || 0).toLocaleString("th-TH") + " THB"; };
   var dateTime = function (value) { if (!value) return "—"; var d = new Date(value); return isNaN(d.getTime()) ? esc(value) : d.toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short", timeZone:"Asia/Bangkok" }); };
   var uid = function (prefix) { var bytes = new Uint8Array(10); crypto.getRandomValues(bytes); return prefix + Array.prototype.map.call(bytes, function (b) { return b.toString(16).padStart(2,"0"); }).join(""); };
+  var signInMessage = "เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์";
+
+  function blockPartnerAccess() {
+    state.authBlocked = true;
+    state.data = null; state.model = null; state.vault = null;
+    state.vaultPin = ""; state.vaultSalt = null; state.vaultEnvelope = null;
+    state.vaultReady = false; state.vaultConflict = true;
+    $(".pcr-shell", root).hidden = true;
+    var reconnect = $("[data-reconnect-line]", root);
+    if (reconnect) reconnect.hidden = false;
+    $$("dialog", root).forEach(function (dialog) { dialog.close(); });
+    $$("form", root).forEach(function (form) { form.reset(); });
+    $$('[data-vault-pin],[data-general-note],[data-private-travel],[name^="private_"]', root).forEach(function (field) { field.value = ""; });
+    $$('[data-jobs],[data-models],[data-earnings],[data-private-events],[data-model-history],[data-model-contacts],[data-activity],[data-console-history],[data-agreements],[data-performance]', root).forEach(function (el) { el.replaceChildren(); });
+    setFlash(signInMessage, "error");
+  }
 
   function api(path, options) {
+    if (state.authBlocked) return Promise.reject(new Error(signInMessage));
     var joiner = path.indexOf("?") === -1 ? "?" : "&";
     return fetch(path + joiner + "t=" + encodeURIComponent(token), Object.assign({}, options || {}, {referrerPolicy:"no-referrer",cache:"no-store",credentials:"omit"})).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (payload) {
+        if (response.status === 401) blockPartnerAccess();
+        if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var reconnect = $("[data-reconnect-line]", root);
-          if (response.status === 401 && reconnect) reconnect.hidden = false;
           var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
-          throw new Error(response.status === 401 ? "เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์" : messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
+          throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
       });
@@ -33,6 +50,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   }
 
   function setFlash(message, tone) {
+    if (state.authBlocked) { message = signInMessage; tone = "error"; }
     var flash = $("[data-flash]", root);
     if (!flash) return;
     flash.textContent = message || "";
@@ -114,7 +132,10 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   }
 
   function hydrate(data) {
+    if (state.authBlocked) return;
+    if (!state.data) setFlash("");
     state.data = data;
+    $(".pcr-shell", root).hidden = false;
     $("[data-loading]", root).textContent = "";
     $("[data-partner-name]", root).textContent = (data.partner && data.partner.name) || "SĪGIL Partner";
     renderMetrics(data); renderJobs(data); renderModels(data); renderEarnings(data); renderTelegram(data);
@@ -231,7 +252,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     if(!state.vaultReady)return loadVaultEnvelope().then(unlockVault).catch(function(){setFlash("ยังโหลด Vault ไม่สำเร็จ กรุณาลองใหม่","error");});
     var pin=$("[data-vault-pin]",root).value; if(pin.length<8)return setFlash("Vault PIN ต้องมีอย่างน้อย 8 ตัวอักษร","error");
     var envelope=state.vaultEnvelope; var salt=envelope?unb64(envelope.salt):crypto.getRandomValues(new Uint8Array(16));
-    vaultKey(pin,salt).then(function(key){ if(!envelope)return {travel_notes:{},model_notes:{},general_note:""}; return crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(envelope.iv)},key,unb64(envelope.ciphertext)).then(function(plain){return JSON.parse(new TextDecoder().decode(plain));}); }).then(function(data){state.vault=data;state.vaultPin=pin;state.vaultSalt=salt;state.vaultConflict=false;$("[data-vault-pin]",root).value=""; if(!state.vault.travel_notes)state.vault.travel_notes={};if(!state.vault.model_notes)state.vault.model_notes={};$("[data-vault-locked]",root).hidden=true;$("[data-vault-open]",root).hidden=false;$("[data-general-note]",root).value=state.vault.general_note||"";setFlash("Private Vault ปลดล็อกใน browser นี้แล้ว","success");hydrate(state.data);}).catch(function(){setFlash("Vault PIN ไม่ถูกต้อง หรือข้อมูลเสียหาย","error");});
+    vaultKey(pin,salt).then(function(key){ if(!envelope)return {travel_notes:{},model_notes:{},general_note:""}; return crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(envelope.iv)},key,unb64(envelope.ciphertext)).then(function(plain){return JSON.parse(new TextDecoder().decode(plain));}); }).then(function(data){if(state.authBlocked)return;state.vault=data;state.vaultPin=pin;state.vaultSalt=salt;state.vaultConflict=false;$("[data-vault-pin]",root).value=""; if(!state.vault.travel_notes)state.vault.travel_notes={};if(!state.vault.model_notes)state.vault.model_notes={};$("[data-vault-locked]",root).hidden=true;$("[data-vault-open]",root).hidden=false;$("[data-general-note]",root).value=state.vault.general_note||"";setFlash("Private Vault ปลดล็อกใน browser นี้แล้ว","success");hydrate(state.data);}).catch(function(){setFlash("Vault PIN ไม่ถูกต้อง หรือข้อมูลเสียหาย","error");});
   }
   function saveVault() {
     if(!state.vault||!state.vaultPin)return Promise.reject(new Error("ปลดล็อก Private Vault ก่อนบันทึก"));
@@ -265,6 +286,8 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function refreshTelegram(){if(state.data && !state.data.partner.telegram_connected && !document.hidden)load();}
   window.addEventListener("focus", refreshTelegram);
   document.addEventListener("visibilitychange", refreshTelegram);
+  $(".pcr-shell",root).hidden=true;
+  setFlash("กำลังโหลดข้อมูล Partner…");
   load();
   loadVaultEnvelope().catch(function(){setFlash("Private Vault พร้อมให้ลองเปิดอีกครั้ง ตารางงานยังใช้งานได้","error");});
 })();

@@ -3,13 +3,14 @@ import test from 'node:test';
 import {webcrypto} from 'node:crypto';
 import {build} from 'esbuild';
 import {Window} from 'happy-dom';
-import {fixture,MODEL} from './helpers/partner-fixture.mjs';
+import {fixture,MODEL,apiModule} from './helpers/partner-fixture.mjs';
 
 const bundle=await build({entryPoints:[new URL('../src/public-index.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm'});
 const {default:pageWorker}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 async function settle(check){for(let n=0;n<100;n++){if(check())return;await new Promise(r=>setTimeout(r,20));}assert.ok(check(),'UI operation did not settle');}
-async function ui(t){
+async function ui(t,{expired=false}={}){
   const f=await fixture();
+  if(expired)f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='invalidated-fixture';
   const w=new Window({url:'https://www.mmdbkk.com/partner/dashboard?t='+encodeURIComponent(f.token),settings:{enableJavaScriptEvaluation:true,disableCSSFileLoading:true,disableJavaScriptFileLoading:true,disableIframePageLoading:true}});
   const pending=new Set();let closed=false;
   t.after(async()=>{closed=true;await w.happyDOM.close();while(pending.size)await Promise.allSettled([...pending]);f.restore();});
@@ -19,11 +20,33 @@ async function ui(t){
   w.fetch=(path,opts={})=>{if(closed)return Promise.resolve(Response.json({ok:false},{status:499}));const u=new URL(path,w.location.href);const p=f.call(u.pathname+u.search,{method:opts.method,body:opts.body?JSON.parse(opts.body):undefined,headers:opts.headers});pending.add(p);p.finally(()=>pending.delete(p));return p;};
   const html=await(await pageWorker.fetch(new Request(w.location.href),f.env,{})).text();
   w.document.write(html);
-  try { await settle(()=>!!w.document.querySelector('[data-model]')); }
+  try { await settle(()=>expired?!w.document.querySelector('[data-reconnect-line]').hidden:!!w.document.querySelector('[data-model]')); }
   catch(e){throw new Error(e.message+'; '+errors.map(x=>x.stack||x).join('; ')+'; '+w.document.querySelector('[data-flash]')?.textContent);}
   const q=s=>w.document.querySelector(s);
   return {f,w,q,errors};
 }
+test('expired access keeps sign-in message after both dashboard and vault fail and hides operations',async t=>{
+  const {q,errors}=await ui(t,{expired:true});
+  assert.equal(q('.pcr-shell').hidden,true);
+  assert.equal(q('[data-reconnect-line]').hidden,false);
+  assert.equal(q('[data-flash]').textContent,'เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์');
+  assert.doesNotMatch(q('[data-flash]').textContent,/ตารางงานยังใช้งานได้/);
+  assert.equal(q('[data-model]'),null);
+  assert.deepEqual(errors,[]);
+});
+test('access revocation closes an open private editor and clears decrypted fields',async t=>{
+  const {q,w,f,errors}=await ui(t);
+  q('[data-vault-pin]').value='fixture-password';q('[data-unlock-vault]').click();
+  await settle(()=>!q('[data-vault-open]').hidden);
+  q('[data-edit-model]').click();
+  q('[name=private_note]').value='LOCAL UNSAVED SECRET';q('[data-general-note]').value='PRIVATE GENERAL';
+  f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='revoked-fixture';
+  w.dispatchEvent(new w.Event('focus'));
+  await settle(()=>!q('[data-reconnect-line]').hidden);
+  assert.equal(q('[data-model-dialog]').open,false);assert.equal(q('.pcr-shell').hidden,true);
+  assert.equal(q('[name=private_note]').value,'');assert.equal(q('[data-general-note]').value,'');
+  assert.equal(q('[data-model]'),null);assert.deepEqual(errors,[]);
+});
 test('native control room executes and switches every operation tab with live fixture data',async t=>{
   const {q,errors}=await ui(t);
   for(const name of ['home','models','agreements','earnings','performance','console','activity','privacy']){
