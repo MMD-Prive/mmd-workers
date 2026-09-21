@@ -19,7 +19,6 @@ const PUBLIC_PARTNER_PAGES: Record<string, PartnerPublicPage> = {
   "/partner/apply": { page: "partner-apply", webflowPath: "/partner/apply", injectFormBridge: true },
   "/partner/model": { page: "partner-model", webflowPath: "/partner/model" },
   "/partner/model/preview": { page: "partner-model-preview", webflowPath: "/partner/model/preview" },
-  "/partner/form": { page: "partner-form", webflowPath: "/partner/form", injectFormBridge: true },
   "/partner/terms": { page: "partner-terms", webflowPath: "/partner/terms" },
   "/partner/review": { page: "partner-review", systemPage: "review" },
   "/partner/recognized": { page: "partner-recognized", systemPage: "recognized" },
@@ -34,6 +33,12 @@ export default {
 
     if (method === "GET" && isPartnerBridgeScriptPath(url)) {
       return javascriptResponse(PARTNER_FORM_BRIDGE_JS);
+    }
+
+    if ((method === "GET" || method === "HEAD") && normalizePartnerPath(url.pathname) === "/partner/form") {
+      const next = new URL("/partner/apply", url.origin);
+      next.search = url.search;
+      return Response.redirect(next.toString(), 308);
     }
 
     if ((method === "GET" || method === "HEAD") && route) {
@@ -175,15 +180,15 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
     "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang='en'>SĪGIL</b><span lang='en'>Partner Division</span></a>" +
-    "<div><a href=\"/partner/model\">Model Partner</a><a href=\"/partner/apply\">Apply</a><a href=\"/partner/terms\">Terms</a></div></nav>" +
+    "<div><a href=\"/partner/model\">Model Partner</a><a href=\"/partner/apply\">Start Intake</a><a href=\"/partner/terms\">Partner Terms</a></div></nav>" +
     "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
     "<aside class=\"mmdp-card\"><small lang='en'>YUKI REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
     renderDashboardPanel(page, token) +
-    "<section class=\"mmdp-grid\"><article><span>01</span><h2>Submit</h2><p>ส่งเฉพาะข้อมูลที่จำเป็นต่อ Partner Review และรักษาขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
-    "<article><span>02</span><h2>Review</h2><p>Yuki ตรวจบทบาท แหล่งที่มา ความพร้อม และความเหมาะสมของ partner lane</p></article>" +
-    "<article><span>03</span><h2>Recognize</h2><p>เมื่อได้รับการรับรองแล้ว เข้าสู่พื้นที่ Partner ด้วยบัญชี LINE ที่เชื่อมไว้</p></article></section>" +
+    "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
+    "<article><span>02</span><h2>Review</h2><p>Yuki จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
+    "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>" +
     "</main><footer class=\"mmd-partner-canon-footer\"><span>MMD PRIVÉ · BANGKOK</span><span>Private by design.</span></footer>" + renderDashboardScript(page) + "</body></html>";
 
   const response = new Response(request.method.toUpperCase() === "HEAD" ? null : html, {
@@ -201,10 +206,10 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
   if (page === "recognized") {
     return {
       title: "MMD Partner Recognized",
-      heading: hasToken ? "Recognized access is ready." : "Open your recognized access link.",
-      lead: hasToken ? "สถานะ Partner ได้รับการยอมรับแล้ว ขั้นต่อไปคืออ่าน Partner Terms และเปิด Dashboard ด้วย private token." : "เปิด Recognition link ที่ทีม MMD Privé ส่งให้คุณ ระบบจะยืนยัน private token ก่อนเข้าสู่ Partner Terms และ Dashboard.",
-      body: hasToken ? "Private token ใช้ยืนยันสิทธิ์สำหรับ Partner Terms และ Dashboard โดย secret ฝั่ง Airtable และ Telegram อยู่ใน backend." : "Recognition link จากทีม MMD Privé จะพาคุณเข้าสู่สิทธิ์ที่ตรงกับ Partner record ของคุณ.",
-      card: hasToken ? "RECOGNIZED" : "OPEN RECOGNITION LINK"
+      heading: hasToken ? "Recognition confirmed." : "Open your Recognition link.",
+      lead: hasToken ? "สถานะ Partner พร้อมเข้าสู่ Partner Terms และ Dashboard ด้วย private token ที่ผูกกับ Partner record ของคุณ." : "ใช้ Recognition link ที่ทีม MMD Privé ส่งให้ เพื่อยืนยัน Partner record และเข้าสู่ขั้นตอนถัดไปอย่างปลอดภัย.",
+      body: hasToken ? "Private token เชื่อม Partner Terms, Dashboard และสิทธิ์ที่เกี่ยวข้องกับ record เดียวกัน โดยข้อมูลระบบสำคัญถูกดูแลฝั่ง backend." : "Recognition link พาคุณเข้าสู่ Partner Terms และ Dashboard ตามสิทธิ์ที่ผูกกับ Partner record ของคุณ.",
+      card: hasToken ? "RECOGNIZED" : "SECURE RECOGNITION"
     };
   }
 
@@ -213,29 +218,29 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
       title: "SĪGIL Partner Dashboard",
       heading: "Partner control room.",
       lead: hasToken ? "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว." : "เข้าสู่ระบบด้วย LINE บัญชีเดิมที่เชื่อมกับ Partner.",
-      body: hasToken ? "ข้อมูลส่วนตัวเริ่มต้นเป็น Private และจะถูกแชร์กับ MMD เฉพาะรายการที่ Partner ยืนยันอย่างชัดเจน." : "จากนั้นเชื่อม Telegram เพื่อรับแจ้งงานและส่งคำตอบให้ MMD.",
+      body: hasToken ? "Partner เป็นผู้ควบคุมข้อมูล Private และเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน." : "หลัง LINE verification คุณสามารถเปิด Dashboard และเลือกเชื่อม Telegram เพิ่มสำหรับการแจ้งเตือนได้.",
       card: "CONTROL ROOM"
     };
   }
 
   return {
     title: "MMD Partner Review",
-    heading: "Request received for review.",
-    lead: "ข้อมูลของคุณเข้าสู่ Partner Review แล้ว Yuki จะจัด lane และขอบเขตที่เหมาะสมก่อนส่งต่อขั้นถัดไป.",
-    body: "Yuki จะตรวจแหล่งที่มา ความเหมาะสม บทบาท และคุณภาพข้อมูล แล้วอัปเดตสถานะเมื่อพร้อมเข้าสู่ขั้น Recognized หรือขอข้อมูลเพิ่มเติม.",
-    card: "UNDER REVIEW"
+    heading: "Partner Review is in progress.",
+    lead: "ข้อมูลของคุณเข้าสู่ Partner Review แล้ว Yuki กำลังจัด lane และขอบเขตที่เหมาะกับบทบาทของคุณ.",
+    body: "ขั้นตอนถัดไปคือ Recognition เมื่อข้อมูลพร้อมเดินต่อ หรือ Yuki จะติดต่อกลับเพื่อเติมรายละเอียดที่ช่วยให้ Review ชัดขึ้น.",
+    card: "IN REVIEW"
   };
 }
 
 function renderSystemActions(page: string, tokenQuery: string, reviewHref: string, termsHref: string, dashboardHref: string): string {
   if (page === "recognized") {
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Read Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">Open Dashboard</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Continue to Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">Open Dashboard</a></p>";
   }
   if (page === "dashboard") {
     if (!tokenQuery) return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE</a></p>";
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"/partner\">Partner Gate</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"/partner\">Partner Home</a></p>";
   }
-  return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">Open Partner Dashboard</a></p>" : "");
+  return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">Read Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">Open Partner Dashboard</a></p>" : "");
 }
 
 function renderDashboardPanel(page: string, token: string): string {
@@ -247,16 +252,16 @@ function renderDashboardPanel(page: string, token: string): string {
   return "<section data-partner-control-room>" +
     "<a class=\"mmdp-btn\" data-reconnect-line hidden href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE อีกครั้ง</a>" +
     "<p class=\"pcr-flash\" data-flash hidden></p>" +
-    "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>ข้อมูลส่วนตัวและโน้ตภายในอยู่ภายใต้การควบคุมของ Partner; การส่งข้อมูลให้ MMD เกิดขึ้นเมื่อ Partner เลือก Share with MMD อย่างชัดเจน</p></div></div>" +
+    "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>Partner เป็นผู้ควบคุมข้อมูลส่วนตัวและโน้ตภายใน พร้อมเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน</p></div></div>" +
     "<div class=\"pcr-shell\"><aside class=\"pcr-side\"><small>Control Room</small><button type=\"button\" data-view=\"home\" aria-current=\"page\">Home & Jobs</button><button type=\"button\" data-view=\"models\">Models</button><button type=\"button\" data-view=\"earnings\">Earnings</button><button type=\"button\" data-view=\"privacy\">Private Vault</button></aside>" +
     "<div class=\"pcr-main\"><p class=\"pcr-loading\" data-loading></p>" +
     "<section data-view-panel=\"home\"><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">TODAY · ASIA/BANGKOK</p><h2 data-partner-name>Partner</h2><p>คิวงานและสถานะโมเดลในสังกัด</p></div></header><div class=\"pcr-metrics\" data-metrics></div><div class=\"pcr-telegram\" data-telegram></div><div class=\"pcr-section\"><div class=\"pcr-section-head\"><h3>ตารางงาน</h3></div><div class=\"pcr-jobs\" data-jobs></div></div></section>" +
     "<section data-view-panel=\"models\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PARTNER ROSTER</p><h2>Models</h2><p>โปรไฟล์ เรท และกลุ่มลูกค้าที่มองเห็น</p></div><button type=\"button\" data-open-add>+ Add model</button></header><div class=\"pcr-models\" data-models></div></section>" +
     "<section data-view-panel=\"earnings\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">PAYOUT LEDGER</p><h2>Earnings</h2><p>รายการค่าตอบแทนจากข้อมูลจริง</p></div></header><div class=\"pcr-section\" data-earnings></div></section>" +
-    "<section data-view-panel=\"privacy\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">END-TO-END PRIVATE</p><h2>Private Vault</h2><p>รหัสถอดข้อมูลอยู่กับ Partner บนอุปกรณ์ของคุณตลอด Private Vault flow</p></div></header><div class=\"pcr-vault\"><div class=\"pcr-vault-card\" data-vault-locked><h3>Unlock Private Vault</h3><p>ใส่ Vault PIN อย่างน้อย 8 ตัวอักษร หากเปิดครั้งแรก PIN นี้จะใช้สร้างกุญแจเข้ารหัสใน browser</p><input data-vault-pin type=\"password\" autocomplete=\"off\" placeholder=\"Vault PIN\"><div class=\"pcr-vault-actions\"><button type=\"button\" data-unlock-vault>Unlock / Create</button></div></div><div class=\"pcr-vault-card pcr-vault-open\" data-vault-open hidden><h3>Partner private notes</h3><p>ข้อความนี้ถูกเข้ารหัสก่อนออกจาก browser</p><textarea data-general-note placeholder=\"บันทึกภายในของ Partner เท่านั้น\"></textarea><div class=\"pcr-vault-actions\"><button type=\"button\" data-save-vault>Encrypt & Save</button></div></div></div></section>" +
+    "<section data-view-panel=\"privacy\" hidden><header class=\"pcr-top\"><div><p class=\"mmdp-eyebrow\">END-TO-END PRIVATE</p><h2>Private Vault</h2><p>Partner ถือ Vault PIN และกุญแจถอดรหัสไว้บนอุปกรณ์ของคุณตลอด Private Vault flow</p></div></header><div class=\"pcr-vault\"><div class=\"pcr-vault-card\" data-vault-locked><h3>Unlock Private Vault</h3><p>ใส่ Vault PIN อย่างน้อย 8 ตัวอักษร หากเปิดครั้งแรก PIN นี้จะใช้สร้างกุญแจเข้ารหัสใน browser</p><input data-vault-pin type=\"password\" autocomplete=\"off\" placeholder=\"Vault PIN\"><div class=\"pcr-vault-actions\"><button type=\"button\" data-unlock-vault>Unlock / Create</button></div></div><div class=\"pcr-vault-card pcr-vault-open\" data-vault-open hidden><h3>Partner private notes</h3><p>ข้อความนี้ถูกเข้ารหัสก่อนออกจาก browser</p><textarea data-general-note placeholder=\"บันทึกภายในของ Partner เท่านั้น\"></textarea><div class=\"pcr-vault-actions\"><button type=\"button\" data-save-vault>Encrypt & Save</button></div></div></div></section>" +
     "</div></div>" +
     "<dialog class=\"pcr-dialog\" data-model-dialog><div class=\"pcr-dialog-head\"><h2>Edit model</h2><button type=\"button\" data-close-dialog>×</button></div><form class=\"pcr-form\" data-model-form><div class=\"pcr-form-grid\">" + sharedFields +
-    "<label class=\"wide pcr-private-field\"><span>Private model note · Partner-only encrypted</span><textarea name=\"private_note\" placeholder=\"ปลดล็อก Private Vault เพื่อแก้ไขโน้ต\"></textarea></label>" +
+    "<label class=\"wide pcr-private-field\"><span>Private model note · Encrypted for Partner</span><textarea name=\"private_note\" placeholder=\"ปลดล็อก Private Vault เพื่อแก้ไขโน้ต\"></textarea></label>" +
     "<fieldset><legend>Sales Control · ส่งให้ Boss Per ตรวจ</legend><div class=\"pcr-form-grid\"><label><span>เรทถึงตัว (THB)</span><input name=\"partner_source_rate_thb\" type=\"number\" min=\"0\"></label><label><span>เรทขายที่เสนอ (THB)</span><input name=\"customer_sell_rate_thb\" type=\"number\" min=\"0\"></label><label><span>Visibility</span><select name=\"sales_visibility\"><option value=\"off\">OFF</option><option value=\"on\">ON</option></select></label><div class=\"wide pcr-checks\">" + audienceHtml + "</div><button type=\"button\" data-save-sales>Submit sales control</button></div></fieldset>" +
     "<fieldset><legend>Profile media · Shared with MMD</legend><input name=\"model_file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,application/pdf\"><button type=\"button\" data-upload-model>Upload for review</button></fieldset>" +
     "<label class=\"wide pcr-consent\"><input name=\"share_with_mmd\" type=\"checkbox\"><span>ฉันเลือกแชร์ข้อมูลโปรไฟล์และไฟล์ชุดนี้กับ MMD เพื่อใช้ตรวจสอบและดำเนินงาน</span></label></div><div class=\"pcr-form-actions\"><button type=\"submit\" data-save-profile>Save profile</button><button type=\"button\" class=\"danger\" data-remove-model>Remove from roster</button></div></form></dialog>" +
@@ -371,7 +376,9 @@ const PARTNER_DESIGN_CSS = String.raw`
   --mmdp-line-strong:rgba(231,199,139,.50);
   --mmdp-gold:#d7af67;
   --mmdp-gold-2:#f5e2b5;
-  --mmdp-danger:#ff8e8e;
+  --mmdp-success:#5d8f70;
+  --mmdp-review:#b89455;
+  --mmdp-danger:#d98282;
   --mmdp-font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;
   --mmdp-font-en:"General Sans","Satoshi",Arial,sans-serif;
   --mmdp-font-secondary:"Satoshi","General Sans",Arial,sans-serif;
@@ -449,6 +456,9 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
   color:var(--mmdp-ink)!important;font-family:var(--mmdp-font-th);font-weight:600;text-decoration:none
 }
 .mmdp-btn.ghost{color:var(--mmdp-gold-2)!important;background:rgba(255,255,255,.035);border-color:var(--mmdp-line)}
+.mmdp-btn{transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
+.mmdp-btn:hover{transform:translateY(-1px);filter:brightness(1.025)}
+.mmdp-btn.ghost:hover{background:rgba(215,175,103,.07);border-color:var(--mmdp-line-strong)}
 .mmdp-card{
   min-height:330px;border:1px solid var(--mmdp-line);border-radius:32px;padding:30px;
   background:radial-gradient(circle at 24% 14%,rgba(215,175,103,.10),transparent 28%),linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.014)),var(--mmdp-panel);
