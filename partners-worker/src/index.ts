@@ -377,7 +377,8 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/v1/partner/line/exchange") return handlePartnerLineExchange(request, runtimeEnv);
-      if (request.method === "GET" && url.pathname === "/v1/partner/line/login") return new Response(PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      if (request.method === "GET" && url.pathname === "/v1/partner/line/login") return Response.redirect("https://mmdbkk.com/sigil/model/dashboard/partner-login", 302);
+      if (request.method === "GET" && url.pathname === "/sigil/model/dashboard/partner-login") return new Response(PARTNER_LINE_LOGIN, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
       if (request.method === "POST" && url.pathname === "/v1/partner/upload") {
         return await handlePartnerUpload(request, runtimeEnv);
       }
@@ -3668,7 +3669,7 @@ const WEBFLOW_SIGIL_PARTNER_FORM_JS = `
 `;
 
 async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Promise<Response> {
-  if (request.headers.get("Origin") !== "https://www.mmdbkk.com") return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
+  if (!["https://www.mmdbkk.com", "https://mmdbkk.com"].includes(request.headers.get("Origin") || "")) return errorResponse(request, env, "origin_not_allowed", "Open Partner LINE login.", 403, false);
   const body = await readJsonObject(request);
   if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
   const token = readString(body.value, "id_token");
@@ -3692,5 +3693,5 @@ async function handlePartnerLineExchange(request: Request, env: RuntimeEnv): Pro
 }
 const PARTNER_LINE_LOGIN = `<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>SĪGIL Partner LINE</title><style>body{background:#10110f;color:#f5f1e7;font:18px system-ui;padding:12vh 24px}main{max-width:440px;margin:auto}button{padding:16px;background:#06c755;color:white;border:0;border-radius:8px;font:inherit;width:100%}</style><main><h1>SĪGIL Partner</h1><p>ใช้ LINE บัญชีเดิมเพื่อเข้าสู่พื้นที่พาร์ทเนอร์</p><button id="go">เข้าสู่ระบบด้วย LINE</button><p id="state" role="status"></p></main><script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script><script>
 const go=document.getElementById('go'),state=document.getElementById('state');
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await liff.init({liffId:'2010864854-N34SgCqq'});if(!liff.isLoggedIn()){liff.login({redirectUri:'https://www.mmdbkk.com/v1/partner/line/login'});return;}const r=await fetch('/v1/partner/line/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:liff.getIDToken()})});const d=await r.json();if(!r.ok||!d.ok){state.textContent='กรุณาให้ MMD ตรวจการเชื่อมบัญชี Partner';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://sigil-partner.lovable.app')throw Error();location.replace(target.href);}catch{state.textContent='เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง';go.disabled=false;}};
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await liff.init({liffId:'2010864854-N34SgCqq'});if(!liff.isLoggedIn()){liff.login({redirectUri:'https://mmdbkk.com/sigil/model/dashboard/partner-login'});return;}const r=await fetch('/v1/partner/line/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:liff.getIDToken()})});const d=await r.json();if(!r.ok||!d.ok){state.textContent='กรุณาให้ MMD ตรวจการเชื่อมบัญชี Partner';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://sigil-partner.lovable.app')throw Error();location.replace(target.href);}catch{state.textContent='เชื่อมต่อไม่สำเร็จ กรุณาลองอีกครั้ง';go.disabled=false;}};
 </script></html>`;
