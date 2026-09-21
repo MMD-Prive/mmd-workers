@@ -1,0 +1,60 @@
+name = "my-mmd-standby-worker"
+main = "src/index.js"
+compatibility_date = "2026-07-02"
+workers_dev = true
+preview_urls = true
+
+# The standby is a separate public front door only. Canonical member, Points,
+# history, tier, renewal, signup and payment truth remain in member-pages-worker
+# and its existing resolver/payment service bindings.
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/member/liff-backup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/liff-backup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/member/api/liff-backup/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/member/api/liff-backup/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/api/member-backup/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member-backup/app/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/member-backup/payments*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/member-backup/payments*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/my-mmd-backup*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/my-mmd-backup*"
+zone_name = "mmdbkk.com"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# LINE_LIFF_BACKUP_ID is supplied at deploy time from the repository variable
+# MY_MMD_BACKUP_LIFF_ID. It must be a second LIFF app on LINE Login channel
+# 2010862595 with endpoint https://www.mmdbkk.com/member/liff-backup.

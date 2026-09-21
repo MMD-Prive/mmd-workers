@@ -1,0 +1,57 @@
+name: Kenji Recommendation CI
+
+on:
+  pull_request:
+    paths:
+      - "shared/kenji-recommendation-*.mjs"
+      - "shared/model-sales-control-v1.mjs"
+      - "shared/model-sales-control-v1.test.mjs"
+      - "admin-worker/src/kenji-recommendation-*.js"
+      - "admin-worker/kenji-recommendation-*.mjs"
+      - "admin-worker/src/kenji-lv5-operational-rpc.js"
+      - "admin-worker/src/kenji-model-access-rpc.js"
+      - "admin-worker/kenji-model-access-rpc.test.mjs"
+      - "docs/architecture/KENJI_RECOMMENDATION_LAYER_V1_20260921.md"
+      - ".github/workflows/kenji-recommendation-ci.yml"
+      - ".github/workflows/deploy-kenji-recommendation-layer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Validate Recommendation Layer policy core
+        run: |
+          node --check shared/kenji-recommendation-contract-v1.mjs
+          node --check shared/kenji-recommendation-context-v1.mjs
+          node --check shared/kenji-recommendation-candidate-v1.mjs
+          node --check shared/kenji-recommendation-layer-v1.mjs
+          node --test shared/kenji-recommendation-authority.test.mjs shared/kenji-recommendation-personalization.test.mjs
+
+      - name: Validate service-only recommendation adapter and production mount
+        run: |
+          node --check admin-worker/src/kenji-recommendation-profile-source.js
+          node --check admin-worker/src/kenji-recommendation-context-adapter.js
+          node --check admin-worker/src/kenji-recommendation-rpc.js
+          node --check admin-worker/src/kenji-lv5-operational-rpc.js
+          node --test admin-worker/kenji-recommendation-rpc-auth.test.mjs admin-worker/kenji-recommendation-rpc-behavior.test.mjs admin-worker/kenji-recommendation-entrypoint.test.mjs
+
+      - name: Validate existing Model Access and Sales Control authority regressions
+        if: matrix.node-version == '22.x'
+        run: |
+          node --test shared/model-sales-control-v1.test.mjs
+          node --test admin-worker/kenji-model-access-rpc.test.mjs

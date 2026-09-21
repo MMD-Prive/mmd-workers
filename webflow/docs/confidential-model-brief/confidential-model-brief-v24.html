@@ -1,0 +1,573 @@
+<!--
+MMD Privé · Confidential Model Brief V24
+Route: /docs/confidential-model-brief
+Source mirror: GitHub / webflow/docs/confidential-model-brief/
+Presentation only. Route access / token / revocation authority remains Worker-owned.
+-->
+<section id="mmd-confidential-model-brief-v24" class="cmb24" data-cmb24 data-lang="th" aria-label="MMD Privé Confidential Model Brief">
+  <style>
+    #mmd-confidential-model-brief-v24{
+      --bg:#080808;--bg2:#10100f;--panel:#151412;--paper:#f4f0e8;--ink:#171512;
+      --text:#f6f2e8;--muted:#aaa398;--muted2:#7e786f;--gold:#d6b978;--gold2:#f0dba9;
+      --line:rgba(235,218,181,.16);--line-strong:rgba(235,218,181,.3);--ok:#9bd2b0;
+      --radius:22px;--ease:cubic-bezier(.22,1,.36,1);
+      color:var(--text)!important;background:var(--bg)!important;
+      font-family:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans SC","PingFang SC","Microsoft YaHei",
+      -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;
+      font-synthesis-weight:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;
+      min-height:100svh;isolation:isolate;overflow:hidden;
+    }
+    #mmd-confidential-model-brief-v24,
+    #mmd-confidential-model-brief-v24 *{box-sizing:border-box}
+    #mmd-confidential-model-brief-v24 *{
+      -webkit-text-fill-color:currentColor!important;
+      text-decoration-thickness:from-font;
+    }
+    #mmd-confidential-model-brief-v24 button,
+    #mmd-confidential-model-brief-v24 a{font:inherit}
+    #mmd-confidential-model-brief-v24 img{max-width:100%;display:block}
+    #mmd-confidential-model-brief-v24 [hidden]{display:none!important}
+    .cmb24__wrap{width:min(1180px,100%);margin:0 auto}
+    .cmb24__nav{
+      height:58px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+      padding:0 16px;border-bottom:1px solid var(--line);position:relative;z-index:20;
+      background:rgba(8,8,8,.78);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)
+    }
+    .cmb24__brand{display:flex;align-items:baseline;gap:8px;color:var(--text)!important;text-decoration:none}
+    .cmb24__brand b{font-size:11px;letter-spacing:.16em;color:var(--gold)!important}
+    .cmb24__brand span{font-size:12px;color:#e8e1d4!important}
+    .cmb24__langs{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025)}
+    .cmb24__langs button{
+      min-width:32px;height:28px;border:0;border-radius:999px;background:transparent;color:#837d73!important;
+      font-size:9px;font-weight:850;letter-spacing:.06em;cursor:pointer
+    }
+    .cmb24__langs button[aria-pressed="true"]{background:rgba(214,185,120,.16);color:var(--gold2)!important}
+    .cmb24__hero{
+      position:relative;min-height:560px;display:flex;align-items:flex-end;padding:94px 16px 24px;overflow:hidden
+    }
+    .cmb24__hero-media{position:absolute;inset:0;z-index:-4}
+    .cmb24__hero-media img{width:100%;height:100%;object-fit:cover;object-position:61% center;filter:saturate(.82) contrast(1.08) brightness(.7);transform:scale(1.035)}
+    .cmb24__hero:before{
+      content:"";position:absolute;inset:0;z-index:-3;
+      background:
+        linear-gradient(180deg,rgba(8,8,8,.1) 0%,rgba(8,8,8,.2) 34%,rgba(8,8,8,.92) 87%,#080808 100%),
+        linear-gradient(90deg,rgba(8,8,8,.08),rgba(8,8,8,.12) 52%,rgba(8,8,8,.68) 100%)
+    }
+    .cmb24__hero:after{
+      content:"";position:absolute;inset:auto -18% 0 -18%;height:46%;
+      background:radial-gradient(ellipse at 52% 100%,rgba(214,185,120,.14),transparent 60%);
+      z-index:-2;pointer-events:none
+    }
+    .cmb24__hero-grid{width:100%;display:grid;gap:16px}
+    .cmb24__kicker{margin:0 0 10px;color:var(--gold)!important;font-size:9px;font-weight:850;letter-spacing:.16em;text-transform:uppercase}
+    .cmb24__hero h1{
+      margin:0;color:#fff9ed!important;font-size:clamp(42px,13vw,64px);line-height:.92;letter-spacing:-.055em;font-weight:700;
+      max-width:720px;text-shadow:0 8px 38px rgba(0,0,0,.46)
+    }
+    .cmb24__hero h1 em{display:block;color:var(--gold2)!important;font-style:normal;font-size:.48em;line-height:1.05;letter-spacing:-.035em;margin-top:8px}
+    .cmb24__lead{margin:15px 0 0;max-width:680px;color:#d6d0c5!important;font-size:12.5px;line-height:1.62}
+    .cmb24__chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+    .cmb24__chips span{padding:6px 9px;border:1px solid var(--line);border-radius:999px;background:rgba(8,8,8,.42);color:#b9b2a6!important;font-size:8px;font-weight:760;letter-spacing:.06em}
+    .cmb24__dossier{
+      border:1px solid var(--line-strong);border-radius:20px;background:rgba(11,11,10,.68);backdrop-filter:blur(20px);
+      -webkit-backdrop-filter:blur(20px);padding:14px;box-shadow:0 30px 70px rgba(0,0,0,.22)
+    }
+    .cmb24__dossier-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+    .cmb24__dossier-head span{color:#a9a297!important;font-size:8px;font-weight:800;letter-spacing:.12em}
+    .cmb24__dossier-head strong{color:var(--gold2)!important;font-size:14px;letter-spacing:.12em}
+    .cmb24__dossier dl{margin:0;display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    .cmb24__dossier dl div{padding:10px;border:1px solid rgba(255,255,255,.07);border-radius:12px;background:rgba(255,255,255,.025)}
+    .cmb24__dossier dt{font-size:8px;color:#777168!important;letter-spacing:.08em;text-transform:uppercase}
+    .cmb24__dossier dd{margin:3px 0 0;color:#eee7dc!important;font-size:10.5px;line-height:1.35;font-weight:720}
+    .cmb24__summary{padding:26px 0 22px;border-top:1px solid var(--line);background:linear-gradient(180deg,#080808,#0e0e0d)}
+    .cmb24__section-head{padding:0 16px 13px;display:flex;justify-content:space-between;gap:12px;align-items:end}
+    .cmb24__section-head h2{margin:4px 0 0;color:#f7f0e4!important;font-size:25px;line-height:1.05;letter-spacing:-.04em}
+    .cmb24__swipe{color:#777168!important;font-size:9px;white-space:nowrap}
+    .cmb24__layers{
+      display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding:0 16px 6px;
+      scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x pan-y
+    }
+    .cmb24__layers::-webkit-scrollbar{display:none}
+    .cmb24__layer{
+      flex:0 0 min(82vw,286px);scroll-snap-align:start;border:1px solid var(--line);border-radius:18px;background:#131210;
+      padding:15px;min-height:164px;position:relative;overflow:hidden
+    }
+    .cmb24__layer:before{
+      content:"";position:absolute;inset:auto -30px -36px auto;width:112px;height:112px;border:1px solid rgba(214,185,120,.16);
+      border-radius:30px;transform:rotate(38deg)
+    }
+    .cmb24__layer:after{
+      content:"";position:absolute;right:30px;bottom:30px;width:44px;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.45
+    }
+    .cmb24__layer-no{display:block;color:var(--gold)!important;font-size:9px;font-weight:850;letter-spacing:.12em}
+    .cmb24__layer h3{margin:24px 0 6px;color:#f6efe3!important;font-size:16px;letter-spacing:-.02em}
+    .cmb24__layer p{margin:0;color:#9d968b!important;font-size:10.5px;line-height:1.55;max-width:90%}
+    .cmb24__transition{
+      position:relative;height:178px;margin:0;overflow:hidden;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:#0a0a09
+    }
+    .cmb24__transition img{width:100%;height:100%;object-fit:cover;object-position:center 58%;filter:saturate(.78) contrast(1.08) brightness(.48);transform:scale(1.04)}
+    .cmb24__transition:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#080808 0%,rgba(8,8,8,.3) 42%,rgba(8,8,8,.12) 64%,#080808 100%)}
+    .cmb24__transition-lines{position:absolute;inset:0;pointer-events:none}
+    .cmb24__transition-lines i{position:absolute;display:block;height:1px;background:linear-gradient(90deg,transparent,rgba(240,219,169,.72),transparent)}
+    .cmb24__transition-lines i:nth-child(1){width:58%;left:-8%;top:32%;transform:rotate(-5deg)}
+    .cmb24__transition-lines i:nth-child(2){width:74%;right:-18%;top:55%;transform:rotate(4deg)}
+    .cmb24__transition-lines i:nth-child(3){width:42%;left:24%;top:72%;opacity:.45}
+    .cmb24__transition-copy{position:absolute;inset:auto 16px 16px;display:flex;justify-content:space-between;align-items:end;gap:12px}
+    .cmb24__transition-copy strong{color:#f8f0e1!important;font-size:13px;letter-spacing:-.01em}
+    .cmb24__transition-copy span{color:var(--gold)!important;font-size:8px;letter-spacing:.12em}
+    .cmb24__details{padding:24px 16px 30px;background:var(--paper);color:var(--ink)!important}
+    .cmb24__details-head{margin-bottom:14px}
+    .cmb24__details-head .cmb24__kicker{color:#9a783d!important}
+    .cmb24__details-head h2{margin:4px 0 12px;color:#1a1712!important;font-size:27px;letter-spacing:-.045em;line-height:1.05}
+    .cmb24__who-grid{display:grid;gap:12px;align-items:stretch}
+    .cmb24__per-media{margin:0;position:relative;overflow:hidden;border-radius:18px;background:#181613;aspect-ratio:4/3;min-height:0}
+    .cmb24__per-media img{width:100%;height:100%;object-fit:cover;object-position:center 28%;filter:saturate(.92) contrast(1.03)}
+    .cmb24__per-media:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 55%,rgba(12,10,8,.78))}
+    .cmb24__per-media figcaption{position:absolute;left:12px;right:12px;bottom:10px;z-index:1;display:flex;justify-content:space-between;gap:10px;align-items:end}
+    .cmb24__per-media figcaption b{color:#fff5e5!important;font-size:11px;letter-spacing:.03em}
+    .cmb24__per-media figcaption span{color:#d9bc7c!important;font-size:7.5px;font-weight:850;letter-spacing:.1em;text-transform:uppercase}
+    .cmb24__who-copy{padding:2px 0}
+    .cmb24__details-head p{margin:0;color:#6f685e!important;font-size:11.5px;line-height:1.62}.cmb24__details-head p+p{margin-top:8px}
+    .cmb24__accordion{border-top:1px solid rgba(31,26,20,.14)}
+    .cmb24__accordion details{border-bottom:1px solid rgba(31,26,20,.14)}
+    .cmb24__accordion summary{
+      list-style:none;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;cursor:pointer;
+      padding:16px 0;color:#191611!important
+    }
+    .cmb24__accordion summary::-webkit-details-marker{display:none}
+    .cmb24__accordion summary small{color:#a07d3e!important;font-size:8px;font-weight:850;letter-spacing:.12em}
+    .cmb24__accordion summary b{font-size:13px;line-height:1.35;color:#211d17!important}
+    .cmb24__plus{width:26px;height:26px;border:1px solid rgba(31,26,20,.16);border-radius:50%;display:grid;place-items:center;color:#5f574d!important;font-size:16px;transition:transform .4s var(--ease),background .3s ease}
+    .cmb24__accordion details[open] .cmb24__plus{transform:rotate(45deg);background:rgba(214,185,120,.16)}
+    .cmb24__accordion-body{padding:0 0 18px 32px;color:#625b51!important;font-size:11px;line-height:1.62}
+    .cmb24__accordion-body p{margin:0;color:#625b51!important}
+    .cmb24__accordion-body p+p{margin-top:10px}
+    .cmb24__mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}
+    .cmb24__mini-grid div{padding:10px;border-radius:12px;background:#ebe5dc}
+    .cmb24__mini-grid span{display:block;color:#8e805f!important;font-size:7.5px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}
+    .cmb24__mini-grid strong{display:block;margin-top:3px;color:#211c16!important;font-size:10.5px;line-height:1.35}
+    .cmb24__tier-row{display:flex;gap:6px;overflow-x:auto;padding:10px 0 2px;scrollbar-width:none}
+    .cmb24__tier-row::-webkit-scrollbar{display:none}
+    .cmb24__tier{flex:0 0 auto;min-width:128px;padding:10px;border:1px solid rgba(31,26,20,.12);border-radius:12px;background:#fffaf2}
+    .cmb24__tier b{display:block;color:#211c16!important;font-size:10px}
+    .cmb24__tier span{display:block;margin-top:2px;color:#82796f!important;font-size:8px}
+    .cmb24__stats{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:12px}
+    .cmb24__stats article{padding:11px;border-radius:12px;background:#1a1815;color:#fff!important}
+    .cmb24__stats span{display:block;color:#a9a093!important;font-size:7.5px;letter-spacing:.08em}
+    .cmb24__stats strong{display:block;margin-top:4px;color:#f1d79e!important;font-size:17px}
+    .cmb24__stats p{margin:2px 0 0;color:#bcb4a8!important;font-size:8px;line-height:1.3}
+    .cmb24__flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:5px;margin-top:12px}
+    .cmb24__flow div{padding:9px 5px;border:1px solid rgba(31,26,20,.12);border-radius:10px;background:#fffaf2;text-align:center;color:#211c16!important;font-size:9px;font-weight:800}
+    .cmb24__flow span{color:#9a783d!important;font-size:11px}
+    .cmb24__console{margin-top:12px;padding:12px;border-radius:14px;background:#11100e;color:#eee7db!important}
+    .cmb24__console-top{display:flex;justify-content:space-between;gap:8px;color:#f1d79e!important;font-size:8px;letter-spacing:.08em}
+    .cmb24__console ul{margin:9px 0 0;padding-left:18px;color:#bcb4a8!important;font-size:9.5px;line-height:1.55}
+    .cmb24__console a{display:inline-block;margin-top:9px;color:#f0dba9!important;font-size:9px}
+    .cmb24__final{
+      position:relative;min-height:430px;display:flex;align-items:flex-end;padding:72px 16px 24px;background:#080808;overflow:hidden
+    }
+    .cmb24__final img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;filter:saturate(.76) contrast(1.08) brightness(.5);transform:scale(1.035);z-index:0}
+    .cmb24__final:before{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(8,8,8,.06),rgba(8,8,8,.22) 36%,rgba(8,8,8,.93) 92%)}
+    .cmb24__final-copy{position:relative;z-index:2;max-width:660px}
+    .cmb24__final h2{margin:0;color:#fff7e8!important;font-size:clamp(36px,11vw,58px);line-height:.93;letter-spacing:-.05em}
+    .cmb24__final p{margin:14px 0 0;color:#d5cfc3!important;font-size:12px;line-height:1.65}
+    .cmb24__final p em{font-style:normal;color:var(--gold2)!important}
+    .cmb24__cta{
+      display:inline-flex;align-items:center;justify-content:center;min-height:48px;margin-top:17px;padding:0 16px;border-radius:999px;
+      background:linear-gradient(135deg,#f0dba9,#cfaf69);color:#17130d!important;text-decoration:none;font-size:11px;font-weight:850;
+      box-shadow:0 14px 38px rgba(214,185,120,.12)
+    }
+    .cmb24__footer{padding:15px 16px 22px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;color:#6f6a62!important;font-size:8px;letter-spacing:.06em;background:#080808}
+    .cmb24 [data-reveal]{opacity:0;transform:translateY(18px) scale(.992);filter:blur(8px);transition:opacity .8s var(--ease),transform .9s var(--ease),filter .8s ease}
+    .cmb24 [data-reveal].is-visible{opacity:1;transform:none;filter:none}
+    @media(min-width:760px){
+      .cmb24__nav{height:68px;padding:0 24px}
+      .cmb24__hero{min-height:600px;padding:82px 24px 34px}
+      .cmb24__hero-grid{grid-template-columns:minmax(0,1.3fr) minmax(300px,.7fr);align-items:end;gap:24px}
+      .cmb24__hero h1{font-size:76px}
+      .cmb24__dossier{padding:17px}
+      .cmb24__summary{padding:34px 0 30px}
+      .cmb24__section-head{padding:0 24px 16px}
+      .cmb24__layers{display:grid;grid-template-columns:repeat(4,1fr);overflow:visible;padding:0 24px}
+      .cmb24__layer{min-width:0;min-height:185px}
+      .cmb24__swipe{display:none}
+      .cmb24__transition{height:230px}
+      .cmb24__transition-copy{inset:auto 24px 22px}
+      .cmb24__details{padding:36px 24px 44px}
+      .cmb24__details-inner{max-width:900px;margin:0 auto}
+      .cmb24__details-head h2{font-size:36px}
+      .cmb24__who-grid{grid-template-columns:minmax(250px,.72fr) minmax(0,1.28fr);gap:20px;align-items:center}
+      .cmb24__per-media{aspect-ratio:4/3}
+      .cmb24__who-copy{padding-right:10px}
+      .cmb24__accordion summary{padding:19px 0}
+      .cmb24__accordion summary b{font-size:15px}
+      .cmb24__accordion-body{padding-left:43px;font-size:12px}
+      .cmb24__mini-grid{grid-template-columns:repeat(3,1fr)}
+      .cmb24__stats{grid-template-columns:repeat(6,1fr)}
+      .cmb24__final{min-height:500px;padding:86px 24px 34px}
+      .cmb24__footer{padding:16px 24px 24px}
+    }
+    @media(max-width:420px){
+      .cmb24__nav{padding:0 12px}.cmb24__brand span{display:none}
+      .cmb24__langs button{min-width:29px;height:27px}
+      .cmb24__hero{padding-left:12px;padding-right:12px}
+      .cmb24__hero h1{font-size:46px;color:#fff9ed!important}
+      .cmb24__lead{color:#d9d2c8!important}
+      .cmb24__dossier dd{color:#f4ede1!important}
+      .cmb24__section-head{padding-left:12px;padding-right:12px}
+      .cmb24__layers{padding-left:12px;padding-right:12px}
+      .cmb24__details{padding-left:12px;padding-right:12px}
+      .cmb24__details-head h2{color:#1a1712!important}
+      .cmb24__accordion summary,.cmb24__accordion summary b{color:#211d17!important}
+      .cmb24__accordion-body,.cmb24__accordion-body p{color:#5f584f!important}
+      .cmb24__final{padding-left:12px;padding-right:12px}
+      .cmb24__final h2{color:#fff7e8!important}
+      .cmb24__final p{color:#ddd6ca!important}
+    }
+    @media(prefers-reduced-motion:reduce){
+      .cmb24 *, .cmb24 *:before, .cmb24 *:after{scroll-behavior:auto!important;animation:none!important;transition:none!important}
+      .cmb24 [data-reveal]{opacity:1!important;transform:none!important;filter:none!important}
+      .cmb24__hero-media img,.cmb24__transition img,.cmb24__final img{transform:none!important}
+    }
+  </style>
+
+  <div class="cmb24__wrap">
+    <nav class="cmb24__nav" aria-label="Confidential brief navigation">
+      <a class="cmb24__brand" href="/" aria-label="MMD Privé">
+        <b>MMD PRIVÉ</b><span data-i18n="navLabel">CONFIDENTIAL MODEL BRIEF</span>
+      </a>
+      <div class="cmb24__langs" role="group" aria-label="Language">
+        <button type="button" data-lang="th" aria-pressed="true">TH</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+        <button type="button" data-lang="zh" aria-pressed="false">ZH</button>
+      </div>
+    </nav>
+
+    <header class="cmb24__hero" data-reveal>
+      <div class="cmb24__hero-media" aria-hidden="true">
+        <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a1e4224f14b8eb9731be6f0_Bangkok301.png" alt="" loading="eager">
+      </div>
+      <div class="cmb24__hero-grid">
+        <div>
+          <p class="cmb24__kicker">LV 10 · PRIVATE DOSSIER</p>
+          <h1><span data-i18n="heroTitle">กรุงเทพฯ ดัง</span><em data-i18n="heroAccent">แต่การเข้าถึงตัวคุณควรเงียบ</em></h1>
+          <p class="cmb24__lead" data-i18n="heroLead"></p>
+          <div class="cmb24__chips" aria-label="Privacy status">
+            <span>PRIVATE ONLY</span><span>DIRECT REVIEW</span><span>CONSENT FIRST</span>
+          </div>
+        </div>
+        <aside class="cmb24__dossier" aria-label="Private candidate dossier">
+          <div class="cmb24__dossier-head"><span>PRIVATE CANDIDATE DOSSIER</span><strong data-private-ref>295052</strong></div>
+          <dl>
+            <div><dt data-i18n="visibility">Visibility</dt><dd data-i18n="visibilityValue">Private Only</dd></div>
+            <div><dt data-i18n="profile">Profile</dt><dd data-i18n="profileValue">Direct Review Only</dd></div>
+            <div><dt data-i18n="clientAccess">Client Access</dt><dd data-i18n="clientAccessValue">Restricted</dd></div>
+            <div><dt data-i18n="photoUsage">Photo Usage</dt><dd data-i18n="photoUsageValue">Consent Required</dd></div>
+          </dl>
+        </aside>
+      </div>
+    </header>
+
+    <section class="cmb24__summary" aria-labelledby="cmb24-summary-title">
+      <div class="cmb24__section-head" data-reveal>
+        <div><p class="cmb24__kicker">HOW PRIVATE WORK MOVES</p><h2 id="cmb24-summary-title" data-i18n="summaryTitle"></h2></div>
+        <span class="cmb24__swipe" data-i18n="swipe">SWIPE →</span>
+      </div>
+      <div class="cmb24__layers" aria-label="Private work layers">
+        <article class="cmb24__layer" data-reveal><span class="cmb24__layer-no">01 · ACCESS</span><h3 data-i18n="layer1Title"></h3><p data-i18n="layer1Copy"></p></article>
+        <article class="cmb24__layer" data-reveal><span class="cmb24__layer-no">02 · BRIEF</span><h3 data-i18n="layer2Title"></h3><p data-i18n="layer2Copy"></p></article>
+        <article class="cmb24__layer" data-reveal><span class="cmb24__layer-no">03 · BOUNDARY</span><h3 data-i18n="layer3Title"></h3><p data-i18n="layer3Copy"></p></article>
+        <article class="cmb24__layer" data-reveal><span class="cmb24__layer-no">04 · DIRECT</span><h3 data-i18n="layer4Title"></h3><p data-i18n="layer4Copy"></p></article>
+      </div>
+    </section>
+
+    <figure class="cmb24__transition" data-reveal aria-label="Transition into detailed brief">
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a1e4224a19d37d0547739da_Bangkok303.png" alt="" loading="lazy">
+      <div class="cmb24__transition-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+      <figcaption class="cmb24__transition-copy"><strong data-i18n="transitionTitle"></strong><span>PROGRESSIVE DISCLOSURE ↓</span></figcaption>
+    </figure>
+
+    <section class="cmb24__details" aria-labelledby="cmb24-details-title">
+      <div class="cmb24__details-inner">
+        <header class="cmb24__details-head" data-reveal>
+          <p class="cmb24__kicker">THE DETAILS · OPEN ONLY WHAT YOU NEED</p>
+          <h2 id="cmb24-details-title" data-i18n="detailsTitle"></h2>
+          <div class="cmb24__who-grid">
+            <figure class="cmb24__per-media">
+              <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a945475d69ecb5bcd8a4c05_Boss%20Per%20beside.webp" alt="Boss Per" loading="lazy">
+              <figcaption><b>Boss Per</b><span>Founder · MMD Privé</span></figcaption>
+            </figure>
+            <div class="cmb24__who-copy">
+              <p data-i18n="detailsLead"></p>
+              <p data-i18n="detailsPer"></p>
+              <p data-i18n="detailsLead2"></p>
+            </div>
+          </div>
+        </header>
+
+        <div class="cmb24__accordion">
+          <details data-reveal>
+            <summary><small>01</small><b data-i18n="acc1Title"></b><span class="cmb24__plus" aria-hidden="true">＋</span></summary>
+            <div class="cmb24__accordion-body">
+              <p data-i18n="acc1P1"></p>
+              <p data-i18n="acc1P2"></p>
+              <div class="cmb24__tier-row" aria-label="Private access layers">
+                <div class="cmb24__tier"><b>VIP / BLACK CARD</b><span data-i18n="tier1"></span></div>
+                <div class="cmb24__tier"><b>SVIP</b><span data-i18n="tier2"></span></div>
+                <div class="cmb24__tier"><b>DIRECT REVIEW</b><span data-i18n="tier3"></span></div>
+              </div>
+            </div>
+          </details>
+
+          <details data-reveal>
+            <summary><small>02</small><b data-i18n="acc2Title"></b><span class="cmb24__plus" aria-hidden="true">＋</span></summary>
+            <div class="cmb24__accordion-body">
+              <p data-i18n="acc2P1"></p>
+              <div class="cmb24__mini-grid" aria-label="Private job brief fields">
+                <div><span>CLIENT CONTEXT</span><strong data-i18n="fieldClient"></strong></div>
+                <div><span>REQUEST TYPE</span><strong data-i18n="fieldRequest"></strong></div>
+                <div><span>TIME</span><strong data-i18n="fieldTime"></strong></div>
+                <div><span>LOCATION</span><strong data-i18n="fieldLocation"></strong></div>
+                <div><span>BOUNDARY</span><strong data-i18n="fieldBoundary"></strong></div>
+                <div><span>RISK NOTES</span><strong data-i18n="fieldRisk"></strong></div>
+              </div>
+              <p data-i18n="acc2P2"></p>
+              <p data-i18n="acc2Pay"></p>
+            </div>
+          </details>
+
+          <details data-reveal>
+            <summary><small>03</small><b data-i18n="acc3Title"></b><span class="cmb24__plus" aria-hidden="true">＋</span></summary>
+            <div class="cmb24__accordion-body">
+              <p data-i18n="acc3P1"></p>
+              <p data-i18n="acc3P2"></p>
+              <div class="cmb24__stats" aria-label="LINE Official aggregate audience signal">
+                <article><span data-i18n="statGender">GENDER SIGNAL</span><strong>90.8%</strong><p data-i18n="statGenderCopy"></p></article>
+                <article><span data-i18n="statRegion">CORE REGION</span><strong>72.2%</strong><p>Bangkok</p></article>
+                <article><span data-i18n="statAge1">TOP AGE</span><strong>35–39</strong><p>26.3%</p></article>
+                <article><span data-i18n="statAge2">NEXT AGE</span><strong>30–34</strong><p>22.3%</p></article>
+                <article><span data-i18n="statAge3">THIRD AGE</span><strong>40–44</strong><p>19.0%</p></article>
+                <article><span data-i18n="statIdentity">CLIENT IDENTITY</span><strong data-i18n="hidden">Hidden</strong><p data-i18n="hiddenCopy"></p></article>
+              </div>
+            </div>
+          </details>
+
+          <details data-reveal>
+            <summary><small>04</small><b data-i18n="acc4Title"></b><span class="cmb24__plus" aria-hidden="true">＋</span></summary>
+            <div class="cmb24__accordion-body">
+              <p data-i18n="acc4P1"></p>
+              <div class="cmb24__flow" aria-label="Payment and contact boundary"><div>Client</div><span>→</span><div>MMD</div><span>→</span><div>Model</div></div>
+              <p data-i18n="acc4Risk"></p>
+              <div class="cmb24__console">
+                <div class="cmb24__console-top"><span>MODEL CONSOLE</span><span data-private-ref>295052</span></div>
+                <ul>
+                  <li data-i18n="console1"></li><li data-i18n="console2"></li><li data-i18n="console3"></li><li data-i18n="console4"></li>
+                </ul>
+                <a href="/rules/private-model-work" data-i18n="rulesLink"></a>
+              </div>
+            </div>
+          </details>
+
+          <details data-reveal>
+            <summary><small>05</small><b data-i18n="acc5Title"></b><span class="cmb24__plus" aria-hidden="true">＋</span></summary>
+            <div class="cmb24__accordion-body">
+              <p data-i18n="acc5P1"></p>
+              <p data-i18n="acc5P2"></p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="cmb24__final" data-reveal>
+      <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a1e422405e68822835a5a77_Bangkok307.png" alt="" loading="lazy">
+      <div class="cmb24__final-copy">
+        <p class="cmb24__kicker">PRIVATE CONVERSATION</p>
+        <h2>DO YOU TRUST IN ME?</h2>
+        <p data-i18n="finalCopy"></p>
+        <a class="cmb24__cta" href="https://t.me/mmdapply" target="_blank" rel="noopener noreferrer" data-i18n="finalCta">Open Private Telegram</a>
+      </div>
+    </section>
+
+    <footer class="cmb24__footer"><span data-i18n="footer1"></span><span data-i18n="footer2"></span></footer>
+  </div>
+
+  <script>
+  (() => {
+    "use strict";
+    const root = document.getElementById("mmd-confidential-model-brief-v24");
+    if (!root || root.dataset.ready === "1") return;
+    root.dataset.ready = "1";
+
+    const COPY = {
+      th: {
+        navLabel:"CONFIDENTIAL MODEL BRIEF",
+        heroTitle:"กรุงเทพฯ ดัง", heroAccent:"แต่การเข้าถึงตัวคุณควรเงียบ",
+        heroLead:"หน้านี้ไม่ได้มีไว้โชว์จำนวนงาน แต่มีไว้ให้คุณเห็นว่า งานจริงสามารถถูกจัดการแบบเป็นส่วนตัว พร้อมบรีฟ ขอบเขต และสิทธิ์ตัดสินใจก่อนรับงานได้อย่างไร",
+        visibility:"การมองเห็น",visibilityValue:"Private Only",profile:"โปรไฟล์",profileValue:"Direct Review Only",clientAccess:"สิทธิ์ลูกค้า",clientAccessValue:"Restricted",photoUsage:"การใช้รูป",photoUsageValue:"ต้องได้รับความยินยอม",
+        summaryTitle:"เห็นระบบทั้งหมดใน 4 ชั้น",swipe:"ปัดดู →",
+        layer1Title:"คนที่เหมาะสมจึงเห็นคุณ",layer1Copy:"การเข้าถึงใช้ชั้นสิทธิ์และการ review แทนการเปิดตัวคุณต่อสาธารณะ",
+        layer2Title:"รู้รายละเอียดก่อนตัดสินใจ",layer2Copy:"Client context, งาน, เวลา, สถานที่, ขอบเขต, risk note และค่าจ้างต้องชัดก่อนรับงานจริง",
+        layer3Title:"เงินและการติดต่ออยู่ในระบบ",layer3Copy:"MMD เป็นจุดกลางของ payment, contact และงาน เพื่อช่วยรักษาความเป็นส่วนตัวของคุณ",
+        layer4Title:"ทำงานแบบ Direct ได้",layer4Copy:"บางเคสไม่ต้องมี public profile และไม่ต้องเปิดหน้าก่อน จนกว่าจะเหมาะสมและคุณยินยอม",
+        transitionTitle:"รายละเอียดทั้งหมดอยู่ด้านล่าง แต่เปิดเฉพาะเรื่องที่คุณอยากอ่าน",
+        detailsTitle:"MMD Privé เป็นใคร?",detailsLead:"มองจากระบบทั้งหมด MMD อาจดูเหมือนองค์กรที่มีคนทำงานอยู่หลายคน แต่แกนจริงของ MMD คือพี่เปอร์ 1 คน ทำงานร่วมกับ AI Worker หลัก 7 ตัว นกฮูก 1 ตัว และ AI อีกกว่า 30 ตัวที่พี่เปอร์เขียนระบบขึ้นมาให้ช่วยทำงานในเว็บไซต์และแอปที่ใช้จริงทุกวัน",detailsPer:"พี่เปอร์มีประสบการณ์ทำงานรวมกว่า 20 ปี เคยเป็นผู้บริหารระดับประธานบริษัท และทำงานเบื้องหลังในวงการบันเทิงประมาณ 8 ปี ผ่านบทบาททั้งฟรีแลนซ์โปรดิวเซอร์ ผู้กำกับ และผู้บริหารฝ่ายสื่อสารการตลาด รวมถึงเคยเป็นอาจารย์มหาวิทยาลัย สอนวิชาการถ่ายภาพฟิล์มและกราฟิกดีไซน์ในมหาวิทยาลัยชั้นนำ ประสบการณ์จากการดูแลทั้งคน งาน ภาพลักษณ์ และสถานการณ์จริงเหล่านี้จึงถูกนำมาแปลงเป็นระบบของ MMD",detailsLead2:"ระบบทั้งหมดเกิดจากประสบการณ์และปัญหาที่เคยเจอจริง แล้วค่อยเขียนให้ AI ช่วยป้องกันปัญหา ดูแลความปลอดภัย รักษาความลับของคนทำงาน และทำให้งานเป็นมืออาชีพขึ้น เป้าหมายของ MMD คือพัฒนาคน สร้างรายได้เสริม และต่อยอดไปสู่อาชีพด้วยความสุจริตและเป็นมืออาชีพ",
+        acc1Title:"Privacy และใครมีสิทธิ์เห็นคุณ",
+        acc1P1:"MMD ใช้ระบบคัดกรอง วิธีบรีฟ และการควบคุมการเข้าถึงเป็นหลัก ความน่าเชื่อถือจึงไม่ต้องแลกด้วยชื่อ ใบหน้า หรือข้อมูลส่วนตัวของคนอื่น",
+        acc1P2:"Privacy ในระบบหมายถึงการเลือกให้คนที่เหมาะสมเข้าถึงข้อมูลที่เหมาะสม โดยแต่ละเคสยังขึ้นกับการ review และความยินยอมของคุณ",
+        tier1:"กลุ่ม private access เดียวกันตาม canon ปัจจุบัน",tier2:"Owner-granted private status",tier3:"พิจารณาเฉพาะเคสก่อนเปิดข้อมูล",
+        acc2Title:"บรีฟงาน ค่าจ้าง และสิทธิ์ตัดสินใจ",
+        acc2P1:"ก่อนรับงาน คุณควรเห็นข้อมูลมากพอที่จะประเมินว่าเคสนี้เหมาะกับคุณหรือเปล่า งานที่ดีต้องชัดทั้งบริบทและขอบเขต",
+        fieldClient:"ลูกค้าเป็นใครในระดับที่จำเป็น",fieldRequest:"ต้องการอะไร",fieldTime:"นานเท่าไร",fieldLocation:"เกิดที่ไหน",fieldBoundary:"ทำอะไรได้บ้าง",fieldRisk:"เรื่องที่ควรระวัง",
+        acc2P2:"ค่าจ้างไม่มีตัวเลขเดียวสำหรับทุกคน เพราะขึ้นกับความสามารถ บุคลิก การสื่อสาร และความเหมาะสมกับลูกค้า รายละเอียดจริงคุยกันหลังทั้งสองฝ่ายตกลงร่วมงาน",
+        acc2Pay:"ก่อนรับงานจริง คุณจะได้รู้ scope, เวลา, สถานที่, เงื่อนไข และค่าจ้างก่อนเสมอ คุณถามได้ คิดได้ และปฏิเสธได้",
+        acc3Title:"ลักษณะลูกค้าและ Audience Signal",
+        acc3P1:"ลูกค้าส่วนใหญ่เป็นกลุ่มที่ให้ความสำคัญกับมารยาท ความเป็นส่วนตัว และการสื่อสารที่ชัดเจน ระบบให้ความสำคัญกับความเคารพและขอบเขตของงาน",
+        acc3P2:"แรงกดดันเรื่องแอลกอฮอล์ ยา การบังคับ หรือการแอบบันทึกภาพอยู่นอกขอบเขตที่ระบบรับรอง ข้อมูลตัวเลขด้านล่างเป็น aggregate จาก LINE Official เพื่อให้เห็น pattern เท่านั้น",
+        statGender:"สัดส่วนเพศ",statGenderCopy:"Male audience",statRegion:"พื้นที่หลัก",statAge1:"ช่วงอายุสูงสุด",statAge2:"ช่วงอายุถัดไป",statAge3:"ช่วงอายุอันดับสาม",statIdentity:"ตัวตนลูกค้า",hidden:"Hidden",hiddenCopy:"ไม่แสดงชื่อ",
+        acc4Title:"Payment, Contact และ Model Console",
+        acc4P1:"Payment, job scope, boundaries และการสื่อสารควรวิ่งผ่าน MMD เพื่อช่วยให้ชื่อนามสกุลและ contact ส่วนตัวของคุณอยู่ในพื้นที่ที่ควบคุมได้",
+        acc4Risk:"การออกนอกระบบเพิ่มความเสี่ยงเรื่องการต่อรองค่าตัว การติดต่อยามวิกาล การหลุดของ contact ส่วนตัว และการสูญเสีย privacy ทีละน้อย",
+        console1:"เช็กเวลาและสถานที่",console2:"อ่าน Job Brief",console3:"เปิด Private Rules",console4:"ยืนยันขั้นตอนถัดไป",rulesLink:"อ่าน /rules/private-model-work",
+        acc5Title:"Direct Work และ Public Profile",
+        acc5P1:"การร่วมงานกับ MMD ไม่ได้บังคับว่ารูปของคุณต้องอยู่บนเว็บไซต์เสมอ บางงานสามารถแนะนำแบบ direct ได้",
+        acc5P2:"บางเคสไม่ต้องมี public profile และไม่ต้องเปิดหน้าคุณก่อน จนกว่าเคสนั้นจะเหมาะสมและคุณยินยอม",
+        finalCopy:"คุณยังมีเวลาเลือกเอง กลับไปคิดให้ดี แล้วถ้าคุณ <em>เชื่อใจ</em> เรา ค่อยกลับมาคุยกันอีกครั้ง",
+        finalCta:"เปิด Private Telegram",
+        footer1:"Bangkok can be loud. Your identity can stay private.",footer2:"Private by design · Consent first"
+      },
+      en: {
+        navLabel:"CONFIDENTIAL MODEL BRIEF",
+        heroTitle:"Bangkok is loud.", heroAccent:"Access to you can stay quiet.",
+        heroLead:"This page is not here to prove how many jobs exist. It shows how real work can be handled privately, with context, boundaries and your decision before acceptance.",
+        visibility:"Visibility",visibilityValue:"Private Only",profile:"Profile",profileValue:"Direct Review Only",clientAccess:"Client Access",clientAccessValue:"Restricted",photoUsage:"Photo Usage",photoUsageValue:"Consent Required",
+        summaryTitle:"The whole system in four layers",swipe:"SWIPE →",
+        layer1Title:"The right people see you",layer1Copy:"Access tiers and review replace public exposure of your identity.",
+        layer2Title:"Know enough before deciding",layer2Copy:"Client context, request, time, location, boundaries, risk notes and compensation should be clear before a real acceptance.",
+        layer3Title:"Payment and contact stay inside",layer3Copy:"MMD sits between the client and model for payment, contact and job coordination to help protect your privacy.",
+        layer4Title:"Direct work is possible",layer4Copy:"Some cases need no public profile and no early face reveal until the fit is right and you consent.",
+        transitionTitle:"Everything is still here. Open only the detail you need.",
+        detailsTitle:"Who is MMD Privé?",detailsLead:"From the outside, MMD can look like a large organization with many people behind it. In reality, the core of MMD is one person—Per—working with 7 primary AI Workers, 1 owl, and more than 30 additional AI systems he built to help run the websites and applications used in daily operations.",detailsPer:"Per has more than 20 years of professional experience. He previously served at company-president level and spent about 8 years working behind the scenes in the entertainment industry. His roles have included freelance producer, director, and marketing communications executive. He also previously taught at university, teaching film photography and graphic design at a leading university. Experience managing people, productions, public image and real-world situations became the foundation for how MMD was designed.",detailsLead2:"Those systems were created from real experience and real problems, then turned into tools that help prevent issues, protect safety, preserve the privacy of people who work with MMD, and keep the work professional. MMD exists to develop people, create extra income, and help turn opportunities into honest, professional careers.",
+        acc1Title:"Privacy and who can see you",
+        acc1P1:"MMD relies on screening, briefing and controlled access. Trust does not need to be proven by exposing other people’s names, faces or private information.",
+        acc1P2:"Privacy here means giving the right person the right level of access. Each case still depends on review and your consent.",
+        tier1:"Current canon treats VIP and Black Card as the same private access group",tier2:"Owner-granted private status",tier3:"Case-level review before disclosure",
+        acc2Title:"Job brief, compensation and your decision",
+        acc2P1:"Before accepting, you should have enough information to judge whether the case fits you. A good job needs clarity, not only good pay.",
+        fieldClient:"Who they are at the level you need",fieldRequest:"What they want",fieldTime:"How long",fieldLocation:"Where it happens",fieldBoundary:"What is allowed",fieldRisk:"What to watch for",
+        acc2P2:"Compensation is not one fixed number for everyone. It depends on skills, personality, communication style and client fit. Exact terms are discussed after both sides agree to work together.",
+        acc2Pay:"Before any real acceptance, you should know the scope, time, location, conditions and compensation. You can ask first, think first and say no.",
+        acc3Title:"Client profile and Audience Signal",
+        acc3P1:"Clients are generally people who value manners, privacy and clear communication. The system centers respectful conduct and job boundaries.",
+        acc3P2:"Alcohol pressure, drugs, coercion and hidden recording sit outside the supported work boundary. The figures below are aggregate LINE Official signals only, shown to explain the pattern rather than reveal anyone.",
+        statGender:"Gender Signal",statGenderCopy:"Male audience",statRegion:"Core Region",statAge1:"Top Age",statAge2:"Next Age",statAge3:"Third Age",statIdentity:"Client Identity",hidden:"Hidden",hiddenCopy:"No names shown",
+        acc4Title:"Payment, contact and Model Console",
+        acc4P1:"Payment, job scope, boundaries and communication should stay inside MMD so your legal name and private contact remain within a controlled workflow.",
+        acc4Risk:"Moving outside the system can increase the risk of rate pressure, late-night contact, private-contact leakage and gradual loss of privacy.",
+        console1:"Check time and location",console2:"Read Job Brief",console3:"Open Private Rules",console4:"Confirm the next step",rulesLink:"Read /rules/private-model-work",
+        acc5Title:"Direct work and public profile",
+        acc5P1:"Working with MMD does not require your photos to stay on a public website. Some work can be introduced directly.",
+        acc5P2:"Some cases need no public profile and no early face reveal until the case is appropriate and you consent.",
+        finalCopy:"You still have time to decide. Think carefully, and if you <em>trust</em> us, we can talk again.",
+        finalCta:"Open Private Telegram",
+        footer1:"Bangkok can be loud. Your identity can stay private.",footer2:"Private by design · Consent first"
+      },
+      zh: {
+        navLabel:"机密模特说明",
+        heroTitle:"曼谷很喧闹。", heroAccent:"但对你的访问可以保持安静。",
+        heroLead:"这个页面不是为了证明有多少工作，而是让你了解：真实工作如何在保护隐私的前提下进行，并在接单前让你看到必要信息、边界与选择权。",
+        visibility:"可见范围",visibilityValue:"仅限私密",profile:"资料",profileValue:"仅限直接审核",clientAccess:"客户访问",clientAccessValue:"受限",photoUsage:"照片使用",photoUsageValue:"需本人同意",
+        summaryTitle:"四层即可看懂整个系统",swipe:"滑动 →",
+        layer1Title:"合适的人才会看到你",layer1Copy:"通过访问层级与审核控制信息，而不是公开暴露你的身份。",
+        layer2Title:"先了解，再决定",layer2Copy:"客户背景、需求、时间、地点、边界、风险提示和报酬都应在正式接单前说明清楚。",
+        layer3Title:"付款与联系留在系统内",layer3Copy:"MMD 作为客户与模特之间的协调层，处理付款、联系和工作流程，以帮助保护你的隐私。",
+        layer4Title:"可以采用 Direct 方式合作",layer4Copy:"部分工作无需公开资料，也无需提前展示面孔，直到情况合适并得到你的同意。",
+        transitionTitle:"所有信息都还在，只打开你现在需要看的部分。",
+        detailsTitle:"MMD Privé 是什么？",detailsLead:"从外面看，MMD 可能像一个拥有很多工作人员的正式机构。实际上，MMD 的核心只有 Per 一个人，和 7 个主要 AI Worker、1 只猫头鹰，以及 30 多个由 Per 自己编写并用于网站与日常工作应用的 AI 系统一起工作。",detailsPer:"Per 拥有超过 20 年的工作经验，曾担任公司总裁级管理职务，并有约 8 年在娱乐行业幕后工作的经历。他曾以自由制片人、导演和市场传播管理者等身份工作，也曾在知名大学任教，教授胶片摄影与平面设计。长期处理人员、制作、品牌形象与真实工作现场的经验，后来成为 MMD 系统设计的重要基础。",detailsLead2:"这些系统都来自真实经验与实际问题，再被写成工具，用来预防问题、照顾安全、保护合作人员的隐私，并让工作保持专业。MMD 的理念是发展人、创造额外收入，并把机会继续发展成诚实、专业的职业。",
+        acc1Title:"隐私，以及谁可以看到你",
+        acc1P1:"MMD 依靠筛选、工作说明和访问控制建立信任，不需要用其他人的姓名、面孔或私人资料来证明可信度。",
+        acc1P2:"这里的隐私意味着让合适的人看到合适程度的信息。每个个案仍需经过审核，并以你的同意为前提。",
+        tier1:"现行规则中 VIP 与 Black Card 属于同一私密访问组",tier2:"由 Owner 授予的私密状态",tier3:"公开信息前进行个案审核",
+        acc2Title:"工作说明、报酬与决定权",
+        acc2P1:"接单前，你应获得足够信息来判断这个个案是否适合自己。好的工作除了报酬，也需要清楚的背景和边界。",
+        fieldClient:"必要程度的客户背景",fieldRequest:"客户需要什么",fieldTime:"持续多久",fieldLocation:"在哪里进行",fieldBoundary:"允许的范围",fieldRisk:"需要注意的风险",
+        acc2P2:"报酬不是所有人统一的数字，会根据能力、个性、沟通方式和客户匹配度而不同。双方确认合作后，再讨论具体条件。",
+        acc2Pay:"正式接单前，你应先知道工作范围、时间、地点、条件和报酬。你可以先提问、先考虑，也可以拒绝。",
+        acc3Title:"客户特征与 Audience Signal",
+        acc3P1:"客户通常重视礼貌、隐私和清楚的沟通。系统把尊重和工作边界放在重要位置。",
+        acc3P2:"酒精压力、毒品、强迫或偷拍都不属于系统支持的工作范围。以下数字仅为 LINE Official 的汇总信号，用于说明整体特征，不用于识别任何个人。",
+        statGender:"性别信号",statGenderCopy:"男性受众",statRegion:"主要地区",statAge1:"最高年龄段",statAge2:"第二年龄段",statAge3:"第三年龄段",statIdentity:"客户身份",hidden:"隐藏",hiddenCopy:"不显示姓名",
+        acc4Title:"付款、联系与 Model Console",
+        acc4P1:"付款、工作范围、边界和沟通应留在 MMD 流程内，让你的真实姓名和私人联系方式保持在可控范围。",
+        acc4Risk:"离开系统后，可能增加压价、深夜联系、私人联系方式外泄，以及隐私逐渐减少的风险。",
+        console1:"检查时间与地点",console2:"阅读 Job Brief",console3:"打开 Private Rules",console4:"确认下一步",rulesLink:"阅读 /rules/private-model-work",
+        acc5Title:"Direct Work 与公开资料",
+        acc5P1:"与 MMD 合作不代表你的照片必须公开放在网站上。部分工作可以直接介绍。",
+        acc5P2:"有些个案无需公开 profile，也无需提前展示你的面孔，直到情况合适并得到你的同意。",
+        finalCopy:"你仍然可以自己决定。先认真考虑，如果你愿意 <em>信任</em> 我们，再回来继续聊。",
+        finalCta:"打开 Private Telegram",
+        footer1:"曼谷可以很喧闹，你的身份依然可以保持私密。",footer2:"隐私优先 · 先征得同意"
+      }
+    };
+
+    function normalizeLang(value){
+      const raw=String(value||"").trim().toLowerCase();
+      if(raw==="en"||raw.startsWith("en-"))return"en";
+      if(raw==="zh"||raw.startsWith("zh-")||raw==="cn"||raw.startsWith("cn-"))return"zh";
+      return"th";
+    }
+    function applyLang(next,{writeUrl=true}={}){
+      const lang=normalizeLang(next);
+      const t=COPY[lang];
+      root.dataset.lang=lang;
+      document.documentElement.lang=lang==="zh"?"zh-CN":lang;
+      root.querySelectorAll("[data-i18n]").forEach(el=>{
+        const key=el.dataset.i18n;
+        if(!(key in t))return;
+        if(key==="finalCopy")el.innerHTML=t[key];
+        else el.textContent=t[key];
+      });
+      root.querySelectorAll("[data-lang]").forEach(btn=>btn.setAttribute("aria-pressed",String(btn.dataset.lang===lang)));
+      if(writeUrl){
+        const u=new URL(location.href);
+        u.searchParams.set("lang",lang);
+        history.replaceState(history.state,"",u.pathname+u.search+u.hash);
+      }
+    }
+
+    root.querySelectorAll("[data-lang]").forEach(btn=>btn.addEventListener("click",()=>applyLang(btn.dataset.lang)));
+
+    const paramLang=new URL(location.href).searchParams.get("lang");
+    applyLang(paramLang||document.documentElement.lang||"th",{writeUrl:false});
+
+    const refs=root.querySelectorAll("[data-private-ref]");
+    try{
+      const key="mmd_confidential_model_brief_ref_v24";
+      let ref=sessionStorage.getItem(key);
+      if(!/^\d{6}$/.test(String(ref||""))){
+        const n=new Uint32Array(1);crypto.getRandomValues(n);ref=String(100000+(n[0]%900000));sessionStorage.setItem(key,ref);
+      }
+      refs.forEach(el=>el.textContent=ref);
+    }catch{ refs.forEach(el=>el.textContent="PRIVATE"); }
+
+    const reveal=[...root.querySelectorAll("[data-reveal]")];
+    if(matchMedia("(prefers-reduced-motion: reduce)").matches||!("IntersectionObserver" in window)){
+      reveal.forEach(el=>el.classList.add("is-visible"));
+    }else{
+      const io=new IntersectionObserver(entries=>{
+        entries.forEach(entry=>{
+          if(entry.isIntersecting){entry.target.classList.add("is-visible");io.unobserve(entry.target);}
+        });
+      },{threshold:.12,rootMargin:"0px 0px -5% 0px"});
+      reveal.forEach(el=>io.observe(el));
+    }
+
+    root.querySelectorAll(".cmb24__accordion details").forEach(detail=>{
+      detail.addEventListener("toggle",()=>{
+        if(!detail.open)return;
+        root.querySelectorAll(".cmb24__accordion details").forEach(other=>{if(other!==detail)other.open=false;});
+      });
+    });
+  })();
+  </script>
+</section>
