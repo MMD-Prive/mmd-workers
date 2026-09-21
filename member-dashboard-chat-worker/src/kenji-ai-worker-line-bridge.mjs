@@ -7,6 +7,7 @@ const AI_MATRIX_URL = "https://ai-worker.local/v1/ai/kenji/conversation-matrix";
 const BRIDGE_ENV = "KENJI_AI_WORKER_BRIDGE_ENABLED";
 const CREW_SOURCE_IDS_ENV = "KENJI_LINE_CREW_SOURCE_IDS";
 const MAX_EVENTS_PER_WEBHOOK = 50;
+const SHADOW_OBSERVATION_CONCURRENCY = 4;
 
 const EVIDENCE_SOURCE_UNAVAILABLE = "SOURCE_UNAVAILABLE";
 
@@ -16,6 +17,22 @@ function text(value) {
 
 function enabled(value) {
   return ["1", "true", "yes", "on"].includes(text(value).toLowerCase());
+}
+
+async function mapWithConcurrency(values, limit, mapper) {
+  const items = Array.isArray(values) ? values : [];
+  if (!items.length) return [];
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(1, Number(limit) || 1), items.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+  return results;
 }
 
 function parseSourceIds(value) {
@@ -199,8 +216,9 @@ export async function observeKenjiLineWebhook({ request, env = {}, contextBuilde
 
   const body = await request.json().catch(() => null);
   const events = Array.isArray(body?.events) ? body.events.slice(0, MAX_EVENTS_PER_WEBHOOK) : [];
-  const results = [];
-  for (const event of events) results.push(await observeKenjiLineEvent({ env, event, contextBuilder }));
+  const results = await mapWithConcurrency(events, SHADOW_OBSERVATION_CONCURRENCY, (event) => (
+    observeKenjiLineEvent({ env, event, contextBuilder })
+  ));
 
   // Telemetry is deliberately aggregate only: no message text, LINE IDs,
   // reply tokens, source IDs, or customer identifiers leave this function.
@@ -229,4 +247,6 @@ export const KENJI_AI_WORKER_LINE_BRIDGE_INTERNALS = Object.freeze({
   CREW_SOURCE_IDS_ENV,
   AI_MATRIX_URL,
   EVIDENCE_SOURCE_UNAVAILABLE,
+  SHADOW_OBSERVATION_CONCURRENCY,
+  mapWithConcurrency,
 });

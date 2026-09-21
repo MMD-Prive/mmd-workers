@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   HYPE_STUCK_SLA_POLICY,
   HYPE_STUCK_SLA_SCHEMA,
+  HYPE_CROSS_SYSTEM_STUCK_SLA_INTERNALS,
   buildCrossSystemStuckSlaWatch,
 } from "./src/hype-cross-system-stuck-sla.js";
 import { buildHypeOwnerSummaryProjection } from "./src/hype-owner-summary.js";
@@ -147,6 +148,77 @@ test("missing source remains partial instead of being reported healthy", () => {
   assert.equal(watch.attention_required, false);
   assert.deepEqual(watch.unavailable_sources, ["telegram_binds"]);
   assert.match(watch.summary, /source unavailable/i);
+});
+
+test("a capped recent-first Airtable candidate window is partial rather than falsely clear", async () => {
+  let requestedUrl = "";
+  const result = await HYPE_CROSS_SYSTEM_STUCK_SLA_INTERNALS.airtableList({
+    AIRTABLE_BASE_ID: "appTest",
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_HTTP: {
+      fetch: async (request) => {
+        requestedUrl = request.url;
+        return new Response(JSON.stringify({
+          records: [{ id: "recNewest", fields: { updated_at: NOW.toISOString() } }],
+          offset: "next-page-exists",
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    },
+  }, "tblTest", {
+    maxRecords: 1,
+    fields: ["updated_at"],
+    sort: [{ field: "updated_at", direction: "desc" }],
+  });
+
+  assert.equal(result.records.length, 1);
+  assert.equal(result.complete, false);
+  assert.match(decodeURIComponent(requestedUrl), /sort\[0\]\[field\]=updated_at/);
+  assert.match(decodeURIComponent(requestedUrl), /sort\[0\]\[direction\]=desc/);
+
+  const sourceStatus = allSourcesAvailable();
+  sourceStatus.entitlement_notifications = {
+    available: true,
+    complete: false,
+    record_count: 1,
+    reason: "candidate_window_truncated",
+  };
+  const watch = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [],
+  }, NOW, { sourceStatus });
+
+  assert.equal(watch.status, "partial");
+  assert.equal(watch.complete, false);
+  assert.deepEqual(watch.unavailable_sources, ["entitlement_notifications"]);
+  assert.equal(watch.sources.entitlement_notifications.reason, "candidate_window_truncated");
+});
+
+test("expired Telegram binds older than the bounded window do not crowd out current incidents", () => {
+  const watch = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [{
+      id: "recAncientBind",
+      fields: {
+        bind_id: "tgb_ancient",
+        role: "client",
+        status: "pending",
+        created_at: "2026-09-18T12:00:00.000Z",
+        expires_at: "2026-09-18T12:15:00.000Z",
+      },
+    }],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  assert.equal(watch.counts.total, 0);
+  assert.equal(watch.items.length, 0);
+  assert.equal(watch.status, "clear");
 });
 
 test("owner summary projects STUCK / NEEDS ATTENTION as read-only action", () => {

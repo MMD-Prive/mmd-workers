@@ -172,3 +172,38 @@ test("webhook observer aggregates only safe counts", async () => {
     customer_copy_changed: false,
   });
 });
+
+test("multi-event shadow observation uses bounded concurrency", async () => {
+  const calls = [];
+  let active = 0;
+  let peak = 0;
+  const contextBuilder = async () => {
+    active += 1;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setImmediate(resolve));
+    active -= 1;
+    return canonicalContextBuilder();
+  };
+  const events = Array.from({ length: 10 }, (_, index) => userEvent({
+    webhookEventId: `evt-${index}`,
+    message: { type: "text", id: `msg-${index}`, text: "PRIVATE CUSTOMER MESSAGE" },
+  }));
+  const request = new Request("https://www.mmdbkk.com/webhooks/line", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ events }),
+  });
+
+  const result = await observeKenjiLineWebhook({
+    request,
+    env: { KENJI_AI_WORKER_BRIDGE_ENABLED: "true", AI_WORKER: acceptedAiBinding(calls) },
+    contextBuilder,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.events, 10);
+  assert.equal(result.observed, 10);
+  assert.equal(calls.length, 10);
+  assert.ok(peak > 1, `expected concurrent observations, peak=${peak}`);
+  assert.ok(peak <= 4, `expected at most four concurrent observations, peak=${peak}`);
+});

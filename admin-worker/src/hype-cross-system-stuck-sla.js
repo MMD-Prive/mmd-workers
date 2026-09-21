@@ -64,6 +64,10 @@ export async function readCrossSystemStuckSlaWatch(env = {}, {
     payment_proofs: loadPaymentProofQueue(env),
     entitlement_notifications: airtableList(env, entitlementTable(env), {
       maxRecords: 300,
+      sort: [
+        { field: "updated_at", direction: "desc" },
+        { field: "created_at", direction: "desc" },
+      ],
       fields: [
         "entitlement_id",
         "package_code",
@@ -80,14 +84,20 @@ export async function readCrossSystemStuckSlaWatch(env = {}, {
     job_confirmations: airtableList(env, sessionsTable(env), {
       maxRecords: 300,
       returnFieldsByFieldId: true,
+      sort: [
+        { field: SESSION_FIELDS.stateUpdatedAt, direction: "desc" },
+        { field: SESSION_FIELDS.createdAt, direction: "desc" },
+      ],
       fields: Object.values(SESSION_FIELDS),
     }),
     coupon_manual_review: airtableList(env, couponClaimsTable(env), {
       maxRecords: 250,
+      sort: [{ field: "updated_at", direction: "desc" }],
       fields: ["claim_id", "campaign_id", "match_status", "review_status", "claim_status", "created_at", "updated_at"],
     }),
     telegram_binds: airtableList(env, telegramBindsTable(env), {
       maxRecords: 250,
+      sort: [{ field: "created_at", direction: "desc" }],
       fields: ["bind_id", "role", "status", "created_at", "expires_at", "consumed_at"],
     }),
   };
@@ -100,8 +110,15 @@ export async function readCrossSystemStuckSlaWatch(env = {}, {
   settled.forEach((result, index) => {
     const key = entries[index][0];
     if (result.status === "fulfilled") {
-      sources[key] = Array.isArray(result.value) ? result.value : [];
-      sourceStatus[key] = { available: true, record_count: sources[key].length, reason: null };
+      const value = result.value;
+      sources[key] = Array.isArray(value) ? value : array(value?.records);
+      const complete = Array.isArray(value) || value?.complete !== false;
+      sourceStatus[key] = {
+        available: true,
+        complete,
+        record_count: sources[key].length,
+        reason: complete ? null : "candidate_window_truncated",
+      };
       return;
     }
     sources[key] = [];
@@ -279,7 +296,7 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
   };
   const sourceStatus = normalizedSourceStatus(options.sourceStatus, sources);
   const unavailableSources = Object.entries(sourceStatus)
-    .filter(([, status]) => status.available !== true)
+    .filter(([, status]) => status.available !== true || status.complete === false)
     .map(([key]) => key);
   const status = counts.overdue > 0
     ? "overdue"
@@ -347,7 +364,7 @@ function recoveryItems(result) {
 function timedItem({ kind, observedAt, nowMs, policy, explicitOverdue = false, reference, label, detail, href, authority }) {
   const observed = validDate(observedAt);
   const ageMinutes = observed ? Math.max(0, Math.floor((nowMs - observed.getTime()) / 60000)) : null;
-  if (ageMinutes !== null && Number.isFinite(policy?.maxAge) && ageMinutes > policy.maxAge && explicitOverdue !== true) return null;
+  if (ageMinutes !== null && Number.isFinite(policy?.maxAge) && ageMinutes > policy.maxAge) return null;
   let slaStatus = "";
   if (explicitOverdue === true) slaStatus = "overdue";
   else if (ageMinutes !== null && ageMinutes >= policy.overdue) slaStatus = "overdue";
@@ -410,7 +427,12 @@ async function loadPaymentProofQueue(env) {
   return payload.items;
 }
 
-async function airtableList(env, table, { maxRecords = 250, returnFieldsByFieldId = false, fields = [] } = {}) {
+async function airtableList(env, table, {
+  maxRecords = 250,
+  returnFieldsByFieldId = false,
+  fields = [],
+  sort = [],
+} = {}) {
   const baseId = clean(env.AIRTABLE_BASE_ID, 120);
   const apiKey = clean(env.AIRTABLE_API_KEY, 5000);
   if (!baseId || !apiKey || !table) throw new Error("airtable_not_ready");
@@ -422,6 +444,12 @@ async function airtableList(env, table, { maxRecords = 250, returnFieldsByFieldI
     url.searchParams.set("pageSize", String(Math.min(100, boundedMax - output.length)));
     if (returnFieldsByFieldId) url.searchParams.set("returnFieldsByFieldId", "true");
     if (offset) url.searchParams.set("offset", offset);
+    array(sort).slice(0, 3).forEach((entry, index) => {
+      const field = clean(entry?.field, 120);
+      if (!field) return;
+      url.searchParams.set(`sort[${index}][field]`, field);
+      url.searchParams.set(`sort[${index}][direction]`, normalize(entry?.direction) === "asc" ? "asc" : "desc");
+    });
     for (const field of array(fields).map((value) => clean(value, 120)).filter(Boolean)) url.searchParams.append("fields[]", field);
     const request = new Request(url, { headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" } });
     const response = env.AIRTABLE_HTTP?.fetch
@@ -432,7 +460,10 @@ async function airtableList(env, table, { maxRecords = 250, returnFieldsByFieldI
     output.push(...array(payload.records));
     offset = clean(payload.offset, 500);
   } while (offset && output.length < boundedMax);
-  return output.slice(0, boundedMax);
+  return {
+    records: output.slice(0, boundedMax),
+    complete: !offset,
+  };
 }
 
 function normalizedSourceStatus(value = {}, sources = {}) {
@@ -450,13 +481,18 @@ function normalizedSourceStatus(value = {}, sources = {}) {
     if (source && typeof source === "object") {
       out[key] = {
         available: source.available === true,
+        complete: source.available === true && source.complete !== false,
         record_count: nonNegative(source.record_count),
         reason: source.available === true ? null : safeCode(source.reason || `${key}_unavailable`),
       };
+      if (source.available === true && source.complete === false) {
+        out[key].reason = safeCode(source.reason || "candidate_window_truncated");
+      }
     } else {
       const present = Object.prototype.hasOwnProperty.call(sources || {}, key) && sources[key] !== null;
       out[key] = {
         available: present,
+        complete: present,
         record_count: key === "recovery_queue"
           ? nonNegative(sources?.recovery_queue?.queue?.open_count)
           : array(sources?.[key]).length,
@@ -466,6 +502,8 @@ function normalizedSourceStatus(value = {}, sources = {}) {
   }
   return out;
 }
+
+export const HYPE_CROSS_SYSTEM_STUCK_SLA_INTERNALS = Object.freeze({ airtableList });
 
 function historicalJob(jobDateValue, observedAtValue, nowMs, maxAgeMinutes) {
   const jobDate = validDate(jobDateValue);
