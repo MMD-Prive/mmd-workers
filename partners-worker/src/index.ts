@@ -1,5 +1,6 @@
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
+import { queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
@@ -1094,6 +1095,20 @@ async function handleAcceptTerms(request: Request, env: RuntimeEnv, ctx: Executi
     },
     true
   );
+
+  queueAuthorityEvent(ctx, env, {
+    event: "partner_terms_accepted",
+    authority: "partners-worker",
+    scope: "partner",
+    distinctValue: updatedRecord.id,
+    insertValue: `${updatedRecord.id}:${agreementVersion}`,
+    properties: {
+      surface: "partner",
+      world: "partner",
+      terms_version: agreementVersion,
+      status: "active",
+    },
+  });
 
   ctx.waitUntil(
     sendTelegramMessage(env, [
