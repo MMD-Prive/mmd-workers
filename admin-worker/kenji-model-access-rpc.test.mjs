@@ -284,3 +284,53 @@ test("Draft Model Offer Rules remain fail-closed in the Kenji consumer", async (
   assert.equal(result.model.sales.customer_rate_thb, null);
   assert.equal(result.model.sales.reason_code, "no_matching_active_rule");
 });
+
+
+test("production-shaped private model may derive Premium access folder from canonical model_tier", async () => {
+  const model = privateModel("PRCANON", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "active",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_premium")], [model])) },
+  );
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "PRCANON");
+});
+
+test("canonical Premium model_tier does not widen Standard member access", async () => {
+  const model = privateModel("PRCANON2", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "active",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON2" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+  );
+  assert.equal(result.status, "silent");
+});
+
+test("canonical folder inference never rescues an inactive or review-only model", async () => {
+  const model = privateModel("PRCANON3", "", {
+    access_folder: undefined,
+    model_tier: { name: "premium" },
+    booking_visibility: "private",
+    visibility: "private",
+    status: "inactive",
+  });
+  const result = await resolveKenjiModelAccess(
+    ENV,
+    { line_user_id: LINE_USER_ID, query: "PRCANON3" },
+    { fetchImpl: airtableFetch(baseData([entitlement("private_premium")], [model])) },
+  );
+  assert.equal(result.status, "silent");
+});
