@@ -40,3 +40,20 @@ test("handler lists R2 without exposing object keys or bucket metadata", async (
   assert.equal(JSON.stringify(payload).includes("r2_key"), false);
   assert.equal(JSON.stringify(payload).includes("bucket"), false);
 });
+
+
+test("catalog exposes a bounded customer-gender scope and defaults legacy folders to all genders", () => {
+  const audienceBySlug = new Map([["male-one", ["male"]], ["female-one", ["female"]]]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/MMD Travel Models/Straight/male-one/card.webp" },
+    { key: "MMD Public Models/MMD Travel Models/Straight/female-one/card.webp" },
+    { key: "MMD Public Models/MMD Travel Models/Straight/legacy/card.webp" },
+  ], { audienceBySlug });
+  const bySlug = new Map(items.map((item) => [item.slug, item]));
+  assert.deepEqual(bySlug.get("male-one").accepted_customer_genders, ["male"]);
+  assert.equal(bySlug.get("male-one").customer_scope, "male_only");
+  assert.deepEqual(bySlug.get("female-one").accepted_customer_genders, ["female"]);
+  assert.equal(bySlug.get("female-one").customer_scope, "female_only");
+  assert.deepEqual(bySlug.get("legacy").accepted_customer_genders, ["male", "female"]);
+  assert.equal(bySlug.get("legacy").customer_scope, "all_genders");
+});
