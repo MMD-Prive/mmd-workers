@@ -230,6 +230,39 @@ jobs:
           test "$mms_code" = "200"
           node -e 'const fs=require("node:fs"); const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8")); const line=p?.bindings?.line||{}; if(p?.ok!==true) throw new Error("mms health is not ok"); if(line?.persona!=="HENNA") throw new Error("unexpected MMS LINE persona"); if(line?.capability_pack!=="mmd-concierge-capability-pack-v1-20260919") throw new Error("unexpected HENNA capability pack"); if(line?.recovery_outcome_taxonomy!=="mmd-recovery-outcome-taxonomy-v1-20260919") throw new Error("unexpected HENNA recovery taxonomy"); if(line?.auto_reply_enabled!==false) throw new Error("HENNA auto reply must remain disabled");' "$mms_body"
 
+      - name: Run one-shot MMD Shop checkout to Telegram canary
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS -o "$body" -w "%{http_code}" \
+            -X POST \
+            -H 'content-type: application/json' \
+            -H 'origin: https://www.mmdbkk.com' \
+            --data '{"customer":{"name":"[SMOKE] MMD SHOP TELEGRAM TEST","phone":"0999999999"},"shipping":{"delivery_method":"pickup","recipient_name":"[SMOKE] MMD SHOP TELEGRAM TEST","phone":"0999999999"},"items":[{"product_id":"recIIR1rsbqTH5y6D","quantity":1}],"source_path":"/mmd-shop?smoke=telegram-canary-20260921"}' \
+            'https://www.mmdbkk.com/mmd-shop/api/checkout')"
+          test "$code" = "200"
+          node -e '
+            const fs=require("node:fs");
+            const p=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            if(p?.ok!==true) throw new Error("checkout_not_ok");
+            if(p?.schema!=="mmd_shop_checkout_v2") throw new Error("checkout_schema_invalid");
+            if(p?.payment_status!=="pending") throw new Error("payment_must_remain_pending");
+            if(p?.official_payment_verification_required!==true) throw new Error("payment_truth_gate_missing");
+            if(!/^https:\/\//.test(String(p?.payment_url||""))) throw new Error("payment_url_missing");
+            if(!String(p?.order_id||"").startsWith("MMD-")) throw new Error("order_id_missing");
+            console.log("LIVE_SMOKE_ORDER_ID="+p.order_id);
+            console.log("LIVE_SMOKE_TOTAL_THB="+p.total_thb);
+            fs.appendFileSync(process.env.GITHUB_ENV,"LIVE_SMOKE_ORDER_ID="+p.order_id+"\n");
+          ' "$body"
+          {
+            echo ""
+            echo "### Live MMD Shop -> Telegram canary"
+            echo "- checkout: PASS"
+            echo "- payment status: pending"
+            echo "- payment truth mutation: NONE"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Record acceptance summary
         if: success()
         shell: bash
