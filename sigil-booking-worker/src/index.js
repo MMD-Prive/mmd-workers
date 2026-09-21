@@ -2,7 +2,7 @@
 // MMD Booking / SIGIL public booking resolver
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
-import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 // Webflow calls this worker. Browser never touches Airtable, R2, Gmail, or Drive directly.
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -20,7 +20,7 @@ export default {
 
     try {
       if (method === "GET" && (path === "/ping" || path === "/health")) {
-        return withCors(json({ ok: true, worker: "sigil-booking-worker", lock: LOCK, ts: Date.now() }), cors);
+        return withCors(json({ ok: true, worker: "sigil-booking-worker", lock: LOCK, analytics: authorityRuntimeHealth(env, "sigil-booking-worker", ctx), ts: Date.now() }), cors);
       }
       if (method === "POST" && path === "/sigil/api/client/resolve") {
         return withCors(json(await handleClientResolve(req, env)), cors);

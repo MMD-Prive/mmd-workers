@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  authorityRuntimeHealth,
   captureAuthorityEvent,
   posthogAuthorityReady,
   queueAuthorityEvent,
@@ -107,4 +108,34 @@ test("queueAuthorityEvent attaches work to execution context without throwing", 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("authorityRuntimeHealth reports configured and queues one fail-open probe", async () => {
+  const originalFetch = globalThis.fetch;
+  const pending = [];
+  globalThis.fetch = async () => new Response("ok", { status: 200 });
+  try {
+    const health = authorityRuntimeHealth({
+      POSTHOG_PROJECT_TOKEN: "test-project-token",
+      POSTHOG_API_HOST: "https://example.test",
+    }, "payments-worker", {
+      waitUntil(promise) { pending.push(promise); },
+    });
+    assert.deepEqual(health, { posthog_authority: "configured", schema: "mmd_authority_v1" });
+    assert.equal(pending.length, 1);
+    const result = await pending[0];
+    assert.equal(result.ok, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("authorityRuntimeHealth reports missing without network activity", () => {
+  let queued = 0;
+  const health = authorityRuntimeHealth({}, "payments-worker", {
+    waitUntil() { queued += 1; },
+  });
+  assert.deepEqual(health, { posthog_authority: "missing", schema: "mmd_authority_v1" });
+  assert.equal(queued, 0);
 });

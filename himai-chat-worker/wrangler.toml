@@ -49,6 +49,7 @@ binding = "TELEGRAM_WORKER"
 service = "telegram-worker"
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"

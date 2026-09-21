@@ -1,6 +1,6 @@
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 
-import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
+import { authorityRuntimeHealth, queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 type SecretName = "AIRTABLE_API_KEY" | "AUTH_SERVICE_PARTNERS_TO_TELEGRAM" | "TOKEN_SECRET" | "ADMIN_APPROVE_SECRET";
 type OptionalVarName =
   | "PUBLIC_SITE_URL"
@@ -384,7 +384,8 @@ export default {
         return json(request, runtimeEnv, {
           ok: true,
           service: "partners-worker",
-          control_layer: ROLE_LAYERS.partner_control
+          control_layer: ROLE_LAYERS.partner_control,
+          analytics: authorityRuntimeHealth(runtimeEnv, "partners-worker", ctx)
         });
       }
 

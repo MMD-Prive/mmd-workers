@@ -1,4 +1,5 @@
 import worker from "./index.js";
+import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
 import { isDriveReconcileRequest, handleDriveReconcile } from "./drive-access-reconcile.js";
@@ -86,6 +87,18 @@ export function normalizeCareBackWebViewOrigin(request) {
 export default {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
+    const runtimeUrl = new URL(request.url);
+    const runtimePath = runtimeUrl.pathname.replace(/\/+$/, "") || "/";
+    if (request.method === "GET" && (runtimePath === "/health" || runtimePath === "/ping")) {
+      return Response.json({
+        ok: true,
+        worker: "member-pages-worker",
+        analytics: authorityRuntimeHealth(env, "member-pages-worker", ctx),
+        time: new Date().toISOString(),
+      }, { headers: { "cache-control": "no-store" } });
+    }
+
+
     // Service-binding-only model inventory discovery. The synthetic hostname is
     // never routed publicly, so Drive credentials and inventory remain backend-only.
     if (isModelDriveDirectoryRequest(request)) {

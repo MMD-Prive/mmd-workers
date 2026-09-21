@@ -215,7 +215,7 @@ export class MmsCoordinator extends DurableObject {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const requestId = crypto.randomUUID();
     const url = new URL(request.url);
     const path = normalizedPath(url.pathname);

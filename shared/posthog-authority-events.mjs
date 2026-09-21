@@ -131,6 +131,30 @@ export async function captureAuthorityEvent(env = {}, input = {}) {
   }
 }
 
+export function authorityRuntimeHealth(env = {}, authority = "", ctx = null) {
+  const configured = posthogAuthorityReady(env);
+  const safeAuthority = clean(authority, 80) || "unknown-worker";
+  if (configured) {
+    const day = new Date().toISOString().slice(0, 10);
+    queueAuthorityEvent(ctx, env, {
+      event: "analytics_runtime_health",
+      authority: safeAuthority,
+      scope: "analytics_health",
+      distinctValue: safeAuthority,
+      insertValue: `${safeAuthority}:${day}`,
+      properties: {
+        surface: "system",
+        world: "ops",
+        status: "configured",
+      },
+    });
+  }
+  return {
+    posthog_authority: configured ? "configured" : "missing",
+    schema: "mmd_authority_v1",
+  };
+}
+
 export function queueAuthorityEvent(ctx, env = {}, input = {}) {
   const task = captureAuthorityEvent(env, input)
     .then((result) => {
