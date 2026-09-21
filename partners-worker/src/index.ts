@@ -4302,13 +4302,13 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
     .brand-mark{width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(213,174,102,.42);border-radius:9px;background:rgba(8,8,7,.34);backdrop-filter:blur(12px)}
     .brand-copy{display:flex;flex-direction:column;gap:3px}
-    .brand-copy b{color:var(--ivory);font-family:var(--font-en);font-size:11px;line-height:1;font-weight:850;letter-spacing:.14em}
-    .brand-copy span{color:var(--gold2);font-family:var(--font-en);font-size:8px;line-height:1.1;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
-    .private{padding:8px 10px;border:1px solid rgba(213,174,102,.3);border-radius:999px;background:rgba(8,8,7,.3);backdrop-filter:blur(12px);color:var(--gold2);font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase}
+    .brand-copy b{color:var(--ivory);font-family:var(--font-en);font-size:11px;line-height:1;font-weight:700;letter-spacing:.14em}
+    .brand-copy span{color:var(--gold2);font-family:var(--font-en);font-size:8px;line-height:1.1;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .private{padding:8px 10px;border:1px solid rgba(213,174,102,.3);border-radius:999px;background:rgba(8,8,7,.3);backdrop-filter:blur(12px);color:var(--gold2);font-size:8px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
     .shell{align-self:end;width:min(100% - 24px,1180px);margin:0 auto;padding:0 0 max(14px,env(safe-area-inset-bottom))}
     .card{position:relative;overflow:hidden;padding:20px;border:1px solid var(--line);border-radius:24px;background:linear-gradient(180deg,rgba(20,18,15,.78),rgba(8,8,7,.95));box-shadow:0 24px 80px rgba(0,0,0,.44);backdrop-filter:blur(20px)}
     .card:before{position:absolute;top:0;right:14%;left:14%;height:1px;content:"";background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font-en);font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+    .eyebrow{margin:0 0 10px;color:var(--gold2);font-family:var(--font-en);font-size:9px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
     h1{margin:0;max-width:570px;color:var(--ivory);font-family:var(--font-th);font-size:clamp(36px,10vw,52px);font-weight:600;letter-spacing:-.045em;line-height:1.02;text-wrap:balance}
     .lead{margin:12px 0 0;max-width:620px;color:var(--body);font-size:13px;line-height:1.68}
     .flow{margin:16px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2)}
@@ -4317,16 +4317,16 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .flow b,.flow span{display:block}
     .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
     .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
-    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:800 14px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease}
+    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:600 14px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease}
     #go:hover{transform:translateY(-1px);filter:brightness(1.04)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
     #go:disabled{cursor:wait;opacity:.68;transform:none}
-    .line-mark{position:relative;width:27px;height:22px;display:grid;place-items:center;border-radius:7px;background:#fff;color:#06a947;font-size:7px;font-weight:950}
+    .line-mark{position:relative;width:27px;height:22px;display:grid;place-items:center;border-radius:7px;background:#fff;color:#06a947;font-size:7px;font-weight:700}
     .line-mark:after{position:absolute;right:3px;bottom:-3px;width:7px;height:7px;background:#fff;clip-path:polygon(0 0,100% 0,100% 100%);content:""}
     #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
     .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
     .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
-    .links a{color:var(--muted);font-family:var(--font-en);font-size:10px;font-weight:750;text-decoration:none}
+    .links a{color:var(--muted);font-family:var(--font-en);font-size:10px;font-weight:600;text-decoration:none}
     .links a:hover{color:var(--ivory)}
 
     .flow b,.private{font-family:var(--font-en)}
