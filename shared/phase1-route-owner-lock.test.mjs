@@ -105,3 +105,34 @@ test("Phase 1 production smoke fails closed if the retired front gate regains an
   assert.match(workflow, /phase1_route_ownership: "closed"/);
   assert.match(workflow, /Phase 1 route ownership: CLOSED/);
 });
+
+
+test("Telegram core routes remain exact and canonical", async () => {
+  const config = await source("telegram-worker/wrangler.toml");
+  const workflow = await source(".github/workflows/deploy-telegram-worker.yml");
+  for (const marker of [
+    "mmdbkk.com/telegram/webhook",
+    "www.mmdbkk.com/telegram/webhook",
+    "mmdbkk.com/v1/webhook",
+    "www.mmdbkk.com/v1/webhook",
+    "mmdbkk.com/telegram/internal/send",
+    "www.mmdbkk.com/telegram/internal/send",
+    "mmdbkk.com/v1/internal/send",
+    "www.mmdbkk.com/v1/internal/send",
+    "mmdbkk.com/v1/send",
+    "www.mmdbkk.com/v1/send",
+  ]) assert.ok(config.includes(marker), marker);
+  assert.match(workflow, /Sync canonical Telegram routes/);
+  assert.match(workflow, /Repair Telegram webhook to canonical route/);
+  assert.match(workflow, /Smoke canonical Telegram auth boundaries/);
+});
+
+test("LINE webhook routes remain bounded to member-dashboard-chat-worker", async () => {
+  const config = await source("member-dashboard-chat-worker/wrangler.toml");
+  for (const marker of [
+    "mmdbkk.com/webhooks/line",
+    "www.mmdbkk.com/webhooks/line",
+    "mmdbkk.com/webhooks/line/mms",
+    "www.mmdbkk.com/webhooks/line/mms",
+  ]) assert.ok(config.includes(marker), marker);
+});
