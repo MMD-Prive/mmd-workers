@@ -378,7 +378,6 @@ async function findOrCreateCustomer(env, customer, sourcePath, memberContext = n
     [CUSTOMER_FIELDS.name]: customer.name,
     [CUSTOMER_FIELDS.displayName]: customer.name,
     [CUSTOMER_FIELDS.phone]: customer.phone,
-    [CUSTOMER_FIELDS.brandOrigin]: "MMD Shop",
     [CUSTOMER_FIELDS.acquisitionChannel]: memberContext?.member_id ? "mmd_member" : "web",
     [CUSTOMER_FIELDS.sourcePath]: clean(sourcePath, 300) || shop.sourcePath,
     [CUSTOMER_FIELDS.signupStatus]: "active",
@@ -388,6 +387,7 @@ async function findOrCreateCustomer(env, customer, sourcePath, memberContext = n
       : `Created by ${shop.publicName} web checkout.`,
     [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
   };
+  if (shop.key === "mmd-shop") fields[CUSTOMER_FIELDS.brandOrigin] = "MMD Shop";
   if (customer.email) fields[CUSTOMER_FIELDS.email] = customer.email;
   if (memberContext?.member_id) fields[CUSTOMER_FIELDS.memberId] = memberContext.member_id;
   if (memberContext?.line_user_id) fields[CUSTOMER_FIELDS.lineUserId] = memberContext.line_user_id;
