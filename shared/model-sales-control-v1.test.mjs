@@ -135,3 +135,53 @@ test("legacy Draft rules remain fail closed", () => {
   assert.equal(result.sellable, false);
   assert.equal(result.reason_code, "no_matching_active_rule");
 });
+
+
+test("canonical Eligible scope only exposes rate only after the audience scope matches", () => {
+  const premium = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+    rules: [rule("eligible-premium", {
+      audience_scope: ["Premium"],
+      price_visibility: "Eligible scope only",
+      customer_sell_rate_thb: 18000,
+    })],
+  });
+  assert.equal(premium.sellable, true);
+  assert.equal(premium.customer_rate_thb, 18000);
+  assert.equal(premium.price_visible, true);
+  assert.equal(premium.reason_code, "matched_active_rule");
+
+  const standard = resolveModelSalesOffer({
+    model_key: "EMs21-JDye",
+    requested_at: at,
+    entitlement_snapshot: { capability_state: { active: ["private_standard"] } },
+    rules: [rule("eligible-premium", {
+      audience_scope: ["Premium"],
+      price_visibility: "Eligible scope only",
+      customer_sell_rate_thb: 18000,
+    })],
+  });
+  assert.equal(standard.sellable, false);
+  assert.equal(standard.customer_rate_thb, null);
+});
+
+test("canonical Per approval only and Never automatic remain hidden", () => {
+  for (const visibility of ["Per approval only", "Never automatic"]) {
+    const result = resolveModelSalesOffer({
+      model_key: "EMs21-JDye",
+      requested_at: at,
+      entitlement_snapshot: { capability_state: { active: ["private_premium"] } },
+      rules: [rule(`hidden-${visibility}`, {
+        audience_scope: ["Premium"],
+        price_visibility: visibility,
+        customer_sell_rate_thb: 18000,
+      })],
+    });
+    assert.equal(result.sellable, true);
+    assert.equal(result.customer_rate_thb, null);
+    assert.equal(result.price_visible, false);
+    assert.equal(result.reason_code, "matched_rate_hidden");
+  }
+});
