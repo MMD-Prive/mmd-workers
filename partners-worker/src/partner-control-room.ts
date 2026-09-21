@@ -252,7 +252,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     if(!state.vaultReady)return loadVaultEnvelope().then(unlockVault).catch(function(){setFlash("ยังโหลด Vault ไม่สำเร็จ กรุณาลองใหม่","error");});
     var pin=$("[data-vault-pin]",root).value; if(pin.length<8)return setFlash("Vault PIN ต้องมีอย่างน้อย 8 ตัวอักษร","error");
     var envelope=state.vaultEnvelope; var salt=envelope?unb64(envelope.salt):crypto.getRandomValues(new Uint8Array(16));
-    vaultKey(pin,salt).then(function(key){ if(!envelope)return {travel_notes:{},model_notes:{},general_note:""}; return crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(envelope.iv)},key,unb64(envelope.ciphertext)).then(function(plain){return JSON.parse(new TextDecoder().decode(plain));}); }).then(function(data){if(state.authBlocked)return;state.vault=data;state.vaultPin=pin;state.vaultSalt=salt;state.vaultConflict=false;$("[data-vault-pin]",root).value=""; if(!state.vault.travel_notes)state.vault.travel_notes={};if(!state.vault.model_notes)state.vault.model_notes={};$("[data-vault-locked]",root).hidden=true;$("[data-vault-open]",root).hidden=false;$("[data-general-note]",root).value=state.vault.general_note||"";setFlash("Private Vault ปลดล็อกใน browser นี้แล้ว","success");hydrate(state.data);}).catch(function(){setFlash("Vault PIN ไม่ถูกต้อง หรือข้อมูลเสียหาย","error");});
+    vaultKey(pin,salt).then(function(key){ if(!envelope)return {travel_notes:{},model_notes:{},general_note:""}; return crypto.subtle.decrypt({name:"AES-GCM",iv:unb64(envelope.iv)},key,unb64(envelope.ciphertext)).then(function(plain){return JSON.parse(new TextDecoder().decode(plain));}); }).then(function(data){if(state.authBlocked)return;state.vault=data;state.vault._partner_record_id=state.data.partner.id;state.vaultPin=pin;state.vaultSalt=salt;state.vaultConflict=false;$("[data-vault-pin]",root).value=""; if(!state.vault.travel_notes)state.vault.travel_notes={};if(!state.vault.model_notes)state.vault.model_notes={};$("[data-vault-locked]",root).hidden=true;$("[data-vault-open]",root).hidden=false;$("[data-general-note]",root).value=state.vault.general_note||"";setFlash("Private Vault ปลดล็อกใน browser นี้แล้ว","success");hydrate(state.data);}).catch(function(){setFlash("Vault PIN ไม่ถูกต้อง หรือข้อมูลเสียหาย","error");});
   }
   function saveVault() {
     if(!state.vault||!state.vaultPin)return Promise.reject(new Error("ปลดล็อก Private Vault ก่อนบันทึก"));
@@ -260,12 +260,14 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     state.vault.general_note=$("[data-general-note]",root).value;
     var snapshot=JSON.stringify(state.vault),pin=state.vaultPin,salt=state.vaultSalt||crypto.getRandomValues(new Uint8Array(16));
     var save=state.vaultQueue.catch(function(){}).then(function(){
+      if(state.authBlocked)throw new Error("เข้าสู่ระบบอีกครั้ง");
       if(state.vaultConflict)throw new Error("Vault ถูกแก้จากอีกอุปกรณ์ กรุณาโหลดใหม่ก่อนบันทึก");
       var iv=crypto.getRandomValues(new Uint8Array(12));
       return vaultKey(pin,salt).then(function(key){return crypto.subtle.encrypt({name:"AES-GCM",iv:iv},key,new TextEncoder().encode(snapshot));}).then(function(cipher){
         var envelope={version:1,salt:b64(salt),iv:b64(iv),ciphertext:b64(new Uint8Array(cipher))};
+        if(state.authBlocked)throw new Error("เข้าสู่ระบบอีกครั้ง");
         return api("/v1/partner/private-vault",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({revision:state.vaultRevision,envelope:envelope})}).then(function(payload){state.vaultEnvelope=envelope;state.vaultRevision=payload.revision;state.vaultSalt=salt;setFlash("บันทึก Private Vault แล้ว · MMD อ่านไม่ได้","success");});
-      }).catch(function(error){if(error.message.indexOf("อีกอุปกรณ์")!==-1)state.vaultConflict=true;throw error;});
+      }).catch(function(error){state.vaultConflict=true;setFlash("ยังไม่บันทึก Vault: "+error.message+" · สำรองข้อมูลที่แก้ไว้ก่อนล็อกและโหลดใหม่","error");throw error;});
     });state.vaultQueue=save;return save;
   }
 

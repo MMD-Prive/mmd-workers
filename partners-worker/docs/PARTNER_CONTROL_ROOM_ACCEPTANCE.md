@@ -1,67 +1,48 @@
-# Partner Control Room acceptance — HOLD
+# Partner Control Room — implementation and pilot acceptance
 
-PR #1504 was owner-merged at `565f1d944e8a6e94a03da64035bd179612d3082c`. The Partner and Admin deployment workflows and HYPE production smoke succeeded on 2026-09-21. This increment extends #1427 and #1429 after #1500, but is **not a complete Partner handoff**. Keep Lovable paused and do not invite or notify the pilot Partner until the open acceptance items below are resolved.
+Lovable remains paused. This increment closes the outstanding implementation paths after #1504/#1506. It does **not** certify an authenticated pilot journey or authorize synthetic payments, identity binding or messages to a real Partner.
 
-Deployment receipts: [Partner](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165254), [Admin](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165237), [HYPE smoke](https://github.com/MMD-Prive/mmd-workers/actions/runs/35587165123). Independent anonymous checks on apex and www confirmed the new page assets, API authentication rejection, and owner-page login redirect. These are not authenticated pilot acceptance.
+## Implemented and tested
 
-## Scope and current evidence
+| Area | Evidence / behavior |
+| --- | --- |
+| Agreement capture | Canonical Create Job calls partners-worker with only the linked Session ID. The authority reads approved canonical terms itself. New bookings freeze current approved terms; historical bookings use independently dated approval history. Browser rates and Partner IDs never determine financial truth. |
+| Existing unpriced jobs | Owner console can explicitly attach an approved agreement to a legacy `commission_terms: not_set` Session. It preserves the original snapshot, actual approval timestamp, owner identity and reconciliation reason. It never silently backdates an agreement. |
+| Settlement | Owner reviews the actual total and chooses one verified full receipt or verified deposit + final receipts. Duplicate/foreign/refunded/void receipts block settlement. Tips are excluded. A historical final-payment-only basis remains final-payment-only. Profit Share requires a cost total and evidence reference, including explicit zero costs. |
+| Ledger / payout | Locked receipt and agreement snapshots determine commission. Completion review, holds, current receipts and recalculated ledger amounts are checked before approval/payment. Durable transfer reference; conflicting replay rejected. Owner can void an unpaid commission with evidence; a recorded transfer cannot be erased. |
+| Concurrency | Existing R2 conditional writes serialize Partner owner decisions by Model and financial writes by Session. Competing requests return conflict. An uncertain upstream write stays fenced for reconciliation rather than allowing a potentially duplicate transfer/intake. Approved agreement versions increase even when draft versions collide. Future-effective proposals stay in review until effective, preserving the current agreement. |
+| Profiles | Only approved shared copy reaches Models and canonical Model Keyword Profiles. Age/profile/skills/experience and all three portfolio/news links propagate to customer-safe copy. Existing customer/visibility policy is preserved; a new keyword profile defaults to public-Kenji No. Pending proposals do not replace the current profile. |
+| Media | Owner opens the actual scoped image, then approves its exact SHA-256 and public use. Only that approval publishes the cover into the canonical media registry and Models Public Image URL. The public image endpoint verifies approval, digest and current canonical cover on every read. Archive revokes publication. Private original keys remain internal. |
+| Sales policy | Partner detail uses the shared canonical sales resolver for current Bangkok-time audience policy previews, including schedule expiry and hidden rates. A preview never creates a customer identity or grants an entitlement. Exact-client rules cannot become model-wide rules. |
+| History / reports | Airtable offsets are followed through all pages. Exact Partner-link filtering is retained. Void/refund/reversal/held states are excluded from pending earnings; paid status is exact, not a substring such as “unpaid”. CSV and print views use the complete returned history. |
+| Private Vault | AES-GCM/PBKDF2 remains browser-only. Import checks decrypted Partner ownership and re-encrypts with the current PIN. Failed saves fence queued writes; unsaved notes can be exported encrypted. Stale server revisions cannot overwrite another device. Lock/login expiry clears private editor state. |
+| Notifications / coordination | Partner Activity includes commission/payment history and durable payout references as well as shared requests and owner replies. Existing admin Telegram notifications remain. Console is an explicit shared coordination request queue; it does not automatically send customer messages. |
 
-| Scope | Implemented in this draft | Acceptance still required |
-| --- | --- | --- |
-| Home / calendar | Bangkok agenda, model/date/status filters, encrypted private locks/travel/external jobs, overlap detection, archive/restore, CSV | Real mobile/desktop layout; cross-device behavior; complete history pagination |
-| Models | Own roster, search, model detail, shared profile proposals, owner approve/reject/add/remove, no hard deletion or automatic sales activation | Approved extended profile/news/portfolio data must reach canonical MMD consumers; proposed vs approved profile display must remain explicit |
-| Photos | Scoped image preview, cover/archive/restore requests, owner decisions, approved cover in Partner roster | Owner must be able to inspect actual shared image before approval; connect approved media to canonical customer profile pipeline |
-| Sales | Explicit sharing, source/sell-rate proposals, audiences, dates, separately labeled approved policy | Wire actual availability to the canonical per-customer/time sales resolver; an approved policy alone does not prove customer visibility |
-| Agreements | Systems 1/2/3, review queue, version history, current approved agreement, Terms status/handoff | Historical effective-date and concurrent owner-decision acceptance |
-| Private Vault | Browser encryption, PIN kept client-side, private contacts/notes/external finances, optimistic R2 revisions, encrypted export | Backup import/recovery UX; concurrent private edits and failed-save recovery; browser acceptance |
-| Console | Own-job shared coordination requests, owner replies, private model contact links | Verify owner team workflow; this is a request queue, not automatic MY MMD customer-message delivery |
-| Earnings | Frozen-snapshot consumer, exact verified full-payment matching, approved net costs for Profit Share, payout reference persistence, completion/payout-hold checks | Canonical snapshot producer is not integrated; existing financial records need reconciliation; notification delivery and concurrency gates remain open |
-| Performance / exports | Per-model job and own-ledger summaries, CSV, browser print/PDF | Historical pagination, lifecycle/refund/void treatment, actual PDF layout |
-| Identity / confirmation | Existing LINE identity and Telegram binding; Dashboard and Telegram recheck Official Verify; closed sessions denied | Genuine account binding and verified-payment pilot acceptance without fabricating records or dispatching test messages to real people |
+## Live pilot prerequisites observed on 2026-09-21
 
-## Release blockers
+Read-only Airtable checks found:
 
-1. Integrate the canonical commission snapshot producer. Repository audit found consumers and schema fields, but no producer that reliably freezes the agreement for each Session. The new strict consumer deliberately rejects missing/incompatible snapshots. Do not backfill historical rates from today's referral or treat this rejection as a completed Earnings feature.
-2. Review the settlement contract below against the real canonical producer and historical records before deployment. This draft only accepts one verified **full** payment. Deposit/final/balance settlement policy is not inferred. Do not change real payment truth or invent cost approvals to make the gate pass.
-3. Resolve concurrent mutations for owner intake/decisions and ledger materialization. Airtable read-then-create is not transactional; repeated sequential requests are tested, competing concurrent requests are not yet guaranteed exactly-once.
-4. Finish the approved-profile/media consumer path and owner visual review. Extended profile fields and links currently persist in approved Partner change requests; that does not automatically publish them in all MMD customer surfaces.
-5. Complete pagination and status accounting before presenting totals as all-time totals. Existing lookups have bounded record windows. Add lifecycle/refund/void acceptance and define the visible reporting period.
-6. Complete browser acceptance on a permitted preview surface at mobile and desktop sizes, including modal forms, encrypted-vault restore, image review, and PDF output. The supported browser rejected localhost and `file:` preview access in this session. No alternate browser surface or network workaround was used. Local DOM tests are not visual browser acceptance.
-7. After code acceptance, deploy both Workers, verify route ownership/authentication, and run an authorized real account journey. No real Telegram notification, payout, identity binding, or pilot payment mutation was performed by these fixture tests.
+- Kendo is Active and recognized; Telegram verification is absent.
+- The existing pilot Session remains `payment_status: pending`.
+- Its existing referral snapshot declares `commission_terms: not_set` and `commercial_terms: case_by_case`.
 
-## Draft settlement consumer contract
+Therefore a complete money/confirm journey still needs an actual approved commercial agreement, genuine Telegram binding, and a genuinely verified payment. Do not choose a rate, create a payment, or confirm a job to make acceptance pass. The owner reconciliation screen is prepared for the real agreement.
 
-The **existing** Session `commission_snapshot_json` and `commission_snapshot_locked` fields must hold an approved immutable object, and `partner_referral_id_snapshot` must match it. No new database or authentication system is introduced.
+Login: <https://mmdbkk.com/sigil/model/dashboard/partner-login>
+Owner review: <https://mmdbkk.com/internal/admin/partners>
 
-```json
-{
-  "contract": "partner_commission_v1",
-  "session_id": "canonical-session-id",
-  "partner_record_id": "canonical-partner-record-id",
-  "model_record_id": "canonical-model-record-id",
-  "referral_record_id": "canonical-referral-record-id",
-  "agreement_version": 1,
-  "system": "profit_share",
-  "basis_rule": "full_payment_only",
-  "payment_ref": "canonical-payment-reference",
-  "payment_amount_thb": 10000,
-  "partner_share_percent": 40,
-  "costs_total_thb": 3000,
-  "costs_approved_by": "canonical-owner-id",
-  "costs_approved_at": "2026-09-25T00:00:00Z",
-  "approved_by": "canonical-owner-id",
-  "approved_at": "2026-09-01T00:00:00Z"
-}
-```
+## Validation
 
-The amounts and identifiers above are illustrative, not pilot facts. Bridge uses `commission_percent` (5–10 percentage points); Co-Partner uses `source_rate_thb`. Profit Share uses net full receipts less explicitly approved costs. Airtable percent columns are written as fractions. The ledger stores the snapshot and durable payout reference in existing fields. Current referrals never substitute for historical financial terms.
+- Partner runtime/DOM suite: 68 tests, including concurrent materialization, ambiguous-write fencing, historical and legacy agreement handling, deposit/final/refund scenarios, 305-row pagination, scoped photo review/publication/revocation, canonical sales resolver and encrypted backup recovery.
+- Admin scope suite: 18 tests covering credential-bound owner access, exact-origin writes, fixed service routes, canonical creation/capture and bundled Co-Partner payout contracts.
+- TypeScript and `git diff --check` pass.
+- These are fixture/DOM tests, not visual mobile/desktop/PDF or authenticated pilot acceptance.
 
-## Verification receipt
+## Operational limits and final handoff gate
 
-- `npm test` in `partners-worker`: 52 tests passed, including runtime fixture tests and two DOM interaction tests.
-- `npm run typecheck` in `partners-worker`: passed.
-- `node --test admin-worker/partner-owner-console.test.mjs`: two tests passed; existing credential-bound session, exact-origin write checks, fixed service destinations, no browser-controlled owner identity.
-- `git diff --check`: passed.
-- The initial draft tests did not establish visual or genuine pilot acceptance. Deployment of #1504 is now verified by the receipts above; the financial producer and other open acceptance items remain incomplete.
+1. Genuine Partner/owner browser acceptance must cover login, private vault restore, owner image preview and printable earnings at mobile and desktop sizes. The supported browser previously blocked local/file preview; no alternative browser or network workaround is permitted. Public production/login checks alone cannot certify this.
+2. Existing downstream customer channels may intentionally limit the length of customer-safe profile excerpts. The full approved copy and links are retained in the canonical keyword profile; approval does not change channel entitlement policy.
+3. A mutation fence left in `reconciliation_required` needs operator investigation. Its deterministic R2 receipt records resource scope, route, record ID and nonce. Confirm the original Worker invocation has stopped, read back canonical records and deterministic source keys, and reconcile uncertain writes before an operator releases the fence. There is deliberately no automatic timed takeover. This coordinates Partner-owned mutations, not arbitrary external Airtable writers.
+4. A refund after an already recorded transfer requires actual financial reconciliation. Never delete or relabel the transfer as though no payment occurred.
 
-Final handoff requires every release blocker to have evidence. Do not equate the earlier narrow P1/P2 completion with the complete Partner Control Room scope.
+Only mark full pilot handoff complete after the genuine-event and browser evidence above exists. Do not equate a merged/deployed increment with end-to-end pilot completion.

@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "partners-worker/**"
+      - "shared/model-sales-control-v1.mjs"
+      - "shared/model-sales-control-v1.d.mts"
       - ".github/workflows/deploy-partners-worker.yml"
   workflow_dispatch:
 
