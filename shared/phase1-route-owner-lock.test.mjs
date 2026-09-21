@@ -81,3 +81,16 @@ test("Private Model handler exists and production workflow refuses route takeove
   assert.match(workflow, /refusing route takeover/);
   assert.match(workflow, /mmdbkk\.com\/sigil\/api\/private-model\/\*/);
 });
+
+
+test("mmd-redirect-worker production retirement is rollback-safe", async () => {
+  const legacy = await source("mmd-redirect-worker/src/index.js");
+  const config = await source("mmd-redirect-worker/wrangler.toml");
+  const workflow = await source(".github/workflows/retire-mmd-redirect-worker-production.yml");
+  assert.match(legacy, /REDIRECT_WORKER_DISABLED = true/);
+  assert.match(legacy, /return fetch\(request\)/);
+  assert.doesNotMatch(config, /\[\[routes\]\]/);
+  assert.match(workflow, /Snapshot and retire every mmd-redirect-worker route/);
+  assert.match(workflow, /Roll back legacy routes if acceptance fails/);
+  assert.match(workflow, /remaining mmd-redirect-worker routes: 0/);
+});
