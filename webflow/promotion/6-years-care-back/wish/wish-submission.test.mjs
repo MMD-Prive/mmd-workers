@@ -6,6 +6,9 @@ import vm from "node:vm";
 await import("../../../global/mmd-canonical-cta-v4.test.mjs");
 
 const source = await readFile(new URL("./wish-submission.js", import.meta.url), "utf8");
+const wallSource = await readFile(new URL("./wish-member-wall.js", import.meta.url), "utf8");
+const flowV30Source = await readFile(new URL("./wish-member-flow-v30.js", import.meta.url), "utf8");
+const wallCss = await readFile(new URL("./wish-member-wall.css", import.meta.url), "utf8");
 
 function loadHooks(overrides = {}) {
   const listeners = new Map();
@@ -62,10 +65,12 @@ test("Existing Webflow textarea keeps its stricter visible character limit", () 
 
 test("Public Wish payload contains no browser identity or benefit authority", () => {
   const { buildPayload, requestId } = loadHooks();
-  const payload = buildPayload("สุขสันต์วันเกิดครับ");
-  assert.deepEqual(Object.keys(payload), ["wish_text", "request_id", "language"]);
+  const payload = buildPayload("สุขสันต์วันเกิดครับ", null, true);
+  assert.deepEqual(Object.keys(payload), ["wish_text", "request_id", "language", "public_display_consent"]);
   assert.equal(payload.wish_text, "สุขสันต์วันเกิดครับ");
   assert.equal(payload.language, "th");
+  assert.equal(payload.public_display_consent, true);
+  assert.equal(buildPayload("Private wish").public_display_consent, false);
   assert.match(payload.request_id, /^[A-Za-z0-9][A-Za-z0-9._~-]{15,127}$/);
   assert.match(requestId(), /^wish-/);
   assert.doesNotMatch(JSON.stringify(payload), /line_user_id|member_id|identity|payment|review|coupon|points|expiry|claim/i);
@@ -113,11 +118,26 @@ test("Existing Webflow Wish form reuses the canonical My MMD handoff", () => {
   assert.doesNotMatch(source, /miniapp\.line\.me\/2010862595-yT4DCEMc\?liff\.state/);
 });
 
-test("Customer copy requires the My MMD coupon claim after Wish", () => {
-  assert.match(source, /ยืนยัน LINE ต่อใน My MMD เพื่อเคลมคูปองส่วนตัวทันทีครับ/);
-  assert.match(source, /Verify LINE in My MMD to claim your personal coupon immediately/);
-  assert.match(source, /请在 My MMD 验证 LINE，立即领取个人优惠券/);
+test("Customer copy explains member-only publication and immediate coupon handoff", () => {
+  assert.match(source, /หากเคยเป็นสมาชิก ให้ยืนยัน LINE ใน My MMD เพื่อให้ข้อความขึ้นและรับคูปองทันทีครับ/);
+  assert.match(source, /If you have ever been an MMD member, verify LINE in My MMD/);
+  assert.match(source, /如果您曾是 MMD 会员，请在 My MMD 验证 LINE/);
   assert.match(source, /benefitCta: "ดูคูปองของฉัน"/);
+});
+
+test("V30 Webflow flow has one visible consent, no reveal dead zone, and direct coupon handoff", () => {
+  assert.doesNotMatch(wallSource, /wish-public-consent|data-public-consent/);
+  assert.match(wallSource, /คำอวยพรจากสมาชิก MMD/);
+  assert.match(wallSource, /สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบัน/);
+  assert.match(flowV30Source, /2026\.09\.21-member-flow-v30/);
+  assert.match(flowV30Source, /consentBridge\.hidden = true/);
+  assert.match(flowV30Source, /typeof detail\.eligible !== "boolean"/);
+  assert.match(flowV30Source, /private_non_member|ระบบยังไม่พบสถานะสมาชิก/);
+  assert.match(flowV30Source, /\/my-mmd\/coupons/);
+  assert.match(wallCss, /\.wish-v23-ribbon[^\n]*display:none!important/);
+  assert.match(wallCss, /\.wish-v23-reveal\{opacity:1!important/);
+  assert.doesNotThrow(() => new Function(wallSource));
+  assert.doesNotThrow(() => new Function(flowV30Source));
 });
 
 test("link token accepts only opaque public Wish tokens", () => {

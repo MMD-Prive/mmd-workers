@@ -641,17 +641,10 @@ function couponStateFor(claimPolicy, observed, promoFields, now = new Date(), wi
 
 function couponIssuanceGatePassed(claimPolicy, observed, wishSubmitted) {
   if (!wishSubmitted) return false;
-  const membershipVerified = observed.status === "active" || observed.status === "grace";
-  const paymentVerified = claimPolicy.payment_required
-    ? claimPolicy.payment_status === "verified"
-    : claimPolicy.payment_status === "not_required";
-  const reviewVerified = claimPolicy.review_status === "approved" || claimPolicy.review_status === "not_required";
-  const claimApproved = ["benefit_approved", "applying", "benefit_applied"].includes(String(claimPolicy.claim_status || ""));
-  return membershipVerified
-    && paymentVerified
-    && reviewVerified
-    && claimApproved
-    && claimPolicy.membership_benefit?.state !== "renewal_required";
+  // The anniversary coupon belongs to every verified MMD member, including
+  // expired members. Renewal/payment gates still control membership days and
+  // points, but must not delay the standalone Wish coupon.
+  return ["active", "grace", "expired"].includes(observed.status);
 }
 
 function normalizeModelLevel(value) {

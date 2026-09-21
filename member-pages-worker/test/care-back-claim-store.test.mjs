@@ -112,6 +112,34 @@ test("CARE BACK activates the code for exactly two calendar months without inven
   assert.equal(result.discount_percent, 0);
 });
 
+test("expired members receive the Wish coupon immediately while renewal benefits stay separate", async () => {
+  const writes = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const table = tableFrom(input);
+    if ((init.method || "GET") === "GET") return Response.json({ records: [] });
+    const body = JSON.parse(init.body);
+    const fields = body.records?.[0]?.fields || body.fields;
+    writes.push({ table, fields });
+    return Response.json({ records: [{ id: `rec${String(writes.length).padStart(14, "E")}`, fields }] });
+  };
+
+  const result = await getCareBackStore(env()).openOrResume({
+    identityHash: IDENTITY,
+    memberId: "MMD-PER-EXPIRED",
+    memberProfile: { membership_status: "expired", tier: "Standard" },
+    wishSubmitted: true,
+    now: BIRTHDAY_NOW,
+  });
+
+  const promo = writes.find((write) => write.table === "MMD — Promo Codes");
+  assert.ok(promo);
+  assert.equal(promo.fields.status, "active");
+  assert.equal(result.coupon_state, "ready");
+  assert.equal(result.coupon_wallet.status, "ready");
+  assert.equal(result.membership_benefit.state, "renewal_required");
+  assert.equal(result.points_policy.renewal_bonus_state, "renewal_required");
+});
+
 test("calendar-month validity preserves month semantics and clamps end-of-month", () => {
   assert.equal(addCalendarMonths("2026-08-31T12:34:56.000Z", 2), "2026-10-31T12:34:56.000Z");
   assert.equal(addCalendarMonths("2026-12-31T00:00:00.000Z", 2), "2027-02-28T00:00:00.000Z");

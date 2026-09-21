@@ -1,4 +1,3 @@
-import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { PUBLIC_JSON_BODY_MAX_BYTES, readBoundedJsonObject } from "./bounded-json.js";
 import { addCalendarMonths, deriveClaimAndCode, getCareBackStore } from "./care-back-claim-store.js";
 
@@ -13,6 +12,7 @@ const PENDING_WISH_COOKIE = "mmd_care_back_wish_link";
 const PENDING_WISH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MAX_WISH = 600;
+const WISH_ELIGIBLE_MEMBER_STATUSES = new Set(["active", "grace", "expired"]);
 const PUBLIC_WISH_PATHS = new Set([
   "/member/api/care-back/public-wish",
   "/member/api/care-back/public-wish/",
@@ -67,17 +67,17 @@ export async function handlePublicWishFeed(request, env = {}) {
       const fields = record?.fields || {};
       const payload = safeObjectJson(fields.payload_json);
       const text = normalizeText(fields.wish_text, MAX_WISH);
-      const customerOptIn = payload.public_display_consent === true
+      const memberOptIn = payload.public_display_consent === true
         && payload.public_display_consent_version === "wish-wall-v1"
         && safeTimestamp(payload.public_display_consented_at)
-        && payload.public_display_customer_verified === true
-        && safeTimestamp(payload.public_display_customer_verified_at)
+        && payload.public_display_member_verified === true
+        && safeTimestamp(payload.public_display_member_verified_at)
         && payload.wish_kind === "verified_identity_linked";
       const ownerApproval = payload.public_display_owner_approved === true
         && safeTimestamp(payload.public_display_owner_approved_at)
         && payload.public_display_approval_basis === "owner_request_publish_all_real_wishes_all_phases_2026-09-16";
       if (fields.campaign_id !== CAMPAIGN_ID || fields.wish_status !== "completed"
-        || (!customerOptIn && !ownerApproval)
+        || (!memberOptIn && !ownerApproval)
         || !text || !safeTimestamp(fields.submitted_at)) return [];
       return [{ text, submitted_at: safeTimestamp(fields.submitted_at) }];
     }).slice(0, 24);
@@ -124,6 +124,8 @@ export async function handlePublicWish(request, env = {}) {
       wish_link_token: linkToken,
       benefits: {
         verification_required: false,
+        member_verification_required: true,
+        member_only_coupon: true,
         coupon: false,
         coupon_after_verification: false,
         coupon_claim_required: true,
@@ -132,9 +134,9 @@ export async function handlePublicWish(request, env = {}) {
       },
       final_display: {
         message: input.language === "en"
-          ? "MMD has received your wish. Verify LINE now to claim your personal discount coupon immediately."
-          : "MMD ได้รับคำอวยพรของคุณแล้วครับ กรุณายืนยัน LINE ต่อเพื่อเคลมคูปองส่วนตัวได้ทันทีครับ",
-        next_action: "required_coupon_claim",
+          ? "MMD has received your wish. If you have ever been an MMD member, verify LINE in My MMD to publish it anonymously and receive your coupon immediately."
+          : "MMD ได้รับคำอวยพรของคุณแล้วครับ หากเคยเป็นสมาชิก ให้ยืนยัน LINE ใน My MMD เพื่อให้ข้อความขึ้นแบบไม่ระบุชื่อและรับคูปองได้ทันทีครับ",
+        next_action: "verify_member_status",
       },
       grants: noGrants(),
     }, 200, { "set-cookie": pendingWishCookie(linkToken) });
@@ -192,19 +194,16 @@ export async function handleLinkWish(request, env = {}) {
   }
 
   const store = getPublicWishStore(env);
-  const couponStore = getVerifiedWishCouponStore(env);
-  if (!store || !couponStore) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
+  if (!store) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
 
   const claimRecordId = validAirtableRecordId(data.campaign_claim_record_id);
   const claimId = exactToken(data.campaign_claim_id, 80);
   const hasCanonicalClaim = Boolean(data.member_exists && data.member_id && claimId && claimRecordId);
+  const memberEligible = isWishEligibleMember(data);
+  const couponStore = memberEligible ? getVerifiedWishCouponStore(env) : null;
+  if (memberEligible && !couponStore) return unavailable("CARE_BACK_STORAGE_NOT_CONFIGURED");
   const linkTokenHash = await publicDigest(`public-wish-link:${linkToken}`);
   const verifiedCustomerRefHash = await keyedDigest(env, `wish-customer:${data.identity_key}`);
-  // Publication is based on completed service history, never membership/tier.
-  const history = await readClientBackedHistoryResult(env, data.line_user_id, new Date(), { requireLinkedClient: true });
-  const customerVerified = history.state === "resolved"
-    && history.summary.verifiedServiceCount > 0
-    && !["blocked", "suspended", "revoked"].includes(String(data.member_profile?.membership_status || "").toLowerCase());
 
   try {
     const wish = await store.linkVerified({
@@ -212,14 +211,13 @@ export async function handleLinkWish(request, env = {}) {
       claimId: hasCanonicalClaim ? claimId : "",
       claimRecordId: hasCanonicalClaim ? claimRecordId : "",
       verifiedCustomerRefHash,
-      customerVerified,
-      memberVerified: hasCanonicalClaim && data.member_exists === true
-        && ["active", "grace", "expired"].includes(String(data.member_profile?.membership_status || "").trim().toLowerCase()),
+      customerVerified: false,
+      memberVerified: memberEligible,
       now: new Date().toISOString(),
     });
 
     let claim = null;
-    const careBackStore = hasCanonicalClaim ? getCareBackStore(env) : null;
+    const careBackStore = hasCanonicalClaim && memberEligible ? getCareBackStore(env) : null;
     if (careBackStore) {
       try {
         claim = await careBackStore.openOrResume({
@@ -235,10 +233,9 @@ export async function handleLinkWish(request, env = {}) {
       }
     }
 
-    const coupon = await couponStore.issueOrResume({
-      identityHash: data.identity_key,
-      now: new Date(),
-    });
+    const coupon = memberEligible
+      ? await couponStore.issueOrResume({ identityHash: data.identity_key, now: new Date() })
+      : ineligibleCoupon();
 
     return json({
       ok: true,
@@ -247,10 +244,15 @@ export async function handleLinkWish(request, env = {}) {
       wish: { text: wish.wish_text, submitted_at: wish.submitted_at },
       benefits: {
         verification_required: false,
+        member_eligible: memberEligible,
         coupon: coupon.state === "ready",
         coupon_state: coupon.state,
         membership_evaluation_started: Boolean(claim),
         points_evaluation_started: Boolean(claim),
+      },
+      publication: {
+        eligible: memberEligible,
+        state: memberEligible ? "public_after_consent" : "private_non_member",
       },
       coupon,
       claim: claim ? safeClaimSummary(claim) : null,
@@ -275,6 +277,27 @@ function getVerifiedWishCouponStore(env) {
   }
   if (!String(env.AIRTABLE_API_KEY || "").trim() || !String(env.AIRTABLE_BASE_ID || "").trim()) return null;
   return new AirtableVerifiedWishCouponStore(env);
+}
+
+function isWishEligibleMember(session = {}) {
+  const memberId = exactToken(session.member_id, 160);
+  const status = String(session.member_profile?.membership_status || "").trim().toLowerCase();
+  return session.member_exists === true
+    && Boolean(memberId)
+    && WISH_ELIGIBLE_MEMBER_STATUSES.has(status);
+}
+
+function ineligibleCoupon() {
+  return {
+    state: "not_eligible",
+    status: "not_eligible",
+    code: "",
+    max_discount_percent: VERIFIED_COUPON_MAX_DISCOUNT_PERCENT,
+    approved_discount_percent: null,
+    activated_at: null,
+    expires_at: null,
+    single_use: true,
+  };
 }
 
 class AirtablePublicWishStore {
@@ -323,7 +346,7 @@ class AirtablePublicWishStore {
         verified_customer_ref_hash: input.verifiedCustomerRefHash,
         source: "line_liff",
         source_path: "/member/liff",
-        display_version: "care_back_verified_wish_v2",
+        display_version: "care_back_member_wish_v3",
         payload_json: JSON.stringify({
           ...wish.payload,
           schema_version: 4,
@@ -336,7 +359,7 @@ class AirtablePublicWishStore {
           campaign_id: CAMPAIGN_ID,
           claim_id: input.claimId || undefined,
           wish_kind: "verified_identity_linked",
-          coupon_policy: "verified_identity",
+          coupon_policy: "verified_member_only",
         }),
         updated_at: input.now,
       }, typecast: false },
@@ -345,7 +368,7 @@ class AirtablePublicWishStore {
   }
 
   async listPublicCandidates() {
-    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',OR(FIND('"public_display_customer_verified":true',{payload_json}&''),FIND('"public_display_owner_approved":true',{payload_json}&'')))`, 100, true);
+    return this.list(`AND({campaign_id}=${formulaString(CAMPAIGN_ID)},{wish_status}='completed',OR(FIND('"public_display_member_verified":true',{payload_json}&''),FIND('"public_display_owner_approved":true',{payload_json}&'')))`, 100, true);
   }
 
   async findByRequestId(requestId) {
