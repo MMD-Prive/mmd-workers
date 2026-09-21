@@ -59,3 +59,15 @@ test("production routing binds the Partner Control Room page and follows the ape
   assert.match(deployWorkflowSource, /page="\$\(curl --location /);
   assert.match(deployWorkflowSource, /\.error\.code \/\/ \.error/);
 });
+
+test("Lovable uses the canonical Worker contract without widening authority", () => {
+  assert.match(wranglerSource, /https:\/\/sigil-partner\.lovable\.app/);
+  assert.match(wranglerSource, /https:\/\/id-preview--bc1401f7-c385-48ab-bf5f-41aafc03fa19\.lovable\.app/);
+  assert.match(indexSource, /Access-Control-Allow-Headers[^\n]+Idempotency-Key/);
+  assert.match(indexSource, /payment_status: paymentStatus/);
+  assert.match(indexSource, /confirmation_allowed: isOfficiallyVerifiedPaymentStatus\(paymentStatus\)/);
+  assert.match(indexSource, /official_verify_required/);
+  assert.match(uiSource, /job\.confirmation_allowed === true/);
+  assert.match(uiSource, /รอ Official Verify/);
+  assert.match(indexSource, /requested_customer_sell_rate_thb: fieldNumber\(existingRecord/);
+});

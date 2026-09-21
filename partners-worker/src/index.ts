@@ -146,6 +146,7 @@ const MODEL_PARTNERS = {
 
 const SESSION_FIELDS = {
   sessionId: "fldLTq2kZbyRv22IA",
+  paymentStatus: "fldTY5lE6m0kQf72n",
   clientName: "fldMvnQ0BzDfHUYjT",
   modelName: "flddVz6eoWRHrzIQr",
   jobDate: "fldpnqoIsUMfN7y3c",
@@ -444,7 +445,7 @@ function corsHeaders(request: Request, env: RuntimeEnv): Headers {
   const headers = new Headers({
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Idempotency-Key",
     "Vary": "Origin"
   });
 
@@ -1216,7 +1217,12 @@ async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Pr
       idempotent: true,
       proposal_id: existingRecord.id,
       status: fieldText(existingRecord, MODEL_OFFER_RULES.status) || "Review",
-      sellability_mutated: false
+      model_record_id: modelRecordId,
+      model_name: modelName,
+      requested_customer_sell_rate_thb: fieldNumber(existingRecord, MODEL_OFFER_RULES.customerSellRateThb),
+      sellability_mutated: false,
+      customer_sell_rate_mutated: false,
+      requires_per_approval: true
     });
   }
   if (existing.length > 1) {
@@ -1388,6 +1394,7 @@ function normalizePartnerModelChange(record: AirtableRecord): Record<string, unk
 
 function normalizePartnerSession(record: AirtableRecord): Record<string, unknown> {
   const partnerStatus = normalizeStatus(fieldText(record, SESSION_FIELDS.partnerConfirmationStatus)) || "pending";
+  const paymentStatus = normalizeStatus(fieldText(record, SESSION_FIELDS.paymentStatus)) || "unavailable";
   return {
     session_record_id: record.id,
     session_id: fieldText(record, SESSION_FIELDS.sessionId) || record.id,
@@ -1401,6 +1408,8 @@ function normalizePartnerSession(record: AirtableRecord): Record<string, unknown
     work_lane: fieldText(record, SESSION_FIELDS.workLane),
     work_type: fieldText(record, SESSION_FIELDS.workType),
     status: partnerStatus,
+    payment_status: paymentStatus,
+    confirmation_allowed: isOfficiallyVerifiedPaymentStatus(paymentStatus),
     confirmation_note: fieldText(record, SESSION_FIELDS.partnerConfirmationNote),
     confirmation_revision: fieldNumber(record, SESSION_FIELDS.partnerConfirmationRevision),
     notification_status: fieldText(record, SESSION_FIELDS.partnerNotificationStatus) || "pending"
@@ -1680,6 +1689,17 @@ async function handlePartnerJobAction(request: Request, env: RuntimeEnv): Promis
   }
   const currentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.partnerConfirmationStatus));
   const currentRevision = fieldNumber(session, SESSION_FIELDS.partnerConfirmationRevision);
+  const paymentStatus = normalizeStatus(fieldText(session, SESSION_FIELDS.paymentStatus));
+  if (!isOfficiallyVerifiedPaymentStatus(paymentStatus)) {
+    return errorResponse(
+      request,
+      env,
+      "official_verify_required",
+      "Partner confirmation is available only after canonical Payment Truth reaches Official Verify.",
+      409,
+      false
+    );
+  }
   if (currentStatus === nextStatus) return json(request, env, { ok: true, idempotent: true, status: nextStatus, revision: currentRevision });
   if (["confirmed", "declined"].includes(currentStatus)) {
     return errorResponse(request, env, "partner_confirmation_already_final", `Job response is already ${currentStatus}.`, 409, false);
@@ -2924,6 +2944,10 @@ function normalizeStatus(value: string | null): string {
 function isPaidStatus(value: string): boolean {
   const status = normalizeStatus(value);
   return ["paid", "settled", "complete", "completed"].some((entry) => status.includes(entry));
+}
+
+function isOfficiallyVerifiedPaymentStatus(value: string): boolean {
+  return ["verified", "paid", "settled", "complete", "completed", "success"].includes(normalizeStatus(value));
 }
 
 function toLabel(value: string): string {
