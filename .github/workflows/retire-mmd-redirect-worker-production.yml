@@ -2,11 +2,11 @@ name: Retire mmd-redirect-worker production routes
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/retire-mmd-redirect-worker-production.yml"
+  workflow_run:
+    workflows:
+      - "Repair admin login routes"
+    types:
+      - completed
 
 concurrency:
   group: retire-mmd-redirect-worker-production
@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   retire:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -26,6 +27,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Verify legacy Worker is hard-disabled
         shell: bash
@@ -70,7 +73,9 @@ jobs:
             'https://www.mmdbkk.com/sigil/admin/login?phase1=retire')"
           echo "/sigil/admin/login -> $admin_code"
           test "$admin_code" = "308"
-          grep -qi '^location: /internal/admin/login' "$admin_headers"
+          grep -Eqi '^x-mmd-route-owner:[[:space:]]*admin-worker' "$admin_headers"
+          grep -Eqi '^x-mmd-admin-login-canonical:[[:space:]]*/internal/admin/login' "$admin_headers"
+          grep -Eqi '^location:[[:space:]]*https://mmdbkk\.com/internal/admin/login' "$admin_headers"
 
       - name: Snapshot and retire every mmd-redirect-worker route
         id: retire_routes
@@ -199,7 +204,9 @@ jobs:
           admin_code="$(curl -sS -D "$admin_headers" -o /dev/null -w '%{http_code}' \
             'https://www.mmdbkk.com/sigil/admin/login?phase1=retired')"
           test "$admin_code" = "308"
-          grep -qi '^location: /internal/admin/login' "$admin_headers"
+          grep -Eqi '^x-mmd-route-owner:[[:space:]]*admin-worker' "$admin_headers"
+          grep -Eqi '^x-mmd-admin-login-canonical:[[:space:]]*/internal/admin/login' "$admin_headers"
+          grep -Eqi '^location:[[:space:]]*https://mmdbkk\.com/internal/admin/login' "$admin_headers"
 
           unknown_headers="$(mktemp)"
           unknown_code="$(curl -sS -D "$unknown_headers" -o /dev/null -w '%{http_code}' \

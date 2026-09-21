@@ -188,7 +188,9 @@ This section supersedes older Phase 1 `UNRESOLVED` / `PARTIAL` labels for the ro
 | `/v1/partner/*` | `partners-worker` | production route + login boundary smoke |
 | `/v1/rt/*` | `realtime-worker` | dedicated zone route sync + owner health + fail-closed room smoke |
 | `/sigil/apply*`, `/sigil/api/private-model/*` | `sigil-worker` | custom-host route sync + GET/HEAD/OPTIONS/invalid-POST smoke |
-| `/blackcard/black-card` | Webflow compatibility page for canonical `/blackcard` surface | compatibility page created outside sitemap; publish required before final route retirement |
+| `/blackcard/black-card` | Webflow compatibility page for canonical `/blackcard` surface | compatibility page excluded from sitemap and published on apex + www |
+| `/sigil/admin/login`, `/admin/login` | `admin-worker` redirect-only compatibility aliases → `/internal/admin/login` | exact apex/www routes; GET/HEAD 308 with query preservation; non-navigation methods fail closed |
+| `/sigil/internal/admin/login` | `admin-worker` compatibility login surface | exact `/sigil/internal/admin*` route family remains canonical Worker-owned |
 | `mmd-redirect-worker` | no canonical ownership | source is HARD DISABLED/pass-through only; final production target is zero Cloudflare routes |
 
 Final Phase 1 retirement gate: `.github/workflows/retire-mmd-redirect-worker-production.yml` snapshots every production route still attached to `mmd-redirect-worker`, verifies replacement surfaces, retires only those legacy routes, runs production acceptance, and restores the snapshot automatically if acceptance fails.

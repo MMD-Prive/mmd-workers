@@ -220,6 +220,40 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/internal/admin/login/session"
 zone_name = "mmdbkk.com"
 
+# Legacy admin-login aliases are redirect-only compatibility surfaces owned by
+# admin-worker. Keep these exact/narrow; do not claim broad /sigil/admin/*.
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/sigil/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/admin/login"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/admin/login*"
+zone_name = "mmdbkk.com"
+
 
 # MMD Shop owner workspace and authenticated API. Webflow is presentation only.
 [[routes]]

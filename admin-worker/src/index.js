@@ -132,6 +132,7 @@ const KENJI_KNOWLEDGE_ALLOWED_AUDIENCE = new Set(["internal", "internal_only", "
 const KENJI_KNOWLEDGE_ALLOWED_SORT = new Set(["updated_at", "created_at", "title", "status", "lane", "language", "audience"]);
 const ADMIN_LOGIN_ROOT_PATH = "/internal/admin";
 const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
+const LEGACY_ADMIN_LOGIN_PATHS = new Set(["/sigil/admin/login", "/admin/login"]);
 const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
 const ADMIN_LOGIN_SESSION_PATH = "/internal/admin/login/session";
 const ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH = "/internal/admin/control-room";
@@ -173,6 +174,10 @@ export default {
     const path = normalizePathname(url.pathname);
     const method = req.method.toUpperCase();
     const cors = corsHeaders(req, env);
+
+    if (LEGACY_ADMIN_LOGIN_PATHS.has(path)) {
+      return redirectLegacyAdminLogin(req, method);
+    }
 
     if (isLegacySigilInternalAdminPath(path) && path !== SIGIL_ADMIN_LOGIN_PAGE_PATH) {
       return redirectLegacySigilInternalAdmin(req);
@@ -1225,6 +1230,42 @@ function isKenjiKnowledgeShellPath(path) {
 
 function isKenjiKnowledgeCapturedPath(path) {
   return path === KENJI_KNOWLEDGE_LEGACY_PATH || path.startsWith(KENJI_KNOWLEDGE_CANONICAL_PATH);
+}
+
+function redirectLegacyAdminLogin(req, method) {
+  if (method !== "GET" && method !== "HEAD") {
+    return new Response(JSON.stringify({
+      ok: false,
+      error: "legacy_admin_login_method_not_allowed",
+      canonical_login: ADMIN_LOGIN_PAGE_PATH,
+    }), {
+      status: 405,
+      headers: {
+        "allow": "GET, HEAD",
+        "cache-control": "no-store",
+        "content-type": "application/json; charset=utf-8",
+        "x-mmd-route-owner": "admin-worker",
+        "x-mmd-admin-login-canonical": ADMIN_LOGIN_PAGE_PATH,
+      },
+    });
+  }
+
+  const source = new URL(req.url);
+  const target = new URL(ADMIN_LOGIN_PAGE_PATH, "https://mmdbkk.com");
+  target.search = source.search;
+  if (!target.searchParams.has("next")) {
+    target.searchParams.set("next", ADMIN_NEXT_INTERNAL_CONTROL_ROOM_PATH);
+  }
+
+  return new Response(null, {
+    status: 308,
+    headers: {
+      "cache-control": "no-store",
+      "location": target.toString(),
+      "x-mmd-route-owner": "admin-worker",
+      "x-mmd-admin-login-canonical": ADMIN_LOGIN_PAGE_PATH,
+    },
+  });
 }
 
 function redirectKenjiKnowledgeLegacy(req) {
