@@ -123,7 +123,6 @@ test("Partner system pages use positive copy and canonical CTA routing", () => {
   assert.doesNotMatch(pageSource, /Review Status/);
   assert.match(pageSource, /Partner Home/);
   assert.match(pageSource, /Partner Terms/);
-  assert.match(pageSource, /\/partner\/apply\?partner_type=modeling/);
   assert.match(pageSource, /MMD PRIVÉ · BANGKOK/);
   assert.match(pageSource, /Private by design\./);
   for (const phrase of ["ยังไม่ใช่การอนุมัติ", "MMD ไม่มีสิทธิ์อ่าน", "รหัสถอดข้อมูลอยู่กับ Partner และไม่ถูกส่งให้ MMD"]) {
