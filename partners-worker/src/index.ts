@@ -258,6 +258,43 @@ const MODELS = {
   status: "fldRcAE3bL8dKmURH"
 } as const;
 
+const MODEL_OFFER_RULES = {
+  ruleKey: "fld0GTefOf9VSdTpU",
+  model: "fldrvoIfq0sMWR70V",
+  modelKey: "fldHlkHRqPr5e8pkn",
+  offerType: "fldt5djzxVFQz43za",
+  requiresPerApproval: "fldlqnCByGm0rRypA",
+  priceVisibility: "fldiLyM0oyHVR6e2j",
+  status: "fldBpmlW8aO9AhDhX",
+  internalOnly: "fldC5I6dm2h3JKkPf",
+  reviewedBy: "fldMNxut21hZCdFlR",
+  version: "fldCMjmjsPImiCUDY",
+  audienceScope: "fldVfrqaEkgI2uf5w",
+  partnerSourceRateThb: "fldbgFiaSm4pWY9qU",
+  salesVisibility: "fldgc3dV6wWVTcu7c",
+  scheduleType: "fldugUjwgRWbJGkpV",
+  effectiveFromAt: "fldeJNUOSiHlEjUSh",
+  effectiveUntilAt: "fldA4RxTfDNGlvgoe",
+  daysOfWeek: "fldAFAhdX7YiiDDbg",
+  startTimeLocal: "fldq1INJTObcAWVJl",
+  endTimeLocal: "fldLed5vuLGmew0g4",
+  priority: "flddWP3oD26iyic5d",
+  sourceActorType: "fldlSuF1vNPbZzqXW",
+  sourcePartnerRef: "fldddYtvJbLgGSp8k",
+  changeReason: "fldfcGGnnfgneFXCi",
+  updatedBy: "fldElUophZssF3426",
+  updatedAt: "fldexo1B74IGqbppn",
+  notifyStatus: "fldpO3fYqBuM4rXY9",
+  notifyError: "fldTaTet5ErLVe50L"
+} as const;
+
+const PARTNER_SALES_AUDIENCES = new Set([
+  "Public Member", "Elite", "Red Card", "Standard", "Premium", "VIP / Black Card", "SVIP", "Per Review"
+]);
+const PARTNER_SALES_SCHEDULES = new Set(["Always", "Date range", "Date + time range", "Weekly recurring"]);
+const PARTNER_SALES_VISIBILITY = new Set(["on", "off"]);
+const PARTNER_SALES_DAYS = new Set(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
+
 const WEBFLOW_PARTNER_FORM_ORIGIN = "https://mmdprive.webflow.io";
 const WEBFLOW_PARTNER_FORM_SCRIPT_URL =
   "https://partners-worker.malemodel-bkk.workers.dev/webflow-sigil-partner-form.js";
@@ -324,6 +361,10 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/telegram/connect") {
         return await handlePartnerTelegramConnect(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/sales/proposal") {
+        return await handlePartnerSalesProposal(request, runtimeEnv);
       }
 
       if (request.method === "POST" && url.pathname === "/__internal/partner-job-confirm") {
@@ -953,9 +994,10 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const telegramId = fieldText(partnerRecord, MODEL_PARTNERS.telegramId);
   const telegramStatus = normalizeStatus(fieldText(partnerRecord, MODEL_PARTNERS.telegramVerificationStatus));
   const telegramConnected = telegramStatus === "verified" && typeof telegramId === "string" && /^\\d{5,20}$/.test(telegramId);
-  const [referrals, commissions] = await Promise.all([
+  const [referrals, commissions, partnerSalesRules] = await Promise.all([
     listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partnerRecord.id),
-    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id)
+    listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, PARTNER_COMMISSIONS.partner, partnerRecord.id),
+    listPartnerSalesRules(env, partnerRecord.id)
   ]);
 
   const modelIds = new Set<string>();
@@ -999,10 +1041,223 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
       paidAmount
     },
     referrals: normalizedReferrals,
-    commissions: normalizedCommissions
+    commissions: normalizedCommissions,
+    sales_controls: buildPartnerSalesControls(referrals, modelMap, partnerSalesRules)
   });
 }
 
+
+async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Promise<Response> {
+  const verified = await verifyPartnerTokenFromRequest(request, env);
+  if (!verified.ok) return verified.response;
+
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+
+  const modelRecordId = readString(body.value, "model_record_id");
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+    return errorResponse(request, env, "model_record_id_invalid", "A canonical linked model is required.", 400, false);
+  }
+
+  const referrals = await listLinkedRecordsForPartner(
+    env,
+    env.AIRTABLE_TABLE_MODEL_REFERRALS,
+    MODEL_REFERRALS.partner,
+    verified.value.partnerRecord.id
+  );
+  const ownsModel = referrals.some((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId));
+  if (!ownsModel) {
+    return errorResponse(request, env, "partner_model_scope_forbidden", "This model is outside the Partner relationship scope.", 403, false);
+  }
+
+  const model = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODELS, modelRecordId);
+  const modelName = fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || modelRecordId;
+  const partnerSourceRate = Number(body.value.partner_source_rate_thb);
+  if (!Number.isFinite(partnerSourceRate) || partnerSourceRate < 0 || partnerSourceRate > 1000000) {
+    return errorResponse(request, env, "partner_source_rate_invalid", "Partner source rate must be a valid THB amount.", 400, false);
+  }
+
+  const salesVisibility = readString(body.value, "sales_visibility").toLowerCase() || "off";
+  if (!PARTNER_SALES_VISIBILITY.has(salesVisibility)) {
+    return errorResponse(request, env, "sales_visibility_invalid", "Unsupported sales visibility.", 400, false);
+  }
+
+  const rawAudiences = Array.isArray(body.value.audience_scope) ? body.value.audience_scope : [];
+  const audiences = [...new Set(rawAudiences.map((value) => String(value || "").trim()).filter(Boolean))];
+  if (!audiences.length || audiences.some((value) => !PARTNER_SALES_AUDIENCES.has(value))) {
+    return errorResponse(request, env, "audience_scope_invalid", "Choose one or more approved customer audiences.", 400, false);
+  }
+
+  const scheduleType = readString(body.value, "schedule_type") || "Always";
+  if (!PARTNER_SALES_SCHEDULES.has(scheduleType)) {
+    return errorResponse(request, env, "schedule_type_invalid", "Unsupported schedule type.", 400, false);
+  }
+
+  const rawDays = Array.isArray(body.value.days_of_week) ? body.value.days_of_week : [];
+  const days = [...new Set(rawDays.map((value) => String(value || "").trim()).filter(Boolean))];
+  if (days.some((value) => !PARTNER_SALES_DAYS.has(value))) {
+    return errorResponse(request, env, "days_of_week_invalid", "Unsupported schedule day.", 400, false);
+  }
+  if (scheduleType === "Weekly recurring" && !days.length) {
+    return errorResponse(request, env, "days_of_week_required", "Weekly recurring rules require at least one day.", 400, false);
+  }
+
+  const startTimeLocal = readString(body.value, "start_time_local");
+  const endTimeLocal = readString(body.value, "end_time_local");
+  if ((startTimeLocal && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTimeLocal)) ||
+      (endTimeLocal && !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTimeLocal))) {
+    return errorResponse(request, env, "local_time_invalid", "Schedule time must use HH:mm Bangkok time.", 400, false);
+  }
+
+  const effectiveFrom = normalizeIsoDate(readString(body.value, "effective_from_at"));
+  const effectiveUntil = normalizeIsoDate(readString(body.value, "effective_until_at"));
+  if (scheduleType !== "Always" && readString(body.value, "effective_from_at") && !effectiveFrom) {
+    return errorResponse(request, env, "effective_from_invalid", "Invalid effective-from timestamp.", 400, false);
+  }
+  if (readString(body.value, "effective_until_at") && !effectiveUntil) {
+    return errorResponse(request, env, "effective_until_invalid", "Invalid effective-until timestamp.", 400, false);
+  }
+  if (effectiveFrom && effectiveUntil && Date.parse(effectiveUntil) <= Date.parse(effectiveFrom)) {
+    return errorResponse(request, env, "schedule_window_invalid", "Schedule end must be later than schedule start.", 400, false);
+  }
+
+  const idempotencyKey = String(request.headers.get("Idempotency-Key") || "").trim();
+  if (idempotencyKey.length < 8 || idempotencyKey.length > 180) {
+    return errorResponse(request, env, "idempotency_key_required", "A stable Idempotency-Key is required.", 400, false);
+  }
+  const digest = await sha256Hex(`${verified.value.partnerRecord.id}:${idempotencyKey}`);
+  const ruleKey = `partner-proposal-${digest.slice(0, 24)}`;
+  const offerRulesTable = String((env as RuntimeEnv & { AIRTABLE_TABLE_MODEL_OFFER_RULES?: string }).AIRTABLE_TABLE_MODEL_OFFER_RULES || "tblSbxUGTFqd2CgPy");
+
+  const existing = await listAirtableRecords(env, offerRulesTable, {
+    filterByFormula: `{${MODEL_OFFER_RULES.ruleKey}}='${escapeFormulaString(ruleKey)}'`,
+    maxRecords: 2
+  });
+  if (existing.length === 1) {
+    return json(request, env, {
+      ok: true,
+      idempotent: true,
+      proposal_id: existing[0].id,
+      status: fieldText(existing[0], MODEL_OFFER_RULES.status) || "Review",
+      sellability_mutated: false
+    });
+  }
+  if (existing.length > 1) {
+    return errorResponse(request, env, "proposal_idempotency_conflict", "Duplicate proposal key requires review.", 409, false);
+  }
+
+  const now = new Date().toISOString();
+  const fields: AirtableFields = {
+    [MODEL_OFFER_RULES.ruleKey]: ruleKey,
+    [MODEL_OFFER_RULES.model]: [modelRecordId],
+    [MODEL_OFFER_RULES.modelKey]: modelName,
+    [MODEL_OFFER_RULES.partnerSourceRateThb]: partnerSourceRate,
+    [MODEL_OFFER_RULES.audienceScope]: audiences,
+    [MODEL_OFFER_RULES.salesVisibility]: salesVisibility,
+    [MODEL_OFFER_RULES.scheduleType]: scheduleType,
+    [MODEL_OFFER_RULES.daysOfWeek]: days,
+    [MODEL_OFFER_RULES.startTimeLocal]: startTimeLocal || null,
+    [MODEL_OFFER_RULES.endTimeLocal]: endTimeLocal || null,
+    [MODEL_OFFER_RULES.effectiveFromAt]: effectiveFrom,
+    [MODEL_OFFER_RULES.effectiveUntilAt]: effectiveUntil,
+    [MODEL_OFFER_RULES.priority]: 0,
+    [MODEL_OFFER_RULES.requiresPerApproval]: "Yes",
+    [MODEL_OFFER_RULES.priceVisibility]: "Per approval only",
+    [MODEL_OFFER_RULES.status]: "Review",
+    [MODEL_OFFER_RULES.internalOnly]: "Yes",
+    [MODEL_OFFER_RULES.sourceActorType]: "partner",
+    [MODEL_OFFER_RULES.sourcePartnerRef]: verified.value.partnerRecord.id,
+    [MODEL_OFFER_RULES.changeReason]: readString(body.value, "change_reason").slice(0, 1200) || "Partner Dashboard sales-control proposal.",
+    [MODEL_OFFER_RULES.updatedBy]: `partner:${verified.value.partnerRecord.id}`,
+    [MODEL_OFFER_RULES.updatedAt]: now,
+    [MODEL_OFFER_RULES.notifyStatus]: "pending",
+    [MODEL_OFFER_RULES.version]: 1
+  };
+
+  const created = await createAirtableRecord(env, offerRulesTable, fields, true);
+  try {
+    await sendTelegramMessage(env, [
+      "PARTNER SALES CONTROL PROPOSAL",
+      "",
+      `Partner: ${fieldText(verified.value.partnerRecord, MODEL_PARTNERS.partnerName) || verified.value.partnerRecord.id}`,
+      `Model: ${modelName}`,
+      `Source Rate: ${Math.round(partnerSourceRate).toLocaleString("en-US")} THB`,
+      `Visibility Request: ${salesVisibility}`,
+      `Audience: ${audiences.join(", ")}`,
+      `Schedule: ${scheduleType}`,
+      `Proposal: ${created.id}`
+    ].join("\n"), "partner_confirm");
+  } catch (error) {
+    console.error("partner sales proposal telegram alert failed", error);
+  }
+
+  return json(request, env, {
+    ok: true,
+    proposal_id: created.id,
+    status: "Review",
+    model_record_id: modelRecordId,
+    model_name: modelName,
+    sellability_mutated: false,
+    customer_sell_rate_mutated: false,
+    requires_per_approval: true
+  }, 201);
+}
+
+function buildPartnerSalesControls(
+  referrals: AirtableRecord[],
+  modelMap: Map<string, AirtableRecord>,
+  rules: AirtableRecord[]
+): Array<Record<string, unknown>> {
+  const latestByModel = new Map<string, AirtableRecord>();
+  const sorted = [...rules].sort((a, b) => {
+    const at = Date.parse(fieldText(a, MODEL_OFFER_RULES.updatedAt) || a.createdTime || "") || 0;
+    const bt = Date.parse(fieldText(b, MODEL_OFFER_RULES.updatedAt) || b.createdTime || "") || 0;
+    return bt - at;
+  });
+  for (const rule of sorted) {
+    for (const modelId of fieldLinkIds(rule, MODEL_OFFER_RULES.model)) {
+      if (!latestByModel.has(modelId)) latestByModel.set(modelId, rule);
+    }
+  }
+
+  const modelIds = [...new Set(referrals.flatMap((record) => fieldLinkIds(record, MODEL_REFERRALS.model)).filter(Boolean))];
+  return modelIds.map((modelId) => {
+    const model = modelMap.get(modelId);
+    const rule = latestByModel.get(modelId);
+    return {
+      model_record_id: modelId,
+      model_name: model ? (fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || "Model") : "Model",
+      proposal: rule ? {
+        proposal_id: rule.id,
+        status: fieldText(rule, MODEL_OFFER_RULES.status) || "Review",
+        partner_source_rate_thb: fieldNumber(rule, MODEL_OFFER_RULES.partnerSourceRateThb),
+        sales_visibility: fieldText(rule, MODEL_OFFER_RULES.salesVisibility) || "off",
+        audience_scope: fieldMultiText(rule, MODEL_OFFER_RULES.audienceScope),
+        schedule_type: fieldText(rule, MODEL_OFFER_RULES.scheduleType) || "Always",
+        effective_from_at: fieldText(rule, MODEL_OFFER_RULES.effectiveFromAt),
+        effective_until_at: fieldText(rule, MODEL_OFFER_RULES.effectiveUntilAt),
+        days_of_week: fieldMultiText(rule, MODEL_OFFER_RULES.daysOfWeek),
+        start_time_local: fieldText(rule, MODEL_OFFER_RULES.startTimeLocal),
+        end_time_local: fieldText(rule, MODEL_OFFER_RULES.endTimeLocal),
+        updated_at: fieldText(rule, MODEL_OFFER_RULES.updatedAt) || rule.createdTime || null
+      } : null
+    };
+  });
+}
+
+async function listPartnerSalesRules(env: RuntimeEnv, partnerRecordId: string): Promise<AirtableRecord[]> {
+  const tableId = String((env as RuntimeEnv & { AIRTABLE_TABLE_MODEL_OFFER_RULES?: string }).AIRTABLE_TABLE_MODEL_OFFER_RULES || "tblSbxUGTFqd2CgPy");
+  try {
+    return await listAirtableRecords(env, tableId, {
+      filterByFormula: `{${MODEL_OFFER_RULES.sourcePartnerRef}}='${escapeFormulaString(partnerRecordId)}'`,
+      maxRecords: 100,
+      sort: [{ field: MODEL_OFFER_RULES.updatedAt, direction: "desc" }]
+    });
+  } catch (error) {
+    console.warn("Partner sales rules lookup failed", getErrorMessage(error));
+    return [];
+  }
+}
 
 async function handlePartnerTelegramConnect(request: Request, env: RuntimeEnv): Promise<Response> {
   const verified = await verifyPartnerTokenFromRequest(request, env);
@@ -2107,6 +2362,12 @@ function fieldLinkIds(record: AirtableRecord, key: string): string[] {
   const value = record.fields[key];
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is string => typeof entry === "string" && entry.startsWith("rec"));
+}
+
+function fieldMultiText(record: AirtableRecord, key: string): string[] {
+  const value = record.fields[key];
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry || "").trim()).filter(Boolean);
 }
 
 function normalizeStatus(value: string | null): string {
