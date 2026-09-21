@@ -4276,6 +4276,17 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
   <meta name="theme-color" content="#080807">
   <title>SĪGIL Partner · Private Access</title>
   <style>
+    @font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af83c714e7ca09d4d5f_Anuphan-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8f8fd3acb9ca38e4d_Anuphan-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+    @font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8bae381fe8af7b3fd_Anuphan-SemiBold.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+    @font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8e6af8380eb7ade4f_Anuphan-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+    @font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e0906124a74b5e2a114_GeneralSans-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e09393d9307034e1c53_GeneralSans-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+    @font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e09ac36bac3c6685725_GeneralSans-Semibold.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+    @font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e096209f014ff07c142_GeneralSans-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+    @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912ae97f0a7a0fd93d9_Satoshi-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912d1ba49f7fb7fcf56_Satoshi-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+    @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
     :root{color-scheme:dark;--bg:#060505;--bg-mid:#090706;--ivory:#fff9f0;--body:#ddd5cb;--muted:#b9b0a6;--placeholder:#91877f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.30);--line2:rgba(255,255,255,.08);--ink:#171006;--green:#06c755;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--bg)}
