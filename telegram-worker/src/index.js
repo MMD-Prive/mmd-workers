@@ -2,7 +2,10 @@ import { json, safeJson, HttpError } from "../lib/http.js";
 import { requireInternalToken } from "../lib/guard.js";
 import { sendTelegramMessage, telegramNotify, telegramTopics } from "../lib/telegram.js";
 import { escapeHtml } from "../lib/util.js";
-import { routeHypeNaturalLanguage } from "./hype-natural-language-router.js";
+import {
+  HYPE_CONVERSATIONAL_UNDERSTANDING_VERSION,
+  routeHypeConversationalUnderstandingV2,
+} from "./hype-conversational-understanding-v2.js";
 import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
 import {
   RECOVERY_OUTCOME_TAXONOMY_VERSION,
@@ -36,6 +39,7 @@ export default {
           preview_channel_configured: Boolean(clean(env.TELEGRAM_PREVIEW_CHANNEL_ID)),
           preview_bot_username: botUsername(env),
           capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+          conversational_understanding: HYPE_CONVERSATIONAL_UNDERSTANDING_VERSION,
           recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
           telegram_router_health: HYPE_TELEGRAM_ROUTER_HEALTH_SCHEMA,
           routes: {
@@ -694,19 +698,27 @@ async function handleTelegramWebhook(update, env) {
     }, env);
   }
 
-  const naturalRoute = routeHypeNaturalLanguage(text);
-  if (naturalRoute.ambiguous === true) {
-    return handleHypeIntentClarification({ chatId, route: naturalRoute }, env);
+  const conversationalRoute = routeHypeConversationalUnderstandingV2(text);
+  if (conversationalRoute.ambiguous === true) {
+    return handleHypeIntentClarification({ chatId, route: conversationalRoute }, env);
   }
-  if (naturalRoute.routed === true && naturalRoute.command) {
+  if (
+    conversationalRoute.clarification_required === true
+    && conversationalRoute.context_required !== true
+  ) {
+    return handleHypeIntentClarification({ chatId, route: conversationalRoute }, env);
+  }
+  if (conversationalRoute.routed === true && conversationalRoute.command) {
     return handleHypeOperatingCommand({
       message,
       chatId,
-      command: naturalRoute.command,
+      command: conversationalRoute.command,
       routing: {
-        source: "natural_language",
-        confidence: naturalRoute.confidence,
-        domain: naturalRoute.domain,
+        source: conversationalRoute.reason === "deterministic_domain_match"
+          ? "natural_language"
+          : "conversational_v2_semantic",
+        confidence: conversationalRoute.confidence,
+        domain: conversationalRoute.domain,
       },
     }, env);
   }
@@ -749,6 +761,45 @@ async function handleTelegramWebhook(update, env) {
     return renderHypeActiveDraftPrompt({ chatId, draft: activeDraft }, env);
   }
 
+  if (conversationalRoute.context_required === true) {
+    if (clean(message.chat?.type).toLowerCase() !== "private") {
+      return handleHypeConversationalPrivateRequired({ chatId }, env);
+    }
+
+    const contextResult = await readHypeConversationContext(message, env);
+    const contextualRoute = routeHypeConversationalUnderstandingV2(text, {
+      context: contextResult.context,
+    });
+    if (contextualRoute.routed === true && contextualRoute.command) {
+      return handleHypeOperatingCommand({
+        message,
+        chatId,
+        command: contextualRoute.command,
+        routing: {
+          source: "conversational_v2_context",
+          confidence: contextualRoute.confidence,
+          domain: contextualRoute.domain,
+        },
+      }, env);
+    }
+    return handleHypeConversationContextClarification({
+      chatId,
+      contextResult,
+      route: contextualRoute,
+    }, env);
+  }
+
+  if (
+    conversationalRoute.social_intent
+    && clean(message.chat?.type).toLowerCase() === "private"
+  ) {
+    return handleHypeSafeConversation({
+      message,
+      chatId,
+      intent: conversationalRoute.social_intent,
+    }, env);
+  }
+
   if (text === "/start" || text.toLowerCase().startsWith("/start@")) {
     const telegram = await sendTelegramMessage({
       chat_id: chatId,
@@ -758,6 +809,10 @@ async function handleTelegramWebhook(update, env) {
       reply_markup: previewButtonMarkup(env),
     }, env);
     return { handled: true, flow: "generic_start", telegram };
+  }
+
+  if (text && !text.startsWith("/") && clean(message.chat?.type).toLowerCase() === "private") {
+    return handleHypeUnclassifiedConversation({ chatId }, env);
   }
 
   return { handled: false, reason: "no_matching_command" };
@@ -1578,6 +1633,189 @@ function hypeTransactionButtons(env, result = {}) {
   return { inline_keyboard: rows };
 }
 
+async function readHypeConversationContext(message, env) {
+  const telegramUserId = clean(message?.from?.id);
+  if (!/^\d{5,20}$/.test(telegramUserId)) {
+    return {
+      ok: false,
+      state: "telegram_identity_invalid",
+      context: { available: false, stale: false, state: "unavailable" },
+    };
+  }
+
+  const binding = env.HYPE_CONTEXT_WRITER || env.HYPE_OPERATIONS;
+  if (!binding?.fetch) {
+    return {
+      ok: false,
+      state: "context_reader_unavailable",
+      context: { available: false, stale: false, state: "unavailable" },
+    };
+  }
+
+  try {
+    const response = await binding.fetch(new Request("https://admin-worker.internal/__internal/hype/conversation-context", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mmd-service-binding": "telegram-worker",
+      },
+      body: JSON.stringify({ telegram_user_id: telegramUserId }),
+    }));
+    const body = await response.json().catch(() => null);
+    if (response.status === 404 && body?.state === "connect_required") {
+      return {
+        ok: false,
+        state: "connect_required",
+        context: { available: false, stale: false, state: "unavailable" },
+      };
+    }
+    if (!response.ok || body?.ok !== true) {
+      return {
+        ok: false,
+        state: clean(body?.state || body?.error || "context_read_failed"),
+        context: { available: false, stale: false, state: "unavailable" },
+      };
+    }
+    const context = body.context && typeof body.context === "object"
+      ? { ...body.context, state: clean(body.state) }
+      : { available: false, stale: false, state: clean(body.state || "none") };
+    return { ok: true, state: clean(body.state || "none"), context };
+  } catch {
+    return {
+      ok: false,
+      state: "context_read_failed",
+      context: { available: false, stale: false, state: "unavailable" },
+    };
+  }
+}
+
+async function handleHypeConversationalPrivateRequired({ chatId }, env) {
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "ผมตาม ‘เรื่องเดิม’ ให้ได้ครับ แต่จะอ่านบริบทและสถานะส่วนตัวเฉพาะใน private chat เท่านั้น 🔒",
+      "",
+      "เปิดแชตส่วนตัวแล้วพิมพ์ประโยคเดิมอีกครั้งได้เลยครับ",
+    ].join("\n"),
+    disable_web_page_preview: true,
+    reply_markup: {
+      inline_keyboard: [[{
+        text: "เปิดแชตส่วนตัวกับ HYPE",
+        url: `https://t.me/${encodeURIComponent(botUsername(env))}`,
+      }]],
+    },
+  }, env);
+  return {
+    handled: true,
+    flow: "hype_conversational_v2_private_required",
+    ok: true,
+    code_status: "private_context_required",
+    telegram,
+  };
+}
+
+async function handleHypeConversationContextClarification({ chatId, contextResult, route }, env) {
+  const state = clean(contextResult?.state || route?.reason || "context_unavailable");
+  const connectRequired = state === "connect_required" || state === "telegram_identity_invalid";
+  const stale = state === "stale" || route?.reason === "continuity_context_stale";
+  const intro = connectRequired
+    ? "ผมยังผูกคำว่า ‘เรื่องเดิม’ กับบัญชี MMD นี้ไม่ได้ครับ เพราะ Telegram ยังไม่ได้เชื่อมกับตัวตนที่ยืนยันแล้ว"
+    : stale
+      ? "บริบทเรื่องเดิมหมดอายุแล้วครับ ผมจะไม่เดาจากข้อมูลเก่า"
+      : state === "none"
+        ? "ยังไม่มีหัวข้อก่อนหน้าที่ปลอดภัยพอให้ผมอ้างย้อนครับ"
+        : "ตอนนี้ผมอ่านบริบทเรื่องเดิมจากระบบกลางไม่ได้ครับ จึงยังไม่เดาว่าหมายถึงเรื่องไหน";
+
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      intro,
+      "",
+      "ระบุเรื่องสั้น ๆ ได้เลย เช่น ‘การจอง’, ‘การชำระ’, ‘สมาชิก’, ‘แต้ม’, ‘คูปอง’ หรือ ‘สถานะเคส’ แล้วผมจะอ่านจาก authority ที่ตรงเรื่องครับ",
+    ].join("\n"),
+    disable_web_page_preview: true,
+    reply_markup: connectRequired ? hypeConnectButtons(env) : hypeHelpButtons(env),
+  }, env);
+  return {
+    handled: true,
+    flow: "hype_conversational_v2_context_clarification",
+    ok: true,
+    code_status: connectRequired ? "connect_required" : stale ? "context_stale" : "context_clarification_required",
+    telegram,
+  };
+}
+
+async function handleHypeSafeConversation({ message, chatId, intent }, env) {
+  if (clean(message?.chat?.type).toLowerCase() !== "private") {
+    return { handled: false, reason: "safe_conversation_private_only" };
+  }
+  if (intent === "help") {
+    return handleHypeOperatingCommand({
+      message,
+      chatId,
+      command: "help",
+      routing: { source: "conversational_v2_safe", confidence: 0.99, domain: "help" },
+    }, env);
+  }
+
+  const copy = {
+    greeting: [
+      "สวัสดีครับ ผม HYPE อยู่ตรงนี้ครับ",
+      "พิมพ์เป็นภาษาคนได้เลย เช่น ‘สมาชิกหมดเมื่อไหร่’, ‘สลิปถึงยัง’ หรือ ‘เรื่องเดิมถึงไหนแล้ว’ ครับ",
+    ],
+    thanks: [
+      "ยินดีครับ",
+      "ถ้าจะตามเรื่องต่อ พิมพ์ ‘เรื่องเดิมถึงไหนแล้ว’ ได้เลย ผมจะใช้เฉพาะบริบทที่ยังสดและเช็กสถานะจริงใหม่ครับ",
+    ],
+    acknowledgement: [
+      "รับทราบครับ",
+      "ถ้ามีรายการค้างอยู่ ผมต่อจากบริบทเดิมให้ได้โดยไม่ใช้ memory แทนสถานะจริงครับ",
+    ],
+    identity: [
+      "ผม HYPE — Telegram Operating Concierge ของ MMD ครับ",
+      "ผมช่วยเข้าใจคำขอ เชื่อมบริบท และพาไปอ่านระบบเจ้าของข้อมูล แต่ไม่อนุมัติเงิน สมาชิก งาน หรือคูปองแทน authority ครับ",
+    ],
+    wellbeing: [
+      "พร้อมทำงานครับ",
+      "บอกเป็นภาษาปกติได้เลยว่าต้องการเช็กเรื่องไหน หรือพิมพ์ ‘เรื่องเดิมถึงไหนแล้ว’ เพื่อคุยต่อครับ",
+    ],
+  };
+  const lines = copy[intent] || ["รับทราบครับ", "บอกเรื่องที่ต้องการให้ HYPE ช่วยได้เลยครับ"];
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: lines.join("\n\n"),
+    disable_web_page_preview: true,
+    reply_markup: hypeHelpButtons(env),
+  }, env);
+  return {
+    handled: true,
+    flow: "hype_conversational_v2_safe_conversation",
+    ok: true,
+    code_status: intent,
+    telegram,
+  };
+}
+
+async function handleHypeUnclassifiedConversation({ chatId }, env) {
+  const telegram = await sendTelegramMessage({
+    chat_id: chatId,
+    text: [
+      "ผมยังไม่แน่ใจว่าข้อความนี้ต้องอ่านระบบเรื่องไหนครับ และไม่อยากเดาแล้วตอบผิดเรื่อง",
+      "",
+      "พิมพ์ต่อแบบสั้น ๆ ได้เลย เช่น ‘เช็กสมาชิก’, ‘ตามสลิป’, ‘ดูการจอง’, ‘ดูแต้ม’, ‘ดูคูปอง’ หรือ ‘ตามเคส’ ครับ",
+    ].join("\n"),
+    disable_web_page_preview: true,
+    reply_markup: hypeHelpButtons(env),
+  }, env);
+  return {
+    handled: true,
+    flow: "hype_conversational_v2_unclassified",
+    ok: true,
+    code_status: "clarification_required",
+    telegram,
+  };
+}
+
 async function handleHypeIntentClarification({ chatId, route }, env) {
   const labels = {
     payment: "/payment — การชำระ / สลิป / ยอดคงเหลือ",
@@ -1593,11 +1831,14 @@ async function handleHypeIntentClarification({ chatId, route }, env) {
     .slice(0, 3)
     .map((item) => labels[item.command])
     .filter(Boolean);
+  const intro = route?.reason === "negated_domain_without_replacement"
+    ? "รับทราบครับว่าไม่ได้หมายถึงเรื่องที่กล่าวมา แต่ยังไม่มีหัวข้อใหม่ที่ชัดพอให้ผมเลือก authority"
+    : "ผมเห็นว่าข้อความนี้เกี่ยวได้มากกว่าหนึ่งเรื่องครับ เลยไม่อยากเดาแล้วไปอ่านระบบผิดชุด";
 
   const telegram = await sendTelegramMessage({
     chat_id: chatId,
     text: [
-      "ผมเห็นว่าข้อความนี้เกี่ยวได้มากกว่าหนึ่งเรื่องครับ เลยไม่อยากเดาแล้วไปอ่านระบบผิดชุด",
+      intro,
       "",
       ...(candidates.length ? candidates : ["/status — ภาพรวมสถานะ", "/booking — งาน/การจอง", "/payment — การชำระ"]),
       "",
@@ -1610,7 +1851,9 @@ async function handleHypeIntentClarification({ chatId, route }, env) {
     handled: true,
     flow: "hype_intent_clarification",
     ok: true,
-    code_status: "ambiguous_intent",
+    code_status: route?.reason === "negated_domain_without_replacement"
+      ? "domain_replacement_required"
+      : "ambiguous_intent",
     candidates: (route?.candidates || []).slice(0, 3).map((item) => item.command),
     telegram,
   };
@@ -3852,9 +4095,10 @@ function hypeHelpText() {
     "<b>/human</b> — ส่งต่อให้ Per / ทีม พร้อม context เดิม",
     "<b>/help</b> — ดูเมนูนี้",
     "",
-    "พิมพ์เป็นภาษาคนได้ด้วย เช่น “งานวันศุกร์โอเคยัง”, “สมาชิกหมดเมื่อไหร่”, “สลิปถึงยัง” หรือ “คูปองใช้ได้ไหม”",
+    "พิมพ์เป็นภาษาคนได้ด้วย เช่น “งานวันศุกร์โอเคยัง”, “เมมหมดตอนไหน”, “สลิปถึงยัง” หรือ “คูปองใช้ได้ไหม”",
+    "คุยต่อจากบริบทเดิมได้ด้วย เช่น “เรื่องเดิมถึงไหนแล้ว” โดย HYPE จะใช้เฉพาะ context ที่ยังสดและอ่านสถานะจริงใหม่ทุกครั้งครับ",
     "ถ้าจะเริ่มรายการใหม่ พิมพ์เช่น “อยากจอง”, “ขอต่ออายุ”, “ส่งสลิป” หรือ “อยากจองนวด” แล้วผมจะเก็บ draft ให้ทีละส่วนครับ",
-    "HYPE จะ route ไป authority ที่ตรงเรื่อง และถ้าข้อความกำกวมจะถามก่อนแทนการเดาครับ",
+    "HYPE จะ route ไป authority ที่ตรงเรื่อง และถ้าข้อความกำกวม/บริบทเก่าจะถามก่อนแทนการเดาครับ",
     "HYPE ช่วยเชื่อม Telegram Identity, ดูสถานะจากระบบ MMD, พาไป MY MMD / Promotion และจัด route ให้ถูกขั้นตอนได้ครับ",
     "ข้อมูลส่วนตัวจะแสดงเฉพาะในแชตส่วนตัว และ HYPE ไม่ถือ final authority แทน MMD/Per",
   ].join("\n");

@@ -332,6 +332,16 @@ Routing rules:
 
 Membership natural-language questions use the existing customer-safe entitlement projection and may show level, lifecycle and active-through. HYPE must not grant, renew or upgrade membership.
 
+## Conversational Understanding V2
+
+V2 extends P4 without changing its authority boundary. It normalizes bounded Thai colloquialisms and typos, honors explicit corrections, provides deterministic safe-conversation replies, and can resolve references such as `เรื่องเดิมถึงไหนแล้ว` from a fresh allowlisted Conversation Matrix topic.
+
+Context resolution is private-chat only. The Matrix projection contains only an allowlisted command/topic, open-thread flag, version and freshness timestamps. It excludes raw messages, summaries, open-loop text, pending references, customer identifiers and cached business truth. A context-derived route must refresh the owning canonical system before replying.
+
+Missing, expired, unversioned, unsupported or unavailable context asks for clarification. Group follow-ups never read Matrix/Client data. Voice transcription, unrestricted free chat, LINE auto-reply and model authority over protected truth remain out of scope.
+
+Full contract: `docs/architecture/HYPE_CONVERSATIONAL_UNDERSTANDING_V2.md`.
+
 ## Safe Transaction Assistant · Priority 5
 
 HYPE may prepare transaction drafts in private Telegram chat, but it does not own the final submit or any resulting business truth.
