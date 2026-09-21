@@ -4,7 +4,7 @@ import {
 } from "../../shared/sigil-availability-snapshot-v1.mjs";
 
 export const SIGIL_AVAILABILITY_INTERNAL_PATH = "/v1/internal/sigil/availability-snapshot";
-const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker"]);
+const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker", "member-dashboard-chat-worker"]);
 
 function text(value) {
   return String(value == null ? "" : value).trim();
@@ -76,8 +76,16 @@ export async function handleSigilAvailabilityInternalRequest(request, env = {}) 
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  const source = caller === "model-console-worker" ? "model_console" : "model_app";
-  const confidence = source === "model_console" ? "operator_confirmed" : "model_confirmed";
+  const source = caller === "model-console-worker"
+    ? "model_console"
+    : caller === "member-dashboard-chat-worker"
+      ? "production_shadow_smoke"
+      : "model_app";
+  const confidence = source === "model_console"
+    ? "operator_confirmed"
+    : source === "production_shadow_smoke"
+      ? "system_derived"
+      : "model_confirmed";
   const result = await writeSigilAvailabilitySnapshot(env, body, {
     model_key: body.model_key,
     source,
