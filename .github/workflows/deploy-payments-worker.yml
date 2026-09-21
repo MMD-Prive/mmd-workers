@@ -54,6 +54,7 @@ jobs:
           node --check payments-worker/index.phase1.js
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
+          node --check payments-worker/customer-change-request.js
           node --check payments-worker/payment-instructions-v1.js
           node --check shared/mmd-shop-stock-reservation.mjs
           node --check shared/mmd-shop-fulfillment.mjs
@@ -67,6 +68,8 @@ jobs:
           node --test payments-worker/canonical-confirm-link.test.mjs
           node --test payments-worker/confirmation-ack.test.mjs
           node --test payments-worker/confirmation-details.test.mjs
+          node --test payments-worker/customer-change-request.test.mjs
+          node --test webflow/sigil/confirm/customer-session-tracker-v2.test.mjs
           node --test payments-worker/payment-instructions-v1.test.mjs
           node --test payments-worker/final-payment-flow.test.mjs
           node --test payments-worker/session-finance-write.test.mjs
@@ -249,7 +252,7 @@ jobs:
           grep -F '"telegram_thread_id":22' "$proof_health_body"
           grep -F '"ready":true' "$proof_health_body"
 
-          for path in /v1/confirm/verify /v1/confirm/details /v1/confirm/ack /v1/confirm/payment-instructions; do
+          for path in /v1/confirm/verify /v1/confirm/details /v1/confirm/ack /v1/confirm/change-request /v1/confirm/payment-instructions; do
             body_file="$(mktemp)"
             code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
               -o "$body_file" -w "%{http_code}" \
