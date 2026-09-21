@@ -134,6 +134,11 @@ test("V30 Webflow flow has one visible consent, no reveal dead zone, and direct 
   assert.match(flowV30Source, /typeof detail\.eligible !== "boolean"/);
   assert.match(flowV30Source, /private_non_member|ระบบยังไม่พบสถานะสมาชิก/);
   assert.match(flowV30Source, /\/my-mmd\/coupons/);
+  assert.match(flowV30Source, /rewriteCouponLinks/);
+  assert.match(flowV30Source, /patchLegacyBenefits/);
+  assert.match(flowV30Source, /data-dashboard-url/);
+  assert.match(flowV30Source, /attributeFilter:\s*\["lang", "href", "data-dashboard-url", "data-wish-version"\]/);
+  assert.doesNotMatch(flowV30Source, /href\s*=\s*["']\/member\/my-mmd/);
   assert.match(wallCss, /\.wish-v23-ribbon[^\n]*display:none!important/);
   assert.match(wallCss, /\.wish-v23-reveal\{opacity:1!important/);
   assert.doesNotThrow(() => new Function(wallSource));
