@@ -6,7 +6,7 @@ import { KENJI_RECOMMENDATION_RPC_PATH } from "./src/kenji-recommendation-rpc.js
 
 export const NOW = "2026-09-21T16:00:00.000Z";
 export const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
-export const ENV = { INTERNAL_TOKEN: "internal-token" };
+export const ENV = { INTERNAL_TOKEN: "internal-token", KENJI_RECOMMENDATION_MODE: "shadow" };
 
 export function profile(overrides = {}) {
   return { model_key: "MX17", working_name: "น้องซิน", model_lane: "both", safe_keywords: ["athletic", "friendly"], summary: "ข้อมูลแนะนำที่อนุมัติแล้ว", is_new_release: false, release_status: "", ...overrides };
