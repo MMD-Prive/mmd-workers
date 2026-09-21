@@ -102,3 +102,77 @@ test('owner can void unpaid earnings with evidence; recorded transfers cannot be
  assert.equal((await(await f.call('/v1/partner/dashboard')).json()).summary.pendingAmount,0);
  f.db.Commissions[0].fields[C.status]='paid';f.db.Commissions[0].fields[C.payoutStatus]='paid';assert.equal((await owner(f,'ledger/action',{commission_record_id:row.commission_record_id,action:'void',note:'Cannot erase real transfer'})).status,409);
 });
+
+
+test('admin finance projections expose locked settlement evidence and commission timeline fields', async t => {
+  const f = await setup(t);
+  const snapshot = {
+    contract: 'partner_commission_v1',
+    session_id: 'session_fixture',
+    partner_record_id: PARTNER,
+    model_record_id: MODEL,
+    referral_record_id: f.db.Referrals[0].id,
+    system: 'bridge',
+    agreement_version: 1,
+    commission_percent: 7,
+    basis_rule: 'full_payment_only',
+    payment_ref: 'payment-finance-audit',
+    payment_amount_thb: 10000,
+    receipts: [{ record_id: 'recPAYMENTAUDIT001', payment_ref: 'payment-finance-audit', amount_thb: 10000, stage: 'full' }],
+    settlement_approved_by: 'fixture-owner',
+    settlement_approved_at: '2026-09-22T01:10:00.000Z'
+  };
+  Object.assign(f.db.Sessions[0].fields, {
+    [S.commissionSnapshotJson]: JSON.stringify(snapshot),
+    [S.commissionSnapshotLocked]: true,
+    [S.paymentStatus]: 'verified'
+  });
+  f.db.Payments.push({
+    id: 'recPAYMENTAUDIT001',
+    createdTime: '2026-09-22T01:00:00.000Z',
+    fields: {
+      [P.sessionId]: 'session_fixture',
+      [P.paymentRef]: 'payment-finance-audit',
+      [P.verification]: 'verified',
+      [P.status]: 'paid',
+      [P.stage]: 'full',
+      [P.amount]: 10000,
+      [P.paymentDate]: '2026-09-22T00:59:00.000Z'
+    }
+  });
+  f.db.Commissions.push({
+    id: 'recCOMMAUDIT000001',
+    createdTime: '2026-09-22T01:12:00.000Z',
+    fields: {
+      [C.sessionId]: 'session_fixture',
+      [C.partner]: [PARTNER],
+      [C.model]: [MODEL],
+      [C.paymentRef]: 'payment-finance-audit',
+      [C.basisAmount]: 10000,
+      [C.commissionAmount]: 700,
+      [C.typeSnapshot]: 'bridge',
+      [C.status]: 'paid',
+      [C.payoutStatus]: 'paid',
+      [C.payoutReference]: 'bank-audit-001',
+      [C.earnedAt]: '2026-09-22T01:12:00.000Z',
+      [C.approvedAt]: '2026-09-22T01:13:00.000Z',
+      [C.paidAt]: '2026-09-22T01:14:00.000Z',
+      [C.approvedBy]: 'fixture-owner',
+      [C.commissionSnapshotJson]: JSON.stringify(snapshot)
+    }
+  });
+
+  const settlement = await (await f.call('/v1/partner/admin/settlements', { owner: true })).json();
+  assert.equal(settlement.sessions[0].commission_snapshot.contract, 'partner_commission_v1');
+  assert.equal(settlement.sessions[0].receipts[0].receipt_record_id, 'recPAYMENTAUDIT001');
+  assert.equal(settlement.sessions[0].receipts[0].payment_date, '2026-09-22T00:59:00.000Z');
+  assert.equal(settlement.sessions[0].receipts[0].verification_status, 'verified');
+
+  const ledger = await (await f.call('/v1/partner/admin/ledger', { owner: true })).json();
+  const row = ledger.commissions.find((item) => item.commission_record_id === 'recCOMMAUDIT000001');
+  assert.equal(row.earned_at, '2026-09-22T01:12:00.000Z');
+  assert.equal(row.approved_at, '2026-09-22T01:13:00.000Z');
+  assert.equal(row.paid_at, '2026-09-22T01:14:00.000Z');
+  assert.equal(row.payout_reference, 'bank-audit-001');
+  assert.equal(row.commission_snapshot.payment_ref, 'payment-finance-audit');
+});

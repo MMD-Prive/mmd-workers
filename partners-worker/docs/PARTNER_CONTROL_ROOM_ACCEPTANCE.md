@@ -54,6 +54,19 @@ Authority rules for P2A:
 - Orphan/ambiguous historical commission rows are surfaced for reconciliation and never silently rewritten or auto-linked.
 - Existing settlement and ledger mutation endpoints remain unchanged; P2A audit itself is GET-only behind the credential-bound owner/admin session and fixed service-binding destinations.
 
+### P2A extension — Finance Timeline + cross-ledger reconciliation
+
+Finance & Audit now treats the canonical Session ID as the join key across four independent sources of money truth:
+
+1. verified Payment receipts and the locked Partner settlement snapshot;
+2. `Sessions.pay_model_thb` as the current Model payout total;
+3. immutable Model Payout Adjustment rows showing before / signed change / after;
+4. Partner Commission ledger rows with earned / approved / paid timestamps and payout references.
+
+The owner view builds a chronological Finance Timeline and performs read-only reconciliation checks. It flags changed or missing locked receipts, settlement-total drift, Partner commission basis or amount drift from the same formulas used by `ledger/materialize`, paid commissions without a durable transfer reference, Model/Session linkage mismatches, and broken Model payout adjustment chains. It never repairs these discrepancies automatically.
+
+`partner_source_rate_thb` remains Partner/source pricing evidence only. It must never be substituted for `model_payout_thb` or `Sessions.pay_model_thb`. Model payout corrections remain append-only adjustments; historical adjustment rows are not edited in place.
+
 ## Phase 1 closure and deferred work
 
 Phase 1 is considered operationally closed when this change is merged, deployed, and the production smoke remains green. The closed scope is: LINE login, Home/Jobs, Models, model detail/edit/add/remove requests, media review handoff, Agreements, System 1/2/3 proposals, Sales Control/visibility/audience proposals, Earnings/Performance, Partner Console, private external schedule/notes, Private Vault, and Payment Truth-gated job responses.

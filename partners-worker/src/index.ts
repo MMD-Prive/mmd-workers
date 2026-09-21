@@ -187,6 +187,7 @@ const PAYMENT_FIELDS = {
   verification: "fldJ7a0Ube9F0bmRy",
   statusFormula: "fld0aatroI5poWOSo",
   amount: "fldvCSwrUW8OMAooS",
+  paymentDate: "fld3yAwxIu2dkw7fO",
   stage: "fldydUWHhqVLMkNSC",
   canonicalStage: "fldrr9g8ZZjqAbdKQ",
   status: "fldEJ1hmm7KwWuI6q"
@@ -2084,7 +2085,31 @@ async function handleAdminPartnerSettlementQueue(request: Request, env: RuntimeE
     const payments = await listAirtableRecords(env, String(env.AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ"), { filterByFormula: `{${PAYMENT_FIELDS.sessionId}}='${escapeFormulaString(sid)}'` });
     const modelId = fieldLinkIds(session, SESSION_FIELDS.canonicalModel)[0];
     const options = changes.filter((c) => ["approved", "superseded"].includes(normalizeStatus(fieldText(c, PARTNER_MODEL_CHANGES.status))) && fieldText(c, PARTNER_MODEL_CHANGES.action) === "update_working_system" && fieldLinkIds(c, PARTNER_MODEL_CHANGES.model).includes(modelId || "") && fieldText(c, PARTNER_MODEL_CHANGES.partnerId) === fieldText(session, SESSION_FIELDS.partnerIdSnapshot)).map((c) => ({ request_id: c.id, payload: parseJson(fieldText(c, PARTNER_MODEL_CHANGES.payloadJson) || "{}") }));
-    items.push({ agreement_options: options, session_record_id: session.id, session_id: sid, model: fieldText(session, SESSION_FIELDS.modelName), payment_status: fieldText(session, SESSION_FIELDS.paymentStatus), completion_review: fieldText(session, SESSION_FIELDS.completionReview), payout_hold: fieldText(session, SESSION_FIELDS.payoutHoldReason), agreement: parseJson(fieldText(session, SESSION_FIELDS.referralSnapshotJson) || "{}"), snapshot_locked: session.fields[SESSION_FIELDS.commissionSnapshotLocked] === true, receipts: payments.filter((p) => fieldText(p, PAYMENT_FIELDS.sessionId) === sid).map((p) => ({ payment_ref: fieldText(p, PAYMENT_FIELDS.paymentRef), stage: paymentStage(p), amount_thb: fieldNumber(p, PAYMENT_FIELDS.amount), verified: paymentStillValid(p), status: fieldText(p, PAYMENT_FIELDS.status) })) });
+    items.push({
+      agreement_options: options,
+      session_record_id: session.id,
+      session_id: sid,
+      session_created_at: fieldText(session, SESSION_FIELDS.createdAt) || session.createdTime || null,
+      model: fieldText(session, SESSION_FIELDS.modelName),
+      model_record_id: modelId || null,
+      payment_status: fieldText(session, SESSION_FIELDS.paymentStatus),
+      completion_review: fieldText(session, SESSION_FIELDS.completionReview),
+      payout_hold: fieldText(session, SESSION_FIELDS.payoutHoldReason),
+      agreement: parseJson(fieldText(session, SESSION_FIELDS.referralSnapshotJson) || "{}"),
+      commission_snapshot: parseJson(fieldText(session, SESSION_FIELDS.commissionSnapshotJson) || "{}"),
+      snapshot_locked: session.fields[SESSION_FIELDS.commissionSnapshotLocked] === true,
+      receipts: payments.filter((p) => fieldText(p, PAYMENT_FIELDS.sessionId) === sid).map((p) => ({
+        receipt_record_id: p.id,
+        payment_ref: fieldText(p, PAYMENT_FIELDS.paymentRef),
+        stage: paymentStage(p),
+        amount_thb: fieldNumber(p, PAYMENT_FIELDS.amount),
+        verified: paymentStillValid(p),
+        verification_status: fieldText(p, PAYMENT_FIELDS.verification),
+        status: fieldText(p, PAYMENT_FIELDS.status),
+        payment_date: fieldText(p, PAYMENT_FIELDS.paymentDate) || null,
+        recorded_at: p.createdTime || null
+      }))
+    });
   }
   return json(request, env, { ok: true, sessions: items, history_complete: true });
 }
@@ -2219,7 +2244,15 @@ async function handleAdminPartnerLedgerQueue(request: Request, env: RuntimeEnv):
       system: fieldText(record, PARTNER_COMMISSIONS.typeSnapshot),
       status: fieldText(record, PARTNER_COMMISSIONS.status),
       payout_status: fieldText(record, PARTNER_COMMISSIONS.payoutStatus),
-      payout_reference: fieldText(record, PARTNER_COMMISSIONS.payoutReference)
+      payout_reference: fieldText(record, PARTNER_COMMISSIONS.payoutReference),
+      earned_at: fieldText(record, PARTNER_COMMISSIONS.earnedAt) || record.createdTime || null,
+      approved_at: fieldText(record, PARTNER_COMMISSIONS.approvedAt) || null,
+      paid_at: fieldText(record, PARTNER_COMMISSIONS.paidAt) || null,
+      held_reason: fieldText(record, PARTNER_COMMISSIONS.heldReason) || null,
+      void_reason: fieldText(record, PARTNER_COMMISSIONS.voidReason) || null,
+      approved_by: fieldText(record, PARTNER_COMMISSIONS.approvedBy) || null,
+      commission_snapshot: parseJson(fieldText(record, PARTNER_COMMISSIONS.commissionSnapshotJson) || "{}"),
+      audit: parseJson(fieldText(record, PARTNER_COMMISSIONS.auditJson) || "{}")
     }))
   });
 }
