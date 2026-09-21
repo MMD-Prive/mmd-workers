@@ -1,12 +1,22 @@
 (function () {
   "use strict";
 
+  var COUPON_URL = "/my-mmd/coupons";
+
   function boot() {
     var root = document.getElementById("mmd-wish");
     if (!root || root.dataset.memberFlowV30 === "1") return;
     root.dataset.memberFlowV30 = "1";
-    root.setAttribute("data-wish-version", "2026.09.21-member-flow-v30");
-    root.setAttribute("data-dashboard-url", "/my-mmd/coupons");
+
+    function enforceRoot() {
+      if (root.getAttribute("data-wish-version") !== "2026.09.21-member-flow-v30") {
+        root.setAttribute("data-wish-version", "2026.09.21-member-flow-v30");
+      }
+      if (root.getAttribute("data-dashboard-url") !== COUPON_URL) {
+        root.setAttribute("data-dashboard-url", COUPON_URL);
+      }
+    }
+    enforceRoot();
 
     var copy = {
       th: {
@@ -23,7 +33,9 @@
         phaseSmall: "สมาชิกเก่า · สมาชิกหมดอายุ · สมาชิกปัจจุบัน",
         phaseReward: "ข้อความขึ้น + รับคูปองทันที",
         phaseValid: "คูปองเข้า MY MMD · ใช้ได้ 1 ครั้ง · อายุ 2 เดือน",
-        phaseFine: "หากยังไม่เคยเป็นสมาชิก คำอวยพรจะถูกเก็บแบบส่วนตัว ไม่ขึ้นบน Wish Wall และไม่มีคูปอง",
+        phaseFine: "ส่วนลดจริงขึ้นอยู่กับสถานะสมาชิก นายแบบ และประเภทงานที่ MMD ยืนยันได้ · สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบันรับคูปองทันที · ผู้ที่ไม่เคยเป็นสมาชิกไม่มีคูปอง",
+        verifiedTitle: "สมาชิกที่ยืนยันแล้ว รับคูปองทันที",
+        verifiedBody: "สมาชิกเก่า สมาชิกหมดอายุ และสมาชิกปัจจุบันรับคูปองได้ทันทีใน MY MMD · ผู้ที่ไม่เคยเป็นสมาชิกจะไม่มีคูปอง",
         phaseCta: "เริ่มเขียนคำอวยพร"
       },
       en: {
@@ -40,7 +52,9 @@
         phaseSmall: "PAST · EXPIRED · CURRENT MEMBERS",
         phaseReward: "Wish published + coupon immediately",
         phaseValid: "Delivered to My MMD · single use · valid 2 months",
-        phaseFine: "If you have never been a member, your wish stays private and no coupon is issued.",
+        phaseFine: "The final rate follows verified membership, Model and job type. Past, expired and current members receive the coupon immediately; non-members do not.",
+        verifiedTitle: "Verified members receive the coupon immediately",
+        verifiedBody: "Past, expired and current members receive it immediately in My MMD. Non-members do not receive a coupon.",
         phaseCta: "Start writing my wish"
       },
       zh: {
@@ -57,7 +71,9 @@
         phaseSmall: "旧会员 · 已到期会员 · 当前会员",
         phaseReward: "祝福显示 + 立即获得优惠券",
         phaseValid: "进入 My MMD · 限用一次 · 有效期 2 个月",
-        phaseFine: "如果从未成为会员，祝福会私密保存，不显示在 Wish Wall，也不会发放优惠券。",
+        phaseFine: "实际折扣以已核实的会员状态、模特和工作类型为准。旧会员、已到期会员和当前会员立即获得优惠券；非会员不会获得。",
+        verifiedTitle: "会员验证后立即获得优惠券",
+        verifiedBody: "旧会员、已到期会员和当前会员可立即在 My MMD 获得优惠券；非会员不会获得优惠券。",
         phaseCta: "开始写祝福"
       }
     };
@@ -72,7 +88,40 @@
       if (element) element.textContent = value;
     }
 
+    function setHref(element, value) {
+      if (element && element.getAttribute("href") !== value) element.setAttribute("href", value);
+    }
+
+    function rewriteCouponLinks() {
+      Array.prototype.slice.call(root.querySelectorAll('a[data-dashboard],a[data-cb-my],a[href*="/member/my-mmd"],a[href="/my-mmd/"],a[href="/my-mmd"]')).forEach(function (anchor) {
+        if (!anchor.classList.contains("wish-phase2__cta")) setHref(anchor, COUPON_URL);
+      });
+    }
+
+    function patchLegacyBenefits(current) {
+      var phase = root.querySelector("[data-phase2-coupon]");
+      if (phase) {
+        var fine = phase.querySelector(".wish-phase2__fine");
+        if (!fine) {
+          fine = Array.prototype.slice.call(phase.querySelectorAll("p")).find(function (paragraph) {
+            return /ส่วนลดจริง|Actual discount|实际折扣/.test(paragraph.textContent || "");
+          });
+        }
+        if (fine) fine.textContent = current.phaseFine;
+      }
+
+      Array.prototype.slice.call(root.querySelectorAll("[data-cb-verify],.wish-benefits-v28>div")).forEach(function (panel) {
+        var title = panel.querySelector("strong");
+        var body = panel.querySelector("p");
+        if (title) title.textContent = current.verifiedTitle;
+        if (body) body.textContent = current.verifiedBody;
+      });
+      var benefitsUrl = root.querySelector(".wish-benefits-v28__url");
+      if (benefitsUrl) benefitsUrl.textContent = "mmdbkk.com/my-mmd/coupons";
+    }
+
     function apply() {
+      enforceRoot();
       var current = copy[language()];
       text('[data-wish-copy="title"]', current.title);
       text('[data-wish-copy="lead"]', current.lead);
@@ -85,7 +134,7 @@
 
       var dashboard = root.querySelector("[data-dashboard]");
       if (dashboard) {
-        dashboard.href = "/my-mmd/coupons";
+        setHref(dashboard, COUPON_URL);
         dashboard.setAttribute("aria-label", current.dashboard);
         var dashboardLabel = dashboard.querySelector("span");
         if (dashboardLabel) dashboardLabel.textContent = current.dashboard;
@@ -109,6 +158,8 @@
           else phaseCta.textContent = current.phaseCta;
         }
       }
+      patchLegacyBenefits(current);
+      rewriteCouponLinks();
     }
 
     Array.prototype.slice.call(root.querySelectorAll(".wish-public-consent")).forEach(function (element) {
@@ -167,9 +218,19 @@
       }
     });
 
-    new MutationObserver(function () { setTimeout(apply, 40); }).observe(root, {
+    document.addEventListener("mmd:care-back:wish-completed", function () {
+      setTimeout(apply, 0);
+      setTimeout(apply, 120);
+    });
+
+    var applyTimer;
+    new MutationObserver(function () {
+      clearTimeout(applyTimer);
+      applyTimer = setTimeout(apply, 40);
+    }).observe(root, {
       attributes: true,
-      attributeFilter: ["lang"]
+      subtree: true,
+      attributeFilter: ["lang", "href", "data-dashboard-url", "data-wish-version"]
     });
     apply();
     setTimeout(apply, 120);
