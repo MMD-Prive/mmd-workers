@@ -288,7 +288,7 @@ async function createManualOrder(env, actor, body) {
       "payment_stage=shop",
       "money_truth=payments-worker",
       "reservation_expires_at=" + clean(reservation?.expires_at, 80),
-    ].filter(Boolean).join("; ");
+    ].filter(Boolean).join("\n");
     await patchRecord(env, TABLES.orders, order.id, { [ORDER_FIELDS.notes]: paymentNotes });
     return {
       order_id: orderId,
@@ -332,10 +332,10 @@ async function findOrCreateManualCustomer(env, customer) {
     [CUSTOMER_FIELDS.phone]: customer.phone,
     [CUSTOMER_FIELDS.email]: customer.email || undefined,
     [CUSTOMER_FIELDS.brandOrigin]: "MMD Shop",
-    [CUSTOMER_FIELDS.acquisitionChannel]: "admin_manual_order",
+    [CUSTOMER_FIELDS.acquisitionChannel]: "web",
     [CUSTOMER_FIELDS.sourcePath]: "/internal/admin/shop/orders",
     [CUSTOMER_FIELDS.signupStatus]: "active",
-    [CUSTOMER_FIELDS.customerOrigin]: "admin",
+    [CUSTOMER_FIELDS.customerOrigin]: "web",
     [CUSTOMER_FIELDS.note]: "Created by MMD Shop manual admin order.",
     [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
   });
@@ -396,7 +396,7 @@ async function createManualOrderItems(env, orderRecordId, items) {
     [ITEM_FIELDS.price]: item.unit_price_thb,
     [ITEM_FIELDS.lineTotal]: item.line_total_thb,
     [ITEM_FIELDS.status]: "draft",
-    [ITEM_FIELDS.pricingSource]: "admin_manual",
+    [ITEM_FIELDS.pricingSource]: "catalog_default",
   }}));
   const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN, 5000);
   const baseId = clean(env.AIRTABLE_BASE_ID, 120);
