@@ -6,10 +6,15 @@ on:
       - "my-mmd-standby-worker/**"
       - "docs/ops/MY_MMD_LIFF_STANDBY_20260921.md"
       - ".github/workflows/deploy-my-mmd-standby-worker.yml"
+  workflow_run:
+    workflows:
+      - "Deploy member-pages-worker"
+    types:
+      - completed
   workflow_dispatch:
     inputs:
       confirm:
-        description: "Type DEPLOY after the second LIFF app exists in channel 2010862595"
+        description: "Type DEPLOY after the backup LIFF app exists in channel 2011691294"
         required: true
         type: string
 
@@ -34,17 +39,19 @@ jobs:
           set -euo pipefail
           npx --yes wrangler@4 deploy --dry-run \
             --config my-mmd-standby-worker/wrangler.toml \
-            --var LINE_LIFF_BACKUP_ID:2010862595-AbCdEf12
+            --var LINE_LIFF_BACKUP_ID:2011691294-GCxAQ2yW
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     needs: validate
     runs-on: ubuntu-latest
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      BACKUP_LIFF_ID: ${{ vars.MY_MMD_BACKUP_LIFF_ID }}
+      BACKUP_LIFF_ID: "2011691294-GCxAQ2yW"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -103,7 +110,7 @@ jobs:
             echo "- Worker: \`my-mmd-standby-worker\`"
             echo "- Health: \`https://www.mmdbkk.com/my-mmd-backup/health\`"
             echo "- LIFF endpoint: \`https://www.mmdbkk.com/member/liff-backup\`"
-            echo "- Secondary LIFF: \`https://miniapp.line.me/${BACKUP_LIFF_ID}/?intent=status\`"
+            echo "- Secondary LIFF: \`https://liff.line.me/${BACKUP_LIFF_ID}?intent=status\`"
             echo "- Automated smoke: PASS"
             echo "- Real LINE device E2E: still required before break-glass use"
           } >> "$GITHUB_STEP_SUMMARY"
