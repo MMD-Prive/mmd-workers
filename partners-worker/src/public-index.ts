@@ -418,12 +418,12 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
   background:linear-gradient(to bottom,rgba(6,5,5,.92),rgba(6,5,5,.60),transparent);
   backdrop-filter:blur(18px)
 }
-.mmdp-nav a{font-family:var(--mmdp-font-en);text-decoration:none;color:var(--mmdp-muted);font-weight:800}
+.mmdp-nav a{font-family:var(--mmdp-font-en);text-decoration:none;color:var(--mmdp-muted);font-weight:600}
 .mmdp-nav a:hover{color:var(--mmdp-ivory)}
 .mmdp-nav div{display:flex;gap:16px;flex-wrap:wrap}
 .mmdp-brand{display:flex;align-items:baseline;gap:10px}
-.mmdp-brand b{color:var(--mmdp-ivory);font-family:var(--mmdp-font-en);font-size:24px;font-weight:850;letter-spacing:.04em}
-.mmdp-brand span{color:var(--mmdp-gold);font-family:var(--mmdp-font-en);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.16em}
+.mmdp-brand b{color:var(--mmdp-ivory);font-family:var(--mmdp-font-en);font-size:24px;font-weight:700;letter-spacing:.04em}
+.mmdp-brand span{color:var(--mmdp-gold);font-family:var(--mmdp-font-en);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.16em}
 .mmd-partner-system{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:0 0 70px}
 .mmdp-hero{
   min-height:calc(100vh - 90px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(280px,.72fr);
@@ -431,7 +431,7 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
 }
 .mmdp-eyebrow{
   margin:0 0 16px;color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);
-  font-size:11px;font-weight:800;letter-spacing:.14em;line-height:1.4;text-transform:uppercase
+  font-size:11px;font-weight:600;letter-spacing:.14em;line-height:1.4;text-transform:uppercase
 }
 .mmdp-hero h1{
   margin:0 0 22px;max-width:880px;color:var(--mmdp-ivory);
@@ -446,7 +446,7 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
   border:1px solid rgba(255,235,186,.66);border-radius:999px;
   background:linear-gradient(180deg,rgba(255,255,255,.38),transparent 44%),linear-gradient(135deg,#fff2c6 0%,#dfbc76 54%,#a77439 100%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.56),0 16px 38px rgba(215,175,103,.18);
-  color:var(--mmdp-ink)!important;font-family:var(--mmdp-font-th);font-weight:800;text-decoration:none
+  color:var(--mmdp-ink)!important;font-family:var(--mmdp-font-th);font-weight:600;text-decoration:none
 }
 .mmdp-btn.ghost{color:var(--mmdp-gold-2)!important;background:rgba(255,255,255,.035);border-color:var(--mmdp-line)}
 .mmdp-card{
@@ -454,7 +454,7 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
   background:radial-gradient(circle at 24% 14%,rgba(215,175,103,.10),transparent 28%),linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.014)),var(--mmdp-panel);
   box-shadow:0 24px 72px rgba(0,0,0,.34)
 }
-.mmdp-card small,.mmdp-card span{color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.mmdp-card small,.mmdp-card span{color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);font-weight:600;letter-spacing:.14em;text-transform:uppercase}
 .mmdp-card strong{
   display:block;margin:70px 0 18px;color:var(--mmdp-ivory);
   font-family:var(--mmdp-font-th);font-size:clamp(40px,5vw,64px);font-weight:600;line-height:.94;letter-spacing:-.045em
@@ -465,12 +465,12 @@ body[data-mmd-partner-page] :is(.mmdp-metrics strong,[data-kpi],[data-metric-val
   background:linear-gradient(145deg,rgba(255,255,255,.05),rgba(255,255,255,.018));
   padding:28px;backdrop-filter:blur(16px)
 }
-.mmdp-grid span{color:var(--mmdp-gold);font-weight:800}
+.mmdp-grid span{color:var(--mmdp-gold);font-weight:600}
 .mmdp-grid h2,.mmdp-dashboard h2{margin:10px 0;color:var(--mmdp-ivory);font-family:var(--mmdp-font-th);font-size:24px}
 .mmdp-dashboard{margin:0 0 28px}
 .mmdp-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
 .mmdp-metrics article{padding:18px;border:1px solid var(--mmdp-line);border-radius:22px;background:rgba(0,0,0,.20)}
-.mmdp-metrics span{display:block;color:var(--mmdp-muted);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em}
+.mmdp-metrics span{display:block;color:var(--mmdp-muted);font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.14em}
 .mmdp-metrics strong{display:block;margin-top:10px;color:var(--mmdp-ivory);font-size:22px}
 body[data-mmd-partner-page] .pa18-card,
 body[data-mmd-partner-page] .pa18-panel,
