@@ -13,6 +13,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260426.1",
     "@types/node": "^25.6.0",
+    "happy-dom": "^20.14.5",
     "typescript": "^5.9.3",
     "wrangler": "^4.13.0"
   }

@@ -4,6 +4,8 @@
 
 name = "admin-worker"
 main = "src/admin-login-hero-worker.js"
+
+triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-01"
 workers_dev = true
 
@@ -785,6 +787,10 @@ service = "cal-sync-worker"
 
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
+# Customer Continuity Phase 4A is limited to deterministic drafts inside the
+# credential-bound Client Intelligence view. Unknown values fail closed, and
+# this mode never sends customer copy or gains business-truth authority.
+KENJI_CONTINUITY_PHASE4_MODE = "operator_draft"
 # Exact cross-site origin used by the current Lovable Model Hub preview. Its model
 # session is partitioned (not a broadly third-party cookie) and only this origin opts in.
 MODEL_DASHBOARD_ORIGIN = "https://mmdmodel.lovable.app"
@@ -1036,3 +1042,24 @@ service = "member-dashboard-chat-worker"
 [[services]]
 binding = "TELEGRAM_ROUTER"
 service = "telegram-worker"
+
+# Partner owner review uses the existing credential-bound admin session.
+[[services]]
+binding = "PARTNERS_WORKER"
+service = "partners-worker"
+
+[[routes]]
+pattern = "mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/partners/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/internal/admin/partners*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/partners/*"
+zone_name = "mmdbkk.com"

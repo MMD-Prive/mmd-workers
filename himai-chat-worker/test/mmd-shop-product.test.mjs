@@ -144,7 +144,7 @@ test("MMD Shop product API resolves SKU slug and returns server checkout eligibi
 });
 
 
-test("MMD Shop product API returns perfume-decant Pod flavour family with stock-backed checkout", async () => {
+test("MMD Shop product API returns Pod flavour family while keeping online checkout restricted", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -216,10 +216,11 @@ test("MMD Shop product API returns perfume-decant Pod flavour family with stock-
     assert.equal(body.product.variant_group, "PPP25");
     assert.equal(body.product.variant_type, "flavour");
     assert.equal(body.product.variant_value, "KyoHo Grape");
-    assert.equal(body.product.checkout_eligible, true);
+    assert.equal(body.product.checkout_eligible, false);
+    assert.equal(body.product.online_checkout_status, "restricted");
     assert.equal(body.variants.length, 2);
     assert.deepEqual(body.variants.map((item) => item.variant_value), ["KyoHo Grape", "Mango"]);
-    assert.equal(body.variants.every((item) => item.checkout_eligible === true), true);
+    assert.equal(body.variants.every((item) => item.checkout_eligible === false), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -285,6 +286,72 @@ test("MMD Shop product API returns Glenburgies as one bottle-variant family", as
         ["GLEN-POP15-WHT", "White Bottle", true]
       ]
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Himai and MMD Shop read one physical stock pool while keeping brand prices separate", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("tblzsmNLfP6J0kQ90")) {
+      return Response.json({
+        records: [{
+          id: "recSharedStock001",
+          fields: {
+            "Product Name": "Shared Stock Product",
+            "SKU": "SHARED-001",
+            "Brand Availability": ["Himai Shop", "MMD Shop"],
+            "Category": "Selected",
+            "Status": "active",
+            "Curation Label": "Selected",
+            "Supplier": [],
+            "Product Note": "shared physical stock",
+            "Himai Selling Price THB": 1800,
+            "MMD Shop Selling Price THB": 2500
+          }
+        }]
+      });
+    }
+    if (url.pathname.includes("tblwFgl4et1TOgtNn")) {
+      return Response.json({
+        records: [{
+          id: "recSharedBatch01",
+          fields: {
+            "Product": ["recSharedStock001"],
+            "Quantity Remaining": 4,
+            "Low Stock Flag": "Low",
+            "Batch Status": "active"
+          }
+        }]
+      });
+    }
+    if (url.pathname.includes("tbl81bnFyASeXCj9x")) return Response.json({ records: [] });
+    throw new Error("unexpected fetch " + String(input));
+  };
+
+  try {
+    const himaiResponse = await handleShopCatalog(
+      new Request("https://www.mmdbkk.com/shop/api/products"),
+      { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_TOKEN: "test-token" }
+    );
+    const mmdResponse = await handleShopCatalog(
+      new Request("https://www.mmdbkk.com/mmd-shop/api/products"),
+      { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_TOKEN: "test-token" }
+    );
+    const himai = await himaiResponse.json();
+    const mmd = await mmdResponse.json();
+
+    assert.equal(himai.products[0].available, 4);
+    assert.equal(mmd.products[0].available, 4);
+    assert.equal(himai.products[0].low_stock, true);
+    assert.equal(mmd.products[0].low_stock, true);
+    assert.equal(himai.products[0].selling_price_thb, 1800);
+    assert.equal(mmd.products[0].selling_price_thb, 2500);
+    assert.equal(himai.products[0].checkout_eligible, true);
+    assert.equal(mmd.products[0].checkout_eligible, true);
   } finally {
     globalThis.fetch = originalFetch;
   }

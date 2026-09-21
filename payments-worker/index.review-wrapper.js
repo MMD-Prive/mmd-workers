@@ -29,6 +29,7 @@ import {
   enrichUnifiedConfirmVerify,
   handleUnifiedPaymentIntent,
   handleUnifiedSlipEvidence,
+  drainWebProofNotifications,
   isUnifiedConfirmVerifyRequest,
   isUnifiedPaymentIntentRequest,
   isUnifiedSlipEvidenceRequest,
@@ -76,6 +77,10 @@ function canonicalTelegramEnv(env = {}) {
 }
 
 export default {
+  async scheduled(event, env, ctx) {
+    await drainWebProofNotifications(canonicalTelegramEnv(env));
+    if (typeof phase1Worker.scheduled === "function") await phase1Worker.scheduled(event, env, ctx);
+  },
   async fetch(request, env, ctx) {
     env = canonicalTelegramEnv(env);
     const url = new URL(request.url);

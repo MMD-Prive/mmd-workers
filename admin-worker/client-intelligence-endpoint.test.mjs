@@ -18,12 +18,14 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
   const projection = buildClientIntelligenceProjection({
     clientId,
     generatedAt: "2026-09-08T06:00:00.000Z",
+    continuityMode: "operator_draft",
     memoryPayload: {
       ok: true,
       data_status: "live",
       memory: {
         record_id: clientId,
         display_name: "วินนี่",
+        verification_status: "verified",
         primary_channel: "line",
         membership_status: "active",
         membership_tier: "premium",
@@ -36,17 +38,25 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
     matrixPayload: {
       ok: true,
       data_status: "live",
+      context_only: true,
+      live_truth_wins: true,
       matrix: {
         record_id: "recMATRIX12345678",
         channel: "line",
-        relationship_context: "ลูกค้าเดิม ใช้งานต่อเนื่อง",
+        topic: "payment",
+        relationship_context: "active_member",
         continuity_summary: "ลูกค้าถามเรื่อง access หลังชำระ renewal",
+        conversation_stage: "awaiting_payment_verification",
         pending_action: "review payment",
         pending_reference: "proof_123",
         important_open_loops: ["ตรวจ payment truth ก่อนคืน access"],
         live_truth_required: true,
         live_truth_domains: ["payment", "access"],
         last_interaction_at: "2026-09-07T14:36:40.000Z",
+        state_updated_at: "2026-09-07T14:36:40.000Z",
+        state_expires_at: "2026-09-14T14:36:40.000Z",
+        matrix_status: "active",
+        version: 7,
       },
     },
     conversationsPayload: {
@@ -71,8 +81,15 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
   assert.equal(projection.ai.advisory_only, true);
   assert.equal(projection.ai.next_best_action.mode, "ready_for_per");
   assert.equal(projection.ai.next_best_action.target_url, `/internal/admin/payments?client_id=${clientId}`);
-  assert.equal(projection.ai.suggested_reply.available, false);
+  assert.equal(projection.ai.suggested_reply.available, true);
   assert.equal(projection.ai.suggested_reply.send_allowed, false);
+  assert.equal(projection.ai.suggested_reply.requires_owner_review, true);
+  assert.match(projection.ai.suggested_reply.text, /คุณวินนี่ครับ/);
+  assert.match(projection.ai.suggested_reply.text, /เรื่องชำระเงิน/);
+  assert.doesNotMatch(
+    JSON.stringify(projection.ai.suggested_reply),
+    /proof_123|ลูกค้าถามเรื่อง access หลังชำระ renewal|paid|active/,
+  );
   assert.equal(projection.authority.payment, "canonical_backend");
   assert.equal(projection.authority.membership, "resolver");
   assert.equal(projection.authority.access, "resolver");
@@ -101,4 +118,41 @@ test("projection does not invent next action or reply without evidence", () => {
   assert.equal(projection.ai.suggested_reply.text, null);
   assert.equal(projection.ai.follow_up.recommended, false);
   assert.deepEqual(projection.ai.notices, []);
+});
+
+test("projection keeps continuity rollout off unless the explicit mode is enabled", () => {
+  const clientId = "recCLIENT12345678";
+  const projection = buildClientIntelligenceProjection({
+    clientId,
+    generatedAt: "2026-09-08T06:00:00.000Z",
+    memoryPayload: {
+      data_status: "live",
+      memory: {
+        record_id: clientId,
+        display_name: "วินนี่",
+        verification_status: "verified",
+        primary_channel: "line",
+      },
+    },
+    matrixPayload: {
+      data_status: "live",
+      context_only: true,
+      live_truth_wins: true,
+      matrix: {
+        channel: "line",
+        topic: "payment",
+        relationship_context: "active_member",
+        conversation_stage: "awaiting_payment_verification",
+        pending_action: "review payment",
+        state_updated_at: "2026-09-07T14:36:40.000Z",
+        state_expires_at: "2026-09-14T14:36:40.000Z",
+        matrix_status: "active",
+        version: 7,
+      },
+    },
+  });
+
+  assert.equal(projection.ai.suggested_reply.available, false);
+  assert.equal(projection.ai.suggested_reply.reason, "phase4_mode_off");
+  assert.equal(projection.ai.suggested_reply.send_allowed, false);
 });

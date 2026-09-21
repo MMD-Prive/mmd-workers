@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 
 import {
   HYPE_CONTINUITY_PATH,
+  HYPE_CONVERSATION_CONTEXT_PATH,
   HYPE_HANDOFF_PATH,
   HYPE_HANDOFF_STATUS_PATH,
   HYPE_TRANSACTION_INTAKE_PATH,
   HYPE_SUPERVISED_EXECUTION_PATH,
   handleHypeContinuityRpc,
+  handleHypeConversationContextRpc,
   handleHypeHandoffRpc,
   handleHypeHandoffStatusRpc,
   handleHypeTransactionIntakeRpc,
@@ -25,6 +27,7 @@ import {
   buildExecutionId,
   observeP6Authority,
   observeExactBookingCorrelation,
+  buildHypeConversationContextProjection,
 } from "./src/hype-handoff-runtime.js";
 
 const ENV = {
@@ -62,6 +65,12 @@ test("HYPE continuity and handoff endpoints are service-binding only", async () 
   );
   assert.equal(wrongCaller.status, 403);
 
+  const contextWrongCaller = await handleHypeConversationContextRpc(
+    internalRequest(HYPE_CONVERSATION_CONTEXT_PATH, { telegram_user_id: "111111" }, "browser"),
+    ENV,
+  );
+  assert.equal(contextWrongCaller.status, 403);
+
   const statusWrongCaller = await handleHypeHandoffStatusRpc(
     internalRequest(HYPE_HANDOFF_STATUS_PATH, { operation: "read", telegram_user_id: "111111" }, "browser"),
     ENV,
@@ -79,6 +88,130 @@ test("HYPE continuity and handoff endpoints are service-binding only", async () 
     ENV,
   );
   assert.equal(executionWrongCaller.status, 403);
+});
+
+test("HYPE V2 conversation context exposes only a bounded recent topic and no Matrix payload", { concurrency: false }, async () => {
+  const originalFetch = globalThis.fetch;
+  const now = new Date();
+  const updatedAt = new Date(now.getTime() - 60_000).toISOString();
+  const expiresAt = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString();
+
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith("/tblClients")) {
+      return Response.json({
+        records: [{
+          id: "recClientA1",
+          fields: {
+            telegram_user_id: "111111",
+            telegram_verification_status: "verified",
+            line_user_id: "U0123456789abcdef0123456789abcdef",
+            "Client Name": "Customer A",
+          },
+        }],
+      });
+    }
+    if (parsed.pathname.endsWith("/tblMatrix")) {
+      return Response.json({
+        records: [{
+          id: "recMatrixContext1",
+          fields: {
+            schema_version: "mmd.kenji_conversation_matrix.v1",
+            conversation_id_hash: "do-not-expose-hash",
+            topic: "payment",
+            subtopic: "payment",
+            last_customer_intent: "payment",
+            last_customer_request: "raw customer message with private details",
+            conversation_stage: "awaiting_payment_verification",
+            pending_reference: "PAY-RAW-SECRET",
+            continuity_summary: "raw internal summary",
+            state_updated_at: updatedAt,
+            state_expires_at: expiresAt,
+            matrix_status: "active",
+            version: 9,
+            payload_json: JSON.stringify({
+              command: "payment",
+              payment_ref: "PAY-RAW-SECRET",
+              internal_note: "never expose this",
+            }),
+          },
+        }],
+      });
+    }
+    throw new Error(`unexpected fetch ${parsed.pathname}`);
+  };
+
+  try {
+    const response = await handleHypeConversationContextRpc(internalRequest(
+      HYPE_CONVERSATION_CONTEXT_PATH,
+      { telegram_user_id: "111111" },
+    ), ENV);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.state, "ready");
+    assert.equal(body.context.available, true);
+    assert.equal(body.context.command, "payment");
+    assert.equal(body.context.open_thread, true);
+    assert.equal(body.context.matrix_version, 9);
+    assert.equal(body.context.requires_live_truth_refresh, true);
+    assert.equal(body.guardrails.raw_matrix_fields_exposed, false);
+    assert.equal(body.guardrails.business_truth_included, false);
+
+    const serialized = JSON.stringify(body);
+    assert.doesNotMatch(serialized, /PAY-RAW-SECRET|do-not-expose-hash|private details|internal summary|internal_note/i);
+    assert.doesNotMatch(serialized, /recClientA1|U0123456789abcdef0123456789abcdef|111111/i);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HYPE V2 conversation context refuses expired, unversioned and unsupported Matrix state", () => {
+  const now = new Date("2026-09-21T10:00:00.000Z");
+  const expired = buildHypeConversationContextProjection({
+    fields: {
+      topic: "booking",
+      last_customer_intent: "booking",
+      conversation_stage: "in_progress",
+      state_updated_at: "2026-09-19T10:00:00.000Z",
+      state_expires_at: "2026-09-20T10:00:00.000Z",
+      matrix_status: "active",
+      version: 3,
+      payload_json: JSON.stringify({ command: "booking" }),
+    },
+  }, now);
+  assert.equal(expired.available, false);
+  assert.equal(expired.stale, true);
+  assert.equal(expired.command, "");
+
+  const unversioned = buildHypeConversationContextProjection({
+    fields: {
+      topic: "payment",
+      last_customer_intent: "payment",
+      conversation_stage: "in_progress",
+      state_updated_at: "2026-09-21T09:00:00.000Z",
+      state_expires_at: "2026-09-22T10:00:00.000Z",
+      matrix_status: "active",
+      version: 0,
+      payload_json: JSON.stringify({ command: "payment" }),
+    },
+  }, now);
+  assert.equal(unversioned.available, false);
+  assert.equal(unversioned.reason, "matrix_version_required");
+
+  const unsupported = buildHypeConversationContextProjection({
+    fields: {
+      topic: "internal_finance",
+      last_customer_intent: "internal_finance",
+      conversation_stage: "in_progress",
+      state_updated_at: "2026-09-21T09:00:00.000Z",
+      state_expires_at: "2026-09-22T10:00:00.000Z",
+      matrix_status: "active",
+      version: 2,
+    },
+  }, now);
+  assert.equal(unsupported.available, false);
+  assert.equal(unsupported.reason, "supported_topic_not_found");
 });
 
 test("HYPE continuity writes a bounded cross-channel Matrix row for a linked canonical client", { concurrency: false }, async () => {

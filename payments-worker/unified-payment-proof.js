@@ -1,5 +1,7 @@
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
+import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
+import { dispatchPaymentNotification, drainPaymentNotifications } from "../shared/payment-notification-outbox.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const PAY_INTENT_PATH = "/v1/pay/verify";
@@ -442,6 +444,7 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     method: "POST",
     headers: { authorization: `Bearer ${token}` },
     body: form,
+    signal: AbortSignal.timeout(15000),
   }));
   const responseData = await response.clone().json().catch(() => ({}));
 
@@ -490,6 +493,50 @@ export function telegramDeliveryAuditNote(telegram = {}) {
     telegram?.error_code ? `telegram_error_code=${telegram.error_code}` : "",
     telegram?.error_description ? `telegram_error=${clean(telegram.error_description, 180)}` : "",
   ].filter(Boolean).join("; ");
+}
+
+async function deliverWebProofNotification(env, record, checkpoint) {
+  const payload = record.payload;
+  let telegram = record.state?.telegram;
+  if (!telegram?.ok) {
+    const object = await env.PAYMENT_SLIP_EVIDENCE?.get(payload.storageKey);
+    if (!object) return { ok: false, error: "payment_evidence_file_unavailable" };
+    const file = new File([await object.arrayBuffer()], payload.filename, {
+      type: object.httpMetadata?.contentType || "application/octet-stream",
+    });
+    telegram = await notifyTelegramFile(env, file, payload);
+    if (telegram.ok) {
+      await checkpoint({ telegram });
+      record.state = { telegram };
+    }
+  }
+  const audit = await patchProofAuditNote(env, payload.proofRecordId, payload.note, telegram);
+  return { ok: telegram.ok === true && audit.ok === true, result: { ...telegram, audit_persisted: audit.ok === true }, error: telegram.error_description || audit.error };
+}
+
+async function dispatchWebProofNotification(env, proof, { snapshot, sourcePage, jobContext } = {}) {
+  const note = clean(proof.fields?.note, 6000);
+  const storageKey = /(?:^|;\s*)r2_key=([^;]+)/.exec(note)?.[1] || "";
+  if (!storageKey) return { delivered: false, queued: false, status: "manual_review", result: null };
+  const proofId = clean(proof.fields?.proof_id, 160);
+  const ext = storageKey.split(".").pop();
+  return dispatchPaymentNotification({
+    bucket: env.PAYMENT_SLIP_EVIDENCE,
+    lane: "web-proof",
+    eventKey: proofId,
+    payload: {
+      proofId, proofRecordId: proof.id, paymentRef: proof.fields.payment_ref,
+      storageKey, filename: `${proofId}.${ext}`, note, snapshot, sourcePage, jobContext,
+    },
+    deliver: (record, checkpoint) => deliverWebProofNotification(env, record, checkpoint),
+  });
+}
+
+export async function drainWebProofNotifications(env, options = {}) {
+  return drainPaymentNotifications({
+    ...options, bucket: env.PAYMENT_SLIP_EVIDENCE, lane: "web-proof",
+    deliver: (record, checkpoint) => deliverWebProofNotification(env, record, checkpoint),
+  });
 }
 
 async function patchProofAuditNote(env, recordId, currentNote, telegram) {
@@ -603,6 +650,20 @@ async function buildProofFields(env, form, payment, paymentRef, file, session = 
 }
 
 export async function handleUnifiedSlipEvidence(request, env, downstream) {
+  const response = await handleSlipEvidenceIntake(request, env, downstream);
+  // Duplicate/lock/error responses originate here, so they need the same
+  // origin policy as the downstream upload response for www -> sigil requests.
+  const origin = request.headers.get("origin");
+  const allowed = String(env.ALLOWED_ORIGINS || "").replace(/^["']|["']$/g, "").split(",").map((value) => value.trim());
+  const headers = new Headers(response.headers);
+  if (origin && allowed.includes(origin)) {
+    headers.set("access-control-allow-origin", origin);
+    headers.append("vary", "Origin");
+  }
+  return new Response(response.body, { status: response.status, headers });
+}
+
+async function handleSlipEvidenceIntake(request, env, downstream) {
   let form;
   try {
     form = await request.clone().formData();
@@ -643,78 +704,93 @@ export async function handleUnifiedSlipEvidence(request, env, downstream) {
       }
     }
 
-    const existing = await findProof(env, paymentRef);
-    if (existing) {
-      const proof = proofSnapshot(existing);
-      return json({
-        ok: true,
-        evidence_only: true,
-        official_verification_required: true,
-        duplicate: true,
-        idempotent: true,
-        already_submitted: true,
+    return await withPaymentEvidenceLock(env.PAYMENT_SLIP_EVIDENCE, paymentRef, async () => {
+      const existing = await findProof(env, paymentRef);
+      if (existing) {
+        const proof = proofSnapshot(existing);
+        let notification = null;
+        if (existing.fields?.channel === "web_pay" && !/telegram_delivered=true/.test(existing.fields?.note || "")) {
+          const payment = await findPayment(env, paymentRef);
+          if (payment) {
+            const snapshot = paymentSnapshot(payment);
+            const session = await findSession(env, snapshot.session_id);
+            notification = await dispatchWebProofNotification(env, existing, {
+              snapshot, sourcePage: source, jobContext: canonicalWebJobContext(session, snapshot),
+            }).catch(() => ({ status: "manual_review", queued: false }));
+          }
+        }
+        return json({
+          ok: true,
+          evidence_only: true,
+          official_verification_required: true,
+          duplicate: true,
+          idempotent: true,
+          already_submitted: true,
+          evidence_submitted: true,
+          payment_ref: paymentRef,
+          proof_id: proof.proof_id || null,
+          verification_status: proof.status === "verified" ? "verified" : "pending_verification",
+          payment_status: proof.status === "verified" ? "paid" : "pending",
+          telegram_retry_queued: notification?.queued === true,
+          telegram_delivery_status: notification?.status || null,
+          message: "Payment proof already received. Do not submit it again.",
+        });
+      }
+
+      const payment = await findPayment(env, paymentRef);
+      if (!payment && CANONICAL_WEB_SOURCES.has(source)) {
+        return json({ ok: false, error: "canonical_payment_not_found", payment_ref: paymentRef }, 409);
+      }
+
+      const file = fileFromForm(form);
+      if (CANONICAL_WEB_SOURCES.has(source) && !file) {
+        return json({ ok: false, error: "payment_proof_file_required" }, 400);
+      }
+
+      let proofBundle = null;
+      if (payment) {
+        const snapshot = paymentSnapshot(payment, form);
+        const session = await findSession(env, snapshot.session_id);
+        proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session);
+      }
+
+      const downstreamHeaders = new Headers(request.headers);
+      downstreamHeaders.set("x-mmd-unified-slip-evidence", "1");
+      const downstreamResponse = await downstream(new Request(request, { headers: downstreamHeaders }));
+      if (!downstreamResponse.ok) return downstreamResponse;
+      const downstreamData = await downstreamResponse.clone().json().catch(() => null);
+      if (!downstreamData || downstreamData.ok !== true) return downstreamResponse;
+
+      if (!proofBundle) return downstreamResponse;
+      const created = await createProof(env, proofBundle.fields);
+      const delivery = await dispatchWebProofNotification(env, { ...created, fields: proofBundle.fields }, {
+        snapshot: proofBundle.snapshot,
+        sourcePage: source,
+        jobContext: proofBundle.jobContext,
+      }).catch(() => ({ delivered: false, queued: false, status: "manual_review" }));
+      const telegram = delivery.result || {};
+
+      return rebuildJson(downstreamResponse, {
+        ...downstreamData,
+        proof_id: proofBundle.proofId,
+        proof_record_id: created?.id || null,
         evidence_submitted: true,
-        payment_ref: paymentRef,
-        proof_id: proof.proof_id || null,
-        verification_status: proof.status === "verified" ? "verified" : "pending_verification",
-        payment_status: proof.status === "verified" ? "paid" : "pending",
-        message: "Payment proof already received. Do not submit it again.",
+        already_submitted: false,
+        duplicate: false,
+        verification_status: "pending_verification",
+        payment_status: "pending",
+        storage: proofBundle.storage.stored ? proofBundle.storage.provider : downstreamData.storage,
+        telegram_file_received: telegram.ok === true,
+        telegram_topic: telegram.topic || null,
+        telegram_thread_id: telegram.thread_id || null,
+        telegram_message_id: telegram.message_id || null,
+        telegram_alert_sent: telegram.alert_sent === true,
+        telegram_audit_persisted: telegram.audit_persisted === true,
+        telegram_retry_queued: delivery.queued === true,
+        telegram_delivery_status: delivery.status,
+        unified_payment_flow: "v1",
+        message: "Payment proof received. MMD is reviewing it; no need to submit again.",
       });
-    }
-
-    const payment = await findPayment(env, paymentRef);
-    if (!payment && CANONICAL_WEB_SOURCES.has(source)) {
-      return json({ ok: false, error: "canonical_payment_not_found", payment_ref: paymentRef }, 409);
-    }
-
-    const file = fileFromForm(form);
-    if (CANONICAL_WEB_SOURCES.has(source) && !file) {
-      return json({ ok: false, error: "payment_proof_file_required" }, 400);
-    }
-
-    let proofBundle = null;
-    if (payment) {
-      const snapshot = paymentSnapshot(payment, form);
-      const session = await findSession(env, snapshot.session_id);
-      proofBundle = await buildProofFields(env, form, payment, paymentRef, file, session);
-    }
-
-    const downstreamHeaders = new Headers(request.headers);
-    downstreamHeaders.set("x-mmd-unified-slip-evidence", "1");
-    const downstreamResponse = await downstream(new Request(request, { headers: downstreamHeaders }));
-    if (!downstreamResponse.ok) return downstreamResponse;
-    const downstreamData = await downstreamResponse.clone().json().catch(() => null);
-    if (!downstreamData || downstreamData.ok !== true) return downstreamResponse;
-
-    if (!proofBundle) return downstreamResponse;
-    const created = await createProof(env, proofBundle.fields);
-    const telegram = await notifyTelegramFile(env, file, {
-      proofId: proofBundle.proofId,
-      paymentRef,
-      snapshot: proofBundle.snapshot,
-      sourcePage: source,
-      jobContext: proofBundle.jobContext,
-    }).catch((error) => ({ ok: false, error_description: clean(error?.message || error, 180) }));
-    const telegramAudit = await patchProofAuditNote(env, created?.id, proofBundle.fields.note, telegram);
-
-    return rebuildJson(downstreamResponse, {
-      ...downstreamData,
-      proof_id: proofBundle.proofId,
-      proof_record_id: created?.id || null,
-      evidence_submitted: true,
-      already_submitted: false,
-      duplicate: false,
-      verification_status: "pending_verification",
-      payment_status: "pending",
-      storage: proofBundle.storage.stored ? proofBundle.storage.provider : downstreamData.storage,
-      telegram_file_received: telegram.ok === true,
-      telegram_topic: telegram.topic || null,
-      telegram_thread_id: telegram.thread_id || null,
-      telegram_message_id: telegram.message_id || null,
-      telegram_alert_sent: telegram.alert_sent === true,
-      telegram_audit_persisted: telegramAudit.ok === true,
-      unified_payment_flow: "v1",
-      message: "Payment proof received. MMD is reviewing it; no need to submit again.",
     });
   } catch (error) {
     return json({

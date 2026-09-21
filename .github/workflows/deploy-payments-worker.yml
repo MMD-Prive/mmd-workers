@@ -13,6 +13,10 @@ on:
       - "shared/membership-promotion-policy.test.mjs"
       - ".github/workflows/deploy-payments-worker.yml"
       - "shared/payment-intelligence.mjs"
+      - "shared/canonical-payment-evidence*"
+      - "shared/payment-notification-outbox*"
+      - "shared/test/payment-memory-r2.mjs"
+      - "scripts/ensure-payment-notification-cron*"
 
 concurrency:
   group: telegram-router-secret-rotation-production
@@ -41,6 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm run test:payment-delivery
           node --check payments-worker/canonical-confirm-link.js
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/shop-payment-v1.js
@@ -220,6 +225,10 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes wrangler@4 versions deploy "${PAYMENTS_WORKER_VERSION_ID}@100%" -y --config wrangler.merged.toml
+
+      - name: Ensure payment notification retry schedule
+        if: steps.deploy_version.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        run: node scripts/ensure-payment-notification-cron.mjs payments-worker
 
       - name: Smoke signed confirmation routes
         if: steps.deploy_version.outcome == 'success' || steps.migration_deploy.outcome == 'success'

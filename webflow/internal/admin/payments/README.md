@@ -1,3 +1,51 @@
+## Confirmation follow-through — 2026-09-21
+
+Build `payment-confirmation-20260921` adds persistent follow-through to the paid-job view.
+
+- Open a paid deposit/full payment to read the private delivery journal and canonical Session acknowledgement timestamps. Delivery acceptance and clicking Confirm remain separate statuses for each recipient.
+- `GET review-queue?view=confirmation&session_id=…&payment_ref=…&payment_stage=…` is read-only. The response allows only delivery booleans, timestamps and bounded state; signed links and recipient identities stay server-side.
+- `POST review` with `action: retry_confirmation` revisits an existing delivery event only. It requires owner/admin, an exact canonical Paid payment/session/stage/client match, an active job and an exact journal subject. It never creates a delivery event or calls money settlement. Existing per-recipient checkpoints, retry lease, backoff and expiry remain authoritative.
+- Missing history stays unknown. Missing recipient bindings require team forwarding from the existing Telegram message. Sending a link never implies recipient acknowledgement; manual forwarding itself is not tracked as an automatic delivery.
+- Final payments, tips, membership and shop payments cannot re-release initial job links.
+
+Webflow deployment: the source remains a self-contained HTML file for local validation. It now exceeds Webflow's 50,000-character embed limit: publish its `<style>…</style>` block to the secondary HtmlEmbed `a52fc9d7-80a2-6244-30e4-5209520328d3`, and the remaining HTML/JS to primary HtmlEmbed `5a2aa67e-dc32-3826-e2d8-3708b2a4f124`. Do not keep the obsolete secondary override. Both parts derive from this same source.
+
+Validation: 7 follow-through API tests, 10 UI interaction tests, 89 delivery/evidence regressions and 17 review/discovery/provenance tests. Live production queue checks require an authenticated admin session; no real approval or notification is sent during validation.
+
+## Payment workspace — 2026-09-21
+
+Build `payment-flow-20260921` replaces the separate job/slip tabs with one search and a list/detail workspace. The visible flow is customer/job → evidence from web or LINE → verified money → confirmation delivery. Desktop keeps the selected job and evidence beside the list; mobile opens one task at a time with a back button.
+
+- Search spans the latest 100 jobs and latest 100 pending proofs. Exact payment/session links deduplicate the same item. Membership or otherwise unmatched proofs remain visible.
+- Pending evidence, waiting for evidence, and paid amounts have plain-language filters. Searching automatically includes every status.
+- Each selected proof is re-read by exact ID before displaying the review controls. A stale response cannot replace the user's next selection.
+- Viewing the evidence and confirming both the match and real bank receipt remain mandatory. Unknown outcomes preserve the same request/key across leaving and reopening an item.
+- Payment success and Telegram/customer/model delivery are shown separately. Existing paid jobs do not claim that confirmation delivery is complete. Issue/reject remain audit-only.
+- The obsolete global technical banner and owner-mode pill are hidden only on this page. Scoped light work panels, explicit contrast, compact headings, and a four-step strip replace the oversized dark layout.
+- Existing pending-job payment URLs remain available from the original job creation notification; this frontend does not mint or release signed URLs.
+
+Interaction checks: `MMD_UI_TEST_MODULES=/path/to/node_modules node --test admin-worker/payment-review-flow-ui.test.cjs` with jsdom 30.0.1. The payment review CI installs its isolated test dependency under the runner temporary directory.
+
+## Previous simple daily payment review
+
+`payment-review-simple.html` is the complete primary embed for `/internal/admin/payments`.
+It replaces the live `money-control-v3` embed and uses a new root so old presentation patches cannot enable its approval controls.
+
+- Two search views: pending slips and the latest 100 created jobs, including jobs without slips. Results are explicitly scoped to the loaded view.
+- Authoritative Per Rename names are joined through exact canonical Client IDs; original names, LINE display names and canonical model aliases remain searchable. No name or amount is used to match money to a job.
+- `view=recent_jobs` is a read-only projection through the existing authenticated queue route. It shows each payment separately and retrieves an exact pending `proof_id` before review, including slips outside the default queue window.
+- Missing alias data is visibly marked as partial; errors never masquerade as an empty list. Ambiguous links fail closed. Confirmation tokens and model payouts never appear in discovery.
+- `include_context=1` adds a read-only canonical Payment/Session projection; no confirmation tokens or model payouts are returned.
+- Show the submitted amount next to the amount due for this payment, not the total job fee.
+- View the evidence and confirm both the job match and money received in the bank before enabling approval.
+- An uncertain response retains the exact request and idempotency key in session storage; only an explicit retry replays it.
+- The result separately reports money recorded, internal Telegram handoff, customer/model delivery, and membership write-through when relevant.
+- Issue/reject record the review audit only. The UI says the item remains in the queue, matching the existing API contract.
+- The CEO inbox remains available under additional tools for exceptional identity/context matching. Historical imports remain separate.
+- Web proofs use semicolon metadata and private `web-payment-proofs`/`mmd-shop-payment-proofs` objects; LINE proofs retain their JSON metadata and private prefix. Images and sandboxed PDFs are served only after the existing admin session check.
+
+Validation: `node --test admin-worker/payment-review-simple.test.mjs` plus existing review/auth/delivery suites. The UI was also exercised with a DOM harness for evidence-load failure, both approval checks, persistent same-key retry, and a failed-delivery receipt after successful payment.
+
 # `/internal/admin/payments` — Money Control V3
 
 Build: `money-control-v3-evidence-context-20260912`

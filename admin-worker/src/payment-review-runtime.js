@@ -7,6 +7,9 @@ import {
   resolveOperatorPaymentContext,
 } from "./payment-review-owner-context.js";
 import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.js";
+import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
+import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
+import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -86,24 +89,48 @@ async function getPaymentEvidence(request, env) {
     "Content-Disposition": "inline",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": "sandbox; default-src 'none'",
   });
   return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
 }
 
 async function listReviewQueue(request, env) {
   const url = new URL(request.url);
+  if (url.searchParams.get("view") === "confirmation") {
+    return json(await followthrough(env, Object.fromEntries(url.searchParams)));
+  }
   const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
+  const discovery = {
+    list: (table, params) => airtableList(env, table, params),
+    page: (table, params) => airtablePage(env, table, params),
+    tables: discoveryTables(env),
+  };
+  if (url.searchParams.get("view") === "recent_jobs") {
+    const jobs = await recentPaymentJobs({ ...discovery, paymentsTable: paymentsTable(env), proofsTable: paymentProofTable(env), limit });
+    return json({ ok: true, authority: "payments-worker", source: "sessions", ordering: "created_at_desc", limit, items: [], jobs });
+  }
+  const proofId = safeText(url.searchParams.get("proof_id"), 120);
   const records = await airtableList(env, paymentProofTable(env), {
-    filterByFormula: reviewablePaymentProofFormula(),
+    filterByFormula: proofId ? `AND(${reviewablePaymentProofFormula()},{proof_id}='${formulaValue(proofId)}')` : reviewablePaymentProofFormula(),
     maxRecords: Math.min(Math.max(limit * 4, limit), 100),
     sort: [{ field: "created_at", direction: "desc" }],
   });
-  const items = records
+  let items = records
     .map(safeQueueItem)
     .filter(Boolean)
     .filter((item) => item.reviewable)
+    .filter((item) => !proofId || item.proof_id === proofId)
     .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
     .slice(0, limit);
+
+  if (url.searchParams.get("include_context") === "1") {
+    items = await enrichPaymentReviewContext(items, records, {
+      list: (table, params) => airtableList(env, table, params),
+      paymentsTable: paymentsTable(env),
+      sessionsTable: clean(env.AIRTABLE_TABLE_SESSIONS_ID || env.AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX"),
+    });
+    items = await enrichDiscoveryNames(items, discovery);
+  }
 
   return json({
     ok: true,
@@ -128,6 +155,7 @@ async function listReviewQueue(request, env) {
 async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
+  if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
 
   const decision = safeCode(body.decision);
   const proofId = safeText(body.proof_id, 120);
@@ -140,7 +168,17 @@ async function commitReview(request, env, actor) {
   if (!idempotencyKey) throw httpError(400, "idempotency_key_required");
 
   const previous = await findReviewAudit(env, idempotencyKey);
-  if (previous) return json(previous, 200);
+  if (previous) {
+    if (previous.proof_id !== proofId || previous.decision !== decision) throw httpError(409, "payment_review_idempotency_conflict");
+    if (previous.ok && previous.decision === "approve" && previous.money_truth_changed && previous.session_id) {
+      previous.job_link_dispatch = await dispatchApprovedJobLinks(env, previous)
+        .catch(() => ({ status: "failed", dispatched: false, retry_queued: false }));
+    }
+    // Replaying a review recovers notification delivery only, never settlement.
+    previous.money_truth_already_changed = previous.money_truth_changed;
+    previous.money_truth_changed = false;
+    return json(previous, 200);
+  }
 
   const proof = await loadProof(env, proofId);
   if (!proof) throw httpError(404, "payment_proof_not_found");
@@ -193,6 +231,7 @@ async function commitReview(request, env, actor) {
     result: "success",
     authority: "payments-worker",
     payment_ref: approval.payment_ref,
+    session_id: approval.session_id,
     amount_thb: approval.amount_thb,
     payment_stage: approval.payment_stage,
     context_source: approval.context_source,
@@ -555,6 +594,7 @@ function safeQueueItem(record) {
   return {
     proof_id: proofId,
     proof_record_id: safeText(record.id, 120),
+    client_record_id: linkedRecordIds(fields.client || fields.Client).length === 1 ? linkedRecordId(fields.client || fields.Client) : null,
     customer_name: safeText(note.sender_display_name || fields.client_name || fields.member_name, 180),
     payer_name: safeText(fields.payer_name || fields.member_name || fields.client_name || fields.name, 180),
     payment_ref: paymentRef,
@@ -575,6 +615,7 @@ function safeQueueItem(record) {
     identity_state: safeCode(paymentIntelligence?.identity_state || (linkedMemberPresent ? "canonical_member_linked" : "")),
     pending_member_profile: paymentIntelligence?.pending_member_profile === true,
     evidence_preview_url: previewUrl,
+    evidence_type: /\.pdf$/i.test(note.r2_key || "") ? "pdf" : "image",
     source_context: sourceContext,
     extraction_method: extractionMethod || "not_run",
     extraction_confidence: extractionConfidence,
@@ -635,6 +676,8 @@ async function findReviewAudit(env, idempotencyKey) {
     context_source: safeCode(after.context_source || ""),
     recovery_context: safeCode(after.context_source) === "liff_renewal_recovery",
     payment_stage: safeCode(after.payment_stage || ""),
+    payment_ref: safeText(after.payment_ref || parseJson(fields["Before JSON"]).payment_ref, 180),
+    session_id: safeText(after.session_id, 180),
     membership_write_through: safeMembershipWriteThrough(after.membership_write_through),
     manual_membership_review_required: after.manual_membership_review_required === true,
     money_truth_changed: after.money_truth_changed === true,
@@ -664,6 +707,8 @@ async function writeAudit(env, input) {
     "After JSON": boundedJson({
       authority: input.authority || "payments-worker",
       context_source: input.context_source || "",
+      session_id: input.session_id || null,
+      payment_ref: input.payment_ref || null,
       payment_stage: input.payment_stage || null,
       membership_write_through: input.membership_write_through || null,
       manual_membership_review_required: input.manual_membership_review_required === true,
@@ -676,9 +721,33 @@ async function writeAudit(env, input) {
 }
 
 async function airtableList(env, tableName, params = {}) {
+  const records = [];
+  let offset;
+  const limit = Math.min(Math.max(params.maxRecords || 100, 1), 1000);
+  do {
+    const payload = await airtablePage(env, tableName, { ...params, maxRecords: limit - records.length, offset });
+    records.push(...payload.records);
+    offset = payload.offset;
+  } while (offset && records.length < limit);
+  if (offset && params.requireComplete) throw httpError(503, "review_context_limit_exceeded");
+  return records.slice(0, limit);
+}
+
+function followthrough(env, input, options = {}) {
+  return paymentConfirmationFollowthrough(env, input, {
+    ...options, list: (table, params) => airtableList(env, table, params),
+    paymentsTable: paymentsTable(env), sessionsTable: discoveryTables(env).sessions,
+  });
+}
+
+async function airtablePage(env, tableName, params = {}) {
   const url = airtableUrl(env, tableName);
+  if (params.returnFieldsByFieldId) url.searchParams.set("returnFieldsByFieldId", "true");
   if (params.filterByFormula) url.searchParams.set("filterByFormula", params.filterByFormula);
   if (params.maxRecords) url.searchParams.set("maxRecords", String(params.maxRecords));
+  if (params.pageSize) url.searchParams.set("pageSize", String(params.pageSize));
+  if (params.offset) url.searchParams.set("offset", params.offset);
+  for (const field of params.fields || []) url.searchParams.append("fields[]", field);
   if (Array.isArray(params.sort)) {
     params.sort.slice(0, 3).forEach((entry, index) => {
       const field = safeText(entry?.field, 120);
@@ -691,7 +760,7 @@ async function airtableList(env, tableName, params = {}) {
   const response = await airtableFetch(env, new Request(url.toString(), { headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}` } }));
   const payload = await response.json().catch(() => ({}));
   if (!response.ok || !Array.isArray(payload.records)) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
-  return payload.records;
+  return payload;
 }
 
 async function airtableGet(env, tableName, recordId) {
@@ -831,13 +900,15 @@ function internalEvidenceUrl(proofId, note = {}) {
 
 function safeEvidenceKey(value) {
   const key = safeText(value, 800);
-  if (!/^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i.test(key)) return "";
+  const line = /^line-ofc\/payment-proofs\/\d{4}\/\d{2}\/[A-Za-z0-9_-]+\/original\.(?:jpe?g|png|webp)$/i;
+  const web = /^(?:web-payment-proofs|mmd-shop-payment-proofs)\/\d{4}\/\d{2}\/webproof_[a-f0-9]{24}\/original\.(?:jpe?g|png|webp|pdf)$/i;
+  if (!line.test(key) && !web.test(key)) return "";
   return key;
 }
 
 function safeImageContentType(value) {
   const type = clean(value).toLowerCase();
-  return new Set(["image/jpeg", "image/png", "image/webp"]).has(type) ? type : "";
+  return new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]).has(type) ? type : "";
 }
 
 function safeMembershipWriteThrough(value) {
@@ -928,7 +999,19 @@ function isoOrText(value) {
 }
 
 function parseNote(value) {
-  return parseJson(value);
+  const parsed = parseJson(value);
+  if (Object.keys(parsed).length) return parsed;
+  // Web intake writes a bounded semicolon metadata envelope, LINE writes JSON.
+  // Only consume the known envelope; never treat free-form customer text as keys.
+  const raw = clean(value);
+  if (!/^schema=mmd_(?:web|shop)_payment_proof_v1(?:;|$)/.test(raw)) return {};
+  const note = {};
+  for (const part of raw.split(";")) {
+    const match = /^\s*(schema|r2_key|payment_lane|telegram_delivered)\s*=\s*([^;]+?)\s*$/.exec(part);
+    if (!match || Object.hasOwn(note, match[1])) continue;
+    note[match[1]] = match[2];
+  }
+  return note;
 }
 
 function parseJson(value) {

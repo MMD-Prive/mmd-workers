@@ -5,6 +5,15 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/payment-confirmation-followthrough.js"
+      - "admin-worker/payment-confirmation-followthrough.test.mjs"
+      - "admin-worker/src/payment-review-display-context.js"
+      - "admin-worker/src/payment-review-discovery.js"
+      - "admin-worker/payment-review-discovery.test.mjs"
+      - "admin-worker/payment-review-flow-ui.test.cjs"
+      - "admin-worker/src/payment-proof-client-provenance-wrapper.js"
+      - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
+      - "admin-worker/payment-review-simple.test.mjs"
       - "admin-worker/src/payment-review-line-recovery.js"
       - "admin-worker/src/payment-review-owner-context.js"
       - "admin-worker/src/payment-review-auto-context.js"
@@ -46,6 +55,7 @@ jobs:
           set -euo pipefail
           node --check admin-worker/src/admin-login-hero-worker.js
           node --check admin-worker/src/payment-review-runtime.js
+          node --check admin-worker/src/payment-review-discovery.js
           node --check admin-worker/src/payment-review-line-recovery.js
           node --check admin-worker/src/payment-review-owner-context.js
           node --check admin-worker/src/payment-review-auto-context.js
@@ -63,6 +73,14 @@ jobs:
           set -euo pipefail
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
+          node --test admin-worker/payment-review-simple.test.mjs admin-worker/payment-confirmation-followthrough.test.mjs
+          node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
+
+      - name: Payment workspace interaction guards
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/payment-review-ui" --no-save --ignore-scripts jsdom@30.0.1
+          MMD_UI_TEST_MODULES="$RUNNER_TEMP/payment-review-ui/node_modules" node --test admin-worker/payment-review-flow-ui.test.cjs
 
       - name: Manual renewal recovery contract
         run: |

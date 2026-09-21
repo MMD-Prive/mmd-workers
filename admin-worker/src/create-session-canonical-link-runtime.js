@@ -102,6 +102,19 @@ export async function handleCanonicalLinkedJobCreate(request, env, ctx, downstre
       sessionId,
       jobId,
     });
+    // The Partner authority reads canonical links and approved terms itself.
+    // No browser-provided rate/commission/partner ID is forwarded as authority.
+    if (modelId && env.PARTNERS_WORKER?.fetch) {
+      try {
+        const captured = await env.PARTNERS_WORKER.fetch(new Request("https://partners-worker.internal/v1/partner/admin/agreement/capture", {
+          method: "POST", headers: { "content-type": "application/json", "x-mmd-service-binding": "admin-worker", "x-mmd-owner-id": "canonical-job-create", "x-mmd-owner-role": "admin" },
+          body: JSON.stringify({ session_record_id: linkage.session_record_id })
+        }));
+        const capture = await captured.json();
+        linkage.partner_agreement = captured.ok && capture.ok ? (capture.partner_managed === false ? "not_partner_managed" : "captured") : "review_required";
+        if (linkage.partner_agreement === "review_required") linkage.partner_warning = capture.error?.code || capture.error || "partner_agreement_capture_failed";
+      } catch { linkage.partner_agreement = "review_required"; linkage.partner_warning = "partner_agreement_capture_unavailable"; }
+    }
     return mergeJsonResponse(response, { linkage });
   } catch (error) {
     return mergeJsonResponse(response, {

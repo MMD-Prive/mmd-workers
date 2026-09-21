@@ -375,6 +375,7 @@ test("health publishes the canonical MMD topic registry", async () => {
   const body = await response.json();
 
   assert.equal(response.status, 200);
+  assert.equal(body.conversational_understanding, "mmd.hype_conversational_understanding.v2");
   assert.deepEqual(body.telegram_topics.map(({ key, thread_id }) => [key, thread_id]), [
     ["booking", 1399],
     ["membership", 20],

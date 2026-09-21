@@ -6,12 +6,20 @@ import {
   isPrivateModelRequestPath,
   probePrivateModelReadiness,
 } from "./private-model.js";
+import {
+  handleEphemeralPrivateCompanion,
+  isEphemeralPrivateCompanionPath,
+} from "./ephemeral-private-companion.js";
 
 export { PublicModelCoordinator };
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (isEphemeralPrivateCompanionPath(url.pathname)) {
+      return handleEphemeralPrivateCompanion(request, env, ctx);
+    }
 
     if (isPrivateModelRequestPath(url.pathname)) {
       return handlePrivateModelRequest(request, env, ctx);

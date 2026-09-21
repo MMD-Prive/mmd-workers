@@ -149,6 +149,7 @@ jobs:
           printf '%s' "$body" | grep -Eq '"worker"[[:space:]]*:[[:space:]]*"telegram"'
           printf '%s' "$body" | grep -Fq 'mmd-concierge-capability-pack-v1-20260919'
           printf '%s' "$body" | grep -Fq 'mmd-recovery-outcome-taxonomy-v1-20260919'
+          printf '%s' "$body" | grep -Fq 'mmd.hype_conversational_understanding.v2'
 
       - name: Repair Telegram webhook to canonical route
         shell: bash

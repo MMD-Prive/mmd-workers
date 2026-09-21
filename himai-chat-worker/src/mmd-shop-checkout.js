@@ -20,6 +20,7 @@ const PRODUCT_FIELDS = Object.freeze({
   supplier: "fldJCZ7YzsUjIItKf",
   note: "fldAT8hnluV4CtF3c",
   mmdPrice: "fldD6Q5yido7pTlU0",
+  himaiPrice: "fldo4N9GRq6rHPiCh",
 });
 
 const CUSTOMER_FIELDS = Object.freeze({
@@ -48,6 +49,7 @@ const ORDER_FIELDS = Object.freeze({
   notes: "fldWG0u77XQ5W0wpT",
   source: "fldSMKdkzwFY6UyzQ",
   telegramSent: "flda0AwcOFAYSy2kB",
+  shopBrand: "fld97aHqq3IbPam84",
 });
 
 const ITEM_FIELDS = Object.freeze({
@@ -69,9 +71,40 @@ const INVENTORY_FIELDS = Object.freeze({
   status: "fldZW2m1Xq8q0ZH9Z",
 });
 
+const SHOP_CHECKOUT_CONFIG = Object.freeze({
+  "mmd-shop": Object.freeze({
+    key: "mmd-shop",
+    path: "/mmd-shop/api/checkout",
+    publicName: "MMD Shop",
+    sourcePath: "/mmd-shop",
+    orderPrefix: "MMD",
+    priceField: PRODUCT_FIELDS.mmdPrice,
+    brandToken: "mmd",
+    telegramFlow: "mmd_shop_orders",
+    telegramTitle: "MMD SHOP",
+  }),
+  shop: Object.freeze({
+    key: "shop",
+    path: "/shop/api/checkout",
+    publicName: "Himai Shop",
+    sourcePath: "/shop",
+    orderPrefix: "HIMAI",
+    priceField: PRODUCT_FIELDS.himaiPrice,
+    brandToken: "himai",
+    telegramFlow: "himai_orders",
+    telegramTitle: "HIMAI SHOP",
+  }),
+});
+
+function checkoutConfigForPath(pathname) {
+  return Object.values(SHOP_CHECKOUT_CONFIG).find((item) => item.path === pathname) || null;
+}
+
+
 export async function handleMmdShopCheckout(request, env) {
   const url = new URL(request.url);
-  if (url.pathname !== "/mmd-shop/api/checkout") return null;
+  const shop = checkoutConfigForPath(url.pathname);
+  if (!shop) return null;
 
   if (request.method.toUpperCase() === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders() });
@@ -94,9 +127,9 @@ export async function handleMmdShopCheckout(request, env) {
     const cartInput = normalizeCart(body.items);
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
     const stock = await loadMmdStock(env);
-    const pricedCart = validateAndPriceCart(cartInput, products, stock);
-    const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext);
-    orderId = makeOrderId();
+    const pricedCart = validateAndPriceCart(cartInput, products, stock, shop);
+    const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext, shop);
+    orderId = makeOrderId(shop.orderPrefix);
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "on_demand");
 
@@ -105,7 +138,8 @@ export async function handleMmdShopCheckout(request, env) {
       customerRecordId: customer.id,
       total,
       stockConfirmationRequired,
-      sourcePath: clean(body.source_path, 300) || "/mmd-shop",
+      sourcePath: clean(body.source_path, 300) || shop.sourcePath,
+      shop,
       shipping,
       reservation: null,
     });
@@ -119,7 +153,7 @@ export async function handleMmdShopCheckout(request, env) {
     order.fields = order.fields || {};
     order.fields[ORDER_FIELDS.notes] = writeMmdShopReservation(order.fields[ORDER_FIELDS.notes] || "", reservation);
 
-    const orderItems = await createOrderItems(env, order.id, pricedCart);
+    const orderItems = await createOrderItems(env, order.id, pricedCart, shop);
 
     const telegram = await notifyOrder(env, {
       orderId,
@@ -128,13 +162,14 @@ export async function handleMmdShopCheckout(request, env) {
       items: pricedCart,
       stockConfirmationRequired,
       reservation,
+      shop,
     }).catch(() => ({ ok: false }));
 
     if (telegram.ok) {
       await patchRecord(env, table(env, "orders"), order.id, { [ORDER_FIELDS.telegramSent]: true }).catch(() => null);
     }
 
-    const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email });
+    const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email, shop });
     if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
       const released = await releaseViaMmdShopCoordinator(env, reservation, "payment_initialization_failed").catch(() => null);
       if (released?.reservation) reservation = released.reservation;
@@ -166,7 +201,8 @@ export async function handleMmdShopCheckout(request, env) {
 
     return json({
       ok: true,
-      schema: "mmd_shop_checkout_v2",
+      schema: shop.key === "mmd-shop" ? "mmd_shop_checkout_v2" : "himai_shop_checkout_v2",
+      shop: shop.key,
       order_id: orderId,
       order_record_id: order.id,
       customer_record_id: customer.id,
@@ -278,20 +314,22 @@ async function loadMmdStock(env) {
   return stock;
 }
 
-export function validateAndPriceCart(cart, products, stock) {
+export function validateAndPriceCart(cart, products, stock, shop = SHOP_CHECKOUT_CONFIG["mmd-shop"]) {
   return cart.map((line) => {
     const record = products.get(line.product_id);
     if (!record?.id) throw httpError(404, "product_not_found");
     const fields = record.fields || {};
     const status = selectName(fields[PRODUCT_FIELDS.status]).toLowerCase();
     const brands = selectList(fields[PRODUCT_FIELDS.brandAvailability]).map((value) => value.toLowerCase());
-    const isMmd = brands.some((value) => value.includes("mmd") || value.includes("both"));
-    const price = positiveNumber(fields[PRODUCT_FIELDS.mmdPrice]);
+    const availableForShop = brands.some((value) =>
+      value.includes(shop.brandToken) || value.includes("both") || (shop.key === "shop" && value === "shop")
+    );
+    const price = positiveNumber(fields[shop.priceField]);
     const sku = clean(fields[PRODUCT_FIELDS.sku], 120);
     const productName = clean(fields[PRODUCT_FIELDS.name], 220);
     if (isRestrictedCheckoutProduct(sku, productName, fields[PRODUCT_FIELDS.note])) throw httpError(403, "product_not_eligible_for_online_checkout");
     if (status !== "active") throw httpError(409, "product_not_active");
-    if (!isMmd) throw httpError(409, "product_not_available_in_mmd_shop");
+    if (!availableForShop) throw httpError(409, "product_not_available_in_shop");
     if (price === null) throw httpError(409, "product_price_unavailable");
 
     const inventory = stock.get(record.id);
@@ -301,7 +339,7 @@ export function validateAndPriceCart(cart, products, stock) {
     if (onDemand && linkedIds(fields[PRODUCT_FIELDS.supplier]).length === 0) throw httpError(409, "on_demand_supplier_unavailable");
     return {
       product_id: record.id,
-      product_name: productName || "MMD Shop Item",
+      product_name: productName || `${shop.publicName} Item`,
       sku,
       supplier_ids: linkedIds(fields[PRODUCT_FIELDS.supplier]),
       quantity: line.quantity,
@@ -314,7 +352,7 @@ export function validateAndPriceCart(cart, products, stock) {
   });
 }
 
-async function findOrCreateCustomer(env, customer, sourcePath, memberContext = null) {
+async function findOrCreateCustomer(env, customer, sourcePath, memberContext = null, shop = SHOP_CHECKOUT_CONFIG["mmd-shop"]) {
   const found = await findExistingCustomer(env, customer, memberContext);
   if (found) {
     const currentMemberId = clean(found.fields?.[CUSTOMER_FIELDS.memberId], 180);
@@ -340,16 +378,16 @@ async function findOrCreateCustomer(env, customer, sourcePath, memberContext = n
     [CUSTOMER_FIELDS.name]: customer.name,
     [CUSTOMER_FIELDS.displayName]: customer.name,
     [CUSTOMER_FIELDS.phone]: customer.phone,
-    [CUSTOMER_FIELDS.brandOrigin]: "MMD Shop",
     [CUSTOMER_FIELDS.acquisitionChannel]: memberContext?.member_id ? "mmd_member" : "web",
-    [CUSTOMER_FIELDS.sourcePath]: clean(sourcePath, 300) || "/mmd-shop",
+    [CUSTOMER_FIELDS.sourcePath]: clean(sourcePath, 300) || shop.sourcePath,
     [CUSTOMER_FIELDS.signupStatus]: "active",
     [CUSTOMER_FIELDS.customerOrigin]: memberContext?.member_id ? "mmd_member" : "web",
     [CUSTOMER_FIELDS.note]: memberContext?.member_id
-      ? "Created by MMD Shop checkout with server-verified MY MMD identity."
-      : "Created by MMD Shop web checkout.",
+      ? `Created by ${shop.publicName} checkout with server-verified MY MMD identity.`
+      : `Created by ${shop.publicName} web checkout.`,
     [CUSTOMER_FIELDS.createdAt]: new Date().toISOString(),
   };
+  if (shop.key === "mmd-shop") fields[CUSTOMER_FIELDS.brandOrigin] = "MMD Shop";
   if (customer.email) fields[CUSTOMER_FIELDS.email] = customer.email;
   if (memberContext?.member_id) fields[CUSTOMER_FIELDS.memberId] = memberContext.member_id;
   if (memberContext?.line_user_id) fields[CUSTOMER_FIELDS.lineUserId] = memberContext.line_user_id;
@@ -431,6 +469,7 @@ async function resolveServerMemberContext(request, env) {
 async function createOrder(env, input) {
   const noteLines = [
     "schema=mmd_shop_order_v1",
+    `shop_brand=${input.shop?.key || "mmd-shop"}`,
     "source=web_checkout",
     `source_path=${input.sourcePath}`,
     input.stockConfirmationRequired ? "stock_confirmation_required=true" : "stock_confirmation_required=false",
@@ -452,10 +491,11 @@ async function createOrder(env, input) {
     [ORDER_FIELDS.notes]: notes,
     [ORDER_FIELDS.source]: "web",
     [ORDER_FIELDS.telegramSent]: false,
+    [ORDER_FIELDS.shopBrand]: input.shop?.publicName || "MMD Shop",
   });
 }
 
-async function createOrderItems(env, orderRecordId, items) {
+async function createOrderItems(env, orderRecordId, items, shop = SHOP_CHECKOUT_CONFIG["mmd-shop"]) {
   const records = items.map((item) => ({ fields: {
     [ITEM_FIELDS.name]: item.sku ? `${item.product_name} · ${item.sku}` : item.product_name,
     [ITEM_FIELDS.order]: [orderRecordId],
@@ -474,21 +514,33 @@ async function createOrderItems(env, orderRecordId, items) {
   return data.records || [];
 }
 
-async function createPaymentIntent(env, { orderId, total, email }) {
-  const base = clean(env.MMD_PAYMENTS_BASE_URL || "https://sigil.mmdbkk.com", 500).replace(/\/+$/g, "");
-  const response = await fetch(`${base}/v1/pay/shop-intent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "https://mmdbkk.com" },
-    body: JSON.stringify({
-      order_id: orderId,
-      session_id: orderId,
-      payment_stage: "shop",
-      amount: total,
-      payment_method: "promptpay",
-      member_email: email || undefined,
-      notes: `MMD Shop Order ${orderId}; payment_stage=shop`,
-    }),
+export async function createPaymentIntent(env, { orderId, total, email, shop = SHOP_CHECKOUT_CONFIG["mmd-shop"] }) {
+  const body = JSON.stringify({
+    order_id: orderId,
+    session_id: orderId,
+    payment_stage: "shop",
+    amount: total,
+    payment_method: "promptpay",
+    member_email: email || undefined,
+    notes: `${shop.publicName} Order ${orderId}; shop_brand=${shop.key}; payment_stage=shop`,
   });
+
+  let response;
+  if (env.PAYMENTS_WORKER?.fetch) {
+    response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments.internal/v1/pay/shop-intent", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body,
+    }));
+  } else {
+    const base = clean(env.MMD_PAYMENTS_BASE_URL || "https://sigil.mmdbkk.com", 500).replace(/\/+$/g, "");
+    response = await fetch(`${base}/v1/pay/shop-intent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://mmdbkk.com" },
+      body,
+    });
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return { ok: false, error: data?.error || `payments_http_${response.status}` };
   return data;
@@ -507,11 +559,11 @@ async function notifyOrder(env, input) {
       "authorization": `Bearer ${token}`,
     },
     body: JSON.stringify({
-      flow: "mmd_shop_orders",
+      flow: input.shop?.telegramFlow || "mmd_shop_orders",
       parse_mode: "HTML",
       disable_web_page_preview: true,
       text: [
-        "<b>MMD SHOP · NEW ORDER</b>",
+        `<b>${escapeHtml(input.shop?.telegramTitle || "MMD SHOP")} · NEW ORDER</b>`,
         `Order: <code>${escapeHtml(input.orderId)}</code>`,
         `Customer: <b>${escapeHtml(input.customerName)}</b>`,
         ...lines,
@@ -523,7 +575,7 @@ async function notifyOrder(env, input) {
     }),
   }));
   const data = await response.json().catch(() => ({}));
-  return { ok: response.ok && data?.ok === true && data?.telegram?.ok === true, status: response.status, flow: "mmd_shop_orders" };
+  return { ok: response.ok && data?.ok === true && data?.telegram?.ok === true, status: response.status, flow: input.shop?.telegramFlow || "mmd_shop_orders" };
 }
 
 async function appendOrderNote(env, order, extra) {
@@ -572,10 +624,10 @@ async function airtable(env, path, init = {}) {
   return data;
 }
 
-function makeOrderId() {
+function makeOrderId(prefix = "MMD") {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
   const suffix = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-  return `MMD-${bangkokDate().replace(/-/g, "")}-${suffix}`;
+  return `${clean(prefix, 16).toUpperCase() || "MMD"}-${bangkokDate().replace(/-/g, "")}-${suffix}`;
 }
 
 function bangkokDate() {
@@ -589,11 +641,14 @@ function isOnDemandProduct(note) {
 }
 
 function isRestrictedCheckoutProduct(sku, name, productNote) {
+  const code = String(sku || "").trim().toUpperCase();
   const text = [sku, name, productNote]
     .map((value) => String(value || ""))
     .join(" ")
     .toLowerCase();
-  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
+  return code.startsWith("PPP25-")
+    || /\bpod\b/i.test(String(name || ""))
+    || /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function selectName(value) {

@@ -16,6 +16,10 @@ on:
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/model-media-real-e2e-production-smoke.yml"
       - "shared/payment-intelligence.mjs"
+      - "shared/payment-notification-outbox*"
+      - "shared/kenji-continuity-operator-draft*"
+      - "shared/test/payment-memory-r2.mjs"
+      - "scripts/ensure-payment-notification-cron*"
 
 concurrency:
   group: deploy-admin-worker-production
@@ -73,6 +77,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm --prefix .. run test:payment-delivery
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
           node --check src/payment-approved-job-link-dispatch.js
@@ -89,12 +94,14 @@ jobs:
           node --check src/model-media-e2e-smoke.js
           node --check src/model-owner-review-queue.js
           node --test payment-issuer-diagnostic.test.mjs hype-shop-orders.test.mjs hype-handoff-runtime.test.mjs hype-recovery-picker-stale.test.mjs hype-owner-summary.test.mjs recovery-control.test.mjs model-media-e2e-smoke.test.mjs model-owner-review-queue.test.mjs service-auth-contract.test.mjs payment-approved-job-link-dispatch.test.mjs job-create-flow.test.mjs telegram-identity-bind-authority.test.mjs
-          node --test model-session-runtime-v1a.test.mjs
+          node --test model-session-runtime-v1a.test.mjs partner-owner-console.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/kenji-control-endpoints.js
+          node --check src/client-intelligence-endpoint.js
+          node --check ../shared/kenji-continuity-operator-draft.mjs
           node --check src/kenji-model-admin-adapter.js
           node --check src/kenji-model-workflow.js
           node --check src/payment-entitlement-approval.js
@@ -108,6 +115,8 @@ jobs:
             mms-admin-session-bounce.test.mjs \
             model-liff-cross-origin-session.test.mjs \
             kenji-model-access-rpc.test.mjs \
+            client-intelligence-endpoint.test.mjs \
+            ../shared/kenji-continuity-operator-draft.test.mjs \
             kenji-model-admin-adapter.test.mjs \
             kenji-model-workflow.test.mjs \
             payment-entitlement-approval.test.mjs \
@@ -246,6 +255,10 @@ jobs:
           npx --yes wrangler@4 versions deploy "${ADMIN_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
 
+      - name: Ensure payment notification retry schedule
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        run: node ../scripts/ensure-payment-notification-cron.mjs admin-worker
+
       - name: Validate admin-worker routes and triggers
         id: triggers_dry_run
         if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
@@ -331,6 +344,8 @@ jobs:
             "/internal/admin/recovery*",
             "/v1/admin/recovery/cases",
             "/v1/admin/recovery/cases*",
+            "/internal/admin/partners*",
+            "/v1/admin/partners/*",
             "/internal/admin/shop/orders*",
             "/internal/admin/shop/inventory*",
             "/internal/admin/shop/products*",

@@ -68,7 +68,20 @@ import {
   isRecoveryControlRequest,
   RECOVERY_CONTROL_PAGE_PATH,
 } from "./recovery-control.js";
-import { HYPE_CONTINUITY_PATH, HYPE_HANDOFF_PATH, HYPE_HANDOFF_STATUS_PATH, HYPE_TRANSACTION_INTAKE_PATH, HYPE_SUPERVISED_EXECUTION_PATH, handleHypeContinuityRpc, handleHypeHandoffRpc, handleHypeHandoffStatusRpc, handleHypeTransactionIntakeRpc, handleHypeSupervisedExecutionRpc } from "./hype-handoff-runtime.js";
+import {
+  HYPE_CONTINUITY_PATH,
+  HYPE_CONVERSATION_CONTEXT_PATH,
+  HYPE_HANDOFF_PATH,
+  HYPE_HANDOFF_STATUS_PATH,
+  HYPE_TRANSACTION_INTAKE_PATH,
+  HYPE_SUPERVISED_EXECUTION_PATH,
+  handleHypeContinuityRpc,
+  handleHypeConversationContextRpc,
+  handleHypeHandoffRpc,
+  handleHypeHandoffStatusRpc,
+  handleHypeTransactionIntakeRpc,
+  handleHypeSupervisedExecutionRpc,
+} from "./hype-handoff-runtime.js";
 
 export const ADMIN_LOGIN_PAGE_PATH = "/internal/admin/login";
 export const SIGIL_ADMIN_LOGIN_PAGE_PATH = "/sigil/internal/admin/login";
@@ -166,6 +179,9 @@ export default {
     // These mutate conversation context only; canonical business truth remains untouched.
     if (path === HYPE_CONTINUITY_PATH) {
       return handleHypeContinuityRpc(request, env);
+    }
+    if (path === HYPE_CONVERSATION_CONTEXT_PATH) {
+      return handleHypeConversationContextRpc(request, env);
     }
     if (path === HYPE_HANDOFF_PATH) {
       return handleHypeHandoffRpc(request, env);

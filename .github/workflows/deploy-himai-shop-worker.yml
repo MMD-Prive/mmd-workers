@@ -1,0 +1,95 @@
+name: Deploy himai-shop-worker
+
+on:
+  pull_request:
+    paths:
+      - "himai-shop-worker/**"
+      - ".github/workflows/deploy-himai-shop-worker.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "himai-shop-worker/**"
+      - ".github/workflows/deploy-himai-shop-worker.yml"
+
+concurrency:
+  group: himai-shop-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: himai-shop-worker
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate JavaScript
+        run: |
+          set -euo pipefail
+          node --check src/index.js
+          node --check src/supplier-assistant.js
+          node --test test/*.test.mjs
+
+      - name: Validate Wrangler configuration
+        run: npx --yes wrangler@4 deploy --dry-run --keep-vars
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: himai-shop-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify Cloudflare authentication
+        run: npx --yes wrangler@4 whoami
+
+      - name: Deploy himai-shop-worker
+        run: npx --yes wrangler@4 deploy --keep-vars
+
+      - name: Production smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          health=""
+          for attempt in {1..12}; do
+            health="$(curl --retry 3 --retry-delay 2 --retry-all-errors -fsS https://himai-shop-worker.mmdbkk.com/health || true)"
+            if node -e 'const b=JSON.parse(process.argv[1]); if (b.lock === "himai-shop-worker-v2026-04-29-shop-routes" && Array.isArray(b.routes) && b.routes.includes("POST /shop/api/distributor/assistant")) process.exit(0); process.exit(1);' "$health" 2>/dev/null; then
+              break
+            fi
+            echo "Waiting for production propagation (attempt $attempt/12)"
+            sleep 5
+          done
+          echo "$health"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.worker !== "himai-shop-worker") process.exit(1); if (!Array.isArray(b.routes) || !b.routes.includes("POST /shop/api/distributor/assistant")) process.exit(1);' "$health"
+
+          surface="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-shop-worker.mmdbkk.com/shop)"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.brand !== "Himai Shop") process.exit(1);' "$surface"
+
+          portal_status="$(curl -sS -o /tmp/himai-portal-response.json -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/api/distributor/portal)"
+          test "$portal_status" = "401"
+          page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"
+          test "$page_status" = "200"
+          grep -q "Distributor Portal" /tmp/himai-distributor.html

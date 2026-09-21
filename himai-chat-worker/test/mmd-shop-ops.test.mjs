@@ -82,6 +82,8 @@ test("admin shop operation route ownership is narrow", () => {
   assert.equal(isAdminShopOperationsApiRequest("/v1/admin/shop/products/update", "POST"), true);
   assert.equal(isAdminShopOperationsApiRequest("/v1/admin/shop/products/update", "GET"), false);
   assert.equal(isAdminShopOrdersApiRequest("/v1/admin/shop/orders/fulfillment", "POST"), true);
+  assert.equal(isAdminShopOrdersApiRequest("/v1/admin/shop/orders/create", "POST"), true);
+  assert.equal(isAdminShopOrdersApiRequest("/v1/admin/shop/orders/create", "GET"), false);
 });
 
 

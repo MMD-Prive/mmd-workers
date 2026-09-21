@@ -117,7 +117,7 @@ async function loadProducts(env, shopKey) {
 
   const [result, stockByProduct, supplierNames] = await Promise.all([
     airtableRequest(env, `${tableId}?${params.toString()}`),
-    shopKey === "shop" ? loadHimaiStockByProduct(env) : loadMmdStockByProduct(env),
+    loadSharedStockByProduct(env),
     loadSupplierNames(env)
   ]);
 
@@ -143,18 +143,16 @@ async function loadProducts(env, shopKey) {
       const productName = recordFields["Product Name"] || "";
       const status = selectName(recordFields["Status"]) || "";
       const note = recordFields["Product Note"] || "";
-      const restricted = shopKey === "mmd-shop" && isRestrictedOnlineCheckout(sku, productName, note);
-      const onDemand = shopKey === "mmd-shop" && isOnDemandProduct(note);
+      const restricted = isRestrictedOnlineCheckout(sku, productName, note);
+      const onDemand = isOnDemandProduct(note);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
-      const checkoutEligible = shopKey === "mmd-shop"
-        ? status.toLowerCase() === "active"
-          && sellingPrice > 0
-          && !restricted
-          && (
-            (onDemand && supplierIds.length > 0)
-            || (stockTracked && Number(stock.available) > 0)
-          )
-        : false;
+      const checkoutEligible = status.toLowerCase() === "active"
+        && sellingPrice > 0
+        && !restricted
+        && (
+          (onDemand && supplierIds.length > 0)
+          || (stockTracked && Number(stock.available) > 0)
+        );
       const canonicalSlug = slugify(sku || productName || record.id);
       const variant = mmdProductVariantMeta(sku, productName);
 
@@ -198,37 +196,7 @@ async function loadProducts(env, shopKey) {
     .filter(Boolean);
 }
 
-async function loadHimaiStockByProduct(env) {
-  const tableId = env.HIMAI_INVENTORY_BATCHES_TABLE_ID || "tblbTrOVfIc9s2E0k";
-  const fields = ["Product", "Quantity Remaining", "Low Stock Flag", "Batch Status"];
-  const params = new URLSearchParams();
-  params.set("pageSize", "100");
-  for (const field of fields) params.append("fields[]", field);
-
-  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
-  const stockByProduct = new Map();
-
-  for (const record of result.records || []) {
-    const fields = record.fields || {};
-    const productIds = Array.isArray(fields["Product"]) ? fields["Product"] : [];
-    const remaining = numberOrNull(fields["Quantity Remaining"]);
-    const batchStatus = (selectName(fields["Batch Status"]) || "").toLowerCase();
-    const lowFlag = (selectName(fields["Low Stock Flag"]) || "").toLowerCase();
-
-    if (batchStatus.includes("archiv") || batchStatus.includes("closed")) continue;
-
-    for (const productId of productIds) {
-      const current = stockByProduct.get(productId) || { available: 0, low: false };
-      current.available += remaining || 0;
-      current.low = current.low || lowFlag.includes("low") || lowFlag.includes("yes") || lowFlag.includes("true");
-      stockByProduct.set(productId, current);
-    }
-  }
-
-  return stockByProduct;
-}
-
-async function loadMmdStockByProduct(env) {
+async function loadSharedStockByProduct(env) {
   const tableId = env.MMD_SHOP_INVENTORY_BATCHES_TABLE_ID || "tblwFgl4et1TOgtNn";
   const fields = ["Product", "Quantity Remaining", "Low Stock Flag", "Batch Status"];
   const params = new URLSearchParams();
@@ -355,11 +323,14 @@ function isOnDemandProduct(note) {
 }
 
 function isRestrictedOnlineCheckout(sku, productName, productNote) {
+  const code = String(sku || "").trim().toUpperCase();
   const text = [sku, productName, productNote]
     .map((value) => String(value || ""))
     .join(" ")
     .toLowerCase();
-  return /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
+  return code.startsWith("PPP25-")
+    || /\bpod\b/i.test(String(productName || ""))
+    || /\b(?:nicotine|vape|e[-\s]?cig(?:arette)?s?)\b|บุหรี่ไฟฟ้า/i.test(text);
 }
 
 function slugify(value) {

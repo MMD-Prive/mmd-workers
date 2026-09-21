@@ -64,7 +64,8 @@ var COPY={
   rulesL1:"เลือก",rulesL2:"เช็กของ",rulesL3:"ชำระ",rulesL4:"รับของ",rulesL5:"ดูแลต่อ",
   rulesS1:"ราคาและสต๊อก",rulesS2:"การชำระเงินและสลิป",rulesS3:"การเตรียมและรับสินค้า",rulesS4:"คืนสินค้าและคืนเงิน",rulesS5:"ถ้าติดตรงไหน",
   rulesP11:"ราคาที่เห็นคือราคาของ MMD Shop ก่อนเปิด Order ผมให้เช็กอีกครั้งจากรายการจริง",
-  rulesP12:"เมื่อสต๊อกยืนยันพร้อม ปุ่มสั่งจะเปิดทันที เพื่อให้ทุก Order เริ่มจากของจริง",\n  rulesP12b:"ของ On-demand เปิด Order ได้เมื่อ Supplier ยืนยัน และสถานะพร้อมส่งจะเริ่มเมื่อเข้าสู่ขั้นตอนเตรียมของ",
+  rulesP12:"เมื่อสต๊อกยืนยันพร้อม ปุ่มสั่งจะเปิดทันที เพื่อให้ทุก Order เริ่มจากของจริง",
+  rulesP12b:"ของ On-demand เปิด Order ได้เมื่อ Supplier ยืนยัน และสถานะพร้อมส่งจะเริ่มเมื่อเข้าสู่ขั้นตอนเตรียมของ",
   rulesP13:"บางชิ้นเปิดให้ดูรายละเอียดล่วงหน้า และปุ่มสั่งจะพร้อมตามสถานะสินค้า",
   rulesP21:"จ่ายจากลิงก์ของ Order นั้นเท่านั้น ยอดใน Order คือยอดที่ใช้จริง",
   rulesP22:"ส่งสลิปครั้งเดียวพอครับ ระบบจะขึ้นว่ารับหลักฐานแล้ว และค่อยยืนยันเมื่อ MMD ตรวจยอด",
@@ -130,7 +131,8 @@ var COPY={
   rulesL1:"Choose",rulesL2:"Check stock",rulesL3:"Pay",rulesL4:"Receive",rulesL5:"Aftercare",
   rulesS1:"Price & stock",rulesS2:"Payment & slips",rulesS3:"Preparation & delivery",rulesS4:"Returns & refunds",rulesS5:"If something gets stuck",
   rulesP11:"The price you see is the MMD Shop price. Before opening an Order, I have it checked once more against the actual item.",
-  rulesP12:"The order button opens as soon as stock is verified, so every Order starts from confirmed availability.",\n  rulesP12b:"For on-demand items, an Order opens once the supplier is confirmed, and ready-to-ship status begins when preparation starts.",
+  rulesP12:"The order button opens as soon as stock is verified, so every Order starts from confirmed availability.",
+  rulesP12b:"For on-demand items, an Order opens once the supplier is confirmed, and ready-to-ship status begins when preparation starts.",
   rulesP13:"Some items are available to view early, and the order button follows the item’s ready status.",
   rulesP21:"Pay only from that Order’s link. The amount on the Order is the amount that counts.",
   rulesP22:"Send the slip once. It shows as proof received first, then becomes confirmed after MMD checks the amount.",
@@ -196,7 +198,8 @@ var COPY={
   rulesL1:"选择",rulesL2:"确认库存",rulesL3:"支付",rulesL4:"收货",rulesL5:"售后",
   rulesS1:"价格与库存",rulesS2:"支付与凭证",rulesS3:"备货与配送",rulesS4:"退货与退款",rulesS5:"遇到问题时",
   rulesP11:"你看到的是 MMD Shop 价格。开启 Order 前，我会再按实际商品确认一次。",
-  rulesP12:"库存确认后，下单按钮会立即开放，让每张 Order 都从真实可用库存开始。",\n  rulesP12b:"On-demand 商品在 Supplier 确认后可以开启 Order，进入备货阶段后状态会更新为可发货。",
+  rulesP12:"库存确认后，下单按钮会立即开放，让每张 Order 都从真实可用库存开始。",
+  rulesP12b:"On-demand 商品在 Supplier 确认后可以开启 Order，进入备货阶段后状态会更新为可发货。",
   rulesP13:"有些商品可以先看详情，下单按钮会按照商品准备状态开放。",
   rulesP21:"只从该 Order 的付款链接支付，Order 上的金额才是实际金额。",
   rulesP22:"付款凭证传一次就够了。系统先显示已收到凭证，MMD 核对金额后才确认。",
@@ -358,7 +361,7 @@ var grid=document.getElementById("mmdGrid");
 var bubble=document.getElementById("mmdCartBubble");
 var list=document.getElementById("mmdCartList");
 var total=document.getElementById("mmdCartTotal");
-var panel=document.querySelector("#mmdCartDrawer .mmd-panel>div");
+var panel=root.querySelector("#mmdCartDrawer .mmd-panel");
 var products=[];
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
 function money(v){var i=window.MMDShopI18n;if(i&&typeof i.money==="function")return i.money(v);var n=Number(v);return Number.isFinite(n)?n.toLocaleString("th-TH")+" บาท":"สอบถามราคา"}
@@ -556,6 +559,7 @@ copyBtn&&copyBtn.addEventListener("click",function(){
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(function(){toast("คัดลอก Cart แล้ว")}).catch(function(){toast("เลือกข้อความใน Cart เพื่อคัดลอกได้เลย")})}
  else{toast("อุปกรณ์นี้ใช้การเลือกข้อความเพื่อคัดลอก")}
 });
-document.addEventListener("mmd:shop-language-change",function(){renderProducts();renderCart();if(window.MMDShopI18n)window.MMDShopI18n.apply(root)});\nfetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw 0;products=data.products||[];var cartChanged=reconcileCart();renderProducts();renderCart();injectCheckout();if(cartChanged)toast("Cart อัปเดตตามสต๊อกล่าสุดแล้ว");if(location.hash==="#cart"&&bubble){window.setTimeout(function(){bubble.click()},60)}}).catch(function(){if(grid)grid.innerHTML='<p class="mmd-copy">กำลังโหลดรายการสินค้า กรุณาลองอีกครั้ง</p>'});
+document.addEventListener("mmd:shop-language-change",function(){renderProducts();renderCart();if(window.MMDShopI18n)window.MMDShopI18n.apply(root)});
+fetch(CATALOG,{cache:"no-store"}).then(function(r){return r.json()}).then(function(data){if(!data||data.ok!==true)throw 0;products=data.products||[];var cartChanged=reconcileCart();renderProducts();renderCart();injectCheckout();if(cartChanged)toast("Cart อัปเดตตามสต๊อกล่าสุดแล้ว");if(location.hash==="#cart"&&bubble){window.setTimeout(function(){bubble.click()},60)}}).catch(function(){if(grid)grid.innerHTML='<p class="mmd-copy">กำลังโหลดรายการสินค้า กรุณาลองอีกครั้ง</p>'});
 })();
 </script>
