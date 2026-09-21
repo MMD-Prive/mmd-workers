@@ -3,7 +3,7 @@ import test from "node:test";
 
 import worker from "../src/index.js";
 
-const BACKUP_ID = "2010862595-AbCdEf12";
+const BACKUP_ID = "2011691294-GCxAQ2yW";
 const PRIMARY_ID = "2010862595-yT4DCEMc";
 
 const shellHtml = `<!doctype html><html lang="th"><head><style>.card{display:block}</style></head><body><main>

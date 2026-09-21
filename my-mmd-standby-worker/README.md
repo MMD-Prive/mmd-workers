@@ -34,18 +34,16 @@ or member database of its own. The host-only MY MMD session cookie remains on
 
 ## Deploy prerequisite
 
-Create a second LIFF app in the existing LINE Login channel `2010862595`:
+The dedicated backup LIFF app is in LINE Login channel `2011691294`:
 
 - Name: `MY MMD Backup`
 - Size: `Full`
-- Endpoint: `https://www.mmdbkk.com/member/liff-backup`
-- Scopes: `openid`, `profile`
-- Permanent link pattern: `concat`
+- LIFF ID: `2011691294-GCxAQ2yW`
+- Endpoint: `https://mmdbkk.com/member/liff-backup`
+- Scope: `openid` only
+- Permanent link: `https://liff.line.me/2011691294-GCxAQ2yW`
 
-Store its public LIFF ID in the GitHub repository variable
-`MY_MMD_BACKUP_LIFF_ID`, then manually dispatch
-`Deploy MY MMD Standby Worker` with confirmation `DEPLOY`.
-
-Do not create the backup LIFF app in another LINE Login channel. The existing
-backend verifies audience `2010862595` and must continue to fail closed for any
-other audience.
+`member-pages-worker` verifies the dedicated audience `2011691294` alongside
+the fixed CARE BACK and primary Dashboard audiences. Every other audience
+continues to fail closed. The standby deploy runs after the production member
+backend deploy succeeds; it can also be dispatched manually with `DEPLOY`.

@@ -1,6 +1,6 @@
 # MY MMD LIFF Standby — 2026-09-21
 
-Status: IMPLEMENTED IN CODE · ACTIVATION REQUIRES SECOND LIFF ID + REAL LINE E2E
+Status: LIFF CREATED · ACTIVATION REQUIRES DEPLOY + REAL LINE E2E
 
 Owner: Per
 
@@ -31,22 +31,24 @@ The standby must show and preserve:
 3. The standby never calculates Points, Tier, expiry, access or coupon value.
 4. The standby never marks a payment paid and never issues entitlement.
 5. Public and Private membership remain separate customer lanes.
-6. The secondary LIFF app must be created inside LINE Login channel
-   `2010862595`; a different audience must fail closed.
+6. The secondary LIFF app uses the dedicated LINE Login channel `2011691294`.
+   The backend allowlist contains this audience plus the fixed CARE BACK and
+   primary Dashboard audiences; every other audience must fail closed.
 7. Primary routes, Rich Menu and the published primary LIFF ID remain unchanged
    until the standby passes a real-device E2E.
 
 ## Activation
 
 1. Merge the standby Worker after CI passes.
-2. In LINE Developers, open LINE Login channel `2010862595` and add:
+2. In LINE Developers, open LINE Login channel `2011691294` and add:
    - name `MY MMD Backup`
    - Full view
-   - endpoint `https://www.mmdbkk.com/member/liff-backup`
-   - scopes `openid`, `profile`
-   - permanent link pattern `concat`
-3. Set repository variable `MY_MMD_BACKUP_LIFF_ID` to the returned LIFF ID.
-4. Run `Deploy MY MMD Standby Worker` with `DEPLOY`.
+   - LIFF ID `2011691294-GCxAQ2yW`
+   - endpoint `https://mmdbkk.com/member/liff-backup`
+   - scope `openid` only
+   - permanent link `https://liff.line.me/2011691294-GCxAQ2yW`
+3. Deploy `member-pages-worker` with `LINE_BACKUP_CHANNEL_ID=2011691294`.
+4. Deploy `my-mmd-standby-worker` after the backend deploy succeeds.
 5. Confirm `/my-mmd-backup/health` is HTTP 200 and reports the unauthenticated
    canonical session boundary as HTTP 401.
 6. Run real LINE E2E with at least:

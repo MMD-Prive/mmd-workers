@@ -1,5 +1,5 @@
 const WORKER_NAME = "my-mmd-standby-worker";
-const VERSION = "2026.09.21-v1";
+const VERSION = "2026.09.21-v2";
 
 const BACKUP_UI_PREFIX = "/my-mmd-backup";
 const BACKUP_HEALTH_PATH = "/my-mmd-backup/health";
