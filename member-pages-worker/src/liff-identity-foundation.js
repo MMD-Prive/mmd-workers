@@ -8,6 +8,7 @@ import legacyWorker from "./legacy-member-pages.js";
 import { readMmsCustomerHistory } from "./mms-customer-history.js";
 import { fulfillmentStateFromOrder, publicMmdShopFulfillment, readMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 import { publicMmdShopReservation, readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
+import { approvedLineChannelIds } from "./line-channel-audiences.js";
 
 const WORKER = "member-pages-worker";
 const VERSION = "20260828-care-back-benefits-wallet";
@@ -1413,13 +1414,6 @@ async function verifyLineIdToken(idToken, env) {
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function approvedLineChannelIds(env) {
-  const values = [env.LINE_LOGIN_CHANNEL_ID, env.LINE_DASHBOARD_CHANNEL_ID]
-    .map((value) => String(value || "").trim())
-    .filter((value) => /^[A-Za-z0-9_-]{6,160}$/.test(value));
-  return [...new Set(values)].slice(0, 2);
 }
 
 async function resolveMemberIdentity(env, lineUserId) {
