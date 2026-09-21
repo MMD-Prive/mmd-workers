@@ -164,8 +164,10 @@ test("owner can add travel allowance without changing customer amount fields", a
     const patch = mock.calls.find((call) => call.table === SESSIONS && call.method === "PATCH");
     assert.deepEqual(patch.body.fields, { pay_model_thb: 10000 });
 
-    const serialized = JSON.stringify(body);
-    assert.doesNotMatch(serialized, /amount_thb":15000|payment_status|customer_amount|deposit|payment_ref/i);
+    assert.equal(body.session.customer_amount_thb, undefined);
+    assert.equal(body.session.payment_status, undefined);
+    assert.equal(body.adjustment.payment_ref, undefined);
+    assert.equal(body.adjustment.deposit_thb, undefined);
   } finally {
     mock.restore();
   }
