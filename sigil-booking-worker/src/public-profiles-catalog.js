@@ -1,4 +1,4 @@
-const DEFAULT_CATALOG_PREFIX = "Public Model/";
+const DEFAULT_CATALOG_PREFIX = "MMD Public Models/";
 const DEFAULT_PUBLIC_ASSET_BASE = "https://models.mmdbkk.com";
 const IMAGE_EXTENSION = /\.(?:avif|jpe?g|png|webp)$/i;
 const PREFERRED_IMAGE = /(?:^|[-_. ])(?:card|cover|hero|main|primary|profile|01)(?:[-_. ]|$)/i;
