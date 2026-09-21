@@ -601,7 +601,7 @@ function corsHeaders(req, env) {
   return h;
 }
 function isAllowedOrigin(req, env) { const origin = req.headers.get("Origin") || ""; if (!origin) return true; const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean); return !allowed.length || allowed.includes(origin); }
-function withCors(res, cors) { const headers = new Headers(res.headers); cors.forEach((v, k) => headers.set(k, v)); return new Response(res.body, { status: res.status, headers }); }
+function withCors(res, cors) { const headers = new Headers(res.headers); cors.forEach((v, k) => headers.set(k, v)); headers.set("X-MMD-Route-Owner", "sigil-booking-worker"); headers.set("Cache-Control", "no-store"); return new Response(res.body, { status: res.status, headers }); }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 async function safeJson(req) { try { return await req.json(); } catch (_) { return {}; } }
 function normalizePath(path = "") { const p = String(path || "/").replace(/\/{2,}/g, "/"); return p.length > 1 ? p.replace(/\/$/, "") : p; }
