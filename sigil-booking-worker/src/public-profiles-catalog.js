@@ -74,7 +74,14 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
   return [...groups.values()].map((group) => {
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
     const photos = group.photos.slice(0, 6).map((photo) => photo.url);
-    const acceptedCustomerGenders = normalizeCustomerGenders(audienceBySlug instanceof Map ? audienceBySlug.get(group.slug) : null);
+    const hasApprovedScope = audienceBySlug instanceof Map && audienceBySlug.has(group.slug);
+    const acceptedCustomerGenders = hasApprovedScope
+      ? normalizeCustomerGenders(audienceBySlug.get(group.slug))
+      : ["male", "female"];
+    // An approved application with an empty or unsupported explicit scope must
+    // not be broadened to both genders. Legacy R2 folders without an approved
+    // application keep the owner-confirmed all-genders fallback.
+    if (hasApprovedScope && acceptedCustomerGenders.length === 0) return null;
     return {
       slug: group.slug,
       display_name: group.display_name,
@@ -85,7 +92,7 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       visibility: "public",
       source: "r2_public_model",
     };
-  }).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
+  }).filter(Boolean).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
 }
 
 async function loadApprovedCustomerScopes(env) {
@@ -112,11 +119,11 @@ async function loadApprovedCustomerScopes(env) {
         const fields = record?.fields || {};
         const reviewStatus = choiceName(fields[APPLICATION_FIELDS.reviewStatus]).toLowerCase();
         const intakeStatus = choiceName(fields[APPLICATION_FIELDS.intakeStatus]).toLowerCase();
-        if (reviewStatus !== "accepted" && intakeStatus !== "approved") continue;
+        if (reviewStatus !== "accepted" || intakeStatus !== "approved") continue;
         const name = clean(fields[APPLICATION_FIELDS.workingName] || fields[APPLICATION_FIELDS.nickname]);
         const slug = slugify(name);
         const genders = customerGendersFromScope(fields[APPLICATION_FIELDS.customerScope]);
-        if (slug && genders.length && !index.has(slug)) index.set(slug, genders);
+        if (slug && !index.has(slug)) index.set(slug, genders);
       }
       offset = clean(data.offset);
     } while (offset && seen < 500);
@@ -136,7 +143,7 @@ function customerGendersFromScope(value) {
 
 function normalizeCustomerGenders(value) {
   const genders = (Array.isArray(value) ? value : []).map((item) => clean(item).toLowerCase()).filter((item) => item === "male" || item === "female");
-  return [...new Set(genders.length ? genders : ["male", "female"])];
+  return [...new Set(genders)];
 }
 
 function choiceName(value) {
