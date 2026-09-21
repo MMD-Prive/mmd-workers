@@ -93,4 +93,6 @@ test("mmd-redirect-worker production retirement is rollback-safe", async () => {
   assert.match(workflow, /Snapshot and retire every mmd-redirect-worker route/);
   assert.match(workflow, /Roll back legacy routes if acceptance fails/);
   assert.match(workflow, /remaining mmd-redirect-worker routes: 0/);
+  assert.match(workflow, /node --input-type=module <<'NODE'/);
+  assert.doesNotMatch(workflow, /const fs = require\("node:fs"\)/);
 });
