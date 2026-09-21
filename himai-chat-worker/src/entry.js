@@ -5,7 +5,7 @@ import { handleShopMovements } from "./shop-movements.js";
 import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
-import { handleMmdShopCheckout } from "./mmd-shop-checkout.js";
+import { handleReplaySafeShopCheckout } from "./shop-checkout-idempotency.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
 import {
@@ -62,7 +62,7 @@ export default {
     if (request.method.toUpperCase() === "GET" && url.pathname === "/shop/distributor") return renderDistributorPortalPage();
 
     try {
-      const checkoutResponse = await handleMmdShopCheckout(request, env, ctx);
+      const checkoutResponse = await handleReplaySafeShopCheckout(request, env, ctx);
       if (checkoutResponse) return checkoutResponse;
     } catch (error) {
       console.error("MMD Shop checkout route error:", error);

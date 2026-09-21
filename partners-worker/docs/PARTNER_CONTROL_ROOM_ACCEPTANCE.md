@@ -43,6 +43,17 @@ Owner review: <https://mmdbkk.com/internal/admin/partners>
 - TypeScript and `git diff --check` pass.
 - These are fixture/DOM tests, not visual mobile/desktop/PDF or authenticated pilot acceptance.
 
+## P2A — Finance & Audit
+
+P2A starts with a read-only owner audit layer at `/internal/admin/partners` before adding any new financial mutation. The view joins the existing canonical settlement queue and Partner commission ledger by Session ID and surfaces payment status, verified receipt evidence, locked agreement snapshot, payout holds, commission basis, payout status and durable payout reference in one place.
+
+Authority rules for P2A:
+- Verified Payment Truth and locked Partner snapshots remain authoritative; browser-entered rates never become financial truth.
+- `partner_source_rate_thb` is Partner/source pricing evidence and is **not** `model_payout_thb` / `Sessions.pay_model_thb`.
+- The Finance & Audit view does not change customer payment, Model payout, Customer Confirmation or Model Confirmation.
+- Orphan/ambiguous historical commission rows are surfaced for reconciliation and never silently rewritten or auto-linked.
+- Existing settlement and ledger mutation endpoints remain unchanged; P2A audit itself is GET-only behind the credential-bound owner/admin session and fixed service-binding destinations.
+
 ## Phase 1 closure and deferred work
 
 Phase 1 is considered operationally closed when this change is merged, deployed, and the production smoke remains green. The closed scope is: LINE login, Home/Jobs, Models, model detail/edit/add/remove requests, media review handoff, Agreements, System 1/2/3 proposals, Sales Control/visibility/audience proposals, Earnings/Performance, Partner Console, private external schedule/notes, Private Vault, and Payment Truth-gated job responses.

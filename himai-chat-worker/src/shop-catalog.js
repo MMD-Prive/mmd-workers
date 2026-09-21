@@ -146,7 +146,8 @@ async function loadProducts(env, shopKey) {
       const restricted = isRestrictedOnlineCheckout(sku, productName, note);
       const onDemand = isOnDemandProduct(note);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
-      const checkoutEligible = status.toLowerCase() === "active"
+      const checkoutEligible = brandAvailability.length > 0
+        && status.toLowerCase() === "active"
         && sellingPrice > 0
         && !restricted
         && (

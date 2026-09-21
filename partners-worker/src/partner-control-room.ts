@@ -41,7 +41,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
         if (state.authBlocked) throw new Error(signInMessage);
         if (!response.ok || !payload.ok) {
           var code = payload.error && typeof payload.error === "object" ? payload.error.code : payload.error;
-          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"รอ MMD ตรวจสอบการชำระเงินก่อนยืนยันงาน",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"รอ Boss Per ตรวจสอบบัญชีพาร์ทเนอร์",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
+          var messages = {vault_conflict:"ข้อมูลถูกแก้จากอีกอุปกรณ์ กรุณาสำรองแล้วโหลด Vault ใหม่ก่อนบันทึก",vault_revision_required:"กรุณาโหลด Vault ใหม่ก่อนบันทึก",job_already_closed:"งานนี้ปิดแล้ว",explicit_share_required:"กรุณายืนยัน Share with MMD",official_verify_required:"งานอยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ",partner_confirmation_already_final:"งานนี้บันทึกคำตอบแล้ว กรุณารีเฟรชสถานะ",partner_not_active:"บัญชีพาร์ทเนอร์อยู่ระหว่างการตรวจสอบ",partner_not_recognized:"บัญชีอยู่ใน Partner Review ของ Boss Per",telegram_connect_required:"เชื่อม Telegram เพื่อรับแจ้งงาน · Dashboard ใช้งานได้ตามปกติ",telegram_binding_conflict:"กรุณาติดต่อ MMD เพื่อตรวจสอบบัญชี Telegram"};
           throw new Error(messages[code] || "กรุณาลองอีกครั้ง หรือติดต่อ MMD เพื่อตรวจสอบรายการ");
         }
         return payload;
@@ -118,10 +118,26 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   }
 
   function renderEarnings(data) {
-    var rows = data.commissions || [];
-    $("[data-earnings]", root).innerHTML = rows.length ? '<div class="pcr-table"><table><thead><tr><th>Job</th><th>Model</th><th>ฐาน</th><th>Commission</th><th>Status</th></tr></thead><tbody>' + rows.map(function (row) {
-      return '<tr><td>' + esc(row.jobId) + '</td><td>' + esc(row.model) + '</td><td>' + esc(money(row.basisAmount)) + '</td><td>' + esc(money(row.commission)) + '</td><td>' + esc(row.statusLabel) + '</td></tr>';
+    var finance = data.finance || {};
+    var summary = finance.summary || {};
+    var profile = finance.payout_profile || {};
+    var reconciliation = finance.reconciliation || {};
+    var rows = finance.rows || data.commissions || [];
+    var payout = '<article class="pcr-finance-card"><div><small>PAYOUT PROFILE</small><h3>' + esc(profile.configured ? (profile.method || "Configured") : "เพิ่มช่องทางรับเงินเพื่อเตรียม Payout") + '</h3><p>' + esc(profile.configured ? ((profile.account_name || "—") + " · " + (profile.account_ref_masked || "—")) : "ข้อมูลนี้เป็นข้อมูลที่ Partner เลือกแชร์กับ MMD เพื่อการจ่ายเงินเท่านั้น") + '</p></div><span class="pcr-finance-state">' + (profile.configured ? "READY" : "SETUP") + '</span></article>';
+    var cards = '<div class="pcr-finance-metrics">' + [
+      ["รอดำเนินการ", summary.pending_amount || 0],
+      ["อนุมัติแล้ว", summary.approved_amount || 0],
+      ["พักการจ่าย", summary.held_amount || 0],
+      ["จ่ายแล้ว", summary.paid_amount || 0]
+    ].map(function(item){return '<article><span>'+esc(item[0])+'</span><strong>'+esc(money(item[1]))+'</strong></article>';}).join("") + '</div>';
+    var warning = reconciliation.required ? '<div class="pcr-finance-warning" role="status"><b>มีรายการเก่าที่ต้อง Reconcile ก่อนรวมยอด</b><p>พบ Commission ID ซ้ำ ' + esc((reconciliation.duplicate_commission_ids || []).join(", ")) + ' · ระบบกันรายการเหล่านี้ออกจากยอดรวมเพื่อป้องกันการนับหรือจ่ายซ้ำ</p></div>' : '';
+    var table = rows.length ? '<div class="pcr-table"><table><thead><tr><th>Job</th><th>Model</th><th>System</th><th>Commission</th><th>Payout</th><th>Timeline</th></tr></thead><tbody>' + rows.map(function (row) {
+      var reason = row.held_reason || row.void_reason || "";
+      var integrity = row.integrity_state === "reconciliation_required" ? '<span class="pcr-audit-flag">RECONCILE</span>' : "";
+      var ref = row.payout_reference ? '<small>Ref · ' + esc(row.payout_reference) + '</small>' : '';
+      return '<tr data-finance-row="' + esc(row.commission_record_id) + '"><td>' + esc(row.jobId) + '</td><td>' + esc(row.model) + '</td><td>' + esc(row.commission_type || "—") + '</td><td><b>' + esc(money(row.commission)) + '</b><small>ฐาน ' + esc(money(row.basisAmount)) + '</small></td><td><b>' + esc(row.statusLabel || row.payout_status || row.status) + '</b>' + (reason ? '<small>' + esc(reason) + '</small>' : '') + ref + integrity + '</td><td><small>Earned · ' + dateTime(row.earnedAt) + '</small><small>Approved · ' + dateTime(row.approvedAt) + '</small><small>Paid · ' + dateTime(row.paidAt) + '</small></td></tr>';
     }).join("") + '</tbody></table></div>' : '<div class="pcr-empty">รายการรายได้จากงานจริงจะปรากฏที่นี่</div>';
+    $("[data-earnings]", root).innerHTML = payout + cards + warning + table;
   }
 
   function renderTelegram(data) {
@@ -166,7 +182,6 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   function submitJobAction(button) {
     var card = button.closest('[data-job]');
     var job = (state.data.jobs || []).find(function (item) { return item.session_record_id === card.dataset.job; });
-    if (!state.data.partner || state.data.partner.telegram_connected !== true) return setFlash("กรุณาเชื่อมและยืนยัน Telegram ก่อนตอบรับงาน","error");
     if (!job || job.confirmation_allowed !== true) return setFlash("งานนี้อยู่ในขั้น Official Verify · ระบบจะเปิดการยืนยันเมื่อการตรวจเสร็จ","error");
     var action = button.dataset.jobAction;
     if(action === "confirm" && state.vaultEnvelope && !state.vault)return ensurePrivate();
@@ -299,6 +314,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
 `;
 
 export const PARTNER_CONTROL_ROOM_CSS = String.raw`
+.pcr-finance-card{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:18px;margin:0 0 14px;border:1px solid var(--mmdp-line);border-radius:16px;background:linear-gradient(135deg,rgba(215,175,103,.10),rgba(49,16,21,.16))}.pcr-finance-card small,.pcr-table small{display:block;color:var(--mmdp-muted);margin-top:4px}.pcr-finance-card h3{margin:5px 0}.pcr-finance-state,.pcr-audit-flag{display:inline-flex;align-items:center;padding:5px 8px;border:1px solid var(--mmdp-line);border-radius:999px;color:var(--mmdp-gold-2);font-family:var(--mmdp-font-en);font-size:10px;font-weight:600;letter-spacing:.08em}.pcr-finance-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}.pcr-finance-metrics article{padding:14px;border:1px solid var(--mmdp-line);border-radius:14px;background:rgba(255,255,255,.025)}.pcr-finance-metrics span{display:block;color:var(--mmdp-muted);font-size:12px}.pcr-finance-metrics strong{display:block;margin-top:5px;color:var(--mmdp-ivory);font-family:var(--mmdp-font-secondary);font-size:18px}.pcr-finance-warning{margin:0 0 14px;padding:14px;border:1px solid rgba(255,142,142,.42);border-radius:14px;background:rgba(105,32,32,.18);color:var(--mmdp-copy)}.pcr-finance-warning b{color:#ffd1d1}.pcr-table td b{display:block}.pcr-table td .pcr-audit-flag{margin-top:6px;color:#ffd1d1}@media(max-width:720px){.pcr-finance-metrics{grid-template-columns:1fr 1fr}.pcr-finance-card{flex-direction:column}.pcr-table{overflow-x:auto}}
 .pcr-side small,.pcr-side button,.pcr-status,.pcr-meta span,.pcr-table th,.pcr-telegram small{font-family:var(--mmdp-font-en)}
 .pcr-metrics strong{font-family:var(--mmdp-font-secondary)}
 .pcr-shell,.pcr-main,.pcr-side,.pcr-section,.pcr-dialog,.pcr-form{font-family:var(--mmdp-font-th)}.pcr-top h2,.pcr-section h3,.pcr-job h3,.pcr-model h3,.pcr-dialog-head h2{font-family:var(--mmdp-font-th);font-weight:600;color:var(--mmdp-ivory);letter-spacing:-.035em}.pcr-top p,.pcr-model-copy p,.pcr-loading{color:var(--mmdp-muted)}

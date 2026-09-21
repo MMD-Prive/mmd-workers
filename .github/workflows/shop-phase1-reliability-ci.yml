@@ -1,0 +1,40 @@
+name: Shop Phase 1 reliability CI
+on:
+  pull_request:
+    paths:
+      - "himai-chat-worker/**"
+      - "payments-worker/shop-payment-v1.js"
+      - "payments-worker/unified-payment-proof.js"
+      - "shared/shop-*.mjs"
+      - "webflow/himai-shop/**"
+      - "webflow/mmd-shop/**"
+      - "webflow/shared/shop-*"
+      - ".github/workflows/shop-phase1-reliability-ci.yml"
+permissions:
+  contents: read
+jobs:
+  reliability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify baseline shop contracts
+        run: node --experimental-default-type=module --test himai-chat-worker/test/*.test.mjs
+      - name: Export exact reviewed source snapshot
+        if: always()
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/shop-phase1-source-sha.txt"
+          git archive --format=tar HEAD | gzip > "$RUNNER_TEMP/shop-phase1-source.tar.gz"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shop-phase1-reviewed-source
+          retention-days: 1
+          path: |
+            ${{ runner.temp }}/shop-phase1-source.tar.gz
+            ${{ runner.temp }}/shop-phase1-source-sha.txt
