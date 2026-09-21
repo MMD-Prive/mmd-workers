@@ -1166,7 +1166,7 @@ async function handlePartnerDashboard(request: Request, env: RuntimeEnv): Promis
   const normalizedCommissions = commissions.map((record) => normalizeCommission(record, modelMap));
   const finance = buildPartnerFinanceSnapshot(partnerRecord, normalizedCommissions);
   const financeRows = Array.isArray(finance.rows) ? finance.rows as Array<Record<string, unknown> & { commission: number; status: string }> : normalizedCommissions;
-  const salesControls = buildPartnerSalesControls(referrals, modelMap, partnerSalesRules);
+  const salesControls = buildPartnerSalesControls(referrals, modelMap, partnerSalesRules, partnerRecord.id);
   const normalizedChanges = modelChanges.map(normalizePartnerModelChange);
   const normalizedModels = buildPartnerModelProfiles(referrals, modelMap, salesControls, normalizedChanges);
   const verifiedSessionIds = await officiallyVerifiedPartnerSessions(env, sessions);
@@ -1433,14 +1433,19 @@ function projectPartnerSalesRule(rule: AirtableRecord): Record<string, unknown> 
 }
 
 function buildPartnerSalesControls(
-  referrals: AirtableRecord[], modelMap: Map<string, AirtableRecord>, rules: AirtableRecord[]
+  referrals: AirtableRecord[], modelMap: Map<string, AirtableRecord>, rules: AirtableRecord[], partnerRecordId: string
 ): Array<Record<string, unknown>> {
   const sorted = [...rules].sort((a, b) => (Date.parse(fieldText(b, MODEL_OFFER_RULES.updatedAt) || b.createdTime || "") || 0) - (Date.parse(fieldText(a, MODEL_OFFER_RULES.updatedAt) || a.createdTime || "") || 0));
   const modelIds = [...new Set(referrals.flatMap((r) => fieldLinkIds(r, MODEL_REFERRALS.model)).filter(Boolean))];
   return modelIds.map((modelId) => {
     const mine = sorted.filter((r) => fieldLinkIds(r, MODEL_OFFER_RULES.model).includes(modelId));
     const partnerScoped = mine.filter((r) => !fieldLinkIds(r, MODEL_OFFER_RULES.client).length && !fieldText(r, MODEL_OFFER_RULES.clientIdentityKey));
-    const proposal = partnerScoped.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.sourceActorType)) === "partner");
+    const partnerHistory = partnerScoped.filter((r) => {
+      const sourcePartner = fieldText(r, MODEL_OFFER_RULES.sourcePartnerRef) || "";
+      const sourceActor = normalizeStatus(fieldText(r, MODEL_OFFER_RULES.sourceActorType));
+      return sourcePartner === partnerRecordId || (sourceActor === "partner" && !sourcePartner);
+    });
+    const proposal = partnerHistory.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.sourceActorType)) === "partner");
     const approved = partnerScoped.find((r) => normalizeStatus(fieldText(r, MODEL_OFFER_RULES.status)) === "active" && Boolean(fieldText(r, MODEL_OFFER_RULES.reviewedBy)));
     const model = modelMap.get(modelId);
     return {
@@ -1449,7 +1454,7 @@ function buildPartnerSalesControls(
       proposal: proposal ? projectPartnerSalesRule(proposal) : null,
       // Configuration only. The canonical sales resolver still decides per customer/time.
       approved_policy: approved ? projectPartnerSalesRule(approved) : null,
-      history: partnerScoped.map(projectPartnerSalesRule),
+      history: partnerHistory.map(projectPartnerSalesRule),
       policy_preview: previewPartnerSalesPolicy(modelId, model ? fieldText(model, MODELS.uniqueKey) || "" : "", mine)
     };
   });
@@ -1619,6 +1624,13 @@ function buildPartnerModelProfiles(
         version: isRecord(entry.payload) ? readFiniteNumber(entry.payload.version) : null,
         system: isRecord(entry.payload) ? readString(entry.payload, "system") : "",
         status: entry.status,
+        commission_percent: isRecord(entry.payload) ? readFiniteNumber(entry.payload.commission_percent) : null,
+        source_rate_thb: isRecord(entry.payload) ? readFiniteNumber(entry.payload.source_rate_thb) : null,
+        partner_share_percent: isRecord(entry.payload) ? readFiniteNumber(entry.payload.partner_share_percent) : null,
+        change_reason: isRecord(entry.payload) ? readString(entry.payload, "change_reason") || null : null,
+        decision_note: entry.decision_note || (isRecord(entry.payload) ? readString(entry.payload, "decision_note") || null : null),
+        decided_at: entry.decided_at || (isRecord(entry.payload) ? readString(entry.payload, "decided_at") || null : null),
+        decided_by: entry.decided_by || (isRecord(entry.payload) ? readString(entry.payload, "decided_by") || null : null),
         updated_at: entry.updated_at
       })),
       sales_control: controlByModel.get(modelId) || null
@@ -3874,11 +3886,16 @@ function buildPartnerFinanceSnapshot(
   const ids = new Map<string, number>();
   for (const row of commissions) {
     const id = String(row.commission_id || "").trim();
-    if (id) ids.set(id, (ids.get(id) || 0) + 1);
+    const split = row.split_index == null ? "" : String(row.split_index);
+    const key = id ? id + "#" + split : "";
+    if (key) ids.set(key, (ids.get(key) || 0) + 1);
   }
   const ambiguous = new Set([...ids.entries()].filter(([, count]) => count > 1).map(([id]) => id));
   const rows = commissions.map((row) => {
-    const duplicate = Boolean(row.commission_id && ambiguous.has(String(row.commission_id)));
+    const id = String(row.commission_id || "").trim();
+    const split = row.split_index == null ? "" : String(row.split_index);
+    const duplicateKey = id ? id + "#" + split : "";
+    const duplicate = Boolean(duplicateKey && ambiguous.has(duplicateKey));
     return {
       ...row,
       integrity_state: duplicate ? "reconciliation_required" : "canonical",
@@ -3924,7 +3941,7 @@ function buildPartnerFinanceSnapshot(
     monthly: [...monthly.values()].sort((a, b) => b.month.localeCompare(a.month)),
     reconciliation: {
       required: ambiguous.size > 0,
-      duplicate_commission_ids: [...ambiguous],
+      duplicate_commission_ids: [...new Set([...ambiguous].map((key) => key.split("#")[0]).filter(Boolean))],
       excluded_from_totals: rows.filter((row) => row.integrity_state === "reconciliation_required").map((row) => row.commission_record_id)
     },
     rows
