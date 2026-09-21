@@ -62,7 +62,12 @@ export async function runSupplierAlertSweep(env) {
       const lowProducts = products.filter((product) => product.low_stock === true);
       const key = await supplierKey(token);
       const preference = await readPreference(env, key);
-      const channel = preference?.channel || normalizeChannel(config.notification_channel || config.channel);
+      const channel = normalizeChannel(
+        preference?.value?.channel
+        || preference?.channel
+        || config.notification_channel
+        || config.channel
+      );
 
       if (!channel || channel === "none") {
         results.push({ supplier: safeSupplierName(portal, config), skipped: true, reason: "notification_channel_not_selected" });
@@ -84,6 +89,12 @@ export async function runSupplierAlertSweep(env) {
 
       if (fingerprint === previous) {
         results.push({ supplier: safeSupplierName(portal, config), skipped: true, reason: "unchanged", channel });
+        continue;
+      }
+
+      if (!previous && fingerprint === "[]") {
+        await writeFingerprint(env, key, fingerprint);
+        results.push({ supplier: safeSupplierName(portal, config), skipped: true, reason: "healthy_initial_state", channel });
         continue;
       }
 
@@ -177,7 +188,12 @@ async function getNotificationPreference(request, env) {
     line: Boolean(notificationTarget(config, "line")),
     telegram: Boolean(notificationTarget(config, "telegram")),
   };
-  const channel = normalizeChannel(saved?.channel || config?.notification_channel || config?.channel) || "none";
+  const channel = normalizeChannel(
+    saved?.value?.channel
+    || saved?.channel
+    || config?.notification_channel
+    || config?.channel
+  ) || "none";
 
   return withCors(request, env, json({
     ok: true,
