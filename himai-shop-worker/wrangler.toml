@@ -14,10 +14,17 @@ APP_NAME = "Himai Shop"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
 ADMIN_DASHBOARD_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev"
 MMD_SHOP_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev"
+HIMAI_SHOP_AI_ENABLED = "true"
+AI_PROVIDER = "openai"
+OPENAI_MODEL = "gpt-4.1-mini"
+SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER
-# INTERNAL_TOKEN
+# INTERNAL_TOKEN                         - shared auth for himai-chat-worker LINE push
+# OPENAI_API_KEY                         - optional natural-language AI layer
+# AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Telegram direct-message service auth
+# HIMAI_DISTRIBUTOR_PORTAL_TOKENS        - same scoped supplier access map used by portal
 
 [[services]]
 binding = "ADMIN_WORKER"
@@ -26,3 +33,15 @@ service = "admin-worker"
 [[services]]
 binding = "HIMAI_CHAT_WORKER"
 service = "himai-chat-worker"
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[[durable_objects.bindings]]
+name = "SUPPLIER_ALERT_STATE"
+class_name = "SupplierAlertState"
+
+[[migrations]]
+tag = "supplier-alert-state-v1"
+new_sqlite_classes = ["SupplierAlertState"]
