@@ -85,7 +85,9 @@ test("public Wish saves first and requires LINE coupon claim", async () => {
   assert.equal(payload.benefits.coupon_claim_required, true);
   assert.equal(payload.benefits.membership_extension, false);
   assert.equal(payload.benefits.points, false);
-  assert.equal(payload.final_display.next_action, "required_coupon_claim");
+  assert.equal(payload.final_display.next_action, "verify_member_status");
+  assert.equal(payload.benefits.member_verification_required, true);
+  assert.equal(payload.benefits.member_only_coupon, true);
   assert.match(response.headers.get("set-cookie") || "", /mmd_care_back_wish_link=pw_/);
   assert.equal(payload.grants.membership, false);
   assert.equal(payload.grants.points, false);
@@ -220,7 +222,7 @@ test("verified LIFF member links an existing public Wish, receives coupon, and k
   assert.equal(payload.grants.points, false);
 });
 
-test("verified LIFF non-member also receives the Wish coupon without a member claim", async () => {
+test("verified LIFF non-member stays private and receives no member coupon", async () => {
   const store = publicStore();
   const env = {
     LIFF_SESSION_SECRET: SECRET,
@@ -256,9 +258,12 @@ test("verified LIFF non-member also receives the Wish coupon without a member cl
   const payload = await response.json();
   assert.equal(payload.ok, true);
   assert.equal(payload.linked, true);
-  assert.equal(payload.benefits.coupon, true);
+  assert.equal(payload.benefits.coupon, false);
+  assert.equal(payload.benefits.member_eligible, false);
   assert.equal(payload.benefits.membership_evaluation_started, false);
-  assert.equal(payload.coupon.state, "ready");
+  assert.equal(payload.publication.state, "private_non_member");
+  assert.equal(payload.coupon.state, "not_eligible");
+  assert.equal(payload.coupon.code, "");
   assert.equal(payload.claim, null);
 });
 
@@ -285,15 +290,15 @@ test("Airtable feed exposes only explicitly consenting verified linked member wi
   const { handlePublicCareBackWishRoute } = await import('../src/public-care-back-wish.js');
   const originalFetch = globalThis.fetch;
   const time = '2026-09-16T12:00:00.000Z';
-  const payload = { public_display_consent: true, public_display_consent_version: 'wish-wall-v1', public_display_consented_at: time, public_display_customer_verified: true, public_display_customer_verified_at: time, wish_kind: 'verified_identity_linked' };
+  const payload = { public_display_consent: true, public_display_consent_version: 'wish-wall-v1', public_display_consented_at: time, public_display_member_verified: true, public_display_member_verified_at: time, wish_kind: 'verified_identity_linked' };
   const row = (changes = {}, fields = {}) => ({ id: 'recABCDEFGHIJKLMN', fields: { campaign_id: 'care_back', wish_status: 'completed', wish_text: 'Approved member wish', submitted_at: time, 'Campaign Claim': ['recABCDEFGHIJKLMN'], verified_customer_ref_hash: 'private-hash', payload_json: JSON.stringify({ ...payload, ...changes }), ...fields } });
   globalThis.fetch = async (url) => {
     assert.match(String(url), /sort%5B0%5D%5Bdirection%5D=desc/);
     return Response.json({ records: [
       row(), row({ public_display_consent: false }), row({ public_display_consent: 'true' }),
-      row({ public_display_customer_verified: false }), row({ public_display_customer_verified: 'true' }),
+      row({ public_display_member_verified: false }), row({ public_display_member_verified: 'true' }),
       row({ public_display_consented_at: null }), row({ wish_kind: 'public_unlinked' }),
-      row({ public_display_customer_verified_at: null }), row({}, { payload_json: '{}' }),
+      row({ public_display_member_verified_at: null }), row({}, { payload_json: '{}' }),
       row({}, { payload_json: 'malformed' }), row({}, { wish_text: '<script>alert(1)</script>' }),
     ] });
   };
@@ -322,9 +327,16 @@ test("Airtable feed exposes owner-approved historical customer wishes across cam
   } finally { globalThis.fetch = originalFetch; }
 });
 
-test("publication consent persists across real Airtable linking; member eligibility comes only from signed session", async () => {
+test("publication consent persists across real Airtable linking; active, grace and expired eligibility comes only from signed session", async () => {
   const originalFetch = globalThis.fetch;
-  for (const [consent, member, membershipStatus] of [[true, true, 'active'], [false, true, 'active'], [true, false, 'active'], [true, true, 'blocked']]) {
+  for (const [consent, member, membershipStatus, eligible] of [
+    [true, true, 'active', true],
+    [true, true, 'grace', true],
+    [true, true, 'expired', true],
+    [false, true, 'active', true],
+    [true, false, 'active', false],
+    [true, true, 'blocked', false],
+  ]) {
     let stored;
     globalThis.fetch = async (url, init = {}) => {
       if ((init.method || 'GET') === 'GET') return Response.json({ records: stored ? [stored] : [] });
@@ -348,7 +360,7 @@ test("publication consent persists across real Airtable linking; member eligibil
       assert.equal(linked.status, 200);
       const data = JSON.parse(stored.fields.payload_json);
       assert.equal(data.public_display_consent, consent);
-      assert.equal(data.public_display_member_verified, member && membershipStatus !== 'blocked');
+      assert.equal(data.public_display_member_verified, eligible);
     } finally { globalThis.fetch = originalFetch; }
   }
 });
