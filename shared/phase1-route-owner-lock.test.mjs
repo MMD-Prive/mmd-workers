@@ -65,7 +65,7 @@ test("Member Webflow pages bypass the legacy catch-all with no-script routes", a
   assert.match(workflow, /mmdbkk\.com\/member\/dashboard\*/);
   assert.match(workflow, /www\.mmdbkk\.com\/member\/dashboard\*/);
   assert.match(workflow, /JSON\.stringify\(\{ pattern \}\)/);
-  assert.match(workflow, /legacy global catch-all: intentionally retained for Phase 1-B/);
+  assert.match(workflow, /legacy global catch-all: retired; no-script exclusions remain guardrails/);
 });
 
 test("Private Model handler exists and production workflow refuses route takeover", async () => {
@@ -95,4 +95,13 @@ test("mmd-redirect-worker production retirement is rollback-safe", async () => {
   assert.match(workflow, /remaining mmd-redirect-worker routes: 0/);
   assert.match(workflow, /node --input-type=module <<'NODE'/);
   assert.doesNotMatch(workflow, /const fs = require\("node:fs"\)/);
+});
+
+
+test("Phase 1 production smoke fails closed if the retired front gate regains any route", async () => {
+  const workflow = await source(".github/workflows/phase1-route-owner-production-smoke.yml");
+  assert.match(workflow, /retired mmd-redirect-worker regained production routes/);
+  assert.match(workflow, /mmd_redirect_worker_routes: 0/);
+  assert.match(workflow, /phase1_route_ownership: "closed"/);
+  assert.match(workflow, /Phase 1 route ownership: CLOSED/);
 });
