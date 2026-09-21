@@ -11,7 +11,9 @@ routes = [
   { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
   { pattern = "mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" }
+  { pattern = "www.mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/partner/dashboard*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/partner/dashboard*", zone_name = "mmdbkk.com" }
 ]
 
 [[services]]
