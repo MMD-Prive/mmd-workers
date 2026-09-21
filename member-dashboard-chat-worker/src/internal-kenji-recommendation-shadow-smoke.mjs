@@ -26,17 +26,33 @@ function isLineUserId(value) {
   return /^U[0-9a-f]{32}$/i.test(text(value));
 }
 
-async function listVerifiedCanonicalLineIds(env = {}, fetchImpl = fetch) {
+function candidatePriority(record = {}) {
+  const fields = record?.fields || {};
+  const historyCount = Array.isArray(fields["MMD — Customer History Reviews"]) ? fields["MMD — Customer History Reviews"].length : 0;
+  const entitlementCount = Array.isArray(fields["MMD — Member Entitlements"]) ? fields["MMD — Member Entitlements"].length : 0;
+  const verified = text(fields["Verification Status"]?.name || fields["Verification Status"]).toLowerCase() === "verified";
+  return (
+    (historyCount > 0 ? 8 : 0) +
+    (entitlementCount > 0 ? 4 : 0) +
+    (verified ? 2 : 0) +
+    Math.min(3, historyCount)
+  );
+}
+
+async function listCanonicalCandidateLineIds(env = {}, fetchImpl = fetch) {
   const apiKey = text(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = clientsTable(env);
   if (!apiKey || !baseId || !table) return [];
 
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("maxRecords", "50");
-  url.searchParams.set("pageSize", "50");
-  url.searchParams.set("filterByFormula", 'AND(LOWER({Verification Status}&"")="verified",LEN({line_user_id}&"")=33)');
+  url.searchParams.set("maxRecords", "100");
+  url.searchParams.set("pageSize", "100");
+  url.searchParams.set("filterByFormula", 'LEN({line_user_id}&"")=33');
   url.searchParams.append("fields[]", "line_user_id");
+  url.searchParams.append("fields[]", "Verification Status");
+  url.searchParams.append("fields[]", "MMD — Member Entitlements");
+  url.searchParams.append("fields[]", "MMD — Customer History Reviews");
 
   try {
     const response = await fetchImpl(url.toString(), {
@@ -44,13 +60,18 @@ async function listVerifiedCanonicalLineIds(env = {}, fetchImpl = fetch) {
     });
     if (!response.ok) return [];
     const payload = await response.json().catch(() => ({}));
-    const ids = [];
+    const rows = [];
+    const seen = new Set();
     for (const record of Array.isArray(payload?.records) ? payload.records : []) {
       const lineUserId = text(record?.fields?.line_user_id);
-      if (isLineUserId(lineUserId) && !ids.includes(lineUserId)) ids.push(lineUserId);
-      if (ids.length >= MAX_CLIENT_CANDIDATES) break;
+      if (!isLineUserId(lineUserId) || seen.has(lineUserId)) continue;
+      seen.add(lineUserId);
+      rows.push({ lineUserId, priority: candidatePriority(record) });
     }
-    return ids;
+    return rows
+      .sort((left, right) => right.priority - left.priority)
+      .slice(0, MAX_CLIENT_CANDIDATES)
+      .map((item) => item.lineUserId);
   } catch {
     return [];
   }
@@ -143,7 +164,7 @@ async function mapWithConcurrency(values, limit, mapper) {
 }
 
 async function selectRealCanonicalContext(env = {}, options = {}) {
-  const candidateProvider = options.candidateProvider || listVerifiedCanonicalLineIds;
+  const candidateProvider = options.candidateProvider || listCanonicalCandidateLineIds;
   const contextBuilder = options.contextBuilder || buildKenjiLineCanonicalContext;
   const lineIds = await candidateProvider(env, options.fetchImpl || fetch);
   const contexts = (await mapWithConcurrency(
@@ -155,7 +176,7 @@ async function selectRealCanonicalContext(env = {}, options = {}) {
 }
 
 async function selectEligibleCanonicalContexts(env = {}, options = {}) {
-  const candidateProvider = options.candidateProvider || listVerifiedCanonicalLineIds;
+  const candidateProvider = options.candidateProvider || listCanonicalCandidateLineIds;
   const contextBuilder = options.contextBuilder || buildKenjiLineCanonicalContext;
   const lineIds = await candidateProvider(env, options.fetchImpl || fetch);
   const contexts = (await mapWithConcurrency(
@@ -476,7 +497,8 @@ export const REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS = Object.freeze({
   CLIENTS_TABLE_FALLBACK,
   RECOMMENDATION_URL,
   MATRIX_SCHEMA,
-  listVerifiedCanonicalLineIds,
+  listCanonicalCandidateLineIds,
+  candidatePriority,
   selectRealCanonicalContext,
   selectEligibleCanonicalContexts,
   eligibilityProjection,
