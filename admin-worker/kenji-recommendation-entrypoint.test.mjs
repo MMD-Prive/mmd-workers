@@ -13,7 +13,7 @@ import { ENV, options, request } from "./kenji-recommendation-test-fixtures.mjs"
 
 test("active Kenji RPC dispatcher recognizes and delegates recommendation route", async () => {
   assert.equal(isKenjiLv5OperationalRpcRequest(KENJI_RECOMMENDATION_RPC_PATH, "POST"), true);
-  const response = await handleKenjiLv5OperationalRpc(request(), ENV);
+  const response = await handleKenjiLv5OperationalRpc(request(), ENV, options());
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.ok, true);
