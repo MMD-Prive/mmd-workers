@@ -27,8 +27,11 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
 
-    if (request.method.toUpperCase() === "GET" && path === "/health") {
-      const response = await himaiChatWorker.fetch(request, env, ctx);
+    if (request.method.toUpperCase() === "GET" && ["/health", "/mmd-shop/api/health", "/shop/api/health"].includes(path)) {
+      const healthUrl = new URL(request.url);
+      healthUrl.pathname = "/health";
+      healthUrl.search = "";
+      const response = await himaiChatWorker.fetch(new Request(healthUrl.toString(), { method: "GET", headers: request.headers }), env, ctx);
       if (!response?.ok) return response;
       const payload = await response.clone().json().catch(() => null);
       if (!payload || typeof payload !== "object") return response;
