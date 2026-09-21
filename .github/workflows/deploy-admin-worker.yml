@@ -16,6 +16,9 @@ on:
       - ".github/workflows/deploy-admin-worker.yml"
       - ".github/workflows/model-media-real-e2e-production-smoke.yml"
       - "shared/payment-intelligence.mjs"
+      - "shared/payment-notification-outbox*"
+      - "shared/test/payment-memory-r2.mjs"
+      - "scripts/ensure-payment-notification-cron*"
 
 concurrency:
   group: deploy-admin-worker-production
@@ -73,6 +76,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          npm --prefix .. run test:payment-delivery
           node --check src/admin-payment-review-entry.js
           node --check src/payment-review-runtime.js
           node --check src/payment-approved-job-link-dispatch.js
@@ -245,6 +249,10 @@ jobs:
           set -o pipefail
           npx --yes wrangler@4 versions deploy "${ADMIN_WORKER_VERSION_ID}@100%" -y \
             2>&1 | tee "$RUNNER_TEMP/admin-worker-deploy.log"
+
+      - name: Ensure payment notification retry schedule
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        run: node ../scripts/ensure-payment-notification-cron.mjs admin-worker
 
       - name: Validate admin-worker routes and triggers
         id: triggers_dry_run

@@ -1,5 +1,6 @@
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
+import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
 import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
@@ -154,6 +155,10 @@ coreWorker.fetch(request, env, ctx)
 */
 
 export default {
+  async scheduled(event, env, ctx) {
+    await drainApprovedJobLinkNotifications(env);
+    if (typeof worker.scheduled === "function") await worker.scheduled(event, env, ctx);
+  },
   async fetch(request, env, ctx) {
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, env, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, env);

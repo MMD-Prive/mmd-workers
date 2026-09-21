@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dispatchApprovedJobLinks } from "./src/payment-approved-job-link-dispatch.js";
+import { dispatchApprovedJobLinks, drainApprovedJobLinkNotifications } from "./src/payment-approved-job-link-dispatch.js";
+import { memoryR2 } from "../shared/test/payment-memory-r2.mjs";
 
 const SESSION_FIELDS = {
   sessionId: "fldLTq2kZbyRv22IA",
@@ -279,4 +280,70 @@ test("unverified Telegram bindings never receive confirmation URLs", async () =>
   } finally {
     globalThis.fetch = original;
   }
+});
+
+for (const failedTarget of ["customer_line", "ops"]) test(`durable retry resends only ${failedTarget} after an outage`, async () => {
+  const original = globalThis.fetch;
+  const env = { ...envFor(sessionRecord()), LINE_SLIP_EVIDENCE: memoryR2() };
+  const calls = [];
+  let healthy = false;
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request && !init ? input : new Request(input, init);
+    const body = await request.json();
+    const target = body.to === "U11111111111111111111111111111111" ? "customer_line"
+      : String(body.chat_id) === "-1003546439681" ? "ops" : body.to || body.chat_id;
+    calls.push({ target, retryKey: request.headers.get("x-line-retry-key") });
+    if (!healthy && target === failedTarget) throw new Error("simulated_connection_reset");
+    return Response.json({ ok: true });
+  };
+  try {
+    const input = { session_id: "sess_approved_1", payment_stage: "deposit", payment_ref: "pay_approved_1" };
+    const first = await dispatchApprovedJobLinks(env, input);
+    assert.equal(first.retry_queued, true);
+    assert.equal(first.delivery_durable, true);
+    assert.equal(calls.length, 5, "one transport failure does not stop other recipients");
+    healthy = true;
+    const sweep = await drainApprovedJobLinkNotifications(env, { now: Date.now() + 120000 });
+    assert.equal(sweep.delivered, 1);
+    assert.equal(calls.length, 6);
+    assert.equal(calls.at(-1).target, failedTarget);
+    if (failedTarget === "customer_line") {
+      assert.match(calls[0].retryKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
+      assert.equal(calls.at(-1).retryKey, calls[0].retryKey);
+    }
+    assert.equal((await dispatchApprovedJobLinks(env, input)).delivery_status, "delivered");
+    assert.equal(calls.length, 6);
+  } finally { globalThis.fetch = original; }
+});
+
+test("LINE acknowledgement for an already accepted retry key counts as delivered", async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request && !init ? input : new Request(input, init);
+    return request.url.includes("api.line.me")
+      ? Response.json({ message: "already accepted" }, { status: 409, headers: { "x-line-accepted-request-id": "original-request" } })
+      : Response.json({ ok: true });
+  };
+  try {
+    const result = await dispatchApprovedJobLinks({ ...envFor(sessionRecord()), LINE_SLIP_EVIDENCE: memoryR2() }, {
+      session_id: "sess_approved_1", payment_stage: "deposit", payment_ref: "pay_approved_1",
+    });
+    assert.equal(result.customer_line_sent, true);
+    assert.equal(result.model_line_sent, true);
+    assert.equal(result.retry_queued, false);
+  } finally { globalThis.fetch = original; }
+});
+
+test("a cancelled job stops an outstanding link notification without sending", async () => {
+  const record = sessionRecord();
+  record.fields.fldmwuvOaiCFdzzRa = "cancelled";
+  const env = { ...envFor(record), LINE_SLIP_EVIDENCE: memoryR2() };
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => assert.fail("cancelled job notification");
+  try {
+    const result = await dispatchApprovedJobLinks(env, { session_id: "sess_approved_1", payment_stage: "deposit", payment_ref: "pay_approved_1" });
+    assert.equal(result.status, "session_cancelled");
+    assert.equal(result.delivery_status, "manual_review");
+    assert.equal(result.retry_queued, false);
+  } finally { globalThis.fetch = original; }
 });

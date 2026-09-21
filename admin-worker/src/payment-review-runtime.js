@@ -140,7 +140,17 @@ async function commitReview(request, env, actor) {
   if (!idempotencyKey) throw httpError(400, "idempotency_key_required");
 
   const previous = await findReviewAudit(env, idempotencyKey);
-  if (previous) return json(previous, 200);
+  if (previous) {
+    if (previous.proof_id !== proofId || previous.decision !== decision) throw httpError(409, "payment_review_idempotency_conflict");
+    if (previous.ok && previous.decision === "approve" && previous.money_truth_changed && previous.session_id) {
+      previous.job_link_dispatch = await dispatchApprovedJobLinks(env, previous)
+        .catch(() => ({ status: "failed", dispatched: false, retry_queued: false }));
+    }
+    // Replaying a review recovers notification delivery only, never settlement.
+    previous.money_truth_already_changed = previous.money_truth_changed;
+    previous.money_truth_changed = false;
+    return json(previous, 200);
+  }
 
   const proof = await loadProof(env, proofId);
   if (!proof) throw httpError(404, "payment_proof_not_found");
@@ -193,6 +203,7 @@ async function commitReview(request, env, actor) {
     result: "success",
     authority: "payments-worker",
     payment_ref: approval.payment_ref,
+    session_id: approval.session_id,
     amount_thb: approval.amount_thb,
     payment_stage: approval.payment_stage,
     context_source: approval.context_source,
@@ -635,6 +646,8 @@ async function findReviewAudit(env, idempotencyKey) {
     context_source: safeCode(after.context_source || ""),
     recovery_context: safeCode(after.context_source) === "liff_renewal_recovery",
     payment_stage: safeCode(after.payment_stage || ""),
+    payment_ref: safeText(after.payment_ref || parseJson(fields["Before JSON"]).payment_ref, 180),
+    session_id: safeText(after.session_id, 180),
     membership_write_through: safeMembershipWriteThrough(after.membership_write_through),
     manual_membership_review_required: after.manual_membership_review_required === true,
     money_truth_changed: after.money_truth_changed === true,
@@ -664,6 +677,8 @@ async function writeAudit(env, input) {
     "After JSON": boundedJson({
       authority: input.authority || "payments-worker",
       context_source: input.context_source || "",
+      session_id: input.session_id || null,
+      payment_ref: input.payment_ref || null,
       payment_stage: input.payment_stage || null,
       membership_write_through: input.membership_write_through || null,
       manual_membership_review_required: input.manual_membership_review_required === true,

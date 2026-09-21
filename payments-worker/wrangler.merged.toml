@@ -1,5 +1,6 @@
 name = "payments-worker"
 main = "index.review-wrapper.js"
+triggers = { crons = ["*/5 * * * *"] }
 compatibility_date = "2026-01-20"
 
 # Production entrypoint:

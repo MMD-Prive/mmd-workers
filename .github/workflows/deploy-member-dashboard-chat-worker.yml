@@ -10,6 +10,8 @@ on:
       - "shared/verified-member-concierge.mjs"
       - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
       - "shared/payment-intelligence.mjs"
+      - "shared/canonical-payment-evidence*"
+      - "shared/test/payment-memory-r2.mjs"
 
 concurrency:
   group: deploy-member-dashboard-chat-worker-production
@@ -116,6 +118,7 @@ jobs:
       - name: Validate LINE, LIFF, CARE BACK, MMS Therapist, and MMS AI front gate
         id: tests
         run: |
+          npm run test:payment-delivery
           node --check member-dashboard-chat-worker/src/index.js
           node --check member-dashboard-chat-worker/src/my-mmd-orders-webflow-page.js
           node --check member-dashboard-chat-worker/src/front-gate-index.js
