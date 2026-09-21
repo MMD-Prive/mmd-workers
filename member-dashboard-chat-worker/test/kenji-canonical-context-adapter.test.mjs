@@ -240,3 +240,193 @@ test("multiple exact Clients fail identity closed and never invoke protected liv
   assert.equal(adminCalls, 0);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(LINE_USER_ID));
 });
+
+
+test("reviewed Customer History Reviews supply safe model history and fresh resolver confirmation upgrades exact identity confidence", async () => {
+  let adminCalls = 0;
+  const env = {
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+    AIRTABLE_HTTP: {
+      async fetch(request) {
+        const table = decodeURIComponent(new URL(request.url).pathname.split("/").at(-1));
+        if (table === "tblVv58TCbwh5j1fS") {
+          return Response.json({
+            records: [{
+              id: "recClientHistory",
+              fields: {
+                line_user_id: LINE_USER_ID,
+                nickname: "ลูกค้าเดิม",
+                "MMD — Customer History Reviews": ["recHistoryApproved", "recHistoryHeld"],
+              },
+            }],
+          });
+        }
+        if (table === "tblS6iRgPjYLBqZJh") {
+          return Response.json({
+            records: [{
+              id: "recMatrixHistory",
+              fields: {
+                matrix_id: "kcm1_history_safe",
+                schema_version: "mmd.kenji_conversation_matrix.v1",
+                last_customer_intent: "mmd_companion",
+                conversation_stage: { id: "selResolved", name: "resolved", color: "greenBright" },
+                continuity_summary: "Previous companion conversation resolved.",
+                matrix_status: { id: "selActive", name: "active", color: "greenBright" },
+                state_updated_at: "2026-09-21T11:30:00.000Z",
+                version: 12,
+              },
+            }],
+          });
+        }
+        if (table === "tblx7NdfHO5iY6qtg") {
+          return Response.json({ records: [] });
+        }
+        if (table === "tblnpDFQMpo8AmNQv") {
+          return Response.json({
+            records: [
+              {
+                id: "recHistoryApproved",
+                fields: {
+                  history_review_id: "hist_safe_1",
+                  review_status: { id: "selMaterialized", name: "materialized", color: "greenBright" },
+                  decision: { id: "selApprove", name: "approve_service_history", color: "greenBright" },
+                  approved_model_text: "Man",
+                  approved_service_date: "2024-08-31",
+                  approved_service_type: "PN",
+                  reviewed_at: "2026-09-13T21:00:00.000Z",
+                  review_note: "must-not-project history note",
+                  approved_payment_ref: "must-not-project-payment-ref",
+                },
+              },
+              {
+                id: "recHistoryHeld",
+                fields: {
+                  history_review_id: "hist_held_1",
+                  review_status: { id: "selNeeds", name: "needs_more_evidence", color: "yellowBright" },
+                  decision: { id: "selHold", name: "hold_for_review", color: "yellowBright" },
+                  approved_model_text: "MustNotAppear",
+                },
+              },
+            ],
+          });
+        }
+        return Response.json({ records: [] });
+      },
+    },
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        const body = await request.json();
+        assert.equal(body.line_user_id, LINE_USER_ID);
+        return Response.json({
+          ok: true,
+          authority: "my_mmd_entitlement_resolver_v1",
+          identity_status: "resolved",
+          membership: { level: "premium", lifecycle: "active", expire_at: "2029-09-10" },
+          resolver_snapshot: canonicalResolverSnapshot(),
+        });
+      },
+    },
+    INTERNAL_TOKEN: "internal-test-token",
+    ADMIN_WORKER: {
+      async fetch() {
+        adminCalls += 1;
+        return Response.json({});
+      },
+    },
+  };
+
+  const result = await buildKenjiLineCanonicalContext({
+    env,
+    event: event("แนะนำ model ให้หน่อย"),
+    currentIntent: "line_event",
+    now: NOW,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.context_bundle.identity.state, "known");
+  assert.equal(result.context_bundle.identity.confidence, "high");
+  assert.equal(result.context_bundle.identity.source, "exact_line_canonical_client");
+  assert.equal(result.context_bundle.customer_context.entitlement_snapshot.access.private_visibility_envelope, "premium");
+  assert.equal(result.context_bundle.prior_model_touches.length, 1);
+  assert.equal(result.context_bundle.prior_model_touches[0].model_key, "Man");
+  assert.equal(result.context_bundle.prior_model_touches[0].relationship, "completed");
+  assert.equal(result.context_bundle.prior_model_touches[0].source, "reviewed_customer_history");
+  assert.equal(result.context_bundle.customer_context.evidence_sources.recognition_history.state, "FOUND");
+  assert.equal(result.telemetry.adapter_complete, true);
+  assert.equal(result.telemetry.memory_candidate, true);
+  assert.equal(result.telemetry.review_required, false);
+  assert.equal(adminCalls, 0);
+
+  const serialized = JSON.stringify(result);
+  assert.doesNotMatch(serialized, /must-not-project|MustNotAppear|payment-ref/i);
+  assert.doesNotMatch(serialized, new RegExp(LINE_USER_ID));
+});
+
+test("exact Client identity remains medium confidence when fresh resolver identity is unavailable", async () => {
+  const env = {
+    AIRTABLE_API_KEY: "test-key",
+    AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg",
+    AIRTABLE_HTTP: {
+      async fetch(request) {
+        const table = decodeURIComponent(new URL(request.url).pathname.split("/").at(-1));
+        if (table === "tblVv58TCbwh5j1fS") {
+          return Response.json({
+            records: [{
+              id: "recClientMedium",
+              fields: {
+                line_user_id: LINE_USER_ID,
+                nickname: "ลูกค้าเดิม",
+                "MMD — Customer History Reviews": ["recHistoryApproved"],
+              },
+            }],
+          });
+        }
+        if (table === "tblS6iRgPjYLBqZJh") {
+          return Response.json({
+            records: [{
+              id: "recMatrixMedium",
+              fields: {
+                matrix_id: "kcm1_medium",
+                schema_version: "mmd.kenji_conversation_matrix.v1",
+                conversation_stage: { id: "selResolved", name: "resolved", color: "greenBright" },
+                matrix_status: { id: "selActive", name: "active", color: "greenBright" },
+                version: 1,
+              },
+            }],
+          });
+        }
+        if (table === "tblnpDFQMpo8AmNQv") {
+          return Response.json({
+            records: [{
+              id: "recHistoryApproved",
+              fields: {
+                review_status: { id: "selMaterialized", name: "materialized", color: "greenBright" },
+                decision: { id: "selApprove", name: "approve_service_history", color: "greenBright" },
+                approved_model_text: "Man",
+              },
+            }],
+          });
+        }
+        return Response.json({ records: [] });
+      },
+    },
+    MEMBER_PAGES_WORKER: {
+      async fetch() {
+        return new Response("{}", { status: 503 });
+      },
+    },
+  };
+
+  const result = await buildKenjiLineCanonicalContext({
+    env,
+    event: event("ต่อจากเดิม"),
+    currentIntent: "line_event",
+    now: NOW,
+  });
+
+  assert.equal(result.context_bundle.identity.state, "known");
+  assert.equal(result.context_bundle.identity.confidence, "medium");
+  assert.equal(result.context_bundle.domain_guard.review_required, true);
+  assert.equal(result.telemetry.adapter_complete, false);
+});

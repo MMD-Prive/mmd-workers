@@ -6,6 +6,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const CLIENTS_TABLE_FALLBACK = "tblVv58TCbwh5j1fS";
 const MATRIX_TABLE_FALLBACK = "tblS6iRgPjYLBqZJh";
 const EVIDENCE_TABLE_FALLBACK = "tblx7NdfHO5iY6qtg";
+const HISTORY_REVIEWS_TABLE_FALLBACK = "tblnpDFQMpo8AmNQv";
 const MEMBER_TRUTH_URL = "https://member-pages-worker.internal/__internal/kenji/member-truth";
 const ADMIN_LIVE_URL = "https://admin-worker.local/v1/internal/kenji/operational-context/live";
 const RIGHTS_AUTHORITY = "my_mmd_entitlement_resolver_v1";
@@ -26,6 +27,7 @@ const CLIENT_FIELDS = Object.freeze([
   "nickname",
   "line_display_name",
   "MMD — Client Intelligence Evidence",
+  "MMD — Customer History Reviews",
 ]);
 
 const MATRIX_FIELDS = Object.freeze([
@@ -62,6 +64,16 @@ const EVIDENCE_FIELDS = Object.freeze([
   "review_status",
   "privacy_level",
   "created_at",
+  "reviewed_at",
+]);
+
+const HISTORY_REVIEW_FIELDS = Object.freeze([
+  "history_review_id",
+  "review_status",
+  "decision",
+  "approved_model_text",
+  "approved_service_date",
+  "approved_service_type",
   "reviewed_at",
 ]);
 
@@ -132,6 +144,10 @@ function matrixTable(env = {}) {
 
 function evidenceTable(env = {}) {
   return text(env.AIRTABLE_TABLE_CLIENT_INTELLIGENCE_EVIDENCE_ID || EVIDENCE_TABLE_FALLBACK);
+}
+
+function historyReviewsTable(env = {}) {
+  return text(env.AIRTABLE_TABLE_CUSTOMER_HISTORY_REVIEWS_ID || HISTORY_REVIEWS_TABLE_FALLBACK);
 }
 
 function escapeFormula(value) {
@@ -205,6 +221,23 @@ async function readReviewedEvidence(env, clientRecord = null) {
     pageSize: 40,
     filterByFormula: formula,
     "fields[]": EVIDENCE_FIELDS,
+  });
+}
+
+async function readReviewedHistory(env, clientRecord = null) {
+  const ids = list(field(clientRecord?.fields || {}, ["MMD — Customer History Reviews"]))
+    .map(safeRef)
+    .filter((value) => /^rec[A-Za-z0-9]+$/.test(value))
+    .slice(0, 60);
+  if (!ids.length) return { ok: true, records: [], reason: "no_linked_history_reviews" };
+  const formula = ids.length === 1
+    ? `RECORD_ID()="${escapeFormula(ids[0])}"`
+    : `OR(${ids.map((id) => `RECORD_ID()="${escapeFormula(id)}"`).join(",")})`;
+  return airtableList(env, historyReviewsTable(env), {
+    maxRecords: 60,
+    pageSize: 60,
+    filterByFormula: formula,
+    "fields[]": HISTORY_REVIEW_FIELDS,
   });
 }
 
@@ -377,6 +410,49 @@ function reviewedEvidenceProjection(result = {}) {
   return { ok: true, preferences: preferences.slice(0, 8), model_touches: modelTouches.slice(0, 6) };
 }
 
+function reviewedHistoryProjection(result = {}) {
+  if (!result.ok) return { ok: false, model_touches: [] };
+  const modelTouches = [];
+  for (const record of result.records || []) {
+    const fields = record?.fields || {};
+    const reviewStatus = token(field(fields, ["review_status"]));
+    const decision = token(field(fields, ["decision"]));
+    if (!REVIEWED_STATES.has(reviewStatus) || decision !== "approve_service_history") continue;
+    const modelText = bounded(field(fields, ["approved_model_text"]), 120);
+    if (!modelText) continue;
+    const lastSeen = field(fields, ["approved_service_date", "reviewed_at"]);
+    modelTouches.push({
+      model_key: modelText,
+      relationship: "completed",
+      last_seen_at: Number.isFinite(Date.parse(text(lastSeen))) ? new Date(Date.parse(text(lastSeen))).toISOString() : "",
+      source: "reviewed_customer_history",
+    });
+    if (modelTouches.length >= 8) break;
+  }
+  return { ok: true, model_touches: modelTouches };
+}
+
+function mergeModelTouches(...groups) {
+  const output = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const item of group || []) {
+      const key = `${token(item?.model_key, 120)}:${token(item?.relationship, 60)}`;
+      if (!token(item?.model_key, 120) || seen.has(key)) continue;
+      seen.add(key);
+      output.push(item);
+      if (output.length >= 8) return output;
+    }
+  }
+  return output;
+}
+
+function effectiveIdentityConfidence(identity = {}, truth = {}) {
+  if (identity.state !== "known") return identity.confidence || "unknown";
+  if (identity.confidence === "high") return "high";
+  return truth.ok === true ? "high" : identity.confidence || "medium";
+}
+
 function sourceState(state, reason, evidenceCount = null) {
   return {
     state,
@@ -385,8 +461,8 @@ function sourceState(state, reason, evidenceCount = null) {
   };
 }
 
-function evidenceSources({ identity, evidence, truth }) {
-  const reviewedCount = evidence.preferences.length + evidence.model_touches.length;
+function evidenceSources({ identity, evidence, history, truth }) {
+  const reviewedCount = evidence.preferences.length + evidence.model_touches.length + history.model_touches.length;
   return {
     rename_identity: identity.state === "known"
       ? sourceState("FOUND", "exact_canonical_client_name", 1)
@@ -395,9 +471,9 @@ function evidenceSources({ identity, evidence, truth }) {
     line_crew: sourceState("SOURCE_UNAVAILABLE", "historical_crew_search_not_wired"),
     chat_exports_attachments: sourceState("SOURCE_UNAVAILABLE", "historical_archive_search_not_wired"),
     hashtags_tenure: sourceState("SOURCE_UNAVAILABLE", "reviewed_tenure_tags_not_wired"),
-    recognition_history: evidence.ok
-      ? sourceState(reviewedCount ? "FOUND" : "SEARCHED_NO_MATCH", reviewedCount ? "reviewed_client_evidence_found" : "reviewed_client_evidence_searched_no_match", reviewedCount)
-      : sourceState("SOURCE_UNAVAILABLE", "reviewed_client_evidence_unavailable"),
+    recognition_history: evidence.ok && history.ok
+      ? sourceState(reviewedCount ? "FOUND" : "SEARCHED_NO_MATCH", reviewedCount ? "reviewed_customer_history_found" : "reviewed_customer_history_searched_no_match", reviewedCount)
+      : sourceState("SOURCE_UNAVAILABLE", "reviewed_customer_history_unavailable"),
     membership_cycles: truth.ok
       ? sourceState(truth.snapshot.capability_state.recognized.length ? "FOUND" : "SEARCHED_NO_MATCH", "canonical_resolver_read", truth.snapshot.capability_state.recognized.length)
       : sourceState("SOURCE_UNAVAILABLE", truth.reason),
@@ -485,8 +561,15 @@ export async function buildKenjiLineCanonicalContext({ env = {}, event = {}, cur
   ]);
   const identity = identityProjection(clientResult);
   const matrix = matrixProjection(matrixResult);
-  const evidenceResult = identity.record ? await readReviewedEvidence(env, identity.record) : { ok: true, records: [] };
+  const [evidenceResult, historyResult] = identity.record
+    ? await Promise.all([
+        readReviewedEvidence(env, identity.record),
+        readReviewedHistory(env, identity.record),
+      ])
+    : [{ ok: true, records: [] }, { ok: true, records: [] }];
   const evidence = reviewedEvidenceProjection(evidenceResult);
+  const history = reviewedHistoryProjection(historyResult);
+  const modelTouches = mergeModelTouches(evidence.model_touches, history.model_touches);
   const intent = effectiveIntent(currentIntent, matrix);
   const domains = inferLiveTruthDomains(intent, matrix?.live_truth_domains || []);
   const needsAdminLive = domains.some((domain) => ADMIN_LIVE_DOMAINS.has(domain));
@@ -497,10 +580,11 @@ export async function buildKenjiLineCanonicalContext({ env = {}, event = {}, cur
     : { ok: false, reason: needsAdminLive ? "canonical_identity_required" : "not_required" };
   const snapshot = truth.ok ? truth.snapshot : null;
   const membership = truth.ok ? truth.membership : {};
-  const sources = evidenceSources({ identity, evidence, truth });
+  const sources = evidenceSources({ identity, evidence, history, truth });
+  const identityConfidence = effectiveIdentityConfidence(identity, truth);
   const reviewRequired = ["ambiguous", "review_required"].includes(identity.state)
     || (identity.state === "known" && !snapshot)
-    || (identity.state === "known" && (!evidence.ok || matrixUnavailable))
+    || (identity.state === "known" && (!evidence.ok || !history.ok || matrixUnavailable))
     || (needsAdminLive && !adminLive.ok);
 
   const contextBundle = {
@@ -509,7 +593,7 @@ export async function buildKenjiLineCanonicalContext({ env = {}, event = {}, cur
       state: identity.state,
       canonical_client_ref: identity.state === "known" && clientRecordId ? `client:${clientRecordId}` : "",
       preferred_name: identity.state === "known" ? identity.preferred_name : "",
-      confidence: identity.confidence,
+      confidence: identityConfidence,
       source: "exact_line_canonical_client",
     },
     customer_context: {
@@ -523,7 +607,7 @@ export async function buildKenjiLineCanonicalContext({ env = {}, event = {}, cur
       evaluated_at: stamp,
     },
     reviewed_preferences: identity.state === "known" ? evidence.preferences : [],
-    prior_model_touches: identity.state === "known" ? evidence.model_touches : [],
+    prior_model_touches: identity.state === "known" ? modelTouches : [],
     continuity: identity.state === "known" ? continuityProjection(matrix) : {},
     conversation_matrix: matrix || {},
     current_intent: intent,
@@ -542,11 +626,11 @@ export async function buildKenjiLineCanonicalContext({ env = {}, event = {}, cur
     schema: KENJI_CANONICAL_CONTEXT_ADAPTER_SCHEMA,
     context_bundle: contextBundle,
     telemetry: {
-      memory_candidate: identity.state === "known" && Boolean(evidence.preferences.length || evidence.model_touches.length || matrix?.last_customer_intent),
+      memory_candidate: identity.state === "known" && Boolean(evidence.preferences.length || modelTouches.length || matrix?.last_customer_intent),
       identity_state: identity.state,
       matrix_version: matrix?.version || 0,
       review_required: reviewRequired,
-      adapter_complete: clientResult.ok && !matrixUnavailable && truth.ok && evidence.ok && (!needsAdminLive || adminLive.ok),
+      adapter_complete: clientResult.ok && !matrixUnavailable && truth.ok && evidence.ok && history.ok && (!needsAdminLive || adminLive.ok),
     },
   };
 }
@@ -555,6 +639,7 @@ export const KENJI_CANONICAL_CONTEXT_INTERNALS = Object.freeze({
   CLIENTS_TABLE_FALLBACK,
   MATRIX_TABLE_FALLBACK,
   EVIDENCE_TABLE_FALLBACK,
+  HISTORY_REVIEWS_TABLE_FALLBACK,
   MEMBER_TRUTH_URL,
   ADMIN_LIVE_URL,
 });
