@@ -514,7 +514,6 @@ export const REAL_RECOMMENDATION_SHADOW_SMOKE_INTERNALS = Object.freeze({
   MATRIX_SCHEMA,
   listCanonicalCandidateLineIds,
   candidatePriority,
-  listCanonicalCandidateLineIds,
   selectRealCanonicalContext,
   selectEligibleCanonicalContexts,
   eligibilityProjection,
