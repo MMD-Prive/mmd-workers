@@ -3,8 +3,10 @@ import { awardBasePointsPhase1 } from "./points-phase1.js";
 import {
   CONFIRM_ACK_PATH,
   CONFIRM_CONTEXT_PATH,
+  CONFIRM_CHANGE_REQUEST_PATH,
   handleConfirmationAck,
   handleConfirmationContext,
+  handleCustomerChangeRequest,
 } from "./confirmation-ack.js";
 import { CONFIRM_DETAILS_PATH, handleConfirmationDetails } from "./confirmation-details.js";
 import { notifyPartnerJobAfterOfficialVerify } from "./partner-job-confirm.js";
@@ -31,6 +33,9 @@ export default {
     }
     if (path === CONFIRM_CONTEXT_PATH && (method === "POST" || method === "OPTIONS")) {
       return handleConfirmationContext(request, env);
+    }
+    if (path === CONFIRM_CHANGE_REQUEST_PATH && (method === "POST" || method === "OPTIONS")) {
+      return handleCustomerChangeRequest(request, env);
     }
 
     if (path === HISTORICAL_REVIEW_PATH) {
