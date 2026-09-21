@@ -1,5 +1,6 @@
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
+import { inferAccessFolder } from "./private-model-work-policy.js";
 
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
 export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
@@ -106,8 +107,11 @@ export function projectKenjiSafeModel(record = {}) {
 }
 
 function modelFolder(record = {}) {
-  const folder = token(fieldValue(record.fields || {}, ["access_folder", "model_access_folder", "model_folder"]));
-  return CANONICAL_PRIVATE_FOLDERS.has(folder) ? folder : "";
+  const fields = record.fields || {};
+  const explicit = token(fieldValue(fields, ["access_folder", "model_access_folder", "model_folder"]));
+  if (CANONICAL_PRIVATE_FOLDERS.has(explicit)) return explicit;
+  const inferred = token(inferAccessFolder(fields));
+  return CANONICAL_PRIVATE_FOLDERS.has(inferred) ? inferred : "";
 }
 
 function modelAccessClass(record = {}) {
