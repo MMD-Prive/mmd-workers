@@ -1,3 +1,4 @@
+import { resolvePersistedShopBrand, SHOP_BRANDS, shopPaymentThreads } from "../shared/shop-brand-context.mjs";
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
 import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
@@ -306,12 +307,19 @@ function firstValue(fields, keys) {
   return null;
 }
 
-function paymentSnapshot(record, form = null) {
+export function paymentSnapshot(record, form = null) {
   const fields = paymentFields(record);
-  const rawStage = firstValue(fields, ["payment_stage", "payment_type", "stage"]) || form?.get("payment_stage") || form?.get("payment_type") || "";
+  const persistedNotes = firstValue(fields, ["Notes", "notes", "fldjsZIKoJPawlb2u"]) || "";
+  const persistedSession = firstValue(fields, ["session_id", "Session ID", "fld2wdhBvc8xrV6y5"]);
+  const noteStage = String(persistedNotes).match(/(?:^|[;\n])\s*payment_stage=([a-z_]+)/i)?.[1];
+  const rawStage = firstValue(fields, ["payment_stage", "payment_type", "stage"]) || noteStage || form?.get("payment_stage") || form?.get("payment_type") || "";
+  const canonicalShop = code(rawStage) === "shop"
+    ? resolvePersistedShopBrand({ session_id: persistedSession || "", Notes: persistedNotes })
+    : null;
   return {
     amount_thb: positive(firstValue(fields, ["amount_thb", "amount", "Amount", "Amount THB"])) || positive(form?.get("amount_thb")),
-    session_id: clean(firstValue(fields, ["session_id", "Session ID"]) || form?.get("session_id"), 220),
+    session_id: clean(persistedSession || form?.get("session_id"), 220),
+    canonical_shop_brand: canonicalShop?.key || null,
     member_email: clean(firstValue(fields, ["member_email", "email", "Contact Email"]) || form?.get("member_email"), 320).toLowerCase(),
     package_code: code(firstValue(fields, ["package_code", "package", "Package Code"]) || form?.get("package_code")),
     payment_stage: code(rawStage) || "deposit",
@@ -384,13 +392,16 @@ function threadId(value, fallback) {
 
 export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = "") {
   if (paymentProofLane(snapshot) === "mmd_shop") {
+    const brand = SHOP_BRANDS[snapshot.canonical_shop_brand] || SHOP_BRANDS["mmd-shop"];
     return {
       topic: "mmd_shop",
-      reason: "mmd_shop_payment",
+      reason: brand.key === "shop" ? "himai_shop_payment" : "mmd_shop_payment",
+      shop: brand.key,
+      shop_name: brand.publicName,
+      shop_title: brand.title,
       should_alert: false,
       inference: null,
-      thread_id: threadId(env.TG_THREAD_MMD_SHOP_PAYMENTS, 161),
-      alerts_thread_id: threadId(env.TG_THREAD_MMD_SHOP_ALERTS, 162),
+      ...shopPaymentThreads(env, brand),
     };
   }
   const route = classifyPaymentOpsRoute({
@@ -425,13 +436,13 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     route.topic === "membership"
       ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
       : route.topic === "mmd_shop"
-        ? "<b>MMD SHOP PAYMENT PROOF · PENDING REVIEW</b>"
+        ? `<b>${tgHtml(route.shop_title)} PAYMENT PROOF · PENDING REVIEW</b>`
         : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
     `Proof: <code>${proofId}</code>`,
     `Ref: <code>${paymentRef}</code>`,
     snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
     snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? "Classified: <b>MMD Shop Order</b>" : "",
+    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `Classified: <b>${tgHtml(route.shop_name)} Order</b>` : "",
     ...(route.topic === "membership" || route.topic === "mmd_shop"
       ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
       : webJobContextCaptionLines(jobContext)),

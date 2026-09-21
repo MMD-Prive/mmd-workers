@@ -24,8 +24,13 @@ test("MMD Shop Webflow cart is gated by canonical checkout_eligible", async () =
   const checkoutStart = source.indexOf("async function checkout()");
   const checkoutEnd = source.indexOf("grid&&grid.addEventListener", checkoutStart);
   const checkoutBlock = source.slice(checkoutStart, checkoutEnd);
-  assert.match(checkoutBlock, /reconcileCart\(\)/);
-  assert.match(checkoutBlock, /p\.checkout_eligible!==true/);
+  assert.match(checkoutBlock, /flow\.run\(\)/);
+  assert.match(source, /reconcile:reconcileCart/);
+  const safety = await readFile(new URL("../../webflow/shared/shop-checkout-safety.js", import.meta.url), "utf8");
+  assert.match(safety, /await config\.refresh\(\)/);
+  assert.match(safety, /config\.reconcile\(\)/);
+  assert.match(safety, /p\.checkout_eligible !== true/);
+  assert.match(safety, /expected_unit_price_thb/);
 });
 
 test("MMD Shop root presents exactly the three Per product families", async () => {

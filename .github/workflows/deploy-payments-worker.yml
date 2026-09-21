@@ -7,6 +7,7 @@ on:
     branches:
       - main
     paths:
+      - "shared/shop-brand-context.mjs"
       - "shared/posthog-authority-events.mjs"
       - "payments-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"

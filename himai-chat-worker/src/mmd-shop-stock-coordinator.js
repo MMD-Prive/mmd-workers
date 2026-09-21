@@ -1,3 +1,5 @@
+import { handleShopCheckoutSession } from "./shop-checkout-idempotency.js";
+import { expireCheckoutReceipt } from "../../shared/shop-checkout-once.mjs";
 import {
   inspectMmdShopStockHealth,
   formatMmdShopStockHealthAlert,
@@ -20,8 +22,11 @@ export class MmdShopStockCoordinator {
     this.tail = Promise.resolve();
   }
 
+  async alarm() { await expireCheckoutReceipt(this.state.storage); }
+
   async fetch(request) {
     const url = new URL(request.url);
+    if (["/shop/api/checkout", "/mmd-shop/api/checkout"].includes(url.pathname)) return handleShopCheckoutSession(request, this.state, this.env);
     if (url.pathname === "/health") return Response.json({ ok: true, coordinator: "mmd_shop_stock" });
 
     const body = request.method === "POST" ? await request.json().catch(() => null) : null;

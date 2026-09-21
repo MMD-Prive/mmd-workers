@@ -336,6 +336,7 @@ async function sendPaymentsProofDocument(req, env) {
     Number(env.TG_THREAD_PAYMENTS_MEMBERSHIP || env.TG_THREAD_MEMBERSHIP || 20),
     Number(env.TG_THREAD_PAYMENTS_CONFIRM || env.TG_THREAD_PAYMENT || env.TG_THREAD_CONFIRM || 22),
     Number(env.TG_THREAD_MMD_SHOP_PAYMENTS || 161),
+    Number(env.TG_THREAD_HIMAI_PAYMENTS || 158),
   ]);
   const file = form.get("document") || form.get("file");
   if (!chatId || chatId !== clean(env.TELEGRAM_CHAT_ID)) return { ok: false, error: "telegram_chat_not_allowed" };
