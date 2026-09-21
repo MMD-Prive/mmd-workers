@@ -1,6 +1,7 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_ACK_PATH = "/v1/confirm/ack";
 export const CONFIRM_CONTEXT_PATH = "/v1/confirm/context";
+export const CONFIRM_CHANGE_REQUEST_PATH = "/v1/confirm/change-request";
 
 function clean(value, max = 5000) {
   return String(value == null ? "" : value).trim().slice(0, max);
@@ -180,6 +181,8 @@ function sessionFields(env = {}) {
     startTime: clean(env.AT_SESSIONS__START_TIME || "fldBeG0FkWwa8kgnp", 100),
     endTime: clean(env.AT_SESSIONS__END_TIME || "fldiDSz0wW9Ct9I3P", 100),
     locationName: clean(env.AT_SESSIONS__LOCATION_NAME || "fldIiRpaxoafjTkFt", 100),
+    googleMapUrl: clean(env.AT_SESSIONS__GOOGLE_MAP_URL || "fldoUDQ8sH93idPx0", 100),
+    jobId: clean(env.AT_SESSIONS__JOB_ID || "fldHw5HdDDdkHXMhG", 100),
   };
 }
 
@@ -218,6 +221,259 @@ async function findSession(env, sessionId) {
   return data?.records?.[0] || null;
 }
 
+
+const CUSTOMER_CHANGE_FIELDS = Object.freeze({
+  requestId: "fldWMwebmHhyVQLzW",
+  session: "fldbL2Ya44l6xEYe1",
+  sessionId: "fldMD3Fhu0ibDmjk0",
+  jobId: "flduFVxjPx6abaXQK",
+  requestType: "fldxg0WIVCmxtdRCF",
+  status: "fldcBkBS70bWBgI8A",
+  currentValueJson: "fld9W8UEOXpsfJT5P",
+  requestedValueJson: "fld8DqBrOmY6lQzGA",
+  customerRemark: "fldjwQWRjxXqrFiAU",
+  requestedBy: "fldVpKi8iu4AfAKfw",
+  source: "fldFX2iXytQyVKRvf",
+  requestedAt: "fldU2e6BO3fVdGyFF",
+  idempotencyKey: "fldWiC7YFE0jYYBUN",
+  notificationStatus: "fldY1Ix9xI3ccNJhX",
+  notificationRef: "fldPLodDJTWfDlgET",
+});
+
+const CUSTOMER_CHANGE_TYPES = new Set([
+  "time_change",
+  "location_change",
+  "date_change",
+  "reschedule",
+  "cancellation",
+  "remark",
+]);
+
+function changeRequestTable(env = {}) {
+  return clean(env.AIRTABLE_TABLE_CUSTOMER_CHANGE_REQUESTS || "tblhQGfJc4GgiteZr", 120);
+}
+
+function parsedJson(value) {
+  try {
+    const parsed = JSON.parse(String(value || "{}"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeChangeRequestType(value) {
+  const result = clean(value, 80).toLowerCase().replace(/[\s-]+/g, "_");
+  return CUSTOMER_CHANGE_TYPES.has(result) ? result : "";
+}
+
+function safeHttpsUrl(value) {
+  const raw = clean(value, 1000);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function requestedChangeValue(type, raw = {}) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const out = {};
+  if (["time_change", "reschedule"].includes(type)) {
+    const start = clean(source.start_time, 80);
+    const end = clean(source.end_time, 80);
+    if (start) out.start_time = start;
+    if (end) out.end_time = end;
+  }
+  if (["date_change", "reschedule"].includes(type)) {
+    const date = clean(source.job_date, 80);
+    if (date) out.job_date = date;
+  }
+  if (["location_change", "reschedule"].includes(type)) {
+    const location = clean(source.location_name, 360);
+    const area = clean(source.area, 240);
+    const map = safeHttpsUrl(source.google_map_url);
+    const note = clean(source.note, 800);
+    if (location) out.location_name = location;
+    if (area) out.area = area;
+    if (map) out.google_map_url = map;
+    if (note) out.note = note;
+    if (source.pending === true) out.pending = true;
+  }
+  return out;
+}
+
+function currentChangeValue(env, session, type) {
+  const fields = sessionFields(env);
+  const source = session?.fields || {};
+  const common = {
+    job_date: clean(source[fields.jobDate], 120) || null,
+    start_time: clean(source[fields.startTime], 120) || null,
+    end_time: clean(source[fields.endTime], 120) || null,
+    location_name: clean(source[fields.locationName], 360) || null,
+    google_map_url: clean(source[fields.googleMapUrl], 1000) || null,
+  };
+  if (type === "time_change") return { start_time: common.start_time, end_time: common.end_time };
+  if (type === "location_change") return { location_name: common.location_name, google_map_url: common.google_map_url };
+  if (type === "date_change") return { job_date: common.job_date };
+  if (type === "reschedule" || type === "cancellation") return common;
+  return {};
+}
+
+function makeChangeRequestId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  const suffix = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `ccr_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}_${suffix}`;
+}
+
+async function findChangeRequestByIdempotency(env, sessionId, idempotencyKey) {
+  const table = changeRequestTable(env);
+  const formula = `AND({session_id}='${formulaValue(sessionId)}',{idempotency_key}='${formulaValue(idempotencyKey)}')`;
+  const query = new URLSearchParams({ maxRecords: "1", filterByFormula: formula, returnFieldsByFieldId: "true" });
+  const data = await airtableRequest(env, `${encodeURIComponent(table)}?${query.toString()}`, { method: "GET" });
+  return data?.records?.[0] || null;
+}
+
+export async function listPendingCustomerChangeRequests(env, sessionId) {
+  const table = changeRequestTable(env);
+  const formula = `AND({session_id}='${formulaValue(sessionId)}',{status}='pending_review')`;
+  const query = new URLSearchParams({
+    maxRecords: "20",
+    pageSize: "20",
+    filterByFormula: formula,
+    returnFieldsByFieldId: "true",
+  });
+  const data = await airtableRequest(env, `${encodeURIComponent(table)}?${query.toString()}`, { method: "GET" });
+  return (Array.isArray(data?.records) ? data.records : []).map((record) => {
+    const fields = record?.fields || {};
+    return {
+      record_id: record.id,
+      request_id: clean(fields[CUSTOMER_CHANGE_FIELDS.requestId], 120),
+      request_type: clean(fields[CUSTOMER_CHANGE_FIELDS.requestType], 80),
+      status: clean(fields[CUSTOMER_CHANGE_FIELDS.status], 80) || "pending_review",
+      requested_at: clean(fields[CUSTOMER_CHANGE_FIELDS.requestedAt], 120) || null,
+      customer_remark: clean(fields[CUSTOMER_CHANGE_FIELDS.customerRemark], 1000) || null,
+      requested_value: parsedJson(fields[CUSTOMER_CHANGE_FIELDS.requestedValueJson]),
+    };
+  });
+}
+
+async function createCustomerChangeRequest(env, authorized, body, idempotencyKey) {
+  const type = normalizeChangeRequestType(body?.request_type);
+  if (!type) {
+    const error = new Error("customer_change_request_type_invalid");
+    error.status = 400;
+    throw error;
+  }
+  const requestedValue = requestedChangeValue(type, body?.requested_value);
+  const remark = clean(body?.customer_remark || body?.remark, 1200);
+  if (type === "time_change" && !requestedValue.start_time && !requestedValue.end_time) throw Object.assign(new Error("time_change_value_required"), { status: 400 });
+  if (type === "location_change" && !requestedValue.location_name && !requestedValue.area && !requestedValue.google_map_url && requestedValue.pending !== true) throw Object.assign(new Error("location_change_value_required"), { status: 400 });
+  if (type === "date_change" && !requestedValue.job_date) throw Object.assign(new Error("date_change_value_required"), { status: 400 });
+  if (type === "reschedule" && !requestedValue.job_date && !requestedValue.start_time && !requestedValue.end_time && !remark) throw Object.assign(new Error("reschedule_value_required"), { status: 400 });
+  if (type === "cancellation" && remark.length < 2) throw Object.assign(new Error("cancellation_reason_required"), { status: 400 });
+  if (type === "remark" && remark.length < 2) throw Object.assign(new Error("remark_required"), { status: 400 });
+
+  const sessionId = clean(authorized.claims.session_id, 200);
+  const existing = await findChangeRequestByIdempotency(env, sessionId, idempotencyKey);
+  if (existing?.id) {
+    const fields = existing.fields || {};
+    return {
+      record_id: existing.id,
+      request_id: clean(fields[CUSTOMER_CHANGE_FIELDS.requestId], 120),
+      request_type: clean(fields[CUSTOMER_CHANGE_FIELDS.requestType], 80),
+      status: clean(fields[CUSTOMER_CHANGE_FIELDS.status], 80),
+      idempotent: true,
+    };
+  }
+
+  const fields = sessionFields(env);
+  const sessionSource = authorized.session?.fields || {};
+  const requestId = makeChangeRequestId();
+  const requestedAt = new Date().toISOString();
+  const currentValue = currentChangeValue(env, authorized.session, type);
+  const table = changeRequestTable(env);
+  const payload = {
+    records: [{
+      fields: {
+        [CUSTOMER_CHANGE_FIELDS.requestId]: requestId,
+        [CUSTOMER_CHANGE_FIELDS.session]: [authorized.session.id],
+        [CUSTOMER_CHANGE_FIELDS.sessionId]: sessionId,
+        [CUSTOMER_CHANGE_FIELDS.jobId]: clean(sessionSource[fields.jobId], 200),
+        [CUSTOMER_CHANGE_FIELDS.requestType]: type,
+        [CUSTOMER_CHANGE_FIELDS.status]: "pending_review",
+        [CUSTOMER_CHANGE_FIELDS.currentValueJson]: JSON.stringify(currentValue),
+        [CUSTOMER_CHANGE_FIELDS.requestedValueJson]: JSON.stringify(requestedValue),
+        [CUSTOMER_CHANGE_FIELDS.customerRemark]: remark,
+        [CUSTOMER_CHANGE_FIELDS.requestedBy]: "customer",
+        [CUSTOMER_CHANGE_FIELDS.source]: "customer_confirmation",
+        [CUSTOMER_CHANGE_FIELDS.requestedAt]: requestedAt,
+        [CUSTOMER_CHANGE_FIELDS.idempotencyKey]: idempotencyKey,
+        [CUSTOMER_CHANGE_FIELDS.notificationStatus]: "pending",
+      },
+    }],
+    typecast: true,
+  };
+  const data = await airtableRequest(env, encodeURIComponent(table), {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  const record = data?.records?.[0];
+  if (!record?.id) throw Object.assign(new Error("customer_change_request_write_failed"), { status: 503 });
+  return { record_id: record.id, request_id: requestId, request_type: type, status: "pending_review", idempotent: false, current_value: currentValue, requested_value: requestedValue, customer_remark: remark };
+}
+
+function htmlEscape(value) {
+  return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+async function notifyCustomerChangeRequest(env, authorized, change) {
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_PAYMENTS_TO_TELEGRAM, 5000);
+  if (!service || typeof service.fetch !== "function" || !token) return { ok: false, reason: "telegram_not_ready" };
+  const fields = sessionFields(env);
+  const source = authorized.session?.fields || {};
+  const lines = [
+    "<b>CUSTOMER CHANGE REQUEST</b>",
+    `<b>Session:</b> <code>${htmlEscape(authorized.claims.session_id)}</code>`,
+    `<b>Client:</b> ${htmlEscape(clean(source[fields.clientName], 120) || "MMD Client")}`,
+    `<b>Model:</b> ${htmlEscape(clean(source[fields.modelName], 120) || "Model")}`,
+    `<b>Type:</b> ${htmlEscape(change.request_type)}`,
+    `<b>Request:</b> <code>${htmlEscape(change.request_id)}</code>`,
+    change.customer_remark ? `<b>Remark:</b> ${htmlEscape(change.customer_remark)}` : "",
+    "<b>Action:</b> Review before mutating canonical Session.",
+  ].filter(Boolean);
+  const response = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
+      flow: "alerts",
+      text: lines.join("\n"),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    }),
+  }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok === false) return { ok: false, reason: clean(data?.error || `telegram_http_${response.status}`, 160) };
+  return { ok: true, ref: clean(data?.result?.message_id || data?.message_id, 120) };
+}
+
+async function patchChangeNotification(env, recordId, status, ref = "") {
+  const table = changeRequestTable(env);
+  await airtableRequest(env, `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}?returnFieldsByFieldId=true`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      fields: {
+        [CUSTOMER_CHANGE_FIELDS.notificationStatus]: status,
+        [CUSTOMER_CHANGE_FIELDS.notificationRef]: clean(ref, 120),
+      },
+      typecast: true,
+    }),
+  });
+}
+
 function assertSessionMatchesClaims(env, session, claims) {
   const fields = sessionFields(env);
   const sessionPaymentRef = clean(session?.fields?.[fields.paymentRef], 200);
@@ -237,6 +493,7 @@ function safeConfirmationContext(env, session, role) {
     start_time: clean(source[fields.startTime], 120) || null,
     end_time: clean(source[fields.endTime], 120) || null,
     location_name: clean(source[fields.locationName], 300) || null,
+    google_map_url: clean(source[fields.googleMapUrl], 1000) || null,
     counterpart_name:
       role === "customer"
         ? clean(source[fields.modelName], 120) || null
@@ -336,6 +593,37 @@ export async function handleConfirmationContext(request, env = {}) {
   }));
 }
 
+export async function handleCustomerChangeRequest(request, env = {}) {
+  if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
+  if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
+
+  const body = await request.clone().json().catch(() => null);
+  const authorized = await parseAuthorizedConfirmationRequest(request, env);
+  if (authorized.response) return authorized.response;
+  if (authorized.expectedRole !== "customer") return withCors(request, env, json({ ok: false, error: "customer_role_required" }, 403));
+
+  const idempotencyKey = clean(request.headers.get("Idempotency-Key") || body?.idempotency_key, 180);
+  if (idempotencyKey.length < 8) return withCors(request, env, json({ ok: false, error: "idempotency_key_required" }, 400));
+
+  try {
+    const change = await createCustomerChangeRequest(env, authorized, body || {}, idempotencyKey);
+    if (change.idempotent) {
+      return withCors(request, env, json({ ok: true, ...change, notification_status: "existing", canonical_session_mutated: false }));
+    }
+    const notice = await notifyCustomerChangeRequest(env, authorized, change).catch((error) => ({ ok: false, reason: clean(error?.message || error, 160) }));
+    await patchChangeNotification(env, change.record_id, notice.ok ? "sent" : "failed", notice.ref || notice.reason || "").catch(() => {});
+    return withCors(request, env, json({
+      ok: true,
+      ...change,
+      notification_status: notice.ok ? "sent" : "failed",
+      canonical_session_mutated: false,
+      requires_mmd_review: true,
+    }, 201));
+  } catch (error) {
+    return withCors(request, env, json({ ok: false, error: clean(error?.message || "customer_change_request_failed", 200) }, errorStatus(error)));
+  }
+}
+
 export async function handleConfirmationAck(request, env = {}) {
   if (request.method.toUpperCase() === "OPTIONS") return withCors(request, env, new Response(null, { status: 204 }));
   if (request.method.toUpperCase() !== "POST") return withCors(request, env, json({ ok: false, error: "method_not_allowed" }, 405));
@@ -344,6 +632,17 @@ export async function handleConfirmationAck(request, env = {}) {
   if (authorized.response) return authorized.response;
 
   try {
+    if (authorized.expectedRole === "customer") {
+      const pending = await listPendingCustomerChangeRequests(env, authorized.claims.session_id);
+      if (pending.length) {
+        return withCors(request, env, json({
+          ok: false,
+          error: "customer_change_request_pending",
+          pending_change_requests: pending,
+          canonical_session_mutated: false,
+        }, 409));
+      }
+    }
     const ack = await patchAcknowledgement(env, authorized.session, authorized.expectedRole);
     return withCors(request, env, json({
       ok: true,
