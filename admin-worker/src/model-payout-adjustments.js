@@ -49,28 +49,43 @@ export async function handleModelPayoutAdjustments(request, env = {}, actor = nu
 
 async function handleGet(url, env) {
   const sessionId = clean(url.searchParams.get("session_id"), 180);
-  if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
+  const audit = await readModelPayoutAdjustmentAudit(env, sessionId);
+  return json(audit.body, audit.status);
+}
+
+export async function readModelPayoutAdjustmentAudit(env, sessionIdInput) {
+  const sessionId = clean(sessionIdInput, 180);
+  if (!sessionId) return { status: 400, body: { ok: false, error: "session_id_required" } };
+  if (!clean(env.AIRTABLE_BASE_ID) || !clean(env.AIRTABLE_API_KEY)) {
+    return { status: 503, body: { ok: false, error: "airtable_not_ready" } };
+  }
 
   const session = await findCanonicalSession(env, sessionId);
-  if (!session.ok) return json({ ok: false, error: session.error }, session.status);
-
+  if (!session.ok) return { status: session.status, body: { ok: false, error: session.error } };
   const adjustments = await listAdjustments(env, sessionId);
-  if (!adjustments.ok) return json({ ok: false, error: "adjustment_lookup_unavailable" }, 503);
+  if (!adjustments.ok) return { status: 503, body: { ok: false, error: "adjustment_lookup_unavailable" } };
 
-  return json({
-    ok: true,
-    session: safeSessionProjection(session.record),
-    adjustments: adjustments.records
-      .map(safeAdjustmentProjection)
-      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))),
-    policy: {
-      customer_amount_affected: false,
-      payment_verification_affected: false,
-      current_total_field: "Sessions.pay_model_thb",
-      immutable_ledger: true,
-      correction_method: "add_opposite_adjustment",
+  const projected = adjustments.records.map(safeAdjustmentProjection)
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  const sessionProjection = safeSessionProjection(session.record);
+  const integrity = reconcileAdjustmentChain(sessionProjection.current_payout_thb, projected);
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      session: sessionProjection,
+      adjustments: projected.slice().reverse(),
+      integrity,
+      policy: {
+        customer_amount_affected: false,
+        payment_verification_affected: false,
+        current_total_field: "Sessions.pay_model_thb",
+        immutable_ledger: true,
+        correction_method: "add_opposite_adjustment",
+      },
     },
-  }, 200);
+  };
 }
 
 async function handlePost(request, env, actor) {
@@ -264,6 +279,50 @@ async function airtableWrite(env, table, suffix, init) {
   return { ok: true, status: response.status, record: data };
 }
 
+function reconcileAdjustmentChain(currentPayout, adjustments) {
+  const issues = [];
+  const rows = Array.isArray(adjustments) ? adjustments : [];
+  const number = (value) => Number.isFinite(Number(value)) ? Number(value) : null;
+  let expected = rows.length ? number(rows[0]?.payout_before_thb) : number(currentPayout);
+  const startingPayout = expected;
+
+  rows.forEach((row, index) => {
+    const before = number(row?.payout_before_thb);
+    const after = number(row?.payout_after_thb);
+    const signed = number(row?.signed_amount_thb);
+    if (before === null || after === null || signed === null) {
+      issues.push({ code: "model_payout_adjustment_incomplete", severity: "high", adjustment_id: row?.adjustment_id || "", index });
+      return;
+    }
+    if (expected !== null && before !== expected) {
+      issues.push({ code: "model_payout_chain_break", severity: "high", adjustment_id: row?.adjustment_id || "", expected_before_thb: expected, actual_before_thb: before, index });
+    }
+    const calculated = before + signed;
+    if (after !== calculated) {
+      issues.push({ code: "model_payout_adjustment_math_mismatch", severity: "high", adjustment_id: row?.adjustment_id || "", expected_after_thb: calculated, actual_after_thb: after, index });
+    }
+    expected = after;
+  });
+
+  const current = number(currentPayout);
+  if (current === null) {
+    issues.push({ code: "model_payout_missing", severity: "high" });
+  } else if (rows.length && expected !== current) {
+    issues.push({ code: "model_payout_current_total_mismatch", severity: "high", expected_current_thb: expected, actual_current_thb: current });
+  }
+
+  return {
+    ok: issues.length === 0,
+    needs_reconciliation: issues.length > 0,
+    starting_payout_thb: startingPayout,
+    adjustment_net_thb: rows.reduce((sum, row) => sum + (number(row?.signed_amount_thb) || 0), 0),
+    expected_current_payout_thb: rows.length ? expected : current,
+    actual_current_payout_thb: current,
+    issue_count: issues.length,
+    issues,
+  };
+}
+
 function safeSessionProjection(record) {
   const fields = record?.fields || {};
   return {
@@ -271,6 +330,7 @@ function safeSessionProjection(record) {
     model_name: clean(fields.model_name || fields["Assigned Model"], 180),
     model_record_id: linkedRecordIds(fields["Canonical Model"])[0] || "",
     current_payout_thb: money(fields.pay_model_thb),
+    created_at: clean(fields.created_at || fields["Created At"] || record?.createdTime, 180),
   };
 }
 
