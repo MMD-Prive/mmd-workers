@@ -598,6 +598,8 @@ function corsHeaders(req, env) {
   h.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Confirm-Key");
   h.set("Access-Control-Max-Age", "86400");
   h.set("Content-Type", "application/json");
+  h.set("X-MMD-Route-Owner", "sigil-booking-worker");
+  h.set("Cache-Control", "no-store");
   return h;
 }
 function isAllowedOrigin(req, env) { const origin = req.headers.get("Origin") || ""; if (!origin) return true; const allowed = str(env.ALLOWED_ORIGINS).split(",").map((x) => x.trim()).filter(Boolean); return !allowed.length || allowed.includes(origin); }
