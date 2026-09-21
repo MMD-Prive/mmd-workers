@@ -1,3 +1,9 @@
+import {
+  boundedConsoleAvailabilityBody,
+  matchConsoleAvailabilitySnapshotPath,
+  resolveConsoleAvailabilityTarget,
+} from "./sigil-availability-producer.mjs";
+
 const VERSION = "model-console-v1.1";
 const CONTRACT_VERSION = "mmd.model-console.v1.1";
 
@@ -61,6 +67,27 @@ export default {
         const body = await readJson(req);
         const response = await callWorker(env.ADMIN_WORKER_BASE_URL, "/v1/admin/models/upsert", env, { method: "POST", body }, ctx);
         await permanentAudit(env, ctx, "model.upsert", body?.id || body?.unique_key || null, response);
+        return out(req, env, response.data, response.status);
+      }
+
+      const availabilityTargetId = matchConsoleAvailabilitySnapshotPath(path);
+      if (method === "POST" && availabilityTargetId) {
+        const body = await readJson(req);
+        const identity = await callWorker(
+          env.ADMIN_WORKER_BASE_URL,
+          `/v1/admin/models/list?q=${enc(availabilityTargetId)}&limit=20`,
+          env,
+          { method: "GET" },
+          ctx,
+        );
+        if (!identity.ok) return out(req, env, identity.data, identity.status);
+
+        const target = resolveConsoleAvailabilityTarget(identity.data, availabilityTargetId);
+        if (!target.ok) return out(req, env, { ok: false, error: target.error }, target.status);
+
+        const safeBody = boundedConsoleAvailabilityBody(body, target.model_key);
+        const response = await callAvailabilityProducer(env, safeBody, ctx);
+        await permanentAudit(env, ctx, "model.availability_snapshot", target.model_key, response);
         return out(req, env, response.data, response.status);
       }
 
@@ -162,6 +189,31 @@ async function callWorker(baseUrl, path, env, options = {}, ctx = {}) {
   let data;
   try { data = text ? JSON.parse(text) : { ok: response.ok }; } catch { data = { ok: response.ok, error: "invalid_downstream_response" }; }
   return { ok: response.ok, status: response.status, data };
+}
+
+async function callAvailabilityProducer(env, body, ctx = {}) {
+  const baseUrl = env.ADMIN_WORKER_BASE_URL;
+  const token = String(env.INTERNAL_TOKEN || "").trim();
+  if (!baseUrl || !token) {
+    return { ok: false, status: 503, data: { ok: false, error: "availability_producer_not_configured" } };
+  }
+  const response = await fetch(`${trim(baseUrl)}/v1/internal/sigil/availability-snapshot`, {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "X-MMD-Internal-Call": "true",
+      "X-MMD-Service-Binding": "model-console-worker",
+      "X-MMD-Operator": ctx.actor || "model-console",
+      "X-Request-ID": ctx.request_id || crypto.randomUUID(),
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  let data;
+  try { data = raw ? JSON.parse(raw) : { ok: response.ok }; } catch { data = { ok: false, error: "invalid_availability_producer_response" }; }
+  return { ok: response.ok && data?.ok !== false, status: response.status, data };
 }
 
 function internalHeaders(env, ctx = {}) {
