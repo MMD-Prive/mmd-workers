@@ -91,7 +91,7 @@ export default {
         )
       );
     }
-  },,
+  },
   async scheduled(_controller, env, ctx) {
     const task = runSupplierAlertSweep(env)
       .then((result) => console.log(JSON.stringify({ event: "himai_supplier_alert_sweep", ...result })))
