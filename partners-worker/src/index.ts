@@ -4294,7 +4294,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912ae97f0a7a0fd93d9_Satoshi-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912d1ba49f7fb7fcf56_Satoshi-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
     @font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
-    :root{color-scheme:dark;--bg:#060505;--bg-mid:#090706;--ivory:#fff9f0;--body:#ddd5cb;--muted:#b9b0a6;--placeholder:#91877f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.30);--line2:rgba(255,255,255,.08);--ink:#171006;--green:#06c755;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
+    :root{color-scheme:dark;--bg:#0a0908;--bg-mid:#0f0d0b;--ivory:#fff9f0;--body:#d9d1c7;--muted:#91887f;--placeholder:#7f776f;--gold:#d7af67;--gold2:#f5e2b5;--line:rgba(215,175,103,.28);--line2:rgba(255,255,255,.06);--ink:#17120b;--green:#5f9272;--font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;--font-en:"General Sans","Satoshi",Arial,sans-serif;--font-secondary:"Satoshi","General Sans",Arial,sans-serif}
     *{box-sizing:border-box}
     html,body{margin:0;min-height:100%;background:var(--bg)}
     body{min-height:100svh;overflow:hidden;color:var(--body);font-family:var(--font-th);font-size:16px;line-height:1.7;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
@@ -4324,7 +4324,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .flow b,.flow span{display:block}
     .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
     .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
-    #go{width:100%;min-height:58px;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;border:1px solid rgba(255,241,199,.72);border-radius:24px;background:linear-gradient(135deg,#f5dfa7 0%,#e5c98b 54%,#d9b970 100%);box-shadow:0 14px 38px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.5);color:#17120b;font:600 15px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
+    #go{width:100%;min-height:58px;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;border:1px solid rgba(255,241,199,.72);border-radius:24px;background:linear-gradient(135deg,#f6e2ae 0%,#e7ca86 56%,#d4ae64 100%);box-shadow:0 14px 38px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.5);color:#17120b;font:600 15px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
     #go:hover{transform:translateY(-1px);filter:brightness(1.025);box-shadow:0 16px 42px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.56)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
     #go:disabled{cursor:wait;opacity:.68;transform:none}
@@ -4403,7 +4403,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
           <span class="line-arrow" aria-hidden="true">↗</span>
         </button>
         <p id="state" role="status" aria-live="polite"></p>
-        <p class="micro">ระบบไม่สร้างบัญชีซ้ำ และยึดสิทธิ์จาก Partner record ที่ผ่าน Recognition แล้วเท่านั้น</p>
+        <p class="micro">ระบบเชื่อมต่อกับ Partner record ที่ผ่าน Recognition และรักษา identity เดิมของคุณตลอด flow</p>
         <nav class="links" aria-label="Partner links">
           <a href="https://www.mmdbkk.com/partner/terms">Partner Terms</a>
           <a href="https://www.mmdbkk.com/partner">Partner Home ↗</a>
@@ -4417,7 +4417,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
 const go=document.getElementById('go'),state=document.getElementById('state');
 let initialized;
 function initialize(){return initialized||(initialized=liff.init({liffId:'2010864854-N34SgCqq'}).catch(error=>{initialized=null;throw error;}));}
-go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · รอ Boss Per ตรวจสอบการเชื่อมบัญชี Partner':'กรุณาลองยืนยัน LINE อีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='กรุณาลองเชื่อมต่อ LINE อีกครั้ง';go.disabled=false;}};
+go.onclick=async()=>{go.disabled=true;state.textContent='กำลังยืนยัน LINE';try{await initialize();if(!liff.isLoggedIn()){liff.login({redirectUri:'${PARTNER_LINE_LOGIN_URL}'});return;}const idToken=liff.getIDToken();if(!idToken)throw Error();const r=await fetch('/v1/partner/line/exchange',{method:'POST',referrerPolicy:'no-referrer',cache:'no-store',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({id_token:idToken})});const d=await r.json();if(!r.ok||!d.ok){const code=d.error&&d.error.code;state.textContent=code==='partner_line_review_required'||code==='partner_not_recognized'?'ยืนยัน LINE แล้ว · บัญชีอยู่ใน Partner Review ของ Boss Per':'กดเข้าสู่ระบบด้วย LINE เพื่อยืนยันอีกครั้ง';go.disabled=false;return;}const target=new URL(d.dashboard_url);if(target.origin!=='https://www.mmdbkk.com'||target.pathname!=='/partner/dashboard'||!target.searchParams.get('t')||target.username||target.password)throw Error();state.textContent='เชื่อมต่อแล้ว · กำลังเปิด Partner Control Room';location.replace(target.href);}catch{state.textContent='กดเข้าสู่ระบบด้วย LINE เพื่อเชื่อมต่ออีกครั้ง';go.disabled=false;}};
 if(typeof liff!=='undefined')initialize().catch(()=>{state.textContent='พร้อมแล้ว · กดเข้าสู่ระบบด้วย LINE อีกครั้ง';});
   </script>
 </body>
