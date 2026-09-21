@@ -255,6 +255,7 @@ const PARTNER_COMMISSIONS = {
 const MODELS = {
   workingName: "fldShiT60bmCxFxRu",
   nickname: "fld0maFkh4NHpsPxA",
+  uniqueKey: "fldYvAbkENGQ4NaaI",
   status: "fldRcAE3bL8dKmURH"
 } as const;
 
@@ -1072,6 +1073,7 @@ async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Pr
 
   const model = await getAirtableRecord(env, env.AIRTABLE_TABLE_MODELS, modelRecordId);
   const modelName = fieldText(model, MODELS.workingName) || fieldText(model, MODELS.nickname) || modelRecordId;
+  const modelKey = fieldText(model, MODELS.uniqueKey) || modelRecordId;
   const partnerSourceRate = Number(body.value.partner_source_rate_thb);
   if (!Number.isFinite(partnerSourceRate) || partnerSourceRate < 0 || partnerSourceRate > 1000000) {
     return errorResponse(request, env, "partner_source_rate_invalid", "Partner source rate must be a valid THB amount.", 400, false);
@@ -1150,7 +1152,7 @@ async function handlePartnerSalesProposal(request: Request, env: RuntimeEnv): Pr
   const fields: AirtableFields = {
     [MODEL_OFFER_RULES.ruleKey]: ruleKey,
     [MODEL_OFFER_RULES.model]: [modelRecordId],
-    [MODEL_OFFER_RULES.modelKey]: modelName,
+    [MODEL_OFFER_RULES.modelKey]: modelKey,
     [MODEL_OFFER_RULES.partnerSourceRateThb]: partnerSourceRate,
     [MODEL_OFFER_RULES.audienceScope]: audiences,
     [MODEL_OFFER_RULES.salesVisibility]: salesVisibility,
