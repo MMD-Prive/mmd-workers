@@ -99,6 +99,8 @@ jobs:
           node --check src/dashboard-worker.js
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
+          node --check src/sigil-availability-snapshot.js
+          node --check ../shared/sigil-availability-snapshot-v1.mjs
           node --check src/kenji-control-endpoints.js
           node --check src/client-intelligence-endpoint.js
           node --check ../shared/kenji-continuity-operator-draft.mjs
@@ -115,6 +117,8 @@ jobs:
             mms-admin-session-bounce.test.mjs \
             model-liff-cross-origin-session.test.mjs \
             kenji-model-access-rpc.test.mjs \
+            sigil-availability-snapshot.test.mjs \
+            ../shared/sigil-availability-snapshot-v1.test.mjs \
             client-intelligence-endpoint.test.mjs \
             ../shared/kenji-continuity-operator-draft.test.mjs \
             kenji-model-admin-adapter.test.mjs \
