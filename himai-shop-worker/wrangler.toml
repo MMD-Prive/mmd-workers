@@ -45,3 +45,6 @@ class_name = "SupplierAlertState"
 [[migrations]]
 tag = "supplier-alert-state-v1"
 new_sqlite_classes = ["SupplierAlertState"]
+
+[triggers]
+crons = ["*/5 * * * *"]
