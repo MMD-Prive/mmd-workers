@@ -9,6 +9,18 @@
  * or background-clip effects from making copy disappear.
  */
 
+@font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af83c714e7ca09d4d5f_Anuphan-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8f8fd3acb9ca38e4d_Anuphan-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8bae381fe8af7b3fd_Anuphan-SemiBold.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"Anuphan";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03af8e6af8380eb7ade4f_Anuphan-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e0906124a74b5e2a114_GeneralSans-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e09393d9307034e1c53_GeneralSans-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e09ac36bac3c6685725_GeneralSans-Semibold.ttf") format("truetype");font-weight:600;font-style:normal;font-display:swap}
+@font-face{font-family:"General Sans";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab03e096209f014ff07c142_GeneralSans-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912ae97f0a7a0fd93d9_Satoshi-Regular.ttf") format("truetype");font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab14912d1ba49f7fb7fcf56_Satoshi-Medium.ttf") format("truetype");font-weight:500;font-style:normal;font-display:swap}
+@font-face{font-family:"Satoshi";src:url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab149126876bbe61da30a9c_Satoshi-Bold.ttf") format("truetype");font-weight:700;font-style:normal;font-display:swap}
+
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7){
   --partner-canvas:#060505;
   --partner-canvas-mid:#090706;
@@ -30,8 +42,9 @@
   --partner-gold-line-strong:rgba(231,199,139,.50);
   --partner-danger:#ff8e8e;
 
-  --partner-font:"LINE Seed Sans TH","Noto Sans Thai","DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --partner-display:"Playfair Display","DM Serif Display",Georgia,serif;
+  --partner-font-th:"Anuphan",Tahoma,"Noto Sans Thai",sans-serif;
+  --partner-font-en:"General Sans","Satoshi",Arial,sans-serif;
+  --partner-font-secondary:"Satoshi","General Sans",Arial,sans-serif;
   --partner-radius-sm:14px;
   --partner-radius-md:18px;
   --partner-radius-lg:24px;
@@ -46,7 +59,7 @@
     radial-gradient(circle at 9% 2%,var(--partner-burgundy-glow),transparent 32rem),
     radial-gradient(circle at 92% 12%,rgba(215,175,103,.10),transparent 34rem),
     linear-gradient(180deg,var(--partner-canvas) 0%,var(--partner-canvas-mid) 48%,#050505 100%);
-  font-family:var(--partner-font);
+  font-family:var(--partner-font-th);
   font-size:16px;
   font-weight:400;
   line-height:1.7;
@@ -68,7 +81,7 @@
 
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(h1,h2,h3,h4){
   color:var(--partner-ivory);
-  font-family:var(--partner-display);
+  font-family:var(--partner-font-th);
   font-weight:600;
   letter-spacing:-.045em;
   overflow-wrap:anywhere;
@@ -77,8 +90,17 @@
 
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(p,li,dd,figcaption,label,small){
   color:var(--partner-copy);
-  font-family:var(--partner-font);
+  font-family:var(--partner-font-th);
   overflow-wrap:anywhere;
+}
+
+:where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :lang(en),
+:where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(.partner-en,[data-partner-font="en"]){
+  font-family:var(--partner-font-en);
+}
+
+:where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(.partner-secondary,[data-partner-font="secondary"]){
+  font-family:var(--partner-font-secondary);
 }
 
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(a,button,input,select,textarea){
@@ -115,8 +137,9 @@
 
 :where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :where(.partner-kicker,[data-partner-role="kicker"]){
   color:var(--partner-gold-light) !important;
+  font-family:var(--partner-font-en);
   font-size:.72rem;
-  font-weight:800;
+  font-weight:600;
   letter-spacing:.14em;
   line-height:1.4;
   text-transform:uppercase;
@@ -252,7 +275,7 @@
     linear-gradient(180deg,rgba(255,255,255,.38),transparent 44%),
     linear-gradient(135deg,#fff2c6 0%,#dfbc76 54%,#a77439 100%);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.56),0 16px 38px rgba(215,175,103,.18);
-  font-weight:800;
+  font-weight:600;
   text-decoration:none;
   transition:transform 280ms var(--partner-ease),filter 280ms ease;
 }
