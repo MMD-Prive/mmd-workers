@@ -3,7 +3,15 @@ main = "src/entry.js"
 compatibility_date = "2026-04-11"
 
 
-# Canonical MMD Shop checkout/status routes. Keep /mmd-shop itself Webflow-owned.
+# Shared Himai/MMD Shop catalog + checkout routes. Keep /shop and /mmd-shop Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop/api/*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/mmd-shop/api/*"
 zone_name = "mmdbkk.com"

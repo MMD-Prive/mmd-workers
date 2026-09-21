@@ -4317,13 +4317,13 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .flow b,.flow span{display:block}
     .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
     .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
-    #go{position:relative;width:100%;min-height:58px;margin-top:14px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:0 20px;border:1px solid rgba(255,239,195,.72);border-radius:999px;background:linear-gradient(135deg,#f8e4b3 0%,#e7c982 54%,#d3ad63 100%);box-shadow:0 16px 38px rgba(215,175,103,.16),inset 0 1px 0 rgba(255,255,255,.54);color:var(--ink);font:600 15px/1 var(--font-en);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
-    #go:hover{transform:translateY(-1px);filter:brightness(1.025);box-shadow:0 18px 42px rgba(215,175,103,.20),inset 0 1px 0 rgba(255,255,255,.58)}
+    #go{width:100%;min-height:58px;margin-top:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 20px;border:1px solid rgba(255,241,199,.72);border-radius:24px;background:linear-gradient(135deg,#f5dfa7 0%,#e5c98b 54%,#d9b970 100%);box-shadow:0 14px 38px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.5);color:#17120b;font:600 15px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
+    #go:hover{transform:translateY(-1px);filter:brightness(1.025);box-shadow:0 16px 42px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.56)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
     #go:disabled{cursor:wait;opacity:.68;transform:none}
-    .line-mark{width:12px;height:12px;display:block;border-radius:50%;background:#5d8f70;box-shadow:0 0 0 7px rgba(93,143,112,.10)}
-    .go-label{min-width:0;text-align:left;letter-spacing:-.01em}
-    .go-arrow{font-family:var(--font-en);font-size:24px;font-weight:500;line-height:1;transform:translateY(-1px)}
+    .line-action{display:flex;align-items:center;gap:14px;min-width:0}
+    .line-dot{width:14px;height:14px;flex:0 0 14px;border-radius:50%;background:#5f9272;box-shadow:0 0 0 7px rgba(95,146,114,.10)}
+    .line-arrow{flex:0 0 auto;color:#17120b;font-family:var(--font-en);font-size:22px;font-weight:600;line-height:1;transform:translateY(-1px)}
     #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
     .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
     .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
@@ -4331,7 +4331,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .links a:hover{color:var(--ivory)}
 
     .flow b,.private{font-family:var(--font-en)}
-    .line-mark{font-family:var(--font-en)}
+    .line-arrow{font-family:var(--font-en)}
     /* FINAL PARTNER CONTRAST SAFETY */
     h1,.brand-copy b{color:var(--ivory)!important;-webkit-text-fill-color:var(--ivory)!important;background:none!important;background-image:none!important}
     .eyebrow,.brand-copy span,.private,#state{color:var(--gold2)!important;-webkit-text-fill-color:var(--gold2)!important}
@@ -4348,10 +4348,10 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
       h1{font-size:clamp(48px,4.5vw,68px)}
       .lead{font-size:14px;line-height:1.75}
       .flow{margin-top:20px}.flow li{padding:13px 9px 13px 0}.flow span{font-size:10px}
-      #go{min-height:56px;font-size:15px}
+      #go{min-height:62px;padding:0 22px;font-size:15px;border-radius:26px}
     }
     @media(max-height:690px) and (max-width:767px){
-      .topbar{padding-top:10px}.shell{padding-bottom:8px}.card{padding:16px}h1{font-size:34px}.lead{font-size:12px;line-height:1.55}.flow{margin-top:12px}#go{margin-top:11px;min-height:48px}.micro,.links{display:none}
+      .topbar{padding-top:10px}.shell{padding-bottom:8px}.card{padding:16px}h1{font-size:34px}.lead{font-size:12px;line-height:1.55}.flow{margin-top:12px}#go{margin-top:11px;min-height:54px}.micro,.links{display:none}
     }
     @media(prefers-reduced-motion:reduce){#go{transition:none}}
   </style>
@@ -4389,9 +4389,11 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
         </ol>
 
         <button id="go" type="button">
-          <span class="line-mark" aria-hidden="true"></span>
-          <span class="go-label">เข้าสู่ระบบด้วย LINE</span>
-          <span class="go-arrow" aria-hidden="true">↗</span>
+          <span class="line-action">
+            <span class="line-dot" aria-hidden="true"></span>
+            <span>เข้าสู่ระบบด้วย LINE</span>
+          </span>
+          <span class="line-arrow" aria-hidden="true">↗</span>
         </button>
         <p id="state" role="status" aria-live="polite"></p>
         <p class="micro">ระบบไม่สร้างบัญชีซ้ำ และยึดสิทธิ์จาก Partner record ที่ผ่าน Recognition แล้วเท่านั้น</p>
