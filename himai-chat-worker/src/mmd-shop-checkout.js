@@ -97,12 +97,12 @@ const SHOP_CHECKOUT_CONFIG = Object.freeze({
   }),
 });
 
-function checkoutConfigForPath(pathname) {
+export function checkoutConfigForPath(pathname) {
   return Object.values(SHOP_CHECKOUT_CONFIG).find((item) => item.path === pathname) || null;
 }
 
 
-export async function handleMmdShopCheckout(request, env, ctx = null) {
+export async function handleMmdShopCheckout(request, env, ctx = null, options = {}) {
   const url = new URL(request.url);
   const shop = checkoutConfigForPath(url.pathname);
   if (!shop) return null;
@@ -124,27 +124,30 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
 
     const customerInput = normalizeCustomer(body.customer || body);
     const shipping = normalizeMmdShopShipping(body.shipping || {}, customerInput);
-    const memberContext = await resolveServerMemberContext(request, env);
+    const memberContext = Object.hasOwn(options, "memberContext") ? options.memberContext : await resolveServerMemberContext(request, env);
     const cartInput = normalizeCart(body.items);
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
     const stock = await loadMmdStock(env);
     const pricedCart = validateAndPriceCart(cartInput, products, stock, shop);
-    const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext, shop);
-    orderId = makeOrderId(shop.orderPrefix);
+    if (options.checkpoint) await options.checkpoint("before_customer_write");
+    const customer = await findOrCreateCustomer(env, customerInput, shop.sourcePath, memberContext, shop);
+    orderId = options.orderId || makeOrderId(shop.orderPrefix);
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "on_demand");
 
+    if (options.checkpoint) await options.checkpoint("before_order_write");
     order = await createOrder(env, {
       orderId,
       customerRecordId: customer.id,
       total,
       stockConfirmationRequired,
-      sourcePath: clean(body.source_path, 300) || shop.sourcePath,
+      sourcePath: shop.sourcePath,
       shop,
       shipping,
       reservation: null,
     });
 
+    if (options.checkpoint) await options.checkpoint("order_created");
     reservation = await reserveViaMmdShopCoordinator(env, {
       order_id: orderId,
       order_record_id: order.id,
@@ -154,6 +157,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
     order.fields = order.fields || {};
     order.fields[ORDER_FIELDS.notes] = writeMmdShopReservation(order.fields[ORDER_FIELDS.notes] || "", reservation);
 
+    if (options.checkpoint) await options.checkpoint("stock_reserved");
     const orderItems = await createOrderItems(env, order.id, pricedCart, shop);
 
     const telegram = await notifyOrder(env, {
@@ -193,6 +197,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       }, 502);
     }
 
+    if (options.checkpoint) await options.checkpoint("payment_created");
     await appendOrderNote(env, order, [
       `payment_ref=${clean(payment.payment_ref, 220)}`,
       "payment_stage=shop",
@@ -266,7 +271,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
   }
 }
 
-function normalizeCustomer(raw) {
+export function normalizeCustomer(raw) {
   const name = clean(raw?.name || raw?.display_name || raw?.customer_name, 180);
   const phone = normalizePhone(raw?.phone || raw?.tel || raw?.mobile);
   const email = clean(raw?.email, 320).toLowerCase();
@@ -276,7 +281,7 @@ function normalizeCustomer(raw) {
   return { name, phone, email };
 }
 
-function normalizeCart(items) {
+export function normalizeCart(items) {
   if (!Array.isArray(items) || !items.length) throw httpError(400, "cart_empty");
   if (items.length > 20) throw httpError(400, "cart_too_large");
   const merged = new Map();
@@ -285,11 +290,16 @@ function normalizeCart(items) {
     const quantity = Number(raw?.quantity ?? raw?.qty ?? 0);
     if (!/^rec[A-Za-z0-9]{14}$/.test(productId)) throw httpError(400, "invalid_product_id");
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) throw httpError(400, "invalid_quantity");
-    merged.set(productId, (merged.get(productId) || 0) + quantity);
+    const expected = raw?.expected_unit_price_thb;
+    if (expected !== undefined && (!Number.isFinite(Number(expected)) || Number(expected) <= 0)) throw httpError(400, "invalid_expected_price");
+    const previous = merged.get(productId);
+    if (previous && previous.expected_unit_price_thb !== (expected === undefined ? undefined : Number(expected))) throw httpError(400, "conflicting_expected_prices");
+    merged.set(productId, { quantity: (previous?.quantity || 0) + quantity, ...(expected !== undefined ? { expected_unit_price_thb: Number(expected) } : {}) });
   }
-  return [...merged.entries()].map(([product_id, quantity]) => {
+  return [...merged.entries()].map(([product_id, line]) => {
+    const { quantity } = line;
     if (quantity > 20) throw httpError(400, "quantity_limit_exceeded");
-    return { product_id, quantity };
+    return { product_id, ...line };
   });
 }
 
@@ -350,6 +360,7 @@ export function validateAndPriceCart(cart, products, stock, shop = SHOP_CHECKOUT
     if (status !== "active") throw httpError(409, "product_not_active");
     if (!availableForShop) throw httpError(409, "product_not_available_in_shop");
     if (price === null) throw httpError(409, "product_price_unavailable");
+    if (line.expected_unit_price_thb !== undefined && Math.abs(Number(line.expected_unit_price_thb) - price) > 0.009) throw httpError(409, "cart_price_changed");
 
     const inventory = stock.get(record.id);
     const onDemand = isOnDemandProduct(fields[PRODUCT_FIELDS.note]);
@@ -464,7 +475,7 @@ async function findExistingCustomer(env, customer, memberContext = null) {
   return null;
 }
 
-async function resolveServerMemberContext(request, env) {
+export async function resolveServerMemberContext(request, env) {
   if (!env.MEMBER_PAGES_WORKER?.fetch) return null;
   const cookie = clean(request.headers.get("cookie"), 12000);
   if (!cookie) return null;
@@ -686,5 +697,5 @@ function money(value) { return Number(value || 0).toLocaleString("en-US", { maxi
 function clean(value, max = 5000) { return String(value == null ? "" : value).trim().slice(0, max).replace(/[\u0000-\u001F\u007F]/g, " "); }
 function escapeHtml(value) { return clean(value, 1000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function httpError(status, message) { const error = new Error(message); error.status = status; return error; }
-function corsHeaders() { return { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type" }; }
+function corsHeaders() { return { "access-control-allow-origin": "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Content-Type, Idempotency-Key" }; }
 function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...corsHeaders() } }); }
