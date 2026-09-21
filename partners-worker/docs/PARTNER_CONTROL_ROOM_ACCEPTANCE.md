@@ -17,6 +17,7 @@ Lovable remains paused. This increment closes the outstanding implementation pat
 | History / reports | Airtable offsets are followed through all pages. Exact Partner-link filtering is retained. Void/refund/reversal/held states are excluded from pending earnings; paid status is exact, not a substring such as “unpaid”. CSV and print views use the complete returned history. |
 | Private Vault | AES-GCM/PBKDF2 remains browser-only. Import checks decrypted Partner ownership and re-encrypts with the current PIN. Failed saves fence queued writes; unsaved notes can be exported encrypted. Stale server revisions cannot overwrite another device. Lock/login expiry clears private editor state. |
 | Notifications / coordination | Partner Activity includes commission/payment history and durable payout references as well as shared requests and owner replies. Existing admin Telegram notifications remain. Console is an explicit shared coordination request queue; it does not automatically send customer messages. |
+| Partner identity onboarding | LINE continues to open the read/manage dashboard. Telegram binding is the required final onboarding step before any Dashboard job response. The UI removes response controls until the canonical Partner record has both a numeric Telegram ID and `verified` status, and the API independently enforces the same gate before every write. |
 
 ## Live pilot prerequisites observed on 2026-09-21
 
@@ -26,14 +27,14 @@ Read-only Airtable checks found:
 - The existing pilot Session remains `payment_status: pending`.
 - Its existing referral snapshot declares `commission_terms: not_set` and `commercial_terms: case_by_case`.
 
-Therefore a complete money/confirm journey still needs an actual approved commercial agreement, genuine Telegram binding, and a genuinely verified payment. Do not choose a rate, create a payment, or confirm a job to make acceptance pass. The owner reconciliation screen is prepared for the real agreement.
+Therefore a complete money/confirm journey still needs an actual approved commercial agreement, genuine Telegram binding by Kendo, and a genuinely verified payment. Kendo must use **Connect Telegram** and press **Start** in Telegram; no operator should enter or infer a Telegram ID on Kendo's behalf. Do not choose a rate, create a payment, or confirm a job to make acceptance pass. The owner reconciliation screen is prepared for the real agreement.
 
 Login: <https://mmdbkk.com/sigil/model/dashboard/partner-login>
 Owner review: <https://mmdbkk.com/internal/admin/partners>
 
 ## Validation
 
-- Partner runtime/DOM suite: 68 tests, including concurrent materialization, ambiguous-write fencing, historical and legacy agreement handling, deposit/final/refund scenarios, 305-row pagination, scoped photo review/publication/revocation, canonical sales resolver and encrypted backup recovery.
+- Partner runtime/DOM suite: 73 tests, including Telegram onboarding/API enforcement, concurrent materialization, ambiguous-write fencing, historical and legacy agreement handling, deposit/final/refund scenarios, 305-row pagination, scoped photo review/publication/revocation, canonical sales resolver and encrypted backup recovery.
 - Admin scope suite: 18 tests covering credential-bound owner access, exact-origin writes, fixed service routes, canonical creation/capture and bundled Co-Partner payout contracts.
 - TypeScript and `git diff --check` pass.
 - These are fixture/DOM tests, not visual mobile/desktop/PDF or authenticated pilot acceptance.

@@ -58,6 +58,21 @@ test('native control room executes and switches every operation tab with live fi
   assert.ok(q('[data-model-dialog]').open);
   assert.deepEqual(errors,[]);
 });
+test('Telegram onboarding hides job response controls until the verified bind appears',async t=>{
+  const {q,w,f,errors}=await ui(t);
+  assert.equal(q('[data-telegram]').dataset.state,'required');
+  assert.match(q('[data-telegram]').textContent,/ขั้นตอนสุดท้าย: เชื่อม Telegram/);
+  assert.ok(q('[data-connect-telegram]'));
+  assert.ok(q('[data-telegram-job-gate]'));
+  assert.equal(q('[data-job-action]'),null);
+  f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramId]='123456789';
+  f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.telegramVerificationStatus]='verified';
+  w.dispatchEvent(new w.Event('focus'));
+  await settle(()=>q('[data-telegram]').dataset.state==='connected');
+  assert.equal(q('[data-telegram-job-gate]'),null);
+  assert.match(q('[data-jobs]').textContent,/รอ Official Verify/);
+  assert.deepEqual(errors,[]);
+});
 test('private schedule encrypts locally, refuses overlap, survives relock, and never enters shared changes',async t=>{
   const {q,w,f,errors}=await ui(t);
   q('[data-vault-pin]').value='fixture-password';q('[data-unlock-vault]').click();
