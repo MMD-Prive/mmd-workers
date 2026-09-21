@@ -4317,12 +4317,13 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .flow b,.flow span{display:block}
     .flow b{color:var(--gold);font-size:8px;letter-spacing:.08em;text-transform:uppercase}
     .flow span{margin-top:4px;color:var(--body);font-size:9px;font-weight:700;line-height:1.35}
-    #go{width:100%;min-height:52px;margin-top:14px;display:flex;align-items:center;justify-content:center;gap:11px;padding:0 18px;border:0;border-radius:999px;background:var(--green);box-shadow:0 14px 36px rgba(6,199,85,.14);color:#fff;font:600 14px/1 var(--font-th);cursor:pointer;transition:transform .2s ease,filter .2s ease}
-    #go:hover{transform:translateY(-1px);filter:brightness(1.04)}
+    #go{position:relative;width:100%;min-height:58px;margin-top:14px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:0 20px;border:1px solid rgba(255,239,195,.72);border-radius:999px;background:linear-gradient(135deg,#f8e4b3 0%,#e7c982 54%,#d3ad63 100%);box-shadow:0 16px 38px rgba(215,175,103,.16),inset 0 1px 0 rgba(255,255,255,.54);color:var(--ink);font:600 15px/1 var(--font-en);cursor:pointer;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}
+    #go:hover{transform:translateY(-1px);filter:brightness(1.025);box-shadow:0 18px 42px rgba(215,175,103,.20),inset 0 1px 0 rgba(255,255,255,.58)}
     #go:focus-visible{outline:3px solid rgba(239,213,159,.72);outline-offset:4px}
     #go:disabled{cursor:wait;opacity:.68;transform:none}
-    .line-mark{position:relative;width:27px;height:22px;display:grid;place-items:center;border-radius:7px;background:#fff;color:#06a947;font-size:7px;font-weight:700}
-    .line-mark:after{position:absolute;right:3px;bottom:-3px;width:7px;height:7px;background:#fff;clip-path:polygon(0 0,100% 0,100% 100%);content:""}
+    .line-mark{width:12px;height:12px;display:block;border-radius:50%;background:#5d8f70;box-shadow:0 0 0 7px rgba(93,143,112,.10)}
+    .go-label{min-width:0;text-align:left;letter-spacing:-.01em}
+    .go-arrow{font-family:var(--font-en);font-size:24px;font-weight:500;line-height:1;transform:translateY(-1px)}
     #state{min-height:20px;margin:9px 0 0;color:var(--gold2);font-size:11px;line-height:1.45;text-align:center}
     .micro{margin:8px 0 0;color:var(--muted);font-size:9px;line-height:1.5;text-align:center}
     .links{margin-top:11px;display:flex;justify-content:center;gap:16px}
@@ -4388,8 +4389,9 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
         </ol>
 
         <button id="go" type="button">
-          <span class="line-mark" aria-hidden="true">LINE</span>
-          <span>เข้าสู่ระบบด้วย LINE</span>
+          <span class="line-mark" aria-hidden="true"></span>
+          <span class="go-label">เข้าสู่ระบบด้วย LINE</span>
+          <span class="go-arrow" aria-hidden="true">↗</span>
         </button>
         <p id="state" role="status" aria-live="polite"></p>
         <p class="micro">ระบบไม่สร้างบัญชีซ้ำ และยึดสิทธิ์จาก Partner record ที่ผ่าน Recognition แล้วเท่านั้น</p>
