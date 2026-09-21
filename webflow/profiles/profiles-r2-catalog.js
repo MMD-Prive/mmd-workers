@@ -4,8 +4,12 @@
   if (!root || root.dataset.r2CatalogReady === "true") return;
   root.dataset.r2CatalogReady = "true";
   var endpoint = "https://sigil.mmdbkk.com/sigil/api/models/search/public-catalog";
+  var femaleGate = "/believe/inme";
   var track = root.querySelector(".mp8-track--profiles");
   if (!track) return;
+  var initialGender = "all";
+  try { initialGender = new URLSearchParams(location.search).get("gender") || "all"; } catch (_) {}
+  root.dataset.activeGender = ["all", "male", "female"].indexOf(initialGender) > -1 ? initialGender : "all";
 
   function text(tag, value, className) {
     var node = document.createElement(tag);
@@ -20,9 +24,9 @@
   }
   function copy() {
     var sets = {
-      th: { badge: "PUBLIC", line: "โปรไฟล์ Public Model ที่อนุมัติให้แสดงบน MMD", fit: "ก่อนยืนยันงาน", detail: "MMD จะตรวจคิว ขอบเขต และความเหมาะสมของทั้งสองฝ่ายก่อนยืนยันทุกครั้ง", cta: "ให้ MMD เช็กคิวและความเหมาะ" },
-      en: { badge: "PUBLIC", line: "A Public Model profile approved for display by MMD.", fit: "Before confirmation", detail: "MMD checks availability, boundaries, and mutual fit before every confirmation.", cta: "Ask MMD to check availability" },
-      zh: { badge: "公开", line: "经 MMD 审核后公开展示的 Public Model Profile。", fit: "确认之前", detail: "每次确认前，MMD 都会检查时间、边界与双方是否合适。", cta: "请 MMD 检查时间与匹配度" }
+      th: { badge: "PUBLIC", line: "โปรไฟล์ Public Model ที่อนุมัติให้แสดงบน MMD", fit: "ก่อนยืนยันงาน", detail: "MMD จะตรวจคิว ขอบเขต และความเหมาะสมของทั้งสองฝ่ายก่อนยืนยันทุกครั้ง", cta: "ให้ MMD เช็กคิวและความเหมาะ", ctaFemale: "ไปที่ BELIEVE ก่อน" },
+      en: { badge: "PUBLIC", line: "A Public Model profile approved for display by MMD.", fit: "Before confirmation", detail: "MMD checks availability, boundaries, and mutual fit before every confirmation.", cta: "Ask MMD to check availability", ctaFemale: "Continue through BELIEVE" },
+      zh: { badge: "公开", line: "经 MMD 审核后公开展示的 Public Model Profile。", fit: "确认之前", detail: "每次确认前，MMD 都会检查时间、边界与双方是否合适。", cta: "请 MMD 检查时间与匹配度", ctaFemale: "先进入 BELIEVE" }
     };
     return sets[language()];
   }
@@ -39,8 +43,11 @@
     article.className = "mp8-profile is-visible";
     article.dataset.profile = "";
     article.dataset.name = item.display_name;
-    article.dataset.travel = "";
-    article.dataset.extreme = "";
+    var accepted = Array.isArray(item.accepted_customer_genders) ? item.accepted_customer_genders.filter(function (value) { return value === "male" || value === "female"; }) : ["male", "female"];
+    if (!accepted.length) accepted = ["male", "female"];
+    article.dataset.travel = accepted.join(",");
+    article.dataset.extreme = accepted.join(",");
+    article.dataset.customerScope = item.customer_scope || "all_genders";
     article.dataset.r2Public = "true";
 
     var figure = document.createElement("figure");
@@ -78,11 +85,36 @@
     var link = document.createElement("a");
     link.className = "mp8-card__cta";
     link.href = "/booking?from=profiles&model=" + encodeURIComponent(item.display_name);
+    link.dataset.profileCta = "true";
+    link.dataset.bookingHref = link.href;
+    link.dataset.femaleHref = femaleGate + "?from=profiles&model=" + encodeURIComponent(item.display_name);
+    link.dataset.defaultLabel = words.cta;
+    link.dataset.femaleLabel = words.ctaFemale;
     link.append(text("span", words.cta), text("b", "↗"));
     body.append(link);
     article.append(figure, body);
     return article;
   }
+  function syncCtas() {
+    var gender = root.dataset.activeGender || "all";
+    root.querySelectorAll("[data-r2-public] [data-profile-cta]").forEach(function (link) {
+      var article = link.closest("[data-r2-public]");
+      var femaleFlow = gender === "female" || (gender === "all" && article && article.dataset.customerScope === "female_only");
+      link.href = femaleFlow ? link.dataset.femaleHref : link.dataset.bookingHref;
+      var label = link.querySelector("span");
+      if (label) label.textContent = femaleFlow ? link.dataset.femaleLabel : link.dataset.defaultLabel;
+    });
+  }
+  root.addEventListener("profiles:filterchange", syncCtas);
+  root.addEventListener("click", function (event) {
+    var button = event.target.closest('[data-filter-group="gender"] [data-filter-value]');
+    if (!button || !root.contains(button)) return;
+    var gender = button.dataset.filterValue;
+    if (["all", "male", "female"].indexOf(gender) === -1) return;
+    root.dataset.activeGender = gender;
+    Promise.resolve().then(syncCtas);
+  });
+
   function updateStats(count) {
     var stats = root.querySelectorAll(".mp8-hero__stats span b");
     if (stats[0]) stats[0].textContent = String(count + 3).padStart(2, "0");
@@ -99,6 +131,7 @@
       track.replaceChildren(fragment);
       updateStats(items.length);
       if (typeof root.mmdProfilesRefresh === "function") root.mmdProfilesRefresh();
+      syncCtas();
     })
     .catch(function () { root.dataset.r2CatalogFallback = "static"; });
 })();
