@@ -32,7 +32,7 @@ test("handler lists R2 without exposing object keys or bucket metadata", async (
     ALLOWED_ORIGINS: "https://mmdbkk.com",
     MMD_MODEL_ASSETS: { async list() { return { objects: [{ key: "Public Model/HIMA/card.webp" }], truncated: false }; } },
   };
-  const response = await handlePublicProfilesCatalogRequest(new Request("https://sigil.mmdbkk.com/sigil/api/models/public-catalog", { headers: { Origin: "https://mmdbkk.com" } }), env);
+  const response = await handlePublicProfilesCatalogRequest(new Request("https://sigil.mmdbkk.com/sigil/api/models/search/public-catalog", { headers: { Origin: "https://mmdbkk.com" } }), env);
   const payload = await response.json();
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("access-control-allow-origin"), "https://mmdbkk.com");
