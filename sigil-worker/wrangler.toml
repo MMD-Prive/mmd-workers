@@ -4,9 +4,9 @@ compatibility_date = "2026-06-04"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
-# No custom routes are declared here on purpose.
-# Cloudflare API is currently rejecting route updates for this worker at /workers/scripts/sigil-worker/routes.
-# Keeping routes out of wrangler.toml allows deploys to succeed through workers.dev.
+# Private Model custom-host routes are synchronized after deploy by the production
+# workflow with a refuse-takeover guard. Keep them out of wrangler.toml so an
+# implementation deploy cannot silently steal another Worker route.
 # Temporary public Complaint Evidence intake URL:
 # https://sigil-worker.malemodel-bkk.workers.dev/member/api/recovery/complaint-evidence
 #
@@ -36,7 +36,7 @@ PUBLIC_MODEL_REVIEW_BASE_URL = "https://mmdbkk.com/internal/admin/model-applicat
 PRIVATE_MODEL_ENABLED = "true"
 PRIVATE_MODEL_UPLOAD_ENABLED = "true"
 PRIVATE_MODEL_UPLOAD_REQUIRED = "false"
-PRIVATE_MODEL_PUBLIC_API_BASE = "https://sigil-worker.malemodel-bkk.workers.dev"
+PRIVATE_MODEL_PUBLIC_API_BASE = "https://www.mmdbkk.com"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TELEGRAM_PUBLIC_MODEL_THREAD_ID = "155"
 TG_THREAD_PUBLIC_MODEL = "155"
