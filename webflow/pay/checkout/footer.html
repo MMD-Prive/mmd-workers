@@ -67,7 +67,7 @@
   let selected="promptpay";
   let shopMode=false;
   let amountDueThb=null;
-  const html=(v)=>String(v==null?"":v).replace(/[&<>"\']/g,(ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\\\"":"&quot;","\'":"&#39;"}[ch]));
+  const html=(v)=>String(v==null?"":v).replace(/[&<>"']/g,(ch)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 
   function setSelected(method){
     selected=method;
