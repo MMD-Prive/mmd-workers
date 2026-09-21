@@ -180,8 +180,11 @@ This section supersedes older Phase 1 `UNRESOLVED` / `PARTIAL` labels for the ro
 
 | Surface | Canonical production owner | Production acceptance |
 | --- | --- | --- |
+| `/`, `/profiles`, `/public/access` | Webflow presentation | post-retirement live 200 smoke with no legacy front-gate interception |
 | `/member/login` | Webflow presentation; My MMD/LIFF Worker remains identity authority | Webflow no-script route exclusion + live page smoke |
 | `/member/dashboard` | Webflow presentation | Webflow no-script route exclusion + live page smoke |
+| `/member/membership`, `/member/promotion` | Webflow presentation | post-retirement live 200 smoke |
+| `/blackcard`, `/blackcard/black-card` | Webflow presentation; compatibility page retained outside sitemap for legacy alias | post-retirement live 200 smoke on both paths |
 | `/api/member/dashboard` | `member-dashboard-chat-worker` → `member-pages-worker` | owner/upstream headers + unauth boundary smoke |
 | `/pay/renewal`, `/sigil/pay/renewal` | `member-dashboard-chat-worker` redirect-only compatibility | 307 + canonical renewal target smoke |
 | SIGIL booking API subset | `sigil-booking-worker` | exact custom-host routes + owner header/CORS smoke |
@@ -191,7 +194,10 @@ This section supersedes older Phase 1 `UNRESOLVED` / `PARTIAL` labels for the ro
 | `/blackcard/black-card` | Webflow compatibility page for canonical `/blackcard` surface | compatibility page excluded from sitemap and published on apex + www |
 | `/sigil/admin/login`, `/admin/login` | `admin-worker` redirect-only compatibility aliases → `/internal/admin/login` | exact apex/www routes; GET/HEAD 308 with query preservation; non-navigation methods fail closed |
 | `/sigil/internal/admin/login` | `admin-worker` compatibility login surface | exact `/sigil/internal/admin*` route family remains canonical Worker-owned |
-| `mmd-redirect-worker` | no canonical ownership | source is HARD DISABLED/pass-through only; final production target is zero Cloudflare routes |
+| `/sigil/admin` | Webflow presentation | post-retirement live 200 smoke; login remains separate `admin-worker` route |
+| `/webhooks/line`, `/webhooks/line/mms` | `member-dashboard-chat-worker` | exact apex/www route config + production LINE/MMS ownership smoke |
+| `/telegram/webhook`, `/v1/webhook`, `/telegram/internal/send`, `/v1/internal/send`, `/v1/send` | `telegram-worker` | exact apex/www route sync + canonical Telegram webhook repair + secret/auth-boundary smoke |
+| `mmd-redirect-worker` | no canonical ownership | source is HARD DISABLED/pass-through only; production route table verified at zero |
 
 Final Phase 1 retirement gate: `.github/workflows/retire-mmd-redirect-worker-production.yml` snapshots every production route still attached to `mmd-redirect-worker`, verifies replacement surfaces, retires only those legacy routes, runs production acceptance, and restores the snapshot automatically if acceptance fails.
 
