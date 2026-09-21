@@ -141,14 +141,14 @@ test("Dashboard actions also recheck Payment Truth and do not accept a paid labe
 });
 
 for(const scenario of ["missing_id","unverified","malformed_id"]){
-  test(`Dashboard job response blocks ${scenario} Telegram identity before writes`,async t=>{
+  test(`Dashboard job response does not require ${scenario} Telegram identity when LINE token and Payment Truth are valid`,async t=>{
     const f=await fixture(t);
     if(scenario==="missing_id")delete f.partner.fields[F.telegramId];
     if(scenario==="unverified")f.partner.fields[F.telegramVerified]="pending";
     if(scenario==="malformed_id")f.partner.fields[F.telegramId]="@fixture_partner";
     const r=await worker.fetch(post("https://www.mmdbkk.com/v1/partner/jobs/action?t="+encodeURIComponent(f.token),{session_record_id:SESSION_ID,action:"confirm"}),f.env,{});
-    assert.equal(r.status,409);assert.equal((await r.json()).error.code,"telegram_connect_required");
-    assert.equal(f.writes.length,0);assert.equal(f.notifications.length,0);
+    assert.equal(r.status,200);assert.equal((await r.json()).status,"confirmed");
+    assert.equal(f.session.fields[F.confirmation],"confirmed");assert.equal(f.writes.length,1);assert.equal(f.notifications.length,1);
   });
 }
 
