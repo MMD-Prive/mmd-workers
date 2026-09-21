@@ -32,3 +32,28 @@ test("confirmation ack does not mark payment paid", () => {
   assert.doesNotMatch(source, /paymentStatus[^\n]*Paid/i);
   assert.doesNotMatch(source, /may_mark_paid/i);
 });
+
+
+test("customer change request intake is review-only and idempotent", () => {
+  assert.match(source, /CONFIRM_CHANGE_REQUEST_PATH = "\/v1\/confirm\/change-request"/);
+  assert.match(source, /AIRTABLE_TABLE_CUSTOMER_CHANGE_REQUESTS/);
+  assert.match(source, /status\]: "pending_review"/);
+  assert.match(source, /canonical_session_mutated: false/);
+  assert.match(source, /requires_mmd_review: true/);
+  assert.match(source, /idempotency_key_required/);
+});
+
+test("customer acknowledgement fails closed while a change request is pending", () => {
+  assert.match(source, /listPendingCustomerChangeRequests\(env, authorized\.claims\.session_id\)/);
+  assert.match(source, /customer_change_request_pending/);
+  assert.match(source, /pending_change_requests: pending/);
+  assert.doesNotMatch(source, /pending[\s\S]{0,300}patchFields\[fields\.sessionStatus\] = "Confirmed"/);
+});
+
+test("change request sends ops notification only after durable Airtable write", () => {
+  const writeAt = source.indexOf("createCustomerChangeRequest(env, authorized");
+  const notifyAt = source.indexOf("notifyCustomerChangeRequest(env, authorized");
+  assert.ok(writeAt >= 0 && notifyAt > writeAt);
+  assert.match(source, /notificationStatus\]: "pending"/);
+  assert.match(source, /patchChangeNotification/);
+});
