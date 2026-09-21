@@ -1,3 +1,4 @@
+import { SHOP_BRANDS, shopFromPaymentRecord } from "../shared/shop-brand.mjs";
 import { classifyPaymentOpsRoute, membershipInferenceLabel, paymentPresentationLane } from "../shared/payment-intelligence.mjs";
 import { verifyConfirmToken } from "./index.js";
 import { withPaymentEvidenceLock } from "../shared/canonical-payment-evidence.mjs";
@@ -306,7 +307,7 @@ function firstValue(fields, keys) {
   return null;
 }
 
-function paymentSnapshot(record, form = null) {
+export function paymentSnapshot(record, form = null) {
   const fields = paymentFields(record);
   const rawStage = firstValue(fields, ["payment_stage", "payment_type", "stage"]) || form?.get("payment_stage") || form?.get("payment_type") || "";
   return {
@@ -315,6 +316,7 @@ function paymentSnapshot(record, form = null) {
     member_email: clean(firstValue(fields, ["member_email", "email", "Contact Email"]) || form?.get("member_email"), 320).toLowerCase(),
     package_code: code(firstValue(fields, ["package_code", "package", "Package Code"]) || form?.get("package_code")),
     payment_stage: code(rawStage) || "deposit",
+    shop_brand: code(rawStage) === "shop" ? shopFromPaymentRecord(record).key : null,
     payment_stage_explicit: Boolean(clean(rawStage)),
     payment_status: code(firstValue(fields, ["Payment Status", "payment_status", "status"])),
     verification_status: code(firstValue(fields, ["Verification Status", "verification_status"])),
@@ -384,13 +386,15 @@ function threadId(value, fallback) {
 
 export function paymentProofTelegramRoute(env = {}, snapshot = {}, sourcePage = "") {
   if (paymentProofLane(snapshot) === "mmd_shop") {
+    const shop = SHOP_BRANDS[snapshot.shop_brand] || SHOP_BRANDS["mmd-shop"];
     return {
+      shop_brand: shop.key, shop_name: shop.publicName, shop_title: shop.telegramTitle,
       topic: "mmd_shop",
-      reason: "mmd_shop_payment",
+      reason: shop.key === "shop" ? "himai_shop_payment" : "mmd_shop_payment",
       should_alert: false,
       inference: null,
-      thread_id: threadId(env.TG_THREAD_MMD_SHOP_PAYMENTS, 161),
-      alerts_thread_id: threadId(env.TG_THREAD_MMD_SHOP_ALERTS, 162),
+      thread_id: threadId(env[shop.paymentThreadEnv], shop.paymentThread),
+      alerts_thread_id: threadId(env[shop.alertsThreadEnv], shop.alertsThread),
     };
   }
   const route = classifyPaymentOpsRoute({
@@ -425,13 +429,13 @@ async function notifyTelegramFile(env, file, { proofId, paymentRef, snapshot, so
     route.topic === "membership"
       ? "<b>MEMBERSHIP PAYMENT PROOF · PENDING REVIEW</b>"
       : route.topic === "mmd_shop"
-        ? "<b>MMD SHOP PAYMENT PROOF · PENDING REVIEW</b>"
+        ? `<b>${route.shop_title} PAYMENT PROOF · PENDING REVIEW</b>`
         : "<b>PAYMENT PROOF · PENDING REVIEW</b>",
     `Proof: <code>${proofId}</code>`,
     `Ref: <code>${paymentRef}</code>`,
     snapshot.amount_thb ? `Amount: <b>${snapshot.amount_thb} THB</b>` : "",
     snapshot.payment_stage ? `Stage: <b>${tgHtml(snapshot.payment_stage)}</b>` : "",
-    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? "Classified: <b>MMD Shop Order</b>" : "",
+    inferenceLabel ? `Classified: <b>${tgHtml(inferenceLabel)}</b>` : route.topic === "membership" ? "Classified: <b>Membership / Renewal</b>" : route.topic === "mmd_shop" ? `Classified: <b>${route.shop_name} Order</b>` : "",
     ...(route.topic === "membership" || route.topic === "mmd_shop"
       ? (route.topic === "mmd_shop" && snapshot.session_id ? [`Order: <code>${tgHtml(snapshot.session_id)}</code>`] : [])
       : webJobContextCaptionLines(jobContext)),

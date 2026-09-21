@@ -1,0 +1,85 @@
+<main id="himai-shop-v3" data-catalog="/shop/api/products" data-checkout="/shop/api/checkout">
+
+
+<section class="hs-hero">
+ <picture>
+  <source media="(max-width:767px)" srcset="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8ae434c7bedab2e3d365a7_Himai%20Shop%20Mobile%20Ver.webp">
+  <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8ae434cafcedc39aba941f_Himai%20Shop%20Dektop%20Ver.webp" alt="Himai Shop" loading="eager" fetchpriority="high">
+ </picture>
+ <header class="hs-nav">
+  <a href="/shop" aria-label="Himai Shop"><img class="hs-logo" src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/69e9d0c363387bd08559ec78_Himai%20Shop%20Trans%20Full.png" alt="Himai Shop"></a>
+  <div class="hs-navlinks">
+   <div class="hs-lang" role="group" aria-label="Language"><button type="button" data-lang="th">TH</button><button type="button" data-lang="en">EN</button><button type="button" data-lang="zh">中文</button></div>
+   <a href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="contact">คุยกับร้าน</a>
+  </div>
+ </header>
+ <div class="hs-shell hs-hero-copy">
+  <span class="hs-kicker">HIMAI · SELECTED WITH CARE</span>
+  <h1 data-i18n="heroTitle">ของที่ชอบ เลือกให้ชัด แล้วค่อยสั่งครับ</h1>
+  <p data-i18n="heroCopy">ผมจัดของในร้านให้เลือกง่ายขึ้น ราคาและสต๊อกที่กดสั่งได้จะยึดจากข้อมูลจริงของร้านครับ</p>
+  <div class="hs-actions"><a class="hs-btn hs-btn-primary" href="#hs-products" data-i18n="browse">ดูสินค้า</a><a class="hs-btn hs-btn-glass" href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="ask">ถาม Himai</a></div>
+ </div>
+</section>
+
+<section class="hs-path" aria-label="How to order">
+ <div class="hs-path-track">
+  <div class="hs-step"><small>01 · PICK</small><strong data-i18n="step1">เลือกตัวและขนาดที่ต้องการ</strong></div>
+  <div class="hs-step"><small>02 · CHECK</small><strong data-i18n="step2">ร้านเช็กราคาและสต๊อกจริง</strong></div>
+  <div class="hs-step"><small>03 · PAY</small><strong data-i18n="step3">จ่ายจาก Order ที่เปิดให้</strong></div>
+  <div class="hs-step"><small>04 · TRACK</small><strong data-i18n="step4">สถานะเดินต่อใน Order เดิม</strong></div>
+ </div>
+</section>
+
+<section class="hs-catalog" id="hs-products">
+ <div class="hs-shell">
+  <div class="hs-head"><div><span class="hs-label">CURRENT SELECTION</span><h2 data-i18n="selectionTitle">เลือกจากของที่มีจริงก่อน</h2><p data-i18n="selectionCopy">สต๊อกกองเดียวกับ MMD Shop แต่ Himai ใช้ราคาของ Himai เองครับ</p></div></div>
+  <div class="hs-grid" id="hsGrid" aria-live="polite"><div class="hs-loading" data-i18n="loading">กำลังเปิดรายการสินค้า…</div></div>
+ </div>
+</section>
+
+<section class="hs-info">
+ <div class="hs-shell">
+  <details><summary data-i18n="info1">ราคา Himai กับ MMD Shop เหมือนกันไหม</summary><div class="hs-fold-body" data-i18n="info1b">ไม่จำเป็นครับ ของกองเดียวกันได้ แต่แต่ละร้านมีราคาขายของตัวเอง ระบบจะใช้ราคาของ Himai ตอนสั่งจากหน้านี้</div></details>
+  <details><summary data-i18n="info2">ถ้าปุ่มสั่งยังไม่เปิด</summary><div class="hs-fold-body" data-i18n="info2b">หมายถึงรายการนั้นยังไม่พร้อมสำหรับ Online Checkout อาจกำลังเช็กสต๊อก ราคา หรือเป็นสินค้าที่ใช้ช่องทางสั่งเฉพาะครับ</div></details>
+  <details><summary data-i18n="info3">หลังจ่ายเงินแล้วตามจากไหน</summary><div class="hs-fold-body" data-i18n="info3b">Order เดิมจะเป็นตัวตามยอด การเตรียมสินค้า การส่ง Return และ Refund เพื่อไม่ให้ข้อมูลแยกกันครับ</div></details>
+ </div>
+</section>
+
+<section class="hs-aftercare">
+ <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a8a8c10b5ae54a09ce22cbf_06%20Vintage%20Comic.webp" alt="Himai Shop packed with care" loading="lazy">
+ <div class="hs-shell hs-aftercare-copy"><span class="hs-kicker">PACKED WITH CARE</span><h2 data-i18n="afterTitle">สั่งแล้วก็อยากให้ตามเรื่องง่ายจนถึงมือคุณ</h2><p data-i18n="afterCopy">Payment, stock, shipping และ aftercare เดินต่อจาก Order เดียวครับ</p></div>
+</section>
+
+<button class="hs-cart" id="hsCart" type="button" aria-label="Open Cart"><span>Cart</span><span class="hs-count" id="hsCount">0</span></button>
+<div class="hs-toast" id="hsToast" role="status" aria-live="polite"></div>
+
+<aside class="hs-drawer" id="hsDrawer" aria-label="Himai Cart">
+ <button class="hs-shade" type="button" data-close aria-label="Close Cart"></button>
+ <div class="hs-panel" role="dialog" aria-modal="true">
+  <div class="hs-panel-top"><div><span class="hs-label">HIMAI CART</span><h3 data-i18n="cartTitle">ของที่เลือกไว้</h3></div><button class="hs-close" type="button" data-close>×</button></div>
+  <p class="hs-dtext" data-i18n="cartCopy">ก่อนเปิด Order ร้านจะเช็กราคาและสต๊อกจริงอีกครั้งครับ</p>
+  <div class="hs-list" id="hsList"></div>
+  <div class="hs-total"><span data-i18n="total">รวม</span><strong id="hsTotal">—</strong></div>
+  <div class="hs-checkout">
+   <h4 data-i18n="checkoutTitle">ข้อมูลสำหรับสั่งซื้อ</h4>
+   <p data-i18n="checkoutCopy">กรอกครั้งเดียว แล้วไปชำระเงินจาก Order ที่ระบบเปิดให้ครับ</p>
+   <input id="hsName" autocomplete="name" placeholder="ชื่อผู้สั่งซื้อ *" data-ph="name">
+   <input id="hsPhone" inputmode="tel" autocomplete="tel" placeholder="เบอร์โทร *" data-ph="phone">
+   <input id="hsEmail" inputmode="email" autocomplete="email" placeholder="อีเมล (ถ้ามี)" data-ph="email">
+   <label><span data-i18n="method">วิธีรับสินค้า</span><select id="hsMethod"><option value="delivery" data-i18n="delivery">จัดส่ง</option><option value="pickup" data-i18n="pickup">รับสินค้าเอง / Pickup</option></select></label>
+   <div class="hs-shipping" id="hsShipping">
+    <input id="hsAddress1" autocomplete="address-line1" placeholder="ที่อยู่จัดส่ง *" data-ph="address1">
+    <input id="hsAddress2" autocomplete="address-line2" placeholder="อาคาร / ชั้น / ห้อง (ถ้ามี)" data-ph="address2">
+    <div class="hs-two"><input id="hsSubdistrict" placeholder="แขวง / ตำบล" data-ph="subdistrict"><input id="hsDistrict" placeholder="เขต / อำเภอ *" data-ph="district"></div>
+    <div class="hs-two"><input id="hsProvince" autocomplete="address-level1" placeholder="จังหวัด *" data-ph="province"><input id="hsPostal" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="รหัสไปรษณีย์ *" data-ph="postal"></div>
+   </div>
+   <textarea id="hsNote" rows="2" placeholder="หมายเหตุการจัดส่ง (ถ้ามี)" data-ph="note"></textarea>
+   <button class="hs-checkout-btn" id="hsCheckout" type="button" data-i18n="checkout">สั่งซื้อและชำระเงิน</button>
+   <div class="hs-checkout-status" id="hsStatus" aria-live="polite"></div>
+  </div>
+  <div class="hs-cartlinks"><a href="https://line.me/R/ti/p/@himaishop" target="_blank" rel="noopener" data-i18n="contact">คุยกับร้าน</a><button id="hsClear" type="button" data-i18n="clear">ล้าง Cart</button></div>
+ </div>
+</aside>
+
+
+</main>

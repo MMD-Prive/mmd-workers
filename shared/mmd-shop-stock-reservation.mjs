@@ -1,10 +1,11 @@
+import { SHOP_INVENTORY_TABLE_ID, SHOP_STOCK_MOVEMENTS_TABLE_ID } from "./shop-brand.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 const TABLES = Object.freeze({
   orders: "tblr8lbi2wMuRM1N4",
   orderItems: "tbl37Iprxz4OLL65P",
-  inventory: "tblwFgl4et1TOgtNn",
-  movements: "tblASifwHdArNKQP2",
+  inventory: SHOP_INVENTORY_TABLE_ID,
+  movements: SHOP_STOCK_MOVEMENTS_TABLE_ID,
 });
 
 const ORDER_FIELDS = Object.freeze({
@@ -519,6 +520,7 @@ async function listRecords(env, tableId, fieldIds) {
     offset = clean(data.offset, 300);
     pages += 1;
   } while (offset && pages < 20);
+  if (offset) throw reservationError(503, "stock_snapshot_incomplete");
   return out;
 }
 

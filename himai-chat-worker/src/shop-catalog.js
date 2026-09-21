@@ -1,13 +1,7 @@
-const SHOP_CONFIG = Object.freeze({
-  shop: {
-    publicName: "Himai Shop",
-    priceField: "Himai Selling Price THB"
-  },
-  "mmd-shop": {
-    publicName: "MMD Shop",
-    priceField: "MMD Shop Selling Price THB"
-  }
-});
+import { SHOP_BRANDS, SHOP_INVENTORY_TABLE_ID } from "../../shared/shop-brand.mjs";
+const SHOP_CONFIG = Object.freeze(Object.fromEntries(Object.entries(SHOP_BRANDS).map(([key, value]) => [key, {
+  publicName: value.publicName, priceField: value.priceFieldName,
+}])));
 
 const MMD_PRODUCT_PREFIX = "/mmd-shop/api/product/";
 
@@ -116,7 +110,7 @@ async function loadProducts(env, shopKey) {
   for (const field of fields) params.append("fields[]", field);
 
   const [result, stockByProduct, supplierNames] = await Promise.all([
-    airtableRequest(env, `${tableId}?${params.toString()}`),
+    airtableListAll(env, tableId, params),
     loadSharedStockByProduct(env),
     loadSupplierNames(env)
   ]);
@@ -146,7 +140,7 @@ async function loadProducts(env, shopKey) {
       const restricted = isRestrictedOnlineCheckout(sku, productName, note);
       const onDemand = isOnDemandProduct(note);
       const trackedOut = stockTracked && Number(stock.available) <= 0;
-      const checkoutEligible = status.toLowerCase() === "active"
+      const checkoutEligible = brandAvailability.length > 0 && status.toLowerCase() === "active"
         && sellingPrice > 0
         && !restricted
         && (
@@ -197,13 +191,13 @@ async function loadProducts(env, shopKey) {
 }
 
 async function loadSharedStockByProduct(env) {
-  const tableId = env.MMD_SHOP_INVENTORY_BATCHES_TABLE_ID || "tblwFgl4et1TOgtNn";
+  const tableId = env.MMD_SHOP_INVENTORY_BATCHES_TABLE_ID || SHOP_INVENTORY_TABLE_ID;
   const fields = ["Product", "Quantity Remaining", "Low Stock Flag", "Batch Status"];
   const params = new URLSearchParams();
   params.set("pageSize", "100");
   for (const field of fields) params.append("fields[]", field);
 
-  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const result = await airtableListAll(env, tableId, params);
   const stockByProduct = new Map();
 
   for (const record of result.records || []) {
@@ -232,7 +226,7 @@ async function loadSupplierNames(env) {
   params.set("pageSize", "100");
   params.append("fields[]", "Supplier Name");
 
-  const result = await airtableRequest(env, `${tableId}?${params.toString()}`);
+  const result = await airtableListAll(env, tableId, params);
   const names = new Map();
   for (const record of result.records || []) {
     names.set(record.id, record.fields?.["Supplier Name"] || record.id);
@@ -370,6 +364,21 @@ function numberOrNull(value) {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+async function airtableListAll(env, tableId, params) {
+  const records = []; let offset = ""; const seen = new Set();
+  do {
+    const query = new URLSearchParams(params);
+    if (offset) query.set("offset", offset);
+    const page = await airtableRequest(env, `${tableId}?${query.toString()}`);
+    if (!Array.isArray(page.records)) throw new Error("shop_catalog_records_invalid");
+    records.push(...page.records);
+    offset = String(page.offset || "");
+    if (offset && (seen.has(offset) || seen.size >= 100)) throw new Error("shop_catalog_incomplete");
+    if (offset) seen.add(offset);
+  } while (offset);
+  return { records };
 }
 
 async function airtableRequest(env, path) {

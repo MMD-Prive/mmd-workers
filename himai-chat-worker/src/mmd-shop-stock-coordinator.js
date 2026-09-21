@@ -1,3 +1,5 @@
+import { durableCheckoutAttempt, expireCheckoutAttempt } from "./shop-checkout-attempt.mjs";
+import { executeMmdShopCheckout } from "./mmd-shop-checkout.js";
 import {
   inspectMmdShopStockHealth,
   formatMmdShopStockHealthAlert,
@@ -20,6 +22,10 @@ export class MmdShopStockCoordinator {
     this.tail = Promise.resolve();
   }
 
+  async alarm() {
+    await expireCheckoutAttempt(this.state);
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/health") return Response.json({ ok: true, coordinator: "mmd_shop_stock" });
@@ -27,6 +33,11 @@ export class MmdShopStockCoordinator {
     const body = request.method === "POST" ? await request.json().catch(() => null) : null;
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return Response.json({ ok: false, error: "invalid_request" }, { status: 400 });
+    }
+
+    if (/^\/checkout-attempt\/(shop|mmd-shop)$/.test(url.pathname)) {
+      if (body.shop !== url.pathname.split("/").pop()) return Response.json({ ok: false, error: "shop_context_mismatch" }, { status: 400 });
+      return durableCheckoutAttempt(this.state, this.env, body, executeMmdShopCheckout);
     }
 
     const run = async () => {

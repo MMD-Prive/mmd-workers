@@ -1,3 +1,5 @@
+import { SHOP_BRANDS, SHOP_INVENTORY_TABLE_ID, shopForCheckoutPath } from "../../shared/shop-brand.mjs";
+import { forwardCheckoutAttempt } from "./shop-checkout-attempt.mjs";
 import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 import { createMmdShopFulfillment, normalizeMmdShopShipping, publicMmdShopFulfillment, writeMmdShopFulfillment } from "../../shared/mmd-shop-fulfillment.mjs";
 import { publicMmdShopReservation, writeMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
@@ -10,7 +12,7 @@ const TABLES = Object.freeze({
   customers: "tbllkfCySeL9fSfZw",
   orders: "tblr8lbi2wMuRM1N4",
   orderItems: "tbl37Iprxz4OLL65P",
-  inventory: "tblwFgl4et1TOgtNn",
+  inventory: SHOP_INVENTORY_TABLE_ID,
 });
 
 const PRODUCT_FIELDS = Object.freeze({
@@ -72,34 +74,9 @@ const INVENTORY_FIELDS = Object.freeze({
   status: "fldZW2m1Xq8q0ZH9Z",
 });
 
-const SHOP_CHECKOUT_CONFIG = Object.freeze({
-  "mmd-shop": Object.freeze({
-    key: "mmd-shop",
-    path: "/mmd-shop/api/checkout",
-    publicName: "MMD Shop",
-    sourcePath: "/mmd-shop",
-    orderPrefix: "MMD",
-    priceField: PRODUCT_FIELDS.mmdPrice,
-    brandToken: "mmd",
-    telegramFlow: "mmd_shop_orders",
-    telegramTitle: "MMD SHOP",
-  }),
-  shop: Object.freeze({
-    key: "shop",
-    path: "/shop/api/checkout",
-    publicName: "Himai Shop",
-    sourcePath: "/shop",
-    orderPrefix: "HIMAI",
-    priceField: PRODUCT_FIELDS.himaiPrice,
-    brandToken: "himai",
-    telegramFlow: "himai_orders",
-    telegramTitle: "HIMAI SHOP",
-  }),
-});
+const SHOP_CHECKOUT_CONFIG = SHOP_BRANDS;
 
-function checkoutConfigForPath(pathname) {
-  return Object.values(SHOP_CHECKOUT_CONFIG).find((item) => item.path === pathname) || null;
-}
+function checkoutConfigForPath(pathname) { return shopForCheckoutPath(pathname); }
 
 
 export async function handleMmdShopCheckout(request, env, ctx = null) {
@@ -114,9 +91,18 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
     return json({ ok: false, error: "method_not_allowed" }, 405);
   }
 
+  const memberContext = await resolveServerMemberContext(request, env);
+  return forwardCheckoutAttempt(request, env, memberContext);
+}
+
+/** Called only inside the durable attempt; never select this executor using a browser header. */
+export async function executeMmdShopCheckout(request, env, ctx = null, execution = {}) {
+  const shop = checkoutConfigForPath(new URL(request.url).pathname);
+  if (!shop || !execution.orderId) return json({ ok: false, error: "checkout_attempt_required" }, 403);
+  let writesStarted = false;
   let reservation = null;
   let order = null;
-  let orderId = "";
+  const orderId = execution.orderId;
 
   try {
     const body = await request.json().catch(() => null);
@@ -124,13 +110,14 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
 
     const customerInput = normalizeCustomer(body.customer || body);
     const shipping = normalizeMmdShopShipping(body.shipping || {}, customerInput);
-    const memberContext = await resolveServerMemberContext(request, env);
+    const memberContext = execution.memberContext || null;
     const cartInput = normalizeCart(body.items);
     const products = await loadProducts(env, cartInput.map((item) => item.product_id));
     const stock = await loadMmdStock(env);
     const pricedCart = validateAndPriceCart(cartInput, products, stock, shop);
-    const customer = await findOrCreateCustomer(env, customerInput, body.source_path, memberContext, shop);
-    orderId = makeOrderId(shop.orderPrefix);
+    validateCheckoutQuote(body.quote, pricedCart);
+    writesStarted = true;
+    const customer = await findOrCreateCustomer(env, customerInput, shop.sourcePath, memberContext, shop);
     const total = pricedCart.reduce((sum, item) => sum + item.line_total_thb, 0);
     const stockConfirmationRequired = pricedCart.some((item) => item.stock_status === "on_demand");
 
@@ -139,7 +126,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       customerRecordId: customer.id,
       total,
       stockConfirmationRequired,
-      sourcePath: clean(body.source_path, 300) || shop.sourcePath,
+      sourcePath: shop.sourcePath,
       shop,
       shipping,
       reservation: null,
@@ -156,20 +143,6 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
 
     const orderItems = await createOrderItems(env, order.id, pricedCart, shop);
 
-    const telegram = await notifyOrder(env, {
-      orderId,
-      total,
-      customerName: customerInput.name,
-      items: pricedCart,
-      stockConfirmationRequired,
-      reservation,
-      shop,
-    }).catch(() => ({ ok: false }));
-
-    if (telegram.ok) {
-      await patchRecord(env, table(env, "orders"), order.id, { [ORDER_FIELDS.telegramSent]: true }).catch(() => null);
-    }
-
     const payment = await createPaymentIntent(env, { orderId, total, email: customerInput.email, shop });
     if (!payment?.ok || !clean(payment.customer_payment_url, 2000)) {
       const released = await releaseViaMmdShopCoordinator(env, reservation, "payment_initialization_failed").catch(() => null);
@@ -185,7 +158,8 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       return json({
         ok: false,
         error: "payment_initialization_failed",
-        retryable: true,
+        retryable: false,
+        safe_new_attempt: false,
         order_created: true,
         order_id: orderId,
         total_thb: total,
@@ -199,6 +173,20 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       "money_truth=payments-worker",
       `reservation_expires_at=${clean(reservation?.expires_at, 80)}`,
     ].join("; ")).catch(() => null);
+
+    const telegram = await notifyOrder(env, {
+      orderId,
+      total,
+      customerName: customerInput.name,
+      items: pricedCart,
+      stockConfirmationRequired,
+      reservation,
+      shop,
+    }).catch(() => ({ ok: false }));
+
+    if (telegram.ok) {
+      await patchRecord(env, table(env, "orders"), order.id, { [ORDER_FIELDS.telegramSent]: true }).catch(() => null);
+    }
 
     queueAuthorityEvent(ctx, env, {
       event: "shop_order_created",
@@ -232,6 +220,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       payment_status: "pending",
       order_status: "draft",
       official_payment_verification_required: true,
+      notification_delivered: telegram.ok === true,
       stock_confirmation_required: stockConfirmationRequired,
       reservation: publicMmdShopReservation(reservation),
       fulfillment: publicMmdShopFulfillment(createMmdShopFulfillment({ shipping })),
@@ -262,8 +251,25 @@ export async function handleMmdShopCheckout(request, env, ctx = null) {
       }).catch(() => null);
     }
     console.error("MMD Shop checkout error:", error);
-    return json({ ok: false, error: clean(error?.message || error || "checkout_failed", 300), order_id: orderId || null }, Number(error?.status || 500));
+    return json({ ok: false, error: clean(error?.message || error || "checkout_failed", 300),
+      order_id: writesStarted ? orderId : null, order_created: Boolean(order?.id),
+      safe_new_attempt: !writesStarted }, Number(error?.status || 500));
   }
+}
+
+export function validateCheckoutQuote(quote, cart) {
+  if (!quote || quote.currency !== "THB" || !Array.isArray(quote.items)) throw httpError(428, "checkout_price_quote_required");
+  const expected = new Map();
+  for (const item of quote.items) {
+    if (!item || expected.has(item.product_id) || !Number.isFinite(item.unit_price_thb) || item.unit_price_thb <= 0)
+      throw httpError(400, "invalid_checkout_quote");
+    expected.set(item.product_id, item.unit_price_thb);
+  }
+  const actualTotal = roundMoney(cart.reduce((sum, item) => sum + item.line_total_thb, 0));
+  if (expected.size !== cart.length || !Number.isFinite(quote.total_thb)
+    || Math.abs(quote.total_thb - actualTotal) > 0.009
+    || cart.some((item) => !expected.has(item.product_id) || Math.abs(expected.get(item.product_id) - item.unit_price_thb) > 0.009))
+    throw httpError(409, "checkout_price_changed");
 }
 
 function normalizeCustomer(raw) {
@@ -330,6 +336,7 @@ async function loadMmdStock(env) {
     offset = clean(data.offset, 300);
     pages += 1;
   } while (offset && pages < 20);
+  if (offset) throw httpError(503, "stock_snapshot_incomplete");
   return stock;
 }
 
@@ -641,12 +648,6 @@ async function airtable(env, path, init = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw httpError(response.status >= 500 ? 502 : response.status, `airtable_${response.status}`);
   return data;
-}
-
-function makeOrderId(prefix = "MMD") {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  const suffix = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
-  return `${clean(prefix, 16).toUpperCase() || "MMD"}-${bangkokDate().replace(/-/g, "")}-${suffix}`;
 }
 
 function bangkokDate() {

@@ -1,3 +1,5 @@
+import { HIMAI_SCRIPT, MMD_SCRIPT, HIMAI_STYLE } from "./generated-shop-assets.mjs";
+import { SHOP_RELIABILITY_SOURCE } from "../../webflow/shared/shop-reliability-runtime.mjs";
 import himaiChatWorker from "./index.js";
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { handleShopCatalog } from "./shop-catalog.js";
@@ -26,6 +28,20 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
+    const asset = {
+      "/shop/api/runtime/reliability-v1.js": [SHOP_RELIABILITY_SOURCE, "application/javascript"],
+      "/mmd-shop/api/runtime/reliability-v1.js": [SHOP_RELIABILITY_SOURCE, "application/javascript"],
+      "/shop/api/runtime/storefront-v1.js": [HIMAI_SCRIPT, "application/javascript"],
+      "/mmd-shop/api/runtime/storefront-v1.js": [MMD_SCRIPT, "application/javascript"],
+      "/shop/api/runtime/storefront-v1.css": [HIMAI_STYLE, "text/css"],
+    }[path];
+    if (asset) {
+      if (!["GET", "HEAD"].includes(request.method)) return json({ ok: false, error: "method_not_allowed" }, 405);
+      return new Response(request.method === "HEAD" ? null : asset[0], { headers: {
+        "content-type": asset[1] + "; charset=utf-8", "cache-control": "no-store",
+        "x-content-type-options": "nosniff", "x-mmd-checkout-reliability": "1",
+      } });
+    }
 
     if (request.method.toUpperCase() === "GET" && ["/health", "/mmd-shop/api/health", "/shop/api/health"].includes(path)) {
       const healthUrl = new URL(request.url);
@@ -38,6 +54,8 @@ export default {
       return json({
         ...payload,
         analytics: authorityRuntimeHealth(env, "himai-chat-worker", ctx),
+        commerce: { reliability_version: 1, checkout_idempotency: env.MMD_SHOP_STOCK_COORDINATOR ? "durable" : "unconfigured",
+          price_quote_required: true, stock_model: "shared_physical_stock", payment_authority: "payments-worker" },
       }, response.status);
     }
 

@@ -1,3 +1,4 @@
+import { shopFromOrder } from "../shared/shop-brand.mjs";
 import {
   createConfirmTokenRecord,
   getConfirmTokenTtlSeconds,
@@ -90,6 +91,7 @@ export async function handleShopRefundConfirm(request, env) {
   try {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    shopFromOrder(order); // Resolve or reject conflicting server brand evidence before mutations.
 
     const orderFields = order.fields || {};
     const orderPaymentStatus = code(orderFields[ORDER_FIELDS.paymentStatus]);
@@ -239,6 +241,7 @@ export async function handleShopIntent(request, env) {
 
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    shopFromOrder(order); // Resolve or reject conflicting server brand evidence before mutations.
     const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
     const orderPaymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
     const reservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
@@ -259,6 +262,7 @@ export async function handleShopIntent(request, env) {
         orderId,
         amount,
         email,
+        shop: shopFromOrder(order),
       });
     }
 
@@ -279,6 +283,8 @@ export async function handleShopIntent(request, env) {
       ok: true,
       authority: "payments-worker",
       schema: "mmd_shop_payment_intent_v1",
+      shop_brand: shopFromOrder(order).key,
+      shop_name: shopFromOrder(order).publicName,
       payment_stage: SHOP_STAGE,
       payment_ref: paymentRef,
       session_id: orderId,
@@ -316,6 +322,7 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
       findPaymentByRef(env, claims.payment_ref),
     ]);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    shopFromOrder(order); // Resolve or reject conflicting server brand evidence before mutations.
     if (!payment?.id) throw httpError(404, "shop_payment_not_found");
 
     const total = positive(order.fields?.[ORDER_FIELDS.total]);
@@ -346,13 +353,15 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
       payment_type: SHOP_STAGE,
       session_status: reservationExpired ? "cancelled" : (text(order.fields?.[ORDER_FIELDS.orderStatus], 80) || "draft"),
       payment_status: text(order.fields?.[ORDER_FIELDS.paymentStatus], 80) || "pending",
-      client_name: "MMD Shop Customer",
-      model_name: "MMD Shop",
-      job_type: "MMD Shop Order",
+      shop_brand: shopFromOrder(order).key,
+      shop_name: shopFromOrder(order).publicName,
+      client_name: `${shopFromOrder(order).publicName} Customer`,
+      model_name: shopFromOrder(order).publicName,
+      job_type: `${shopFromOrder(order).publicName} Order`,
       job_date: null,
       start_time: null,
       end_time: null,
-      location_name: "MMD Shop",
+      location_name: shopFromOrder(order).publicName,
       google_map_url: null,
       vip_detail: null,
       created_at: null,
@@ -382,6 +391,8 @@ export async function maybeHandleShopConfirmationDetails(request, env) {
       },
       shop_order: {
         schema: "mmd_shop_order_payment_context_v1",
+        shop_brand: shopFromOrder(order).key,
+        shop_name: shopFromOrder(order).publicName,
         order_id: claims.session_id,
         order_record_id: order.id,
         items: orderItems.map(safeShopOrderItem),
@@ -443,6 +454,12 @@ export async function enrichShopConfirmVerify(request, response, env) {
       payment_status: details.payment_status,
       session_status: details.session_status,
       amount_thb: details.amount_thb,
+      shop_brand: details.shop_brand,
+      shop_name: details.shop_name,
+      client_name: details.client_name,
+      model_name: details.model_name,
+      job_type: details.job_type,
+      location_name: details.location_name,
       shop_order: details.shop_order,
       payment: details.payment,
     },
@@ -464,6 +481,7 @@ export async function preflightReviewedShopPayment(request, env) {
   try {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    shopFromOrder(order); // Resolve or reject conflicting server brand evidence before mutations.
 
     const orderStatus = code(order.fields?.[ORDER_FIELDS.orderStatus]);
     const paymentStatus = code(order.fields?.[ORDER_FIELDS.paymentStatus]);
@@ -523,6 +541,7 @@ export async function reconcileReviewedShopPayment(request, response, env) {
   try {
     const order = await findOrderByOrderId(env, orderId);
     if (!order?.id) throw httpError(404, "shop_order_not_found");
+    shopFromOrder(order); // Resolve or reject conflicting server brand evidence before mutations.
 
     const existingReservation = readMmdShopReservation(order.fields?.[ORDER_FIELDS.notes]);
     let committedReservation = existingReservation;
@@ -555,11 +574,12 @@ export async function reconcileReviewedShopPayment(request, response, env) {
       patchRecord(env, table(env, "orderItems"), item.id, { [ITEM_FIELDS.status]: "confirmed" })
     ));
 
-    await notifyShopPayment(env, {
+    const notification = await notifyShopPayment(env, {
+      shop: shopFromOrder(order),
       orderId,
       paymentRef: text(body?.payment_ref || body?.transaction_ref, 220),
       amount: positive(body?.amount_thb ?? body?.amount) || positive(order.fields?.[ORDER_FIELDS.total]) || 0,
-    }).catch(() => null);
+    }).catch(() => ({ ok: false, error: "notification_delivery_failed" }));
 
     const headers = new Headers(response.headers);
     headers.delete("content-length");
@@ -574,6 +594,8 @@ export async function reconcileReviewedShopPayment(request, response, env) {
         order_status: "confirmed",
         payment_status: "paid",
         items_confirmed: items.length,
+        notification_delivered: notification?.ok === true,
+        shop_brand: shopFromOrder(order).key,
         fulfillment: publicMmdShopFulfillment(confirmedFulfillment),
         reservation: committedReservation ? publicMmdShopReservation(committedReservation) : null,
         inventory_out_committed: committedReservation ? committedReservation.state === "committed" : null,
@@ -636,7 +658,7 @@ async function createPaymentRecord(env, input) {
     [PAYMENT_FIELDS.amount]: input.amount,
     [PAYMENT_FIELDS.status]: "Pending",
     [PAYMENT_FIELDS.method]: "PromptPay",
-    [PAYMENT_FIELDS.notes]: `schema=mmd_shop_payment_v1; order_id=${input.orderId}; payment_stage=shop; official_verification_required=true${input.email ? `; customer_email=${input.email}` : ""}`,
+    [PAYMENT_FIELDS.notes]: `schema=mmd_shop_payment_v1; shop_brand=${input.shop.key}; order_id=${input.orderId}; payment_stage=shop; official_verification_required=true${input.email ? `; customer_email=${input.email}` : ""}`,
     [PAYMENT_FIELDS.verification]: "pending_review",
     [PAYMENT_FIELDS.intentStatus]: "Pending Confirmation",
     [PAYMENT_FIELDS.createdAt]: new Date().toISOString(),
@@ -811,10 +833,10 @@ async function notifyShopPayment(env, input) {
       "authorization": `Bearer ${token}`,
     },
     body: JSON.stringify({
-      flow: "mmd_shop_payments",
+      flow: input.shop.paymentFlow,
       parse_mode: "HTML",
       text: [
-        "<b>MMD SHOP · PAYMENT VERIFIED</b>",
+        `<b>${input.shop.telegramTitle} · PAYMENT VERIFIED</b>`,
         `Order: <code>${escapeHtml(input.orderId)}</code>`,
         `Ref: <code>${escapeHtml(input.paymentRef)}</code>`,
         `Amount: <b>${Number(input.amount || 0).toLocaleString("en-US")} THB</b>`,
