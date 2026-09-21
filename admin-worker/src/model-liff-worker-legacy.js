@@ -1,6 +1,10 @@
 import dashboardWorker from "./dashboard-worker.js";
 import { planPrivateUpload, uploadPrivateMedia } from "../../shared/private-media.mjs";
+import {
+  availabilityStateFromModelProfile,
+} from "../../shared/sigil-availability-snapshot-v1.mjs";
 import { issueModelTelegramBind, telegramConnectedFromFields } from "./telegram-identity-bind-authority.js";
+import { writeSigilAvailabilitySnapshot } from "./sigil-availability-snapshot.js";
 
 const EXCHANGE_PATH = "/v1/model/liff/exchange";
 const CURRENT_PATH = "/v1/model/session/current";
@@ -407,6 +411,30 @@ async function handleProfileUpdate(request, env) {
   const profile = safeModelProfile(updated.record);
   const main = await findOwnedMainMedia(env, auth.payload.model_record_id);
   if (main?.media_id) profile.current_profile_image_url = `${MEDIA_PATH}/${encodeURIComponent(main.media_id)}/file`;
+
+  let availabilitySnapshot = null;
+  const availabilityChanged = changedFields.some((item) =>
+    item.field === "available_now" || item.field === "availability_status"
+  );
+  if (availabilityChanged) {
+    const modelKey = firstText(updated.record?.fields || {}, ["unique_key", "model_lookup_key", "model_code"]);
+    if (modelKey) {
+      const snapshotResult = await writeSigilAvailabilitySnapshot(env, {
+        model_key: modelKey,
+        availability_state: availabilityStateFromModelProfile(profile),
+      }, {
+        model_key: modelKey,
+        source: "model_app",
+        confidence: "model_confirmed",
+      });
+      availabilitySnapshot = snapshotResult.ok
+        ? { ok: true, ...snapshotResult.receipt }
+        : { ok: false, error: snapshotResult.error || "availability_snapshot_unavailable" };
+    } else {
+      availabilitySnapshot = { ok: false, error: "canonical_model_key_missing" };
+    }
+  }
+
   return json({
     ok: true,
     model: profile,
@@ -416,6 +444,7 @@ async function handleProfileUpdate(request, env) {
       request_status: "pending_review",
       requested_at: review.requestedAt,
     },
+    ...(availabilitySnapshot ? { availability_snapshot: availabilitySnapshot } : {}),
   }, 200, request, env);
 }
 
