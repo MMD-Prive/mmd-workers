@@ -15,9 +15,16 @@ import {
 
 export const KENJI_RECOMMENDATION_RPC_PATH = "/v1/internal/kenji/recommendations";
 export const KENJI_RECOMMENDATION_RPC_SCHEMA = "mmd.kenji_recommendation_rpc.v1";
+export const KENJI_RECOMMENDATION_MODE_ENV = "KENJI_RECOMMENDATION_MODE";
+
+const ACTIVE_RECOMMENDATION_MODES = new Set(["shadow", "service_only"]);
 
 function clean(value, max = 500) {
   return String(value == null ? "" : value).trim().replace(/\s+/g, " ").slice(0, max);
+}
+
+function recommendationMode(env = {}) {
+  return clean(env[KENJI_RECOMMENDATION_MODE_ENV], 40).toLowerCase();
 }
 
 export async function resolveKenjiRecommendationPreview(env = {}, body = {}, options = {}) {
@@ -107,6 +114,10 @@ export function isKenjiRecommendationRpcRequest(path, method = "") {
 export async function handleKenjiRecommendationRpc(request, env = {}, options = {}) {
   if (!authorized(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
   if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const mode = recommendationMode(env);
+  if (!ACTIVE_RECOMMENDATION_MODES.has(mode)) {
+    return json({ ok: false, error: "recommendation_layer_disabled" }, 503);
+  }
   const contentType = clean(request.headers.get("content-type")).split(";", 1)[0].toLowerCase();
   if (contentType !== "application/json") return json({ ok: false, error: "invalid_content_type" }, 415);
   const body = await request.json().catch(() => null);
@@ -114,7 +125,7 @@ export async function handleKenjiRecommendationRpc(request, env = {}, options = 
   try {
     const result = await resolveKenjiRecommendationPreview(env, body, options);
     if (result.ok === false && ["canonical_line_identity_required", "invalid_evaluated_at"].includes(result.error)) return json(result, 400);
-    return json(result);
+    return json({ ...result, deployment_mode: mode });
   } catch (error) {
     if (error instanceof KenjiRecommendationSourceError) return json({ ok: false, error: error.code }, 503);
     return json({ ok: false, error: "recommendation_failed" }, 500);
