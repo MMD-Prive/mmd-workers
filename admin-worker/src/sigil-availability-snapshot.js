@@ -1,7 +1,9 @@
 import {
   buildSigilAvailabilitySnapshot,
   safeAvailabilityReceipt,
+  SIGIL_AVAILABILITY_KV_PREFIX,
 } from "../../shared/sigil-availability-snapshot-v1.mjs";
+import { safeModelKey } from "../../shared/kenji-recommendation-contract-v1.mjs";
 
 export const SIGIL_AVAILABILITY_INTERNAL_PATH = "/v1/internal/sigil/availability-snapshot";
 const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker"]);
@@ -32,7 +34,59 @@ function internalCaller(request, env = {}) {
 }
 
 export function isSigilAvailabilityInternalRequest(path = "", method = "") {
-  return path === SIGIL_AVAILABILITY_INTERNAL_PATH && String(method || "").toUpperCase() === "POST";
+  const normalizedMethod = String(method || "").toUpperCase();
+  return path === SIGIL_AVAILABILITY_INTERNAL_PATH && ["GET", "POST"].includes(normalizedMethod);
+}
+
+export async function readSigilAvailabilitySnapshot(env = {}, modelKeyInput = "", nowMs = Date.now()) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  if (!binding || typeof binding.get !== "function") {
+    return { ok: false, status: 503, error: "availability_snapshot_storage_unavailable" };
+  }
+
+  const modelKey = safeModelKey(modelKeyInput);
+  if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
+
+  let snapshot;
+  try {
+    snapshot = await binding.get(`${SIGIL_AVAILABILITY_KV_PREFIX}${modelKey}`, "json");
+  } catch {
+    return { ok: false, status: 503, error: "availability_snapshot_read_failed" };
+  }
+
+  if (!snapshot || typeof snapshot !== "object") {
+    return {
+      ok: true,
+      status: 200,
+      model_key: modelKey,
+      snapshot_state: "missing",
+      fresh: false,
+      stale: false,
+      age_seconds: null,
+      ttl_remaining_seconds: null,
+      receipt: null,
+    };
+  }
+
+  const receipt = safeAvailabilityReceipt(snapshot);
+  const updatedMs = Date.parse(text(receipt.updated_at));
+  const expiresMs = Date.parse(text(receipt.expires_at));
+  const fresh = Number.isFinite(expiresMs) && expiresMs > nowMs;
+  const stale = Number.isFinite(expiresMs) && expiresMs <= nowMs;
+  const ageSeconds = Number.isFinite(updatedMs) ? Math.max(0, Math.floor((nowMs - updatedMs) / 1000)) : null;
+  const ttlRemainingSeconds = fresh ? Math.max(0, Math.ceil((expiresMs - nowMs) / 1000)) : 0;
+
+  return {
+    ok: true,
+    status: 200,
+    model_key: modelKey,
+    snapshot_state: fresh ? "fresh" : stale ? "stale" : "invalid_expiry",
+    fresh,
+    stale,
+    age_seconds: ageSeconds,
+    ttl_remaining_seconds: ttlRemainingSeconds,
+    receipt,
+  };
 }
 
 export async function writeSigilAvailabilitySnapshot(env = {}, input = {}, options = {}) {
@@ -65,6 +119,27 @@ export async function writeSigilAvailabilitySnapshot(env = {}, input = {}, optio
 export async function handleSigilAvailabilityInternalRequest(request, env = {}) {
   const caller = internalCaller(request, env);
   if (!caller) return json({ ok: false, error: "internal_auth_required" }, 401);
+
+  if (request.method.toUpperCase() === "GET") {
+    if (caller !== "model-console-worker") return json({ ok: false, error: "internal_auth_required" }, 401);
+    const modelKey = new URL(request.url).searchParams.get("model_key") || "";
+    const result = await readSigilAvailabilitySnapshot(env, modelKey);
+    return json(
+      result.ok
+        ? {
+            ok: true,
+            model_key: result.model_key,
+            snapshot_state: result.snapshot_state,
+            fresh: result.fresh,
+            stale: result.stale,
+            age_seconds: result.age_seconds,
+            ttl_remaining_seconds: result.ttl_remaining_seconds,
+            snapshot: result.receipt,
+          }
+        : { ok: false, error: result.error },
+      result.status || (result.ok ? 200 : 400),
+    );
+  }
 
   const contentType = text(request.headers.get("content-type")).toLowerCase();
   if (!contentType.includes("application/json")) {
