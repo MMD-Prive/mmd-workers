@@ -265,6 +265,50 @@ test("shop payment reads only the HIMAI Shop payment-instruction profile", async
   assert.doesNotMatch(JSON.stringify(payload), /9999999999|Primary Receiver/);
 });
 
+test("shop payment supports server-configured static QR with customer-entered amount plus bank transfer", async () => {
+  const env = envWith();
+  env.AIRTABLE_HTTP.fetch = async () => Response.json({
+    records: [{
+      id: "rec_shop",
+      fields: {
+        "Instruction ID": "mmd_shop_himai_v1",
+        Status: "active",
+        Version: 1,
+        "Bank Provider": "kbank",
+        "Bank Name TH": "ธนาคารกสิกรไทย",
+        "Account Name TH": "ธัชชะ ป.",
+        "Account Number": "0681900357",
+        Methods: ["promptpay", "bank_transfer"],
+        "QR Strategy": "static_url",
+        "QR Image URL": "https://assets.example.test/himai-open-amount-qr.png",
+        "Effective From": "2026-09-21T00:00:00.000Z",
+      },
+    }],
+  });
+
+  const response = await handlePaymentInstructions(
+    request(),
+    env,
+    detailsFetcher({
+      ...details({ stage: "shop", amount_due_thb: 2500 }),
+      payment_type: "shop",
+      shop_order: { order_id: "ORDER-QR-1" },
+    }),
+  );
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.instruction_profile, "mmd_shop_himai_v1");
+  assert.equal(payload.instructions.promptpay.enabled, true);
+  assert.equal(payload.instructions.promptpay.qr_url, "https://assets.example.test/himai-open-amount-qr.png");
+  assert.equal(payload.instructions.promptpay.qr_strategy, "static_url");
+  assert.equal(payload.instructions.promptpay.amount_entry, "customer_manual");
+  assert.equal(payload.instructions.bank_transfer.enabled, true);
+  assert.equal(payload.instructions.bank_transfer.account_number, "0681900357");
+  assert.equal(payload.instructions.paypal_card.enabled, false);
+  assert.doesNotMatch(JSON.stringify(payload), /promptpay\.io\/|\/2500\.00\.png/);
+});
+
 test("service payment stays isolated on the primary instruction profile", async () => {
   let formula = "";
   const env = envWith();

@@ -91,15 +91,23 @@ export async function handlePaymentInstructions(request, env = {}, fetchConfirma
     : DEFAULT_CARD_FEE_PERCENT;
   const cardFeeThb = roundMoney(base.amount_due_thb * cardFeePercent / 100);
   const cardAmountDueThb = roundMoney(base.amount_due_thb + cardFeeThb);
-  const qrUrl = methods.has("promptpay") && promptPayRef && text(config["QR Strategy"], 80) === "dynamic_amount"
-    ? dynamicPromptPayQr(promptPayRef, base.amount_due_thb)
+  const qrStrategy = text(config["QR Strategy"], 80);
+  const configuredQrUrl = safeHttpsUrl(config["QR Image URL"]);
+  const qrUrl = methods.has("promptpay")
+    ? (qrStrategy === "dynamic_amount" && promptPayRef
+      ? dynamicPromptPayQr(promptPayRef, base.amount_due_thb)
+      : qrStrategy === "static_url"
+        ? configuredQrUrl
+        : null)
     : null;
 
   const instructions = {
-    promptpay: methods.has("promptpay") && promptPayRef ? {
+    promptpay: methods.has("promptpay") && qrUrl ? {
       enabled: true,
-      display_ref: formatPromptPay(promptPayRef),
+      display_ref: promptPayRef ? formatPromptPay(promptPayRef) : null,
       qr_url: qrUrl,
+      qr_strategy: qrStrategy || null,
+      amount_entry: qrStrategy === "static_url" ? "customer_manual" : "embedded",
     } : { enabled: false },
     bank_transfer: methods.has("bank_transfer") && accountNumber ? {
       enabled: true,
