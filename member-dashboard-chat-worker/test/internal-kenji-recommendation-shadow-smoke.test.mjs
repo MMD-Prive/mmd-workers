@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_MODE,
   REAL_RECOMMENDATION_SHADOW_SMOKE_MODE,
+  runEligibleKenjiRecommendationShadowSmoke,
   runRealKenjiRecommendationShadowSmoke,
 } from "../src/internal-kenji-recommendation-shadow-smoke.mjs";
 
@@ -35,6 +37,20 @@ function adaptedContext() {
         review_required: false,
       },
       rights_authority: "my_mmd_entitlement_resolver_v1",
+      customer_context: {
+        entitlement_snapshot: {
+          member_blocked: false,
+          capability_state: {
+            active: ["private_member"],
+            recognized: ["premium"],
+          },
+          access: {
+            private_visibility_envelope: "premium",
+            new_model_reveals_allowed: true,
+            protected_capabilities_active: ["private_models"],
+          },
+        },
+      },
     },
     telemetry: {
       identity_state: "known",
@@ -191,4 +207,157 @@ test("real shadow smoke returns no customer detail when no verified canonical co
     customer_side_effects: false,
     error: "real_verified_canonical_context_unavailable",
   });
+});
+
+
+test("eligible shadow smoke requires active private access plus reviewed history and returns 1-3 rate+availability recommendations", async () => {
+  const calls = [];
+  const env = {
+    INTERNAL_TOKEN: "internal-secret",
+    ADMIN_WORKER: {
+      async fetch(request) {
+        calls.push(await request.json());
+        return new Response(JSON.stringify({
+          ok: true,
+          deployment_mode: "shadow",
+          customer_ready: true,
+          recommendation_count: 2,
+          discovery: {
+            scanned_profiles: 28,
+            shortlisted_profiles: 7,
+            access_matched_candidates: 3,
+          },
+          recommendations: [
+            {
+              model_key: "MX17",
+              safe_display_name: "SAFE NAME 1",
+              sales: { customer_rate_thb: 12000, price_visible: true },
+              availability: { state: "available_today" },
+              match_reasons: ["reviewed_history_match", "available_today"],
+              is_new_release: false,
+              safe_next_action: "continue_to_booking_review",
+            },
+            {
+              model_key: "MX29",
+              safe_display_name: "SAFE NAME 2",
+              sales: { customer_rate_thb: 15000, price_visible: true },
+              availability: { state: "available_soon" },
+              match_reasons: ["request_preference_match", "available_soon"],
+              is_new_release: true,
+              safe_next_action: "per_review_before_offer",
+            },
+          ],
+          review_candidates: [],
+          new_release: { included: true },
+          guardrails: {
+            auto_send_allowed: false,
+            booking_confirmed: false,
+            payment_confirmed: false,
+            entitlement_mutated: false,
+            source_rate_exposed: false,
+            raw_notes_exposed: false,
+          },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      },
+    },
+  };
+
+  const result = await runEligibleKenjiRecommendationShadowSmoke(env, {
+    eligibleSelections: async () => [{
+      lineUserId: LINE_USER_ID,
+      adapted: adaptedContext(),
+      eligibility: {
+        eligible: true,
+        private_visibility_envelope: "premium",
+        active_capability_count: 1,
+        recognized_capability_count: 1,
+        reviewed_preference_count: 1,
+        prior_model_touch_count: 1,
+        has_reviewed_history: true,
+      },
+    }],
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.mode, ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_MODE);
+  assert.equal(result.payload.eligible_client_found, true);
+  assert.equal(result.payload.context_receipt.private_access_active, true);
+  assert.equal(result.payload.context_receipt.private_visibility_envelope, "premium");
+  assert.equal(result.payload.context_receipt.reviewed_preference_count, 1);
+  assert.equal(result.payload.context_receipt.prior_model_touch_count, 1);
+  assert.equal(result.payload.recommendation_receipt.recommendation_count, 2);
+  assert.equal(result.payload.recommendation_receipt.discovery.access_matched_candidates, 3);
+  assert.equal(result.payload.recommendation_receipt.recommendations[0].customer_rate_thb, 12000);
+  assert.equal(result.payload.recommendation_receipt.recommendations[0].availability_state, "available_today");
+  assert.equal(result.payload.recommendation_receipt.recommendations[1].customer_rate_thb, 15000);
+  assert.equal(result.payload.recommendation_receipt.recommendations[1].availability_state, "available_soon");
+  assert.equal(result.payload.guardrails.auto_send_allowed, false);
+  assert.equal(result.payload.customer_side_effects, false);
+  assert.equal(calls.length, 1);
+
+  const publicPayload = JSON.stringify(result.payload);
+  assert.doesNotMatch(publicPayload, /U1234567890abcdef/);
+  assert.doesNotMatch(publicPayload, /recPRIVATE123456/);
+  assert.doesNotMatch(publicPayload, /PRIVATE NAME/);
+  assert.doesNotMatch(publicPayload, /SAFE NAME/);
+});
+
+test("eligible shadow smoke rejects recommendations missing a customer rate or ready availability", async () => {
+  const result = await runEligibleKenjiRecommendationShadowSmoke({}, {
+    eligibleSelections: async () => [{
+      lineUserId: LINE_USER_ID,
+      adapted: adaptedContext(),
+      eligibility: {
+        eligible: true,
+        private_visibility_envelope: "premium",
+        active_capability_count: 1,
+        recognized_capability_count: 1,
+        reviewed_preference_count: 1,
+        prior_model_touch_count: 1,
+      },
+    }],
+    recommendationCaller: async () => ({
+      status: 200,
+      payload: {
+        ok: true,
+        deployment_mode: "shadow",
+        customer_ready: true,
+        recommendation_count: 1,
+        discovery: { scanned_profiles: 20, shortlisted_profiles: 5, access_matched_candidates: 1 },
+        recommendations: [{
+          model_key: "MX17",
+          sales: { customer_rate_thb: null, price_visible: false },
+          availability: { state: "unknown" },
+          match_reasons: [],
+        }],
+        review_candidates: [],
+        guardrails: {
+          auto_send_allowed: false,
+          booking_confirmed: false,
+          payment_confirmed: false,
+          entitlement_mutated: false,
+          source_rate_exposed: false,
+          raw_notes_exposed: false,
+        },
+      },
+    }),
+  });
+
+  assert.equal(result.status, 409);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.eligible_client_found, true);
+  assert.equal(result.payload.error, "eligible_clients_found_but_no_customer_ready_recommendation");
+  assert.equal(result.payload.diagnostics.max_access_matched_candidates, 1);
+  assert.equal(result.payload.diagnostics.max_recommendation_count, 1);
+});
+
+test("eligible shadow smoke does not accept a canonical client without reviewed preference/history", async () => {
+  const result = await runEligibleKenjiRecommendationShadowSmoke({}, {
+    eligibleSelections: async () => [],
+  });
+  assert.equal(result.status, 409);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.eligible_client_found, false);
+  assert.equal(result.payload.error, "eligible_private_client_with_reviewed_history_unavailable");
 });
