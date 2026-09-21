@@ -11,7 +11,7 @@ function lineUserId(event = {}) {
   return /^U[0-9a-f]{32}$/i.test(value) ? value : "";
 }
 
-async function callModelAccess(env = {}, userId = "", query = "") {
+async function callModelAccess(env = {}, userId = "", query = "", context = {}) {
   const internalToken = text(env.INTERNAL_TOKEN, 2000);
   if (!env.ADMIN_WORKER?.fetch || !internalToken || !userId || !query) return { status: "unavailable" };
   try {
@@ -23,7 +23,12 @@ async function callModelAccess(env = {}, userId = "", query = "") {
         "x-mmd-internal-call": "true",
         "x-mmd-service-binding": "member-dashboard-chat-worker",
       },
-      body: JSON.stringify({ line_user_id: userId, query }),
+      body: JSON.stringify({
+        line_user_id: userId,
+        query,
+        requested_at: context.requested_at || new Date().toISOString(),
+        work_lane: context.work_lane || "",
+      }),
     }));
     if (!response.ok) return { status: "unavailable" };
     const payload = await response.json().catch(() => null);
@@ -33,6 +38,17 @@ async function callModelAccess(env = {}, userId = "", query = "") {
       model: payload.model && typeof payload.model === "object" ? {
         model_code: text(payload.model.model_code, 80),
         working_name: text(payload.model.working_name, 120),
+        sales: payload.model.sales && typeof payload.model.sales === "object" ? {
+          sellable: payload.model.sales.sellable === true,
+          visibility: text(payload.model.sales.visibility, 40) || "off",
+          customer_rate_thb: Number.isFinite(Number(payload.model.sales.customer_rate_thb)) ? Number(payload.model.sales.customer_rate_thb) : null,
+          price_visible: payload.model.sales.price_visible === true,
+          requires_per_approval: payload.model.sales.requires_per_approval === true,
+          reason_code: text(payload.model.sales.reason_code, 120),
+          term_summary: text(payload.model.sales.term_summary, 240),
+          matched_rule_key: text(payload.model.sales.matched_rule_key, 180) || null,
+          rule_version: payload.model.sales.rule_version ?? null,
+        } : null,
       } : null,
     };
   } catch {
@@ -49,13 +65,23 @@ export async function resolveKenjiLv5LineModelGate({ env = {}, event = {}, curre
   }
   const userId = lineUserId(event);
   if (!userId) return { required: true, status: "unavailable", parsed };
-  const access = await callModelAccess(env, userId, parsed.model_name);
+  const requestedAt = parsed.start_time || parsed.requested_at || now.toISOString();
+  const workLane = parsed.work_lane || parsed.job_type || parsed.service || "";
+  const access = await callModelAccess(env, userId, parsed.model_name, {
+    requested_at: requestedAt,
+    work_lane: workLane,
+  });
   return { required: true, ...access, parsed };
 }
 
 export function renderKenjiLv5ModelGateReply(gate = {}) {
   if (gate.required !== true) return "";
-  if (gate.status === "match") return "";
+  if (gate.status === "match") {
+    if (gate.model?.sales && gate.model.sales.sellable !== true) {
+      return "นายแบบคนนี้มีข้อมูลในระบบแล้วครับ แต่เงื่อนไขการขายสำหรับสิทธิ์และช่วงเวลานี้ยังไม่เปิด ผมจึงยังไม่เสนอราคาและไม่ถือว่าเป็นการยืนยันงานครับ";
+    }
+    return "";
+  }
   if (gate.status === "renewal") {
     return "สถานะสมาชิกตอนนี้ยังไม่เปิดสิทธิ์กับนายแบบที่ขอครับ ผมยังไม่เช็กคิวต่อให้เป็นการยืนยันงานจนกว่าสถานะสมาชิกจะกลับมาใช้งานได้ครับ";
   }
