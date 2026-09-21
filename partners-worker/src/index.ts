@@ -146,6 +146,7 @@ const MODEL_PARTNERS = {
 
 const SESSION_FIELDS = {
   sessionId: "fldLTq2kZbyRv22IA",
+  paymentRef: "fldojgjSQLaO0uQLX",
   paymentStatus: "fldTY5lE6m0kQf72n",
   clientName: "fldMvnQ0BzDfHUYjT",
   modelName: "flddVz6eoWRHrzIQr",
@@ -165,6 +166,15 @@ const SESSION_FIELDS = {
   partnerNotificationMessageId: "fldyG4XzAlMQz4gfG",
   partnerNotificationSentAt: "fldG2sWou0Zh18PHS",
   partnerNotificationError: "fldGLKYcQVPZelwue"
+} as const;
+
+const PAYMENT_FIELDS = {
+  paymentRef: "fldOO6SY49iDw8VBZ",
+  sessionId: "fld2wdhBvc8xrV6y5",
+  verification: "fldJ7a0Ube9F0bmRy",
+  statusFormula: "fld0aatroI5poWOSo",
+  amount: "fldvCSwrUW8OMAooS",
+  stage: "fldydUWHhqVLMkNSC"
 } as const;
 
 const PARTNER_MODEL_CHANGES = {
@@ -403,6 +413,26 @@ export default {
 
       if (request.method === "POST" && url.pathname === "/v1/partner/working-system") {
         return await handlePartnerWorkingSystemChange(request, runtimeEnv);
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/partner/admin/working-systems") {
+        return await handleAdminWorkingSystemQueue(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/admin/working-systems/decision") {
+        return await handleAdminWorkingSystemDecision(request, runtimeEnv, ctx);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/admin/ledger/materialize") {
+        return await handleAdminPartnerLedgerMaterialize(request, runtimeEnv, ctx);
+      }
+
+      if (request.method === "GET" && url.pathname === "/v1/partner/admin/ledger") {
+        return await handleAdminPartnerLedgerQueue(request, runtimeEnv);
+      }
+
+      if (request.method === "POST" && url.pathname === "/v1/partner/admin/ledger/action") {
+        return await handleAdminPartnerLedgerAction(request, runtimeEnv, ctx);
       }
 
       if (request.method === "POST" && url.pathname === "/v1/partner/models/upload") {
@@ -1604,6 +1634,358 @@ async function handlePartnerWorkingSystemChange(request: Request, env: RuntimeEn
     console.error("partner working system telegram alert failed", error);
   }
   return json(request, env, { ok: true, request_id: created.id, status: "review", version, system, canonical_agreement_mutated: false, ledger_mutated: false, requires_per_approval: true }, 201);
+}
+
+async function handleAdminWorkingSystemQueue(request: Request, env: RuntimeEnv): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const tableId = partnerModelChangesTable(env);
+  const records = await listAirtableRecords(env, tableId, {
+    filterByFormula: `AND({${PARTNER_MODEL_CHANGES.action}}='update_working_system',{${PARTNER_MODEL_CHANGES.status}}='review')`,
+    maxRecords: 100,
+    sort: [{ field: PARTNER_MODEL_CHANGES.submittedAt, direction: "asc" }]
+  });
+  return json(request, env, {
+    ok: true,
+    authority: "boss_per",
+    requests: records.map(normalizePartnerModelChange)
+  });
+}
+
+async function handleAdminWorkingSystemDecision(
+  request: Request,
+  env: RuntimeEnv,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const requestRecordId = readString(body.value, "request_record_id");
+  const decision = normalizeStatus(readString(body.value, "decision"));
+  const note = readString(body.value, "note").slice(0, 1200);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(requestRecordId) || !new Set(["approve", "reject"]).has(decision)) {
+    return errorResponse(request, env, "working_system_decision_invalid", "request_record_id and approve or reject are required.", 400, false);
+  }
+
+  const changesTable = partnerModelChangesTable(env);
+  const change = await getAirtableRecord(env, changesTable, requestRecordId);
+  if (fieldText(change, PARTNER_MODEL_CHANGES.action) !== "update_working_system") {
+    return errorResponse(request, env, "working_system_request_invalid", "The request is not a working-system proposal.", 409, false);
+  }
+  const currentStatus = normalizeStatus(fieldText(change, PARTNER_MODEL_CHANGES.status));
+  if (currentStatus === "approved" || currentStatus === "rejected") {
+    return json(request, env, { ok: true, idempotent: true, request_record_id: requestRecordId, status: currentStatus });
+  }
+  if (currentStatus !== "review") {
+    return errorResponse(request, env, "working_system_request_not_reviewable", "The request is no longer reviewable.", 409, false);
+  }
+
+  const now = new Date().toISOString();
+  const payloadValue = parseJson(fieldText(change, PARTNER_MODEL_CHANGES.payloadJson) || "{}");
+  if (!isRecord(payloadValue)) {
+    return errorResponse(request, env, "working_system_payload_invalid", "The stored proposal payload is invalid.", 409, false);
+  }
+  const system = readString(payloadValue, "system") as PartnerWorkingSystem;
+  const modelRecordId = fieldLinkIds(change, PARTNER_MODEL_CHANGES.model)[0] || "";
+  const partnerRecordId = fieldLinkIds(change, PARTNER_MODEL_CHANGES.partner)[0] || "";
+  const version = readFiniteNumber(payloadValue.version) || fieldNumber(change, PARTNER_MODEL_CHANGES.revision) || 1;
+  if (!PARTNER_WORKING_SYSTEMS.has(system) || !modelRecordId || !partnerRecordId) {
+    return errorResponse(request, env, "working_system_payload_incomplete", "The stored proposal is missing canonical links.", 409, false);
+  }
+
+  if (decision === "reject") {
+    await updateAirtableRecord(env, changesTable, requestRecordId, {
+      [PARTNER_MODEL_CHANGES.status]: "rejected",
+      [PARTNER_MODEL_CHANGES.updatedAt]: now,
+      [PARTNER_MODEL_CHANGES.actorRef]: "boss_per",
+      [PARTNER_MODEL_CHANGES.payloadJson]: JSON.stringify({ ...payloadValue, decision_note: note, decided_at: now, decided_by: "boss_per" })
+    }, true);
+    return json(request, env, { ok: true, request_record_id: requestRecordId, status: "rejected", canonical_agreement_mutated: false });
+  }
+
+  const validationError = validateStoredWorkingSystem(payloadValue, system);
+  if (validationError) return errorResponse(request, env, validationError.code, validationError.message, 409, false);
+  const referrals = await listLinkedRecordsForPartner(
+    env,
+    env.AIRTABLE_TABLE_MODEL_REFERRALS,
+    MODEL_REFERRALS.partner,
+    partnerRecordId,
+    fieldText(change, PARTNER_MODEL_CHANGES.partnerId) || ""
+  );
+  const referral = referrals.find((record) => fieldLinkIds(record, MODEL_REFERRALS.model).includes(modelRecordId));
+  if (!referral) return errorResponse(request, env, "working_system_referral_missing", "The canonical Partner–Model referral no longer exists.", 409, false);
+
+  const effectiveFrom = normalizeIsoDate(readString(payloadValue, "effective_from")) || now;
+  const previousNotes = fieldText(referral, MODEL_REFERRALS.notes);
+  const canonicalFields: AirtableFields = {
+    [MODEL_REFERRALS.commissionType]: system,
+    [MODEL_REFERRALS.commissionRate]: system === "bridge"
+      ? Number(payloadValue.commission_percent)
+      : system === "profit_share" ? Number(payloadValue.partner_share_percent) : 0,
+    [MODEL_REFERRALS.flatAmountThb]: system === "co_partner" ? Number(payloadValue.source_rate_thb) : 0,
+    [MODEL_REFERRALS.basisRule]: "payment_truth_net_basis",
+    [MODEL_REFERRALS.effectiveFrom]: effectiveFrom,
+    [MODEL_REFERRALS.approvedAt]: now,
+    [MODEL_REFERRALS.approvedBy]: "boss_per",
+    [MODEL_REFERRALS.notes]: appendNote(previousNotes, `[${now}] Working System v${version} approved (${system}); request ${requestRecordId}${note ? `; ${note}` : ""}`)
+  };
+  await updateAirtableRecord(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, referral.id, canonicalFields, true);
+
+  const priorApproved = await listAirtableRecords(env, changesTable, {
+    filterByFormula: `AND({${PARTNER_MODEL_CHANGES.action}}='update_working_system',{${PARTNER_MODEL_CHANGES.status}}='approved')`,
+    maxRecords: 100
+  });
+  for (const prior of priorApproved) {
+    if (prior.id !== requestRecordId &&
+        fieldLinkIds(prior, PARTNER_MODEL_CHANGES.partner).includes(partnerRecordId) &&
+        fieldLinkIds(prior, PARTNER_MODEL_CHANGES.model).includes(modelRecordId)) {
+      await updateAirtableRecord(env, changesTable, prior.id, {
+        [PARTNER_MODEL_CHANGES.status]: "superseded",
+        [PARTNER_MODEL_CHANGES.updatedAt]: now
+      }, true);
+    }
+  }
+  await updateAirtableRecord(env, changesTable, requestRecordId, {
+    [PARTNER_MODEL_CHANGES.status]: "approved",
+    [PARTNER_MODEL_CHANGES.updatedAt]: now,
+    [PARTNER_MODEL_CHANGES.actorRef]: "boss_per",
+    [PARTNER_MODEL_CHANGES.payloadJson]: JSON.stringify({ ...payloadValue, decision_note: note, decided_at: now, decided_by: "boss_per", canonical_referral_id: referral.id })
+  }, true);
+
+  ctx.waitUntil(sendTelegramMessage(env, [
+    "PARTNER WORKING SYSTEM ACTIVATED", "", `Partner: ${partnerRecordId}`, `Model: ${modelRecordId}`,
+    `System: ${system}`, `Version: ${version}`, `Effective: ${effectiveFrom}`, `Approved by: Boss Per`
+  ].join("\n"), "partner_confirm").catch((error) => console.error("working system approval telegram failed", error)));
+  return json(request, env, {
+    ok: true,
+    request_record_id: requestRecordId,
+    status: "approved",
+    system,
+    version,
+    effective_from: effectiveFrom,
+    canonical_referral_id: referral.id,
+    canonical_agreement_mutated: true,
+    ledger_mutated: false
+  });
+}
+
+function validateStoredWorkingSystem(
+  payload: Record<string, unknown>,
+  system: PartnerWorkingSystem
+): { code: string; message: string } | null {
+  const commission = readFiniteNumber(payload.commission_percent);
+  const sourceRate = readFiniteNumber(payload.source_rate_thb);
+  const partnerShare = readFiniteNumber(payload.partner_share_percent);
+  if (system === "bridge" && (commission === null || commission < 5 || commission > 10)) {
+    return { code: "bridge_commission_invalid", message: "Stored Bridge commission must be between 5% and 10%." };
+  }
+  if (system === "co_partner" && (sourceRate === null || sourceRate < 0 || sourceRate > 1000000)) {
+    return { code: "co_partner_source_rate_invalid", message: "Stored Co-Partner source rate is invalid." };
+  }
+  if (system === "profit_share" && (partnerShare === null || partnerShare <= 0 || partnerShare >= 100)) {
+    return { code: "profit_share_invalid", message: "Stored Profit Share percentage is invalid." };
+  }
+  return null;
+}
+
+function partnerModelChangesTable(env: RuntimeEnv): string {
+  return String((env as RuntimeEnv & { AIRTABLE_TABLE_PARTNER_MODEL_CHANGES?: string }).AIRTABLE_TABLE_PARTNER_MODEL_CHANGES || "tbl8kxhjKzGU0xx4L");
+}
+
+function verifyAdminAuthority(request: Request, env: RuntimeEnv): Response | null {
+  const expected = String(env.ADMIN_APPROVE_SECRET || env.TOKEN_SECRET || "").trim();
+  const explicit = String(request.headers.get("x-mmd-admin-secret") || "").trim();
+  const bearer = String(request.headers.get("authorization") || "").trim().match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  if (!expected) return errorResponse(request, env, "admin_auth_unavailable", "Boss Per approval authority is not configured.", 503, false);
+  if (!explicit && !bearer) return errorResponse(request, env, "admin_auth_required", "Boss Per authorization is required.", 401, false);
+  if (!constantTimeStringEqual(explicit || bearer, expected)) return errorResponse(request, env, "admin_auth_invalid", "Boss Per authorization is invalid.", 403, false);
+  return null;
+}
+
+async function handleAdminPartnerLedgerMaterialize(
+  request: Request,
+  env: RuntimeEnv,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const sessionRecordId = readString(body.value, "session_record_id");
+  const requestedModelId = readString(body.value, "model_record_id");
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(sessionRecordId)) {
+    return errorResponse(request, env, "session_record_id_invalid", "A canonical Session record is required.", 400, false);
+  }
+  const sessionsTable = String((env as RuntimeEnv & { AIRTABLE_TABLE_SESSIONS?: string }).AIRTABLE_TABLE_SESSIONS || "tblC98mKWbzmPuNzX");
+  const session = await getAirtableRecord(env, sessionsTable, sessionRecordId);
+  const sessionId = fieldText(session, SESSION_FIELDS.sessionId) || "";
+  const partnerId = fieldText(session, SESSION_FIELDS.partnerIdSnapshot) || "";
+  const paymentRef = fieldText(session, SESSION_FIELDS.paymentRef) || "";
+  if (!sessionId || !partnerId) {
+    return errorResponse(request, env, "partner_snapshot_incomplete", "Session is missing immutable Partner snapshot data.", 409, false);
+  }
+
+  const partners = await listAirtableRecords(env, env.AIRTABLE_TABLE_MODEL_PARTNERS, {
+    filterByFormula: `{${MODEL_PARTNERS.partnerId}}='${escapeFormulaString(partnerId)}'`, maxRecords: 2
+  });
+  if (partners.length !== 1) return errorResponse(request, env, "partner_snapshot_unresolved", "Session Partner snapshot does not resolve uniquely.", 409, false);
+  const partner = partners[0]!;
+  const referrals = await listLinkedRecordsForPartner(env, env.AIRTABLE_TABLE_MODEL_REFERRALS, MODEL_REFERRALS.partner, partner.id, partnerId);
+  let modelRecordId = requestedModelId;
+  const snapshot = parseJson(fieldText(session, SESSION_FIELDS.partnerSnapshotJson) || "{}");
+  if (!modelRecordId && isRecord(snapshot)) modelRecordId = readString(snapshot, "model_record_id");
+  if (!modelRecordId && referrals.length === 1) modelRecordId = fieldLinkIds(referrals[0]!, MODEL_REFERRALS.model)[0] || "";
+  const referral = referrals.find((entry) => fieldLinkIds(entry, MODEL_REFERRALS.model).includes(modelRecordId));
+  if (!referral) return errorResponse(request, env, "canonical_referral_unresolved", "A unique canonical Partner–Model agreement is required.", 409, false);
+
+  const paymentsTable = String((env as RuntimeEnv & { AIRTABLE_TABLE_PAYMENTS?: string }).AIRTABLE_TABLE_PAYMENTS || "tblWGGJJOx5eBvBZJ");
+  const paymentFormulaParts = [`{${PAYMENT_FIELDS.sessionId}}='${escapeFormulaString(sessionId)}'`];
+  if (paymentRef) paymentFormulaParts.push(`{${PAYMENT_FIELDS.paymentRef}}='${escapeFormulaString(paymentRef)}'`);
+  const payments = await listAirtableRecords(env, paymentsTable, {
+    filterByFormula: `OR(${paymentFormulaParts.join(",")})`, maxRecords: 20
+  });
+  const verifiedPayments = payments.filter((entry) => normalizeStatus(fieldText(entry, PAYMENT_FIELDS.verification)) === "verified");
+  verifiedPayments.sort((a, b) => paymentStageRank(b) - paymentStageRank(a));
+  const payment = verifiedPayments[0];
+  if (!payment) return errorResponse(request, env, "payment_not_verified", "Canonical Payment Truth is not verified.", 409, false);
+  const basisAmount = fieldNumber(payment, PAYMENT_FIELDS.amount);
+  if (!(basisAmount > 0)) return errorResponse(request, env, "payment_basis_missing", "Verified Payment Truth has no positive basis amount.", 409, false);
+
+  const working = canonicalWorkingSystem(referral);
+  const system = String(working.system || "bridge") as PartnerWorkingSystem;
+  const rate = system === "co_partner"
+    ? fieldNumber(referral, MODEL_REFERRALS.flatAmountThb)
+    : fieldNumber(referral, MODEL_REFERRALS.commissionRate);
+  const commissionAmount = roundCurrency(system === "co_partner" ? rate : basisAmount * rate / 100);
+  if (!(commissionAmount >= 0)) return errorResponse(request, env, "commission_calculation_invalid", "Canonical agreement cannot produce a valid commission.", 409, false);
+  const canonicalPaymentRef = fieldText(payment, PAYMENT_FIELDS.paymentRef) || paymentRef || payment.id;
+  const version = await activeWorkingSystemVersion(env, partner.id, modelRecordId);
+  const commissionId = `pc_${(await sha256Hex(`${sessionId}:${referral.id}:${canonicalPaymentRef}:v${version}`)).slice(0, 28)}`;
+  const existing = await listAirtableRecords(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, {
+    filterByFormula: `{${PARTNER_COMMISSIONS.commissionId}}='${escapeFormulaString(commissionId)}'`, maxRecords: 2
+  });
+  if (existing.length === 1) return json(request, env, {
+    ok: true, idempotent: true, commission_record_id: existing[0]!.id, commission_id: commissionId,
+    basis_amount_thb: basisAmount, commission_amount_thb: fieldNumber(existing[0]!, PARTNER_COMMISSIONS.commissionAmount)
+  });
+  if (existing.length > 1) return errorResponse(request, env, "commission_idempotency_conflict", "Duplicate ledger rows require review.", 409, false);
+
+  const now = new Date().toISOString();
+  const commission = await createAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, {
+    [PARTNER_COMMISSIONS.commissionId]: commissionId,
+    [PARTNER_COMMISSIONS.partner]: [partner.id],
+    [PARTNER_COMMISSIONS.referral]: [referral.id],
+    [PARTNER_COMMISSIONS.model]: [modelRecordId],
+    [PARTNER_COMMISSIONS.sessionId]: sessionId,
+    [PARTNER_COMMISSIONS.paymentRef]: canonicalPaymentRef,
+    [PARTNER_COMMISSIONS.currency]: "THB",
+    [PARTNER_COMMISSIONS.basisAmount]: basisAmount,
+    [PARTNER_COMMISSIONS.rateSnapshot]: rate,
+    [PARTNER_COMMISSIONS.typeSnapshot]: system,
+    [PARTNER_COMMISSIONS.commissionAmount]: commissionAmount,
+    [PARTNER_COMMISSIONS.status]: "earned",
+    [PARTNER_COMMISSIONS.earnedAt]: now,
+    [PARTNER_COMMISSIONS.payoutStatus]: "pending",
+    [PARTNER_COMMISSIONS.jobId]: fieldText(session, "fldHw5HdDDdkHXMhG") || sessionId
+  }, true);
+  ctx.waitUntil(sendTelegramMessage(env, [
+    "PARTNER LEDGER EARNED", "", `Partner: ${partnerId}`, `Session: ${sessionId}`, `System: ${system}`,
+    `Payment Truth: ${canonicalPaymentRef}`, `Basis: ${basisAmount} THB`, `Commission: ${commissionAmount} THB`
+  ].join("\n"), "partner_confirm").catch((error) => console.error("partner ledger telegram failed", error)));
+  return json(request, env, {
+    ok: true, commission_record_id: commission.id, commission_id: commissionId, system, agreement_version: version,
+    basis_amount_thb: basisAmount, commission_amount_thb: commissionAmount, payment_verified: true,
+    canonical_agreement_mutated: false, ledger_mutated: true
+  }, 201);
+}
+
+function paymentStageRank(record: AirtableRecord): number {
+  return ["final", "full"].includes(normalizeStatus(fieldText(record, PAYMENT_FIELDS.stage))) ? 2 : 1;
+}
+
+async function handleAdminPartnerLedgerQueue(request: Request, env: RuntimeEnv): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const rows = await listAirtableRecords(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, { maxRecords: 100 });
+  return json(request, env, {
+    ok: true,
+    authority: "boss_per",
+    financial_visibility: "admin_full_partner_own_only",
+    commissions: rows.map((record) => ({
+      commission_record_id: record.id,
+      commission_id: fieldText(record, PARTNER_COMMISSIONS.commissionId),
+      partner_record_id: fieldLinkIds(record, PARTNER_COMMISSIONS.partner)[0] || null,
+      model_record_id: fieldLinkIds(record, PARTNER_COMMISSIONS.model)[0] || null,
+      session_id: fieldText(record, PARTNER_COMMISSIONS.sessionId),
+      payment_ref: fieldText(record, PARTNER_COMMISSIONS.paymentRef),
+      basis_amount_thb: fieldNumber(record, PARTNER_COMMISSIONS.basisAmount),
+      commission_amount_thb: fieldNumber(record, PARTNER_COMMISSIONS.commissionAmount),
+      system: fieldText(record, PARTNER_COMMISSIONS.typeSnapshot),
+      status: fieldText(record, PARTNER_COMMISSIONS.status),
+      payout_status: fieldText(record, PARTNER_COMMISSIONS.payoutStatus)
+    }))
+  });
+}
+
+async function handleAdminPartnerLedgerAction(
+  request: Request,
+  env: RuntimeEnv,
+  ctx: ExecutionContext
+): Promise<Response> {
+  const authError = verifyAdminAuthority(request, env);
+  if (authError) return authError;
+  const body = await readJsonObject(request);
+  if (!body.ok) return errorResponse(request, env, "invalid_json", body.error, 400, false);
+  const recordId = readString(body.value, "commission_record_id");
+  const action = normalizeStatus(readString(body.value, "action"));
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(recordId) || !new Set(["approve", "mark_paid"]).has(action)) {
+    return errorResponse(request, env, "partner_ledger_action_invalid", "commission_record_id and approve or mark_paid are required.", 400, false);
+  }
+  const row = await getAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, recordId);
+  const status = normalizeStatus(fieldText(row, PARTNER_COMMISSIONS.status));
+  const payoutStatus = normalizeStatus(fieldText(row, PARTNER_COMMISSIONS.payoutStatus));
+  const now = new Date().toISOString();
+  if (action === "approve") {
+    if (status === "approved" || payoutStatus === "ready") return json(request, env, { ok: true, idempotent: true, status: "approved", payout_status: "ready" });
+    if (status !== "earned" || !(fieldNumber(row, PARTNER_COMMISSIONS.commissionAmount) >= 0)) {
+      return errorResponse(request, env, "commission_not_approvable", "Only a valid earned commission can be approved.", 409, false);
+    }
+    await updateAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, recordId, {
+      [PARTNER_COMMISSIONS.status]: "approved",
+      [PARTNER_COMMISSIONS.approvedAt]: now,
+      [PARTNER_COMMISSIONS.payoutStatus]: "ready"
+    }, true);
+    return json(request, env, { ok: true, commission_record_id: recordId, status: "approved", payout_status: "ready" });
+  }
+  if (status === "paid" || payoutStatus === "paid") return json(request, env, { ok: true, idempotent: true, status: "paid", payout_status: "paid" });
+  if (status !== "approved" || payoutStatus !== "ready") {
+    return errorResponse(request, env, "commission_not_ready", "Commission must be approved and ready before marking paid.", 409, false);
+  }
+  const payoutReference = readString(body.value, "payout_reference").slice(0, 180);
+  if (!payoutReference) return errorResponse(request, env, "payout_reference_required", "A payout reference is required.", 400, false);
+  await updateAirtableRecord(env, env.AIRTABLE_TABLE_PARTNER_COMMISSIONS, recordId, {
+    [PARTNER_COMMISSIONS.status]: "paid",
+    [PARTNER_COMMISSIONS.payoutStatus]: "paid",
+    [PARTNER_COMMISSIONS.paidAt]: now
+  }, true);
+  ctx.waitUntil(sendTelegramMessage(env, [
+    "PARTNER PAYOUT PAID", "", `Commission: ${fieldText(row, PARTNER_COMMISSIONS.commissionId) || recordId}`,
+    `Amount: ${fieldNumber(row, PARTNER_COMMISSIONS.commissionAmount)} THB`, `Payout ref: ${payoutReference}`, "Authority: Boss Per"
+  ].join("\n"), "partner_confirm").catch((error) => console.error("partner payout telegram failed", error)));
+  return json(request, env, { ok: true, commission_record_id: recordId, status: "paid", payout_status: "paid", paid_at: now });
+}
+
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+async function activeWorkingSystemVersion(env: RuntimeEnv, partnerRecordId: string, modelRecordId: string): Promise<number> {
+  const rows = await listAirtableRecords(env, partnerModelChangesTable(env), {
+    filterByFormula: `AND({${PARTNER_MODEL_CHANGES.action}}='update_working_system',{${PARTNER_MODEL_CHANGES.status}}='approved')`, maxRecords: 100
+  });
+  const row = rows.find((entry) => fieldLinkIds(entry, PARTNER_MODEL_CHANGES.partner).includes(partnerRecordId) && fieldLinkIds(entry, PARTNER_MODEL_CHANGES.model).includes(modelRecordId));
+  return row ? fieldNumber(row, PARTNER_MODEL_CHANGES.revision) || 1 : 1;
 }
 
 async function handlePartnerModelChange(request: Request, env: RuntimeEnv): Promise<Response> {
