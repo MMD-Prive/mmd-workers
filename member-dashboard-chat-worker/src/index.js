@@ -12,7 +12,9 @@ import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verifie
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 import {
+  ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_MODE,
   REAL_RECOMMENDATION_SHADOW_SMOKE_MODE,
+  runEligibleKenjiRecommendationShadowSmoke,
   runRealKenjiRecommendationShadowSmoke,
 } from "./internal-kenji-recommendation-shadow-smoke.mjs";
 
@@ -2186,9 +2188,11 @@ export default {
     if (request.method === "POST" && url.pathname === INTERNAL_AI_SERVICE_BINDING_SMOKE.path) {
       if (!hasAiServiceSmokeAuth(request, env)) return json({ ok: false, error: "ai_service_smoke_auth_required" }, 401);
       const smokeInput = await request.clone().json().catch(() => null);
-      const result = smokeInput?.mode === REAL_RECOMMENDATION_SHADOW_SMOKE_MODE
-        ? await runRealKenjiRecommendationShadowSmoke(env)
-        : await runInternalAiServiceBindingSmoke(env);
+      const result = smokeInput?.mode === ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_MODE
+        ? await runEligibleKenjiRecommendationShadowSmoke(env)
+        : smokeInput?.mode === REAL_RECOMMENDATION_SHADOW_SMOKE_MODE
+          ? await runRealKenjiRecommendationShadowSmoke(env)
+          : await runInternalAiServiceBindingSmoke(env);
       return json(result.payload, result.status);
     }
 
