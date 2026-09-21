@@ -14,6 +14,11 @@ Layer ownership:
 - `POST /v1/partner/request`
 - `GET /v1/partner/verify?t=...`
 - `GET /v1/partner/dashboard?t=...`
+- `POST /v1/partner/models/change?t=...`
+- `POST /v1/partner/models/upload?t=...`
+- `POST /v1/partner/jobs/action?t=...`
+- `POST /v1/partner/sales/proposal?t=...`
+- `GET|POST /v1/partner/private-vault?t=...`
 - `POST /v1/partner/accept-terms`
 - `POST /v1/partner/approve`
 - `POST /v1/apply/public-model` (alias: `POST /apply/public-model`)
@@ -63,6 +68,14 @@ for this form.
 Required secret bindings are `AIRTABLE_API_KEY`, `TELEGRAM_BOT_TOKEN`, and `TOKEN_SECRET`. Manage them through Cloudflare secret management; do not commit literal secret values.
 
 `TOKEN_SECRET` is used for HMAC SHA-256 token signatures. The raw token is never stored in Airtable; only the SHA-256 hash is stored in `Model Partners`.
+
+## Partner Control Room privacy boundary
+
+- Partner-private notes are encrypted in the browser with AES-GCM using a key derived from the Partner's Vault PIN. The PIN and plaintext are never sent to the Worker.
+- The Worker stores only the encrypted envelope in private R2 and returns ciphertext only to the verified Partner session.
+- Shared model profile changes require an explicit `share_with_mmd: true` acknowledgement and are written to `MMD — Partner Model Change Requests` for review. They do not directly mutate canonical Models.
+- Source rate, requested customer sell rate, audience and visibility changes are proposals. They remain fail-closed until the existing Boss Per approval path accepts them.
+- Dashboard job reads are scoped by the canonical Partner ID snapshot; model mutations are scoped through the Partner's linked Model Referral records.
 
 ## Deploy
 

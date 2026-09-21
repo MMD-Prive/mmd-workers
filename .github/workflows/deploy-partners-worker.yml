@@ -88,7 +88,7 @@ jobs:
 
       - name: Typecheck
         working-directory: partners-worker
-        run: npm run typecheck
+        run: npm test && npm run typecheck
 
       - name: Rotate Partners-to-Telegram service secret
         shell: bash
@@ -244,6 +244,38 @@ jobs:
               401|403|503) ;;
               *) cat "$approval_body"; echo "Approval endpoint did not fail closed: HTTP $approval_code" >&2; exit 1 ;;
             esac
+          done
+
+      - name: Smoke Partner Control Room and fail-closed routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          sleep 3
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            page="$(curl --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/partner/dashboard?t=production-smoke-placeholder")"
+            grep -Fq 'data-partner-control-room' <<<"$page"
+            grep -Fq 'MMD ไม่มีสิทธิ์อ่าน' <<<"$page"
+            grep -Fq 'Private Vault' <<<"$page"
+
+            for path in \
+              /v1/partner/dashboard \
+              /v1/partner/private-vault; do
+              body="$(mktemp)"
+              code="$(curl --silent --show-error -o "$body" -w "%{http_code}" "$origin$path")"
+              test "$code" = "401"
+              test "$(jq -r '.error // empty' "$body")" = "token_missing"
+            done
+
+            for path in \
+              /v1/partner/models/change \
+              /v1/partner/models/upload \
+              /v1/partner/jobs/action \
+              /v1/partner/sales/proposal; do
+              body="$(mktemp)"
+              code="$(curl --silent --show-error -o "$body" -w "%{http_code}" -X POST "$origin$path")"
+              test "$code" = "401"
+              test "$(jq -r '.error // empty' "$body")" = "token_missing"
+            done
           done
 
       - name: Clean raw Kendo token from Airtable notes
