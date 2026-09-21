@@ -22,6 +22,15 @@ export function captureAuthorityEvent(
   input: AuthorityEventInput,
 ): Promise<AuthorityCaptureResult>;
 
+export function authorityRuntimeHealth(
+  env: unknown,
+  authority: string,
+  ctx?: { waitUntil(promise: Promise<unknown>): void } | null,
+): {
+  posthog_authority: "configured" | "missing";
+  schema: "mmd_authority_v1";
+};
+
 export function queueAuthorityEvent(
   ctx: { waitUntil(promise: Promise<unknown>): void } | null | undefined,
   env: unknown,
