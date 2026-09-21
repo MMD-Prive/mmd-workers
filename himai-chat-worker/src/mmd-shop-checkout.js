@@ -474,21 +474,33 @@ async function createOrderItems(env, orderRecordId, items) {
   return data.records || [];
 }
 
-async function createPaymentIntent(env, { orderId, total, email }) {
-  const base = clean(env.MMD_PAYMENTS_BASE_URL || "https://sigil.mmdbkk.com", 500).replace(/\/+$/g, "");
-  const response = await fetch(`${base}/v1/pay/shop-intent`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: "https://mmdbkk.com" },
-    body: JSON.stringify({
-      order_id: orderId,
-      session_id: orderId,
-      payment_stage: "shop",
-      amount: total,
-      payment_method: "promptpay",
-      member_email: email || undefined,
-      notes: `MMD Shop Order ${orderId}; payment_stage=shop`,
-    }),
+export async function createPaymentIntent(env, { orderId, total, email }) {
+  const body = JSON.stringify({
+    order_id: orderId,
+    session_id: orderId,
+    payment_stage: "shop",
+    amount: total,
+    payment_method: "promptpay",
+    member_email: email || undefined,
+    notes: `MMD Shop Order ${orderId}; payment_stage=shop`,
   });
+
+  let response;
+  if (env.PAYMENTS_WORKER?.fetch) {
+    response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments.internal/v1/pay/shop-intent", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body,
+    }));
+  } else {
+    const base = clean(env.MMD_PAYMENTS_BASE_URL || "https://sigil.mmdbkk.com", 500).replace(/\/+$/g, "");
+    response = await fetch(`${base}/v1/pay/shop-intent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://mmdbkk.com" },
+      body,
+    });
+  }
+
   const data = await response.json().catch(() => ({}));
   if (!response.ok) return { ok: false, error: data?.error || `payments_http_${response.status}` };
   return data;
