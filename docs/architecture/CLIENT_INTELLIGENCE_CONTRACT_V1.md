@@ -47,11 +47,20 @@ It is not a payment, membership, access, entitlement or messaging authority.
     "notices": [],
     "next_best_action": null,
     "suggested_reply": {
-      "available": false,
-      "text": null,
-      "channel": "",
+      "schema": "mmd.kenji_continuity_operator_draft.v1",
+      "mode": "operator_draft",
+      "available": true,
+      "text": "customer-safe deterministic draft for owner review",
+      "channel": "line_ofc",
       "send_allowed": false,
-      "reason": "reply_generation_not_connected"
+      "requires_owner_review": true,
+      "reason": "operator_review_required",
+      "guardrails": {
+        "customer_auto_send": false,
+        "business_truth_claims": false,
+        "memory_is_context_only": true,
+        "protected_truth_refresh_required": true
+      }
     },
     "follow_up": {
       "recommended": false,
@@ -86,7 +95,22 @@ The first implementation is deterministic and evidence-backed. It may surface:
 
 Every important recommendation includes evidence references when available.
 
-The endpoint must not generate a customer reply yet. `send_allowed` remains `false` until a separate approved messaging contract exists.
+## Phase 4A operator draft
+
+`KENJI_CONTINUITY_PHASE4_MODE=operator_draft` may expose a deterministic customer-safe draft inside this credential-bound operator view. It is not connected to LINE delivery, a message queue, or a customer auto-reply path. `send_allowed` and `customer_auto_send` remain hard-coded `false`.
+
+A draft is available only when all gates pass:
+
+- Exact canonical Client identity is explicitly verified with high confidence.
+- The preferred name passes identifier, contact-data, credential, and control-character filters.
+- Conversation Matrix marks a reviewed returning relationship.
+- The Matrix is active, versioned, unexpired, context-only, and explicitly declares that live truth wins.
+- An open non-review stage has evidence of a continuing thread.
+- The channel is an allowlisted LINE/LIFF channel.
+
+The copy uses only an allowlisted topic label. It never interpolates Matrix summaries, open loops, pending actions, pending references, payment artifacts, canonical status values, credentials, or customer identifiers. Protected topics always tell the operator/customer that the latest status must be checked with the owning system before confirmation.
+
+`off` and every unknown mode fail closed with no draft. Moving beyond operator review requires a separate approved messaging contract, explicit owner approval, shadow evidence, and a production rollback plan.
 
 ## Authority rule
 

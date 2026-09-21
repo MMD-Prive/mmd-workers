@@ -17,6 +17,7 @@ on:
       - ".github/workflows/model-media-real-e2e-production-smoke.yml"
       - "shared/payment-intelligence.mjs"
       - "shared/payment-notification-outbox*"
+      - "shared/kenji-continuity-operator-draft*"
       - "shared/test/payment-memory-r2.mjs"
       - "scripts/ensure-payment-notification-cron*"
 
@@ -99,6 +100,8 @@ jobs:
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/kenji-control-endpoints.js
+          node --check src/client-intelligence-endpoint.js
+          node --check ../shared/kenji-continuity-operator-draft.mjs
           node --check src/kenji-model-admin-adapter.js
           node --check src/kenji-model-workflow.js
           node --check src/payment-entitlement-approval.js
@@ -112,6 +115,8 @@ jobs:
             mms-admin-session-bounce.test.mjs \
             model-liff-cross-origin-session.test.mjs \
             kenji-model-access-rpc.test.mjs \
+            client-intelligence-endpoint.test.mjs \
+            ../shared/kenji-continuity-operator-draft.test.mjs \
             kenji-model-admin-adapter.test.mjs \
             kenji-model-workflow.test.mjs \
             payment-entitlement-approval.test.mjs \

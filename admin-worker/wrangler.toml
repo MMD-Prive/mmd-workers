@@ -787,6 +787,10 @@ service = "cal-sync-worker"
 
 [vars]
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
+# Customer Continuity Phase 4A is limited to deterministic drafts inside the
+# credential-bound Client Intelligence view. Unknown values fail closed, and
+# this mode never sends customer copy or gains business-truth authority.
+KENJI_CONTINUITY_PHASE4_MODE = "operator_draft"
 # Exact cross-site origin used by the current Lovable Model Hub preview. Its model
 # session is partitioned (not a broadly third-party cookie) and only this origin opts in.
 MODEL_DASHBOARD_ORIGIN = "https://mmdmodel.lovable.app"
