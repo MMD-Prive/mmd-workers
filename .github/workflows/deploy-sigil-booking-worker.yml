@@ -6,6 +6,7 @@ on:
     branches:
       - main
     paths:
+      - "shared/posthog-authority-events.mjs"
       - "sigil-booking-worker/**"
       - ".github/workflows/deploy-sigil-booking-worker.yml"
 

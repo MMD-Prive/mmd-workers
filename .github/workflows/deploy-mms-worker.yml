@@ -6,6 +6,7 @@ on:
     branches:
       - main
     paths:
+      - "shared/posthog-authority-events.mjs"
       - "mms-worker/**"
       - ".github/workflows/deploy-mms-worker.yml"
 

@@ -6,6 +6,7 @@ on:
     branches:
       - main
     paths:
+      - "shared/posthog-authority-events.mjs"
       - "member-pages-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
