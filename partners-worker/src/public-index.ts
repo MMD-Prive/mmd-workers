@@ -174,12 +174,12 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     "<meta name=\"robots\" content=\"noindex,nofollow\"><title>" + escapeHtml(copy.title) + "</title>" +
     "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
-    "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang="en">SĪGIL</b><span lang="en">Partner Division</span></a>" +
+    "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang='en'>SĪGIL</b><span lang='en'>Partner Division</span></a>" +
     "<div><a href=\"/partner/model\">Model Partner</a><a href=\"/partner/apply\">Apply</a><a href=\"/partner/terms\">Terms</a></div></nav>" +
     "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
-    "<aside class=\"mmdp-card\"><small lang="en">YUKI REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang="en">Partner Control Layer</span></aside></section>" +
+    "<aside class=\"mmdp-card\"><small lang='en'>YUKI REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
     renderDashboardPanel(page, token) +
     "<section class=\"mmdp-grid\"><article><span>01</span><h2>Submit</h2><p>ส่งข้อมูลให้ชัดพอสำหรับการพิจารณา ไม่ต้องเปิดข้อมูลส่วนตัวเกินจำเป็น</p></article>" +
     "<article><span>02</span><h2>Review</h2><p>Yuki ตรวจบทบาท แหล่งที่มา ความพร้อม และความเหมาะสมของ partner lane</p></article>" +
