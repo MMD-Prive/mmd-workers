@@ -8,6 +8,7 @@ on:
       - "admin-worker/src/payment-review-display-context.js"
       - "admin-worker/src/payment-review-discovery.js"
       - "admin-worker/payment-review-discovery.test.mjs"
+      - "admin-worker/payment-review-flow-ui.test.cjs"
       - "admin-worker/src/payment-proof-client-provenance-wrapper.js"
       - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
       - "admin-worker/payment-review-simple.test.mjs"
@@ -72,6 +73,12 @@ jobs:
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
           node --test admin-worker/payment-review-simple.test.mjs
           node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
+
+      - name: Payment workspace interaction guards
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/payment-review-ui" --no-save --ignore-scripts jsdom@30.0.1
+          MMD_UI_TEST_MODULES="$RUNNER_TEMP/payment-review-ui/node_modules" node --test admin-worker/payment-review-flow-ui.test.cjs
 
       - name: Manual renewal recovery contract
         run: |
