@@ -1,0 +1,175 @@
+name: Deploy Kenji Recommendation Layer
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy admin-worker"]
+    types: [completed]
+
+concurrency:
+  group: deploy-admin-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: admin-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      ADMIN_WORKER_URL: https://admin-worker.malemodel-bkk.workers.dev
+      KENJI_RECOMMENDATION_MODE: shadow
+
+    steps:
+      - name: Check out production main
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Normalize Cloudflare token
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const token = (process.env.CLOUDFLARE_API_TOKEN || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          if (!token) throw new Error("CLOUDFLARE_API_TOKEN is missing after normalization");
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${token}\n`);
+          NODE
+
+      - name: Verify Cloudflare account
+        run: npx --yes wrangler@4 whoami
+
+      - name: Validate recommendation production bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check src/kenji-recommendation-profile-source.js
+          node --check src/kenji-recommendation-context-adapter.js
+          node --check src/kenji-recommendation-rpc.js
+          node --check src/kenji-lv5-operational-rpc.js
+          node --check ../shared/kenji-recommendation-contract-v1.mjs
+          node --check ../shared/kenji-recommendation-context-v1.mjs
+          node --check ../shared/kenji-recommendation-candidate-v1.mjs
+          node --check ../shared/kenji-recommendation-layer-v1.mjs
+          node --test \
+            ../shared/kenji-recommendation-authority.test.mjs \
+            ../shared/kenji-recommendation-personalization.test.mjs \
+            kenji-recommendation-rpc-auth.test.mjs \
+            kenji-recommendation-rpc-behavior.test.mjs \
+            kenji-recommendation-entrypoint.test.mjs \
+            kenji-model-access-rpc.test.mjs \
+            ../shared/model-sales-control-v1.test.mjs
+
+      - name: Ensure sanitized availability KV binding
+        id: availability_kv
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          (async () => {
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+            const token = (process.env.CLOUDFLARE_API_TOKEN || "").trim();
+            const title = "MMD_SIGIL_AVAILABILITY_SNAPSHOTS_V1";
+            if (!account || !token) throw new Error("Cloudflare KV credentials are missing");
+            const api = `https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces`;
+            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+            const call = async (url, init = {}) => {
+              const response = await fetch(url, { ...init, headers: { ...headers, ...(init.headers || {}) } });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok || data.success !== true) throw new Error(JSON.stringify(data.errors || data));
+              return data.result;
+            };
+            const namespaces = await call(`${api}?per_page=1000&order=title&direction=asc`);
+            let namespace = namespaces.find((item) => item.title === title);
+            if (!namespace) {
+              namespace = await call(api, { method: "POST", body: JSON.stringify({ title }) });
+            }
+            if (!/^[a-f0-9]{32}$/i.test(String(namespace.id || ""))) {
+              throw new Error("Cloudflare returned an invalid KV namespace ID");
+            }
+            const source = fs.readFileSync("wrangler.toml", "utf8");
+            const start = "# BEGIN GENERATED KENJI RECOMMENDATION KV";
+            const end = "# END GENERATED KENJI RECOMMENDATION KV";
+            const escapedStart = start.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const escapedEnd = end.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const cleaned = source.replace(new RegExp(`\\n?${escapedStart}[\\s\\S]*?${escapedEnd}\\n?`, "g"), "\n").trimEnd();
+            const binding = [
+              "",
+              start,
+              "[[kv_namespaces]]",
+              'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"',
+              `id = "${namespace.id}"`,
+              end,
+              "",
+            ].join("\n");
+            fs.writeFileSync(".wrangler-kenji-recommendation.toml", `${cleaned}${binding}`);
+            console.log(`Resolved ${title} for SIGIL_AVAILABILITY_SNAPSHOTS`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          grep -Fq 'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"' .wrangler-kenji-recommendation.toml
+
+      - name: Validate Cloudflare version upload
+        shell: bash
+        run: |
+          npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+            --config .wrangler-kenji-recommendation.toml \
+            --var "KENJI_RECOMMENDATION_MODE:${KENJI_RECOMMENDATION_MODE}" \
+            --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Upload recommendation-enabled admin-worker version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="kenji-recommendation-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 versions upload --keep-vars \
+            --config .wrangler-kenji-recommendation.toml \
+            --var "KENJI_RECOMMENDATION_MODE:${KENJI_RECOMMENDATION_MODE}" \
+            --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}" \
+            --tag "$tag" \
+            --message "Kenji Recommendation Layer ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/kenji-recommendation-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/kenji-recommendation-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID" >&2
+            cat "$RUNNER_TEMP/kenji-recommendation-upload.log" >&2
+            exit 2
+          fi
+          echo "KENJI_RECOMMENDATION_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+
+      - name: Deploy recommendation-enabled version
+        run: npx --yes wrangler@4 versions deploy "${KENJI_RECOMMENDATION_VERSION_ID}@100%" -y
+
+      - name: Smoke service-only production guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -o "$response_file" -w "%{http_code}" \
+            -X POST "${ADMIN_WORKER_URL}/v1/internal/kenji/recommendations" \
+            -H "content-type: application/json" \
+            --data '{}')"
+          test "$status" = "401"
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (payload.ok !== false || payload.error !== "internal_auth_required") {
+            throw new Error(`Unexpected production guard response: ${JSON.stringify(payload)}`);
+          }
+          console.log("Kenji Recommendation Layer production route is mounted and service-only");
+          NODE
