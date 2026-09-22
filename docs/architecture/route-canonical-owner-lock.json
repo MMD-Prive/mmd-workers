@@ -810,7 +810,7 @@
     },
     {
       "route_id": "17_member_payments",
-      "route": "/member/payments",
+      "route": "/my-mmd/payments",
       "route_family": "Member payments",
       "hosts": [
         "mmdbkk.com",
@@ -820,7 +820,7 @@
         "GET",
         "HEAD"
       ],
-      "canonical_route": "/member/payments",
+      "canonical_route": "/my-mmd/payments",
       "aliases": [],
       "alias_notes": null,
       "status": "PARTIAL_INTEGRATION",
@@ -836,13 +836,11 @@
       "owner_decision": "LOCKED_SOURCE",
       "owner_confidence": "HIGH",
       "compatibility_decision": "retain legacy bridge only until production BFF acceptance",
-      "production_verified": "source_implemented_prod_ingress_pending",
-      "production_verification": "Webflow source, BFF source and route config proven; unauthenticated ingress + authenticated customer-safe acceptance still pending",
+      "production_verified": "live_connected_real_member_accepted_20260922",
+      "production_verification": "Production accepted 2026-09-22 on d29f81c84d71e891e31ebdf8bfa451417166e9b8: My MMD Payment Center presentation, LIFF continue_payment return, unauthenticated 401, real verified LINE member, customer-safe records, exact backend-issued signed public handoff, and browser-context rejection.",
       "risk": "legacy admin delegation must not expose admin context; BFF must reject browser-selected identity/payment authority and never become money truth",
-      "evidence": "Webflow page 69dfd6c51dd636056fdb35ea root #mmd-payments-maxx; member-pages-worker/src/member-payments-bff.js; member-dashboard-chat-worker/src/index.js; member-dashboard-chat-worker/wrangler.toml; docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md",
-      "conflicts": [
-        "legacy admin facade remains migration dependency until production BFF acceptance"
-      ],
+      "evidence": "member-pages-worker/src/member-payments-bff.js; member-dashboard-chat-worker/src/my-mmd-lovable-app-front-gate.js; member-dashboard-chat-worker/src/front-gate-index.js; member-dashboard-chat-worker/wrangler.toml; docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md; docs/ops/MMD_MEMBER_PAYMENTS_PRODUCTION_ACCEPTANCE_20260919.md; production receipt issue #325 comment 5773905945",
+      "conflicts": [],
       "migration_phase": "Phase 3A/5",
       "acceptance_requirements": [
         "Deploy member-dashboard-chat-worker exact /v1/member/payments ingress and member-pages-worker BFF.",
