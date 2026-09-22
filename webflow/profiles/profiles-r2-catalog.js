@@ -41,10 +41,30 @@
     `);
   }
 
+  if (stage2 && !root.querySelector("[data-social-packages]")) {
+    stage2.insertAdjacentHTML("beforebegin", `
+      <section class="mp8-driver-packages" data-social-packages hidden aria-labelledby="mp8-social-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD SOCIAL · APPEARANCE</p>
+          <h3 id="mp8-social-packages-title">บางงาน แค่มีคนไปด้วยก็เปลี่ยนทั้งบรรยากาศ</h3>
+          <p>สำหรับ Dinner, Wedding, Gala, Corporate Event และ Social occasion ที่ต้องการคนที่แต่งตัวเหมาะ เข้าสังคมเป็น และเข้าใจบริบทของงาน</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">DINNER GUEST</h4><strong class="mp8-driver-package__price">฿5,500</strong></div><p class="mp8-driver-package__line">Dinner, Reception หรือ Invitation ที่อยากมีคู่ไปด้วยแบบสุภาพ ดูดี และคุยกับคนในงานได้</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>1 venue</span><span>Smart / Formal</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=social_appearance&package=dinner_guest">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">EVENT PARTNER</h4><strong class="mp8-driver-package__price">฿6,900</strong></div><p class="mp8-driver-package__line">Wedding, Launch, Corporate Event หรือ Celebration ที่ต้องอยู่ด้วยกันตลอดช่วงหลักของงาน</p><div class="mp8-driver-package__meta"><span>4 ชั่วโมง</span><span>Event ready</span><span>Dress code brief</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=social_appearance&package=event_partner">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">FORMAL EVENING</h4><strong class="mp8-driver-package__price">฿9,500</strong></div><p class="mp8-driver-package__line">ค่ำคืนที่ยาวขึ้น ตั้งแต่ Dinner / Reception ไปจนถึงช่วงหลักของงาน พร้อม briefing เรื่อง dress code และ social context</p><div class="mp8-driver-package__meta"><span>6 ชั่วโมง</span><span>Formal evening</span><span>Curated</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=social_appearance&package=formal_evening">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">BRAND / CORPORATE</h4><strong class="mp8-driver-package__price">QUOTE</strong></div><p class="mp8-driver-package__line">Brand guest, commercial event, media appearance หรือการใช้ภาพ/วิดีโอเชิงพาณิชย์ ต้อง brief และ quote แยกตามหน้าที่และ usage rights</p><div class="mp8-driver-package__meta"><span>Commercial brief</span><span>Usage rights separate</span></div><a class="mp8-driver-package__cta" href="/public/access?from=profiles&role=social_appearance&brief=brand_corporate">ส่งบรีฟให้ MMD ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">OT ก่อน 00:00 ฿1,290/ชม. · เวลาที่จองไว้ล่วงหน้าหลัง 00:00 +฿500/ชม. · OT หลัง 00:00 ฿1,790/ชม. · OT หลัง 03:00 ฿2,090/ชม. · หลัง 06:00 ต้อง MMD review · หากลักษณะงานเปลี่ยนเป็น Night Life / Commercial ต้อง Change Plan และ re-quote · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน · ค่าอาหาร/เครื่องดื่ม/Ticket/เดินทาง/Parking/wardrobe พิเศษคิดตามจริง</p>
+      </section>
+    `);
+  }
+
   var driverPackages = root.querySelector("[data-driver-packages]");
   var culinaryPackages = root.querySelector("[data-culinary-packages]");
   var dayOffPackages = root.querySelector("[data-dayoff-packages]");
   var nightLifePackages = root.querySelector("[data-nightlife-packages]");
+  var socialPackages = root.querySelector("[data-social-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -227,6 +247,7 @@
       if (culinaryPackages) culinaryPackages.hidden = activeRole !== "culinary_companion";
       if (dayOffPackages) dayOffPackages.hidden = activeRole !== "everyday_companion";
       if (nightLifePackages) nightLifePackages.hidden = activeRole !== "nightlife_companion";
+      if (socialPackages) socialPackages.hidden = activeRole !== "social_appearance";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -237,7 +258,9 @@
             ? dayOffPackages
             : activeRole === "nightlife_companion" && nightLifePackages
               ? nightLifePackages
-              : stage2;
+              : activeRole === "social_appearance" && socialPackages
+                ? socialPackages
+                : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -259,6 +282,7 @@
   if (culinaryPackages) culinaryPackages.hidden = true;
   if (dayOffPackages) dayOffPackages.hidden = true;
   if (nightLifePackages) nightLifePackages.hidden = true;
+  if (socialPackages) socialPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

@@ -2470,6 +2470,9 @@ function modelSessionPayoutTerms(workLane, packageCode, basePayoutThb) {
     night_out: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     dinner_to_midnight: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     own_the_night: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    dinner_guest: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    event_partner: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    formal_evening: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
   }[code];
 
   if (!terms) {
