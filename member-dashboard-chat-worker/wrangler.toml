@@ -383,6 +383,11 @@ KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
 # proven delivered by LINE are supplied to the internal shadow binding. This
 # never changes the LINE response path and stays fail-closed when unavailable.
 KENJI_LINE_CONVERSATION_SHADOW_ENABLED = "true"
+AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
+# Phase 2 semantic understanding stays shadow-only. It may classify how the
+# latest message relates to prior turns, but it has no customer-copy field,
+# cannot mutate domain truth, and cannot bypass LINE_AUTO_REPLY_ENABLED=false.
+KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "true"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
