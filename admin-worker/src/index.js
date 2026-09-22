@@ -2473,6 +2473,9 @@ function modelSessionPayoutTerms(workLane, packageCode, basePayoutThb) {
     dinner_guest: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     event_partner: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     formal_evening: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    bangkok_with_me: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    local_bangkok: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    your_bangkok_day: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
   }[code];
 
   if (!terms) {
