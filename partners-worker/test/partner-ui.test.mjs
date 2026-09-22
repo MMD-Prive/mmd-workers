@@ -20,17 +20,15 @@ async function ui(t,{expired=false}={}){
   w.fetch=(path,opts={})=>{if(closed)return Promise.resolve(Response.json({ok:false},{status:499}));const u=new URL(path,w.location.href);const p=f.call(u.pathname+u.search,{method:opts.method,body:opts.body?JSON.parse(opts.body):undefined,headers:opts.headers});pending.add(p);p.finally(()=>pending.delete(p));return p;};
   const html=await(await pageWorker.fetch(new Request(w.location.href),f.env,{})).text();
   w.document.write(html);
-  try { await settle(()=>expired?!w.document.querySelector('[data-reconnect-line]').hidden:!!w.document.querySelector('[data-model]')); }
+  try { await settle(()=>expired?w.location.pathname==='/sigil/model/dashboard/partner-login':!!w.document.querySelector('[data-model]')); }
   catch(e){throw new Error(e.message+'; '+errors.map(x=>x.stack||x).join('; ')+'; '+w.document.querySelector('[data-flash]')?.textContent);}
   const q=s=>w.document.querySelector(s);
   return {f,w,q,errors};
 }
-test('expired access keeps sign-in message after both dashboard and vault fail and hides operations',async t=>{
-  const {q,errors}=await ui(t,{expired:true});
-  assert.equal(q('.pcr-shell').hidden,true);
-  assert.equal(q('[data-reconnect-line]').hidden,false);
-  assert.equal(q('[data-flash]').textContent,'เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์');
-  assert.doesNotMatch(q('[data-flash]').textContent,/ตารางงานยังใช้งานได้/);
+test('expired access leaves no dashboard fallback UI and redirects to canonical LINE login',async t=>{
+  const {q,w,errors}=await ui(t,{expired:true});
+  assert.equal(w.location.pathname,'/sigil/model/dashboard/partner-login');
+  assert.equal(q('[data-reconnect-line]'),null);
   assert.equal(q('[data-model]'),null);
   assert.deepEqual(errors,[]);
 });
@@ -42,10 +40,10 @@ test('access revocation closes an open private editor and clears decrypted field
   q('[name=private_note]').value='LOCAL UNSAVED SECRET';q('[data-general-note]').value='PRIVATE GENERAL';
   f.db.Partners[0].fields[apiModule.MODEL_PARTNERS.accessTokenHash]='revoked-fixture';
   w.dispatchEvent(new w.Event('focus'));
-  await settle(()=>!q('[data-reconnect-line]').hidden);
+  await settle(()=>w.location.pathname==='/sigil/model/dashboard/partner-login');
   assert.equal(q('[data-model-dialog]').open,false);assert.equal(q('.pcr-shell').hidden,true);
   assert.equal(q('[name=private_note]').value,'');assert.equal(q('[data-general-note]').value,'');
-  assert.equal(q('[data-model]'),null);assert.deepEqual(errors,[]);
+  assert.equal(q('[data-reconnect-line]'),null);assert.equal(q('[data-model]'),null);assert.deepEqual(errors,[]);
 });
 test('native control room executes and switches every operation tab with live fixture data',async t=>{
   const {q,errors}=await ui(t);
