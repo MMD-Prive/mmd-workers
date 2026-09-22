@@ -74,6 +74,23 @@ function escapeFormula(value) {
   return text(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function sourceEventIds(records = [], currentEventId = "") {
+  const ids = [];
+  for (const record of records) {
+    const fields = object(record?.fields);
+    const payload = object(fields.payload_json);
+    const inboxId = text(fields.inbox_id);
+    const candidate = text(
+      fields.line_id
+      || payload.source_message_id
+      || (inboxId.startsWith("line_") ? inboxId.slice(5) : ""),
+    );
+    if (/^[A-Za-z0-9._:-]{3,120}$/.test(candidate)) ids.push(candidate);
+  }
+  if (/^[A-Za-z0-9._:-]{3,120}$/.test(text(currentEventId))) ids.push(text(currentEventId));
+  return [...new Set(ids)].slice(-HISTORY_LIMIT);
+}
+
 async function listAirtableHistory(env = {}, lineUserId = "", fetchImpl = fetch) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
@@ -105,13 +122,23 @@ async function listAirtableHistory(env = {}, lineUserId = "", fetchImpl = fetch)
   }
 }
 
-async function listAirtableDeliveredReplies(env = {}, lineUserId = "", fetchImpl = fetch) {
+async function listAirtableDeliveredReplies(env = {}, lineUserId = "", exactSourceEventIds = [], fetchImpl = fetch) {
   const apiKey = text(env.AIRTABLE_API_KEY);
   const baseId = text(env.AIRTABLE_BASE_ID);
   const table = aiMessageEventsTable(env);
   if (!apiKey || !baseId || !table || !lineUserId) {
     return { ok: false, records: [], reason: "outbound_history_storage_unavailable" };
   }
+
+  const lineageClauses = exactSourceEventIds
+    .slice(-HISTORY_LIMIT)
+    .map((id) => `{event_id}="kai_line_${escapeFormula(id)}"`);
+  // Newer telemetry may carry line_user_id directly. Historical rows did not,
+  // so exact inbound message lineage remains the safe fallback join.
+  const identityClauses = [
+    `{line_user_id}="${escapeFormula(lineUserId)}"`,
+    ...lineageClauses,
+  ];
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("kenji_outbound_history_timeout"), HISTORY_READ_TIMEOUT_MS);
@@ -120,7 +147,7 @@ async function listAirtableDeliveredReplies(env = {}, lineUserId = "", fetchImpl
     url.searchParams.set("pageSize", String(HISTORY_LIMIT));
     url.searchParams.set(
       "filterByFormula",
-      `AND({line_user_id}="${escapeFormula(lineUserId)}",{channel}="LINE_OFC",{final_status}="sent")`,
+      `AND({channel}="LINE_OFC",{final_status}="sent",OR(${identityClauses.join(",")}))`,
     );
     [
       "event_id",
@@ -351,10 +378,9 @@ export async function buildKenjiLineConversationHistory({ env = {}, event = {}, 
     };
   }
 
-  const [stored, delivered] = await Promise.all([
-    listAirtableHistory(env, lineUserId, fetchImpl),
-    listAirtableDeliveredReplies(env, lineUserId, fetchImpl),
-  ]);
+  const stored = await listAirtableHistory(env, lineUserId, fetchImpl);
+  const lineage = sourceEventIds(stored.records, eventId(event));
+  const delivered = await listAirtableDeliveredReplies(env, lineUserId, lineage, fetchImpl);
   const turns = dedupeTurns([
     ...stored.records.map(turnFromRecord).filter(Boolean),
     ...delivered.records.map(turnFromAiMessageEvent).filter(Boolean),
