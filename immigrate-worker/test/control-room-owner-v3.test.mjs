@@ -121,6 +121,10 @@ try {
   assert.match(body, /mmd:control-room:dashboard/);
   assert.match(body, /window\.__mmdControlRoomDashboard/);
   assert.match(body, /data-v2-open-ai/);
+  assert.match(body, /data-v2-refresh/);
+  assert.match(body, /REFRESH LIVE/);
+  assert.match(body, /system_health=live/);
+  assert.match(body, /data-v2-release/);
   assert.match(body, /data-mmd-workflow="20260922"/);
   assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
   assert.match(body, /หาจากงานล่าสุด/);
