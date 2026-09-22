@@ -37,6 +37,11 @@ import {
   isModelPayoutAdjustmentRequest,
 } from "./model-payout-adjustments.js";
 import {
+  attachModelMoneyContextToJobResponse,
+  modelMoneyValidationResponse,
+  resolveJobModelMoneyContext,
+} from "./model-money-job-context.js";
+import {
   handleAdminShopOrdersApi,
   handleAdminShopOrdersPage,
   isAdminShopOrdersApiRequest,
@@ -187,6 +192,7 @@ export default {
     let activationRequest = null;
     let modelConfirmRequest = null;
     let perRenameRequest = null;
+    let jobMoneyContext = null;
     let normalizedPath = "";
     const method = String(request.method || "GET").toUpperCase();
     try {
@@ -200,6 +206,13 @@ export default {
       }
     } catch {
       // Core worker remains authoritative if URL parsing fails.
+    }
+
+    if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
+      const jobBody = await request.clone().json().catch(() => ({}));
+      const resolvedMoney = resolveJobModelMoneyContext(jobBody);
+      if (!resolvedMoney.ok) return modelMoneyValidationResponse(resolvedMoney);
+      jobMoneyContext = resolvedMoney.context;
     }
 
     // SIGIL Availability Snapshot is a service-only write boundary. It accepts
@@ -244,7 +257,9 @@ export default {
       const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), runtimeEnv);
       if (privateWorkBlocked) return privateWorkBlocked;
       const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, runtimeEnv);
-      if (refreshed) return refreshed;
+      if (refreshed) {
+        return attachModelMoneyContextToJobResponse(refreshed, runtimeEnv, jobMoneyContext);
+      }
     }
 
     let response = await worker.fetch(request, runtimeEnv, ctx);
@@ -265,6 +280,7 @@ export default {
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
       response = await augmentOwnerJobGrantCreateError(request, response, runtimeEnv);
+      response = await attachModelMoneyContextToJobResponse(response, runtimeEnv, jobMoneyContext);
     }
 
     if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
