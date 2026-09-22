@@ -129,9 +129,14 @@ test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events
         records: [{
           id: "recCustomer",
           fields: {
+            inbox_id: "line_msg-prior",
+            line_id: "msg-prior",
             source: "line",
             created_at: "2026-09-22T10:00:00.000Z",
-            payload_json: JSON.stringify({ raw_text: "คนนี้ดูดี" }),
+            payload_json: JSON.stringify({
+              source_message_id: "msg-prior",
+              raw_text: "คนนี้ดูดี",
+            }),
           },
         }],
       });
