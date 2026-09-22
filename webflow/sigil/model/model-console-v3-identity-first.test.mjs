@@ -28,6 +28,16 @@ test("Model Console renders only the authenticated model payout returned by the 
   assert.doesNotMatch(source, /customer_amount_due_thb/);
 });
 
+test("Model Console renders model-safe payout terms without customer pricing", () => {
+  assert.match(source, /session\?\.payout_terms/);
+  assert.match(source, /เรทเพิ่มเติมถึงตัว/);
+  assert.match(source, /OT ก่อน 00:00 \/ ชั่วโมง/);
+  assert.match(source, /OT หลัง 00:00 \/ ชั่วโมง/);
+  assert.match(source, /OT หลัง 03:00 \/ ชั่วโมง/);
+  assert.match(source, /ต่อเวลาต้องผ่าน MY MMD → MMD MODEL → MMD ยืนยัน/);
+  assert.doesNotMatch(source, /customer_sell_rate_thb|customer_amount_due_thb|margin_thb|commission_thb/);
+});
+
 test("Model Console gives a LINE-return action instead of instructing the model to reopen HYPE", () => {
   assert.match(source, /ยืนยัน LINE เพื่อกลับเข้างาน/);
   assert.match(source, /ยืนยัน LINE แล้วกลับเข้างาน/);
