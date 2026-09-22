@@ -22,7 +22,7 @@ const DELIVERY_PATHS = new Set([
 ]);
 const CHANNELS = new Set(["line", "telegram", "none"]);
 const DEFAULT_MODEL = "gpt-4.1-mini";
-const DEFAULT_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor";
+const DEFAULT_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/supplier";
 const MAX_MESSAGE_LENGTH = 1600;
 
 export async function handleSupplierAssistant(request, env) {
@@ -514,7 +514,7 @@ function deterministicReply(message, snapshot) {
   }
 
   if (/(dashboard|แดชบอร์ด|หน้าเว็บ|portal)/i.test(lower)) {
-    return "เปิด Distributor Dashboard ได้ที่ " + DEFAULT_DASHBOARD_URL;
+    return "เปิด Supplier Dashboard ได้ที่ " + DEFAULT_DASHBOARD_URL;
   }
 
   if (/(แจ้งเตือน|notification|alert|line|telegram|เทเลแกรม)/i.test(lower)) {
