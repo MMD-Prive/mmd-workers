@@ -9,13 +9,28 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 test("client intelligence stays on narrow same-origin ingress routes", async () => {
   const wrangler = await readFile(join(root, "wrangler.toml"), "utf8");
   const wrapper = await readFile(join(root, "src/control-room-dashboard-ingress-wrapper.ts"), "utf8");
+  const deployWorkflow = await readFile(join(root, "..", ".github/workflows/deploy-immigrate-worker.yml"), "utf8");
 
-  for (const pattern of [
+  const intelligencePatterns = [
     'mmdbkk.com/v1/admin/clients/intelligence*',
     'www.mmdbkk.com/v1/admin/clients/intelligence*',
-  ]) {
+  ];
+  for (const pattern of intelligencePatterns) {
     assert.match(wrangler, new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+
+  for (const pattern of [
+    'mmdbkk.com/v1/admin/clients/lineage-lookup*',
+    'www.mmdbkk.com/v1/admin/clients/lineage-lookup*',
+    'mmdbkk.com/v1/admin/clients/recent*',
+    'www.mmdbkk.com/v1/admin/clients/recent*',
+    ...intelligencePatterns,
+  ]) {
+    assert.match(deployWorkflow, new RegExp(`"${pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));
+  }
+  assert.match(deployWorkflow, /Verify Client Intelligence ingress fails closed in production/);
+  assert.match(deployWorkflow, /immigrate-to-admin-client-intelligence-v1/);
+  assert.match(deployWorkflow, /immigrate-to-admin-client-intelligence-audit-v1/);
 
   assert.match(wrapper, /CLIENT_INTELLIGENCE_PATH = "\/v1\/admin\/clients\/intelligence"/);
   assert.match(wrapper, /CLIENT_INTELLIGENCE_AUDIT_PATH = "\/v1\/admin\/clients\/intelligence\/audit"/);
