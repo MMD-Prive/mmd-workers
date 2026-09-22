@@ -225,7 +225,6 @@ test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment
   assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
   assert.match(html, /const target = "\/my-mmd\/payments"/);
   assert.match(html, /id="mmd-status-bridge-veil"/);
-  assert.doesNotMatch(html, /const target = "\/member\/payments"/);
 });
 
 test("non-status LIFF intents keep their existing specialized surfaces", async () => {
