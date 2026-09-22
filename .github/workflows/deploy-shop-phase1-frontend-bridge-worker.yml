@@ -40,6 +40,31 @@ jobs:
       - name: Wrangler dry run
         run: npx --yes wrangler@4 deploy --dry-run --config workers/shop-phase1-frontend-bridge-worker/wrangler.toml
 
+      - name: Route-free deploy config dry run
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="workers/shop-phase1-frontend-bridge-worker/wrangler.toml"
+          tmp="workers/shop-phase1-frontend-bridge-worker/.wrangler-no-routes.toml"
+          trap 'rm -f "$tmp"' EXIT
+          node - "$src" "$tmp" <<'NODE'
+          const fs = require("node:fs");
+          const [src, out] = process.argv.slice(2);
+          const input = fs.readFileSync(src, "utf8").split(/\r?\n/);
+          const lines = [];
+          let skipping = false;
+          for (const line of input) {
+            if (/^\s*\[\[routes\]\]\s*$/.test(line)) {
+              skipping = true;
+              continue;
+            }
+            if (skipping && /^\s*\[/.test(line)) skipping = false;
+            if (!skipping) lines.push(line);
+          }
+          fs.writeFileSync(out, lines.join("\n") + "\n");
+          NODE
+          npx --yes wrangler@4 deploy --dry-run --config "$tmp"
+
   deploy:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: verify
@@ -59,7 +84,8 @@ jobs:
         run: |
           set -euo pipefail
           src="workers/shop-phase1-frontend-bridge-worker/wrangler.toml"
-          tmp="$RUNNER_TEMP/shop-phase1-bridge-no-routes.toml"
+          tmp="workers/shop-phase1-frontend-bridge-worker/.wrangler-no-routes.toml"
+          trap 'rm -f "$tmp"' EXIT
           node - "$src" "$tmp" <<'NODE'
           const fs = require("node:fs");
           const [src, out] = process.argv.slice(2);
