@@ -21,8 +21,8 @@ export default {
       const assistantResponse = await handleSupplierAssistant(request, env);
       if (assistantResponse) return assistantResponse;
 
-      if (method === "GET" && url.pathname === "/shop/distributor") {
-        return await proxyCanonicalPath(request, env, "/shop/distributor");
+      if (method === "GET" && ["/shop/distributor", "/shop/supplier"].includes(url.pathname)) {
+        return await proxyCanonicalPath(request, env, "/shop/supplier");
       }
 
       if (method === "GET" && (url.pathname === "/health" || url.pathname === "/ping")) {
@@ -43,6 +43,7 @@ export default {
               "GET /mmd-shop/catalog",
               "GET /api/mmd-shop/catalog",
               "GET /shop/distributor",
+              "GET /shop/supplier",
               "GET /shop/api/distributor/portal",
               "POST /shop/api/distributor/assistant",
               "GET,POST /shop/api/distributor/notification-preference",
