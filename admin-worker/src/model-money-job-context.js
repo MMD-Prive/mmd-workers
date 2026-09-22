@@ -74,11 +74,27 @@ function explicitModelPackageCode(body = {}) {
   );
 }
 
-export function resolveJobModelMoneyContext(body = {}) {
-  const input = readObject(body);
-  const derivedLane = explicitPrivateVisibility(input) ? "private_model" : "public_model";
-  const explicitLane = token(input.model_work_lane || readObject(input.model_money).lane);
+function requestUrl(value) {
+  if (!value) return null;
+  try {
+    return value instanceof URL ? value : new URL(String(value));
+  } catch {
+    return null;
+  }
+}
 
+export function resolveJobModelMoneyContext(body = {}, urlValue = "") {
+  const input = readObject(body);
+  const url = requestUrl(urlValue);
+  const derivedLane = explicitPrivateVisibility(input) ? "private_model" : "public_model";
+  const bodyLane = token(input.model_work_lane || readObject(input.model_money).lane);
+  const queryLane = token(url?.searchParams.get("model_work_lane"));
+
+  if (bodyLane && queryLane && bodyLane !== queryLane) {
+    return { ok: false, status: 409, error: "model_work_lane_source_conflict" };
+  }
+
+  const explicitLane = bodyLane || queryLane;
   if (explicitLane && !MONEY_LANES.has(explicitLane)) {
     return { ok: false, status: 400, error: "model_work_lane_invalid" };
   }
@@ -93,7 +109,12 @@ export function resolveJobModelMoneyContext(body = {}) {
   }
 
   const modelWorkLane = explicitLane || derivedLane;
-  const modelPackageCode = explicitModelPackageCode(input);
+  const bodyPackageCode = explicitModelPackageCode(input);
+  const queryPackageCode = token(url?.searchParams.get("model_package_code"));
+  if (bodyPackageCode && queryPackageCode && bodyPackageCode !== queryPackageCode) {
+    return { ok: false, status: 409, error: "model_package_source_conflict" };
+  }
+  const modelPackageCode = bodyPackageCode || queryPackageCode;
 
   if (modelWorkLane !== "public_model" && modelPackageCode) {
     return {
@@ -126,7 +147,7 @@ export function resolveJobModelMoneyContext(body = {}) {
           : modelWorkLane === "public_model"
             ? "public_session_locked"
             : "review_required",
-      confidential_handling: confidentialHandling(input),
+      confidential_handling: confidentialHandling(input) || truthy(url?.searchParams.get("confidential_handling")),
       confidential_is_money_lane: false,
     },
   };
