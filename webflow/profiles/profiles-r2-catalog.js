@@ -60,11 +60,31 @@
     `);
   }
 
+  if (stage2 && !root.querySelector("[data-bangkok-packages]")) {
+    stage2.insertAdjacentHTML("beforebegin", `
+      <section class="mp8-driver-packages" data-bangkok-packages hidden aria-labelledby="mp8-bangkok-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD LOCAL · BANGKOK COMPANION</p>
+          <h3 id="mp8-bangkok-packages-title">Bangkok is the destination. เขาคือคนที่ไปด้วย</h3>
+          <p>Local Companion สำหรับคนที่อยากใช้กรุงเทพแบบมีคนรู้จังหวะเมืองไปด้วย — MMD ช่วยวาง route, match personality และดู continuity หลายจุด โดยไม่ขายเป็นบริการมัคคุเทศก์ เว้นแต่ MMD ยืนยันผู้มีใบอนุญาตโดยเฉพาะ</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">BANGKOK WITH ME</h4><strong class="mp8-driver-package__price">฿5,900</strong></div><p class="mp8-driver-package__line">เลือก 2–3 จุดในโซนเดียวกัน เช่น Old Town, Riverside, Siam หรือ Ari แล้วใช้เมืองไปด้วยกันแบบไม่รีบ</p><div class="mp8-driver-package__meta"><span>4 ชั่วโมง</span><span>2–3 stops</span><span>Bangkok city</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=bangkok_companion&package=bangkok_with_me">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">LOCAL BANGKOK</h4><strong class="mp8-driver-package__price">฿7,900</strong></div><p class="mp8-driver-package__line">ครึ่งวันที่มีหลาย mood เช่น Neighborhood → Food → River → Sunset โดย MMD ช่วยจัด route ให้เข้ากับสิ่งที่คุณชอบ</p><div class="mp8-driver-package__meta"><span>6 ชั่วโมง</span><span>3–4 stops</span><span>Local plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=bangkok_companion&package=local_bangkok">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">YOUR BANGKOK DAY</h4><strong class="mp8-driver-package__price">฿10,500</strong></div><p class="mp8-driver-package__line">หนึ่งวันเต็มในกรุงเทพจาก mood ของคุณ — MMD ช่วยเรียง route, timing และคนที่เหมาะกับ day plan นั้น</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full Bangkok day</span><span>Curated route</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=bangkok_companion&package=your_bangkok_day">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">LICENSED GUIDE</h4><strong class="mp8-driver-package__price">QUOTE</strong></div><p class="mp8-driver-package__line">หากต้องการบริการมัคคุเทศก์เชิงประวัติศาสตร์ วัฒนธรรม หรือการนำเที่ยวอย่างเป็นทางการ MMD จะจัดเฉพาะผู้ที่ตรวจใบอนุญาตแล้วและ quote แยก</p><div class="mp8-driver-package__meta"><span>License verified</span><span>Guide scope</span><span>Request only</span></div><a class="mp8-driver-package__cta" href="/public/access?from=profiles&role=bangkok_companion&brief=licensed_guide">ขอ Licensed Guide ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">Bangkok city only · OT ก่อน 00:00 ฿1,190/ชม. · เวลาที่จองไว้ล่วงหน้าหลัง 00:00 +฿500/ชม. · OT หลัง 00:00 ฿1,690/ชม. · OT หลัง 03:00 ฿1,990/ชม. · หลัง 06:00 ต้อง MMD review · ถ้า activity เปลี่ยนเป็น Night Life ให้ Change Plan / re-quote · ออกนอกกรุงเทพต้อง re-quote · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน · ค่าอาหาร/เครื่องดื่ม/ตั๋ว/กิจกรรม/BTS-MRT/Taxi/Boat/Parking คิดตามจริง · Companion ทั่วไปไม่ใช่ Licensed Tour Guide</p>
+      </section>
+    `);
+  }
+
   var driverPackages = root.querySelector("[data-driver-packages]");
   var culinaryPackages = root.querySelector("[data-culinary-packages]");
   var dayOffPackages = root.querySelector("[data-dayoff-packages]");
   var nightLifePackages = root.querySelector("[data-nightlife-packages]");
   var socialPackages = root.querySelector("[data-social-packages]");
+  var bangkokPackages = root.querySelector("[data-bangkok-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -248,6 +268,7 @@
       if (dayOffPackages) dayOffPackages.hidden = activeRole !== "everyday_companion";
       if (nightLifePackages) nightLifePackages.hidden = activeRole !== "nightlife_companion";
       if (socialPackages) socialPackages.hidden = activeRole !== "social_appearance";
+      if (bangkokPackages) bangkokPackages.hidden = activeRole !== "bangkok_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -260,7 +281,9 @@
               ? nightLifePackages
               : activeRole === "social_appearance" && socialPackages
                 ? socialPackages
-                : stage2;
+                : activeRole === "bangkok_companion" && bangkokPackages
+                  ? bangkokPackages
+                  : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -283,6 +306,7 @@
   if (dayOffPackages) dayOffPackages.hidden = true;
   if (nightLifePackages) nightLifePackages.hidden = true;
   if (socialPackages) socialPackages.hidden = true;
+  if (bangkokPackages) bangkokPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

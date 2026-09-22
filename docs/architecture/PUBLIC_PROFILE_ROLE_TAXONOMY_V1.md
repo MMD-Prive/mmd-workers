@@ -18,6 +18,19 @@ Date: 2026-09-22
 | `culinary_companion` | เชฟหล่อ | Cooking, private dining, kitchen experience |
 | `social_appearance` | คู่หูออกงาน | Dinner, event, social appearance |
 | `bangkok_companion` | เพื่อนเที่ยวกรุงเทพ | Bangkok/local day companion |
+
+### Bangkok Companion regulatory boundary
+
+`bangkok_companion` is a local-companion / lifestyle role. It may include accompanying the client between places, helping coordinate a preferred route, and sharing ordinary personal/local recommendations.
+
+It must **not** be marketed as a licensed tourist-guide service unless MMD has verified the applicable guide credential for that specific person/offer.
+
+- Generic Public profile label: `Bangkok Companion`.
+- Licensed guide claim: credential verification required.
+- Licensed Guide request: custom quote / controlled assignment.
+- Outside-Bangkok scope: re-quote.
+- Driving the client: use the Driver Companion product/requirements instead of silently expanding Bangkok Companion.
+
 | `sport_activity` | หนุ่มสายกีฬา | Running, sport, outdoor activity |
 | `wellness_companion` | หนุ่มสายสุขภาพ | Wellness and fitness-oriented activity |
 | `business_companion` | หนุ่มออฟฟิศ | Business dinner, meeting companion, smart casual |
