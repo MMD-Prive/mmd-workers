@@ -267,11 +267,14 @@ export async function handleMemberAppSessionExtensionApi(request,env={},readSess
     if(extension&&["model_approved","payment_required","payment_pending","payment_verified"].includes(code(extension.fields?.[EF.status]))){
       extension=await finalizeVerifiedExtension(env,session,extension);
     }
+    const refreshedSession=code(extension?.fields?.[EF.status])==="mmd_confirmed"
+      ? await getById(env,table(env,"AIRTABLE_TABLE_SESSIONS",SESSIONS_DEFAULT),session.id)
+      : session;
     return json({
       ok:true,
-      session:{session_id:clean(session.fields?.session_id,180),status:sessionState(session.fields),official_end_at:sessionEndIso(session.fields),package_code:sessionPackage(session.fields),model_work_lane:sessionLane(session.fields)},
+      session:{session_id:clean(refreshedSession.fields?.session_id,180),status:sessionState(refreshedSession.fields),official_end_at:sessionEndIso(refreshedSession.fields),package_code:sessionPackage(refreshedSession.fields),model_work_lane:sessionLane(refreshedSession.fields)},
       extension:safeExtension(extension),
-      can_request:sessionLane(session.fields)==="public_model"&&ACTIVE.has(sessionState(session.fields))&&(!extension||!OPEN.has(code(extension.fields?.[EF.status]))),
+      can_request:sessionLane(refreshedSession.fields)==="public_model"&&ACTIVE.has(sessionState(refreshedSession.fields))&&(!extension||!OPEN.has(code(extension.fields?.[EF.status]))),
     });
   }catch(e){return fail(Number(e?.status)||500,"SESSION_EXTENSION_UNAVAILABLE",clean(e?.message||e||"extension_unavailable",300))}
 }
