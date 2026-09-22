@@ -11,6 +11,8 @@
   var stage2 = root.querySelector("[data-role-stage2]");
   var driverPackages = root.querySelector("[data-driver-packages]");
   var culinaryPackages = root.querySelector("[data-culinary-packages]");
+  var dayOffPackages = root.querySelector("[data-dayoff-packages]");
+  var nightLifePackages = root.querySelector("[data-nightlife-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -191,13 +193,19 @@
       });
       if (driverPackages) driverPackages.hidden = activeRole !== "driver_companion";
       if (culinaryPackages) culinaryPackages.hidden = activeRole !== "culinary_companion";
+      if (dayOffPackages) dayOffPackages.hidden = activeRole !== "everyday_companion";
+      if (nightLifePackages) nightLifePackages.hidden = activeRole !== "nightlife_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
         ? driverPackages
         : activeRole === "culinary_companion" && culinaryPackages
           ? culinaryPackages
-          : stage2;
+          : activeRole === "everyday_companion" && dayOffPackages
+            ? dayOffPackages
+            : activeRole === "nightlife_companion" && nightLifePackages
+              ? nightLifePackages
+              : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -217,6 +225,8 @@
   track.replaceChildren();
   if (driverPackages) driverPackages.hidden = true;
   if (culinaryPackages) culinaryPackages.hidden = true;
+  if (dayOffPackages) dayOffPackages.hidden = true;
+  if (nightLifePackages) nightLifePackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 
