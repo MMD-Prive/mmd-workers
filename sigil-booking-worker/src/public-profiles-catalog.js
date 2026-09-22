@@ -5,6 +5,8 @@ const PREFERRED_IMAGE = /(?:^|[-_. ])(?:card|cover|hero|main|primary|profile|01)
 const BLOCKED_SEGMENTS = new Set(["private", "evidence", "slips", "line-notes", "line_notes", "sigil", "internal"]);
 const PUBLIC_CATALOG_PATH = "/sigil/api/models/search/public-catalog";
 const MODEL_APPLICATIONS_TABLE_ID = "tblwUa8ySWln8OfaJ";
+const PUBLIC_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
+const PUBLIC_PROMO_CONSENT_SOURCES = new Set(["/apply/public-model", "mmd_model", "mmd_model_authenticated"]);
 const APPLICATION_FIELDS = Object.freeze({
   workingName: "fldY8Jf7H70Tn1S93",
   nickname: "fldUIqNSM6Z9dK8Tj",
@@ -13,10 +15,18 @@ const APPLICATION_FIELDS = Object.freeze({
   reviewStatus: "fldInXMklAz53CiCq",
   intakeStatus: "fldHk2h9Rf6g5UlZw",
   submittedAt: "fldRs4JdlxOdtlqp9",
+  payloadJson: "fldJ9ldETtMF2Qbqf",
   approvedRoles: "fldz20JiFUK9ubk1c",
   bookingMode: "fldjo1NpDcB0JXk91",
   publicProfileApproved: "fldcnCF3KrdAd4cfa",
   credentialStatus: "fldFM8T50S1zObdVP",
+  nonMemberImageConsent: "fldUMJEUVK3GNmomA",
+  nonMemberPromoRoles: "fldQgqdiVPTMRfawj",
+  publicPromoConsentStatus: "fldsD2K6T1UGyggvp",
+  publicPromoConsentAt: "fld8M8tXWQsDpsouB",
+  publicPromoConsentVersion: "fldbI0gUNjwtIUXd2",
+  publicPromoConsentRevokedAt: "fld1A7uvWaJIhwjOg",
+  publicPromoConsentSource: "fldB5TqIGAOvF01uj",
 });
 
 export function isPublicProfilesCatalogRequest(path, method = "GET") {
@@ -56,12 +66,22 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
 
 export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), audienceBySlug = null } = {}) {
   // audienceBySlug is accepted only for backward-compatible unit callers. It never
-  // grants public visibility: a model still needs an explicit approved eligibility row.
+  // grants public visibility: a model still needs explicit MMD approval and current
+  // non-member image-promotion consent for at least one approved role.
   if (!(eligibilityBySlug instanceof Map) || eligibilityBySlug.size === 0) {
     eligibilityBySlug = new Map();
     if (audienceBySlug instanceof Map) {
       for (const [slug, genders] of audienceBySlug.entries()) {
-        eligibilityBySlug.set(slug, { genders, roles: [], booking_mode: "curated", public_profile_approved: false, credential_status: "not_required" });
+        eligibilityBySlug.set(slug, {
+          genders,
+          roles: [],
+          promo_roles: [],
+          booking_mode: "curated",
+          public_profile_approved: false,
+          credential_status: "not_required",
+          nonmember_image_consent: false,
+          promo_consent_status: "not_granted",
+        });
       }
     }
   }
@@ -89,11 +109,13 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
     const photos = group.photos.slice(0, 6).map((photo) => photo.url);
     const eligibility = eligibilityBySlug instanceof Map ? eligibilityBySlug.get(group.slug) : null;
-    if (!eligibility || eligibility.public_profile_approved !== true) return null;
+    if (!eligibility || eligibility.public_profile_approved !== true || !validPublicPromoConsent(eligibility)) return null;
     const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
     const approvedRoles = normalizeRoleKeys(eligibility.roles);
-    if (!acceptedCustomerGenders.length || !approvedRoles.length) return null;
-    if (approvedRoles.includes("medical_professional") && clean(eligibility.credential_status).toLowerCase() !== "verified") {
+    const promoRoles = normalizeRoleKeys(eligibility.promo_roles);
+    const publicRoles = approvedRoles.filter((role) => promoRoles.includes(role));
+    if (!acceptedCustomerGenders.length || !publicRoles.length) return null;
+    if (publicRoles.includes("medical_professional") && clean(eligibility.credential_status).toLowerCase() !== "verified") {
       return null;
     }
     return {
@@ -103,9 +125,10 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       photos,
       customer_scope: acceptedCustomerGenders.length === 1 ? `${acceptedCustomerGenders[0]}_only` : "all_genders",
       accepted_customer_genders: acceptedCustomerGenders,
-      approved_roles: approvedRoles,
+      approved_roles: publicRoles,
       booking_mode: normalizeBookingMode(eligibility.booking_mode),
       visibility: "public",
+      audience_visibility: "non_member_consented",
       source: "r2_public_model",
     };
   }).filter(Boolean).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
@@ -139,12 +162,42 @@ async function loadApprovedEligibility(env) {
         const name = clean(fields[APPLICATION_FIELDS.workingName] || fields[APPLICATION_FIELDS.nickname]);
         const slug = slugify(name);
         if (!slug || index.has(slug)) continue;
+
+        const payload = jsonObject(fields[APPLICATION_FIELDS.payloadJson]);
+        const payloadConsent = payload.mmd_nonmember_profile_image_consent === true;
+        const storedStatus = choiceName(fields[APPLICATION_FIELDS.publicPromoConsentStatus]).toLowerCase();
+        const storedRoles = choiceNames(fields[APPLICATION_FIELDS.nonMemberPromoRoles]);
+        const storedConsentAt = clean(fields[APPLICATION_FIELDS.publicPromoConsentAt]);
+        const storedVersion = clean(fields[APPLICATION_FIELDS.publicPromoConsentVersion]);
+        const storedSource = clean(fields[APPLICATION_FIELDS.publicPromoConsentSource]);
+        const storedRevokedAt = clean(fields[APPLICATION_FIELDS.publicPromoConsentRevokedAt]);
+        const status = storedStatus || (payloadConsent ? "granted" : "not_granted");
+        const version = storedVersion || clean(payload.mmd_public_promo_consent_version);
+        const consentAt = storedConsentAt || (payloadConsent ? clean(fields[APPLICATION_FIELDS.submittedAt]) : "");
+        const source = storedSource || (payloadConsent ? "/apply/public-model" : "");
+        const promoRoles = storedRoles.length
+          ? storedRoles
+          : normalizeRoleKeys(payload.mmd_nonmember_promo_roles);
+        // Once reviewed/dedicated consent state exists, it is authoritative over
+        // historical application payload. Unchecking or revoking cannot be widened
+        // again by an older payload that once contained consent=true.
+        const imageConsent = storedStatus
+          ? storedStatus === "granted" && checkboxTrue(fields[APPLICATION_FIELDS.nonMemberImageConsent])
+          : payloadConsent;
+
         index.set(slug, {
           genders: customerGendersFromScope(fields[APPLICATION_FIELDS.customerScope]),
           roles: choiceNames(fields[APPLICATION_FIELDS.approvedRoles]),
+          promo_roles: promoRoles,
           booking_mode: choiceName(fields[APPLICATION_FIELDS.bookingMode]),
           public_profile_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicProfileApproved]),
           credential_status: choiceName(fields[APPLICATION_FIELDS.credentialStatus]),
+          nonmember_image_consent: imageConsent,
+          promo_consent_status: status,
+          promo_consent_at: consentAt,
+          promo_consent_version: version,
+          promo_consent_source: source,
+          promo_consent_revoked_at: storedRevokedAt,
         });
       }
       offset = clean(data.offset);
@@ -155,6 +208,29 @@ async function loadApprovedEligibility(env) {
   return index;
 }
 
+function validPublicPromoConsent(value = {}) {
+  if (value.nonmember_image_consent !== true) return false;
+  if (clean(value.promo_consent_status).toLowerCase() !== "granted") return false;
+  if (clean(value.promo_consent_version) !== PUBLIC_PROMO_CONSENT_VERSION) return false;
+  if (!validDateTime(value.promo_consent_at)) return false;
+  if (clean(value.promo_consent_revoked_at)) return false;
+  if (!PUBLIC_PROMO_CONSENT_SOURCES.has(clean(value.promo_consent_source).toLowerCase())) return false;
+  return normalizeRoleKeys(value.promo_roles).length > 0;
+}
+
+function validDateTime(value) {
+  const text = clean(value);
+  return Boolean(text && Number.isFinite(Date.parse(text)));
+}
+function jsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(clean(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 function choiceNames(value) {
   return (Array.isArray(value) ? value : [value]).map(choiceName).filter(Boolean);
 }
@@ -231,7 +307,7 @@ function normalizePath(value) { const path = clean(value || "/").replace(/\/{2,}
 function corsHeaders(request, env) {
   const headers = new Headers({
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=120, stale-while-revalidate=600",
+    "cache-control": "private, no-store, max-age=0, must-revalidate",
     "access-control-allow-methods": "GET,HEAD,OPTIONS",
     "access-control-allow-headers": "Content-Type",
     "vary": "Origin",
