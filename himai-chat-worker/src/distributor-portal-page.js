@@ -10,7 +10,7 @@ export function renderDistributorPortalPage() {
   });
 }
 
-const HTML = String.raw\`<!doctype html>
+const HTML = String.raw`<!doctype html>
 <html lang="th">
 <head>
 <meta charset="utf-8">
@@ -279,4 +279,4 @@ textarea{min-height:86px;resize:vertical}
 })();
 </script>
 </body>
-</html>\`;
+</html>`;
