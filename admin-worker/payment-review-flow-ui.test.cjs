@@ -33,6 +33,17 @@ test('one search finds Per Rename, original names, models, and jobs without slip
  }finally{h.dom.window.close()}
 });
 
+test('payment workspace exposes payment, session and proof references without hiding them',async()=>{
+ const h=setup();try{await tick();await tick();assert.match(h.q('[data-pf-list]').textContent,/Payment Ref: pay-a/);await h.open();assert.match(h.q('[data-pf-work]').textContent,/Session ID: sess-a/);assert.match(h.q('[data-pf-work]').textContent,/Payment Ref: pay-a/);assert.match(h.q('[data-pf-work]').textContent,/Proof ID: proof-a/);assert.match(h.q('[data-pf-review]').textContent,/Proof ID: proof-a/);
+ }finally{h.dom.window.close()}
+});
+
+test('canonical approval errors stay specific instead of blaming pairing generically',async()=>{
+ const h=setup({fetch:async(_url,opts)=>{if(opts.method==='POST')return{ok:false,status:409,json:async()=>({ok:false,error:'canonical_payment_reference_mismatch'})}}});
+ try{await tick();await tick();await h.open();h.image();h.q('[data-pf-match]').click();h.q('[data-pf-bank]').click();h.q('[data-pf-approve]').click();await tick();assert.match(h.q('[data-pf-message]').textContent,/Payment Reference.*ไม่ตรงกัน/);assert.doesNotMatch(h.q('[data-pf-message]').textContent,/รีเฟรชหรือตรวจการจับคู่/);
+ }finally{h.dom.window.close()}
+});
+
 test('exact proof reload, image and both checks are mandatory before approval',async()=>{
  const h=setup({items:[]});try{await tick();await tick();await h.open();assert.ok(h.calls.some(x=>x.url.includes('proof_id=proof-a')));assert.equal(h.q('[data-pf-approve]').disabled,true);h.image();h.q('[data-pf-match]').click();assert.equal(h.q('[data-pf-approve]').disabled,true);h.q('[data-pf-bank]').click();assert.equal(h.q('[data-pf-approve]').disabled,false);h.q('[data-pf-evidence] img').onerror();assert.equal(h.q('[data-pf-approve]').disabled,true);assert.equal(h.calls.filter(x=>x.opts.method==='POST').length,0);
  }finally{h.dom.window.close()}

@@ -533,24 +533,32 @@ async function createOrUpdatePaymentIntent(env, payload) {
   const table = getPaymentsTable(env);
   const existing = await findPaymentByPaymentRef(env, payload.payment_ref);
 
+  // Canonical Payments writes use only schema-backed fields. Do not write to
+  // formula aliases such as `payment_ref` / `verification_status`, and do
+  // not send legacy field names that are absent from the production table.
+  const paymentMethodRaw = toStr(payload.payment_method || "promptpay").toLowerCase();
+  const paymentMethod =
+    paymentMethodRaw.includes("prompt") ? "PromptPay" :
+    paymentMethodRaw.includes("bank") ? "Bank Transfer" :
+    paymentMethodRaw.includes("credit") ? "Credit Card" :
+    paymentMethodRaw.includes("cash") ? "Cash" : "Other";
+  const paymentDate = toStr(payload.paid_at || nowIso()).slice(0, 10);
+
   const fields = compact({
-    payment_ref: payload.payment_ref,
-    session_id: payload.session_id,
-    payment_stage: payload.payment_stage === "shop" ? undefined : payload.payment_stage,
-    payment_type: payload.payment_stage === "shop" ? undefined : payload.payment_stage,
-    amount_thb: payload.amount,
-    amount: payload.amount,
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    notes: payload.notes || "",
-    receipt_url: payload.receipt_url || "",
-    "Receipt Photo": payload.receipt_url || "",
-    "Payment Method": payload.payment_method || "promptpay",
-    "Payment Status": payload.payment_status || "pending",
-    "Verification Status": payload.verification_status || "pending",
-    "Payment Intent Status (AI)": payload.intent_status || "manual_review",
-    "Payment Date": payload.paid_at || nowIso(),
-    "Created At": payload.created_at || nowIso(),
+    [toStr(env.AT_PAYMENTS__PAYMENT_REF || "Payment Reference")]: payload.payment_ref,
+    [toStr(env.AT_PAYMENTS__PAYMENT_DATE || "Payment Date")]: paymentDate,
+    [toStr(env.AT_PAYMENTS__AMOUNT || "Amount")]: payload.amount,
+    [toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]: "Paid",
+    [toStr(env.AT_PAYMENTS__PAYMENT_METHOD || "Payment Method")]: paymentMethod,
+    [toStr(env.AT_PAYMENTS__NOTES || "Notes")]: toStr(payload.notes) || undefined,
+    [toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]: "verified",
+    [toStr(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS || "Payment Intent Status")]: "Confirmed",
+    [toStr(env.AT_PAYMENTS__PACKAGE_CODE || "Package Code")]: toStr(payload.package_code) || undefined,
+    [toStr(env.AT_PAYMENTS__SESSION_ID || "session_id")]: toStr(payload.session_id) || undefined,
+    [toStr(env.AT_PAYMENTS__PAYMENT_STAGE || "payment_stage")]: toStr(payload.payment_stage) || undefined,
+    [toStr(env.AT_PAYMENTS__PAYMENT_TYPE || "payment_type")]:
+      ["deposit", "final", "tips", "full"].includes(toStr(payload.payment_stage)) ? toStr(payload.payment_stage) : undefined,
+    [toStr(env.AT_PAYMENTS__CREATED_AT || "Created At")]: existing?.id ? undefined : (payload.created_at || nowIso()),
   });
 
   if (existing?.id) {
@@ -568,38 +576,35 @@ async function updateSessionFromPayment(env, payload) {
     return { ok: false, skipped: true, reason: "session_not_found" };
   }
 
-  const nextStatus = paymentStatusFromStage(payload.stage);
-  const isFinal = payload.stage === "final" || payload.stage === "full";
-  const sessionFields = session.fields || {};
-  const lifecycleField = ["session_state", "state", "status"]
-    .find((name) => Object.prototype.hasOwnProperty.call(sessionFields, name)) || "status";
+  // Money truth must not advance the booking/model lifecycle. Session Status,
+  // status/session_state and model_session_state stay owned by their existing
+  // lifecycle contracts. This write only projects payment state.
+  const currentPaymentStatus = toStr(
+    session.fields?.[toStr(env.AT_SESSIONS__PAYMENT_STATUS || "payment_status")] ||
+    session.fields?.payment_status
+  ).toLowerCase();
+  const nextPaymentStatus =
+    payload.stage === "deposit" ? "partial" :
+    ["final", "full", "membership"].includes(payload.stage) ? "paid" :
+    currentPaymentStatus;
 
   const fields = compact({
-    [lifecycleField]: isFinal ? "final_payment_confirmed" : nextStatus,
-    "Session Status": nextStatus,
-    "Payment Status": nextStatus,
-    // The signed customer/model links remain bound to the original payment
-    // stage. Final payment has its own canonical ref and must not replace that
-    // original Session ref.
-    payment_ref: isFinal ? undefined : payload.payment_ref,
-    last_payment_ref: payload.payment_ref,
-    payment_type: payload.stage,
-    amount_thb: payload.amount_thb,
-    paid_at: payload.paid_at || nowIso(),
-    receipt_url: payload.receipt_url || "",
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    deposit_paid_at: payload.stage === "deposit" ? (payload.paid_at || nowIso()) : undefined,
-    final_paid_at: payload.stage === "final" || payload.stage === "full" ? (payload.paid_at || nowIso()) : undefined,
-    tips_paid_at: payload.stage === "tips" ? (payload.paid_at || nowIso()) : undefined,
+    [toStr(env.AT_SESSIONS__PAYMENT_STATUS || "payment_status")]: nextPaymentStatus || undefined,
+    [toStr(env.AT_SESSIONS__PAYMENT_REF || "payment_ref")]:
+      payload.stage === "deposit" && !toStr(session.fields?.[toStr(env.AT_SESSIONS__PAYMENT_REF || "payment_ref")])
+        ? payload.payment_ref
+        : undefined,
   });
 
-  await airtablePatch(env, getSessionsTable(env), session.id, fields);
+  if (Object.keys(fields).length) {
+    await airtablePatch(env, getSessionsTable(env), session.id, fields);
+  }
 
   return {
     ok: true,
     session_record_id: session.id,
-    status: nextStatus,
+    payment_status: nextPaymentStatus || null,
+    lifecycle_unchanged: true,
   };
 }
 
