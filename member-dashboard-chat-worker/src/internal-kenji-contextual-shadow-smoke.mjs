@@ -102,6 +102,7 @@ export async function runKenjiContextualUnderstandingShadowSmoke(env = {}, { fet
         auto_send_allowed: false,
         model_attempted: result?.model_attempted === true,
         model_success: result?.model_success === true,
+        model_failure_reason: String(result?.model_failure_reason || "").slice(0, 80),
         analysis_source: String(result?.analysis_source || "unknown").slice(0, 40),
         relation: String(result?.relation || "unknown").slice(0, 40),
         topic_relation: String(result?.topic_relation || "unknown").slice(0, 40),
