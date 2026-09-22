@@ -150,6 +150,37 @@ test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events
   assert.equal(history.coverage.reply_history_complete, true);
 });
 
+test("current webhook is not duplicated when the same LINE message is already in Inbox", async () => {
+  const history = await buildKenjiLineConversationHistory({
+    env: ENV,
+    event: event("เปลี่ยนเป็นสามทุ่มนะ"),
+    fetchImpl: async (url) => {
+      if (String(url).includes("tblEvents")) return response({ records: [] });
+      return response({
+        records: [{
+          id: "recCurrentAlreadyPersisted",
+          fields: {
+            inbox_id: "line_msg-current",
+            line_id: "msg-current",
+            source: "line",
+            created_at: "2026-09-22T10:02:00.000Z",
+            payload_json: JSON.stringify({
+              source_message_id: "msg-current",
+              received_at: "2026-09-22T10:02:00.000Z",
+              raw_text: "เปลี่ยนเป็นสามทุ่มนะ",
+            }),
+          },
+        }],
+      });
+    },
+  });
+
+  assert.equal(history.turns.length, 1);
+  assert.equal(history.turns[0].role, "customer");
+  assert.equal(history.turns[0].content, "เปลี่ยนเป็นสามทุ่มนะ");
+  assert.equal(history.turns[0].source_event_id, "msg-current");
+});
+
 test("missing outbound evidence remains explicit instead of inventing an earlier reply", async () => {
   const history = await buildKenjiLineConversationHistory({
     env: ENV,
