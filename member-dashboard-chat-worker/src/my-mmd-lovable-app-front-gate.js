@@ -167,7 +167,7 @@ function publicExtensionScript() {
     try {
       const u = new URL(String(value || ""));
       const keys = [...u.searchParams.keys()];
-      return u.protocol === "https:" && u.hostname === "mmdbkk.com" && u.pathname === "/sigil/pay" &&
+      return u.protocol === "https:" && u.hostname === "mmdbkk.com" && u.pathname === "/pay/checkout" &&
         keys.length === 1 && keys[0] === "t" && !!u.searchParams.get("t") ? u.toString() : "";
     } catch { return ""; }
   };
