@@ -148,6 +148,27 @@ Audit events use `POST /v1/admin/clients/intelligence/audit` and write only `Eve
 
 This UI has no LINE reply/push adapter and no send button. `send_allowed=false`, `customer_auto_send=false`, and `requires_owner_review=true` remain mandatory. The audit route reports `customer_delivery_attempted=false` and `business_truth_mutated=false`.
 
+## Phase 4C operator quality feedback
+
+Before any separately approved customer-copy rollout, the operator view may collect one bounded quality decision for the currently reviewed draft. The feedback contract is `mmd.kenji_continuity_operator_feedback.v1` and accepts only these allowlisted combinations:
+
+- `accepted / ready_as_is`
+- `needs_edit / tone_adjustment`
+- `needs_edit / missing_context`
+- `needs_edit / too_generic`
+- `rejected / wrong_context`
+- `rejected / unsafe_or_inaccurate`
+- `rejected / stale_context`
+- `rejected / not_relevant`
+
+Feedback requires a successful safe-view audit, the current browser's explicit owner-review confirmation, and a fresh server-side re-read of the same safe draft. Free-text feedback, edited customer copy, unknown request fields, and mismatched outcome/reason combinations are rejected.
+
+The audit store still receives only `Event ID`, bounded `Action`, and normalized `Result`. It does not receive the Client record ID, actor identity, preferred name, draft text, edited text, Matrix content, canonical business status, credentials, or payment artifacts.
+
+A live kill switch does not prevent read-only quality evaluation, but it continues to lock clipboard copy. An `accepted` or `needs_edit` decision returns a ten-minute signed feedback receipt bound to the credential actor, Client hash, current draft hash, outcome, and reason. The receipt contains no raw Client ID, actor ID, name, or draft text. The server revalidates the receipt and re-reads the current safe draft before authorizing copy, so browser-state tampering, another actor, a changed draft, an expired receipt, or a `rejected` outcome remains locked.
+
+Copy now requires this successfully recorded quality decision and signed receipt. `rejected` never issues a copy-eligible receipt. `accepted` and `needs_edit` may unlock copy only while all Phase 4B runtime controls remain clear. Quality feedback never sends a customer message or changes business truth.
+
 ## Authority rule
 
 AI output is derived advisory context only.
