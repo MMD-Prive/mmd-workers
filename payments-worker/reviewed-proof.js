@@ -70,7 +70,7 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
     if (!paymentRef) throw httpError(400, "payment_ref_required");
     if (amountThb == null) throw httpError(400, "amount_thb_required");
     if (reviewReason.length < 5) throw httpError(400, "review_reason_required");
-    if (["deposit", "final", "tips", "full"].includes(paymentStage) && !sessionId) {
+    if (["deposit", "final", "tips", "full", "extension"].includes(paymentStage) && !sessionId) {
       throw httpError(400, "session_id_required_for_service_payment");
     }
     if (paymentStage === "membership" && !memberEmail && !emailLessRecovery) {
