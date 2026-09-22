@@ -39,6 +39,7 @@ const F = Object.freeze({
     availability: "fld6RuUDmGcGDc34i",
     availableNow: "fldwMpYGpA5RvC76m",
     status: "fldRcAE3bL8dKmURH",
+    lineUserId: "fld2ywTFI6MZhX6PV",
   },
   cal: {
     uid: "fld42rRY3ufGeXCcf", bookingId: "fld4PDFuJecAY3HCf", eventTypeId: "fldzl67JJBq9QKoc2",
@@ -288,6 +289,7 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
         expires_at: snapshot?.expires_at || null,
         age_seconds: snapshot?.age_seconds ?? null,
         ttl_remaining_seconds: snapshot?.ttl_remaining_seconds ?? null,
+        line_connected: /^U[0-9a-f]{32}$/i.test(clean(field(record, F.model.lineUserId), 80)),
       };
     })
     .filter(item => item.model_id || item.model_key || item.name)
@@ -373,6 +375,7 @@ export async function readAdminCalendar(env, dateText = "") {
           confidence: live?.confidence || null,
           updated_at: live?.updated_at || null,
           expires_at: live?.expires_at || null,
+          line_connected: live?.line_connected === true,
         };
       })(),
       deposit: { payment_ref: p ? clean(field(p,F.payment.ref),180)||null : clean(field(s,F.session.paymentRef),180)||null, amount_thb: p ? number(field(p,F.payment.amount)) : number(field(s,F.session.depositPaid)), verification_status: p ? clean(field(p,F.payment.verification),100)||clean(field(p,F.payment.depositStatus),100)||clean(field(p,F.payment.status),100)||null : clean(field(s,F.session.paymentStatus),100)||clean(field(j,F.job.depositStatus),100)||null, verified: paid, authority: "payments-worker" },
