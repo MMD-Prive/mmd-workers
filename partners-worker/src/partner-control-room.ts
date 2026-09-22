@@ -16,6 +16,7 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
   var dateTime = function (value) { if (!value) return "—"; var d = new Date(value); return isNaN(d.getTime()) ? esc(value) : d.toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short", timeZone:"Asia/Bangkok" }); };
   var uid = function (prefix) { var bytes = new Uint8Array(10); crypto.getRandomValues(bytes); return prefix + Array.prototype.map.call(bytes, function (b) { return b.toString(16).padStart(2,"0"); }).join(""); };
   var signInMessage = "เข้าสู่ระบบด้วย LINE อีกครั้งเพื่อเปิดพื้นที่พาร์ทเนอร์";
+  var loginUrl = "/sigil/model/dashboard/partner-login";
 
   function blockPartnerAccess() {
     state.authBlocked = true;
@@ -23,13 +24,11 @@ export const PARTNER_CONTROL_ROOM_JS = String.raw`
     state.vaultPin = ""; state.vaultSalt = null; state.vaultEnvelope = null;
     state.vaultReady = false; state.vaultConflict = true;
     $(".pcr-shell", root).hidden = true;
-    var reconnect = $("[data-reconnect-line]", root);
-    if (reconnect) reconnect.hidden = false;
     $$("dialog", root).forEach(function (dialog) { dialog.close(); });
     $$("form", root).forEach(function (form) { form.reset(); });
     $$('[data-vault-pin],[data-general-note],[data-private-travel],[name^="private_"]', root).forEach(function (field) { field.value = ""; });
     $$('[data-jobs],[data-models],[data-earnings],[data-private-events],[data-model-history],[data-model-contacts],[data-activity],[data-console-history],[data-agreements],[data-performance]', root).forEach(function (el) { el.replaceChildren(); });
-    setFlash(signInMessage, "error");
+    window.location.replace(loginUrl);
   }
 
   function api(path, options) {
