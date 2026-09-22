@@ -359,7 +359,10 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
-LINE_AUTO_REPLY_ENABLED = "true"
+# Kenji Conversation V1 Phase 1 is shadow-only. Keep the transport mute in
+# versioned production config as well as the runtime kill switch: inbound
+# messages may be observed, but this deployment cannot emit customer replies.
+LINE_AUTO_REPLY_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
@@ -376,6 +379,10 @@ AIRTABLE_TABLE_CLIENT_INTELLIGENCE_EVIDENCE_ID = "tblx7NdfHO5iY6qtg"
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
 KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
+# Phase 1 conversation context: previous customer messages plus only replies
+# proven delivered by LINE are supplied to the internal shadow binding. This
+# never changes the LINE response path and stays fail-closed when unavailable.
+KENJI_LINE_CONVERSATION_SHADOW_ENABLED = "true"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
