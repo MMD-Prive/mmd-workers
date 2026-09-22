@@ -467,6 +467,15 @@ function renderShell(config, nonce) {
     ).format(date);
   }
 
+  function safeExtensionPaymentUrl(value) {
+    try {
+      const u = new URL(String(value || ""));
+      const keys = [...u.searchParams.keys()];
+      return u.protocol === "https:" && u.hostname === "mmdbkk.com" && u.pathname === "/pay/checkout" &&
+        keys.length === 1 && keys[0] === "t" && !!u.searchParams.get("t") ? u.toString() : "";
+    } catch { return ""; }
+  }
+
   function extensionStatusText(status) {
     const th = {
       requested:"ส่งให้ Model แล้ว · รอการตอบรับ",
@@ -502,9 +511,10 @@ function renderShell(config, nonce) {
         requested.textContent = "เวลาที่ขอ: " + extensionTime(ext.requested_end_at) + (ext.customer_amount_thb ? " · " + formatThb(ext.customer_amount_thb) : "");
         summary.append(requested);
       }
-      if (ext.status === "payment_required" && ext.customer_payment_url) {
+      const paymentUrl = safeExtensionPaymentUrl(ext.customer_payment_url);
+      if (ext.status === "payment_required" && paymentUrl) {
         const pay = document.createElement("a");
-        pay.href = ext.customer_payment_url; pay.className = "extension-pay"; pay.textContent = "ชำระ Extension ↗";
+        pay.href = paymentUrl; pay.className = "extension-pay"; pay.textContent = "ชำระ Extension ↗";
         summary.append(pay);
       }
     }
