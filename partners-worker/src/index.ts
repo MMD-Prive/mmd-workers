@@ -3096,7 +3096,9 @@ async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv
     [SESSION_FIELDS.partnerConfirmationStatus]: nextStatus,
     [SESSION_FIELDS.partnerConfirmedAt]: now,
     [SESSION_FIELDS.partnerConfirmationRevision]: nextRevision,
-    [SESSION_FIELDS.partnerConfirmationNote]: note || (nextStatus === "confirmed" ? "Confirmed via verified Partner Telegram." : nextStatus === "declined" ? "Declined via verified Partner Telegram." : "Partner requested changes via verified Telegram.")
+    [SESSION_FIELDS.partnerConfirmationNote]: note || (nextStatus === "confirmed" ? "Confirmed by Partner." : nextStatus === "declined" ? "Declined by Partner." : "Partner requested changes."),
+    [SESSION_FIELDS.partnerNotificationStatus]: "acknowledged",
+    [SESSION_FIELDS.partnerNotificationError]: null
   }, true);
 
   const safeSession = fieldText(session, SESSION_FIELDS.sessionId) || sessionRecordId;
