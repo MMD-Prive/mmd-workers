@@ -1,0 +1,59 @@
+<!-- MMD Create Job · Model Money Lane V1
+     Public and Private money are separate authorities.
+     Confidential is disclosure handling, not a money lane. -->
+<style id="mmd-create-job-money-lane-css">
+#mmd-cj-split-v1 .mmd-cj-money{margin-top:20px;padding:18px;border:1px solid #4a4532;border-radius:14px;background:linear-gradient(145deg,#24251d,#171a17)}
+#mmd-cj-split-v1 .mmd-cj-money__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:14px}
+#mmd-cj-split-v1 .mmd-cj-money__k{display:block;color:var(--gold);font-size:9px;font-weight:800;letter-spacing:.14em}
+#mmd-cj-split-v1 .mmd-cj-money__head h3{margin:5px 0 0!important;color:var(--ink)!important;font-size:18px;line-height:1.35}
+#mmd-cj-split-v1 .mmd-cj-money__badge{padding:7px 10px;border:1px solid #5a5740;border-radius:999px;color:#e6d39f;font-size:9px;font-weight:800;letter-spacing:.08em}
+#mmd-cj-split-v1 .mmd-cj-money__copy{margin:10px 0 0!important;color:var(--muted);font-size:11px;line-height:1.7}
+#mmd-cj-split-v1 .mmd-cj-money__grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:15px}
+#mmd-cj-split-v1 .mmd-cj-money__confidential{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid #394038;border-radius:10px;background:#111512}
+#mmd-cj-split-v1 .mmd-cj-money__confidential input{width:18px;height:18px;margin:2px 0 0;accent-color:var(--gold);flex:none}
+#mmd-cj-split-v1 .mmd-cj-money__confidential b{display:block;color:var(--ink);font-size:12px}
+#mmd-cj-split-v1 .mmd-cj-money__confidential small{display:block;margin-top:3px;color:var(--muted);font-size:10px;line-height:1.5}
+#mmd-cj-split-v1 .mmd-cj-money__lock{margin-top:12px;padding:10px 12px;border-left:3px solid var(--gold);background:#111512;color:#c9c2b4;font-size:10.5px;line-height:1.6}
+#mmd-cj-split-v1 .mmd-cj-money__lock strong{color:var(--gold)}
+#mmd-cj-split-v1 .mmd-cj-money-summary dd{color:var(--gold)!important;font-weight:700}
+@media(min-width:640px){#mmd-cj-split-v1 .mmd-cj-money__grid{grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr)}}
+</style>
+<script id="mmd-create-job-money-lane-v1">
+(()=>{'use strict';
+ const boot=()=>{
+  const root=document.getElementById('mmd-cj-split-v1');
+  if(!root||root.dataset.modelMoneyUi==='v1')return;
+  root.dataset.modelMoneyUi='v1';
+  const baseEndpoint=root.dataset.createEndpoint||'/v1/admin/job/create';
+  const scopePanel=root.querySelector('[data-cj-panel="scope"]');
+  const firstSubgrid=scopePanel?.querySelector('.mmd-cj__subgrid');
+  if(!scopePanel||!firstSubgrid)return;
+  const PACKAGES={
+   pick_me_up:{label:'PICK ME UP · ลูกค้า 1,490 · ถึงตัว 900',price:1490,payout:900,duration:'01:30',format:'travel'},
+   airport_please:{label:'AIRPORT, PLEASE. · ลูกค้า 1,890 · ถึงตัว 1,100',price:1890,payout:1100,duration:'02:00',format:'travel'},
+   wait_for_me:{label:'WAIT FOR ME · ลูกค้า 2,690 · ถึงตัว 1,650',price:2690,payout:1650,duration:'03:00',format:'travel'},
+   half_day_with_him:{label:'HALF DAY WITH HIM · ลูกค้า 3,490 · ถึงตัว 2,200',price:3490,payout:2200,duration:'04:00',format:'travel'},
+   cook_with_me:{label:'COOK WITH ME · ลูกค้า 1,990 · ถึงตัว 1,250',price:1990,payout:1250,duration:'02:00',format:'dining'},
+   dinner_made_for_you:{label:'DINNER, MADE FOR YOU · ลูกค้า 2,990 · ถึงตัว 1,850',price:2990,payout:1850,duration:'03:00',format:'dining'},
+   market_to_table:{label:'MARKET TO TABLE · ลูกค้า 3,790 · ถึงตัว 2,350',price:3790,payout:2350,duration:'04:00',format:'dining'},
+   private_table:{label:'PRIVATE TABLE · ลูกค้า 4,990 · ถึงตัว 3,100',price:4990,payout:3100,duration:'04:00',format:'dining'}
+  };
+  const section=document.createElement('section');section.className='mmd-cj-money';section.dataset.modelMoneyUi='v1';
+  section.innerHTML='<div class="mmd-cj-money__head"><div><span class="mmd-cj-money__k">MONEY AUTHORITY</span><h3 data-money-title>เลือกระบบเงินของงานก่อน</h3></div><span class="mmd-cj-money__badge" data-money-badge>WAITING FOR JOB TYPE</span></div><p class="mmd-cj-money__copy" data-money-copy>Public และ Private ใช้ระบบเงินคนละชุด โดย Confidential เป็นเพียงวิธีดูแลการเปิดเผยข้อมูล ไม่ใช่ประเภทเงิน</p><div class="mmd-cj-money__grid"><label class="mmd-cj__field" data-model-package-wrap hidden><span>Public Service Package</span><select class="mmd-cj__input" data-model-package><option value="">Public Session · กำหนดราคาและเรทถึงตัวเฉพาะงาน</option><optgroup label="DRIVER COMPANION"><option value="pick_me_up"></option><option value="airport_please"></option><option value="wait_for_me"></option><option value="half_day_with_him"></option></optgroup><optgroup label="CULINARY COMPANION"><option value="cook_with_me"></option><option value="dinner_made_for_you"></option><option value="market_to_table"></option><option value="private_table"></option></optgroup></select><small class="mmd-cj__hint">เลือก Package จะเติมราคา ระยะเวลา และยอดถึงตัวตาม Public Matrix ให้ตรวจต่อได้</small></label><label class="mmd-cj-money__confidential"><input type="checkbox" data-confidential-handling><span><b>Confidential handling</b><small>ซ่อนรายละเอียดข้อเสนองานจาก Public แต่ไม่เปลี่ยน PUBLIC MONEY เป็น PRIVATE MONEY อัตโนมัติ</small></span></label></div><div class="mmd-cj-money__lock" data-money-lock><strong>ยังไม่เลือกประเภทงาน</strong><br>ระบบจะ lock Money Lane จาก Public / Private ที่เลือกด้านบน</div>';
+  firstSubgrid.insertAdjacentElement('beforebegin',section);
+  const packageSelect=section.querySelector('[data-model-package]'),packageWrap=section.querySelector('[data-model-package-wrap]'),confidential=section.querySelector('[data-confidential-handling]');
+  Object.entries(PACKAGES).forEach(([key,item])=>{const o=packageSelect.querySelector('option[value="'+key+'"]');if(o)o.textContent=item.label});
+  const summary=root.querySelector('.mmd-cj__summary');
+  if(summary&&!summary.querySelector('[data-model-money-summary]')){const row=document.createElement('div');row.className='mmd-cj-money-summary';row.dataset.modelMoneySummary='1';row.innerHTML='<dt>ระบบเงิน</dt><dd data-model-money-summary-value>—</dd>';const scopeRow=summary.querySelector('[data-cj="sScope"]')?.closest('div');scopeRow?.insertAdjacentElement('afterend',row)}
+  const selectedWorld=()=>root.querySelector('[data-cj-world].is-selected')?.getAttribute('data-cj-world')||'';
+  function setField(key,value,eventName='input'){const el=root.querySelector('[data-cj="'+key+'"]');if(!el)return;el.value=String(value);el.dispatchEvent(new Event(eventName,{bubbles:true}));if(eventName!=='change')el.dispatchEvent(new Event('change',{bubbles:true}))}
+  function applyPackage(){const item=PACKAGES[packageSelect.value];if(!item)return;setField('price',item.price);setField('modelPayout',item.payout);setField('duration',item.duration,'change');const format=root.querySelector('[data-cj="publicFormat"]');if(format){format.value=item.format;format.dispatchEvent(new Event('change',{bubbles:true}))}}
+  function updateEndpoint(world){const u=new URL(baseEndpoint,location.origin);u.searchParams.delete('model_work_lane');u.searchParams.delete('model_package_code');u.searchParams.delete('confidential_handling');if(world==='public'){u.searchParams.set('model_work_lane','public_model');if(packageSelect.value)u.searchParams.set('model_package_code',packageSelect.value)}else if(world==='private'){u.searchParams.set('model_work_lane','private_model')}if(confidential.checked)u.searchParams.set('confidential_handling','1');root.dataset.createEndpoint=u.pathname+u.search}
+  function sync(){const world=selectedWorld(),title=section.querySelector('[data-money-title]'),badge=section.querySelector('[data-money-badge]'),copy=section.querySelector('[data-money-copy]'),lock=section.querySelector('[data-money-lock]'),summaryValue=root.querySelector('[data-model-money-summary-value]');packageWrap.hidden=world!=='public';packageSelect.disabled=world!=='public';if(world!=='public'&&packageSelect.value)packageSelect.value='';if(world==='public'){title.textContent='PUBLIC MONEY · Package / Session';badge.textContent=packageSelect.value?'PUBLIC PACKAGE MATRIX':'PUBLIC SESSION LOCKED';copy.textContent='ราคาลูกค้าและเรทถึงตัวเป็นคนละค่า Package ช่วยตั้งค่าเริ่มต้น แต่ยอดจ่ายนายแบบใน Session คือค่าที่ MMD MODEL จะแสดงก่อนรับงาน';lock.innerHTML='<strong>PUBLIC MONEY</strong><br>ใช้ Public Package/OT Matrix ได้เฉพาะ Package ที่อนุมัติ หากไม่เลือก Package ระบบใช้เรทที่ lock เฉพาะ Session';if(summaryValue)summaryValue.textContent=packageSelect.value?'PUBLIC · '+(PACKAGES[packageSelect.value]?.label||packageSelect.value):'PUBLIC · SESSION LOCKED'}else if(world==='private'){title.textContent='PRIVATE MONEY · Case Locked';badge.textContent='NO PUBLIC MATRIX';copy.textContent='งาน Private ใช้ราคาลูกค้าและเรทถึงตัวที่ MMD อนุมัติเฉพาะเคส ไม่ดึงราคา Package, OT หรือ After Midnight ของ Public มาใช้';lock.innerHTML='<strong>PRIVATE MONEY</strong><br>ทุกการต่อเวลา/เปลี่ยนขอบเขตต้องออกเรท Private ของเคสใหม่ → Model Approve → MMD Confirm';if(summaryValue)summaryValue.textContent='PRIVATE · CASE LOCKED'}else{title.textContent='เลือกระบบเงินของงานก่อน';badge.textContent='WAITING FOR JOB TYPE';copy.textContent='Public และ Private ใช้ระบบเงินคนละชุด โดย Confidential เป็นเพียงวิธีดูแลการเปิดเผยข้อมูล ไม่ใช่ประเภทเงิน';lock.innerHTML='<strong>ยังไม่เลือกประเภทงาน</strong><br>ระบบจะ lock Money Lane จาก Public / Private ที่เลือกด้านบน';if(summaryValue)summaryValue.textContent='—'}updateEndpoint(world)}
+  packageSelect.addEventListener('change',()=>{applyPackage();sync()});confidential.addEventListener('change',sync);
+  root.addEventListener('click',e=>{if(e.target.closest('[data-cj-world]'))setTimeout(sync);if(e.target.closest('[data-cj="reset"]'))setTimeout(()=>{packageSelect.value='';confidential.checked=false;sync()})});
+  new MutationObserver(sync).observe(root,{subtree:true,attributes:true,attributeFilter:['class']});sync();
+ };
+ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot,{once:true}):boot();
+})();
+</script>
