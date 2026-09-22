@@ -503,9 +503,13 @@ function canSeeProduct(access, product) {
   const compactHaystack = compactMatchText(haystack);
   const productOk = access.product_keywords.length === 0 || hasAnyMatch(haystack, compactHaystack, access.product_keywords);
   const supplierOk = access.supplier_names.length > 0 && hasAnyMatch(haystack, compactHaystack, access.supplier_names);
+  const supplierIdOk = Array.isArray(access.supplier_ids)
+    && access.supplier_ids.length > 0
+    && Array.isArray(product.supplier_ids)
+    && product.supplier_ids.some((id) => access.supplier_ids.includes(id));
 
-  if (access.product_keywords.length > 0) return productOk || supplierOk;
-  return supplierOk;
+  if (access.product_keywords.length > 0) return productOk || supplierOk || supplierIdOk;
+  return supplierOk || supplierIdOk;
 }
 
 function hasAnyMatch(haystack, compactHaystack, terms) {
