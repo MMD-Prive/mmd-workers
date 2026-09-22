@@ -144,6 +144,12 @@ jobs:
             "www.mmdbkk.com/internal/admin/jobs/create-session/core",
             "mmdbkk.com/a/create-session.js",
             "www.mmdbkk.com/a/create-session.js",
+            "mmdbkk.com/v1/admin/clients/lineage-lookup*",
+            "www.mmdbkk.com/v1/admin/clients/lineage-lookup*",
+            "mmdbkk.com/v1/admin/clients/recent*",
+            "www.mmdbkk.com/v1/admin/clients/recent*",
+            "mmdbkk.com/v1/admin/clients/intelligence*",
+            "www.mmdbkk.com/v1/admin/clients/intelligence*",
           ];
           const obsolete = [
             "mmdbkk.com/internal/admin/jobs/create-session.js",
@@ -193,6 +199,58 @@ jobs:
           if (stale.length) throw new Error(`obsolete routes still present: ${stale.join(", ")}`);
           console.log(`verified ${desired.length}/${desired.length} exact MMD internal routes`);
           NODE
+
+      - name: Verify Client Intelligence ingress fails closed in production
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          read_headers="$(mktemp)"
+          read_body="$(mktemp)"
+          audit_headers="$(mktemp)"
+          audit_body="$(mktemp)"
+          trap 'rm -f "$read_headers" "$read_body" "$audit_headers" "$audit_body"' EXIT
+
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            verified=0
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              : > "$read_headers"
+              : > "$read_body"
+              : > "$audit_headers"
+              : > "$audit_body"
+              read_code="$(curl -sS -D "$read_headers" -o "$read_body" -w '%{http_code}' \
+                "${origin}/v1/admin/clients/intelligence?client_id=recSMOKE00000001&deploy=${GITHUB_SHA}&attempt=${attempt}")"
+              audit_code="$(curl -sS -D "$audit_headers" -o "$audit_body" -w '%{http_code}' \
+                -X POST \
+                -H "Origin: ${origin}" \
+                -H 'Content-Type: application/json' \
+                --data '{"action":"view","client_id":"recSMOKE00000001"}' \
+                "${origin}/v1/admin/clients/intelligence/audit")"
+
+              if [ "$read_code" = "401" ] \
+                && [ "$audit_code" = "401" ] \
+                && grep -Eiq '^x-mmd-control-room-dashboard-ingress:[[:space:]]*immigrate-to-admin-client-intelligence-v1' "$read_headers" \
+                && grep -Eiq '^x-mmd-control-room-dashboard-ingress:[[:space:]]*immigrate-to-admin-client-intelligence-audit-v1' "$audit_headers"; then
+                echo "Client Intelligence ingress verified for ${origin} on attempt ${attempt}"
+                verified=1
+                break
+              fi
+
+              echo "Client Intelligence ingress not ready for ${origin} (attempt ${attempt}, read ${read_code}, audit ${audit_code}); retrying..."
+              sleep 3
+            done
+
+            if [ "$verified" != "1" ]; then
+              echo "Client Intelligence ingress production verification failed for ${origin}" >&2
+              grep -Ei '^(HTTP/|content-type:|location:|x-mmd-control-room-dashboard-ingress:|server:|cf-ray:)' "$read_headers" >&2 || true
+              grep -Ei '^(HTTP/|content-type:|location:|allow:|x-mmd-control-room-dashboard-ingress:|server:|cf-ray:)' "$audit_headers" >&2 || true
+              head -c 240 "$read_body" >&2 || true
+              echo >&2
+              head -c 240 "$audit_body" >&2 || true
+              echo >&2
+              exit 1
+            fi
+          done
 
       - name: Verify Customer Data readable UI in production
         shell: bash
