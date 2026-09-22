@@ -609,37 +609,17 @@ async function updateSessionFromPayment(env, payload) {
 }
 
 async function awardPointsIfEligible(env, payload) {
-  if (!stageEligibleForPoints(payload.stage)) {
-    return { ok: true, skipped: true, reason: "stage_not_eligible" };
-  }
-
-  const existing = await findPointLedgerByPaymentRef(env, payload.payment_ref);
-  if (existing?.id) {
-    return { ok: true, duplicate: true, awarded: false, record_id: existing.id, points: 0 };
-  }
-
-  const points = computePoints(env, payload.amount_thb);
-  if (points <= 0) {
-    return { ok: true, skipped: true, reason: "points_zero", awarded: false, points: 0 };
-  }
-
-  const record = await airtableCreate(env, getPointsLedgerTable(env), {
-    payment_ref: payload.payment_ref,
-    session_id: payload.session_id || "",
-    member_email: payload.member_email || "",
-    package_code: payload.package_code || "",
-    amount_thb: payload.amount_thb,
-    points,
-    type: "earn",
-    payment_type: payload.stage,
-    created_at: nowIso(),
-  });
-
+  // Retired: Base Points Phase 1 in index.phase1.js is the only canonical
+  // points writer. This legacy hook must never touch Airtable after money
+  // truth is committed, otherwise an auxiliary ledger failure can make an
+  // Official Verify look failed after Payments is already Paid/verified.
   return {
     ok: true,
-    awarded: true,
-    record_id: record?.id || null,
-    points,
+    skipped: true,
+    awarded: false,
+    reason: "legacy_points_writer_retired",
+    canonical_writer: "points_phase1",
+    payment_ref: toStr(payload?.payment_ref) || null,
   };
 }
 

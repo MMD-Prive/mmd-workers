@@ -47,7 +47,8 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
     if (serviceStages.has(stage) && !session) issues.push("canonical_session_context_missing");
     if (linkedSessions.length > 1 || (session && linkedSessions.length === 1 && linkedSessions[0] !== session.id)) issues.push("payment_context_mismatch");
     const status = text(p["Payment Status"] || p.status).toLowerCase();
-    if (["cancelled", "canceled", "rejected", "void", "failed", "paid", "verified", "approved", "refunded"].includes(status)) issues.push("payment_not_pending");
+    const settlementRecovery = ["paid", "verified", "approved"].includes(status);
+    if (["cancelled", "canceled", "rejected", "void", "failed", "refunded"].includes(status)) issues.push("payment_not_pending");
     if (["cancelled", "canceled", "rejected", "void"].includes(text(s["Session Status"] || s.status).toLowerCase())) issues.push("session_cancelled");
     const result = {
       ...item,
@@ -65,6 +66,7 @@ export async function enrichPaymentReviewContext(items, proofs, { list, payments
       payment_stage: stage,
       expected_amount_thb: expected,
       payment_status: status,
+      settlement_recovery: settlementRecovery,
       package_code: text(p.package_code),
       context_loaded: true,
     };

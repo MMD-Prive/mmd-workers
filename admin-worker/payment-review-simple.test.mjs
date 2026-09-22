@@ -97,7 +97,7 @@ test('missing, ambiguous, mismatched or cancelled contexts fail closed in the si
   for (const result of [
     await project([]), await project([payment, { ...payment, id: 'duplicate' }]),
     await project([{ ...payment, fields: { ...payment.fields, Amount: 5000 } }]),
-    await project([{ ...payment, fields: { ...payment.fields, 'Payment Status': 'Paid' } }]),
+    await project([{ ...payment, fields: { ...payment.fields, 'Payment Status': 'Refunded' } }]),
     await project([payment], []),
     await project([payment], [session], [{ id: 'rec-proof', fields: { payment: ['wrong-payment'] } }]),
   ]) {
@@ -106,6 +106,16 @@ test('missing, ambiguous, mismatched or cancelled contexts fail closed in the si
     assert.ok(result.context_issues.length);
   }
 });
+test('already-paid exact canonical context stays approvable for settlement recovery', async () => {
+  const result = await project([{ ...payment, fields: { ...payment.fields, 'Payment Status': 'Paid' } }]);
+  assert.equal(result.can_approve, true);
+  assert.equal(result.payment_stage, 'full');
+  assert.equal(result.session_id, 'sess-test');
+  assert.equal(result.payment_status, 'paid');
+  assert.equal(result.settlement_recovery, true);
+  assert.deepEqual(result.context_issues, []);
+});
+
 test('unavailable canonical data remains an error, never a ready item', async () => {
   const [result] = await enrichPaymentReviewContext([item], proofs, { paymentsTable: 'payments', sessionsTable: 'sessions', list: async () => { throw Error('rate limited'); } });
   assert.equal(result.can_approve, false);

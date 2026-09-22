@@ -79,7 +79,7 @@ async function writeSerializedLedgerEvent(env, payload) {
   if (!paymentRef) throw new Error("payment_ref_required");
   if (!memberId) throw new Error("canonical_member_id_required");
 
-  const ledgerTable = clean(env.AIRTABLE_TABLE_POINTS_LEDGER || "points_ledger");
+  const ledgerTable = clean(env.AIRTABLE_TABLE_POINTS_LEDGER || "tbl5dfnwjUFMLbnWL");
   const duplicate = await findFirst(env, ledgerTable, `{payment_ref}=${formulaText(paymentRef)}`);
   if (duplicate?.id) {
     return {
