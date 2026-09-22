@@ -1,7 +1,7 @@
 import canonicalWorker from "./canonical-admin-login-wrapper";
 import type { Env } from "./types";
 
-const DASHBOARD_PATH = "/v1/admin/dashboard";
+const DASHBOARD_PATH = "/v1/admin/dashboard";\nconst DASHBOARD_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
 const DASHBOARD_OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const CLIENT_INTELLIGENCE_PATH = "/v1/admin/clients/intelligence";
 const CLIENT_INTELLIGENCE_AUDIT_PATH = "/v1/admin/clients/intelligence/audit";
@@ -25,11 +25,13 @@ function json(data: unknown, status = 200, marker = "immigrate-to-admin-v1"): Re
 async function bridgeAdminRead(
   request: Request,
   env: Env,
-  kind: "dashboard" | "dashboard-owner-actions" | "client-intelligence" | "client-intelligence-audit",
+  kind: "dashboard" | "dashboard-analytics" | "dashboard-owner-actions" | "client-intelligence" | "client-intelligence-audit",
 ): Promise<Response> {
   const url = new URL(request.url);
   const marker = kind === "dashboard"
     ? "immigrate-to-admin-v1"
+    : kind === "dashboard-analytics"
+      ? "immigrate-to-admin-analytics-v1"
     : kind === "dashboard-owner-actions"
       ? "immigrate-to-admin-owner-actions-v1"
       : kind === "client-intelligence-audit"
@@ -49,6 +51,8 @@ async function bridgeAdminRead(
   headers.delete("x-mmd-public-host");
   headers.set("x-mmd-auth-bridge", kind === "dashboard"
     ? "immigrate-control-room-dashboard"
+    : kind === "dashboard-analytics"
+      ? "immigrate-control-room-analytics"
     : kind === "dashboard-owner-actions"
       ? "immigrate-dashboard-owner-actions"
       : kind === "client-intelligence-audit"
@@ -71,7 +75,7 @@ async function bridgeAdminRead(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = normalizePath(new URL(request.url).pathname);
-    if (path === DASHBOARD_PATH) return bridgeAdminRead(request, env, "dashboard");
+    if (path === DASHBOARD_PATH) return bridgeAdminRead(request, env, "dashboard");\n    if (path === DASHBOARD_ANALYTICS_PATH) return bridgeAdminRead(request, env, "dashboard-analytics");
     if (path === DASHBOARD_OWNER_ACTIONS_PATH) return bridgeAdminRead(request, env, "dashboard-owner-actions");
     if (path === CLIENT_INTELLIGENCE_PATH) return bridgeAdminRead(request, env, "client-intelligence");
     if (path === CLIENT_INTELLIGENCE_AUDIT_PATH) return bridgeAdminRead(request, env, "client-intelligence-audit");
