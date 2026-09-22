@@ -12,6 +12,10 @@ import { generateSafeReply, canonicalRichMenuIntent } from "../../shared/verifie
 import { resolveKenjiLiveMemberContext } from "./kenji-live-member-truth-adapter.mjs";
 import { INTERNAL_AI_SERVICE_BINDING_SMOKE, runInternalAiServiceBindingSmoke } from "./internal-ai-service-binding-smoke.mjs";
 import {
+  CONTEXTUAL_UNDERSTANDING_SHADOW_SMOKE_MODE,
+  runKenjiContextualUnderstandingShadowSmoke,
+} from "./internal-kenji-contextual-shadow-smoke.mjs";
+import {
   ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_MODE,
   REAL_RECOMMENDATION_SHADOW_SMOKE_MODE,
   runEligibleKenjiRecommendationShadowSmoke,
@@ -2191,7 +2195,9 @@ export default {
         ? await runEligibleKenjiRecommendationShadowSmoke(env)
         : smokeInput?.mode === REAL_RECOMMENDATION_SHADOW_SMOKE_MODE
           ? await runRealKenjiRecommendationShadowSmoke(env)
-          : await runInternalAiServiceBindingSmoke(env);
+          : smokeInput?.mode === CONTEXTUAL_UNDERSTANDING_SHADOW_SMOKE_MODE
+            ? await runKenjiContextualUnderstandingShadowSmoke(env)
+            : await runInternalAiServiceBindingSmoke(env);
       return json(result.payload, result.status);
     }
 
