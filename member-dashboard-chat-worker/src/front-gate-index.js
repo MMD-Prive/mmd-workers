@@ -411,6 +411,12 @@ function recordBridgeTelemetry(result = {}) {
     identity_state: String(result.identity_state || "unknown").slice(0, 24),
     matrix_version: Number(result.matrix_version) || 0,
     review_required: Number(result.review_required) || 0,
+    contextual_shadow_observed: Number(result.contextual_shadow_observed) || 0,
+    contextual_model_success: Number(result.contextual_model_success) || 0,
+    contextual_clarification_required: Number(result.contextual_clarification_required) || 0,
+    contextual_relations: Array.isArray(result.contextual_relations)
+      ? result.contextual_relations.map((value) => String(value).slice(0, 32)).slice(0, 6)
+      : [],
     shadow_only: result.shadow_only === true,
     customer_copy_changed: false,
     ok: result.ok === true,
