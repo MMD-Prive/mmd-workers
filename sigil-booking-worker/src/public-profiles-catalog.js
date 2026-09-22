@@ -178,8 +178,11 @@ async function loadApprovedEligibility(env) {
         const promoRoles = storedRoles.length
           ? storedRoles
           : normalizeRoleKeys(payload.mmd_nonmember_promo_roles);
+        // Once reviewed/dedicated consent state exists, it is authoritative over
+        // historical application payload. Unchecking or revoking cannot be widened
+        // again by an older payload that once contained consent=true.
         const imageConsent = storedStatus
-          ? storedStatus === "granted" && (checkboxTrue(fields[APPLICATION_FIELDS.nonMemberImageConsent]) || payloadConsent)
+          ? storedStatus === "granted" && checkboxTrue(fields[APPLICATION_FIELDS.nonMemberImageConsent])
           : payloadConsent;
 
         index.set(slug, {
