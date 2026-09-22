@@ -2,6 +2,7 @@ import {
   buildKenjiLineCanonicalContext,
   inferKenjiShadowIntent,
 } from "./kenji-line-canonical-context-adapter.mjs";
+import { buildKenjiLineConversationHistory } from "./kenji-line-conversation-history.mjs";
 
 const AI_MATRIX_URL = "https://ai-worker.local/v1/ai/kenji/conversation-matrix";
 const BRIDGE_ENV = "KENJI_AI_WORKER_BRIDGE_ENABLED";
@@ -147,6 +148,22 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
   }
 
   let response;
+  // This context is intentionally attached only to the internal AI Worker
+  // request. It is not included in bridge telemetry or any customer-facing
+  // response. The only outbound history admitted here is a record with actual
+  // sent evidence; drafts and suggested copy are never treated as prior words.
+  let conversationHistory;
+  try {
+    conversationHistory = await buildKenjiLineConversationHistory({ env, event });
+  } catch (_) {
+    conversationHistory = {
+      enabled: false,
+      available: false,
+      turns: [],
+      coverage: { customer_messages: 0, confirmed_assistant_messages: 0, reply_history_complete: false },
+      reason: "conversation_history_unavailable",
+    };
+  }
   try {
     response = await env.AI_WORKER.fetch(new Request(AI_MATRIX_URL, {
       method: "POST",
@@ -158,7 +175,12 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
       },
       body: JSON.stringify({
         actor: { role: "system" },
-        context_bundle: adapted.context_bundle,
+        context_bundle: {
+          ...adapted.context_bundle,
+          // Private service-binding input. It must not be copied into a
+          // Matrix, event telemetry, response, or log.
+          conversation_history_v1: conversationHistory,
+        },
       }),
     }));
   } catch (_) {
@@ -200,6 +222,9 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
     identity_state: identityState,
     matrix_version: matrixVersion,
     review_required: safety.review_required === true,
+    conversation_turns_read: Array.isArray(conversationHistory?.turns) ? conversationHistory.turns.length : 0,
+    confirmed_assistant_turns_read: Number(conversationHistory?.coverage?.confirmed_assistant_messages) || 0,
+    reply_history_complete: conversationHistory?.coverage?.reply_history_complete === true,
     shadow_only: true,
     customer_copy_changed: false,
   };

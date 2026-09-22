@@ -16,6 +16,7 @@ import {
 } from "./kenji-line-live-truth.mjs";
 import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
+import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -606,6 +607,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         attempted: shouldReply,
         deliveryStatus: replyResult?.status ?? null,
       }).catch(() => ({ skipped: true, reason: "telemetry_runtime_error" }));
+      // The transcript records a reply only after LINE confirms delivery. It
+      // never treats generated/suggested copy as customer-visible history.
+      const outboundTurn = delivered
+        ? await recordDeliveredKenjiLineReply({ env, event, replyText: decision.text }).catch(() => ({ skipped: true, reason: "outbound_turn_runtime_error" }))
+        : { skipped: true, reason: "reply_not_delivered" };
       const matrix = continuityEnabled && !support && eventMode !== "standby" && !redelivered
         ? await writeKenjiLineMatrixTurn({
             env,
@@ -616,7 +622,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
             lastEventId: text(telemetry?.event_id),
           }).catch(() => ({ skipped: true, reason: "matrix_runtime_error" }))
         : { skipped: true, reason: continuityEnabled ? "event_not_eligible" : "continuity_disabled" };
-      return { telemetry, matrix };
+      return { telemetry, outboundTurn, matrix };
     })();
     if (typeof ctx?.waitUntil === "function") ctx.waitUntil(postTurnWork);
     else await postTurnWork;

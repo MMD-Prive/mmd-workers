@@ -122,6 +122,60 @@ test("bridge calls Conversation Matrix through private service binding and emits
   assert.equal(JSON.stringify(calls[0].body).includes(LINE_USER_ID), false);
 });
 
+test("enabled transcript reaches only the private AI binding and never bridge output", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    records: [{
+      id: "recInbound",
+      fields: {
+        source: "line",
+        created_at: "2026-09-22T12:00:00.000Z",
+        payload_json: JSON.stringify({ raw_text: "ข้อความเก่าของลูกค้า" }),
+      },
+    }, {
+      id: "recSent",
+      fields: {
+        source: "line_ofc_outbound",
+        status: "sent",
+        created_at: "2026-09-22T12:01:00.000Z",
+        payload_json: JSON.stringify({ direction: "outbound", actual_sent: true, sent_text: "คำตอบที่ส่งจริง" }),
+      },
+    }],
+  }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const result = await observeKenjiLineEvent({
+      env: {
+        KENJI_AI_WORKER_BRIDGE_ENABLED: "true",
+        KENJI_LINE_CONVERSATION_SHADOW_ENABLED: "true",
+        AIRTABLE_API_KEY: "test-key",
+        AIRTABLE_BASE_ID: "app-test",
+        AI_WORKER: acceptedAiBinding(calls),
+      },
+      event: userEvent(),
+      contextBuilder: canonicalContextBuilder,
+    });
+    assert.equal(calls.length, 1);
+    const transcript = calls[0].body.context_bundle.conversation_history_v1;
+    assert.equal(transcript.turns.length, 3);
+    assert.equal(transcript.coverage.reply_history_complete, true);
+    assert.equal(transcript.memory.schema, "mmd.kenji_line_conversation_memory.v1");
+    assert.equal(transcript.memory.summary, "ข้อความล่าสุดจากลูกค้า: PRIVATE CUSTOMER MESSAGE");
+    assert.equal(transcript.turns[0].content, "ข้อความเก่าของลูกค้า");
+    assert.equal(transcript.turns[1].content, "คำตอบที่ส่งจริง");
+    assert.equal(result.conversation_turns_read, 3);
+    assert.equal(result.confirmed_assistant_turns_read, 1);
+    assert.equal(result.reply_history_complete, true);
+    const serializedResult = JSON.stringify(result);
+    assert.equal(serializedResult.includes("ข้อความเก่าของลูกค้า"), false);
+    assert.equal(serializedResult.includes("คำตอบที่ส่งจริง"), false);
+    assert.equal(serializedResult.includes("PRIVATE CUSTOMER MESSAGE"), false);
+    assert.equal(serializedResult.includes("ข้อความล่าสุดจากลูกค้า"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("missing ai-worker binding fails closed and never becomes SEARCHED_NO_MATCH", async () => {
   const result = await observeKenjiLineEvent({
     env: { KENJI_AI_WORKER_BRIDGE_ENABLED: "true" },
