@@ -12,6 +12,20 @@
   const intelligencePath="/v1/admin/clients/intelligence";
   const auditPath="/v1/admin/clients/intelligence/audit";
   const draftSchema="mmd.kenji_continuity_operator_draft.v1";
+  const feedbackSchema="mmd.kenji_continuity_operator_feedback.v1";
+  const feedbackReasonLabels={
+    needs_edit:[
+      ["tone_adjustment","โทนยังไม่เหมาะ"],
+      ["missing_context","บริบทสำคัญยังไม่พอ"],
+      ["too_generic","คำตอบทั่วไปเกินไป"]
+    ],
+    rejected:[
+      ["wrong_context","ต่อเรื่องผิด"],
+      ["unsafe_or_inaccurate","เสี่ยงอ้างข้อมูลไม่ถูกต้อง"],
+      ["stale_context","บริบทเก่าหรือหมดอายุ"],
+      ["not_relevant","ไม่เกี่ยวกับคำถามล่าสุด"]
+    ]
+  };
   const state={
     records:[],
     selected:null,
@@ -22,6 +36,11 @@
     draftAvailable:false,
     runtimeCopyAllowed:false,
     viewAudited:false,
+    feedbackOutcome:"",
+    feedbackReason:"",
+    feedbackRecorded:false,
+    feedbackReceipt:"",
+    feedbackSubmitting:false,
     copying:false
   };
 
@@ -99,8 +118,19 @@
 #mmdMemberIntelligence .mi-draft-meta b{min-width:0;overflow-wrap:anywhere;color:#263b2f}
 #mmdMemberIntelligence .mi-draft-review{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:12px;border:1px solid rgba(31,54,42,.14);border-radius:14px;background:#fff;color:#35493d;font-size:11px;line-height:1.55}
 #mmdMemberIntelligence .mi-draft-review input{flex:0 0 auto;width:18px;height:18px;margin:1px 0 0;accent-color:#405947}
+#mmdMemberIntelligence .mi-draft-feedback{margin-top:12px;padding:13px;border:1px solid rgba(31,54,42,.12);border-radius:15px;background:rgba(255,255,255,.72)}
+#mmdMemberIntelligence .mi-draft-feedback-title{display:block;margin-bottom:9px;color:#5f7466;font-size:9px;font-weight:900;letter-spacing:.12em}
+#mmdMemberIntelligence .mi-draft-feedback-options{display:flex;gap:7px;flex-wrap:wrap}
+#mmdMemberIntelligence .mi-draft-feedback-choice{min-height:38px;padding:8px 12px;border:1px solid rgba(31,54,42,.18);border-radius:999px;background:#fff;color:#35493d;font-size:10px;font-weight:850}
+#mmdMemberIntelligence .mi-draft-feedback-choice[data-selected="true"]{border-color:#385b45;background:#385b45;color:#fff}
+#mmdMemberIntelligence .mi-draft-feedback-choice:disabled{cursor:not-allowed;opacity:.42}
+#mmdMemberIntelligence .mi-draft-feedback-reason{display:grid;gap:5px;margin-top:10px;color:#5f7466;font-size:10px;font-weight:800}
+#mmdMemberIntelligence .mi-draft-feedback-reason select{width:100%;min-height:42px;padding:8px 10px;border:1px solid rgba(31,54,42,.16);border-radius:11px;background:#fff;color:#263b2f;font:600 11px/1.4 system-ui,sans-serif}
+#mmdMemberIntelligence .mi-draft-feedback-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px}
+#mmdMemberIntelligence .mi-draft-feedback-status{margin:0;color:#6d7d73;font-size:10px;line-height:1.5}
 #mmdMemberIntelligence .mi-draft-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
 #mmdMemberIntelligence .mi-draft-button{min-height:44px;border:0;border-radius:999px;background:#233b2d;color:#fff;padding:10px 17px;font-size:11px;font-weight:900;letter-spacing:.04em}
+#mmdMemberIntelligence .mi-draft-button.is-secondary{min-height:38px;background:#586c5e;padding:8px 13px;font-size:10px}
 #mmdMemberIntelligence .mi-draft-button:disabled{cursor:not-allowed;opacity:.42}
 #mmdMemberIntelligence .mi-draft-audit{margin:0;color:#6d7d73;font-size:10px;line-height:1.5}
 @media(max-width:620px){#mmdMemberIntelligence .mi-draft-card{padding:16px}#mmdMemberIntelligence .mi-draft-meta div{grid-template-columns:1fr;gap:3px}}
@@ -113,10 +143,21 @@
     card.className="mi-draft-card";
     card.setAttribute("data-tone","warn");
     card.setAttribute("aria-labelledby","miDraftTitle");
-    card.innerHTML=`<div class="mi-draft-head"><div><small class="mi-draft-kicker">CUSTOMER CONTINUITY · OPERATOR ONLY</small><h3 id="miDraftTitle">Kenji Reply Draft</h3></div><span class="mi-draft-state" id="miDraftState" data-tone="bad">LOCKED</span></div><textarea class="mi-draft-copy" id="miDraftText" readonly disabled aria-label="Kenji operator reply draft"></textarea><p class="mi-draft-reason" id="miDraftReason">กำลังอ่าน Conversation Matrix และ safety gates…</p><div class="mi-draft-meta"><div><small>MATRIX</small><b id="miDraftMatrix">WAITING</b></div><div><small>KILL SWITCH</small><b id="miDraftKill">UNKNOWN · COPY LOCKED</b></div><div><small>AUTHORITY</small><b>Context only · live truth wins · no customer send</b></div></div><label class="mi-draft-review"><input id="miDraftReview" type="checkbox" disabled><span>ผมตรวจ draft และจะ re-check payment / booking / access / availability จากระบบเจ้าของข้อมูลก่อนนำไปใช้</span></label><div class="mi-draft-actions"><button class="mi-draft-button" id="miDraftCopy" type="button" disabled aria-disabled="true">COPY LOCKED</button><p class="mi-draft-audit" id="miDraftAudit" role="status" aria-live="polite">View audit ยังไม่บันทึก</p></div>`;
+    card.innerHTML=`<div class="mi-draft-head"><div><small class="mi-draft-kicker">CUSTOMER CONTINUITY · OPERATOR ONLY</small><h3 id="miDraftTitle">Kenji Reply Draft</h3></div><span class="mi-draft-state" id="miDraftState" data-tone="bad">LOCKED</span></div><textarea class="mi-draft-copy" id="miDraftText" readonly disabled aria-label="Kenji operator reply draft"></textarea><p class="mi-draft-reason" id="miDraftReason">กำลังอ่าน Conversation Matrix และ safety gates…</p><div class="mi-draft-meta"><div><small>MATRIX</small><b id="miDraftMatrix">WAITING</b></div><div><small>KILL SWITCH</small><b id="miDraftKill">UNKNOWN · COPY LOCKED</b></div><div><small>AUTHORITY</small><b>Context only · live truth wins · no customer send</b></div></div><label class="mi-draft-review"><input id="miDraftReview" type="checkbox" disabled><span>ผมตรวจ draft และจะ re-check payment / booking / access / availability จากระบบเจ้าของข้อมูลก่อนนำไปใช้</span></label><div class="mi-draft-feedback" id="miDraftFeedback"><small class="mi-draft-feedback-title">OPERATOR QUALITY · NO CUSTOMER TEXT STORED</small><div class="mi-draft-feedback-options"><button class="mi-draft-feedback-choice" type="button" data-feedback-outcome="accepted" disabled>ใช้ได้</button><button class="mi-draft-feedback-choice" type="button" data-feedback-outcome="needs_edit" disabled>ต้องแก้</button><button class="mi-draft-feedback-choice" type="button" data-feedback-outcome="rejected" disabled>ไม่ควรใช้</button></div><label class="mi-draft-feedback-reason" id="miDraftFeedbackReasonWrap" hidden><span>เหตุผล</span><select id="miDraftFeedbackReason" disabled aria-label="เหตุผลการประเมิน draft"></select></label><div class="mi-draft-feedback-actions"><button class="mi-draft-button is-secondary" id="miDraftFeedbackSave" type="button" disabled aria-disabled="true">บันทึกผลประเมิน</button><p class="mi-draft-feedback-status" id="miDraftFeedbackStatus" role="status" aria-live="polite">ติ๊ก review ก่อนประเมิน</p></div></div><div class="mi-draft-actions"><button class="mi-draft-button" id="miDraftCopy" type="button" disabled aria-disabled="true">COPY LOCKED</button><p class="mi-draft-audit" id="miDraftAudit" role="status" aria-live="polite">View audit ยังไม่บันทึก</p></div>`;
     detail.appendChild(card);
 
-    byId("miDraftReview")?.addEventListener("change",syncCopyButton);
+    byId("miDraftReview")?.addEventListener("change",()=>{
+      syncFeedbackControls();
+      syncCopyButton();
+    });
+    card.querySelectorAll("[data-feedback-outcome]").forEach((button)=>{
+      button.addEventListener("click",()=>selectFeedbackOutcome(button.dataset.feedbackOutcome));
+    });
+    byId("miDraftFeedbackReason")?.addEventListener("change",(event)=>{
+      state.feedbackReason=clean(event.target?.value);
+      syncFeedbackControls();
+    });
+    byId("miDraftFeedbackSave")?.addEventListener("click",submitDraftFeedback);
     byId("miDraftCopy")?.addEventListener("click",copyDraft);
     return card;
   }
@@ -177,6 +218,11 @@
     state.draftAvailable=false;
     state.runtimeCopyAllowed=false;
     state.viewAudited=false;
+    state.feedbackOutcome="";
+    state.feedbackReason="";
+    state.feedbackRecorded=false;
+    state.feedbackReceipt="";
+    state.feedbackSubmitting=false;
     state.copying=false;
     const review=byId("miDraftReview");
     if(review){review.checked=false;review.disabled=true}
@@ -188,7 +234,9 @@
     setText("miDraftMatrix","WAITING");
     setText("miDraftKill","UNKNOWN · COPY LOCKED");
     setText("miDraftAudit","View audit ยังไม่บันทึก");
+    setText("miDraftFeedbackStatus","ติ๊ก review ก่อนประเมิน");
     setTone("miDraftCard","warn");
+    syncFeedbackControls();
     syncCopyButton();
   }
 
@@ -200,6 +248,9 @@
       &&state.runtimeCopyAllowed
       &&state.viewAudited
       &&review?.checked===true
+      &&state.feedbackRecorded
+      &&clean(state.feedbackReceipt).length>0
+      &&state.feedbackOutcome!=="rejected"
       &&state.copying===false;
     button.disabled=!enabled;
     button.setAttribute("aria-disabled",enabled?"false":"true");
@@ -208,15 +259,115 @@
     else button.textContent="COPY LOCKED";
   }
 
-  async function recordDraftAudit(action,clientId,ownerReviewConfirmed=false){
+  async function recordDraftAudit(action,clientId,ownerReviewConfirmed=false,extra={}){
+    const payload={action,client_id:clientId,...extra};
+    if(ownerReviewConfirmed)payload.owner_review_confirmed=true;
     return api(auditPath,{
       method:"POST",
-      body:JSON.stringify({
-        action,
-        client_id:clientId,
-        owner_review_confirmed:ownerReviewConfirmed
-      })
+      body:JSON.stringify(payload)
     });
+  }
+
+  function selectFeedbackOutcome(outcome){
+    const next=clean(outcome);
+    if(!["accepted","needs_edit","rejected"].includes(next)||state.feedbackRecorded||state.feedbackSubmitting)return;
+    state.feedbackOutcome=next;
+    state.feedbackReason=next==="accepted"?"ready_as_is":"";
+    syncFeedbackControls();
+    syncCopyButton();
+  }
+
+  function syncFeedbackControls(){
+    const review=byId("miDraftReview");
+    const ready=state.draftAvailable
+      &&state.viewAudited
+      &&review?.checked===true
+      &&state.feedbackRecorded===false
+      &&state.feedbackSubmitting===false;
+    document.querySelectorAll("#miDraftFeedback [data-feedback-outcome]").forEach((button)=>{
+      const selected=clean(button.dataset.feedbackOutcome)===state.feedbackOutcome;
+      button.disabled=!ready;
+      button.setAttribute("aria-pressed",selected?"true":"false");
+      button.setAttribute("data-selected",selected?"true":"false");
+    });
+
+    const reasonWrap=byId("miDraftFeedbackReasonWrap");
+    const select=byId("miDraftFeedbackReason");
+    const choices=feedbackReasonLabels[state.feedbackOutcome]||[];
+    if(reasonWrap)reasonWrap.hidden=!choices.length;
+    if(select){
+      const previous=state.feedbackReason;
+      select.replaceChildren();
+      const placeholder=document.createElement("option");
+      placeholder.value="";
+      placeholder.textContent="เลือกเหตุผล";
+      select.appendChild(placeholder);
+      choices.forEach(([value,label])=>{
+        const option=document.createElement("option");
+        option.value=value;
+        option.textContent=label;
+        select.appendChild(option);
+      });
+      select.value=choices.some(([value])=>value===previous)?previous:"";
+      if(choices.length)state.feedbackReason=select.value;
+      else if(state.feedbackOutcome!=="accepted")state.feedbackReason="";
+      select.disabled=!ready||!choices.length;
+    }
+
+    const save=byId("miDraftFeedbackSave");
+    const feedbackComplete=state.feedbackOutcome==="accepted"
+      ?state.feedbackReason==="ready_as_is"
+      :choices.some(([value])=>value===state.feedbackReason);
+    const saveEnabled=ready&&feedbackComplete;
+    if(save){
+      save.disabled=!saveEnabled;
+      save.setAttribute("aria-disabled",saveEnabled?"false":"true");
+      save.textContent=state.feedbackSubmitting?"กำลังบันทึก…":state.feedbackRecorded?"บันทึกแล้ว":"บันทึกผลประเมิน";
+    }
+  }
+
+  async function submitDraftFeedback(){
+    const review=byId("miDraftReview");
+    const clientId=clean(state.selected?.client_id);
+    const choices=feedbackReasonLabels[state.feedbackOutcome]||[];
+    const feedbackComplete=state.feedbackOutcome==="accepted"
+      ?state.feedbackReason==="ready_as_is"
+      :choices.some(([value])=>value===state.feedbackReason);
+    if(!clientId||!state.draftAvailable||!state.viewAudited||review?.checked!==true||!feedbackComplete||state.feedbackRecorded||state.feedbackSubmitting)return;
+
+    state.feedbackSubmitting=true;
+    syncFeedbackControls();
+    syncCopyButton();
+    try{
+      const result=await recordDraftAudit("feedback",clientId,true,{
+        feedback_schema:feedbackSchema,
+        outcome:state.feedbackOutcome,
+        reason_code:state.feedbackReason
+      });
+      const copyEligible=state.feedbackOutcome!=="rejected";
+      if(result?.feedback_schema!==feedbackSchema
+        ||result?.operator_feedback_recorded!==true
+        ||result?.copy_eligible!==copyEligible
+        ||(copyEligible&&!clean(result?.feedback_receipt))
+        ||(!copyEligible&&clean(result?.feedback_receipt)))throw new Error("feedback_receipt_invalid");
+      state.feedbackRecorded=true;
+      state.feedbackReceipt=copyEligible?clean(result.feedback_receipt):"";
+      const copyState=state.feedbackOutcome==="rejected"
+        ?"Draft ถูกปฏิเสธ · Copy ยังล็อก"
+        :state.runtimeCopyAllowed
+          ?"บันทึกแล้ว · Copy พร้อมหลัง quality decision"
+          :"บันทึกแล้ว · Copy ยังล็อกโดย runtime control";
+      setText("miDraftFeedbackStatus",`${copyState} · ไม่เก็บข้อความลูกค้า`);
+    }catch(error){
+      if(lower(error?.message)!=="unauthorized")setText("miDraftFeedbackStatus","บันทึกผลไม่สำเร็จ · Copy ยังล็อกแบบ fail-closed");
+      state.feedbackRecorded=false;
+      state.feedbackReceipt="";
+      setTone("miDraftCard","bad");
+    }finally{
+      state.feedbackSubmitting=false;
+      syncFeedbackControls();
+      syncCopyButton();
+    }
   }
 
   async function renderDraft(payload,clientId,selectionSeq){
@@ -230,6 +381,11 @@
     state.draftText=safe?clean(draft.text):"";
     state.runtimeCopyAllowed=runtime.status==="live"&&runtime.operator_copy_allowed===true;
     state.viewAudited=false;
+    state.feedbackOutcome="";
+    state.feedbackReason="";
+    state.feedbackRecorded=false;
+    state.feedbackReceipt="";
+    state.feedbackSubmitting=false;
 
     const matrixBits=[
       clean(matrix.freshness).toUpperCase()||"UNKNOWN",
@@ -250,14 +406,16 @@
     const text=byId("miDraftText");
     const review=byId("miDraftReview");
     if(text){text.value=state.draftText;text.disabled=!safe}
-    if(review){review.checked=false;review.disabled=!safe||!state.runtimeCopyAllowed}
+    if(review){review.checked=false;review.disabled=!safe}
 
     if(!safe){
       setText("miDraftState","UNAVAILABLE");
       setTone("miDraftState","bad");
       setText("miDraftReason",draftReason(draft.reason));
       setText("miDraftAudit","ไม่มี draft ที่ผ่าน safety contract · ไม่บันทึก copy audit");
+      setText("miDraftFeedbackStatus","ไม่มี draft ที่ผ่าน safety contract · ไม่บันทึก feedback");
       setTone("miDraftCard","bad");
+      syncFeedbackControls();
       syncCopyButton();
       return;
     }
@@ -266,41 +424,55 @@
     setTone("miDraftState",state.runtimeCopyAllowed?"ok":"bad");
     setText("miDraftReason","Draft จาก allowlisted continuity context เท่านั้น · Per ต้องตรวจ live truth ก่อนนำไปใช้ · ระบบนี้ส่งให้ลูกค้าไม่ได้");
     setText("miDraftAudit","กำลังบันทึก safe view audit…");
+    setText("miDraftFeedbackStatus","รอ view audit และ owner review");
     setTone("miDraftCard",state.runtimeCopyAllowed?"ok":"warn");
+    syncFeedbackControls();
     syncCopyButton();
 
     try{
       await recordDraftAudit("view",clientId,false);
       if(selectionSeq!==state.selectionSeq||clean(state.selected?.client_id)!==clientId)return;
       state.viewAudited=true;
-      setText("miDraftAudit",state.runtimeCopyAllowed?"View audited · ติ๊ก review เพื่อเปิด Copy":"View audited · Copy ถูกล็อกโดย runtime control");
+      setText("miDraftAudit",state.runtimeCopyAllowed?"View audited · ติ๊ก review แล้วบันทึกผลประเมินเพื่อเปิด Copy":"View audited · ประเมินได้ แต่ Copy ถูกล็อกโดย runtime control");
+      setText("miDraftFeedbackStatus","ติ๊ก review แล้วเลือกผลประเมิน");
     }catch(error){
       if(selectionSeq!==state.selectionSeq||lower(error?.message)==="unauthorized")return;
       state.viewAudited=false;
       setText("miDraftAudit","AUDIT UNAVAILABLE · Copy ถูกล็อกแบบ fail-closed");
+      setText("miDraftFeedbackStatus","View audit ไม่สำเร็จ · Feedback และ Copy ถูกล็อก");
       setTone("miDraftCard","bad");
     }
+    syncFeedbackControls();
     syncCopyButton();
   }
 
   async function copyDraft(){
     const review=byId("miDraftReview");
     const clientId=clean(state.selected?.client_id);
-    if(!clientId||!state.draftAvailable||!state.runtimeCopyAllowed||!state.viewAudited||review?.checked!==true||state.copying)return;
+    if(!clientId||!state.draftAvailable||!state.runtimeCopyAllowed||!state.viewAudited||review?.checked!==true||!state.feedbackRecorded||!clean(state.feedbackReceipt)||state.feedbackOutcome==="rejected"||state.copying)return;
     state.copying=true;
     syncCopyButton();
     try{
-      await recordDraftAudit("copy",clientId,true);
+      await recordDraftAudit("copy",clientId,true,{feedback_receipt:state.feedbackReceipt});
       if(!navigator.clipboard?.writeText)throw new Error("clipboard_unavailable");
       await navigator.clipboard.writeText(state.draftText);
       setText("miDraftAudit","Copied · owner review + copy authorization audited");
       const button=byId("miDraftCopy");
       if(button)button.textContent="COPIED";
     }catch(error){
-      if(lower(error?.message)!=="unauthorized")setText("miDraftAudit","Copy ไม่สำเร็จ · audit/clipboard gate ยังล็อกอยู่");
+      const code=lower(error?.message);
+      if(code==="operator_feedback_receipt_required"){
+        state.feedbackOutcome="";
+        state.feedbackReason="";
+        state.feedbackRecorded=false;
+        state.feedbackReceipt="";
+        setText("miDraftFeedbackStatus","Feedback receipt หมดอายุหรือไม่ตรงกับ draft · กรุณาประเมินใหม่");
+      }
+      if(code!=="unauthorized")setText("miDraftAudit","Copy ไม่สำเร็จ · audit/clipboard gate ยังล็อกอยู่");
       setTone("miDraftCard","bad");
     }finally{
       state.copying=false;
+      syncFeedbackControls();
       syncCopyButton();
     }
   }

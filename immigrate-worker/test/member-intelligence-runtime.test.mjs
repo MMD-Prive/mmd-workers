@@ -39,6 +39,32 @@ test("Member Intelligence renders a fail-closed reviewed operator draft without 
   assert.doesNotMatch(source, /api\.line\.me|\/messages\/.+\/send|pushMessage|replyMessage/);
 });
 
+test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {
+  assert.match(source, /mmd\.kenji_continuity_operator_feedback\.v1/);
+  assert.match(source, /data-feedback-outcome="accepted"/);
+  assert.match(source, /data-feedback-outcome="needs_edit"/);
+  assert.match(source, /data-feedback-outcome="rejected"/);
+  assert.match(source, /tone_adjustment/);
+  assert.match(source, /missing_context/);
+  assert.match(source, /unsafe_or_inaccurate/);
+  assert.match(source, /feedback_schema:feedbackSchema/);
+  assert.match(source, /recordDraftAudit\("feedback"/);
+  assert.match(source, /result\?\.operator_feedback_recorded!==true/);
+  assert.match(source, /result\?\.copy_eligible!==copyEligible/);
+  assert.match(source, /state\.feedbackReceipt=copyEligible\?clean\(result\.feedback_receipt\):""/);
+  assert.match(source, /&&state\.feedbackRecorded/);
+  assert.match(source, /&&clean\(state\.feedbackReceipt\)\.length>0/);
+  assert.match(source, /&&state\.feedbackOutcome!=="rejected"/);
+  assert.match(source, /!state\.feedbackRecorded\|\|!clean\(state\.feedbackReceipt\)\|\|state\.feedbackOutcome==="rejected"/);
+  assert.match(source, /recordDraftAudit\("copy",clientId,true,\{feedback_receipt:state\.feedbackReceipt\}\)/);
+  assert.match(source, /operator_feedback_receipt_required/);
+  assert.ok(
+    source.indexOf('await recordDraftAudit("feedback"') < source.indexOf('await recordDraftAudit("copy"'),
+    "quality feedback receipt must be recorded before the copy path can run",
+  );
+  assert.doesNotMatch(source, /miDraftFeedback(?:Note|Text)|feedback_(?:note|text)/i);
+});
+
 test("Member Intelligence explains unavailable drafts and locks copy on audit or runtime-control failure", () => {
   assert.match(source, /phase4_mode_off/);
   assert.match(source, /matrix_stale_or_expired/);

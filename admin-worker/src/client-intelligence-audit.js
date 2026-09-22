@@ -6,13 +6,21 @@ import { KENJI_CONTINUITY_OPERATOR_DRAFT_SCHEMA } from "../../shared/kenji-conti
 
 export const CLIENT_INTELLIGENCE_AUDIT_PATH = "/v1/admin/clients/intelligence/audit";
 export const CLIENT_INTELLIGENCE_AUDIT_SCHEMA = "mmd.client_intelligence_operator_draft_audit.v1";
+export const CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA = "mmd.kenji_continuity_operator_feedback.v1";
 
 const ACCESS_LOG_TABLE = "System — Access Log";
+const FEEDBACK_RECEIPT_TTL_SECONDS = 10 * 60;
 const ACTIONS = Object.freeze({
   view: "client.intelligence.operator_draft.viewed",
   copy: "client.intelligence.operator_draft.copy_authorized",
+  feedback: "client.intelligence.operator_draft.feedback",
 });
 const OWNER_ROLES = new Set(["owner", "admin"]);
+const FEEDBACK_REASONS = Object.freeze({
+  accepted: new Set(["ready_as_is"]),
+  needs_edit: new Set(["tone_adjustment", "missing_context", "too_generic"]),
+  rejected: new Set(["wrong_context", "unsafe_or_inaccurate", "stale_context", "not_relevant"]),
+});
 
 export function isClientIntelligenceAuditRequest(path, method = "POST") {
   return normalizePath(path) === CLIENT_INTELLIGENCE_AUDIT_PATH
@@ -46,8 +54,23 @@ export async function handleClientIntelligenceAuditRequest(
   if (!Object.hasOwn(ACTIONS, action) || !isRecordId(clientId)) {
     return json({ ok: false, error: "invalid_request" }, 400);
   }
-  if (action === "copy" && body.owner_review_confirmed !== true) {
+  if (!hasOnlyAllowedRequestFields(body, action)) {
+    return json({ ok: false, error: "invalid_request_fields" }, 400);
+  }
+  if ((action === "copy" || action === "feedback") && body.owner_review_confirmed !== true) {
     return json({ ok: false, error: "owner_review_confirmation_required" }, 422);
+  }
+
+  let feedback = null;
+  if (action === "feedback") {
+    const outcome = clean(body.outcome, 24).toLowerCase();
+    const reasonCode = clean(body.reason_code, 40).toLowerCase();
+    if (body.feedback_schema !== CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA
+      || !Object.hasOwn(FEEDBACK_REASONS, outcome)
+      || !FEEDBACK_REASONS[outcome].has(reasonCode)) {
+      return json({ ok: false, error: "invalid_operator_feedback" }, 422);
+    }
+    feedback = { outcome, reason_code: reasonCode };
   }
 
   let projection;
@@ -92,17 +115,41 @@ export async function handleClientIntelligenceAuditRequest(
     hmacSha256Hex(auditKey, `actor:${clean(actor.id, 160)}`),
     hmacSha256Hex(auditKey, `draft:${clean(draft.text, 1800)}`),
   ]);
+  const requestedNowMs = Number(options.now?.() ?? Date.now());
+  const nowMs = Number.isFinite(requestedNowMs) ? requestedNowMs : Date.now();
+  if (action === "copy") {
+    const receiptValid = await validateFeedbackReceipt({
+      receipt: body.feedback_receipt,
+      auditKey,
+      clientHash,
+      actorHash,
+      draftHash,
+      nowMs,
+    });
+    if (!receiptValid) {
+      return json({ ok: false, error: "operator_feedback_receipt_required" }, 409);
+    }
+  }
+
+  const feedbackReceipt = feedback && feedback.outcome !== "rejected"
+    ? await createFeedbackReceipt({ auditKey, clientHash, actorHash, draftHash, feedback, nowMs })
+    : null;
   const eventId = [
     "ci",
     action,
+    feedback?.outcome || "none",
+    feedback?.reason_code || "none",
     clientHash.slice(0, 12),
     actorHash.slice(0, 12),
     draftHash.slice(0, 12),
     crypto.randomUUID(),
   ].join("_");
+  const auditAction = feedback
+    ? `${ACTIONS.feedback}.${feedback.outcome}.${feedback.reason_code}`
+    : ACTIONS[action];
   const fields = {
     "Event ID": eventId,
-    Action: ACTIONS[action],
+    Action: auditAction,
     Result: "success",
   };
 
@@ -129,11 +176,94 @@ export async function handleClientIntelligenceAuditRequest(
     ok: true,
     schema: CLIENT_INTELLIGENCE_AUDIT_SCHEMA,
     action,
-    audit_state: action === "copy" ? "copy_authorized" : "view_recorded",
+    audit_state: action === "copy"
+      ? "copy_authorized"
+      : action === "feedback"
+        ? "feedback_recorded"
+        : "view_recorded",
     event_id: eventId,
+    ...(feedback ? {
+      feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+      operator_feedback: feedback,
+      operator_feedback_recorded: true,
+      copy_eligible: feedback.outcome !== "rejected",
+      feedback_receipt: feedbackReceipt?.token || null,
+      feedback_receipt_expires_at: feedbackReceipt?.expires_at || null,
+    } : {}),
     customer_delivery_attempted: false,
     business_truth_mutated: false,
   }, 201);
+}
+
+function hasOnlyAllowedRequestFields(body, action) {
+  const allowed = action === "feedback"
+    ? new Set(["action", "client_id", "owner_review_confirmed", "feedback_schema", "outcome", "reason_code"])
+    : action === "copy"
+      ? new Set(["action", "client_id", "owner_review_confirmed", "feedback_receipt"])
+      : new Set(["action", "client_id", "owner_review_confirmed"]);
+  return Object.keys(body).every((key) => allowed.has(key));
+}
+
+async function createFeedbackReceipt({ auditKey, clientHash, actorHash, draftHash, feedback, nowMs }) {
+  const issuedAt = Math.floor(nowMs / 1000);
+  const expiresAt = issuedAt + FEEDBACK_RECEIPT_TTL_SECONDS;
+  const payload = [
+    "v1",
+    issuedAt,
+    expiresAt,
+    feedback.outcome,
+    feedback.reason_code,
+    clientHash.slice(0, 24),
+    actorHash.slice(0, 24),
+    draftHash.slice(0, 24),
+  ].join(".");
+  const signature = await hmacSha256Hex(auditKey, `feedback-receipt:${payload}`);
+  return {
+    token: `${payload}.${signature}`,
+    expires_at: new Date(expiresAt * 1000).toISOString(),
+  };
+}
+
+async function validateFeedbackReceipt({ receipt, auditKey, clientHash, actorHash, draftHash, nowMs }) {
+  const value = clean(receipt, 600);
+  const parts = value.split(".");
+  if (parts.length !== 9) return false;
+  const [version, issuedRaw, expiresRaw, outcome, reasonCode, clientRef, actorRef, draftRef, signature] = parts;
+  if (version !== "v1"
+    || !Object.hasOwn(FEEDBACK_REASONS, outcome)
+    || outcome === "rejected"
+    || !FEEDBACK_REASONS[outcome].has(reasonCode)
+    || !/^\d{10}$/.test(issuedRaw)
+    || !/^\d{10}$/.test(expiresRaw)
+    || !/^[a-f0-9]{24}$/.test(clientRef)
+    || !/^[a-f0-9]{24}$/.test(actorRef)
+    || !/^[a-f0-9]{24}$/.test(draftRef)
+    || !/^[a-f0-9]{64}$/.test(signature)) return false;
+
+  const issuedAt = Number(issuedRaw);
+  const expiresAt = Number(expiresRaw);
+  const now = Math.floor(nowMs / 1000);
+  if (issuedAt > now + 30
+    || expiresAt <= now
+    || expiresAt - issuedAt !== FEEDBACK_RECEIPT_TTL_SECONDS
+    || clientRef !== clientHash.slice(0, 24)
+    || actorRef !== actorHash.slice(0, 24)
+    || draftRef !== draftHash.slice(0, 24)) return false;
+
+  const payload = parts.slice(0, 8).join(".");
+  const expected = await hmacSha256Hex(auditKey, `feedback-receipt:${payload}`);
+  return constantTimeEqual(signature, expected);
+}
+
+function constantTimeEqual(left, right) {
+  const a = String(left || "");
+  const b = String(right || "");
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  }
+  return diff === 0;
 }
 
 async function loadProjection(request, env, clientId) {
