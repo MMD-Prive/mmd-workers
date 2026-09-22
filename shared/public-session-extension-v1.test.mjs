@@ -23,6 +23,18 @@ test("DAY OFF extension prices daytime and after-midnight minutes without preboo
   assert.equal(midnight.model_payout_thb,2650);
 });
 
+test("Sport Activity extension follows its public package matrix",()=>{
+  const result=pricePublicExtension({
+    packageCode:"move_with_me",
+    originalEndAt:"2026-09-22T06:00:00.000Z", // 13:00 BKK
+    requestedEndAt:"2026-09-22T07:30:00.000Z", // 14:30 BKK
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.customer_amount_thb,1485);
+  assert.equal(result.model_payout_thb,975);
+  assert.equal(result.official_end_changes_only_after,"model_approved+payment_verified+mmd_confirmed");
+});
+
 test("after 03:00 changes band and after 06:00 fails closed",()=>{
   const priced=pricePublicExtension({
     packageCode:"formal_evening",
