@@ -92,4 +92,7 @@ jobs:
           test "$portal_status" = "401"
           page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/supplier)"
           test "$page_status" = "200"
-          grep -Eq "HIMAI SHOP|Himai Shop" /tmp/himai-distributor.html\n\n          legacy_page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor-legacy.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"\n          test "$legacy_page_status" = "200"
+          grep -Eq "HIMAI SHOP|Himai Shop" /tmp/himai-distributor.html
+
+          legacy_page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor-legacy.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"
+          test "$legacy_page_status" = "200"
