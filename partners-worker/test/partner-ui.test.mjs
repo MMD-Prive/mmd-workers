@@ -25,6 +25,13 @@ async function ui(t,{expired=false}={}){
   const q=s=>w.document.querySelector(s);
   return {f,w,q,errors};
 }
+test('dashboard without token redirects directly to canonical LINE login and renders no fallback page',async t=>{
+  const f=await fixture();t.after(f.restore);
+  const response=await pageWorker.fetch(new Request('https://www.mmdbkk.com/partner/dashboard'),f.env,{});
+  assert.equal(response.status,302);
+  assert.equal(response.headers.get('location'),'https://www.mmdbkk.com/sigil/model/dashboard/partner-login');
+  assert.equal(await response.text(),'');
+});
 test('expired access leaves no dashboard fallback UI and redirects to canonical LINE login',async t=>{
   const {q,w,errors}=await ui(t,{expired:true});
   assert.equal(w.location.pathname,'/sigil/model/dashboard/partner-login');
