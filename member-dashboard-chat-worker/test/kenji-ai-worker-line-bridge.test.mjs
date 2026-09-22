@@ -222,6 +222,10 @@ test("webhook observer aggregates only safe counts", async () => {
     identity_state: "known",
     matrix_version: 4,
     review_required: 1,
+    contextual_shadow_observed: 0,
+    contextual_model_success: 0,
+    contextual_clarification_required: 0,
+    contextual_relations: [],
     shadow_only: true,
     customer_copy_changed: false,
   });
