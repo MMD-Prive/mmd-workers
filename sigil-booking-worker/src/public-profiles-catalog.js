@@ -19,6 +19,7 @@ const APPLICATION_FIELDS = Object.freeze({
   approvedRoles: "fldz20JiFUK9ubk1c",
   bookingMode: "fldjo1NpDcB0JXk91",
   publicProfileApproved: "fldcnCF3KrdAd4cfa",
+  publicImageApproved: "fldFm1ouEn5TlyLUo",
   credentialStatus: "fldFM8T50S1zObdVP",
   nonMemberImageConsent: "fldUMJEUVK3GNmomA",
   nonMemberPromoRoles: "fldQgqdiVPTMRfawj",
@@ -78,6 +79,7 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
           promo_roles: [],
           booking_mode: "curated",
           public_profile_approved: false,
+          public_image_approved: false,
           credential_status: "not_required",
           nonmember_image_consent: false,
           promo_consent_status: "not_granted",
@@ -109,7 +111,10 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
     const photos = group.photos.slice(0, 6).map((photo) => photo.url);
     const eligibility = eligibilityBySlug instanceof Map ? eligibilityBySlug.get(group.slug) : null;
-    if (!eligibility || eligibility.public_profile_approved !== true || !validPublicPromoConsent(eligibility)) return null;
+    // A public folder is storage only. A card may exist only when the complete
+    // service matrix has a role, audience, explicit booking route, profile
+    // approval and an approved public-safe image.
+    if (!eligibility || !hasCompletePublicServiceMatrix(eligibility) || !validPublicPromoConsent(eligibility)) return null;
     const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
     const approvedRoles = normalizeRoleKeys(eligibility.roles);
     const promoRoles = normalizeRoleKeys(eligibility.promo_roles);
@@ -126,7 +131,7 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       customer_scope: acceptedCustomerGenders.length === 1 ? `${acceptedCustomerGenders[0]}_only` : "all_genders",
       accepted_customer_genders: acceptedCustomerGenders,
       approved_roles: publicRoles,
-      booking_mode: normalizeBookingMode(eligibility.booking_mode),
+      booking_mode: eligibility.booking_mode,
       visibility: "public",
       audience_visibility: "non_member_consented",
       source: "r2_public_model",
@@ -191,6 +196,7 @@ async function loadApprovedEligibility(env) {
           promo_roles: promoRoles,
           booking_mode: choiceName(fields[APPLICATION_FIELDS.bookingMode]),
           public_profile_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicProfileApproved]),
+          public_image_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicImageApproved]),
           credential_status: choiceName(fields[APPLICATION_FIELDS.credentialStatus]),
           nonmember_image_consent: imageConsent,
           promo_consent_status: status,
@@ -206,6 +212,13 @@ async function loadApprovedEligibility(env) {
     console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_eligibility_unavailable", error: String(error?.message || error) }));
   }
   return index;
+}
+
+function hasCompletePublicServiceMatrix(value = {}) {
+  if (value.public_profile_approved !== true || value.public_image_approved !== true) return false;
+  if (!normalizeCustomerGenders(value.genders).length) return false;
+  if (!normalizeRoleKeys(value.roles).length || !normalizeRoleKeys(value.promo_roles).length) return false;
+  return ["direct", "curated", "brief_only"].includes(clean(value.booking_mode).toLowerCase());
 }
 
 function validPublicPromoConsent(value = {}) {
@@ -239,11 +252,6 @@ function normalizeRoleKeys(value) {
   const allowed = new Set(["everyday_companion","driver_companion","culinary_companion","social_appearance","bangkok_companion","sport_activity","wellness_companion","business_companion","nightlife_companion","creative_companion","medical_professional"]);
   return [...new Set((Array.isArray(value) ? value : []).map((item) => clean(item).toLowerCase()).filter((item) => allowed.has(item)))];
 }
-function normalizeBookingMode(value) {
-  const mode = clean(value).toLowerCase();
-  return ["direct","brief_only"].includes(mode) ? mode : "curated";
-}
-
 function customerGendersFromScope(value) {
   const choices = (Array.isArray(value) ? value : [value]).map(choiceName).map((item) => item.toLowerCase());
   const genders = [];
