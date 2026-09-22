@@ -152,6 +152,28 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       });
     }
 
+    let proofVerification = {
+      ok: true,
+      verified: recovery ? true : code(fields.status || fields.verification_status) === "verified",
+      duplicate: recovery ? false : code(fields.status || fields.verification_status) === "verified",
+    };
+    if (!recovery && !proofVerification.verified) {
+      proofVerification = await airtableUpdate(env, proofTable(env), proof.id, {
+        status: "verified",
+        verified_at: new Date().toISOString().slice(0, 10),
+        verified_by: "payments-worker",
+      }).then(() => ({
+        ok: true,
+        verified: true,
+        duplicate: false,
+      })).catch((error) => ({
+        ok: false,
+        verified: false,
+        duplicate: false,
+        error: clean(error?.message || error || "proof_verification_write_failed"),
+      }));
+    }
+
     const headers = new Headers(response.headers);
     headers.set("content-type", "application/json; charset=utf-8");
     headers.set("cache-control", "no-store, private");
@@ -173,6 +195,9 @@ export async function handleReviewedProof(request, env = {}, ctx = null, notifyT
       membership_expiry_rule: materialization?.membership_expiry_rule || undefined,
       membership_promotion: materialization?.promotion || undefined,
       downstream_access_reconcile_required: Boolean(materialization),
+      proof_verification: proofVerification,
+      proof_reconciled: proofVerification.verified === true,
+      proof_reconcile_failed: proofVerification.ok === false,
     }), { status: response.status, headers });
   } catch (error) {
     return json({
