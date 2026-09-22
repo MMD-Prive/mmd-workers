@@ -32,9 +32,14 @@ test("points endpoint is patched to lifetime total without removing ledger histo
     earnedTotal: 1199,
     redeemedTotal: 25,
     recordsCount: 3,
+    lifetimeServiceSpendThb: 150000,
+    serviceSpend365dThb: 25000,
+    completedServiceCount: 4,
   });
   assert.equal(patched.summary.confirmedBalance, 1174);
   assert.equal(patched.summary.pointsExpire, false);
+  assert.equal(patched.summary.lifetimeServiceSpendThb, 150000);
+  assert.equal(patched.summary.serviceSpend365dThb, 25000);
   assert.equal(patched.ledger.length, 1);
   assert.deepEqual(patched.pointsPolicy, { expires: false, mode: "lifetime_total", phase: 1 });
 });

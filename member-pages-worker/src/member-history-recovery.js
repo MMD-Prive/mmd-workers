@@ -1,3 +1,8 @@
+import {
+  readMemberHistoryPreload,
+  recoveryStatusFromPreload,
+} from "./member-history-preload.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const POLICY = "member_history_recovery_v2_note_first";
@@ -107,6 +112,8 @@ export async function scheduleMemberHistoryRecoveryForSessionToken(token, env = 
   // LINE OFC history is the source of truth from the first login. Do not gate
   // the background scan on a pre-existing Member/Airtable wallet or a slip.
   if (!session || !safeLineUserId(session.line_user_id)) return false;
+  const preloaded = await useBatchPreload(env, session.line_user_id, trigger);
+  if (preloaded) return true;
   const existing = await readMemberHistoryRecoveryStatus(env, session.line_user_id);
   if (existing.state === "in_progress" && !refreshExpired(existing)) return true;
   if (!shouldAutoRunHistoryRecovery(existing, trigger)) return true;
@@ -136,6 +143,13 @@ export async function runMemberHistoryRecovery({
 } = {}) {
   if (!hasBindings(env) && !store) return statusPayload("blocked", { reason: "not_configured", trigger });
   if (!safeLineUserId(lineUserId)) return statusPayload("blocked", { reason: "identity_invalid", trigger });
+
+  // The scheduled batch projection is the normal path. The broad historical
+  // scan below runs only when that projection is missing, stale, or ambiguous.
+  if (!store) {
+    const preloaded = await useBatchPreload(env, lineUserId, trigger, now);
+    if (preloaded) return preloaded;
+  }
 
   const db = store || new AirtableHistoryStore(env);
   const lockKey = await recoveryKey("lock", lineUserId);
@@ -734,6 +748,20 @@ export async function readMemberHistoryRecoveryStatus(env, lineUserId) {
     : statusPayload("checking", { reason: "not_started" });
 }
 
+async function useBatchPreload(env, lineUserId, trigger, now = new Date()) {
+  try {
+    const preload = await readMemberHistoryPreload(env, lineUserId, { now });
+    const raw = recoveryStatusFromPreload(preload, trigger, now);
+    if (!raw) return null;
+    const status = statusPayload(raw.state, raw);
+    await writeStatusKey(env, await recoveryKey("status", lineUserId), status);
+    return status;
+  } catch (error) {
+    console.warn({ event: "member_history_preload_lookup_failed", reason: safeErrorCode(error) });
+    return null;
+  }
+}
+
 async function markQueued(env, lineUserId, trigger) {
   const status = statusPayload("checking", {
     trigger,
@@ -765,12 +793,17 @@ function statusPayload(state, extra = {}) {
     note_without_amount_count: nonNegativeInt(extra.note_without_amount_count),
     unmatched_payment_count: nonNegativeInt(extra.unmatched_payment_count),
     verified_service_spend_thb: roundMoney(extra.verified_service_spend_thb),
+    lifetime_service_spend_thb: roundMoney(extra.lifetime_service_spend_thb),
+    service_spend_365d_thb: roundMoney(extra.service_spend_365d_thb),
+    completed_service_count: nonNegativeInt(extra.completed_service_count),
     historical_points_recovered: nonNegativeInt(extra.historical_points_recovered),
     historical_points_added: signedInt(extra.historical_points_added),
     current_points_total: nullableNonNegativeInt(extra.current_points_total),
     points_expire: false,
     history_window_years: HISTORY_WINDOW_YEARS,
     source_pending: extra.source_pending === true,
+    preload_source: bounded(extra.preload_source, 48) || null,
+    projection_computed_at: isoDate(extra.projection_computed_at),
     trigger: bounded(extra.trigger, 32) || null,
     reason: bounded(extra.reason, 80) || null,
     started_at: isoDate(extra.started_at),

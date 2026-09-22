@@ -96,6 +96,7 @@ function renderShell(config, nonce) {
     </section>
     <section id="points" class="panel" aria-label="Points">
       <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
+      <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
     </section>
     <section id="package" class="panel" aria-label="Package">
@@ -152,9 +153,9 @@ function renderShell(config, nonce) {
     zh: { mark:"MMD Privé · Member Dashboard", title:"我的 MMD", subtitle:"在 LINE 内简单、私密地查看您的会员信息。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
   Object.assign(copy, ({
-    th:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 คูปองของฉัน",couponWalletEmpty:"ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ"},
-    en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet."},
-    zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。"},
+    th:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 คูปองของฉัน",couponWalletEmpty:"ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ",pointsLabel:"คะแนนสะสมทั้งหมด",pointsNoExpiry:"Points สะสมตลอดอายุ · ยังไม่ตัด 365 วัน",serviceSpendLabel:"ยอดใช้บริการที่ยืนยันแล้ว",lifetimeSpendLabel:"ยอดสะสมทั้งหมด",spend365Label:"ย้อนหลัง 365 วัน"},
+    en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet.",pointsLabel:"Lifetime points",pointsNoExpiry:"Lifetime Points · no 365-day expiry",serviceSpendLabel:"Verified service spend",lifetimeSpendLabel:"Lifetime",spend365Label:"Last 365 days"},
+    zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",pointsLabel:"累计积分",pointsNoExpiry:"累计积分 · 暂不按 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
   })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
@@ -165,6 +166,9 @@ function renderShell(config, nonce) {
     if (copy[key]) element.textContent = copy[key];
   }
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
+  document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
+  document.getElementById("lifetime-spend-label").textContent = copy.lifetimeSpendLabel || "Lifetime";
+  document.getElementById("spend-365-label").textContent = copy.spend365Label || "Last 365 days";
   careButton.textContent = copy.careButton || careButton.textContent;
   wishText.placeholder = copy.wishPlaceholder || wishText.placeholder;
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
@@ -338,7 +342,7 @@ function renderShell(config, nonce) {
   function legacyCustomerView(data) {
     return {
       member: { display_name:data.display_name, tier:data.tier, membership_status:data.membership_status, membership_expires_at:data.membership_expires_at },
-      points: { status:Number.isInteger(data.points_records_count) ? "verified" : "checking", active_points:data.points, history:[] },
+      points: { status:Number.isInteger(data.points_records_count) ? "verified" : "checking", active_points:data.points, lifetime_service_spend_thb:data.lifetime_service_spend_thb, service_spend_365d_thb:data.service_spend_365d_thb, completed_service_count:data.completed_service_count, history:[] },
       packages: { status:"checking", current_package:null, package_history:[] },
       jobs: { status:"checking", upcoming_jobs:[], active_jobs:[], completed_jobs:[], cancelled_jobs:[] },
       payments: { status:data.payment_status, historical_verified:data.payment_history },
@@ -365,9 +369,12 @@ function renderShell(config, nonce) {
   }
 
   function renderPoints(points) {
-    document.getElementById("points-total").textContent = points.status === "verified" && Number.isInteger(points.active_points) ? signedPoints(points.active_points).replace(/^\\+/, "") : "—";
-    document.getElementById("points-rate").textContent = points.status === "verified" ? (copy.pointsRate || "") : (copy.checkingPoints || copy.checking || "");
-    document.getElementById("points-expiry").textContent = points.status === "verified" && Number.isInteger(points.expiring_points) && points.expiring_points > 0 && safeDate(points.nearest_expiry) ? (copy.expiring || "") + ": " + points.expiring_points + " · " + shortDate(points.nearest_expiry) : "";
+    const verified = points.status === "verified";
+    document.getElementById("points-total").textContent = verified && Number.isInteger(points.active_points) ? signedPoints(points.active_points).replace(/^\\+/, "") : "—";
+    document.getElementById("points-rate").textContent = verified ? (copy.pointsRate || "") : (copy.checkingPoints || copy.checking || "");
+    document.getElementById("points-expiry").textContent = verified ? (copy.pointsNoExpiry || "") : "";
+    document.getElementById("points-lifetime-spend").textContent = verified ? formatThb(points.lifetime_service_spend_thb) : "—";
+    document.getElementById("points-365-spend").textContent = verified ? formatThb(points.service_spend_365d_thb) : "—";
     const history = document.getElementById("points-history"); history.replaceChildren();
     if (points.status !== "verified") return appendEmpty(history, copy.checkingPoints || copy.checking);
     const items = safeList(points.history); if (!items.length) return appendEmpty(history, copy.empty);
@@ -416,6 +423,7 @@ function renderShell(config, nonce) {
   function membershipStatus(value) { const labels = { th:{active:"สมาชิกใช้งานอยู่",grace:"อยู่ในช่วงผ่อนผัน",expired:"สมาชิกหมดอายุ",under_review:"อยู่ระหว่างตรวจสอบ",checking:"กำลังตรวจสอบ"}, en:{active:"Active member",grace:"Grace period",expired:"Expired",under_review:"Under review",checking:"Checking"}, zh:{active:"会员有效",grace:"宽限期",expired:"会员已过期",under_review:"审核中",checking:"检查中"} }; return (labels[locale] || labels.th)[value] || (labels[locale] || labels.th).checking; }
   function safeStatus(value) { const labels = { th:{completed:"เสร็จสิ้น",active:"ใช้งานอยู่",upcoming:"นัดหมายล่วงหน้า",cancelled:"ยกเลิก",expired:"หมดอายุ",posted:"บันทึกแล้ว",verified:"ตรวจสอบแล้ว",pending_review:"รอตรวจสอบ",checking:"กำลังตรวจสอบ"}, en:{completed:"Completed",active:"Active",upcoming:"Upcoming",cancelled:"Cancelled",expired:"Expired",posted:"Posted",verified:"Verified",pending_review:"Pending review",checking:"Checking"}, zh:{completed:"已完成",active:"有效",upcoming:"即将开始",cancelled:"已取消",expired:"已过期",posted:"已记录",verified:"已验证",pending_review:"待审核",checking:"检查中"} }; return (labels[locale] || labels.th)[value] || (labels[locale] || labels.th).checking; }
   function signedPoints(value) { const number = Number(value || 0); return (number >= 0 ? "+" : "") + new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(number) + " pts"; }
+  function formatThb(value) { const number = Number(value); return Number.isFinite(number) && number >= 0 ? new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH",{style:"currency",currency:"THB",maximumFractionDigits:2}).format(number) : "—"; }
   function shortDate(value) { const date = new Date(String(value || "") + "T00:00:00+07:00"); return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",{day:"numeric",month:"short",year:"2-digit"}).format(date); }
   function safeDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || "")) ? String(value) : ""; }
   function safePaymentStatus(value) { return ["verified","pending_review","unavailable"].includes(String(value || "")) ? String(value) : ""; }
