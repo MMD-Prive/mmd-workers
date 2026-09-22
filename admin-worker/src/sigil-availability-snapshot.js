@@ -144,7 +144,7 @@ function formulaText(value) {
   return `"${text(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-async function findAdoptionModel(env = {}, modelKeyInput = "") {
+async function findAdoptionModel(env = {}, modelKeyInput = "", options = {}) {
   const modelKey = safeModelKey(modelKeyInput);
   if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
 
@@ -179,7 +179,7 @@ async function findAdoptionModel(env = {}, modelKeyInput = "") {
   }
 
   const lineUserId = text(fields.line_user_id);
-  if (!LINE_USER_ID_RE.test(lineUserId)) {
+  if (!LINE_USER_ID_RE.test(lineUserId) && options.allow_unlinked !== true) {
     return {
       ok: false,
       status: 409,
@@ -195,7 +195,7 @@ async function findAdoptionModel(env = {}, modelKeyInput = "") {
     model_record_id: text(record.id, 40),
     model_key: modelKey,
     display_name: text(fields.working_name).slice(0, 80) || modelKey,
-    line_user_id: lineUserId,
+    line_user_id: LINE_USER_ID_RE.test(lineUserId) ? lineUserId : "",
   };
 }
 
@@ -402,7 +402,7 @@ async function handleAvailabilityAdoptionActivationIssued(request, env = {}, cal
   const modelKey = safeModelKey(body?.model_key);
   const modelRecordId = text(body?.model_record_id, 40);
   if (!modelKey || !/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) return json({ ok: false, error: "activation_evidence_invalid" }, 400);
-  const model = await findAdoptionModel(env, modelKey);
+  const model = await findAdoptionModel(env, modelKey, { allow_unlinked: true });
   if (!model.ok) return json({ ok: false, error: model.error }, model.status || 400);
   if (model.model_record_id !== modelRecordId) return json({ ok: false, error: "activation_evidence_model_mismatch" }, 409);
   const tracked = await writeAdoptionRecoveryEvidence(env, modelKey, {
