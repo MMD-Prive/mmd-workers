@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { runInNewContext } from "node:vm";
 
 const tmp = await mkdtemp(join(tmpdir(), "control-room-v4-"));
 const outfile = join(tmp, "control-room-v4.mjs");
@@ -109,6 +110,43 @@ try {
   assert.match(body, /Telegram \/ Google Drive · Router Health Read-only/);
   assert.match(body, /data-audit-cta/);
   assert.match(body, /\/v1\/admin\/auth\/me/);
+
+  assert.equal(response.headers.get('x-mmd-control-room-mmd-flow'), '20260922');
+  assert.match(body, /data-mmd-workflow="20260922"/);
+  assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
+  assert.match(body, /หาจากงานล่าสุด/);
+  assert.match(body, /Slip Intake/);
+  // Owner actions remain route handoffs, never generic customer confirmation links.
+  const flow = body.match(/<section class="mmd-workflow"[\s\S]*?<\/section>/)[0];
+  assert.equal((flow.match(/<li>/g) || []).length, 5);
+  assert.doesNotMatch(flow, /<form|<script|href="\/sigil\/(?:pay|confirm)/);
+  for (const route of [...flow.matchAll(/href="([^"]+)"/g)].map(m => m[1])) {
+    assert.ok(['/internal/admin/jobs/all', '/internal/admin/customer-data',
+      '/internal/ceo/payment-slip-inbox', '/internal/admin/payments',
+      '/internal/admin/jobs/create-job'].includes(route), route);
+  }
+
+  // Exercise the actual dashboard consumer: unknown counts must not become zero.
+  const dashboardScript = [...body.matchAll(/<script>([\s\S]*?)<\/script>/g)]
+    .map(m => m[1]).find(s => s.includes("fetch('/v1/admin/dashboard'"));
+  for (const value of [undefined, null, '', ' ', false, {}, [], -1, 1.5, 0, '0', 12]) {
+    const values = Object.fromEntries(['customer', 'payment', 'model', 'access'].map(k => [k, { textContent: '—' }]));
+    const status = { textContent: '' };
+    const root = {
+      querySelectorAll(selector) {
+        const match = selector.match(/^\[data-count="([^"]+)"\]$/);
+        return match ? [values[match[1]]] : [];
+      },
+      querySelector() { return { classList: { add() {}, remove() {} }, querySelector() { return status; } }; },
+    };
+    runInNewContext(dashboardScript, {
+      document: { getElementById() { return root; } },
+      fetch: async () => ({ ok: true, status: 200, json: async () => ({ queues: { payments: value } }) }),
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(values.payment.textContent, value === 0 || value === '0' ? '0' : value === 12 ? '12' : '—');
+    assert.equal(values.customer.textContent, '—');
+  }
 
   assert.doesNotMatch(body, /href="\/male-massage\/therapists\/login"/);
   assert.doesNotMatch(body, /WORKER-RENDERED INTERNAL PAGES/);
