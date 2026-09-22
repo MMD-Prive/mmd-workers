@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -176,8 +176,15 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/credentials:'include'/);
   assert.match(html,/\.webflow\\\.io/);
   assert.match(html,/calendar-owner-ui-v3-20260922/);
+  assert.match(html,/calendar-owner-ui-v5-20260922/);
+  assert.match(html,/\/v1\/admin\/calendar\/model-photo\?model_id=/);
+  assert.match(html,/วันนี้มีอะไรบ้าง/);
+  assert.match(html,/ดูงาน รอมัดจำ คิวชน และเวลาว่างในจอเดียว/);
   assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
   assert.match(html,/cleanInlineArtifacts/);
+  assert.match(html,/\['วันนี้','รอมัดจำ','ยืนยันแล้ว','นายแบบ','เช็กราคา'\]/);
+  assert.match(html,/งานยาว \/ ข้ามคืน/);
+  assert.match(html,/นายแบบ & Therapist/);
   assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
   for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
