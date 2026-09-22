@@ -1,5 +1,9 @@
 import { readMemberAppSession } from "./member-app-api.js";
 import { readMemberHistoryRecoveryStatus } from "./member-history-recovery.js";
+import {
+  lifetimePointsFromPreload,
+  readMemberHistoryPreload,
+} from "./member-history-preload.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
@@ -40,6 +44,19 @@ export async function prepareMyMmdLifetimePointsContext(request, env = {}) {
   if (!session?.memberId || !session?.lineUserId) return null;
 
   try {
+    try {
+      const preload = await readMemberHistoryPreload(env, session.lineUserId);
+      const preloadedPoints = lifetimePointsFromPreload(preload, session.memberId);
+      if (preloadedPoints) {
+        const recoveryState = preload.projection?.history_backfill_status === "reconciled"
+          ? "reconciled"
+          : "review_required";
+        return { ...preloadedPoints, recoveryState, pointsRecoveryPending: false };
+      }
+    } catch (error) {
+      console.warn({ event: "my_mmd_points_preload_lookup_failed", failure_class: safeFailure(error) });
+    }
+
     const recoveryStatus = await readMemberHistoryRecoveryStatus(env, session.lineUserId);
     const recoveryState = normalizeToken(recoveryStatus?.state);
     if (["checking", "in_progress"].includes(recoveryState)) {
@@ -145,6 +162,9 @@ export function patchLifetimePointsPayload(path, payload, summary) {
     expiryPolicy: "none_phase1",
     nearestExpiry: null,
     expiringPoints: 0,
+    lifetimeServiceSpendThb: money(summary.lifetimeServiceSpendThb),
+    serviceSpend365dThb: money(summary.serviceSpend365dThb),
+    completedServiceCount: nonNegativeInt(summary.completedServiceCount),
   };
 
   if (/^\/api\/member\/app\/points\/?$/.test(path)) {
@@ -172,6 +192,9 @@ export function patchLifetimePointsPayload(path, payload, summary) {
       ...payload,
       points_confirmed: summary.confirmedBalance,
       points_records_count: summary.recordsCount,
+      lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+      service_spend_365d_thb: money(summary.serviceSpend365dThb),
+      completed_service_count: nonNegativeInt(summary.completedServiceCount),
       points_expire: false,
       points_policy: "lifetime_total_phase1",
     };
@@ -193,6 +216,9 @@ export function patchLifetimePointsPayload(path, payload, summary) {
           expiring_points: 0,
           nearest_expiry: null,
           expiry_policy: "none_phase1",
+          lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+          service_spend_365d_thb: money(summary.serviceSpend365dThb),
+          completed_service_count: nonNegativeInt(summary.completedServiceCount),
         },
       },
     };
@@ -208,6 +234,9 @@ export function patchLifetimePointsPayload(path, payload, summary) {
         ...data,
         points: summary.confirmedBalance,
         points_records_count: summary.recordsCount,
+        lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+        service_spend_365d_thb: money(summary.serviceSpend365dThb),
+        completed_service_count: nonNegativeInt(summary.completedServiceCount),
         points_expire: false,
         points_policy: "lifetime_total_phase1",
         customer_360: {
@@ -220,6 +249,9 @@ export function patchLifetimePointsPayload(path, payload, summary) {
             expiring_points: 0,
             nearest_expiry: null,
             expiry_policy: "none_phase1",
+            lifetime_service_spend_thb: money(summary.lifetimeServiceSpendThb),
+            service_spend_365d_thb: money(summary.serviceSpend365dThb),
+            completed_service_count: nonNegativeInt(summary.completedServiceCount),
           },
         },
       },
@@ -400,6 +432,16 @@ function normalizeToken(value) {
 
 function isObject(value) {
   return value && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonNegativeInt(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+}
+
+function money(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) / 100 : 0;
 }
 
 function clean(value) {
