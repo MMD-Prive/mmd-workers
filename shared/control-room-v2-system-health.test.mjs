@@ -7,7 +7,7 @@ const canon = JSON.parse(await readFile(new URL("../docs/architecture/route-cano
 
 test("Control Room V2 static receipts are backed by closed machine canon", () => {
   const health = buildControlRoomV2SystemHealth({
-    dashboardStatus: { payments: "พร้อม", telegram: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
+    dashboardStatus: { admin: "พร้อม", payments: "พร้อม", telegram: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
     telegramRouterHealth: { status: "configured", summary: "router configured" },
   });
   assert.equal(health.schema, CONTROL_ROOM_V2_SYSTEM_HEALTH_SCHEMA);
@@ -24,7 +24,7 @@ test("Control Room V2 static receipts are backed by closed machine canon", () =>
 
 test("Control Room V2 distinguishes live health from production acceptance", () => {
   const health = buildControlRoomV2SystemHealth({
-    dashboardStatus: { payments: "พร้อม", telegram: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
+    dashboardStatus: { admin: "พร้อม", payments: "พร้อม", telegram: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
     telegramRouterHealth: { status: "configured", summary: "router configured" },
   });
   const byKey = Object.fromEntries(health.systems.map((item) => [item.key, item]));
@@ -45,13 +45,13 @@ test("Control Room V2 distinguishes live health from production acceptance", () 
 
 test("Control Room V2 escalates degraded and action-needed live sources", () => {
   const degraded = buildControlRoomV2SystemHealth({
-    dashboardStatus: { payments: "พร้อม", data: "บางส่วน", reconfirm: "พร้อม" },
+    dashboardStatus: { admin: "พร้อม", payments: "พร้อม", data: "บางส่วน", reconfirm: "พร้อม" },
     telegramRouterHealth: { status: "partial", summary: "one destination missing" },
   });
   assert.equal(degraded.overall_status, "degraded");
 
   const action = buildControlRoomV2SystemHealth({
-    dashboardStatus: { payments: "มีปัญหา", data: "พร้อม", reconfirm: "พร้อม" },
+    dashboardStatus: { admin: "พร้อม", payments: "มีปัญหา", data: "พร้อม", reconfirm: "พร้อม" },
     telegramRouterHealth: { status: "configured" },
   });
   assert.equal(action.overall_status, "action_needed");
