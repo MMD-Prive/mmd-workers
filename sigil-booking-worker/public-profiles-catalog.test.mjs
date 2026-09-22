@@ -11,6 +11,7 @@ function eligible(genders=["male","female"], roles=["everyday_companion"], overr
     promo_roles: [...roles],
     booking_mode: "curated",
     public_profile_approved: true,
+    public_image_approved: true,
     credential_status: "not_required",
     nonmember_image_consent: true,
     promo_consent_status: "granted",
@@ -76,6 +77,20 @@ test("catalog fails closed for empty customer scope or empty approved roles", ()
   assert.deepEqual(items, []);
 });
 
+test("catalog fails closed unless the complete service matrix explicitly approves the public image and booking route", () => {
+  const eligibilityBySlug = new Map([
+    ["image-pending", eligible(["male"], ["everyday_companion"], { public_image_approved: false })],
+    ["booking-missing", eligible(["male"], ["everyday_companion"], { booking_mode: "" })],
+    ["booking-unknown", eligible(["male"], ["everyday_companion"], { booking_mode: "agent_decides" })],
+  ]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/image-pending/card.webp" },
+    { key: "MMD Public Models/booking-missing/card.webp" },
+    { key: "MMD Public Models/booking-unknown/card.webp" },
+  ], { eligibilityBySlug });
+  assert.deepEqual(items, []);
+});
+
 test("non-member image exposure fails closed without current explicit consent", () => {
   const eligibilityBySlug = new Map([
     ["no-consent", eligible(["male"], ["everyday_companion"], { nonmember_image_consent: false })],
@@ -133,6 +148,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["driver_companion"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: false,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
         fldUMJEUVK3GNmomA: true,
         fldQgqdiVPTMRfawj: ["driver_companion"],
@@ -149,6 +165,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["social_appearance"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
       } },
       { fields: {
@@ -159,6 +176,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["social_appearance", "nightlife_companion"],
         fldjo1NpDcB0JXk91: "brief_only",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
         fldUMJEUVK3GNmomA: true,
         fldQgqdiVPTMRfawj: ["social_appearance"],
@@ -181,6 +199,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["culinary_companion"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
       } },
     ],
