@@ -9,7 +9,7 @@ const LEGACY_MY_MMD_UI_PREFIX = "/member/my-mmd";
 const MY_MMD_PRESENTATION_ORIGIN = "https://my-mmd-member-profile.lovable.app";
 const MY_MMD_PRESENTATION_MODE = "lovable-full-app-20260905";
 const MEMBER_LIFF_SHELL_PATHS = new Set(["/member/liff", "/member/liff/"]);
-const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile"];
+const MY_MMD_ROUTE_SUFFIXES = ["membership", "points", "coupons", "history", "profile", "payments"];
 const HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a36fa9c99c7e95731eeca5d_HYPE.webp";
 const HYPE_LOADING_PATH = `${MY_MMD_ASSET_PREFIX}hype.webp`;
 const STATUS_HYPE_LOADING_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a9be30ba79b9386ecdbe9ab_HYPE_NOW_LOADING_10FRAMES.gif";
@@ -233,10 +233,10 @@ function liffStateSearchParams(url) {
   return new URLSearchParams();
 }
 
-function isStatusLiffShellRequest(request) {
+function liffAuthBridgeTarget(request) {
   const url = new URL(request.url);
   const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
-  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return false;
+  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return "";
 
   const stateParams = liffStateSearchParams(url);
   const intent = String(
@@ -248,9 +248,10 @@ function isStatusLiffShellRequest(request) {
   ).trim().toLowerCase();
   const campaign = String(url.searchParams.get("campaign") || stateParams.get("campaign") || "").trim().toLowerCase();
 
-  if (campaign) return false;
-  if (!intent || intent === "unknown") return true;
-  return intent === "status";
+  if (campaign) return "";
+  if (!intent || intent === "unknown" || intent === "status") return "/my-mmd/";
+  if (intent === "continue_payment") return "/my-mmd/payments";
+  return "";
 }
 
 function statusBridgeSkin() {
@@ -304,18 +305,21 @@ function injectStatusBridgeSkin(html) {
 }
 
 async function rewriteStatusReturnTarget(request, response) {
-  if (!isStatusLiffShellRequest(request) || request.method === "HEAD" || !response.ok) return response;
+  const target = liffAuthBridgeTarget(request);
+  if (!target || request.method === "HEAD" || !response.ok) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  const canonical = html.replace('const target = "/member/my-mmd";', 'const target = "/my-mmd/";');
+  const canonical = html
+    .replace('const target = "/member/my-mmd";', `const target = ${JSON.stringify(target)};`)
+    .replace('const target = "/member/payments";', `const target = ${JSON.stringify(target)};`);
   const rewritten = injectStatusBridgeSkin(canonical);
 
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("x-mmd-liff-return-target", "/my-mmd/");
+  headers.set("x-mmd-liff-return-target", target);
   headers.set("x-mmd-liff-ui-mode", "auth-bridge-only");
   return new Response(rewritten, {
     status: response.status,
