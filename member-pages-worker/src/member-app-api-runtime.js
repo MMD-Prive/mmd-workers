@@ -1,6 +1,7 @@
 import liffFoundation from "./liff-identity-foundation.js";
 import { readClientBackedHistoryResult } from "./member-app-client-history.js";
 import { handleMemberAppSessionApi, isMemberAppSessionPath } from "./member-app-session.js";
+import { handleMemberAppSessionExtensionApi, isMemberAppSessionExtensionPath } from "./member-app-session-extension.js";
 
 const API_PREFIX = "/api/member/app/";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -30,7 +31,7 @@ function normalizePath(value) {
 
 export function isMemberAppApiPath(input) {
   const url = input instanceof URL ? input : new URL(String(input));
-  return ROUTES.has(normalizePath(url.pathname)) || isMemberAppSessionPath(url);
+  return ROUTES.has(normalizePath(url.pathname)) || isMemberAppSessionPath(url) || isMemberAppSessionExtensionPath(url);
 }
 
 function methodNotAllowed() {
@@ -785,6 +786,7 @@ async function adaptCare(request, env, delegate) {
 
 export async function handleMemberAppApi(request, env = {}, delegate = liffFoundation) {
   if (isMemberAppSessionPath(request.url)) return handleMemberAppSessionApi(request, env, readMemberAppSession);
+  if (isMemberAppSessionExtensionPath(request.url)) return handleMemberAppSessionExtensionApi(request, env, readMemberAppSession);
   if (request.method !== "GET") return methodNotAllowed();
   const path = normalizePath(new URL(request.url).pathname);
   if (!ROUTES.has(path)) return routeNotFound();
