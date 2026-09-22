@@ -25,6 +25,8 @@ export function handleLiffMemberShell(request, env = {}) {
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
+    sessionExtensionEndpoint: "/api/member/app/session/extension",
+    sessionExtensionRequestEndpoint: "/api/member/app/session/extension/request",
     careBackEndpoint: "/member/api/liff/care-back/claim",
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
@@ -58,6 +60,7 @@ function renderShell(config, nonce) {
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+    .extension-pay{display:block;margin-top:12px;padding:12px 14px;border-radius:12px;background:#f0d892;color:#181207;text-decoration:none;font-weight:800;text-align:center}.extension-pay:focus-visible{outline:2px solid #fff;outline-offset:2px}
     .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
   </style>
 </head>
@@ -105,6 +108,12 @@ function renderShell(config, nonce) {
     </section>
     <section id="jobs" class="panel" aria-label="Jobs">
       <div class="card"><h2 data-copy="jobsTitle">💼 Jobs</h2><div id="jobs-groups" class="stack"></div></div>
+      <div class="card" id="session-extension-card">
+        <span class="label">ACTIVE SESSION · REQUEST THROUGH MMD</span>
+        <h2 style="margin:8px 0 4px">ต่อเวลา / เปลี่ยนแผน</h2>
+        <p class="sub">เวลาหรือแผนใหม่จะเป็นทางการเมื่อ Model อนุมัติ ชำระเงินได้รับการตรวจสอบ และ MMD ยืนยันแล้วเท่านั้น</p>
+        <div id="session-extension" class="stack"><p class="empty">กำลังตรวจ Session ที่ใช้งานอยู่ครับ</p></div>
+      </div>
       <details class="card details"><summary data-copy="requestsLabel">Recent requests</summary><div id="requests" class="stack"></div></details>
       <details class="card details"><summary data-copy="mmsLabel">MMS prebookings</summary><div id="mms" class="stack"></div></details>
     </section>
@@ -240,6 +249,7 @@ function renderShell(config, nonce) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {});
+    await readSessionExtension();
     await readCouponWallet();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
@@ -412,6 +422,131 @@ function renderShell(config, nonce) {
     document.getElementById("history-window").textContent = safeDate(historyView.from) && safeDate(historyView.to) ? shortDate(historyView.from) + " - " + shortDate(historyView.to) : (historyView.status === "checking" ? (copy.checking || "") : "");
     renderBoundedRows("v2-history", historyView.status === "verified" ? historyView.events : [], historyView.status === "checking" ? copy.checking : copy.empty, (item) => eventRow(item.date, item.title, item.status, item.type === "points" ? signedPoints(item.points_delta) : item.type));
     renderBoundedRows("payment-history", payments.historical_verified, copy.empty, (item) => eventRow(item.date, item.title, item.status, Number.isInteger(item.amount) ? item.amount + " THB" : ""));
+  }
+
+  async function extensionFetch(path, options = {}) {
+    const response = await fetch(path, {
+      credentials:"same-origin",
+      headers:{"accept":"application/json",...(options.body?{"content-type":"application/json"}:{})},
+      ...options,
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.ok !== true) {
+      const error = new Error(String(payload?.error?.code || "SESSION_EXTENSION_UNAVAILABLE"));
+      error.code = payload?.error?.code || "SESSION_EXTENSION_UNAVAILABLE";
+      throw error;
+    }
+    return payload;
+  }
+
+  async function requestSessionExtension(sessionId, minutes, note = "") {
+    const payload = await extensionFetch(CONFIG.sessionExtensionRequestEndpoint, {
+      method:"POST",
+      body:JSON.stringify({session_id:sessionId,request_kind:"extend_time",requested_minutes:minutes,note}),
+    });
+    renderSessionExtension(payload);
+    await readSessionExtension();
+  }
+
+  async function requestChangePlan(sessionId, note) {
+    const text = String(note || "").trim();
+    if (!text) return;
+    const payload = await extensionFetch(CONFIG.sessionExtensionRequestEndpoint, {
+      method:"POST",
+      body:JSON.stringify({session_id:sessionId,request_kind:"change_plan",note:text}),
+    });
+    renderSessionExtension(payload);
+    await readSessionExtension();
+  }
+
+  function extensionTime(value) {
+    const date = new Date(String(value || ""));
+    return Number.isNaN(date.getTime()) ? "—" : new Intl.DateTimeFormat(
+      locale === "zh" ? "zh-CN" : locale === "en" ? "en-GB" : "th-TH",
+      {day:"numeric",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Bangkok"}
+    ).format(date);
+  }
+
+  function extensionStatusText(status) {
+    const th = {
+      requested:"ส่งให้ Model แล้ว · รอการตอบรับ",
+      model_approved:"Model อนุมัติแล้ว · MMD กำลังเตรียมยอด",
+      model_declined:"Model ไม่สะดวกต่อเวลานี้",
+      payment_required:"พร้อมชำระเงินเพิ่ม",
+      payment_pending:"ได้รับรายการชำระแล้ว · รอตรวจสอบ",
+      payment_verified:"ชำระเงินตรวจสอบแล้ว · กำลังยืนยันเวลาใหม่",
+      mmd_confirmed:"MMD ยืนยันเวลาใหม่แล้ว",
+      review_required:"MMD ต้องตรวจรายละเอียดนี้ก่อน",
+      cancelled:"คำขอนี้ถูกยกเลิก",
+    };
+    return th[String(status || "")] || "กำลังตรวจสอบ";
+  }
+
+  function renderSessionExtension(payload) {
+    const container = document.getElementById("session-extension");
+    if (!container) return;
+    container.replaceChildren();
+    const session = payload?.session || null;
+    const ext = payload?.extension || null;
+    if (!session) return appendEmpty(container, "ยังไม่มี Active Session ที่เปิดให้ต่อเวลาครับ");
+
+    const summary = document.createElement("div");
+    summary.className = "benefit-card";
+    const official = document.createElement("span"); official.className = "label"; official.textContent = "OFFICIAL END TIME";
+    const time = document.createElement("strong"); time.textContent = extensionTime(ext?.confirmed_end_at || session.official_end_at);
+    summary.append(official,time);
+    if (ext) {
+      const state = document.createElement("span"); state.className = "sub"; state.textContent = extensionStatusText(ext.status); summary.append(state);
+      if (ext.requested_end_at && ext.status !== "mmd_confirmed") {
+        const requested = document.createElement("span"); requested.className = "sub";
+        requested.textContent = "เวลาที่ขอ: " + extensionTime(ext.requested_end_at) + (ext.customer_amount_thb ? " · " + formatThb(ext.customer_amount_thb) : "");
+        summary.append(requested);
+      }
+      if (ext.status === "payment_required" && ext.customer_payment_url) {
+        const pay = document.createElement("a");
+        pay.href = ext.customer_payment_url; pay.className = "extension-pay"; pay.textContent = "ชำระ Extension ↗";
+        summary.append(pay);
+      }
+    }
+    container.append(summary);
+
+    if (payload.can_request !== true) return;
+    const controls = document.createElement("div"); controls.className = "stack";
+    const title = document.createElement("span"); title.className = "label"; title.textContent = "EXTEND TIME";
+    controls.append(title);
+    for (const [label,minutes] of [["+30 นาที",30],["+1 ชั่วโมง",60],["+2 ชั่วโมง",120],["+3 ชั่วโมง",180]]) {
+      const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try { await requestSessionExtension(session.session_id, minutes); }
+        catch (error) { show(error.code === "SESSION_NOT_ACTIVE" ? "Extension เปิดเมื่อเริ่มงานแล้วครับ" : "ตอนนี้ยังส่งคำขอต่อเวลาไม่ได้ครับ"); button.disabled = false; }
+      });
+      controls.append(button);
+    }
+    const note = document.createElement("textarea"); note.maxLength = 600; note.placeholder = "เปลี่ยนแผน เช่น จาก Dinner อยากไปต่อ Bar หรือเปลี่ยนกิจกรรม";
+    const change = document.createElement("button"); change.type = "button"; change.textContent = "CHANGE PLAN · ส่งให้ MMD ตรวจ";
+    change.addEventListener("click", async () => {
+      if (!note.value.trim()) { note.focus(); return; }
+      change.disabled = true;
+      try { await requestChangePlan(session.session_id, note.value); }
+      catch { show("ตอนนี้ยังส่ง Change Plan ไม่ได้ครับ"); change.disabled = false; }
+    });
+    controls.append(note,change);
+    container.append(controls);
+  }
+
+  async function readSessionExtension() {
+    const container = document.getElementById("session-extension");
+    if (!container) return null;
+    try {
+      const payload = await extensionFetch(CONFIG.sessionExtensionEndpoint, {method:"GET"});
+      renderSessionExtension(payload);
+      return payload;
+    } catch {
+      container.replaceChildren();
+      appendEmpty(container, "ตอนนี้ยังตรวจ Extension ไม่ได้ครับ");
+      return null;
+    }
   }
 
   function renderBoundedRows(id, items, emptyCopy, renderItem) { const container = document.getElementById(id); container.replaceChildren(); const safe = safeList(items); if (!safe.length) return appendEmpty(container, emptyCopy); for (const item of safe) container.append(renderItem(item)); }
