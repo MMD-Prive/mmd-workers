@@ -76,7 +76,8 @@ async function bridgeAdminRead(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const path = normalizePath(new URL(request.url).pathname);
-    if (path === DASHBOARD_PATH) return bridgeAdminRead(request, env, "dashboard");\n    if (path === DASHBOARD_ANALYTICS_PATH) return bridgeAdminRead(request, env, "dashboard-analytics");
+    if (path === DASHBOARD_PATH) return bridgeAdminRead(request, env, "dashboard");
+    if (path === DASHBOARD_ANALYTICS_PATH) return bridgeAdminRead(request, env, "dashboard-analytics");
     if (path === DASHBOARD_OWNER_ACTIONS_PATH) return bridgeAdminRead(request, env, "dashboard-owner-actions");
     if (path === CLIENT_INTELLIGENCE_PATH) return bridgeAdminRead(request, env, "client-intelligence");
     if (path === CLIENT_INTELLIGENCE_AUDIT_PATH) return bridgeAdminRead(request, env, "client-intelligence-audit");
