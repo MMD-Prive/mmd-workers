@@ -13,6 +13,10 @@ const APPLICATION_FIELDS = Object.freeze({
   reviewStatus: "fldInXMklAz53CiCq",
   intakeStatus: "fldHk2h9Rf6g5UlZw",
   submittedAt: "fldRs4JdlxOdtlqp9",
+  approvedRoles: "fldz20JiFUK9ubk1c",
+  bookingMode: "fldjo1NpDcB0JXk91",
+  publicProfileApproved: "fldcnCF3KrdAd4cfa",
+  credentialStatus: "fldFM8T50S1zObdVP",
 });
 
 export function isPublicProfilesCatalogRequest(path, method = "GET") {
@@ -31,11 +35,11 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
     const prefixes = catalogPrefixes(env.PUBLIC_MODEL_CATALOG_PREFIXES || env.PUBLIC_MODEL_CATALOG_PREFIX || DEFAULT_CATALOG_PREFIX);
     const objects = [];
     for (const prefix of prefixes) objects.push(...await listPrefix(env.MMD_MODEL_ASSETS, prefix));
-    const audienceBySlug = await loadApprovedCustomerScopes(env);
+    const eligibilityBySlug = await loadApprovedEligibility(env);
     const items = buildPublicCatalog(objects, {
       prefixes,
       publicAssetBase: env.MODEL_PUBLIC_ASSET_BASE_URL || DEFAULT_PUBLIC_ASSET_BASE,
-      audienceBySlug,
+      eligibilityBySlug,
     });
     return json({
       ok: true,
@@ -50,7 +54,17 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
   }
 }
 
-export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, audienceBySlug = new Map() } = {}) {
+export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), audienceBySlug = null } = {}) {
+  // audienceBySlug is accepted only for backward-compatible unit callers. It never
+  // grants public visibility: a model still needs an explicit approved eligibility row.
+  if (!(eligibilityBySlug instanceof Map) || eligibilityBySlug.size === 0) {
+    eligibilityBySlug = new Map();
+    if (audienceBySlug instanceof Map) {
+      for (const [slug, genders] of audienceBySlug.entries()) {
+        eligibilityBySlug.set(slug, { genders, roles: [], booking_mode: "curated", public_profile_approved: false, credential_status: "not_required" });
+      }
+    }
+  }
   const groups = new Map();
   const normalizedPrefixes = catalogPrefixes(prefixes);
   for (const object of Array.isArray(objects) ? objects : []) {
@@ -74,14 +88,14 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
   return [...groups.values()].map((group) => {
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
     const photos = group.photos.slice(0, 6).map((photo) => photo.url);
-    const hasApprovedScope = audienceBySlug instanceof Map && audienceBySlug.has(group.slug);
-    const acceptedCustomerGenders = hasApprovedScope
-      ? normalizeCustomerGenders(audienceBySlug.get(group.slug))
-      : ["male", "female"];
-    // An approved application with an empty or unsupported explicit scope must
-    // not be broadened to both genders. Legacy R2 folders without an approved
-    // application keep the owner-confirmed all-genders fallback.
-    if (hasApprovedScope && acceptedCustomerGenders.length === 0) return null;
+    const eligibility = eligibilityBySlug instanceof Map ? eligibilityBySlug.get(group.slug) : null;
+    if (!eligibility || eligibility.public_profile_approved !== true) return null;
+    const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
+    const approvedRoles = normalizeRoleKeys(eligibility.roles);
+    if (!acceptedCustomerGenders.length || !approvedRoles.length) return null;
+    if (approvedRoles.includes("medical_professional") && clean(eligibility.credential_status).toLowerCase() !== "verified") {
+      return null;
+    }
     return {
       slug: group.slug,
       display_name: group.display_name,
@@ -89,13 +103,15 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       photos,
       customer_scope: acceptedCustomerGenders.length === 1 ? `${acceptedCustomerGenders[0]}_only` : "all_genders",
       accepted_customer_genders: acceptedCustomerGenders,
+      approved_roles: approvedRoles,
+      booking_mode: normalizeBookingMode(eligibility.booking_mode),
       visibility: "public",
       source: "r2_public_model",
     };
   }).filter(Boolean).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
 }
 
-async function loadApprovedCustomerScopes(env) {
+async function loadApprovedEligibility(env) {
   const index = new Map();
   if (!clean(env.AIRTABLE_API_KEY) || !clean(env.AIRTABLE_BASE_ID)) return index;
   try {
@@ -122,15 +138,34 @@ async function loadApprovedCustomerScopes(env) {
         if (reviewStatus !== "accepted" || intakeStatus !== "approved") continue;
         const name = clean(fields[APPLICATION_FIELDS.workingName] || fields[APPLICATION_FIELDS.nickname]);
         const slug = slugify(name);
-        const genders = customerGendersFromScope(fields[APPLICATION_FIELDS.customerScope]);
-        if (slug && !index.has(slug)) index.set(slug, genders);
+        if (!slug || index.has(slug)) continue;
+        index.set(slug, {
+          genders: customerGendersFromScope(fields[APPLICATION_FIELDS.customerScope]),
+          roles: choiceNames(fields[APPLICATION_FIELDS.approvedRoles]),
+          booking_mode: choiceName(fields[APPLICATION_FIELDS.bookingMode]),
+          public_profile_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicProfileApproved]),
+          credential_status: choiceName(fields[APPLICATION_FIELDS.credentialStatus]),
+        });
       }
       offset = clean(data.offset);
     } while (offset && seen < 500);
   } catch (error) {
-    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "customer_scope_fallback", error: String(error?.message || error) }));
+    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_eligibility_unavailable", error: String(error?.message || error) }));
   }
   return index;
+}
+
+function choiceNames(value) {
+  return (Array.isArray(value) ? value : [value]).map(choiceName).filter(Boolean);
+}
+function checkboxTrue(value) { return value === true || value === 1 || clean(value).toLowerCase() === "true"; }
+function normalizeRoleKeys(value) {
+  const allowed = new Set(["everyday_companion","driver_companion","culinary_companion","social_appearance","bangkok_companion","sport_activity","wellness_companion","business_companion","nightlife_companion","creative_companion","medical_professional"]);
+  return [...new Set((Array.isArray(value) ? value : []).map((item) => clean(item).toLowerCase()).filter((item) => allowed.has(item)))];
+}
+function normalizeBookingMode(value) {
+  const mode = clean(value).toLowerCase();
+  return ["direct","brief_only"].includes(mode) ? mode : "curated";
 }
 
 function customerGendersFromScope(value) {
