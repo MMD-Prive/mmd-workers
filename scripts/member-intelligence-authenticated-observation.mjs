@@ -107,6 +107,34 @@ function increment(map, key) {
   map[key] = (map[key] || 0) + 1;
 }
 
+function safeUnavailableDraftContract(payload) {
+  const ai = payload?.ai || {};
+  const draft = ai.suggested_reply || {};
+  const applies = draft.applies || {};
+  const guards = draft.guardrails || {};
+  const authority = payload?.authority || {};
+  const channel = clean(draft.channel).toLowerCase();
+  const reason = clean(draft.reason).toLowerCase();
+
+  return ai.advisory_only === true
+    && authority.ai === "advisory"
+    && draft.schema === "mmd.kenji_continuity_operator_draft.v1"
+    && draft.mode === "operator_draft"
+    && draft.available === false
+    && draft.text === null
+    && (!channel || ALLOWED_CHANNELS.has(channel))
+    && draft.send_allowed === false
+    && draft.requires_owner_review === true
+    && ALLOWED_UNAVAILABLE_REASONS.has(reason)
+    && applies.preferred_name === false
+    && applies.returning_tone === false
+    && applies.continuity_acknowledgement === false
+    && guards.customer_auto_send === false
+    && guards.business_truth_claims === false
+    && guards.memory_is_context_only === true
+    && typeof guards.protected_truth_refresh_required === "boolean";
+}
+
 function safeDraftContract(payload) {
   const identity = payload?.identity || {};
   const ai = payload?.ai || {};
@@ -157,9 +185,11 @@ function copyReadyContract(payload) {
     && runtime.reason === "clear";
 }
 
-function classifyResult({ ready, safe, violations, endpointErrors }) {
+function classifyResult({ ready, safe, violations, endpointErrors, degradedProjections }) {
   if (violations > 0) return { status: "contract_violation", healthy: false };
-  if (endpointErrors > 0) return { status: "observation_degraded", healthy: false };
+  if (endpointErrors > 0 || degradedProjections > 0) {
+    return { status: "observation_degraded", healthy: false };
+  }
   if (ready > 0) return { status: "human_acceptance_ready", healthy: true };
   if (safe > 0) return { status: "safe_draft_not_copy_ready", healthy: true };
   return { status: "no_current_eligible_draft", healthy: true };
@@ -239,6 +269,7 @@ export async function runAuthenticatedObservation({
   let safetyContractViolationCount = 0;
   let responseContractViolationCount = 0;
   let endpointErrorCount = 0;
+  let degradedProjectionCount = 0;
 
   for (const id of ids) {
     checkedCount += 1;
@@ -276,11 +307,29 @@ export async function runAuthenticatedObservation({
     }
 
     projectionCount += 1;
-    increment(projectionCounts, projectionBucket(payload.data_status));
+    const dataStatus = projectionBucket(payload.data_status);
+    increment(projectionCounts, dataStatus);
+    if (dataStatus === "other") {
+      responseContractViolationCount += 1;
+      continue;
+    }
+    if (dataStatus === "degraded") {
+      degradedProjectionCount += 1;
+      continue;
+    }
+
     const draft = payload?.ai?.suggested_reply || {};
-    if (draft.available !== true) {
+    if (draft.available === false) {
+      if (!safeUnavailableDraftContract(payload)) {
+        responseContractViolationCount += 1;
+        continue;
+      }
       unavailableDraftCount += 1;
       increment(unavailableReasons, unavailableReason(draft.reason));
+      continue;
+    }
+    if (draft.available !== true) {
+      responseContractViolationCount += 1;
       continue;
     }
 
@@ -298,6 +347,7 @@ export async function runAuthenticatedObservation({
     safe: safeDraftCount,
     violations: violationCount,
     endpointErrors: endpointErrorCount,
+    degradedProjections: degradedProjectionCount,
   });
   const orderedReasons = Object.fromEntries(Object.entries(unavailableReasons).sort(([a], [b]) => a.localeCompare(b)));
   const orderedEndpointErrors = Object.fromEntries(Object.entries(endpointErrorBuckets).sort(([a], [b]) => a.localeCompare(b)));
@@ -313,6 +363,7 @@ export async function runAuthenticatedObservation({
       candidate_count: ids.length,
       checked_count: checkedCount,
       projection_count: projectionCount,
+      degraded_projection_count: degradedProjectionCount,
       endpoint_error_count: endpointErrorCount,
       endpoint_error_buckets: orderedEndpointErrors,
       response_contract_violation_count: responseContractViolationCount,
