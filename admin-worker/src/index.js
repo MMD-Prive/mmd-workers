@@ -2154,6 +2154,7 @@ function modelSessionTables(env = {}) {
         googleMapUrl: str(env.AT_SESSIONS__GOOGLE_MAP_URL || "google_map_url"),
         payModelThb: str(env.AT_SESSIONS__MODEL_PAYOUT_AMOUNT_THB || "pay_model_thb"),
         packageCode: str(env.AT_SESSIONS__PACKAGE_CODE || "package_code"),
+        modelWorkLane: str(env.AT_SESSIONS__MODEL_WORK_LANE || "model_work_lane"),
       },
     },
   };
@@ -2433,8 +2434,27 @@ function modelSessionPageSlug(page) {
   return str(page?.path).replace(/^\/model\/session\//, "").replace(/-/g, "_");
 }
 
-function modelSessionPayoutTerms(packageCode, basePayoutThb) {
+function modelSessionPayoutTerms(workLane, packageCode, basePayoutThb) {
+  const lane = str(workLane).trim().toLowerCase();
   const code = str(packageCode).trim().toLowerCase();
+  const safeBasePayout = Number.isFinite(basePayoutThb) && basePayoutThb > 0 ? basePayoutThb : null;
+
+  if (lane === "private_model") {
+    return {
+      policy_version: "mmd_private_model_money_v1_20260922",
+      money_lane: "private_model",
+      compensation_mode: "case_locked",
+      base_payout_thb: safeBasePayout,
+      public_package_matrix_applies: false,
+      public_ot_matrix_applies: false,
+      extension_rate_mode: "mmd_case_quote_required",
+      extension_requires_model_approval: true,
+      extension_requires_mmd_confirmation: true,
+    };
+  }
+
+  if (lane !== "public_model") return null;
+
   const terms = {
     pick_me_up: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
     airport_please: { overtime_payout_thb_per_hour: 550, late_night_payout_thb: 200, extra_km_payout_thb: 15, reimbursable_expenses: ["tollway", "parking"] },
@@ -2451,12 +2471,32 @@ function modelSessionPayoutTerms(packageCode, basePayoutThb) {
     dinner_to_midnight: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     own_the_night: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
   }[code];
-  if (!terms) return null;
+
+  if (!terms) {
+    return {
+      policy_version: "mmd_public_model_money_v1_20260922",
+      money_lane: "public_model",
+      compensation_mode: "public_session_locked",
+      package_code: code || null,
+      base_payout_thb: safeBasePayout,
+      public_package_matrix_applies: false,
+      public_ot_matrix_applies: false,
+      extension_rate_mode: "package_policy_missing_review_required",
+      extension_requires_model_approval: true,
+      extension_requires_mmd_confirmation: true,
+    };
+  }
+
   return {
-    policy_version: "mmd_model_payout_v1_20260922",
+    policy_version: "mmd_public_model_money_v1_20260922",
+    money_lane: "public_model",
+    compensation_mode: "public_package_matrix",
     package_code: code,
-    base_payout_thb: Number.isFinite(basePayoutThb) && basePayoutThb > 0 ? basePayoutThb : null,
+    base_payout_thb: safeBasePayout,
+    public_package_matrix_applies: true,
+    public_ot_matrix_applies: true,
     ...terms,
+    extension_requires_model_approval: true,
     extension_requires_mmd_confirmation: true,
   };
 }
@@ -2469,6 +2509,7 @@ function modelSessionResponseSession(tables, record) {
   const page = resolveModelSessionPage(normalized);
   const payModelThb = Number(fields[names.payModelThb]);
   const packageCode = str(fields[names.packageCode] || "");
+  const modelWorkLane = str(fields[names.modelWorkLane] || "");
   const safePayModelThb = Number.isFinite(payModelThb) && payModelThb > 0 ? payModelThb : null;
   return {
     session_id: str(fields[names.sessionId] || ""),
@@ -2484,8 +2525,9 @@ function modelSessionResponseSession(tables, record) {
     location_name: str(fields[names.locationName] || ""),
     google_map_url: str(fields[names.googleMapUrl] || ""),
     package_code: packageCode || null,
+    model_work_lane: modelWorkLane || null,
     pay_model_thb: safePayModelThb,
-    payout_terms: modelSessionPayoutTerms(packageCode, safePayModelThb),
+    payout_terms: modelSessionPayoutTerms(modelWorkLane, packageCode, safePayModelThb),
   };
 }
 
