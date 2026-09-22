@@ -85,9 +85,21 @@ function unavailableProjection(clientId, reason = "active_matrix_required") {
         mode: "operator_draft",
         available: false,
         text: null,
+        channel: "line",
         send_allowed: false,
         requires_owner_review: true,
         reason,
+        applies: {
+          preferred_name: false,
+          returning_tone: false,
+          continuity_acknowledgement: false,
+        },
+        guardrails: {
+          customer_auto_send: false,
+          business_truth_claims: false,
+          memory_is_context_only: true,
+          protected_truth_refresh_required: false,
+        },
       },
     },
     authority: { ai: "advisory" },
@@ -235,6 +247,51 @@ test("marks even a partial intelligence endpoint failure as degraded", async () 
   assert.equal(result.scan.endpoint_error_count, 1);
   assert.deepEqual(result.scan.endpoint_error_buckets, { server_error: 1 });
   assert.equal(JSON.stringify(result).includes("Never emit this"), false);
+});
+
+test("fails closed on an HTTP-200 degraded projection", async () => {
+  const degraded = {
+    ...unavailableProjection(CLIENT_A),
+    data_status: "degraded",
+  };
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, degraded]]),
+  });
+
+  const result = await runAuthenticatedObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "observation_degraded");
+  assert.equal(result.healthy, false);
+  assert.equal(result.projections.degraded, 1);
+  assert.equal(result.scan.degraded_projection_count, 1);
+  assert.equal(result.drafts.unavailable_count, 0);
+});
+
+test("rejects a malformed unavailable-draft projection", async () => {
+  const malformed = {
+    ok: true,
+    data_status: "live",
+    client_id: CLIENT_A,
+    ai: {
+      advisory_only: true,
+      suggested_reply: {
+        available: false,
+        reason: "active_matrix_required",
+      },
+    },
+    authority: { ai: "advisory" },
+  };
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, malformed]]),
+  });
+
+  const result = await runAuthenticatedObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.scan.response_contract_violation_count, 1);
+  assert.equal(result.drafts.unavailable_count, 0);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
 });
 
 test("bounds scans and never emits rejected login details", async () => {

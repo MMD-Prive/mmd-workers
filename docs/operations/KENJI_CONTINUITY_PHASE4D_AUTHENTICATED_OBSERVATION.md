@@ -13,7 +13,7 @@ The manually dispatched workflow establishes a credential-bound owner session an
 - runtime kill switches permit copy only when both controls are clear; and
 - at least one current draft is ready for human acceptance, when eligible data exists.
 
-The workflow reports `no_current_eligible_draft` as a healthy observation. The absence of a suitable current conversation is not a deployment failure. Endpoint failure or any available draft that violates the safety contract fails closed.
+The workflow reports `no_current_eligible_draft` as a healthy observation. The absence of a suitable current conversation is not a deployment failure. Endpoint failure, an HTTP-200 degraded projection, a malformed unavailable-draft projection, or any available draft that violates the safety contract fails closed.
 
 ## Privacy and authority boundary
 
