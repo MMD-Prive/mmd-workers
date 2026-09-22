@@ -1,0 +1,40 @@
+name = "cal-sync-worker"
+main = "src/index.js"
+compatibility_date = "2026-09-14"
+
+[vars]
+MMD_TIMEZONE = "Asia/Bangkok"
+CAL_SHADOW_MODE = "true"
+# Narrow outbound write scope: only ensure MMD Internal Hold bookings.
+# Cal webhook lifecycle remains shadow/identity-ledger only.
+CAL_INTERNAL_HOLD_WRITE_ENABLED = "true"
+CAL_INTERNAL_HOLD_EVENT_TYPE_ID = "7057823"
+CAL_INTERNAL_ATTENDEE_NAME = "MMD Privé Internal Hold"
+CAL_INTERNAL_ATTENDEE_EMAIL = "malemodel.bkk@gmail.com"
+CAL_INTERNAL_HOLD_LOCATION = "MMD Internal Hold"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+CAL_BOOKING_LINKS_TABLE_ID = "tbl6saWYEQrEdnMIK"
+
+# Secrets (configure outside source control):
+# CAL_WEBHOOK_SECRET
+# AIRTABLE_API_KEY (or AIRTABLE_TOKEN) — required only for the non-authoritative
+# Cal booking identity ledger. Never commit the token here.
+# CAL_API_KEY (optional; MCP OAuth is used for ChatGPT control)
+#
+# Shadow mode may persist Cal booking identity (UID -> Session/Job metadata)
+# but must not mutate MMD Session, Payment, Membership, Client, pricing,
+# cancellation, or entitlement truth.
+# Do not set CAL_SHADOW_MODE="false" until lifecycle mutation rules are
+# explicitly approved and covered by production smoke tests.
+
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[[durable_objects.bindings]]
+name = "CAL_HOLD_COORDINATOR"
+class_name = "CalInternalHoldCoordinator"
+
+[[migrations]]
+tag = "v2026-09-20-cal-internal-hold-coordinator"
+new_sqlite_classes = ["CalInternalHoldCoordinator"]

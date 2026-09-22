@@ -1,0 +1,184 @@
+name: Repair Customer Data Airtable
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/repair-customer-data-airtable.yml"
+
+concurrency:
+  group: repair-customer-data-airtable
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: immigrate-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: b176eda1172b741fd2e58904cc9d77c5
+      AIRTABLE_RUNTIME_TOKEN: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      AIRTABLE_STAGING_TABLE_ID: tblOs8yyLK09SKrCt
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: immigrate-worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate canonical Airtable token without exposing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${AIRTABLE_RUNTIME_TOKEN:-}" ]; then
+            echo "Canonical Airtable GitHub secret is missing" >&2
+            exit 2
+          fi
+          echo "::add-mask::${AIRTABLE_RUNTIME_TOKEN}"
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w '%{http_code}' \
+            -H "Authorization: Bearer ${AIRTABLE_RUNTIME_TOKEN}" \
+            "https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_STAGING_TABLE_ID}?maxRecords=1&pageSize=1")"
+          if [ "$code" != "200" ]; then
+            echo "Canonical Airtable token validation failed: airtable_${code}" >&2
+            exit 3
+          fi
+          echo "Canonical Airtable token can read Customer Data staging"
+
+      - name: Replace immigrate-worker Airtable secret with canonical token
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$AIRTABLE_RUNTIME_TOKEN" | npx --yes wrangler@4.128.0 secret put AIRTABLE_API_KEY --name immigrate-worker
+
+      - name: Patch exact Customer Data bridge and token-gated diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(node -e 'console.log(require("node:crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$token"
+          echo "CUSTOMER_DATA_REPAIR_DIAG_TOKEN=$token" >> "$GITHUB_ENV"
+          CUSTOMER_DATA_REPAIR_DIAG_TOKEN="$token" node <<'NODE'
+          const fs = require("node:fs");
+          const token = process.env.CUSTOMER_DATA_REPAIR_DIAG_TOKEN;
+
+          const routesFile = "src/internal-routes.ts";
+          let routes = fs.readFileSync(routesFile, "utf8");
+          const customerNeedle = '  if (!path.startsWith("/v1/admin/customer-data")) return null;\n  const gate = await requireAdminGate(request, env);\n  if (gate) return gate;\n  try {';
+          const customerPatch = '  if (!path.startsWith("/v1/admin/customer-data")) return null;\n' +
+            '  if (path === "/v1/admin/customer-data/_repair-diag" && request.method === "GET") {\n' +
+            `    if (request.headers.get("x-mmd-ci-diagnostic") !== ${JSON.stringify(token)}) return Response.json({ ok: false, error: "not_found" }, { status: 404 });\n` +
+            '    try {\n' +
+            '      airtableConfig(env);\n' +
+            '      const staging = tableIds(env).staging;\n' +
+            '      await airtableList(env, staging, { maxRecords: "1", pageSize: "1" });\n' +
+            '      return Response.json({ ok: true, status: "airtable_ok" }, { headers: { "cache-control": "no-store" } });\n' +
+            '    } catch (error) {\n' +
+            '      const code = str(error?.message) || "customer_data_diag_failed";\n' +
+            '      return Response.json({ ok: false, status: code }, { status: 200, headers: { "cache-control": "no-store" } });\n' +
+            '    }\n' +
+            '  }\n' +
+            '  const gate = await requireAdminGate(request, env);\n' +
+            '  if (gate) return gate;\n' +
+            '  try {';
+          if (!routes.includes(customerNeedle)) throw new Error("Unable to locate exact Customer Data API auth gate");
+          routes = routes.replace(customerNeedle, customerPatch);
+          fs.writeFileSync(routesFile, routes);
+
+          const indexFile = "src/index.ts";
+          let index = fs.readFileSync(indexFile, "utf8");
+          const apiNeedle = 'if (pathname.startsWith("/a/")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          const apiPatch = 'if (pathname.startsWith("/a/")) return true;\n  if (pathname.startsWith("/v1/admin/customer-data")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          if (!index.includes('pathname.startsWith("/v1/admin/customer-data")')) {
+            if (!index.includes(apiNeedle)) throw new Error("Unable to locate Customer Data API bridge guard");
+            index = index.replace(apiNeedle, apiPatch);
+          }
+          const pageNeedle = 'pathname === CONTROL_ROOM.root ||\n    pathname === ADMIN_JOBS.createSession ||';
+          const pagePatch = 'pathname === CONTROL_ROOM.root ||\n    pathname === "/internal/admin/customer-data" ||\n    pathname.startsWith("/internal/admin/customer-data/") ||\n    pathname === ADMIN_JOBS.createSession ||';
+          if (!index.includes('pathname === "/internal/admin/customer-data"')) {
+            if (!index.includes(pageNeedle)) throw new Error("Unable to locate Customer Data page bridge guard");
+            index = index.replace(pageNeedle, pagePatch);
+          }
+          fs.writeFileSync(indexFile, index);
+          NODE
+
+      - name: Upload and deploy diagnostic Worker with repaired secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.128.0 versions upload --keep-vars --tag customer-data-repair-diag --message "Verify repaired Customer Data Airtable secret" 2>&1 | tee "$RUNNER_TEMP/customer-data-repair-upload.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/customer-data-repair-upload.log" | tail -n 1)"
+          test -n "$version_id"
+          echo "CUSTOMER_DATA_REPAIR_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          npx --yes wrangler@4.128.0 versions deploy "${version_id}@100%" -y
+
+      - name: Verify Airtable through production Worker
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          body="$(mktemp)"
+          code="$(curl -sS -o "$body" -w '%{http_code}' \
+            -H "x-mmd-ci-diagnostic: ${CUSTOMER_DATA_REPAIR_DIAG_TOKEN}" \
+            "https://mmdbkk.com/v1/admin/customer-data/_repair-diag")"
+          status="$(node - "$code" "$body" <<'NODE'
+          const fs = require("node:fs");
+          const [code, file] = process.argv.slice(2);
+          let data = {};
+          try { data = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
+          process.stdout.write(String(data.status || data.error || `http_${code}`));
+          NODE
+          )"
+          echo "Customer Data production Airtable status: $status"
+          test "$status" = "airtable_ok"
+
+      - name: Restore clean production Worker with repaired secret
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout -- src/internal-routes.ts src/index.ts
+          node <<'NODE'
+          const fs = require("node:fs");
+          const file = "src/index.ts";
+          let source = fs.readFileSync(file, "utf8");
+          const apiNeedle = 'if (pathname.startsWith("/a/")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          const apiPatch = 'if (pathname.startsWith("/a/")) return true;\n  if (pathname.startsWith("/v1/admin/customer-data")) return true;\n  if (INTERNAL_ROUTES_BRIDGE_ADMIN_API_PATHS.has(pathname)) return true;';
+          if (!source.includes('pathname.startsWith("/v1/admin/customer-data")')) {
+            if (!source.includes(apiNeedle)) throw new Error("Unable to locate Customer Data API bridge guard");
+            source = source.replace(apiNeedle, apiPatch);
+          }
+          const pageNeedle = 'pathname === CONTROL_ROOM.root ||\n    pathname === ADMIN_JOBS.createSession ||';
+          const pagePatch = 'pathname === CONTROL_ROOM.root ||\n    pathname === "/internal/admin/customer-data" ||\n    pathname.startsWith("/internal/admin/customer-data/") ||\n    pathname === ADMIN_JOBS.createSession ||';
+          if (!source.includes('pathname === "/internal/admin/customer-data"')) {
+            if (!source.includes(pageNeedle)) throw new Error("Unable to locate Customer Data page bridge guard");
+            source = source.replace(pageNeedle, pagePatch);
+          }
+          fs.writeFileSync(file, source);
+          NODE
+          npx --yes wrangler@4.128.0 versions upload --keep-vars --tag customer-data-repair-clean --message "Customer Data clean production after Airtable repair" 2>&1 | tee "$RUNNER_TEMP/customer-data-repair-clean.log"
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/customer-data-repair-clean.log" | tail -n 1)"
+          test -n "$version_id"
+          npx --yes wrangler@4.128.0 versions deploy "${version_id}@100%" -y
+
+      - name: Confirm repair completed
+        shell: bash
+        working-directory: .
+        run: echo "Customer Data Airtable repair completed and clean Worker restored."

@@ -1,0 +1,38 @@
+name: Per Rename Active Entrypoint Guard
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/admin-login-hero-core.js"
+      - "admin-worker/src/admin-live-marker-wrapper.js"
+      - "admin-worker/src/per-rename-client-search.js"
+      - "admin-worker/wrangler.toml"
+      - "admin-worker/per-rename-client-search.test.mjs"
+      - "admin-worker/per-rename-entrypoint.test.mjs"
+      - ".github/workflows/per-rename-active-entrypoint-guard.yml"
+  push:
+    branches: [main]
+    paths:
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/src/admin-login-hero-core.js"
+      - "admin-worker/src/admin-live-marker-wrapper.js"
+      - "admin-worker/src/per-rename-client-search.js"
+      - "admin-worker/wrangler.toml"
+      - "admin-worker/per-rename-client-search.test.mjs"
+      - "admin-worker/per-rename-entrypoint.test.mjs"
+      - ".github/workflows/per-rename-active-entrypoint-guard.yml"
+
+jobs:
+  per-rename-entrypoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Per Rename contract regression
+        run: node admin-worker/per-rename-client-search.test.mjs
+      - name: Active entrypoint regression
+        run: node admin-worker/per-rename-entrypoint.test.mjs

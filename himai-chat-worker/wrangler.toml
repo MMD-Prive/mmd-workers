@@ -1,0 +1,103 @@
+name = "himai-chat-worker"
+main = "src/entry.js"
+compatibility_date = "2026-04-11"
+
+
+# Shared Himai/MMD Shop catalog + checkout routes. Keep /shop and /mmd-shop Webflow-owned.
+[[routes]]
+pattern = "mmdbkk.com/shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/api/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/order*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/order*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/product/*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/product/*"
+zone_name = "mmdbkk.com"
+
+[[services]]
+binding = "MEMBER_PAGES_WORKER"
+service = "member-pages-worker"
+
+[[services]]
+binding = "PAYMENTS_WORKER"
+service = "payments-worker"
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
+MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
+APP_NAME = "Himai Shop"
+AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_SUPPLIERS_TABLE = "Shared — Suppliers"
+SHARED_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
+DEFAULT_TIMEZONE = "Asia/Bangkok"
+LINE_OA_HANDLE = "@himaishop"
+LINE_OA_URL = "https://line.me/R/ti/p/@himaishop"
+REGISTER_PREFIX = "REGISTER HIMAI"
+
+# Airtable table IDs (configurable per environment)
+HIMAI_CUSTOMERS_TABLE_ID = "tblmNV3LP9kvXOzcU"
+CONSOLE_INBOX_TABLE_ID = "tblFHmfpB2TTrzO2e"
+SHARED_SHOP_PRODUCTS_TABLE_ID = "tblzsmNLfP6J0kQ90"
+HIMAI_STOCK_MOVEMENTS_TABLE_ID = "tbl2GMPrDr6sBW997"
+MMD_SHOP_INVENTORY_BATCHES_TABLE_ID = "tblwFgl4et1TOgtNn"
+MMD_SHOP_STOCK_MOVEMENTS_TABLE_ID = "tblASifwHdArNKQP2"
+MMD_SHOP_ORDERS_TABLE_ID = "tblr8lbi2wMuRM1N4"
+MMD_SHOP_ORDER_ITEMS_TABLE_ID = "tbl37Iprxz4OLL65P"
+MMD_SHOP_SUPPLIER_LEDGER_TABLE_ID = "tbl2hqvi2hmk3wpe0"
+MMD_SHOP_SUPPLIER_PAYOUTS_TABLE_ID = "tblJF9dH59FK31dgA"
+
+# Canonical Telegram forum destinations.
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_HIMAI_ORDERS = "157"
+TG_THREAD_HIMAI_PAYMENTS = "158"
+TG_THREAD_HIMAI_ALERTS = "159"
+TG_THREAD_MMD_SHOP_ORDERS = "160"
+TG_THREAD_MMD_SHOP_PAYMENTS = "161"
+TG_THREAD_MMD_SHOP_ALERTS = "162"
+
+# ---- Secrets (set via: wrangler secret put <NAME>) ----
+# AIRTABLE_TOKEN                      - Airtable API authentication
+# LINE_CHANNEL_SECRET                 - LINE webhook signature verification
+# LINE_CHANNEL_ACCESS_TOKEN           - LINE Bot API token
+# INTERNAL_TOKEN                      - Internal endpoint authorization
+# AUTH_SERVICE_HIMAI_TO_TELEGRAM      - Service auth for canonical telegram-worker routing
+# HIMAI_DISTRIBUTOR_PORTAL_TOKENS     - Distributor portal access map (JSON)
+
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+
+[[durable_objects.bindings]]
+name = "MMD_SHOP_STOCK_COORDINATOR"
+class_name = "MmdShopStockCoordinator"
+
+[[migrations]]
+tag = "mmd-shop-stock-coordinator-v1"
+new_sqlite_classes = ["MmdShopStockCoordinator"]

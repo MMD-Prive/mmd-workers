@@ -1,0 +1,209 @@
+import { CONCIERGE_CAPABILITY_PACK_VERSION, detectSharedConciergeCapability } from "../../shared/concierge-capability-pack-v1.mjs";
+import { RECOVERY_OUTCOME_TAXONOMY_VERSION } from "../../shared/recovery-outcome-taxonomy-v1.mjs";
+
+const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
+const MAX_WEBHOOK_BYTES = 64 * 1024;
+
+const SAFE_REPLIES = Object.freeze({
+  booking: "สวัสดีครับ พี่เฮนน่ารับเรื่องให้ได้ครับ 💚\nหากต้องการจองบริการ กดส่งคำขอจองพร้อมแจ้งวันที่ เวลา พื้นที่ และบริการที่สนใจได้เลยครับ ทีม MMS จะตรวจคิวและยืนยันกลับอีกครั้ง",
+  services: "MMS มีบริการนวดถึงที่แบบเป็นส่วนตัวครับ ทั้ง Aroma Oil, Thai, Sport, Office Syndrome, Health/Fitness Advisor, Herbal Compress, Partner-Present และ Women Massage\n\nบอกพี่เฮนน่าได้เลยครับว่าสนใจแบบไหน และต้องการรับบริการบริเวณไหน 💚",
+  apply: "สนใจสมัครเป็น Therapist กับ MMS ได้เลยครับ 💚\nกรอกข้อมูลผ่านหน้าใบสมัครอย่างเป็นส่วนตัว แล้วทีมงานจะตรวจประสบการณ์ ทักษะ และติดต่อกลับเป็นรายบุคคลครับ\nhttps://www.mmdbkk.com/apply/mms-therapist",
+  how_to: "MMS เป็นบริการส่ง Therapist ที่ผ่านการคัดเลือกไปดูแลคุณตามสถานที่นัดหมายครับ ขั้นแรกส่งคำขอจอง จากนั้นทีมงานจะตรวจบริการ พื้นที่ และคิว Therapist ก่อนยืนยันทุกครั้ง\n\nดูวิธีใช้บริการ: https://www.mmdbkk.com/male-massage/how-to-use",
+  shop_orders: "เรื่อง MMD Shop ให้เช็กจาก MY MMD โดยตรงนะครับ เพราะสถานะ Order/Payment เป็นข้อมูลสมาชิก\nhttps://www.mmdbkk.com/my-mmd/orders\nถ้าต้องการคุยข้ามระบบต่อ ใช้ HYPE @mmdprivebot ได้ครับ",
+  care_back_coupon: "CARE BACK / Coupon เป็นสิทธิ์สมาชิก MMD ครับ พี่เฮนน่ารู้ทางส่งต่อ แต่จะไม่เปิดหรือสร้างสิทธิ์แทนระบบ\nCARE BACK: https://www.mmdbkk.com/promotion/6-years-care-back\nCoupon Wallet: https://www.mmdbkk.com/my-mmd/coupons",
+  mms_therapist_options: "เรื่องตัวเลือก Therapist ฝั่ง MMS พี่เฮนน่ารับต่อได้ครับ 💚\nส่งวัน เวลา โซน และบริการ/อาการที่อยากเน้นมาก่อนได้ ตัวเลือกจริงต้องยึดจาก MMS ปัจจุบันและยังไม่ถือว่า Confirm Therapist จนกว่าจะยืนยันคิว",
+  hall_model_discovery: "ถ้าหมายถึง Model ฝั่ง MMD Privé ไม่ใช่ MMS ให้เลือกมุมมองผ่าน Hall ก่อนนะครับ HENNA จะไม่เดาเพศ/มุมมองหรือดึง Model ทั้งหมดมาให้\nhttps://www.mmdbkk.com/hall\nเรื่องข้ามระบบใช้ HYPE @mmdprivebot ได้ครับ",
+  points_coupon_balance: "Points / Coupon ของ MMD เป็นข้อมูลสมาชิกครับ พี่เฮนน่าจะไม่เดายอดจากแชต MMS และจะไม่อ่าน wallet ของ MMD เอง\nถ้าต้องการดูยอดที่ยืนยันแล้ว เปิด HYPE @mmdprivebot แบบ private ได้ครับ — HYPE อ่านเฉพาะ bounded canonical wallet หลังยืนยันตัวตน\nPoints: https://www.mmdbkk.com/my-mmd/points\nCoupons: https://www.mmdbkk.com/my-mmd/coupons",
+});
+
+export function lineBotStatus(env) {
+  const channelSecret = clean(env.LINE_CHANNEL_SECRET);
+  const accessToken = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
+  return {
+    configured: Boolean(channelSecret && accessToken),
+    channel_id: clean(env.MMS_LINE_CHANNEL_ID),
+    auto_reply_enabled: enabled(env.LINE_AUTO_REPLY_ENABLED),
+    persona: "HENNA",
+    capability_pack: CONCIERGE_CAPABILITY_PACK_VERSION,
+    recovery_outcome_taxonomy: RECOVERY_OUTCOME_TAXONOMY_VERSION,
+  };
+}
+
+export function classifyHennaIntent(input) {
+  const text = normalize(input);
+  if (!text) return "ignore";
+
+  const sharedCapability = detectSharedConciergeCapability(text);
+  if (sharedCapability === "shop_orders") return "shop_orders";
+  if (sharedCapability === "care_back_coupon") return "care_back_coupon";
+  if (sharedCapability === "mms_therapist_options") return "mms_therapist_options";
+  if (sharedCapability === "service_recovery") return "manual_recovery";
+  if (sharedCapability === "closed_loop_handoff") return "manual_handoff_status";
+  if (sharedCapability === "hall_model_discovery") return "hall_model_discovery";
+  if (sharedCapability === "points_coupon_balance") return "points_coupon_balance";
+  if (matches(text, ["สมัคร", "สมัครงาน", "therapist", "job", "ร่วมงาน"])) return "apply";
+  if (matches(text, ["วิธีใช้", "ใช้งานยังไง", "ขั้นตอน", "how to", "howto"])) return "how_to";
+  if (matches(text, ["บริการอะไร", "มีบริการ", "ประเภทนวด", "นวดอะไร", "service"])) return "services";
+  if (matches(text, ["จอง", "นัด", "book", "booking", "เรียก therapist"])) return "booking";
+  if (matches(text, ["ราคา", "เท่าไหร่", "ค่าบริการ", "เรท", "price", "rate"])) return "manual_price";
+  if (matches(text, ["ว่างไหม", "ใครว่าง", "คิวว่าง", "วันนี้ว่าง", "พรุ่งนี้ว่าง", "available", "availability"])) return "manual_availability";
+  if (matches(text, ["แอดมิน", "เจ้าหน้าที่", "คุยกับคน", "คุยกับเปอร์", "พี่เปอร์", "human", "admin"])) return "manual_handoff";
+  return "manual_unknown";
+}
+
+export function hennaReply(intent) {
+  return SAFE_REPLIES[intent] || "";
+}
+
+export async function handleMmsLineWebhook(request, env) {
+  const rawBody = await readWebhookBody(request);
+  const signature = clean(request.headers.get("x-line-signature"));
+  const channelSecret = clean(env.LINE_CHANNEL_SECRET);
+  if (!channelSecret || !(await verifyLineSignature(rawBody, signature, channelSecret))) {
+    return response({ ok: false, error: "invalid_signature" }, 401);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody || "{}");
+  } catch {
+    return response({ ok: false, error: "invalid_json" }, 400);
+  }
+
+  const events = Array.isArray(payload.events) ? payload.events : [];
+  const results = [];
+  for (const event of events) {
+    if (event?.type !== "message" || event?.message?.type !== "text") continue;
+    const intent = classifyHennaIntent(event.message.text);
+    const reply = hennaReply(intent);
+    const manual = intent.startsWith("manual_");
+
+    if (manual) {
+      await notifyManualHandoff(env, event, intent);
+      results.push({ intent, action: "manual_handoff" });
+      continue;
+    }
+
+    if (!reply || !enabled(env.LINE_AUTO_REPLY_ENABLED)) {
+      results.push({ intent, action: "no_reply" });
+      continue;
+    }
+
+    const sent = await replyLine(env, event.replyToken, reply);
+    results.push({ intent, action: sent ? "replied" : "reply_failed" });
+  }
+
+  return response({ ok: true, persona: "HENNA", processed: results.length, results }, 200);
+}
+
+export async function verifyLineSignature(rawBody, signature, secret) {
+  if (!signature || !secret) return false;
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  return constantTimeEqual(base64(digest), signature);
+}
+
+async function replyLine(env, replyToken, text) {
+  const token = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (!token || !replyToken) return false;
+  const result = await fetch(LINE_REPLY_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ replyToken, messages: [{ type: "text", text }] }),
+  });
+  if (!result.ok) {
+    console.error(JSON.stringify({ event: "mms_line_reply_failed", status: result.status }));
+  }
+  return result.ok;
+}
+
+async function notifyManualHandoff(env, event, intent) {
+  const service = env.TELEGRAM_WORKER;
+  const token = clean(env.AUTH_SERVICE_MMS_TO_TELEGRAM);
+  if (!service || typeof service.fetch !== "function" || !token) return false;
+  const sourceType = clean(event?.source?.type || "user").slice(0, 24);
+  const messageId = clean(event?.message?.id || "unknown").slice(0, 80);
+  const result = await service.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      flow: intent === "manual_recovery" ? "recovery" : "mms_manual_handoff",
+      text: [
+        "🐔 HENNA · MMS LINE ต้องการคนรับช่วง",
+        `เหตุผล: ${intent}`,
+        `Source: ${sourceType}`,
+        `Message ref: ${messageId}`,
+        intent === "manual_recovery"
+          ? "Recovery นี้ให้คง context เดิมและใช้ HYPE/MMD Case lifecycle + canonical outcome taxonomy; ห้ามสรุป resolved/refund/rebooking จากข้อความอย่างเดียว"
+          : "เปิด LINE Official Account Manager เพื่อตอบลูกค้าครับ",
+      ].join("\n"),
+      disable_web_page_preview: true,
+    }),
+  }));
+  const body = await result.json().catch(() => ({}));
+  const ok = result.ok && body?.ok === true && body?.telegram?.ok === true;
+  if (!ok) console.error(JSON.stringify({ event: "mms_line_handoff_notify_failed", status: result.status }));
+  return ok;
+}
+
+async function readWebhookBody(request) {
+  const declared = Number(request.headers.get("content-length") || 0);
+  if (declared > MAX_WEBHOOK_BYTES) throw new Error("LINE_WEBHOOK_TOO_LARGE");
+  const body = await request.text();
+  if (new TextEncoder().encode(body).byteLength > MAX_WEBHOOK_BYTES) throw new Error("LINE_WEBHOOK_TOO_LARGE");
+  return body;
+}
+
+function response(body, status) {
+  return Response.json(body, {
+    status,
+    headers: {
+      "Cache-Control": "no-store",
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
+
+function matches(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function normalize(value) {
+  return String(value || "").normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function clean(value) {
+  return String(value || "").replace(/[\r\n\u2028\u2029]/g, "").trim();
+}
+
+function enabled(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
+}
+
+function base64(buffer) {
+  let binary = "";
+  for (const byte of new Uint8Array(buffer)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function constantTimeEqual(left, right) {
+  const a = new TextEncoder().encode(left);
+  const b = new TextEncoder().encode(right);
+  let difference = a.length ^ b.length;
+  const length = Math.max(a.length, b.length);
+  for (let index = 0; index < length; index += 1) difference |= (a[index] || 0) ^ (b[index] || 0);
+  return difference === 0;
+}

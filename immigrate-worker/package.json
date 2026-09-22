@@ -1,0 +1,18 @@
+{
+  "name": "immigrate-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/canonical-admin-login-wrapper.test.mjs && node test/control-room-owner-v3.test.mjs && node test/control-room-safety-location-ui.test.mjs && node test/control-room-dashboard-ingress.test.mjs && node test/customer-360-live-ingress.test.mjs && node test/customer-memory-race.test.mjs && node test/customer-identity-alignment.test.mjs && node test/create-session-owner-ui.test.mjs && node test/create-session-simple-start.test.mjs && node test/sigil-admin-login.test.mjs && node test/invite-signing.test.mjs && node --test test/create-job-canonical-client.test.mjs test/create-session-manual-client-fallback.test.mjs ../admin-worker/create-session-client-lineage-runtime.test.mjs ../admin-worker/create-session-remembered-name-priority.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260301.0",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.7.3",
+    "wrangler": "^4.10.0"
+  }
+}

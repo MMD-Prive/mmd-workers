@@ -1,0 +1,97 @@
+name: Calendar Production Connection
+on:
+  push:
+    branches: [fix/calendar-cal-visibility-20260914, fix/cal-sync-ledger-binding-20260914, fix/calendar-live-cal-diagnostics-20260914]
+    paths:
+      - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-service-binding.test.mjs'
+      - 'admin-worker/src/admin-calendar-runtime*'
+      - 'webflow/internal/admin/calendar/**'
+      - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
+      - 'admin-worker/src/model-confirm-cal-hold.js'
+      - 'admin-worker/model-confirm-cal-hold.test.mjs'
+      - 'tools/calendar-live-write-smoke.mjs'
+      - '.github/workflows/calendar-live-write-smoke.yml'
+      - 'admin-worker/wrangler.toml'
+      - 'admin-worker/calendar-routes.json'
+      - 'tools/calendar-production-connection.mjs'
+      - '.github/workflows/calendar-production-connection.yml'
+      - '.github/workflows/deploy-cal-sync-worker.yml'
+      - 'cal-sync-worker/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'admin-worker/src/admin-calendar-visibility*'
+      - 'admin-worker/src/admin-calendar-service-binding.test.mjs'
+      - 'admin-worker/src/admin-calendar-runtime*'
+      - 'webflow/internal/admin/calendar/**'
+      - 'admin-worker/src/job-orchestrator-owner-ops-wrapper.js'
+      - 'admin-worker/src/model-confirm-cal-hold.js'
+      - 'admin-worker/model-confirm-cal-hold.test.mjs'
+      - 'tools/calendar-live-write-smoke.mjs'
+      - '.github/workflows/calendar-live-write-smoke.yml'
+      - 'admin-worker/wrangler.toml'
+      - 'admin-worker/calendar-routes.json'
+      - 'tools/calendar-production-connection.mjs'
+      - '.github/workflows/calendar-production-connection.yml'
+      - '.github/workflows/deploy-cal-sync-worker.yml'
+      - 'cal-sync-worker/**'
+  workflow_run:
+    workflows: ['Deploy admin-worker', 'Deploy cal-sync-worker']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: calendar-production-connection-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate calendar session, data and connection contracts
+        env:
+          CALENDAR_RENDER_PATH: ${{ runner.temp }}/calendar-preview.html
+        run: |
+          node --check admin-worker/src/admin-calendar-visibility.js
+          node --check tools/calendar-production-connection.mjs
+          node --test \
+            admin-worker/src/admin-calendar-service-binding.test.mjs \
+            admin-worker/src/admin-calendar-visibility.test.mjs \
+            admin-worker/src/admin-calendar-runtime.test.mjs
+          node tools/calendar-production-connection.mjs --validate
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calendar-synthetic-preview
+          path: ${{ runner.temp }}/calendar-preview.html
+          retention-days: 7
+  connect:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'))
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reconcile calendar routes and verify real owner access
+        env:
+          ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+          CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          AIRTABLE_EXISTING_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY || secrets.AIRTABLE_TOKEN }}
+          CAL_EXISTING_KEY: ${{ secrets.CAL_API_KEY }}
+        run: node tools/calendar-production-connection.mjs --connect
+      - uses: actions/upload-artifact@v4
+        with:
+          name: calendar-connection-receipt
+          path: ${{ runner.temp }}/calendar-connection-receipt.json
+          retention-days: 14
+          if-no-files-found: error

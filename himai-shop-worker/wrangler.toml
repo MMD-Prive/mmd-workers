@@ -1,0 +1,61 @@
+name = "himai-shop-worker"
+main = "src/index.js"
+compatibility_date = "2026-04-27"
+workers_dev = true
+
+routes = [
+  { pattern = "himai-shop-worker.mmdbkk.com", custom_domain = true },
+  # Compatibility for the current Webflow embed on /ceo/dashboard.
+  { pattern = "admin-worker.mmdbkk.com", custom_domain = true },
+
+  # Public supplier portal routes on the existing mmdbkk.com Cloudflare zone.
+  # Keep the scope narrow so the rest of Webflow remains untouched.
+  { pattern = "mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/shop/supplier*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/supplier*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" }
+]
+
+[vars]
+APP_NAME = "Himai Shop"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdprive.webflow.io"
+ADMIN_DASHBOARD_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev"
+MMD_SHOP_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev"
+HIMAI_SHOP_AI_ENABLED = "true"
+AI_PROVIDER = "openai"
+OPENAI_MODEL = "gpt-4.1-mini"
+SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/supplier"
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_HIMAI_ALERTS = "159"
+
+# ---- Secrets (set via wrangler secret) ----
+# ADMIN_BEARER
+# INTERNAL_TOKEN                         - shared auth for himai-chat-worker LINE push
+# OPENAI_API_KEY                         - optional natural-language AI layer
+# AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Service auth for himai-chat-worker LINE push
+# HIMAI_DISTRIBUTOR_PORTAL_TOKENS        # same scoped supplier access map used by portal
+
+[[services]]
+binding = "ADMIN_WORKER"
+service = "admin-worker"
+
+[[services]]
+binding = "HIMAI_CHAT_WORKER"
+service = "himai-chat-worker"
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[[durable_objects.bindings]]
+name = "SUPPLIER_ALERT_STATE"
+class_name = "SupplierAlertState"
+
+[[migrations]]
+tag = "supplier-alert-state-v1"
+new_sqlite_classes = ["SupplierAlertState"]
+
+[triggers]
+crons = ["*/5 * * * *"]
