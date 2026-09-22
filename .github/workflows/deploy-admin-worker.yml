@@ -9,6 +9,8 @@ on:
       - "admin-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/control-room-v2-system-health.mjs"
+      - "shared/posthog-conversion-canon.mjs"
+      - "shared/posthog-conversion-canon.test.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
       - "shared/mmd-shop-stock-reconciliation.mjs"
       - "shared/private-media.mjs"
@@ -98,6 +100,8 @@ jobs:
           node --test model-session-runtime-v1a.test.mjs partner-owner-console.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
+          node --check src/owner-analytics-dashboard.js
+          node --test owner-analytics-dashboard.test.mjs ../shared/posthog-conversion-canon.test.mjs
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/sigil-availability-snapshot.js
