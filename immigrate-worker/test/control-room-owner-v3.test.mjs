@@ -113,6 +113,7 @@ try {
 
   assert.equal(response.headers.get('x-mmd-control-room-mmd-flow'), '20260922');
   assert.equal(response.headers.get('x-mmd-control-room-v2'), 'system-health-v1');
+  assert.equal(response.headers.get('x-mmd-owner-analytics'), 'intent-truth-v1');
   assert.equal(response.headers.get('x-mmd-control-room-phase1'), 'closed');
   assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
   assert.match(body, /SYSTEM HEALTH · V2/);
@@ -121,6 +122,15 @@ try {
   assert.match(body, /mmd:control-room:dashboard/);
   assert.match(body, /window\.__mmdControlRoomDashboard/);
   assert.match(body, /data-v2-open-ai/);
+  assert.match(body, /data-mmd-owner-analytics="v1"/);
+  assert.match(body, /ANALYTICS · OWNER/);
+  assert.match(body, /Intent ≠ Business Truth/);
+  assert.match(body, /Business Truth/);
+  assert.match(body, /Authority Health/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/analytics'/);
+  assert.match(body, /Unobserved event = — · ไม่ตีความเป็น 0/);
+  assert.match(body, /READ SCOPE NEEDED/);
+  assert.doesNotMatch(body, /cross_layer_person_conversion\s*[:=]\s*true/);
   assert.match(body, /data-mmd-workflow="20260922"/);
   assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
   assert.match(body, /หาจากงานล่าสุด/);
