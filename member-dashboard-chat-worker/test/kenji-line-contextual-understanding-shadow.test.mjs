@@ -163,13 +163,38 @@ test("provider 429 exposes only a bounded provider code and never provider messa
       error: {
         code: "rate_limit_exceeded",
         type: "requests",
+        param: "requests_per_minute",
         message: "PRIVATE PROVIDER MESSAGE MUST NOT LEAK",
       },
-    }), { status: 429, headers: { "content-type": "application/json" } }),
+    }), {
+      status: 429,
+      headers: {
+        "content-type": "application/json",
+        "retry-after": "2",
+        "x-ratelimit-limit-requests": "500",
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-reset-requests": "1.8s",
+        "x-ratelimit-limit-tokens": "30000",
+        "x-ratelimit-remaining-tokens": "12000",
+        "x-ratelimit-reset-tokens": "250ms",
+      },
+    }),
   });
 
   assert.equal(result.model_success, false);
   assert.equal(result.model_failure_reason, "openai_http_429_rate_limit_exceeded");
+  assert.deepEqual(result.model_failure_diagnostics, {
+    provider_code: "rate_limit_exceeded",
+    provider_type: "requests",
+    provider_param: "requests_per_minute",
+    retry_after: "2",
+    limit_requests: "500",
+    limit_tokens: "30000",
+    remaining_requests: "0",
+    remaining_tokens: "12000",
+    reset_requests: "1.8s",
+    reset_tokens: "250ms",
+  });
   assert.equal(JSON.stringify(result).includes("PRIVATE PROVIDER MESSAGE"), false);
   assert.equal(result.auto_send_allowed, false);
 });
