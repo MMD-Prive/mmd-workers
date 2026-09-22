@@ -315,6 +315,25 @@ html,body{background:#09090c!important}
       });
     };
     cleanInlineArtifacts();
+
+    const tabs=[...root.querySelectorAll('.mcal__tab')];
+    ['วันนี้','รอมัดจำ','ยืนยันแล้ว','นายแบบ','เช็กราคา'].forEach((label,i)=>{if(tabs[i])tabs[i].textContent=label});
+    const workEyes=[...root.querySelectorAll('.mcal__workspace .mcal__eyebrow')];
+    const workTitles=[...root.querySelectorAll('.mcal__workspace .mcal__paneltitle')];
+    ['คิววันนี้','ต้องทำต่อ','งานยาว'].forEach((label,i)=>{if(workEyes[i])workEyes[i].textContent=label});
+    ['ตารางงาน','รอมัดจำ','งานยาว / ข้ามคืน'].forEach((label,i)=>{if(workTitles[i])workTitles[i].textContent=label});
+    const availability=root.querySelector('.mcal__availability');
+    if(availability){
+      const eye=availability.querySelector('.mcal__eyebrow');
+      const title=availability.querySelector('.mcal__paneltitle');
+      const note=availability.querySelector('.mcal__panelnote');
+      if(eye)eye.textContent='เวลาว่าง';
+      if(title)title.textContent='นายแบบ & Therapist';
+      if(note)note.textContent='เริ่มงานได้ 24 ชม. · Booking Desk 10:00–24:00';
+    }
+    const todayButton=root.querySelector('.mcal__today');
+    if(todayButton)todayButton.textContent='วันนี้';
+
     const production=!/\.webflow\.io$/i.test(location.hostname);
 
     if(production){
