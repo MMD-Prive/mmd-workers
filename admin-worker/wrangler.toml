@@ -820,6 +820,8 @@ binding = "CAL_SYNC_WORKER"
 service = "cal-sync-worker"
 
 [vars]
+AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS = "tblbIhMUXMAYlXmpi"
+AIRTABLE_TABLE_MODEL_PAYOUT_ADJUSTMENTS = "tbl2624vwyWkOeP0y"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
 # Customer Continuity Phase 4A is limited to deterministic drafts inside the
 # credential-bound Client Intelligence view. Unknown values fail closed, and
