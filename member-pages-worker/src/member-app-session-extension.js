@@ -116,7 +116,7 @@ function safeExtension(record){
   };
 }
 function safePaymentUrl(value){
-  try{const u=new URL(clean(value,8192));if(u.protocol!=="https:"||u.hostname!=="mmdbkk.com"||u.pathname!=="/sigil/pay"||u.hash)return null;
+  try{const u=new URL(clean(value,8192));if(u.protocol!=="https:"||u.hostname!=="mmdbkk.com"||u.pathname!=="/pay/checkout"||u.hash)return null;
     const keys=[...u.searchParams.keys()];if(keys.length!==1||keys[0]!=="t"||!u.searchParams.get("t"))return null;return u.toString();
   }catch{return null}
 }
