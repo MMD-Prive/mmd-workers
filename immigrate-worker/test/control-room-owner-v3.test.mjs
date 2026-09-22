@@ -112,6 +112,15 @@ try {
   assert.match(body, /\/v1\/admin\/auth\/me/);
 
   assert.equal(response.headers.get('x-mmd-control-room-mmd-flow'), '20260922');
+  assert.equal(response.headers.get('x-mmd-control-room-v2'), 'system-health-v1');
+  assert.equal(response.headers.get('x-mmd-control-room-phase1'), 'closed');
+  assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
+  assert.match(body, /SYSTEM HEALTH · V2/);
+  assert.match(body, /Production truth at a glance/);
+  assert.match(body, /HYPE \/ STUCK \/ SLA/);
+  assert.match(body, /mmd:control-room:dashboard/);
+  assert.match(body, /window\.__mmdControlRoomDashboard/);
+  assert.match(body, /data-v2-open-ai/);
   assert.match(body, /data-mmd-workflow="20260922"/);
   assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
   assert.match(body, /หาจากงานล่าสุด/);

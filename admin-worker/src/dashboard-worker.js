@@ -14,6 +14,7 @@ import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
+import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -130,6 +131,19 @@ export async function buildAdminDashboard(env) {
         ? "มีปัญหา"
         : "ยังยืนยันไม่ได้";
 
+  const dashboardStatus = {
+    admin: "พร้อม",
+    payments: statusFromResult(paymentQueueResult),
+    historical_recovery: statusFromResult(historicalQueueResult),
+    telegram: telegramStatus,
+    data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
+    reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
+  };
+  const controlRoomV2 = buildControlRoomV2SystemHealth({
+    dashboardStatus,
+    telegramRouterHealth,
+  });
+
   return {
     ok: true,
     layer: "core",
@@ -146,14 +160,8 @@ export async function buildAdminDashboard(env) {
     boss,
     reconfirm,
     telegram_router_health: telegramRouterHealth,
-    status: {
-      admin: "พร้อม",
-      payments: statusFromResult(paymentQueueResult),
-      historical_recovery: statusFromResult(historicalQueueResult),
-      telegram: telegramStatus,
-      data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
-      reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
-    },
+    control_room_v2: controlRoomV2,
+    status: dashboardStatus,
     debug: {
       payment_review_loaded: paymentQueue.length,
       historical_loaded: historicalQueue.length,
