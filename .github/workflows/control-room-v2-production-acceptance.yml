@@ -1,0 +1,143 @@
+name: Control Room V2 Production Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "shared/control-room-v2-system-health.mjs"
+      - "immigrate-worker/src/control-room-owner-ui.ts"
+      - "admin-worker/src/dashboard-worker.js"
+      - ".github/workflows/control-room-v2-production-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-room-v2-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Verify authenticated Control Room V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || "").trim();
+            if (!credential) throw new Error("ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required");
+
+            const login = await fetch(`${origin}/internal/admin/login/session`, {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-MMD-Login-Fetch": "1",
+              },
+              body: new URLSearchParams({
+                credential,
+                next: "/internal/admin/control-room",
+              }).toString(),
+              redirect: "manual",
+            });
+            const loginPayload = await login.clone().json().catch(() => null);
+            if (login.status !== 200 || loginPayload?.ok !== true) {
+              throw new Error(`owner login failed: ${login.status}`);
+            }
+            const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("owner session cookie missing");
+
+            let pageUrl = new URL("/internal/admin/control-room", origin);
+            let page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+            if ([301, 302, 303, 307, 308].includes(page.status)) {
+              const location = page.headers.get("location") || "";
+              if (!location) throw new Error("Control Room redirect missing location");
+              pageUrl = new URL(location, pageUrl);
+              if (!["mmdbkk.com", "www.mmdbkk.com"].includes(pageUrl.hostname) || pageUrl.pathname !== "/internal/admin/control-room") {
+                throw new Error(`unexpected Control Room redirect: ${pageUrl.href}`);
+              }
+              page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+            }
+            const html = await page.text();
+            if (page.status !== 200) throw new Error(`Control Room expected 200, got ${page.status}`);
+            if (page.headers.get("x-mmd-control-room-v2") !== "system-health-v1") throw new Error("Control Room V2 header missing");
+            if (page.headers.get("x-mmd-control-room-phase1") !== "closed") throw new Error("Phase 1 closure header missing");
+            for (const marker of ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2"]) {
+              if (!html.includes(marker)) throw new Error(`Control Room marker missing: ${marker}`);
+            }
+
+            const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const payload = await dashboard.json().catch(() => null);
+            if (dashboard.status !== 200 || payload?.ok !== true) throw new Error(`dashboard truth failed: ${dashboard.status}`);
+            const v2 = payload?.control_room_v2;
+            if (v2?.schema !== "mmd.control_room_v2.system_health.v1") throw new Error("Control Room V2 schema mismatch");
+            if (v2?.phase1?.status !== "CLOSED" || Number(v2?.phase1?.blocking_unresolved_count) !== 0) {
+              throw new Error("Phase 1 machine closure not projected");
+            }
+            if (Number(v2?.phase0?.accepted_workers) !== 6) throw new Error("Phase 0 authority acceptance not projected");
+            if (v2?.authority?.read_only !== true || v2?.authority?.business_truth_mutated !== false) {
+              throw new Error("Control Room V2 read-only authority contract failed");
+            }
+            if (v2?.operational_watch?.load_mode !== "on_demand" || v2?.operational_watch?.duplicate_dashboard_fetch !== false) {
+              throw new Error("HYPE/STUCK/SLA load contract failed");
+            }
+
+            const keys = new Set((v2?.systems || []).map((item) => item?.key));
+            for (const key of ["website","workers","deploy","routes","analytics","payments","telegram","line","data","jobs"]) {
+              if (!keys.has(key)) throw new Error(`system health lane missing: ${key}`);
+            }
+
+            const unauthDashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthDashboard.status !== 401) throw new Error(`unauth dashboard must fail closed, got ${unauthDashboard.status}`);
+
+            const unauthPage = await fetch(`${pageUrl.origin}/internal/admin/control-room`, { redirect: "manual" });
+            if (![302, 303, 307, 308].includes(unauthPage.status)) {
+              throw new Error(`unauth Control Room must redirect to login, got ${unauthPage.status}`);
+            }
+            const unauthLocation = unauthPage.headers.get("location") || "";
+            if (!unauthLocation.includes("/internal/admin/login")) throw new Error("unauth Control Room redirect is not login");
+
+            console.log(JSON.stringify({
+              ok: true,
+              schema: v2.schema,
+              overall_status: v2.overall_status,
+              systems: [...keys],
+              phase0_workers: v2.phase0.accepted_workers,
+              phase1_status: v2.phase1.status,
+              authority: "read_only",
+            }, null, 2));
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Acceptance receipt
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Control Room V2 Production Acceptance
+          - Authenticated page: PASS
+          - Phase 0 PostHog authority receipt: 6/6
+          - Phase 1 machine canon: CLOSED / blocking 0
+          - Website / Workers / Deploy Gate / Routes / PostHog / Payments / Telegram / LINE / Data / Jobs: projected
+          - HYPE / STUCK / SLA: on-demand, no duplicate dashboard fetch
+          - Business authority: read-only
+          - Unauthenticated page/API: fail-closed
+          EOF
