@@ -1,4 +1,5 @@
 import baseWorker from "./index.js";
+import { handlePublicSessionExtensionPayment, isPublicSessionExtensionPaymentPath } from "./public-session-extension-payment.js";
 import {
   attachSigilPricingToCustomerToken,
   exposeVerifiedSigilPricing,
@@ -263,6 +264,9 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/g, "") || "/";
     const method = req.method.toUpperCase();
+    if (isPublicSessionExtensionPaymentPath(url)) {
+      return handlePublicSessionExtensionPayment(req, env);
+    }
     if (path === PATH) {
       if (method === "OPTIONS") return new Response(null, { status: 204, headers: cors(req, env) });
       if (method !== "POST") return methodNotAllowed(req, env);
