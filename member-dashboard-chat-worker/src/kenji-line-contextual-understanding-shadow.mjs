@@ -1,7 +1,7 @@
 export const KENJI_LINE_CONTEXTUAL_UNDERSTANDING_SCHEMA = "mmd.kenji_line_contextual_understanding.v1";
 export const KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED_ENV = "KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED";
 
-const DEFAULT_MODEL = "gpt-5.6";
+const DEFAULT_CONTEXT_MODEL = "gpt-4.1-mini";
 const MODEL_TIMEOUT_MS = 5_500;
 const MAX_TRANSCRIPT_TURNS = 12;
 const MAX_TURN_TEXT = 520;
@@ -58,6 +58,14 @@ function list(value) {
 
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function safeProviderToken(value) {
+  return text(value, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9_:-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
 }
 
 function eventText(event = {}) {
@@ -295,7 +303,7 @@ Rules:
 - Return only the JSON schema requested.`;
 
   const payload = {
-    model: text(env.OPENAI_MODEL, 80) || DEFAULT_MODEL,
+    model: text(env.KENJI_CONTEXTUAL_OPENAI_MODEL, 80) || DEFAULT_CONTEXT_MODEL,
     instructions,
     input: `Known evidence-backed facts: ${knownFacts || "none"}\n\nTranscript:\n${transcript}`,
     max_output_tokens: 300,
@@ -367,7 +375,16 @@ Rules:
       signal: controller.signal,
     });
     if (!response.ok) {
-      return { ok: false, attempted: true, reason: `openai_http_${response.status}`, result: null };
+      const providerError = await response.json().catch(() => null);
+      const providerCode = safeProviderToken(providerError?.error?.code);
+      const providerType = safeProviderToken(providerError?.error?.type);
+      const suffix = providerCode || providerType;
+      return {
+        ok: false,
+        attempted: true,
+        reason: `openai_http_${response.status}${suffix ? `_${suffix}` : ""}`,
+        result: null,
+      };
     }
     const body = await response.json().catch(() => null);
     if (!body) return { ok: false, attempted: true, reason: "openai_invalid_json", result: null };
