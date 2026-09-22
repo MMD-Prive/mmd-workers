@@ -178,6 +178,9 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/calendar-owner-ui-v3-20260922/);
   assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
   assert.match(html,/cleanInlineArtifacts/);
+  assert.match(html,/\['วันนี้','รอมัดจำ','ยืนยันแล้ว','นายแบบ','เช็กราคา'\]/);
+  assert.match(html,/งานยาว \/ ข้ามคืน/);
+  assert.match(html,/นายแบบ & Therapist/);
   assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
   for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
