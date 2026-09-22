@@ -61,6 +61,17 @@ const JOB_CREATE_PATH = "/v1/admin/job/create";
 const MANUAL_PUBLIC_FALLBACK_MARKER = "canonical-v1";
 let lineOfcContactBackfillKickStarted = false;
 
+export function modelMoneyRuntimeEnv(env = {}) {
+  const modelPackageField = String(env?.AT_SESSIONS__MODEL_PACKAGE_CODE || "").trim() || "model_package_code";
+  return {
+    ...env,
+    // Never allow the model-money resolver to read Sessions.package_code. That
+    // field is Membership/access-only. Model service packages have a separate
+    // canonical field so Public pricing cannot leak into Private money policy.
+    AT_SESSIONS__PACKAGE_CODE: modelPackageField,
+  };
+}
+
 function scheduleLineOfcContactBackfill(env, ctx) {
   if (lineOfcContactBackfillKickStarted || !env?.LINE_OFC_BACKFILL_COORDINATOR) return;
   lineOfcContactBackfillKickStarted = true;
@@ -160,15 +171,17 @@ coreWorker.fetch(request, env, ctx)
 
 export default {
   async scheduled(event, env, ctx) {
-    await drainApprovedJobLinkNotifications(env);
-    if (typeof worker.scheduled === "function") await worker.scheduled(event, env, ctx);
+    const runtimeEnv = modelMoneyRuntimeEnv(env);
+    await drainApprovedJobLinkNotifications(runtimeEnv);
+    if (typeof worker.scheduled === "function") await worker.scheduled(event, runtimeEnv, ctx);
   },
   async fetch(request, env, ctx) {
-    if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, env, ctx);
-    if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, env);
-    if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, env, ctx);
-    scheduleLineOfcContactBackfill(env, ctx);
-    if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, env);
+    const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
+    if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
+    if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
+    scheduleLineOfcContactBackfill(runtimeEnv, ctx);
+    if (isModelConsoleAuditRequest(request)) return handleModelConsoleAudit(request, runtimeEnv);
     let privateModelRequest = null;
     let privateModelSearchRequest = null;
     let activationRequest = null;
@@ -193,65 +206,65 @@ export default {
     // only sanitized Model Console / Model App inputs and writes no raw operational
     // context into the recommendation KV.
     if (isSigilAvailabilityInternalRequest(normalizedPath, method)) {
-      return handleSigilAvailabilityInternalRequest(request, env);
+      return handleSigilAvailabilityInternalRequest(request, runtimeEnv);
     }
 
     // Kenji LV5 orchestration is service-binding only. The handler performs its
     // own strict caller + internal bearer checks and never becomes domain truth.
     if (isKenjiLv5OperationalRpcRequest(normalizedPath, method)) {
-      return handleKenjiLv5OperationalRpc(request, env);
+      return handleKenjiLv5OperationalRpc(request, runtimeEnv);
     }
 
     if (isAdminShopOrdersPageRequest(normalizedPath, method)) {
-      const actor = await readCredentialBoundAdminActor(request, env);
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
       return handleAdminShopOrdersPage(request, actor);
     }
 
     if (isAdminShopOrdersApiRequest(normalizedPath, method)) {
-      const actor = await readCredentialBoundAdminActor(request, env);
-      return handleAdminShopOrdersApi(request, env, actor);
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleAdminShopOrdersApi(request, runtimeEnv, actor);
     }
 
     if (isAdminShopOperationsPageRequest(normalizedPath, method)) {
-      const actor = await readCredentialBoundAdminActor(request, env);
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
       return handleAdminShopOperationsPage(request, actor);
     }
 
     if (isAdminShopOperationsApiRequest(normalizedPath, method)) {
-      const actor = await readCredentialBoundAdminActor(request, env);
-      return handleAdminShopOperationsApi(request, env, actor);
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleAdminShopOperationsApi(request, runtimeEnv, actor);
     }
 
     if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {
-      const actor = await readCredentialBoundAdminActor(request, env);
-      return handleModelPayoutAdjustments(request, env, actor);
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleModelPayoutAdjustments(request, runtimeEnv, actor);
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
-      const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), env);
+      const privateWorkBlocked = await guardPrivateJobCreateWork(request.clone(), runtimeEnv);
       if (privateWorkBlocked) return privateWorkBlocked;
-      const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, env);
+      const refreshed = await maybeHandleHeldIdentityLinkRefresh(request, runtimeEnv);
       if (refreshed) return refreshed;
     }
 
-    let response = await worker.fetch(request, env, ctx);
+    let response = await worker.fetch(request, runtimeEnv, ctx);
     if (normalizedPath === AUDIENCE_BRIEF_PATH && method === "GET" && response.status === 404) {
       response = await buildAudienceBriefLive(
         request,
-        env,
+        runtimeEnv,
         ctx,
-        (path) => delegatedJson(request, env, ctx, path),
+        (path) => delegatedJson(request, runtimeEnv, ctx, path),
       );
     }
-    if (privateModelSearchRequest) response = await enforcePrivateModelSearchPolicy(privateModelSearchRequest, response, env);
-    if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, env, response);
-    if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, env);
-    if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, env);
-    if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, env);
+    if (privateModelSearchRequest) response = await enforcePrivateModelSearchPolicy(privateModelSearchRequest, response, runtimeEnv);
+    if (privateModelRequest) response = await maybeHandlePrivateModelAdminRequest(privateModelRequest, runtimeEnv, response);
+    if (activationRequest) response = await syncPrivateModelHandoffAfterActivation(activationRequest, response, runtimeEnv);
+    if (modelConfirmRequest) response = await maybeCreateInternalHoldAfterModelConfirm(modelConfirmRequest, response, runtimeEnv);
+    if (perRenameRequest) response = await enrichLineageWithPerRename(perRenameRequest, response, runtimeEnv);
     response = await enforceOwnerDashboardFirst(request, response);
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
-      response = await augmentOwnerJobGrantCreateError(request, response, env);
+      response = await augmentOwnerJobGrantCreateError(request, response, runtimeEnv);
     }
 
     if (normalizedPath === LINEAGE_LOOKUP_PATH || normalizedPath === LINEAGE_RECENT_PATH) {
