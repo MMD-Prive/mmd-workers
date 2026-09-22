@@ -39,6 +39,12 @@ const F = Object.freeze({
 });
 
 const clean = (v, max = 500) => String(v ?? "").trim().slice(0, max);
+function safeHttpsUrl(value) {
+  try {
+    const url = new URL(clean(value, 1200));
+    return url.protocol === "https:" ? url.toString() : "";
+  } catch { return ""; }
+}
 const field = (r, id) => r?.fields?.[id];
 const link = v => Array.isArray(v) && v.length ? clean(v[0], 80) : null;
 const number = v => Number.isFinite(Number(v)) ? Number(v) : null;
@@ -151,6 +157,7 @@ async function readMmsTherapistAvailability(env = {}) {
           therapist_id: clean(item?.therapist_id, 80) || null,
           display_name: clean(item?.display_name, 120) || null,
           availability_status: clean(item?.availability_status, 40) || "Unknown",
+          public_photo_url: safeHttpsUrl(item?.public_photo_url),
           status: clean(item?.status, 40) || null,
           matching_enabled: item?.matching_enabled === true,
         }))
