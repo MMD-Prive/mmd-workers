@@ -304,7 +304,7 @@ function normalizePath(value) { const path = clean(value || "/").replace(/\/{2,}
 function corsHeaders(request, env) {
   const headers = new Headers({
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "public, max-age=120, stale-while-revalidate=600",
+    "cache-control": "private, no-store, max-age=0, must-revalidate",
     "access-control-allow-methods": "GET,HEAD,OPTIONS",
     "access-control-allow-headers": "Content-Type",
     "vary": "Origin",
