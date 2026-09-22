@@ -816,6 +816,20 @@ function normalizeApplication(body) {
   output.application_type = "public_model";
   output.form_version = boundedString(body.form_version || "public-model-apply-v8", 80);
   output.nickname = boundedString(body.nickname, 120);
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  output.mmd_nonmember_profile_image_consent = imageConsent;
+  output.mmd_public_promo_consent_status = imageConsent ? "granted" : "not_granted";
+  if (imageConsent) {
+    output.mmd_nonmember_promo_roles = [...new Set((body.mmd_nonmember_promo_roles || []).filter((role) => PUBLIC_MODEL_ROLE_KEYS.has(role)))];
+    output.mmd_public_promo_consent_version = PUBLIC_MODEL_PROMO_CONSENT_VERSION;
+    output.mmd_public_promo_consent_source = "/apply/public-model";
+  } else {
+    delete output.mmd_nonmember_promo_roles;
+    delete output.mmd_public_promo_consent_version;
+    delete output.mmd_public_promo_consent_source;
+  }
+
   return output;
 }
 
