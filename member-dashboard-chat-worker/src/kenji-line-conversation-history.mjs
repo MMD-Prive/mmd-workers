@@ -193,11 +193,19 @@ function turnFromRecord(record = {}) {
     : boundedText(payload.raw_text || fields.admin_note);
   if (!content) return null;
 
+  const inboxId = text(fields.inbox_id);
+  const sourceEventId = text(
+    payload.source_event_id
+    || payload.source_message_id
+    || fields.line_id
+    || (inboxId.startsWith("line_") ? inboxId.slice(5) : ""),
+  );
   return {
     role,
     content,
     occurred_at: text(payload.sent_at || payload.received_at || fields.created_at || record.createdTime),
     evidence: role === "assistant" ? "actual_sent" : "customer_received",
+    source_event_id: sourceEventId,
   };
 }
 
@@ -218,7 +226,7 @@ function turnFromAiMessageEvent(record = {}) {
     content,
     occurred_at: text(fields.created_at || record.createdTime),
     evidence: "line_delivery_succeeded",
-    source_event_id: text(fields.event_id),
+    source_event_id: text(fields.event_id).replace(/^kai_line_/, ""),
   };
 }
 
@@ -237,7 +245,10 @@ function currentInboundTurn(event = {}) {
 function dedupeTurns(turns = []) {
   const seen = new Set();
   return turns.filter((turn) => {
-    const key = `${turn.role}|${turn.occurred_at}|${turn.content}`;
+    const sourceEventId = text(turn?.source_event_id);
+    const key = sourceEventId
+      ? `${turn.role}|event:${sourceEventId}`
+      : `${turn.role}|${turn.occurred_at}|${turn.content}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
