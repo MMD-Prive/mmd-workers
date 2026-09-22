@@ -1,0 +1,23 @@
+<style id="mp8-confidential-money-lane-css">
+.mp8-confidential-talent [data-confidential-money-lane]{margin-top:12px;padding:12px 13px;border:1px solid rgba(229,200,142,.22);border-radius:14px;background:rgba(229,200,142,.06)}
+.mp8-confidential-talent [data-confidential-money-lane] small{display:block;color:#d7b66f;font-size:8px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+.mp8-confidential-talent [data-confidential-money-lane] strong{display:block;margin-top:5px;color:#fff;font-size:12px;line-height:1.45}
+.mp8-confidential-talent [data-confidential-money-lane] p{margin:6px 0 0;color:rgba(255,255,255,.67);font-size:10.5px;line-height:1.58}
+</style>
+<script id="mp8-confidential-money-lane-v1">
+(()=>{'use strict';
+ const root=document.querySelector('.mp8-confidential-talent');
+ if(!root||root.querySelector('[data-confidential-money-lane]'))return;
+ const note=document.createElement('div');note.setAttribute('data-confidential-money-lane','v1');
+ const meta=root.querySelector('.mp8-confidential-talent__meta');
+ (meta||root.querySelector('div')||root).insertAdjacentElement(meta?'beforebegin':'beforeend',note);
+ const copy={
+  th:{k:'MONEY LANE · ระบุในทุกข้อเสนอ',t:'Confidential ไม่ได้แปลว่า Private Money โดยอัตโนมัติ',p:'Confidential คือวิธีดูแลการเปิดเผยรายละเอียดงาน ส่วนระบบเงินกำหนดแยกเป็นราย Session: PUBLIC MONEY ใช้แพ็กเกจหรือเงื่อนไข Public ที่ MMD อนุมัติ ส่วน PRIVATE MONEY ใช้เรทเฉพาะเคสที่ MMD lock ก่อนเสนอ โดย MMD MODEL จะแสดงประเภทเงินและเรทถึงตัวให้ชัดก่อนกดรับงาน'},
+  en:{k:'MONEY LANE · SHOWN ON EVERY OFFER',t:'Confidential does not automatically mean Private Money.',p:'Confidential controls how job details are disclosed. Money authority is assigned separately per Session: PUBLIC MONEY follows an approved Public package or Session policy; PRIVATE MONEY uses a case-specific quote and payout locked by MMD before the offer. MMD MODEL shows the money lane and your exact payout before acceptance.'},
+  zh:{k:'MONEY LANE · 每份工作邀约都会标明',t:'Confidential 并不自动等同于 Private Money。',p:'Confidential 只决定工作资料如何披露；资金规则会按每个 Session 单独确定。PUBLIC MONEY 使用 MMD 批准的公开套餐或 Session 条款；PRIVATE MONEY 使用 MMD 在邀约前锁定的个案报价与报酬。MMD MODEL 会在接受前明确显示资金类别与到手报酬。'}
+ };
+ function lang(){const l=(document.documentElement.lang||'th').toLowerCase();return l.startsWith('zh')?'zh':l.startsWith('en')?'en':'th'}
+ function render(){const x=copy[lang()];note.innerHTML='<small>'+x.k+'</small><strong>'+x.t+'</strong><p>'+x.p+'</p>'}
+ render();new MutationObserver(render).observe(document.documentElement,{attributes:true,attributeFilter:['lang']});
+})();
+</script>
