@@ -36,6 +36,19 @@ export const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
   "Conversation / Hosting",
   "Private Review Only",
 ]);
+export const PUBLIC_MODEL_ROLE_KEYS = new Set([
+  "everyday_companion",
+  "driver_companion",
+  "culinary_companion",
+  "social_appearance",
+  "bangkok_companion",
+  "sport_activity",
+  "wellness_companion",
+  "business_companion",
+  "nightlife_companion",
+  "creative_companion",
+  "medical_professional",
+]);
 const FORBIDDEN_FIELDS = new Set([
   "airtable_record_id",
   "application_id",
@@ -97,6 +110,7 @@ const APPLICATION_FIELDS = Object.freeze({
   consentAt: "fldr8KtcsLD6a1NCh",
   payloadHash: "fldqaQb5BMoCGF7XE",
   intakeStatus: "fldHk2h9Rf6g5UlZw",
+  requestedRoles: "fldYsWJXXuXzt7I2N",
   duplicateKey: "flddQezHdP6zdvQuZ",
   requestFingerprint: "fldcpQbNo9G0BAvlF",
   uploadSessionId: "fldg2EOpp5GEhHUdI",
@@ -555,6 +569,8 @@ function validateApplicationPayload(body) {
   const workTypes = body.work_types ?? body.interested_work_types ?? body.workTypes;
   const workTypeError = validateWorkTypes(workTypes);
   if (workTypeError) fields.work_types = workTypeError;
+  const roleError = validatePublicRoles(body.mmd_requested_public_roles ?? body.requested_roles);
+  if (roleError) fields.requested_roles = roleError;
   const forbidden = findForbiddenField(body);
   if (forbidden) fields.forbidden_field = "contains server-controlled or raw upload field";
   const refs = validateUploadRefs(body);
@@ -613,6 +629,17 @@ function validateWorkTypes(value) {
   if (value.length > 10) return "too many selected work types";
   for (const item of value) {
     if (typeof item !== "string" || !PUBLIC_MODEL_ALLOWED_WORK_TYPES.has(item.trim())) return "contains unsupported work type";
+  }
+  return "";
+}
+
+function validatePublicRoles(value) {
+  if (value === undefined || value === null || value === "") return "";
+  if (!Array.isArray(value)) return "must be an array";
+  if (value.length < 1) return "select at least one role";
+  if (value.length > PUBLIC_MODEL_ROLE_KEYS.size) return "too many selected roles";
+  for (const item of value) {
+    if (typeof item !== "string" || !PUBLIC_MODEL_ROLE_KEYS.has(item.trim())) return "contains unsupported role";
   }
   return "";
 }
@@ -723,6 +750,10 @@ function applicationAirtableFields(body, normalized, uploads, context) {
   assign(fields, APPLICATION_FIELDS.intro, boundedString(body.intro || body.story, 4000));
   assign(fields, APPLICATION_FIELDS.experience, boundedString(body.experience || body.occupation_detail, 4000));
   assign(fields, APPLICATION_FIELDS.workType, boundedString(body.service_job_preference || body.work_type, 500));
+  const requestedRoles = body.mmd_requested_public_roles ?? body.requested_roles;
+  if (Array.isArray(requestedRoles) && requestedRoles.length) {
+    fields[APPLICATION_FIELDS.requestedRoles] = [...new Set(requestedRoles.map((item) => boundedString(item, 80)).filter((item) => PUBLIC_MODEL_ROLE_KEYS.has(item)))];
+  }
   assign(fields, APPLICATION_FIELDS.privacyLevel, boundedString(body.privacy_level, 160));
   assign(fields, APPLICATION_FIELDS.experienceMonths, numberOrUndefined(body.mmd_experience_months, 0, 11));
   assign(fields, APPLICATION_FIELDS.experienceYears, numberOrUndefined(body.mmd_experience_years, 0, 80));
