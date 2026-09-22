@@ -1,6 +1,15 @@
 const SCHEMA = "mmd.control_room_v2.system_health.v1";
 
 const ACCEPTED = Object.freeze({
+  website: Object.freeze({
+    status: "CLOSED",
+    evidence_type: "production_acceptance",
+    receipt: "Phase 1 post-retirement Webflow/public/member smoke",
+  }),
+  deploy: Object.freeze({
+    evidence_type: "production_acceptance",
+    receipt: "GitHub Actions production deploy + smoke gates",
+  }),
   routes: Object.freeze({
     phase: "1",
     status: "CLOSED",
@@ -53,6 +62,30 @@ export function buildControlRoomV2SystemHealth({
 } = {}) {
   const telegramStatus = clean(telegramRouterHealth?.status) || dashboardStatus?.telegram;
   const systems = [
+    system({
+      key: "website",
+      label: "Website",
+      status: "ok",
+      evidenceType: ACCEPTED.website.evidence_type,
+      source: "webflow_production_acceptance",
+      detail: "Public/member presentation accepted after legacy front-gate retirement",
+    }),
+    system({
+      key: "workers",
+      label: "Workers",
+      status: liveStatus(dashboardStatus?.admin),
+      evidenceType: "live",
+      source: "admin-worker",
+      detail: clean(dashboardStatus?.admin) || "authenticated admin runtime unavailable",
+    }),
+    system({
+      key: "deploy",
+      label: "Deploy Gate",
+      status: "ok",
+      evidenceType: ACCEPTED.deploy.evidence_type,
+      source: "github_actions_production_gates",
+      detail: "Production deploy/smoke gates accepted · no GitHub credential exposed to browser",
+    }),
     system({
       key: "routes",
       label: "Routes",
