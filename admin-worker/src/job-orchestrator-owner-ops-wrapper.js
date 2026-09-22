@@ -7,13 +7,14 @@ import {
   listOwnerJobActions,
   ownerActionHttpResponse,
 } from "./job-orchestrator-owner-ops-runtime.js";
-import { calendarApiResponse, calendarJsonResponse, calendarPageResponse, calendarModelPhotoResponse, readCalendarOwnerActor, calendarDate } from "./admin-calendar-visibility.js";
+import { calendarApiResponse, calendarJsonResponse, calendarPageResponse, calendarModelPhotoResponse, calendarTherapistPhotoResponse, readCalendarOwnerActor, calendarDate } from "./admin-calendar-visibility.js";
 
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
 const CALENDAR_API_PATH = "/v1/admin/calendar";
 const CALENDAR_RECONCILE_API_PATH = "/v1/admin/calendar/reconcile";
 const CALENDAR_MODEL_PHOTO_API_PATH = "/v1/admin/calendar/model-photo";
+const CALENDAR_THERAPIST_PHOTO_API_PATH = "/v1/admin/calendar/therapist-photo";
 const CALENDAR_PAGE_PATH = "/internal/admin/calendar";
 const ALL_JOBS_PAGE_PATH = "/internal/admin/jobs/all";
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
@@ -180,6 +181,10 @@ async function handleCalendar(request, env, ctx, url, method) {
     if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
     return calendarModelPhotoResponse(request, env);
   }
+  if (url.pathname === CALENDAR_THERAPIST_PHOTO_API_PATH) {
+    if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
+    return calendarTherapistPhotoResponse(request, env);
+  }
   const date = url.searchParams.get("date");
   if (date !== null && !calendarDate(date)) return calendarJsonResponse({ ok: false, error: "invalid_calendar_date" }, 400);
   if (url.pathname === CALENDAR_PAGE_PATH) {
@@ -202,7 +207,7 @@ export default {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
     const calendarPath = url.pathname.replace(/\/$/, "");
-    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH].includes(calendarPath)) {
+    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH].includes(calendarPath)) {
       url.pathname = calendarPath;
       return handleCalendar(request, env, ctx, url, method);
     }
