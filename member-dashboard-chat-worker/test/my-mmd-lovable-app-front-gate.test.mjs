@@ -23,7 +23,7 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
         <link rel="icon" href="/favicon.ico">
         <link rel="stylesheet" href="/assets/app.css">
       </head><body>
-        <a href="/">Home</a><a href="/membership">Membership</a>
+        <a href="/">Home</a><a href="/membership">Membership</a><a href="/payments">Payments</a>
         <main>MMD PRIVÉ · MY MMD</main>
         <script type="module" src="/assets/app.js"></script>
       </body></html>`, {
@@ -61,6 +61,7 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
   assert.match(html, /href="\/my-mmd\/"/);
   assert.match(html, /href="\/my-mmd\/membership"/);
+  assert.match(html, /href="\/my-mmd\/payments"/);
   assert.doesNotMatch(html, /\/member\/my-mmd/);
 });
 
@@ -201,6 +202,30 @@ test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ su
   assert.match(html, /กำลังยืนยันสมาชิก…/);
   assert.match(html, /\/my-mmd-assets\/hype-loading\.gif/);
   assert.match(html, /\/member\/api\/liff\/profile/);
+});
+
+test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment Center", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PAYMENT BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="pay123">const target = "/member/payments"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?liff.state=%3Fintent%3Dcontinue_payment"),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/payments");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.match(html, /const target = "\/my-mmd\/payments"/);
+  assert.match(html, /id="mmd-status-bridge-veil"/);
+  assert.doesNotMatch(html, /const target = "\/member\/payments"/);
 });
 
 test("non-status LIFF intents keep their existing specialized surfaces", async () => {
