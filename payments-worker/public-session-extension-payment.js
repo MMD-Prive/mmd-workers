@@ -162,7 +162,7 @@ async function handleIntent(request,env){
   return json({
     ok:true,authority:"payments-worker",schema:"public_session_extension_payment_v1",
     request_id:requestId,session_id:sessionId,payment_ref:paymentRef,payment_stage:"extension",
-    amount_thb:price,customer_payment_url:`${web}/sigil/pay?t=${encodeURIComponent(token)}`,
+    amount_thb:price,customer_payment_url:`${web}/pay/checkout?t=${encodeURIComponent(token)}`,
     payment_write:write,
   });
 }
