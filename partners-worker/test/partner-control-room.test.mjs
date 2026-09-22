@@ -114,7 +114,8 @@ test("Lovable uses the canonical Worker contract without widening authority", ()
   assert.match(indexSource, /confirmation_allowed: isOfficiallyVerifiedPaymentStatus\(paymentStatus\)/);
   assert.match(indexSource, /official_verify_required/);
   assert.match(uiSource, /job\.confirmation_allowed === true/);
-  assert.match(uiSource, /Official Verify/);
+  assert.doesNotMatch(uiSource, /Official Verify in progress/);
+  assert.match(uiSource, /กำลังเตรียมงาน/);
   assert.match(indexSource, /requested_customer_sell_rate_thb: fieldNumber\(existingRecord/);
 });
 
@@ -128,4 +129,14 @@ test("Partner system pages use positive copy and canonical CTA routing", () => {
   for (const phrase of ["ยังไม่ใช่การอนุมัติ", "MMD ไม่มีสิทธิ์อ่าน", "รหัสถอดข้อมูลอยู่กับ Partner และไม่ถูกส่งให้ MMD"]) {
     assert.doesNotMatch(pageSource, new RegExp(phrase));
   }
+});
+
+
+test("Partner job cards use customer-confirmed canonical location and Partner budget", () => {
+  assert.match(indexSource, /customerAckAt: "fldJSS5GNN7quJwa8"/);
+  assert.match(indexSource, /location: locationConfirmed \? canonicalLocation : "รอยืนยันสถานที่กับลูกค้า"/);
+  assert.match(indexSource, /partner_source_rate_thb: partnerSourceRate/);
+  assert.match(uiSource, /งบถึงตัว/);
+  assert.match(uiSource, /pending_change/);
+  assert.match(uiSource, /รายละเอียดงานมีการเปลี่ยนแปลง/);
 });
