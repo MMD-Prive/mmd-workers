@@ -28,6 +28,9 @@ test("Control Room V2 distinguishes live health from production acceptance", () 
     telegramRouterHealth: { status: "configured", summary: "router configured" },
   });
   const byKey = Object.fromEntries(health.systems.map((item) => [item.key, item]));
+  assert.equal(byKey.website.evidence_type, "production_acceptance");
+  assert.equal(byKey.workers.evidence_type, "live");
+  assert.equal(byKey.deploy.evidence_type, "production_acceptance");
   assert.equal(byKey.routes.evidence_type, "production_acceptance");
   assert.equal(byKey.analytics.evidence_type, "production_acceptance");
   assert.equal(byKey.line.evidence_type, "production_acceptance");
