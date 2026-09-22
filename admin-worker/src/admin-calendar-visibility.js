@@ -9,6 +9,7 @@ const CAL_EVENT_TYPE_API_VERSION = '2024-06-14';
 const CAL_SYNC_HEALTH_URL = 'https://cal-sync.internal/health';
 const CAL_SYNC_PUBLIC_FALLBACK = 'https://cal-sync-worker.malemodel-bkk.workers.dev/health';
 const CALENDAR_PRESENTATION_URL = 'https://mmdprive.webflow.io/internal/admin/calendar';
+const CALENDAR_OWNER_UI_VERSION = 'calendar-owner-ui-v3-20260922';
 const clean = value => String(value ?? '').trim();
 const escapeHtml = value => clean(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -101,6 +102,125 @@ function calendarPresentationHeaders(request) {
   return headers;
 }
 
+function injectCalendarOwnerUi(html) {
+  if (!clean(html) || html.includes('id="' + CALENDAR_OWNER_UI_VERSION + '"')) return html;
+
+  const css = String.raw`<style id="${CALENDAR_OWNER_UI_VERSION}">
+html,body{background:#09090c!important}
+#mmd-admin-latest{display:none!important}
+.mcal{display:grid!important;grid-template-columns:224px minmax(0,1fr)!important;min-height:100vh!important;background:radial-gradient(circle at 88% 0,rgba(215,184,114,.07),transparent 28%),#09090c!important}
+.mcal__rail{position:sticky!important;inset:auto!important;top:0!important;width:auto!important;height:100vh!important;min-height:100vh!important;padding:22px 16px!important;background:rgba(7,7,10,.97)!important;border-right:1px solid rgba(255,255,255,.08)!important;z-index:12!important}
+.mcal__main{margin-left:0!important;min-width:0!important;max-width:none!important;padding:28px clamp(20px,2.7vw,44px) 48px!important}
+.mcal__top{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:center!important;gap:22px!important}
+.mcal__eyebrow{margin:0 0 8px!important;letter-spacing:.16em!important}
+.mcal__title{margin:0!important;font-size:clamp(44px,4.6vw,68px)!important;line-height:.94!important;letter-spacing:-.045em!important}
+.mcal__sub{max-width:760px!important;margin:12px 0 0!important;font-size:13px!important;line-height:1.65!important;color:rgba(247,242,234,.66)!important}
+.mcal__actions{display:flex!important;justify-content:flex-end!important;align-items:center!important;flex-wrap:wrap!important;gap:8px!important}
+.mcal__action{min-height:40px!important;padding:0 15px!important;font-size:9px!important}
+.mcal__statusbar{display:flex!important;flex-wrap:wrap!important;gap:8px!important;margin-top:20px!important;padding:0!important;border:0!important;background:transparent!important}
+.mcal__status{display:flex!important;align-items:center!important;gap:7px!important;min-height:34px!important;padding:0 11px!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:999px!important;background:rgba(255,255,255,.018)!important}
+.mcal__statuslabel,.mcal__statusvalue{font-size:8px!important;line-height:1!important}
+.mcal__metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important;margin-top:14px!important}
+.mcal__metric{min-height:118px!important;padding:17px 18px!important;border-radius:17px!important;background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.018))!important}
+.mcal__metricvalue{font-size:34px!important;line-height:1!important;margin-top:16px!important}
+.mcal__metricsub{margin-top:10px!important;opacity:.68!important}
+.mcal__datebar{position:sticky!important;top:10px!important;z-index:9!important;margin-top:12px!important;padding:9px 10px!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:16px!important;background:rgba(15,14,19,.9)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important}
+.mcal__tabs{margin-top:10px!important;gap:7px!important}
+.mcal__legend,.mcal__hours{display:none!important}
+.mcal__tab{min-height:38px!important;padding:0 13px!important;font-size:8px!important}
+.mcal__notice{display:none!important}
+.mcal__workspace{grid-template-columns:minmax(0,1.65fr) minmax(280px,.55fr)!important;gap:12px!important;margin-top:12px!important}
+.mcal__panel{border-radius:17px!important;background:rgba(18,17,23,.86)!important}
+.mcal-live-card{border-radius:13px!important;background:rgba(255,255,255,.022)!important}
+.mcal__availability{margin-top:12px!important}
+.mcal__footer{margin-top:18px!important;padding-bottom:8px!important}
+[data-mmd-calendar-legacy-banner="hidden"]{display:none!important}
+@media(max-width:991px){
+  .mcal{display:block!important}
+  .mcal__rail{position:relative!important;top:auto!important;width:auto!important;height:auto!important;min-height:0!important;padding:14px 18px!important}
+  .mcal__main{padding:22px!important}
+  .mcal__metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .mcal__workspace{grid-template-columns:1fr!important}
+}
+@media(max-width:767px){
+  .mcal__rail{display:none!important}
+  .mcal__main{padding:18px 13px 88px!important}
+  .mcal__top{grid-template-columns:1fr!important;gap:14px!important}
+  .mcal__title{font-size:48px!important}
+  .mcal__actions{justify-content:flex-start!important}
+  .mcal__statusbar{margin-top:16px!important}
+  .mcal__metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .mcal__metric{min-height:104px!important;padding:15px!important}
+  .mcal__metricvalue{font-size:30px!important;margin-top:13px!important}
+  .mcal__datebar{top:8px!important}
+}
+</style>`;
+
+  const runtime = String.raw`<script id="${CALENDAR_OWNER_UI_VERSION}-runtime">
+(()=>{
+  const boot=()=>{
+    const root=document.querySelector('.mcal');
+    if(!root)return;
+    root.setAttribute('data-owner-ui','v3');
+
+    const normalise=value=>String(value||'').replace(/\s+/g,' ').trim();
+    const cleanInlineArtifacts=()=>{
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      const nodes=[];
+      while(walker.nextNode())nodes.push(walker.currentNode);
+      nodes.forEach(node=>{
+        const before=String(node.nodeValue||'');
+        if(/##INLINE\d+##/i.test(before))node.nodeValue=before.replace(/##INLINE\d+##/gi,'').trim();
+      });
+    };
+    cleanInlineArtifacts();
+    const production=!/\.webflow\.io$/i.test(location.hostname);
+
+    if(production){
+      const notice=root.querySelector('.mcal__notice');
+      if(notice)notice.hidden=true;
+    }
+
+    const legacy=[...document.querySelectorAll('body *')]
+      .map(el=>({el,text:normalise(el.textContent)}))
+      .filter(x=>x.text.length>80&&x.text.length<1400&&/SMOKE PASS/i.test(x.text)&&/(Model Confirm|Confirmed Session|live-write|source of truth)/i.test(x.text))
+      .sort((a,b)=>a.text.length-b.text.length)[0];
+    if(legacy?.el&&!legacy.el.classList.contains('mcal')){
+      legacy.el.setAttribute('data-mmd-calendar-legacy-banner','hidden');
+      legacy.el.hidden=true;
+    }
+
+    const eyebrow=root.querySelector('.mcal__eyebrow');
+    const sub=root.querySelector('.mcal__sub');
+    if(eyebrow)eyebrow.textContent='MMD · SCHEDULING';
+    if(sub)sub.textContent='ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ และเวลาว่างของทีมจากหน้าจอเดียว';
+
+    const labels=['งานวันนี้','รอมัดจำ','คิวชน','งานยาว'];
+    const subs=['งานที่อยู่ในปฏิทิน','Model confirmed · รอรับเงิน','ต้องตรวจเวลา','5+ ชม. / ข้ามวัน'];
+    root.querySelectorAll('.mcal__metriclabel').forEach((el,i)=>{if(labels[i])el.textContent=labels[i]});
+    root.querySelectorAll('.mcal__metricsub').forEach((el,i)=>{if(subs[i])el.textContent=subs[i]});
+
+    const live=[...root.querySelectorAll('.mcal__action')].find(el=>/Refresh Live Data|Calendar ใช้งานจริง/i.test(el.textContent||''));
+    if(live&&production)live.textContent='โหลดข้อมูลใหม่';
+
+    const reconcile=[...root.querySelectorAll('.mcal__action')].find(el=>/Reconcile Cal/i.test(el.textContent||''));
+    if(reconcile){
+      reconcile.textContent='ซิงก์ Cal';
+      reconcile.title='ตรวจและเติม Cal mapping ที่ขาด โดยไม่เปลี่ยน Money Truth';
+    }
+  };
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+</script>`;
+
+  let output = html;
+  if (output.includes('</head>')) output = output.replace('</head>', css + '</head>');
+  else output = css + output;
+  if (output.includes('</body>')) output = output.replace('</body>', runtime + '</body>');
+  else output += runtime;
+  return output;
+}
+
 function injectCalendarConnectionState(html, connection) {
   const state = `<script type="application/json" id="calendar-connection-state">${JSON.stringify(connection).replace(/</g,'\\u003c')}</script>`;
   if (html.includes('id="calendar-connection-state"')) {
@@ -148,6 +268,7 @@ export async function calendarPageResponse(request, env = {}, selectedDate = '')
     }
   }
 
+  html = injectCalendarOwnerUi(html);
   html = injectCalendarConnectionState(html, connection);
   for (const name of ['content-length','set-cookie','content-encoding','etag','last-modified','report-to','nel']) headers.delete(name);
   headers.set('content-type','text/html; charset=utf-8');
