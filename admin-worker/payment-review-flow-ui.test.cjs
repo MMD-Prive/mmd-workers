@@ -49,6 +49,17 @@ test('exact proof reload, image and both checks are mandatory before approval',a
  }finally{h.dom.window.close()}
 });
 
+test('failed approval response recovers from canonical Paid state instead of asking owner to approve twice',async()=>{
+ let recentReads=0;
+ const paid={...job,payments:[{...job.payments[0],state:'paid',proof_ids:['proof-a']}]};
+ const h=setup({fetch:async(url,opts)=>{
+   if(opts.method==='POST')return{ok:false,status:502,json:async()=>({ok:false,error:'payments_worker_review_failed'})};
+   if(url.includes('view=recent_jobs')&&++recentReads>=2)return{ok:true,status:200,json:async()=>({ok:true,items:[],jobs:[paid]})};
+ }});
+ try{await tick();await tick();await h.open();h.image();h.q('[data-pf-match]').click();h.q('[data-pf-bank]').click();h.q('[data-pf-approve]').click();await tick();await tick();assert.match(h.q('[data-pf-receipt]').textContent,/รับเงิน 30,000 บาท แล้ว/);assert.match(h.q('[data-pf-receipt]').textContent,/ตรวจซ้ำ.*Paid/);assert.equal(h.q('[data-pf-approve]'),null);assert.equal(h.q('[data-pf-uncertain]'),null);
+ }finally{h.dom.window.close()}
+});
+
 test('uncertain approval survives leaving/reopening and retries only the identical request; failed delivery is separate from paid',async()=>{
  let writes=0;const h=setup({fetch:async(_url,opts)=>{if(opts.method==='POST'){if(JSON.parse(opts.body).action==='retry_confirmation')return{ok:true,status:200,json:async()=>confirmation};if(++writes===1)throw Error('network');return{ok:true,status:200,json:async()=>({ok:true,money_truth_changed:true,payment_stage:'full',job_link_dispatch:{dispatched:false,retry_queued:true}})}}}});
  try{await tick();await tick();await h.open();h.image();h.q('[data-pf-match]').click();h.q('[data-pf-bank]').click();h.q('[data-pf-approve]').click();await tick();assert.equal(writes,1);assert.equal(h.q('[data-pf-uncertain]').hidden,false);h.q('[data-pf-back]').click();await h.open();assert.equal(h.q('[data-pf-approve]').disabled,true);h.q('[data-pf-retry]').click();await tick();const posts=h.calls.filter(x=>x.opts.method==='POST');assert.equal(posts.length,2);assert.equal(posts[0].opts.body,posts[1].opts.body);assert.equal(posts[0].opts.headers['Idempotency-Key'],posts[1].opts.headers['Idempotency-Key']);assert.match(h.q('[data-pf-receipt]').textContent,/รับเงิน 30,000 บาท แล้ว/);await tick();assert.match(h.q('[data-pf-confirm]').textContent,/มีรายการรอส่งซ้ำ/);assert.equal(h.q('[data-pf-approve]'),null);h.q('[data-pf-delivery-retry]').click();await tick();assert.equal(JSON.parse(h.calls.filter(x=>x.opts.method==='POST')[2].opts.body).action,'retry_confirmation');
