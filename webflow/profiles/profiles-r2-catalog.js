@@ -9,6 +9,7 @@
   var femaleGate = "/believe/inme";
   var track = root.querySelector(".mp8-track--profiles");
   var stage2 = root.querySelector("[data-role-stage2]");
+  var driverPackages = root.querySelector("[data-driver-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -187,9 +188,13 @@
       root.querySelectorAll("[data-role-value]").forEach(function (candidate) {
         candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
       });
+      if (driverPackages) driverPackages.hidden = activeRole !== "driver_companion";
       if (stage2) stage2.hidden = false;
       render();
-      if (stage2 && typeof stage2.scrollIntoView === "function") stage2.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      var focusTarget = activeRole === "driver_companion" && driverPackages ? driverPackages : stage2;
+      if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
+        focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     });
   });
 
@@ -204,6 +209,7 @@
   });
 
   track.replaceChildren();
+  if (driverPackages) driverPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 
