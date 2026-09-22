@@ -213,6 +213,7 @@ export async function handleMmdShopCheckout(request, env, ctx = null, options = 
       insertValue: orderId,
       properties: {
         surface: "shop",
+        flow: "shop_checkout",
         world: "shop",
         shop: shop.key,
         status: "draft",

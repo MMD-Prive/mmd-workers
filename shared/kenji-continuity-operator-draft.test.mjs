@@ -86,6 +86,19 @@ test("handoff draft stays generic and requires Per plus fresh authority review",
   assert.equal(draft.send_allowed, false);
 });
 
+test("verified public members are treated as reviewed returning relationships", () => {
+  const draft = buildKenjiContinuityOperatorDraft(eligible({
+    relationship: { context: "verified_public_member" },
+    continuity: { topic: "support" },
+    safety: { live_truth_required: false },
+  }), { mode: "operator_draft", now: NOW });
+
+  assert.equal(draft.available, true);
+  assert.equal(draft.reason, "operator_review_required");
+  assert.match(draft.text, /คุณวินนี่ครับ/);
+  assert.equal(draft.send_allowed, false);
+});
+
 test("never interpolates raw Matrix notes, references, statuses, or credentials", () => {
   const draft = buildKenjiContinuityOperatorDraft(eligible({
     continuity: {

@@ -4,6 +4,7 @@ import type { Env } from "./types";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const DASHBOARD_OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const CLIENT_INTELLIGENCE_PATH = "/v1/admin/clients/intelligence";
+const CLIENT_INTELLIGENCE_AUDIT_PATH = "/v1/admin/clients/intelligence/audit";
 const PUBLIC_HOSTS = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
 
 function normalizePath(value: string): string {
@@ -21,13 +22,19 @@ function json(data: unknown, status = 200, marker = "immigrate-to-admin-v1"): Re
   });
 }
 
-async function bridgeAdminRead(request: Request, env: Env, kind: "dashboard" | "dashboard-owner-actions" | "client-intelligence"): Promise<Response> {
+async function bridgeAdminRead(
+  request: Request,
+  env: Env,
+  kind: "dashboard" | "dashboard-owner-actions" | "client-intelligence" | "client-intelligence-audit",
+): Promise<Response> {
   const url = new URL(request.url);
   const marker = kind === "dashboard"
     ? "immigrate-to-admin-v1"
     : kind === "dashboard-owner-actions"
       ? "immigrate-to-admin-owner-actions-v1"
-      : "immigrate-to-admin-client-intelligence-v1";
+      : kind === "client-intelligence-audit"
+        ? "immigrate-to-admin-client-intelligence-audit-v1"
+        : "immigrate-to-admin-client-intelligence-v1";
   if (!PUBLIC_HOSTS.has(url.hostname)) {
     return json({ ok: false, error: `${kind.replace(/-/g, "_")}_bridge_host_not_allowed` }, 403, marker);
   }
@@ -44,7 +51,9 @@ async function bridgeAdminRead(request: Request, env: Env, kind: "dashboard" | "
     ? "immigrate-control-room-dashboard"
     : kind === "dashboard-owner-actions"
       ? "immigrate-dashboard-owner-actions"
-      : "immigrate-client-intelligence");
+      : kind === "client-intelligence-audit"
+        ? "immigrate-client-intelligence-audit"
+        : "immigrate-client-intelligence");
   headers.set("x-mmd-public-host", url.hostname);
 
   const forwarded = new Request(request, { headers });
@@ -65,6 +74,7 @@ export default {
     if (path === DASHBOARD_PATH) return bridgeAdminRead(request, env, "dashboard");
     if (path === DASHBOARD_OWNER_ACTIONS_PATH) return bridgeAdminRead(request, env, "dashboard-owner-actions");
     if (path === CLIENT_INTELLIGENCE_PATH) return bridgeAdminRead(request, env, "client-intelligence");
+    if (path === CLIENT_INTELLIGENCE_AUDIT_PATH) return bridgeAdminRead(request, env, "client-intelligence-audit");
     return canonicalWorker.fetch(request, env);
   },
 };

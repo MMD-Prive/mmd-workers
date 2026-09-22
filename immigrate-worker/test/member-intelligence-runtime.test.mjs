@@ -9,11 +9,42 @@ const wrangler = await readFile(new URL("../wrangler.toml", import.meta.url), "u
 test("Member Intelligence reads only canonical same-origin admin projections", () => {
   assert.match(source, /\/v1\/admin\/clients\/recent/);
   assert.match(source, /\/v1\/admin\/clients\/lineage-lookup/);
-  assert.match(source, /\/v1\/admin\/kenji\/control\/memory\?client_id=/);
+  assert.match(source, /\/v1\/admin\/clients\/intelligence/);
+  assert.doesNotMatch(source, /\/v1\/admin\/kenji\/control\/memory\?client_id=/);
   assert.match(source, /credentials:\s*"same-origin"/);
   assert.match(source, /cache:\s*"no-store"/);
   assert.doesNotMatch(source, /admin-worker\.malemodel-bkk\.workers\.dev/);
   assert.doesNotMatch(source, /AIRTABLE_API_KEY|ADMIN_BEARER|CONFIRM_KEY|X-Confirm-Key/);
+});
+
+test("Member Intelligence renders a fail-closed reviewed operator draft without a send path", () => {
+  assert.match(source, /mmd\.kenji_continuity_operator_draft\.v1/);
+  assert.match(source, /draft\.send_allowed===false/);
+  assert.match(source, /guards\.customer_auto_send===false/);
+  assert.match(source, /guards\.business_truth_claims===false/);
+  assert.match(source, /draft\.requires_owner_review===true/);
+  assert.match(source, /continuity\.freshness==="fresh"/);
+  assert.match(source, /continuity\.live_truth_wins===true/);
+  assert.match(source, /miDraftReview/);
+  assert.match(source, /miDraftMatrix/);
+  assert.match(source, /miDraftKill/);
+  assert.match(source, /runtime\.operator_copy_allowed===true/);
+  assert.match(source, /recordDraftAudit\("view"/);
+  assert.match(source, /recordDraftAudit\("copy"/);
+  assert.match(source, /navigator\.clipboard\.writeText/);
+  assert.ok(
+    source.indexOf('await recordDraftAudit("copy"') < source.indexOf("navigator.clipboard.writeText"),
+    "copy authorization audit must succeed before clipboard mutation",
+  );
+  assert.doesNotMatch(source, /api\.line\.me|\/messages\/.+\/send|pushMessage|replyMessage/);
+});
+
+test("Member Intelligence explains unavailable drafts and locks copy on audit or runtime-control failure", () => {
+  assert.match(source, /phase4_mode_off/);
+  assert.match(source, /matrix_stale_or_expired/);
+  assert.match(source, /AUDIT UNAVAILABLE · Copy ถูกล็อกแบบ fail-closed/);
+  assert.match(source, /UNKNOWN · COPY LOCKED/);
+  assert.match(source, /COPY LOCKED/);
 });
 
 test("Member Intelligence fails closed on unresolved identity and browser auth loss", () => {

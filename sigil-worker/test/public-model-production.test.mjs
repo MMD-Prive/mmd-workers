@@ -223,6 +223,86 @@ test("production apply persists once and returns an idempotent duplicate respons
   assert.equal(env.__airtable.applications.length, 1);
 });
 
+test("production apply persists scoped non-member image consent in dedicated Airtable fields", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    mmd_requested_public_roles: ["driver_companion", "culinary_companion"],
+    mmd_nonmember_profile_image_consent: true,
+    mmd_nonmember_promo_roles: ["driver_companion"],
+    mmd_public_promo_consent_version: publicModelTestInternals.PROMO_CONSENT_VERSION,
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(env.__airtable.applications.length, 1);
+
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberImageConsent], true);
+  assert.deepEqual(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberPromoRoles], ["driver_companion"]);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentStatus], "granted");
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentVersion], publicModelTestInternals.PROMO_CONSENT_VERSION);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentSource], "/apply/public-model");
+  assert.match(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentAt], /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentRevokedAt], undefined);
+});
+
+test("production apply stores explicit non-consent without promo authority", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    mmd_requested_public_roles: ["driver_companion"],
+    mmd_nonmember_profile_image_consent: false,
+    mmd_nonmember_promo_roles: [],
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberImageConsent], false);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentStatus], "not_granted");
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.nonMemberPromoRoles], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentAt], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentVersion], undefined);
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.publicPromoConsentSource], undefined);
+});
+
+test("public image consent fails closed for unrequested promo roles and stale consent version", async () => {
+  const cases = [
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: true,
+      mmd_nonmember_promo_roles: ["culinary_companion"],
+      mmd_public_promo_consent_version: publicModelTestInternals.PROMO_CONSENT_VERSION,
+      expected: "mmd_nonmember_promo_roles",
+    },
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: true,
+      mmd_nonmember_promo_roles: ["driver_companion"],
+      mmd_public_promo_consent_version: "legacy-v0",
+      expected: "mmd_public_promo_consent_version",
+    },
+    {
+      mmd_requested_public_roles: ["driver_companion"],
+      mmd_nonmember_profile_image_consent: false,
+      mmd_nonmember_promo_roles: ["driver_companion"],
+      expected: "mmd_nonmember_promo_roles",
+    },
+  ];
+
+  for (const item of cases) {
+    const env = makeEnv();
+    const { expected, ...overrides } = item;
+    const response = await post(APPLY_URL, validApplication(overrides), env);
+    const body = await response.json();
+    assert.equal(response.status, 400, expected);
+    assert.equal(body.error, "invalid_payload", expected);
+    assert.equal(Object.hasOwn(body.fields, expected), true, expected);
+    assert.equal(env.__airtable.applications.length, 0, expected);
+  }
+});
+
 test("a fresh coordinator adopts the persisted application ID for pre-migration retries", async () => {
   const env = makeEnv();
   const payload = validApplication({ nickname: "Migration Retry" });

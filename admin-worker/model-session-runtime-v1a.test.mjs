@@ -73,6 +73,8 @@ function makeSession(state) {
       location_name: "Bangkok",
       google_map_url: "https://maps.google.com/?q=Bangkok",
       pay_model_thb: 10000,
+      package_code: "night_out",
+      model_work_lane: "public_model",
       state,
     },
   };
@@ -280,7 +282,72 @@ test("GET /v1/model/session/current returns owned job details, model payout, sta
     assert.equal(body.session.location_name, "Bangkok");
     assert.equal(body.session.google_map_url, "https://maps.google.com/?q=Bangkok");
     assert.equal(body.session.pay_model_thb, 10000);
+    assert.equal(body.session.package_code, "night_out");
+    assert.equal(body.session.model_work_lane, "public_model");
+    assert.equal(body.session.payout_terms.money_lane, "public_model");
+    assert.equal(body.session.payout_terms.compensation_mode, "public_package_matrix");
+    assert.equal(body.session.payout_terms.public_package_matrix_applies, true);
+    assert.equal(body.session.payout_terms.base_payout_thb, 10000);
+    assert.equal(body.session.payout_terms.overtime_before_midnight_payout_thb_per_hour, 650);
+    assert.equal(body.session.payout_terms.after_midnight_prebook_premium_payout_thb_per_hour, 350);
+    assert.equal(body.session.payout_terms.overtime_after_midnight_payout_thb_per_hour, 1000);
+    assert.equal(body.session.payout_terms.overtime_after_0300_payout_thb_per_hour, 1200);
+    assert.equal(body.session.payout_terms.extension_requires_mmd_confirmation, true);
+    assert.doesNotMatch(JSON.stringify(body.session.payout_terms), /customer|margin|commission|sell_rate|client_price/i);
     assert.equal(body.session.t, undefined);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("private-model money never inherits the public package or OT matrix", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  mock.session.fields.model_work_lane = "private_model";
+  mock.session.fields.package_code = "night_out";
+  try {
+    const { response, body } = await getCurrent(t);
+    assert.equal(response.status, 200);
+    assert.equal(body.session.model_work_lane, "private_model");
+    assert.equal(body.session.payout_terms.money_lane, "private_model");
+    assert.equal(body.session.payout_terms.compensation_mode, "case_locked");
+    assert.equal(body.session.payout_terms.base_payout_thb, 10000);
+    assert.equal(body.session.payout_terms.public_package_matrix_applies, false);
+    assert.equal(body.session.payout_terms.public_ot_matrix_applies, false);
+    assert.equal(body.session.payout_terms.extension_rate_mode, "mmd_case_quote_required");
+    assert.equal(body.session.payout_terms.overtime_before_midnight_payout_thb_per_hour, undefined);
+    assert.equal(body.session.payout_terms.overtime_after_midnight_payout_thb_per_hour, undefined);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("needs-review money lane fails closed without payout terms", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  mock.session.fields.model_work_lane = "needs_review";
+  try {
+    const { response, body } = await getCurrent(t);
+    assert.equal(response.status, 200);
+    assert.equal(body.session.model_work_lane, "needs_review");
+    assert.equal(body.session.payout_terms, null);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("model payout terms stay model-safe and use session pay_model_thb as base truth", async () => {
+  const t = await signedModelT();
+  const mock = installRuntimeFetchMock({ initialState: "confirmed" });
+  try {
+    const { response, body } = await getCurrent(t);
+    assert.equal(response.status, 200);
+    assert.equal(body.session.payout_terms.policy_version, "mmd_public_model_money_v1_20260922");
+    assert.equal(body.session.payout_terms.money_lane, "public_model");
+    assert.equal(body.session.payout_terms.compensation_mode, "public_package_matrix");
+    assert.equal(body.session.payout_terms.base_payout_thb, body.session.pay_model_thb);
+    const json = JSON.stringify(body.session.payout_terms);
+    assert.doesNotMatch(json, /customer_amount_due|customer_sell|margin|commission|payment_ref|bank|slip/i);
   } finally {
     mock.restore();
   }

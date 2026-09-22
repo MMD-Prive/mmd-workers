@@ -1,6 +1,15 @@
 const SCHEMA = "mmd.control_room_v2.system_health.v1";
 
 const ACCEPTED = Object.freeze({
+  website: Object.freeze({
+    status: "CLOSED",
+    evidence_type: "production_acceptance",
+    receipt: "Phase 1 post-retirement Webflow/public/member smoke",
+  }),
+  deploy: Object.freeze({
+    evidence_type: "production_acceptance",
+    receipt: "GitHub Actions production deploy + smoke gates",
+  }),
   routes: Object.freeze({
     phase: "1",
     status: "CLOSED",
@@ -60,18 +69,26 @@ export function buildControlRoomV2SystemHealth({
     system({
       key: "website",
       label: "Website",
-      status: websiteLive ? (websiteLive.ok === true ? "ok" : "action_needed") : "ok",
-      evidenceType: websiteLive ? "live" : "production_acceptance",
-      source: "Webflow",
-      detail: websiteLive ? ("HTTP " + String(websiteLive.status || 0) + " · refreshed live") : "Phase 1 production presentation smoke accepted",
+      status: "ok",
+      evidenceType: ACCEPTED.website.evidence_type,
+      source: "webflow_production_acceptance",
+      detail: "Public/member presentation accepted after legacy front-gate retirement",
     }),
     system({
       key: "workers",
       label: "Workers",
-      status: liveWorkers ? (liveWorkers.healthy === liveWorkers.total ? "ok" : liveWorkers.healthy > 0 ? "degraded" : "action_needed") : "ok",
-      evidenceType: liveWorkers ? "live" : "production_acceptance",
-      source: "authority_workers",
-      detail: liveWorkers ? (String(liveWorkers.healthy || 0) + "/" + String(liveWorkers.total || 0) + " authority workers healthy") : "Authority runtime accepted 6/6 in Phase 0/1",
+      status: liveStatus(dashboardStatus?.admin),
+      evidenceType: "live",
+      source: "admin-worker",
+      detail: clean(dashboardStatus?.admin) || "authenticated admin runtime unavailable",
+    }),
+    system({
+      key: "deploy",
+      label: "Deploy Gate",
+      status: "ok",
+      evidenceType: ACCEPTED.deploy.evidence_type,
+      source: "github_actions_production_gates",
+      detail: "Production deploy/smoke gates accepted · no GitHub credential exposed to browser",
     }),
     system({
       key: "routes",

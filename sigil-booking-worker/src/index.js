@@ -186,6 +186,7 @@ async function handleBookingIntake(req, env, ctx) {
     insertValue: bookingRef,
     properties: {
       surface: "booking",
+      flow: "booking_intake",
       world: fields.lane === "private" ? "private" : "public",
       lane: fields.lane,
       job_class: fields.job_class,

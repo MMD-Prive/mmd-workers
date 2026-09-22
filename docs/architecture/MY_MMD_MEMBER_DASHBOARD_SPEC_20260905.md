@@ -12,7 +12,7 @@ The product should answer four questions quickly:
 1. Who am I in MMD right now?
 2. What is my current verified status?
 3. Is there anything I need to do now?
-4. Where do I go for detail?
+4. What is new in MMD that is relevant to me?
 
 The canonical customer route is:
 
@@ -70,111 +70,165 @@ Canonical routes:
 /my-mmd/membership
 /my-mmd/points
 /my-mmd/coupons
+/my-mmd/payments
 /my-mmd/history
 /my-mmd/profile
 ```
 
 Legacy `/member/my-mmd*` is compatibility-only and must not become a separate member application again.
 
-## 4. Home Dashboard — intentionally light
+## 4. Home — Feed-first Private Home
 
-The Home route should be a calm status dashboard, not a summary of every feature.
+Decision update: 2026-09-22.
 
-### Required content
+The Home route is no longer a traditional account dashboard. It is the member's **private home**: a light verified snapshot at the top and a vertically scrolling **MMD NOW** feed as the primary experience.
 
-#### A. Greeting / identity
+Conceptual balance:
 
-Keep it short.
+```text
+~20% light dashboard / verified snapshot
+~80% feed / updates / current actions
+```
+
+The product goal is to answer two questions immediately:
+
+1. **ตอนนี้ฉันต้องทำอะไรไหม**
+2. **MMD มีอะไรใหม่ที่เกี่ยวกับฉัน**
+
+Home must remain mobile-first, calm and editorial. It must not become a marketing landing page, a dense operations dashboard or a second admin console.
+
+### A. Compact greeting / identity
+
+Keep the greeting short and understated.
 
 Example:
 
 ```text
 สวัสดีครับ คุณเปอร์
-My MMD
+MY MMD
 ```
 
-Do not turn this area into a large marketing hero.
+The Home header must not become a large marketing hero.
 
-#### B. Primary Member Status card
+### B. Light verified snapshot
 
-One card should show the minimum useful verified state at a glance:
+Use one compact status strip/card only.
 
-- Membership Level — only when backend-verified
-- Current Status — Active / Grace / Expired / Pending Review / Suspended / Blocked / Revoked / Checking
-- Confirmed Points — only when backend returns a verified balance
-- Actual Access — only from backend authority; unresolved must display `Checking`
+It may show, only when backend-verified:
 
-These concepts must stay visibly separate:
+- Membership Level
+- lifecycle/status
+- confirmed Points
+- one short Actual Access indicator when the backend supplies it safely
+
+These concepts remain separate:
 
 ```text
 Membership Level != Current Status != Actual Access
 ```
 
-Do not imply access from tier or lifecycle status.
+Home must not render the full membership artwork, long member-since/expiry detail, entitlement evidence or account explanation. Those belong on their dedicated routes.
 
-If a value is missing or unverified, show a neutral checking state rather than a guessed value.
+If a field is unresolved, show a neutral checking state or omit it according to the existing safe presentation contract. Never guess a tier, balance, expiry or access state.
 
-#### C. One Next Action
+### C. Needs You
 
-Home may show one contextual action only when the backend provides a safe action.
+`Needs You` appears only when canonical backend state already provides a safe action or an existing backend-backed actionable item.
 
-Examples:
+Examples of eligible source states:
 
-- ต่ออายุสมาชิก
-- ยืนยันผ่าน LINE
-- ดำเนินการ CARE BACK ต่อ
-- ตรวจสอบข้อมูล
-
-Do not create frontend rules that decide the action independently.
-
-#### D. MMD Letter / New Letter
-
-Show one lightweight latest editorial card only.
-
-Recommended card fields:
-
-- short label: `MMD LETTER` or `WHAT'S NEW`
-- title
-- 1–2 line excerpt
-- date
-- optional `อ่านต่อ` CTA
+- backend-provided `nextAction`
+- current Job/Booking action already present in the safe member projection
+- canonical payment continuation/review state
+- renewal/recovery action
+- CARE / Coupon action already supplied by the owning backend
 
 Rules:
 
-- one latest item only on Home
-- no feed wall
-- no auto-carousel
-- no urgent visual treatment unless the content is genuinely operationally urgent
-- no personalized entitlement or benefit claims inside editorial content
-- no points, coupon eligibility or membership conclusions derived from the Letter
+- no frontend-created business decision;
+- no fabricated urgency;
+- no more than 1–3 visible actions;
+- payment, entitlement and booking truth remain with their canonical backend owners;
+- unresolved data must not become an action recommendation.
 
-For the current version, MMD Letter may be presentation-owned static/editorial content inside Lovable because it carries no member authority. If it later becomes personalized or dynamically targeted, it must be supplied through a bounded Worker endpoint.
+### D. MMD NOW — primary feed
 
-#### E. Compact navigation
+`MMD NOW` is the main Home content plane.
 
-Home should make the five detail areas easy to reach without duplicating their content.
+Feed categories:
 
-Preferred mobile primary navigation should stay within normal mobile conventions and avoid more than five primary bottom tabs.
+1. **NEEDS YOU** — backend-backed customer actions only
+2. **FOR YOU** — backend-backed personalized items only
+3. **MMD UPDATE** — non-authoritative editorial/system update content
+4. **EDITORIAL** — MMD Letter, TMIB, Behind MMD, City Guide, Academy / MMS stories
 
-Recommended primary nav:
+Ordering principle:
 
 ```text
-Home
+must act -> relevant to me -> newest useful update -> editorial
+```
+
+Feed cards may contain:
+
+- small category label
+- title
+- 1–2 line excerpt
+- date only when the source provides a real date
+- optional safe editorial image
+- CTA to an approved route
+
+No auto-carousel.
+
+### E. Personalized feed authority
+
+Personalized feed content must never be inferred from frontend-only data.
+
+If a feed card claims or depends on:
+
+- customer status
+- entitlement/access
+- Points
+- coupon eligibility/value
+- payment status/amount
+- booking/job state
+- private Model availability or access
+- customer preference/history targeting
+
+then the card must be backed by an explicit bounded backend projection.
+
+Lovable may own static/editorial cards that make **no** customer-specific authority claim.
+
+When no trustworthy feed item exists, Home should show a refined quiet state such as `ตอนนี้ยังไม่มีอัปเดตใหม่` rather than fabricate content.
+
+### F. Compact quick access
+
+Quick access is utility, not the Home's main content.
+
+Preferred Home quick access:
+
+```text
 Member
 Points
 Wallet
-More
+Payments
 ```
 
-`More` may contain:
+History and Profile remain available through application navigation and later navigation refinement.
+
+Avoid the previous dense six-tile Home grid.
+
+### G. Feed / Telegram separation
+
+Telegram member groups are read-only broadcast surfaces.
+
+Home is the complete private personalized plane; Telegram is only the time-sensitive push layer that sends the member back to My MMD.
 
 ```text
-History
-Profile
-Support
+MY MMD = archive + personalized feed + personal action
+Telegram = limited urgent/fresh broadcast + route back to MY MMD
 ```
 
-The canonical detail URLs remain unchanged even if navigation groups some of them under More.
+Do not mirror the full MY MMD feed into Telegram.
 
 ## 5. What must NOT be on Home
 
@@ -346,17 +400,28 @@ Avoid:
 
 ## 13. Home visual priority
 
-The reading order should be:
+The Home reading order is:
 
 ```text
 1. Greeting / identity
-2. Member Status
-3. One Next Action, only when needed
-4. MMD Letter / New Letter
-5. Navigation to detail
+2. Compact verified snapshot
+3. Needs You — only when backend-backed
+4. MMD NOW feed
+5. Compact quick access
 ```
 
-If there is no action required, the Home page should feel intentionally quiet.
+The feed should feel more editorial than the detail screens while preserving the same warm-light My MMD design system.
+
+Home must not use:
+
+- full Membership card artwork as the dominant hero
+- heavy black account cards
+- dense accounting modules
+- repeated policy/explanation notes
+- oversized quick-action grids
+- auto-rotating promotions
+
+If there is no action and no new feed item, the Home page should feel intentionally quiet rather than artificially busy.
 
 ## 14. Current API contract
 
@@ -374,28 +439,31 @@ GET /api/member/app/care
 
 All member authority remains server-side.
 
-A future dynamic MMD Letter endpoint is optional and should not be added until editorial content needs personalization or independent publishing cadence.
+The existing bounded read routes remain authoritative for all current member truth.
+
+A future dynamic `MMD NOW` feed endpoint may be added only when MMD needs independently publishable or personalized feed content. Until such a bounded backend contract exists, static presentation-owned editorial content must remain non-personalized and non-authoritative.
 
 ## 15. Acceptance criteria for Home
 
 Home is considered correct when:
 
-- it opens quickly on mobile
-- it does not expose mock/demo values on the canonical host
-- the member can identify their verified status in a few seconds
-- unverified fields remain Checking
-- there is never more than one primary Next Action
-- the latest MMD Letter is visually secondary to Member Status
-- no detailed module is duplicated on Home
-- navigation reaches every detail route
-- no browser-side point, membership, entitlement or coupon calculation exists
-- session-required, checking, blocked and error states are visually distinct and fail closed
+- it opens quickly on mobile;
+- it does not expose mock/demo values on the canonical host;
+- the member can identify verified status at a glance without reading a dense dashboard;
+- unverified fields remain Checking/omitted according to backend state;
+- `Needs You` appears only from a real backend-backed action;
+- the main visual body is `MMD NOW`, not account modules;
+- no customer-specific feed card is fabricated by frontend logic;
+- static editorial cards make no membership, access, payment, Points, coupon, booking or entitlement claim;
+- full Membership detail, full Points ledger, full Wallet, full Payment detail and full History remain on dedicated routes;
+- no browser-side point, membership, entitlement, payment, booking or coupon calculation exists;
+- session-required, checking, blocked and error states remain visually distinct and fail closed.
 
 ## 16. Canonical product principle
 
 ```text
-Home tells me where I stand.
-Detail pages tell me why.
+Home tells me what matters now — and what is new in MMD.
+Detail pages tell me the full story.
 Workers decide what is true.
 Lovable decides how it feels.
 ```

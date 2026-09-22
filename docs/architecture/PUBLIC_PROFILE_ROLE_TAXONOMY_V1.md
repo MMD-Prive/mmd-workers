@@ -87,6 +87,22 @@ Submission stores requested roles. MMD review separately decides approved roles,
 - **Google Drive**: human-readable canonical product/operations reference.
 - **R2**: public-safe model media only; folder presence alone grants no eligibility.
 
+## Confidential work bridge
+
+Public-profile visibility and confidential-job visibility are separate controls.
+
+A person may keep an approved public profile while asking MMD to route selected work privately. The public page must not reveal confidential job details, client identity, worker payout, or private offer terms.
+
+Public talent CTA:
+
+`https://t.me/mmdapply`
+
+Recommended copy:
+
+> มีโปรไฟล์กับ MMD อยู่แล้ว และต้องการรับงานแบบ Confidential / ไม่เปิดเผยรายละเอียดงานต่อสาธารณะ? ติดต่อ MMD Apply ผ่าน Telegram
+
+Confidential work must still move through controlled MMD review and the MMD MODEL acceptance flow. Direct client-model contact/payment bypass is not an approved confidential-work path.
+
 ## Safety locks
 
 - Applicant-selected role never auto-publishes.

@@ -8,6 +8,7 @@ on:
     paths:
       - "admin-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
+      - "shared/control-room-v2-system-health.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
       - "shared/mmd-shop-stock-reconciliation.mjs"
       - "shared/private-media.mjs"
@@ -103,6 +104,7 @@ jobs:
           node --check ../shared/sigil-availability-snapshot-v1.mjs
           node --check src/kenji-control-endpoints.js
           node --check src/client-intelligence-endpoint.js
+          node --check src/client-intelligence-audit.js
           node --check ../shared/kenji-continuity-operator-draft.mjs
           node --check src/kenji-model-admin-adapter.js
           node --check src/kenji-model-workflow.js
@@ -120,6 +122,7 @@ jobs:
             sigil-availability-snapshot.test.mjs \
             ../shared/sigil-availability-snapshot-v1.test.mjs \
             client-intelligence-endpoint.test.mjs \
+            client-intelligence-audit.test.mjs \
             ../shared/kenji-continuity-operator-draft.test.mjs \
             kenji-model-admin-adapter.test.mjs \
             kenji-model-workflow.test.mjs \

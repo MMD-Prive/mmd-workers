@@ -258,6 +258,20 @@ function queueReviewedPaymentAuthorityEvents(ctx, env, request, response) {
     if (!paymentRef) return;
 
     const paymentStage = String(body.payment_stage || body.stage || body.payment_type || "").trim().toLowerCase();
+    const paymentFlow = paymentStage === "membership"
+      ? "membership_payment"
+      : paymentStage === "shop"
+        ? "shop_payment"
+        : paymentStage === "mms"
+          ? "mms_payment"
+          : "booking_payment";
+    const paymentWorld = paymentStage === "shop"
+      ? "shop"
+      : paymentStage === "mms"
+        ? "mms"
+        : paymentStage === "membership"
+          ? "member"
+          : "private";
     const amount = Number(body.amount_thb ?? body.amount);
     queueAuthorityEvent(ctx, env, {
       event: "payment_verified",
@@ -267,7 +281,8 @@ function queueReviewedPaymentAuthorityEvents(ctx, env, request, response) {
       insertValue: `${paymentRef}:${paymentStage || "unknown"}`,
       properties: {
         surface: "payment",
-        world: paymentStage === "shop" ? "shop" : "member",
+        flow: paymentFlow,
+        world: paymentWorld,
         payment_stage: paymentStage || "unknown",
         amount_thb: Number.isFinite(amount) ? amount : undefined,
         currency: "THB",
@@ -290,6 +305,7 @@ function queueReviewedPaymentAuthorityEvents(ctx, env, request, response) {
         insertValue: `${paymentRef}:membership_activated`,
         properties: {
           surface: "membership",
+          flow: "membership_activation",
           world: "member",
           payment_stage: "membership",
           package_code: String(body.package_code || body.package || payload.membership_write_through?.package_code || "").trim(),
