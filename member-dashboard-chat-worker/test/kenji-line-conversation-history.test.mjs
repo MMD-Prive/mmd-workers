@@ -13,6 +13,7 @@ const ENV = {
   AIRTABLE_API_KEY: "test-key",
   AIRTABLE_BASE_ID: "app-test",
   AIRTABLE_TABLE_CONSOLE_INBOX_ID: "tblInbox",
+  AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID: "tblEvents",
   KENJI_LINE_CONVERSATION_SHADOW_ENABLED: "true",
 };
 
@@ -37,6 +38,8 @@ test("conversation history retains same-customer turns and only actual sent assi
         {
           id: "recCustomer",
           fields: {
+            inbox_id: "line_msg-prior",
+            line_id: "msg-prior",
             source: "line",
             created_at: "2026-09-22T10:00:00.000Z",
             admin_note: "เสาร์นี้ สองทุ่ม สุขุมวิท",
@@ -73,6 +76,114 @@ test("conversation history retains same-customer turns and only actual sent assi
   assert.equal(history.turns.some((turn) => turn.content.includes("ข้อความร่าง")), false);
   assert.equal(history.coverage.confirmed_assistant_messages, 1);
   assert.equal(history.coverage.reply_history_complete, true);
+});
+
+
+test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events", async () => {
+  let outboundLookupUrl = "";
+  const history = await buildKenjiLineConversationHistory({
+    env: ENV,
+    event: event("มีแนวนี้อีกไหม"),
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tblEvents")) {
+        outboundLookupUrl = target;
+        return response({
+          records: [
+            {
+              id: "recDelivered",
+              fields: {
+                event_id: "kai_line_msg-prior",
+                created_at: "2026-09-22T10:01:00.000Z",
+                channel: "LINE_OFC",
+                generated_reply: "Sansui เป็นตัวเลือกที่คุยกันอยู่ครับ",
+                response_mode: "auto_reply_sent",
+                final_status: "sent",
+                payload_json: JSON.stringify({
+                  line_delivery_attempted: true,
+                  line_delivery_succeeded: true,
+                  line_delivery_status: 200,
+                }),
+              },
+            },
+            {
+              id: "recNotDelivered",
+              fields: {
+                event_id: "kai_line_failed",
+                created_at: "2026-09-22T10:01:30.000Z",
+                channel: "LINE_OFC",
+                generated_reply: "ข้อความนี้ห้ามเข้าประวัติ",
+                response_mode: "auto_reply_sent",
+                final_status: "sent",
+                payload_json: JSON.stringify({
+                  line_delivery_attempted: true,
+                  line_delivery_succeeded: false,
+                  line_delivery_status: 500,
+                }),
+              },
+            },
+          ],
+        });
+      }
+      return response({
+        records: [{
+          id: "recCustomer",
+          fields: {
+            inbox_id: "line_msg-prior",
+            line_id: "msg-prior",
+            source: "line",
+            created_at: "2026-09-22T10:00:00.000Z",
+            payload_json: JSON.stringify({
+              source_message_id: "msg-prior",
+              raw_text: "คนนี้ดูดี",
+            }),
+          },
+        }],
+      });
+    },
+  });
+
+  assert.deepEqual(history.turns.map((turn) => [turn.role, turn.content]), [
+    ["customer", "คนนี้ดูดี"],
+    ["assistant", "Sansui เป็นตัวเลือกที่คุยกันอยู่ครับ"],
+    ["customer", "มีแนวนี้อีกไหม"],
+  ]);
+  assert.equal(history.turns.some((turn) => turn.content.includes("ห้ามเข้าประวัติ")), false);
+  assert.match(decodeURIComponent(outboundLookupUrl), /kai_line_msg-prior/);
+  assert.match(decodeURIComponent(outboundLookupUrl), /kai_line_msg-current/);
+  assert.equal(history.coverage.confirmed_assistant_messages, 1);
+  assert.equal(history.coverage.reply_history_complete, true);
+});
+
+test("current webhook is not duplicated when the same LINE message is already in Inbox", async () => {
+  const history = await buildKenjiLineConversationHistory({
+    env: ENV,
+    event: event("เปลี่ยนเป็นสามทุ่มนะ"),
+    fetchImpl: async (url) => {
+      if (String(url).includes("tblEvents")) return response({ records: [] });
+      return response({
+        records: [{
+          id: "recCurrentAlreadyPersisted",
+          fields: {
+            inbox_id: "line_msg-current",
+            line_id: "msg-current",
+            source: "line",
+            created_at: "2026-09-22T10:02:00.000Z",
+            payload_json: JSON.stringify({
+              source_message_id: "msg-current",
+              received_at: "2026-09-22T10:02:00.000Z",
+              raw_text: "เปลี่ยนเป็นสามทุ่มนะ",
+            }),
+          },
+        }],
+      });
+    },
+  });
+
+  assert.equal(history.turns.length, 1);
+  assert.equal(history.turns[0].role, "customer");
+  assert.equal(history.turns[0].content, "เปลี่ยนเป็นสามทุ่มนะ");
+  assert.equal(history.turns[0].source_event_id, "msg-current");
 });
 
 test("missing outbound evidence remains explicit instead of inventing an earlier reply", async () => {
@@ -160,8 +271,8 @@ test("delivered Kenji reply is written as an actual outbound turn and deduped", 
   assert.equal(result.id, "recOutbound");
   const write = calls.find((call) => call.init.method === "POST");
   const fields = JSON.parse(write.init.body).fields;
-  assert.equal(fields.source, "line_ofc_outbound");
-  assert.equal(fields.status, "sent");
+  assert.equal(fields.source, "line_oa");
+  assert.equal(fields.status, "done");
   const payload = JSON.parse(fields.payload_json);
   assert.equal(payload.actual_sent, true);
   assert.equal(payload.sent_text, "รับทราบครับ ผมปรับเวลาเป็นสามทุ่ม โดยคงวันและสุขุมวิทไว้");

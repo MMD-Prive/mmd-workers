@@ -3,6 +3,7 @@ import {
   inferKenjiShadowIntent,
 } from "./kenji-line-canonical-context-adapter.mjs";
 import { buildKenjiLineConversationHistory } from "./kenji-line-conversation-history.mjs";
+import { observeKenjiLineContextualUnderstandingShadow } from "./kenji-line-contextual-understanding-shadow.mjs";
 
 const AI_MATRIX_URL = "https://ai-worker.local/v1/ai/kenji/conversation-matrix";
 const BRIDGE_ENV = "KENJI_AI_WORKER_BRIDGE_ENABLED";
@@ -119,6 +120,13 @@ function safeBridgeResult(overrides = {}) {
     identity_state: "unknown",
     matrix_version: 0,
     review_required: true,
+    contextual_shadow_enabled: false,
+    contextual_relation: "standalone",
+    contextual_confidence: 0,
+    contextual_referent_state: "not_needed",
+    contextual_needs_clarification: false,
+    contextual_analysis_source: "disabled",
+    contextual_model_success: false,
     shadow_only: true,
     customer_copy_changed: false,
     ...overrides,
@@ -164,6 +172,30 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
       reason: "conversation_history_unavailable",
     };
   }
+  let contextualUnderstanding;
+  try {
+    contextualUnderstanding = await observeKenjiLineContextualUnderstandingShadow({
+      env,
+      history: conversationHistory,
+      event,
+    });
+  } catch (_) {
+    contextualUnderstanding = {
+      enabled: true,
+      schema: "mmd.kenji_line_contextual_understanding.v1",
+      relation: "clarification_needed",
+      topic_relation: "unclear",
+      referent_state: "unresolved",
+      needs_clarification: true,
+      confidence: 0,
+      analysis_source: "shadow_error",
+      model_success: false,
+      shadow_only: true,
+      auto_send_allowed: false,
+      customer_copy_changed: false,
+    };
+  }
+
   try {
     response = await env.AI_WORKER.fetch(new Request(AI_MATRIX_URL, {
       method: "POST",
@@ -180,6 +212,9 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
           // Private service-binding input. It must not be copied into a
           // Matrix, event telemetry, response, or log.
           conversation_history_v1: conversationHistory,
+          // Phase 2 is analysis-only. The structured semantic projection has
+          // no customer reply field and cannot authorize any domain action.
+          contextual_understanding_v1: contextualUnderstanding,
         },
       }),
     }));
@@ -225,6 +260,13 @@ export async function observeKenjiLineEvent({ env = {}, event = {}, contextBuild
     conversation_turns_read: Array.isArray(conversationHistory?.turns) ? conversationHistory.turns.length : 0,
     confirmed_assistant_turns_read: Number(conversationHistory?.coverage?.confirmed_assistant_messages) || 0,
     reply_history_complete: conversationHistory?.coverage?.reply_history_complete === true,
+    contextual_shadow_enabled: contextualUnderstanding?.enabled === true,
+    contextual_relation: text(contextualUnderstanding?.relation) || "standalone",
+    contextual_confidence: Math.max(0, Math.min(1, Number(contextualUnderstanding?.confidence) || 0)),
+    contextual_referent_state: text(contextualUnderstanding?.referent_state) || "not_needed",
+    contextual_needs_clarification: contextualUnderstanding?.needs_clarification === true,
+    contextual_analysis_source: text(contextualUnderstanding?.analysis_source) || "unknown",
+    contextual_model_success: contextualUnderstanding?.model_success === true,
     shadow_only: true,
     customer_copy_changed: false,
   };
@@ -251,6 +293,10 @@ export async function observeKenjiLineWebhook({ request, env = {}, contextBuilde
   const succeeded = results.filter((item) => item.ok).length;
   const incomplete = results.filter((item) => item.evidence_incomplete).length;
   const identityStates = [...new Set(results.map((item) => item.identity_state).filter(Boolean))];
+  const contextualRelations = [...new Set(results
+    .filter((item) => item.contextual_shadow_enabled)
+    .map((item) => item.contextual_relation)
+    .filter(Boolean))];
   return {
     ok: succeeded === results.length,
     enabled: true,
@@ -262,6 +308,10 @@ export async function observeKenjiLineWebhook({ request, env = {}, contextBuilde
     identity_state: identityStates.length === 1 ? identityStates[0] : identityStates.length ? "mixed" : "unknown",
     matrix_version: Math.max(0, ...results.map((item) => Number(item.matrix_version) || 0)),
     review_required: results.filter((item) => item.review_required).length,
+    contextual_shadow_observed: results.filter((item) => item.contextual_shadow_enabled).length,
+    contextual_model_success: results.filter((item) => item.contextual_model_success).length,
+    contextual_clarification_required: results.filter((item) => item.contextual_needs_clarification).length,
+    contextual_relations: contextualRelations,
     shadow_only: true,
     customer_copy_changed: false,
   };
