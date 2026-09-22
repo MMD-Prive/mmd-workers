@@ -54,6 +54,7 @@ test("Phase 2 model reads the whole visible thread and returns semantics only", 
       KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED: "true",
       OPENAI_API_KEY: "test-key",
       OPENAI_MODEL: "gpt-5.6",
+      KENJI_CONTEXTUAL_OPENAI_MODEL: "gpt-4.1-mini",
     },
     history,
     event: event("มีแนวนี้อีกไหม"),
@@ -104,6 +105,7 @@ test("Phase 2 model reads the whole visible thread and returns semantics only", 
   assert.match(request.input, /แต่แพงไปหน่อย/);
   assert.match(request.input, /มีแนวนี้อีกไหม/);
   assert.match(request.instructions, /Do not answer the customer/);
+  assert.equal(request.model, "gpt-4.1-mini");
 });
 
 test("model failure reason stays internal and fallback remains shadow-only", async () => {
@@ -138,6 +140,37 @@ test("model failure reason stays internal and fallback remains shadow-only", asy
   assert.equal(result.shadow_only, true);
   assert.equal(result.auto_send_allowed, false);
   assert.equal(Object.prototype.hasOwnProperty.call(result, "answer"), false);
+});
+
+test("provider 429 exposes only a bounded provider code and never provider message text", async () => {
+  const result = await observeKenjiLineContextualUnderstandingShadow({
+    env: {
+      KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED: "true",
+      OPENAI_API_KEY: "test-key",
+      KENJI_CONTEXTUAL_OPENAI_MODEL: "gpt-4.1-mini",
+    },
+    history: {
+      turns: [
+        { role: "customer", content: "คนนี้ดูดี", evidence: "customer_received" },
+        { role: "assistant", content: "ตัวเลือก A เรท 25k ครับ", evidence: "line_delivery_succeeded" },
+        { role: "customer", content: "มีแนวนี้อีกไหม", evidence: "current_webhook" },
+      ],
+      memory: { known_facts: [], corrections: [] },
+    },
+    event: event("มีแนวนี้อีกไหม"),
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: {
+        code: "rate_limit_exceeded",
+        type: "requests",
+        message: "PRIVATE PROVIDER MESSAGE MUST NOT LEAK",
+      },
+    }), { status: 429, headers: { "content-type": "application/json" } }),
+  });
+
+  assert.equal(result.model_success, false);
+  assert.equal(result.model_failure_reason, "openai_http_429_rate_limit_exceeded");
+  assert.equal(JSON.stringify(result).includes("PRIVATE PROVIDER MESSAGE"), false);
+  assert.equal(result.auto_send_allowed, false);
 });
 
 test("correction fallback patches only the field the customer changed", async () => {
@@ -215,6 +248,7 @@ test("explicit topic switch does not inherit the previous subject", async () => 
 test("Phase 2 production config is shadow-only while LINE auto reply stays off", () => {
   const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"true"$/m);
+  assert.match(wrangler, /^KENJI_CONTEXTUAL_OPENAI_MODEL\s*=\s*"gpt-4\.1-mini"$/m);
   assert.match(wrangler, /^KENJI_LINE_CONVERSATION_SHADOW_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
 });

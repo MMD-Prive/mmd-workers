@@ -388,6 +388,9 @@ AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
 # latest message relates to prior turns, but it has no customer-copy field,
 # cannot mutate domain truth, and cannot bypass LINE_AUTO_REPLY_ENABLED=false.
 KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "true"
+# Dedicated shadow model so contextual observation does not consume the same
+# model-rate bucket as the live Kenji response path.
+KENJI_CONTEXTUAL_OPENAI_MODEL = "gpt-4.1-mini"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
