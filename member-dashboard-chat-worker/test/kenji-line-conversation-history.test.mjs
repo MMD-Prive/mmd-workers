@@ -38,6 +38,8 @@ test("conversation history retains same-customer turns and only actual sent assi
         {
           id: "recCustomer",
           fields: {
+            inbox_id: "line_msg-prior",
+            line_id: "msg-prior",
             source: "line",
             created_at: "2026-09-22T10:00:00.000Z",
             admin_note: "เสาร์นี้ สองทุ่ม สุขุมวิท",
@@ -78,18 +80,20 @@ test("conversation history retains same-customer turns and only actual sent assi
 
 
 test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events", async () => {
+  let outboundLookupUrl = "";
   const history = await buildKenjiLineConversationHistory({
     env: ENV,
     event: event("มีแนวนี้อีกไหม"),
     fetchImpl: async (url) => {
       const target = String(url);
       if (target.includes("tblEvents")) {
+        outboundLookupUrl = target;
         return response({
           records: [
             {
               id: "recDelivered",
               fields: {
-                event_id: "kai_line_delivered",
+                event_id: "kai_line_msg-prior",
                 created_at: "2026-09-22T10:01:00.000Z",
                 channel: "LINE_OFC",
                 generated_reply: "Sansui เป็นตัวเลือกที่คุยกันอยู่ครับ",
@@ -140,6 +144,8 @@ test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events
     ["customer", "มีแนวนี้อีกไหม"],
   ]);
   assert.equal(history.turns.some((turn) => turn.content.includes("ห้ามเข้าประวัติ")), false);
+  assert.match(decodeURIComponent(outboundLookupUrl), /kai_line_msg-prior/);
+  assert.match(decodeURIComponent(outboundLookupUrl), /kai_line_msg-current/);
   assert.equal(history.coverage.confirmed_assistant_messages, 1);
   assert.equal(history.coverage.reply_history_complete, true);
 });
