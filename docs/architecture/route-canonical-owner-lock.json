@@ -1,14 +1,15 @@
 {
   "metadata": {
-    "phase": "1B",
-    "status": "READY_FOR_HUMAN_REVIEW",
-    "base_main_sha": "dbc4669062162ec78244423131bc5ecc54445b27",
+    "phase": "1",
+    "status": "PHASE_1_CLOSED",
+    "base_main_sha": "d29f81c84d71e891e31ebdf8bfa451417166e9b8",
     "input_artifact": "docs/architecture/ROUTE_INVENTORY_NORMALIZED.md",
     "source_artifact": "docs/architecture/ROUTE_CANONICAL_OWNER_LOCK.md",
-    "consistency_fix": "Phase 1B.5B14",
-    "documentation_only": true,
+    "consistency_fix": "Phase 1 Final Canon Sync",
+    "documentation_only": false,
     "owner_decisions_changed": 10,
-    "last_reconciled": "2026-09-19"
+    "last_reconciled": "2026-09-22",
+    "production_truth_source": "Phase 1 production superseding snapshot + accepted GitHub Actions receipts"
   },
   "principles": {
     "webflow_visible_public_pages": true,
@@ -51,32 +52,26 @@
       "canonical_route": "/",
       "aliases": [],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page",
       "page_owner": "Webflow",
       "api_owner": "unknown",
       "current_owner": "Webflow",
-      "current_front_gate": "unknown/current front gate if routed through apex",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Webflow",
       "backend_owner": "unknown",
       "candidate_owner": "Webflow",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "LOW",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified in Phase 1B",
-      "risk": "product IA not normalized",
-      "evidence": "not verified in Phase 1B",
-      "conflicts": [
-        "not in Phase 1A evidence"
-      ],
-      "migration_phase": "Phase 2A",
-      "acceptance_requirements": [
-        "Verify apex/www/Webflow route",
-        "headers",
-        "no Worker truth."
-      ],
+      "production_verified": "production_smoke_verified",
+      "production_verification": "Phase 1 production route-owner smoke + mmd-redirect retirement accepted 2026-09-22",
+      "risk": "low; presentation only",
+      "evidence": "Post-retirement production GET smoke on apex/www",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "product IA not normalized",
         "remove_later_decision": null
@@ -102,8 +97,8 @@
       "surface_type": "page",
       "page_owner": "Webflow",
       "api_owner": "unknown",
-      "current_owner": "mmd-redirect-worker temporary page",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_owner": "legacy front-gate owner retired; current route behavior must be proven per surface",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "front-gate shell",
       "backend_owner": "unknown",
       "candidate_owner": "Webflow",
@@ -143,30 +138,26 @@
       "canonical_route": "/profiles",
       "aliases": [],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page",
-      "page_owner": "Webflow or catalog Worker",
+      "page_owner": "Webflow",
       "api_owner": "unknown",
-      "current_owner": "none proven",
-      "current_front_gate": "unknown",
+      "current_owner": "Webflow",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "none proven",
       "backend_owner": "unknown",
       "candidate_owner": "Webflow or catalog Worker",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "public catalog IA blocked",
-      "evidence": "not verified",
-      "conflicts": [
-        "no implementation evidence"
-      ],
-      "migration_phase": "Phase 2A",
-      "acceptance_requirements": [
-        "Identify existing page/API owner or create approved future task."
-      ],
+      "production_verified": "production_smoke_verified",
+      "production_verification": "Phase 1 production route-owner smoke + mmd-redirect retirement accepted 2026-09-22",
+      "risk": "low; presentation owner locked",
+      "evidence": "Post-retirement production GET smoke",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "public catalog IA blocked",
         "remove_later_decision": null
@@ -240,7 +231,7 @@
       "page_owner": "Redirect Rule to /sigil/booking",
       "api_owner": "unknown",
       "current_owner": "not explicitly proven",
-      "current_front_gate": "likely mmd-redirect-worker or Webflow",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "unknown",
       "backend_owner": "unknown",
       "candidate_owner": "Redirect Rule to /sigil/booking",
@@ -282,30 +273,30 @@
         "/sigil/access"
       ],
       "alias_notes": null,
-      "status": "PARTIAL_INTEGRATION",
-      "status_display": "PARTIAL INTEGRATION · WEBFLOW SOURCE VERIFIED / LIVE SMOKE PENDING",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED · WEBFLOW PRESENTATION LOCKED",
       "surface_type": "page",
       "page_owner": "Webflow page 6a58a1f259f7960f6edafce9",
       "api_owner": "public-access-worker for separate POST /public/api/access/intake",
-      "current_owner": "Webflow visible access-gate source; production route winner requires live GET/HEAD smoke",
-      "current_front_gate": "production ingress not yet live-smoked",
+      "current_owner": "Webflow visible access-gate presentation",
+      "current_front_gate": "Webflow origin; no legacy front-gate interception",
       "ui_location": "Webflow /public/access page 6a58a1f259f7960f6edafce9 root #mmd-access-gate; LINE LIFF status CTA + /member/my-mmd; no intake form",
       "backend_owner": "public-access-worker for separate intake API only",
       "candidate_owner": "Webflow presentation + public-access-worker separate API",
-      "owner_decision": "LOCKED_PRESENTATION_SOURCE",
-      "owner_confidence": "MEDIUM",
+      "owner_decision": "LOCKED_PRESENTATION",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "retain /sigil/access until separate IA decision",
-      "production_verified": "webflow_source_verified_route_and_api_live_smoke_pending",
-      "production_verification": "Webflow presentation source verified; production GET/HEAD route and public-access-worker API live smoke pending",
+      "production_verified": "presentation_production_smoke_verified",
+      "production_verification": "Phase 1 production GET smoke passed; separate POST /public/api/access/intake remains a Phase 2 API acceptance item",
       "risk": "visible access gate must not grant membership/access itself; separate intake API remains evidence-only and must not be implied by the page",
-      "evidence": "Webflow page 6a58a1f259f7960f6edafce9 publishedPath /public/access; root #mmd-access-gate; primary LINE LIFF status CTA; secondary /member/my-mmd; no form. public-access-worker separately implements POST /public/api/access/intake and sigil.mmdbkk.com/public/api/* route config.",
+      "evidence": "Webflow page + Phase 1 post-retirement production smoke",
       "conflicts": [
         "historical docs classified /public/access as a missing intake page",
         "production GET/HEAD route winner still requires live smoke",
         "public-access-worker intake API is separate from the visible gate",
         "unknown /public/api/* subpaths are not implemented"
       ],
-      "migration_phase": "Phase 2A",
+      "migration_phase": "Phase 2A API acceptance only",
       "acceptance_requirements": [
         "Live-smoke GET and HEAD /public/access on apex and www and verify the current Webflow gate.",
         "Verify primary LINE LIFF status CTA and secondary /member/my-mmd handoff.",
@@ -346,7 +337,7 @@
       "page_owner": "Webflow",
       "api_owner": "unknown",
       "current_owner": "partial immigrate-worker shell evidence",
-      "current_front_gate": "mmd-redirect-worker aliases",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "immigrate-worker shell evidence",
       "backend_owner": "unknown",
       "candidate_owner": "Webflow",
@@ -396,8 +387,8 @@
       "surface_type": "page",
       "page_owner": "Cloudflare Redirect Rules later",
       "api_owner": "unknown",
-      "current_owner": "mmd-redirect-worker",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_owner": "legacy front-gate owner retired; current route behavior must be proven per surface",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "unknown",
       "backend_owner": "unknown",
       "candidate_owner": "Cloudflare Redirect Rules later",
@@ -629,34 +620,26 @@
       "canonical_route": "/sigil/api/* booking subset",
       "aliases": [],
       "alias_notes": null,
-      "status": "PARTIAL_INTEGRATION",
-      "status_display": "PARTIAL INTEGRATION",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page_or_api",
       "page_owner": "sigil-booking-worker implementation only",
-      "api_owner": "sigil-booking-worker repository handlers",
-      "current_owner": "sigil-booking-worker implementation only",
-      "current_front_gate": "workers.dev config only; custom-host route attachment missing/unverified",
+      "api_owner": "sigil-booking-worker",
+      "current_owner": "sigil-booking-worker",
+      "current_front_gate": "exact sigil.mmdbkk.com custom-host routes",
       "ui_location": "unknown",
-      "backend_owner": "sigil-booking-worker repository handlers",
-      "candidate_owner": "sigil-booking-worker handler candidate pending route binding",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "MEDIUM",
+      "backend_owner": "sigil-booking-worker",
+      "candidate_owner": "sigil-booking-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified; custom-host route attachment absent from sigil-booking-worker/wrangler.toml",
-      "risk": "API route family broadness; workers.dev must not become canonical production owner",
-      "evidence": "sigil-booking-worker/src/index.js implements POST /sigil/api/client/resolve, GET|POST /sigil/api/models/search, and POST /sigil/api/booking/intake; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; README mapping is suggested only",
-      "conflicts": [
-        "namespace may include non-booking APIs later",
-        "custom-host route attachment unproven"
-      ],
-      "migration_phase": "Phase 2B",
-      "acceptance_requirements": [
-        "Add/prove exact custom-host binding for /sigil/api/client/resolve",
-        "Add/prove exact custom-host binding for /sigil/api/models/search",
-        "Add/prove exact custom-host binding for /sigil/api/booking/intake",
-        "production acceptance must prove methods and fail-closed unknown subpaths"
-      ],
+      "production_verified": "production_route_and_cors_smoke_verified",
+      "production_verification": "Phase 1 exact custom-host route attachment + OPTIONS owner-header smoke passed",
+      "risk": "bounded explicit partition",
+      "evidence": "sigil-booking-worker routes + Phase 1 production acceptance",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "custom-host route attachment missing/unverified",
         "remove_later_decision": null
@@ -678,30 +661,26 @@
       "canonical_route": "/member/login",
       "aliases": [],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page_or_api",
-      "page_owner": "admin-worker or auth Worker TBD",
+      "page_owner": "Webflow",
       "api_owner": "auth/session owner TBD",
-      "current_owner": "none proven",
-      "current_front_gate": "unknown",
+      "current_owner": "Webflow",
+      "current_front_gate": "Webflow origin via no-script exclusion; My MMD/LIFF Worker remains identity authority",
       "ui_location": "none proven",
       "backend_owner": "auth/session owner TBD",
       "candidate_owner": "admin-worker or auth Worker TBD",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "none",
-      "production_verified": "unverified",
-      "production_verification": "not verified",
-      "risk": "Memberstack must not return as target",
-      "evidence": "not verified",
-      "conflicts": [
-        "target login contract absent"
-      ],
-      "migration_phase": "Phase 3A",
-      "acceptance_requirements": [
-        "mmd_member_id"
-      ],
+      "production_verified": "production_smoke_verified",
+      "production_verification": "Phase 1 Webflow no-script exclusion + live page smoke passed",
+      "risk": "presentation only; auth authority remains LIFF/member backend",
+      "evidence": "Webflow page + production smoke",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "Memberstack must not return as target",
         "remove_later_decision": null
@@ -724,36 +703,26 @@
         "/member"
       ],
       "alias_notes": null,
-      "status": "UNRESOLVED",
-      "status_display": "UNRESOLVED",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page",
-      "page_owner": "TBD non-legacy owner",
-      "api_owner": "unknown; /v1/member/dashboard handler not proven",
-      "current_owner": "immigrate-worker temporary page renderer",
-      "current_front_gate": "mmd-redirect-worker page route to immigrate-worker; no dashboard API rewrite proven",
+      "page_owner": "Webflow",
+      "api_owner": "member-dashboard-chat-worker front gate -> member-pages-worker truth",
+      "current_owner": "Webflow presentation",
+      "current_front_gate": "Webflow origin via no-script exclusion",
       "ui_location": "legacy dashboard shell in immigrate-worker",
-      "backend_owner": "unresolved dashboard API contract; /v1/member/dashboard and /api/member/dashboard handlers/mapping not proven",
-      "candidate_owner": "TBD non-legacy page owner; API owner TBD",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
+      "backend_owner": "member-pages-worker through /api/member/dashboard front gate",
+      "candidate_owner": "Webflow presentation + member-dashboard-chat-worker/member-pages-worker API chain",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "keep /member alias",
-      "production_verified": "unverified",
-      "production_verification": "page source/config evidence only; API not verified",
-      "risk": "legacy page dependency; dashboard UI may depend on API endpoint returning 404 or fall-through",
-      "evidence": "mmd-redirect-worker/src/index.js handles /member/dashboard as page route via fetchMemberFrontend; immigrate-worker/src/index.ts renders /member/dashboard; no exact /v1/member/dashboard, /api/member/dashboard, or /member/api/dashboard handler found in current source scan",
-      "conflicts": [
-        "legacy page dependency",
-        "backend API handler missing",
-        "alias/rewrite mapping missing or unverified"
-      ],
-      "migration_phase": "Phase 3A",
-      "acceptance_requirements": [
-        "Separate /member/dashboard page route from /v1/member/dashboard API contract.",
-        "Select non-legacy dashboard page owner and auth.",
-        "Implement/prove /v1/member/dashboard or approved replacement API.",
-        "Prove /api/member/dashboard alias or remove it from contract.",
-        "Keep mmd_member_id as target identity."
-      ],
+      "production_verified": "page_and_api_production_smoke_verified",
+      "production_verification": "Webflow live page smoke + /api/member/dashboard owner/upstream header acceptance passed",
+      "risk": "low; page/API authority split explicit",
+      "evidence": "Phase 1 production acceptance",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "member dashboard backend API handler and alias mapping are not proven",
         "remove_later_decision": null
@@ -783,7 +752,7 @@
       "page_owner": "Webflow",
       "api_owner": "payment APIs separate",
       "current_owner": "Webflow",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Published Webflow page",
       "backend_owner": "payment APIs separate",
       "candidate_owner": "Webflow",
@@ -877,7 +846,7 @@
       "page_owner": "member-pages-worker temporary",
       "api_owner": "member status backend TBD",
       "current_owner": "member-pages-worker",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Worker-rendered placeholder/status page",
       "backend_owner": "member status backend TBD",
       "candidate_owner": "member-pages-worker temporary",
@@ -1102,8 +1071,8 @@
       "surface_type": "page",
       "page_owner": "Redirect/pass-through compatibility",
       "api_owner": "unknown",
-      "current_owner": "mmd-redirect-worker pass-through",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_owner": "legacy front-gate owner retired; current route behavior must be proven per surface",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Webflow pass-through",
       "backend_owner": "unknown",
       "candidate_owner": "Redirect/pass-through compatibility",
@@ -1193,7 +1162,7 @@
       "page_owner": "member-pages-worker page",
       "api_owner": "payments-worker/admin review",
       "current_owner": "member-pages-worker",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Worker-rendered pending page",
       "backend_owner": "payments-worker/admin review",
       "candidate_owner": "member-pages-worker page",
@@ -1331,7 +1300,7 @@
       "page_owner": "member-pages-worker temporary lock",
       "api_owner": "payment API separate",
       "current_owner": "member-pages-worker safety page",
-      "current_front_gate": "mmd-redirect-worker never-redirect",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "Worker safety/fallback page",
       "backend_owner": "payment API separate",
       "candidate_owner": "member-pages-worker temporary lock",
@@ -1416,33 +1385,26 @@
         "/sigil/apply/"
       ],
       "alias_notes": null,
-      "status": "PARTIAL_INTEGRATION",
-      "status_display": "PARTIAL INTEGRATION",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page",
-      "page_owner": "sigil-worker candidate target pending implementation",
-      "api_owner": "sigil-worker candidate target only",
-      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
-      "current_front_gate": "mmd-redirect-worker",
+      "page_owner": "sigil-worker",
+      "api_owner": "sigil-worker",
+      "current_owner": "sigil-worker",
+      "current_front_gate": "exact custom-host /sigil/apply* routes",
       "ui_location": "UI/page handler missing or unverified in sigil-worker",
-      "backend_owner": "sigil-worker candidate target only",
-      "candidate_owner": "sigil-worker candidate target pending implementation",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
+      "backend_owner": "sigil-worker",
+      "candidate_owner": "sigil-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "slash alias retained only as compatibility",
-      "production_verified": "unverified",
-      "production_verification": "not verified; target handler and production route incomplete",
-      "risk": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
-      "evidence": "not verified; target handler and production route incomplete",
-      "conflicts": [
-        "front gate delegation without matching target handler"
-      ],
-      "migration_phase": "Phase 4A",
-      "acceptance_requirements": [
-        "Implement/prove GET/HEAD handler",
-        "slash/query behavior",
-        "owner headers",
-        "no stale Telegram brief."
-      ],
+      "production_verified": "production_route_smoke_verified",
+      "production_verification": "Phase 1 GET/HEAD/owner-header acceptance passed after exact legacy route retirement",
+      "risk": "bounded private-model surface",
+      "evidence": "sigil-worker private-model handler + production route smoke",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "target Worker currently falls through to not_found; private model entry must not lock without handler proof",
         "remove_later_decision": null
@@ -1465,34 +1427,26 @@
         "slash variant"
       ],
       "alias_notes": null,
-      "status": "PARTIAL_INTEGRATION",
-      "status_display": "PARTIAL INTEGRATION",
+      "status": "LIVE_CONNECTED",
+      "status_display": "LIVE CONNECTED",
       "surface_type": "page_or_api",
-      "page_owner": "sigil-worker candidate target pending implementation",
-      "api_owner": "sigil-worker candidate target only",
-      "current_owner": "mmd-redirect-worker delegates to SIGIL_WORKER; target handler absent in current sigil-worker/src/index.js",
-      "current_front_gate": "mmd-redirect-worker",
+      "page_owner": "sigil-worker",
+      "api_owner": "sigil-worker",
+      "current_owner": "sigil-worker",
+      "current_front_gate": "exact custom-host /sigil/api/private-model/* routes",
       "ui_location": "unknown",
-      "backend_owner": "sigil-worker candidate target only",
-      "candidate_owner": "sigil-worker candidate target pending implementation",
-      "owner_decision": "UNRESOLVED",
-      "owner_confidence": "BLOCKED",
+      "backend_owner": "sigil-worker",
+      "candidate_owner": "sigil-worker",
+      "owner_decision": "LOCKED",
+      "owner_confidence": "HIGH",
       "compatibility_decision": "slash alias retained only as compatibility",
-      "production_verified": "unverified",
-      "production_verification": "not verified; target handler and request contract incomplete",
-      "risk": "POST/OPTIONS/body preservation cannot be locked until target API exists",
-      "evidence": "not verified; target handler and request contract incomplete",
-      "conflicts": [
-        "front gate delegation without matching target handler"
-      ],
-      "migration_phase": "Phase 4A",
-      "acceptance_requirements": [
-        "Implement/prove POST/OPTIONS handler",
-        "auth",
-        "body preservation",
-        "route attachment",
-        "no Webflow pass-through."
-      ],
+      "production_verified": "production_options_and_invalid_post_smoke_verified",
+      "production_verification": "Phase 1 OPTIONS + invalid-payload fail-closed acceptance passed",
+      "risk": "bounded private-model API",
+      "evidence": "sigil-worker handler + production acceptance",
+      "conflicts": [],
+      "migration_phase": "Phase 1 CLOSED",
+      "acceptance_requirements": [],
       "notes": {
         "blocker_reason": "POST/OPTIONS/body preservation cannot be locked until target API exists",
         "remove_later_decision": null
@@ -1616,8 +1570,8 @@
       "surface_type": "page",
       "page_owner": "alias/remove later",
       "api_owner": "model session APIs elsewhere",
-      "current_owner": "mmd-redirect-worker recovery shell",
-      "current_front_gate": "mmd-redirect-worker",
+      "current_owner": "legacy front-gate owner retired; current route behavior must be proven per surface",
+      "current_front_gate": "none; legacy mmd-redirect-worker production routes retired",
       "ui_location": "temporary shell",
       "backend_owner": "model session APIs elsewhere",
       "candidate_owner": "alias/remove later",
@@ -2344,14 +2298,12 @@
       "source_of_truth": "trusted Worker state after handler exists",
       "temporary_proxy": "none proven for dashboard API",
       "known_overlap": [
-        "/v1/member/applications missing",
-        "/v1/member/dashboard handler missing",
-        "/api/member/dashboard alias mapping unproven"
+        "/v1/member/applications missing"
       ],
       "target_direct_route": "TBD",
       "owner_decision": "UNRESOLVED",
       "evidence": "No exact /v1/member/dashboard handler or /api/member/dashboard mapping found in current source scan; /member/dashboard page route is separate.",
-      "notes": "Page/API separation required: /member/dashboard is page route, /v1/member/dashboard is backend API contract.",
+      "notes": "Route-specific ownership only. /api/member/dashboard production chain is locked; generic /v1/member/* remains endpoint-specific.",
       "route_exceptions": [
         {
           "route": "/v1/member/dashboard",
@@ -2365,13 +2317,13 @@
         },
         {
           "route": "/api/member/dashboard",
-          "method": "unknown pending mapping",
-          "exception_owner": "TBD alias only if proven",
-          "current_status": "UNRESOLVED",
-          "migration_state": "alias/rewrite mapping unproven",
-          "auth_contract": "pending member dashboard API contract",
-          "evidence": "mmd-redirect-worker MEMBER_API_PATHS only includes /member/api/liff/identify; no /api/member/dashboard rewrite found.",
-          "acceptance_requirement": "Prove alias/rewrite to canonical API or remove alias from contract."
+          "method": "GET",
+          "exception_owner": "member-dashboard-chat-worker -> member-pages-worker",
+          "current_status": "LIVE_CONNECTED",
+          "migration_state": "production accepted",
+          "auth_contract": "member/session boundary enforced by front gate/backend",
+          "evidence": "Phase 1 production owner/upstream header smoke",
+          "acceptance_requirement": "Maintain owner/upstream regression smoke."
         }
       ]
     },
@@ -2392,20 +2344,17 @@
     },
     {
       "namespace": "/v1/rt/*",
-      "canonical_owner": null,
+      "canonical_owner": "realtime-worker",
       "implementation_owner": "realtime-worker",
       "visibility": "internal/realtime client",
       "auth_requirement": "room token / server auth",
       "source_of_truth": "Durable Object room state after production route binding is proven",
       "temporary_proxy": null,
-      "known_overlap": [
-        "workers.dev only is not canonical production ownership",
-        "no custom-host route or service binding proof recorded in this lock"
-      ],
-      "target_direct_route": "custom-host route or service binding TBD",
-      "owner_decision": "UNRESOLVED",
-      "evidence": "ROUTE_CANONICAL_OWNER_LOCK.md API Namespace Ownership table",
-      "notes": "realtime-worker implements /v1/rt/room/open and /v1/rt/ws, but production route ownership remains unresolved until custom-host route or service binding is proven."
+      "known_overlap": [],
+      "target_direct_route": "exact apex/www custom-host /v1/rt/* routes",
+      "owner_decision": "LOCKED",
+      "evidence": "realtime-worker implementation + dedicated zone route sync + Phase 1 owner health/fail-closed smoke",
+      "notes": "Production owner locked to realtime-worker. workers.dev remains non-canonical compatibility only."
     },
     {
       "namespace": "/public/api/*",
@@ -2439,21 +2388,19 @@
     },
     {
       "namespace": "/sigil/api/*",
-      "canonical_owner": null,
+      "canonical_owner": "explicit route partitions",
       "candidate_owner": "sigil-booking-worker for implemented booking handlers; sigil-worker candidate target for private-model apply",
       "visibility": "public/internal by endpoint",
       "auth_requirement": "endpoint-specific",
       "source_of_truth": "SIGIL booking/apply contracts after route attachment is proven",
-      "temporary_proxy": "mmd-redirect-worker for private apply",
+      "temporary_proxy": null,
       "known_overlap": [
-        "broad route family can collide",
-        "private-model apply exact route remains unresolved",
-        "booking custom-host route attachment missing/unverified"
+        "unlisted /sigil/api/* subpaths remain fail-closed/unowned"
       ],
-      "target_direct_route": "explicit route partitions; no workers.dev canonical ownership",
-      "owner_decision": "UNRESOLVED",
+      "target_direct_route": "explicit route partitions only",
+      "owner_decision": "LOCKED_WITH_EXCEPTIONS",
       "evidence": "sigil-booking-worker/src/index.js implements booking handlers; sigil-booking-worker/wrangler.toml has workers_dev = true and no custom-host [[routes]]; /sigil/api/private-model/apply exact route is PARTIAL_INTEGRATION with sigil-worker candidate only",
-      "notes": "Namespace record may not be more authoritative than exact route records.",
+      "notes": "Booking and private-model partitions are production-locked; no broad wildcard owner is inferred.",
       "route_partitions": [
         {
           "partition": "booking_api_handlers",
@@ -2464,24 +2411,24 @@
           ],
           "implementation_owner": "sigil-booking-worker",
           "implementation_status": "implemented in repository",
-          "custom_host_route_attachment": "missing/unverified",
-          "production_route_owner": "UNRESOLVED",
-          "status": "PARTIAL_INTEGRATION",
-          "owner_decision": "UNRESOLVED",
-          "blocker": "exact custom-host binding absent/unverified",
-          "next_action": "Phase 2B route attachment and production acceptance"
+          "custom_host_route_attachment": "verified",
+          "production_route_owner": "sigil-booking-worker",
+          "status": "LIVE_CONNECTED",
+          "owner_decision": "LOCKED",
+          "blocker": null,
+          "next_action": "maintain regression smoke"
         },
         {
           "partition": "private_model_apply",
           "route": "/sigil/api/private-model/apply",
-          "canonical_owner": null,
+          "canonical_owner": "sigil-worker",
           "candidate_owner": "sigil-worker",
-          "current_handler": "missing/unverified",
-          "production_route_attachment": "missing/unverified",
-          "status": "PARTIAL_INTEGRATION",
-          "owner_decision": "UNRESOLVED",
-          "blocker": "no matching handler or custom route",
-          "implementation_phase": "Phase 4A"
+          "current_handler": "implemented and verified",
+          "production_route_attachment": "verified",
+          "status": "LIVE_CONNECTED",
+          "owner_decision": "LOCKED",
+          "blocker": null,
+          "implementation_phase": "Phase 1 CLOSED"
         }
       ]
     },
@@ -2567,20 +2514,20 @@
     },
     {
       "namespace": "LINE endpoints",
-      "canonical_owner": "member-dashboard-chat-worker for /webhooks/line production webhook only; rich-menu/internal production owner unresolved",
+      "canonical_owner": "member-dashboard-chat-worker for /webhooks/line and /webhooks/line/mms; rich-menu/internal remains endpoint-specific",
       "implementation_owner": "member-dashboard-chat-worker",
       "visibility": "webhook/internal",
       "auth_requirement": "LINE signature, internal token/confirm key",
       "source_of_truth": "LINE event and trusted Worker state after exact binding proof",
-      "temporary_proxy": "mmd-redirect-worker webhook bridge legacy",
+      "temporary_proxy": null,
       "known_overlap": [
         "admin-worker rich-menu proxy",
         "rich-menu/internal APIs require exact route or service binding proof"
       ],
       "target_direct_route": "explicit route partitions",
-      "owner_decision": "TEMPORARY_WEBHOOK_UNRESOLVED_RICH_MENU",
+      "owner_decision": "LOCKED_WEBHOOK_WITH_UNRESOLVED_INTERNAL_APIS",
       "evidence": "member-dashboard-chat-worker/wrangler.toml proves apex/www /webhooks/line routes only; member-dashboard-chat-worker/src/index.js implements /v1/internal/line/* and /__internal/line/* rich-menu APIs; admin-worker/src/index.js proxies admin rich-menu calls through MEMBER_DASHBOARD_CHAT_WORKER and can return service_binding_unavailable when absent.",
-      "notes": "Do not treat webhook continuity and rich-menu/internal API continuity as one LIVE_CONNECTED surface.",
+      "notes": "LINE webhook ownership is production-locked. Rich-menu/internal APIs remain deferred and do not block Phase 1 closure.",
       "route_partitions": [
         {
           "partition": "line_webhook",
@@ -2592,8 +2539,9 @@
           "production_route_owner": "member-dashboard-chat-worker",
           "custom_host_attachment": "proven in member-dashboard-chat-worker/wrangler.toml for apex/www",
           "status": "LIVE_CONNECTED",
-          "owner_decision": "TEMPORARY",
-          "acceptance_requirement": "Maintain LINE signature verification and current webhook route continuity."
+          "owner_decision": "LOCKED",
+          "acceptance_requirement": "Maintain LINE signature verification and current webhook route continuity.",
+          "current_status": "LIVE_CONNECTED"
         },
         {
           "partition": "rich_menu_internal_apis",
@@ -2634,7 +2582,7 @@
       "redirect_type": "host canonicalization",
       "query_preservation": "preserve full query unless route allowlist says otherwise",
       "host_behavior": "www to apex for front-gated routes",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Cloudflare Redirect Rules",
       "keep_until": "all canonical owners proven",
       "removal_phase": "Phase 6A"
@@ -2645,7 +2593,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "/sigil/start live and approved",
       "removal_phase": "Phase 6A"
@@ -2656,7 +2604,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule after owner lock",
       "keep_until": "login IA resolved",
       "removal_phase": "Phase 6A"
@@ -2667,7 +2615,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "/sigil/start live and approved",
       "removal_phase": "Phase 6A"
@@ -2678,7 +2626,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "/sigil/start live and approved",
       "removal_phase": "Phase 6A"
@@ -2689,7 +2637,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "/sigil/start live and approved",
       "removal_phase": "Phase 6A"
@@ -2700,7 +2648,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "dashboard owner/auth live",
       "removal_phase": "Phase 6A"
@@ -2711,7 +2659,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "membership page verified",
       "removal_phase": "Phase 6A"
@@ -2722,7 +2670,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "membership page verified",
       "removal_phase": "Phase 6A"
@@ -2733,7 +2681,7 @@
       "redirect_type": "301 compatibility",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule",
       "keep_until": "membership page verified",
       "removal_phase": "Phase 6A"
@@ -2744,7 +2692,7 @@
       "redirect_type": "301 legacy",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule or remove",
       "keep_until": "renewal/membership contracts proven",
       "removal_phase": "Phase 6A"
@@ -2755,7 +2703,7 @@
       "redirect_type": "301 legacy",
       "query_preservation": "preserve query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Redirect Rule or remove",
       "keep_until": "renewal/membership contracts proven",
       "removal_phase": "Phase 6A"
@@ -2799,7 +2747,7 @@
       "redirect_type": "folder redirect",
       "query_preservation": "preserve suffix/query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Bulk Redirect",
       "keep_until": "academy owner proven",
       "removal_phase": "Phase 6A"
@@ -2810,7 +2758,7 @@
       "redirect_type": "folder redirect",
       "query_preservation": "preserve suffix/query",
       "host_behavior": "apex/www",
-      "current_implementation": "mmd-redirect-worker",
+      "current_implementation": "retired; no production route after Phase 1",
       "target_implementation": "Bulk Redirect",
       "keep_until": "trust owner proven",
       "removal_phase": "Phase 6A"
@@ -2818,8 +2766,9 @@
   ],
   "worker_classifications": {
     "mmd-redirect-worker": {
-      "classification": "deprecated front gate",
-      "decision": "No new scope; retire in Phase 6 only."
+      "classification": "retired front gate",
+      "production_routes": 0,
+      "decision": "HARD DISABLED/pass-through source retained only for rollback history; zero canonical or production routes after Phase 1 retirement."
     },
     "immigrate-worker": {
       "classification": "legacy/temporary compatibility bridge",
@@ -2867,21 +2816,23 @@
       "decision": "API map remains TEMPORARY until exact /v1/pay* route evidence is enumerated."
     },
     "sigil-worker": {
-      "classification": "candidate target for SIGIL apply/private model APIs; implementation owner for board UI status/queue APIs",
+      "classification": "canonical Private Model owner; implementation owner for board UI status/queue APIs",
       "board_ui_api_implementation_owner": [
         "/v1/sigil/board/status",
         "/v1/sigil/board/queue"
       ],
       "board_ui_api_production_owner": "UNRESOLVED",
-      "decision": "SIGIL apply/private model apply remain UNRESOLVED until matching handlers and route attachment are proven. /v1/sigil/board/status and /v1/sigil/board/queue handlers are implemented, but production ownership remains UNRESOLVED until exact custom-host route or service binding proof. Recovery/public model API overlap still requires future lock."
+      "decision": "Private Model page/API are production-locked to sigil-worker. Board UI status/queue APIs remain separately unresolved until exact ingress proof.",
+      "private_model_production_owner": "sigil-worker"
     },
     "sigil-booking-proxy-worker": {
       "classification": "canonical active page route proxy",
       "decision": "Owns /sigil/booking route behavior; Webflow owns visible source."
     },
     "sigil-booking-worker": {
-      "classification": "booking API implementation owner",
-      "decision": "Implements current booking API subset under /sigil/api/*, but custom-host route ownership is missing/unverified because the current Wrangler file has workers_dev = true and no [[routes]]."
+      "classification": "canonical booking API owner",
+      "decision": "Owns accepted booking API subset with exact sigil.mmdbkk.com routes and production CORS/owner smoke.",
+      "production_route_owner": "sigil-booking-worker"
     },
     "public-access-worker": {
       "classification": "active public access intake API owner",
@@ -2909,33 +2860,34 @@
       "decision": "Job/events ownership needs exact route lock."
     },
     "realtime-worker": {
-      "classification": "realtime implementation owner",
-      "decision": "Implements /v1/rt/*, but production route ownership remains UNRESOLVED until custom-host route or service binding is proven. workers.dev is not canonical."
+      "classification": "canonical realtime production owner",
+      "decision": "Owns /v1/rt/* on apex/www through dedicated zone route sync; production owner health and fail-closed boundary accepted.",
+      "production_route_owner": "realtime-worker"
     }
   },
   "unresolved_decisions": [
     {
-      "route_or_namespace_key": "/, /profiles, /services/companion",
-      "implementation_status": "not proven",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "Not proven in Phase 1A evidence.",
-      "candidate_owner": "Webflow or catalog Worker TBD",
+      "route_or_namespace_key": "/services/companion",
+      "implementation_status": "not proven in Phase 1",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
+      "blocker": "Companion presentation was outside accepted Phase 1 production smoke.",
+      "candidate_owner": "Webflow",
       "required_next_phase": "Phase 2A",
-      "acceptance_requirement": "Prove exact apex/www/Webflow route, headers, owner, and no Worker truth before locking."
+      "acceptance_requirement": "Prove current Webflow route if this surface remains canonical."
     },
     {
-      "route_or_namespace_key": "/public/access and /sigil/access",
-      "implementation_status": "visible page route not proven; POST /public/api/access/intake implementation/config owner is public-access-worker",
-      "production_ownership_status": "UNRESOLVED for visible page; API production smoke pending",
-      "blocker": "UI artifacts exist, but exact visible page route is not proven; POST /public/api/access/intake implementation/config owner is public-access-worker, live smoke pending.",
-      "candidate_owner": "Webflow visible page; public-access-worker API",
+      "route_or_namespace_key": "/sigil/access and separate /public/api/access/intake acceptance",
+      "implementation_status": "/public/access presentation production-locked; alias/API acceptance remains",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
+      "blocker": "Only alias/API follow-up remains; visible /public/access owner is resolved.",
+      "candidate_owner": "Webflow alias decision + public-access-worker API",
       "required_next_phase": "Phase 2A",
       "acceptance_requirement": "Prove visible page owner and live-smoke intake API without granting access from evidence."
     },
     {
       "route_or_namespace_key": "/sigil/start",
       "implementation_status": "alias target exists as entry concept",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Alias target exists, but canonical visible owner is not proven.",
       "candidate_owner": "Webflow or approved entry Worker TBD",
       "required_next_phase": "Phase 2A",
@@ -2944,7 +2896,7 @@
     {
       "route_or_namespace_key": "/sigil/recovery",
       "implementation_status": "assets/API pieces exist",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Duplicate recovery API evidence and no normalized visible owner.",
       "candidate_owner": "Webflow page plus explicit recovery API Worker TBD",
       "required_next_phase": "Phase 2A or Phase 6",
@@ -2953,52 +2905,16 @@
     {
       "route_or_namespace_key": "/sigil/aftercare",
       "implementation_status": "JS reference only",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "JS reference only, no exact owner.",
       "candidate_owner": "Webflow TBD",
       "required_next_phase": "Phase 2A",
       "acceptance_requirement": "Prove exact route exists and has an approved owner, or defer/remove by approval."
     },
     {
-      "route_or_namespace_key": "/sigil/pay/renewal and /pay/renewal",
-      "implementation_status": "renderer/front-gate evidence exists; direct production route attachment not proven",
-      "production_ownership_status": "UNRESOLVED or TEMPORARY pending exact route proof",
-      "blocker": "Exact direct production route owner, production winner, GET/HEAD/slash/query behavior, and Webflow bridge outcome are not proven.",
-      "candidate_owner": "member-dashboard-chat-worker renderer candidate; current front-gate/member-pages dependency retained",
-      "required_next_phase": "Phase 3/7 and Phase 6A",
-      "acceptance_requirement": "Audit exact route config, production winner, GET/HEAD/slash/query behavior, and Webflow bridge redirect before locking owner or removing aliases."
-    },
-    {
-      "route_or_namespace_key": "/sigil/apply and /sigil/api/private-model/apply",
-      "implementation_status": "front-gate delegation exists; target handlers missing/unverified",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "Matching sigil-worker page/API handlers and custom route attachment are missing/unverified.",
-      "candidate_owner": "sigil-worker candidate target only",
-      "required_next_phase": "Phase 4A",
-      "acceptance_requirement": "Implement/prove GET/HEAD/slash/query and POST/OPTIONS/body/auth behavior, owner headers, and exact production route attachment."
-    },
-    {
-      "route_or_namespace_key": "/sigil/api/* booking partition",
-      "implementation_status": "sigil-booking-worker implements /sigil/api/client/resolve, /sigil/api/models/search, and /sigil/api/booking/intake",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "Custom-host route attachment and production reachability are missing/unverified.",
-      "candidate_owner": "sigil-booking-worker implementation owner",
-      "required_next_phase": "Phase 2B",
-      "acceptance_requirement": "Prove exact custom-host binding, method coverage, production smoke, and fail-closed unknown subpaths."
-    },
-    {
-      "route_or_namespace_key": "/v1/rt/*",
-      "implementation_status": "realtime-worker implements room open and Durable Object websocket handlers",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "No exact custom-host route or service binding proof; workers.dev is not canonical.",
-      "candidate_owner": "realtime-worker implementation owner",
-      "required_next_phase": "Realtime route binding acceptance",
-      "acceptance_requirement": "Prove custom-host route or service binding, auth, room open/websocket paths, aliases if any, and production smoke."
-    },
-    {
       "route_or_namespace_key": "Telegram complaint/preview aliases",
       "implementation_status": "telegram-worker implements complaint/preview aliases; webhook/internal-send core is locked separately",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Complaint/preview aliases do not yet have exact custom-host production attachment.",
       "candidate_owner": "telegram-worker implementation owner",
       "required_next_phase": "Telegram optional alias route acceptance",
@@ -3007,25 +2923,16 @@
     {
       "route_or_namespace_key": "/internal/admin/liff-renewal-queue and /v1/admin/line/liff-renewal-queue",
       "implementation_status": "internal UI handler not proven; API exception candidate unresolved",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "No implemented/proven internal UI handler or route attachment; UI must remain separate from API candidate.",
       "candidate_owner": "TBD for UI; API candidate pending exact handler/route confirmation",
       "required_next_phase": "Phase 5",
       "acceptance_requirement": "Prove UI handler/route attachment separately from API handler, method, auth, and route before locking owner."
     },
     {
-      "route_or_namespace_key": "/v1/partner/request",
-      "implementation_status": "partners-worker implements POST /v1/partner/request",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "partners-worker custom-host route config does not include /v1/partner/request; workers.dev references are not canonical production ownership.",
-      "candidate_owner": "partners-worker implementation owner",
-      "required_next_phase": "Partner route binding acceptance",
-      "acceptance_requirement": "Prove exact custom-host route or binding, CORS/auth/method behavior, and production smoke before locking owner."
-    },
-    {
       "route_or_namespace_key": "LINE rich-menu/internal APIs",
       "implementation_status": "member-dashboard-chat-worker implements /v1/internal/line/* and /__internal/line/* rich-menu/internal APIs",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "/webhooks/line route is proven, but rich-menu/internal APIs lack exact route or service binding proof; admin-worker can return service_binding_unavailable.",
       "candidate_owner": "member-dashboard-chat-worker implementation owner; admin-worker admin proxy depends on binding",
       "required_next_phase": "LINE rich-menu binding acceptance",
@@ -3034,7 +2941,7 @@
     {
       "route_or_namespace_key": "/v1/sigil/board/status and /v1/sigil/board/queue",
       "implementation_status": "sigil-worker implements read-only board status and queue handlers",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "The Webflow board calls these same-origin APIs, but sigil-worker has no exact custom-host route or service binding proof; safe-mode fallback is not API connectivity proof.",
       "candidate_owner": "sigil-worker implementation owner",
       "required_next_phase": "Phase 5/10 board UI API binding acceptance",
@@ -3043,7 +2950,7 @@
     {
       "route_or_namespace_key": "direct admin/model APIs without exact ingress",
       "implementation_status": "admin-worker implements handlers such as /v1/model/session/current, /v1/model/session/action, /v1/admin/model/session/link, /v1/admin/job/create, and member/model/payment admin APIs",
-      "production_ownership_status": "UNRESOLVED for direct paths without exact route, bridge, or service-binding proof",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "admin-worker/wrangler.toml attaches exact login, Kenji, and Kenji-readiness routes only and has no broad /v1/admin/* route; handler evidence alone does not prove production ingress.",
       "candidate_owner": "admin-worker implementation owner",
       "required_next_phase": "Phase 5 admin API route binding acceptance",
@@ -3052,34 +2959,25 @@
     {
       "route_or_namespace_key": "missing admin bridge backend operations",
       "implementation_status": "immigrate-worker preserves ingress routes, but /v1/admin/clients/lineage-lookup, /v1/admin/clients/recent, /v1/admin/job/draft, and /v1/admin/line/push have no matching admin-worker handler in the current scan",
-      "production_ownership_status": "UNRESOLVED backend contracts; ingress remains TEMPORARY",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Path-preserving bridge requests may forward through ADMIN_WORKER to missing backend handlers and fall through to 404.",
       "candidate_owner": "TBD backend owner; admin-worker candidate only after implementation or formal mapping",
       "required_next_phase": "Phase 5 bridge backend acceptance",
       "acceptance_requirement": "Implement or formally map backend operation, method, auth, payload, response, failure behavior, and production reachability while preserving existing ingress until migration is accepted."
     },
     {
-      "route_or_namespace_key": "/member/login",
-      "implementation_status": "not proven",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "Login/session contract not normalized.",
-      "candidate_owner": "admin-worker or auth Worker TBD",
+      "route_or_namespace_key": "/v1/member/dashboard",
+      "implementation_status": "noncanonical future/legacy API contract not proven; /member/dashboard and /api/member/dashboard are production-locked",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
+      "blocker": "Only /v1/member/dashboard remains unproven; current UI uses the accepted /api/member/dashboard chain.",
+      "candidate_owner": "TBD only if /v1/member/dashboard is retained",
       "required_next_phase": "Phase 3A",
-      "acceptance_requirement": "Define and prove mmd_member_id login/session contract."
-    },
-    {
-      "route_or_namespace_key": "/member/dashboard, /v1/member/dashboard, /api/member/dashboard",
-      "implementation_status": "legacy page evidence exists; backend API handler/mapping not proven",
-      "production_ownership_status": "UNRESOLVED",
-      "blocker": "Current legacy page route uses mmd-redirect-worker to immigrate-worker; /v1/member/dashboard and /api/member/dashboard backend API handler/mapping are not proven.",
-      "candidate_owner": "TBD non-legacy page owner; API owner unresolved",
-      "required_next_phase": "Phase 3A",
-      "acceptance_requirement": "Separate page route from API contract, select dashboard owner/auth, implement or prove backend API, and keep mmd_member_id target."
+      "acceptance_requirement": "Either remove from canonical scope or implement/prove before any client depends on it."
     },
     {
       "route_or_namespace_key": "/member/payments",
       "implementation_status": "admin-worker page delegation evidence only",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Current admin-worker page delegation mixes member UI and admin review ownership.",
       "candidate_owner": "TBD page owner; payments/admin APIs server-side",
       "required_next_phase": "Phase 3A/5",
@@ -3088,7 +2986,7 @@
     {
       "route_or_namespace_key": "/sigil/member/apply",
       "implementation_status": "Webflow UI exists",
-      "production_ownership_status": "UNRESOLVED for backend",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "UI exists but /v1/member/applications backend owner missing.",
       "candidate_owner": "Webflow page plus explicit backend TBD",
       "required_next_phase": "Phase 3B",
@@ -3097,7 +2995,7 @@
     {
       "route_or_namespace_key": "/sigil/pay, generic",
       "implementation_status": "not implemented",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "No implementation evidence.",
       "candidate_owner": "none",
       "required_next_phase": "Phase 7",
@@ -3106,7 +3004,7 @@
     {
       "route_or_namespace_key": "/sigil/model/console, /sigil/model/client-brief",
       "implementation_status": "current /model/console is legacy shell; canonical route not proven",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "No exact visible owner; current /model/console is legacy shell.",
       "candidate_owner": "TBD Worker or Webflow",
       "required_next_phase": "Phase 4B",
@@ -3115,7 +3013,7 @@
     {
       "route_or_namespace_key": "model confirmation routes",
       "implementation_status": "not proven",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "Contract/owner not proven.",
       "candidate_owner": "TBD",
       "required_next_phase": "Phase 4A",
@@ -3133,7 +3031,7 @@
     {
       "route_or_namespace_key": "public model apply API overlap",
       "implementation_status": "overlapping concepts exist in sigil-worker and partners-worker route families",
-      "production_ownership_status": "UNRESOLVED",
+      "production_ownership_status": "DEFERRED_NON_BLOCKING",
       "blocker": "sigil-worker and partners-worker route families overlap conceptually.",
       "candidate_owner": "TBD between sigil-worker and partners-worker route families",
       "required_next_phase": "Phase 4",
@@ -3143,37 +3041,37 @@
   "remove_later_items": [
     {
       "item": "mmd-redirect-worker catch-all",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "Every dependent route has live direct owner or Redirect Rule.",
       "removal_gate": "Phase 6 proof sequence and rollback plan."
     },
     {
       "item": "/model/console shell",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "/sigil/model/console live with auth and model session acceptance.",
       "removal_gate": "Phase 6 after Phase 4B."
     },
     {
       "item": "trust/login aliases",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "/sigil/start live and approved.",
       "removal_gate": "Phase 6A."
     },
     {
       "item": "membership aliases",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "/sigil/member/membership and dashboard flow live.",
       "removal_gate": "Phase 6A."
     },
     {
       "item": "/renew, /renewal aliases",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "Renewal and membership route contracts proven.",
       "removal_gate": "Phase 6A."
     },
     {
       "item": "old academy/trust folder redirects",
-      "current_owner": "mmd-redirect-worker",
+      "current_owner": "none; mmd-redirect-worker production route retired in Phase 1",
       "replacement_condition": "Destination owners proven.",
       "removal_gate": "Phase 6A Bulk Redirect migration."
     },
@@ -3192,6 +3090,37 @@
     "webflow_publish": false,
     "json_valid": true,
     "generic_catch_all_canonical": false,
-    "workers_dev_canonical": false
+    "workers_dev_canonical": false,
+    "canon_sync_only": true,
+    "runtime_proof_consumed": true,
+    "phase1_machine_closed": true,
+    "blocking_unresolved_zero": true,
+    "mmd_redirect_routes_zero": true
+  },
+  "phase1_closure": {
+    "closed": true,
+    "status": "CLOSED",
+    "closed_at": "2026-09-22",
+    "blocking_unresolved_count": 0,
+    "deferred_non_blocking_count": 19,
+    "mmd_redirect_worker_production_routes": 0,
+    "accepted_owner_families": [
+      "Webflow public/member presentation",
+      "Member Dashboard API",
+      "Renewal compatibility",
+      "SIGIL booking API",
+      "Private Model",
+      "Partner API",
+      "Realtime",
+      "Telegram core",
+      "LINE webhook",
+      "Admin login compatibility"
+    ],
+    "production_receipts": {
+      "latest_redirect_retirement_run_id": 35703326764,
+      "phase1_route_owner_regression": "shared/phase1-route-owner-lock.test.mjs",
+      "human_superseding_snapshot": "docs/architecture/ROUTE_OWNER_DECISION_LOG.md"
+    },
+    "control_room_v2_gate": "OPEN"
   }
 }
