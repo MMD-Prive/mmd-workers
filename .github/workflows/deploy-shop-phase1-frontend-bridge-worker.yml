@@ -1,0 +1,56 @@
+name: Deploy Shop Phase 1 frontend bridge
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "workers/shop-phase1-frontend-bridge-worker/**"
+      - ".github/workflows/deploy-shop-phase1-frontend-bridge-worker.yml"
+
+concurrency:
+  group: shop-phase1-frontend-bridge-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Unit tests
+        working-directory: workers/shop-phase1-frontend-bridge-worker
+        run: |
+          set -euo pipefail
+          npm test
+          npm run check
+      - name: Wrangler dry run
+        run: npx --yes wrangler@4 deploy --dry-run --config workers/shop-phase1-frontend-bridge-worker/wrangler.toml
+      - name: Deploy exact storefront page bridge
+        run: npx --yes wrangler@4 deploy --config workers/shop-phase1-frontend-bridge-worker/wrangler.toml
+      - name: Production smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in https://mmdbkk.com/shop https://www.mmdbkk.com/shop https://mmdbkk.com/mmd-shop https://www.mmdbkk.com/mmd-shop; do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 5 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w "%{http_code}" "$url")"
+            test "$code" = "200"
+            grep -qi '^x-mmd-route-owner: shop-phase1-frontend-bridge-worker' "$headers"
+            grep -q 'mmd-shop-phase1-edge-bridge' "$body"
+            rm -f "$headers" "$body"
+          done
+          api="$(curl --retry 5 --retry-delay 2 --retry-all-errors -fsS https://mmdbkk.com/shop/api/products)"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.shop!=="shop") process.exit(1)' "$api"
+          api="$(curl --retry 5 --retry-delay 2 --retry-all-errors -fsS https://mmdbkk.com/mmd-shop/api/products)"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.ok!==true||x.shop!=="mmd-shop") process.exit(1)' "$api"
