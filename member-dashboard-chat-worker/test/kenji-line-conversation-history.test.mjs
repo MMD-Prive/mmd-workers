@@ -13,6 +13,7 @@ const ENV = {
   AIRTABLE_API_KEY: "test-key",
   AIRTABLE_BASE_ID: "app-test",
   AIRTABLE_TABLE_CONSOLE_INBOX_ID: "tblInbox",
+  AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID: "tblEvents",
   KENJI_LINE_CONVERSATION_SHADOW_ENABLED: "true",
 };
 
@@ -71,6 +72,74 @@ test("conversation history retains same-customer turns and only actual sent assi
   assert.equal(history.turns.length, 3);
   assert.deepEqual(history.turns.map((turn) => turn.role), ["customer", "assistant", "customer"]);
   assert.equal(history.turns.some((turn) => turn.content.includes("ข้อความร่าง")), false);
+  assert.equal(history.coverage.confirmed_assistant_messages, 1);
+  assert.equal(history.coverage.reply_history_complete, true);
+});
+
+
+test("Phase 1 final outbound evidence accepts only LINE-confirmed sent AI events", async () => {
+  const history = await buildKenjiLineConversationHistory({
+    env: ENV,
+    event: event("มีแนวนี้อีกไหม"),
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("tblEvents")) {
+        return response({
+          records: [
+            {
+              id: "recDelivered",
+              fields: {
+                event_id: "kai_line_delivered",
+                created_at: "2026-09-22T10:01:00.000Z",
+                channel: "LINE_OFC",
+                generated_reply: "Sansui เป็นตัวเลือกที่คุยกันอยู่ครับ",
+                response_mode: "auto_reply_sent",
+                final_status: "sent",
+                payload_json: JSON.stringify({
+                  line_delivery_attempted: true,
+                  line_delivery_succeeded: true,
+                  line_delivery_status: 200,
+                }),
+              },
+            },
+            {
+              id: "recNotDelivered",
+              fields: {
+                event_id: "kai_line_failed",
+                created_at: "2026-09-22T10:01:30.000Z",
+                channel: "LINE_OFC",
+                generated_reply: "ข้อความนี้ห้ามเข้าประวัติ",
+                response_mode: "auto_reply_sent",
+                final_status: "sent",
+                payload_json: JSON.stringify({
+                  line_delivery_attempted: true,
+                  line_delivery_succeeded: false,
+                  line_delivery_status: 500,
+                }),
+              },
+            },
+          ],
+        });
+      }
+      return response({
+        records: [{
+          id: "recCustomer",
+          fields: {
+            source: "line",
+            created_at: "2026-09-22T10:00:00.000Z",
+            payload_json: JSON.stringify({ raw_text: "คนนี้ดูดี" }),
+          },
+        }],
+      });
+    },
+  });
+
+  assert.deepEqual(history.turns.map((turn) => [turn.role, turn.content]), [
+    ["customer", "คนนี้ดูดี"],
+    ["assistant", "Sansui เป็นตัวเลือกที่คุยกันอยู่ครับ"],
+    ["customer", "มีแนวนี้อีกไหม"],
+  ]);
+  assert.equal(history.turns.some((turn) => turn.content.includes("ห้ามเข้าประวัติ")), false);
   assert.equal(history.coverage.confirmed_assistant_messages, 1);
   assert.equal(history.coverage.reply_history_complete, true);
 });
@@ -160,8 +229,8 @@ test("delivered Kenji reply is written as an actual outbound turn and deduped", 
   assert.equal(result.id, "recOutbound");
   const write = calls.find((call) => call.init.method === "POST");
   const fields = JSON.parse(write.init.body).fields;
-  assert.equal(fields.source, "line_ofc_outbound");
-  assert.equal(fields.status, "sent");
+  assert.equal(fields.source, "line_oa");
+  assert.equal(fields.status, "done");
   const payload = JSON.parse(fields.payload_json);
   assert.equal(payload.actual_sent, true);
   assert.equal(payload.sent_text, "รับทราบครับ ผมปรับเวลาเป็นสามทุ่ม โดยคงวันและสุขุมวิทไว้");
