@@ -2,7 +2,7 @@ export const KENJI_LINE_CONTEXTUAL_UNDERSTANDING_SCHEMA = "mmd.kenji_line_contex
 export const KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED_ENV = "KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED";
 
 const DEFAULT_MODEL = "gpt-5.6";
-const MODEL_TIMEOUT_MS = 2_800;
+const MODEL_TIMEOUT_MS = 5_500;
 const MAX_TRANSCRIPT_TURNS = 12;
 const MAX_TURN_TEXT = 520;
 
@@ -265,9 +265,9 @@ function normalizeModelResult(parsed = {}, turnCount = 0) {
 
 async function modelUnderstanding({ env = {}, history = {}, event = {}, fetchImpl = fetch } = {}) {
   const apiKey = text(env.OPENAI_API_KEY, 300);
-  if (!apiKey) return null;
+  if (!apiKey) return { ok: false, attempted: false, reason: "openai_key_missing", result: null };
   const turns = transcriptTurns(history);
-  if (turns.length < 2) return null;
+  if (turns.length < 2) return { ok: false, attempted: false, reason: "insufficient_turns", result: null };
 
   const transcript = turns
     .map((turn) => `[${turn.index}] ${turn.role === "assistant" ? "ASSISTANT_SENT" : "CUSTOMER"}: ${turn.content}`)
@@ -366,15 +366,35 @@ Rules:
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      return { ok: false, attempted: true, reason: `openai_http_${response.status}`, result: null };
+    }
     const body = await response.json().catch(() => null);
-    if (!body || (body.status && body.status !== "completed")) return null;
+    if (!body) return { ok: false, attempted: true, reason: "openai_invalid_json", result: null };
+    if (body.status && body.status !== "completed") {
+      return {
+        ok: false,
+        attempted: true,
+        reason: `openai_status_${text(body.status, 40).toLowerCase() || "unknown"}`,
+        result: null,
+      };
+    }
     const raw = extractOutputText(body);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return normalizeModelResult(parsed, turns.length);
-  } catch (_) {
-    return null;
+    if (!raw) return { ok: false, attempted: true, reason: "openai_output_missing", result: null };
+    try {
+      const parsed = JSON.parse(raw);
+      return { ok: true, attempted: true, reason: "", result: normalizeModelResult(parsed, turns.length) };
+    } catch (_) {
+      return { ok: false, attempted: true, reason: "openai_output_parse_failed", result: null };
+    }
+  } catch (error) {
+    const timedOut = controller.signal.aborted || error?.name === "AbortError";
+    return {
+      ok: false,
+      attempted: true,
+      reason: timedOut ? "openai_timeout" : "openai_request_failed",
+      result: null,
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -415,9 +435,13 @@ export async function observeKenjiLineContextualUnderstandingShadow({
   }
 
   const modeled = await modelUnderstanding({ env, history, event, fetchImpl });
+  const fallback = modeled?.ok ? null : fallbackUnderstanding({ history, event });
   return {
     enabled: true,
-    ...(modeled || fallbackUnderstanding({ history, event })),
+    ...(modeled?.ok ? modeled.result : fallback),
+    model_attempted: modeled?.attempted === true,
+    model_success: modeled?.ok === true,
+    model_failure_reason: modeled?.ok ? "" : text(modeled?.reason, 80),
     shadow_only: true,
     auto_send_allowed: false,
     customer_copy_changed: false,
