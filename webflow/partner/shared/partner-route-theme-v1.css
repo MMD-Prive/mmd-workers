@@ -378,3 +378,26 @@
     background:none;
   }
 }
+
+
+/* Partner logo canon: no decorative frame around logo/mark. */
+:where(.mmd-partner-theme,[data-mmd-partner-theme],.mmd-partner-v7) :is(
+  #sigilPartnerGlobalNav .sp-mark,
+  .pt6-brand-mark,
+  .brand-mark,
+  .mpc-logo,
+  .mmd-partner-v7__brand,
+  [class*="partner"][class*="brand-mark"],
+  [class*="partner"][class*="logo-mark"],
+  [class*="partner"][class*="logo-wrap"],
+  [class*="partner"][class*="brand-badge"]
+){
+  border:0!important;
+  outline:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  background-image:none!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
