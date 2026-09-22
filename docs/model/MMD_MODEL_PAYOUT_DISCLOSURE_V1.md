@@ -3,6 +3,41 @@
 Status: Canonical payout presentation contract  
 Date: 2026-09-22
 
+## Money-lane separation
+
+MMD has **two different model-job money systems**. They must never be merged by UI convenience.
+
+### PUBLIC MONEY · `model_work_lane=public_model`
+
+Public work may use standardized products/packages.
+
+- Customer price can come from a published Public package/catalog.
+- Model payout can come from an approved Public payout matrix or a Session-locked Public payout.
+- OT/add-on/after-midnight rules may be standardized per Public product.
+- Public package/OT rules may be surfaced in MMD MODEL after the Session is identified as `public_model`.
+
+### PRIVATE MONEY · `model_work_lane=private_model`
+
+Private/SIGIL work is **case-priced and case-locked**.
+
+- Customer price is the approved quote for that specific private job.
+- Model payout is the payout explicitly locked for that specific Session.
+- Public package prices, Public payout percentages, Public OT tables and Public after-midnight formulas **do not apply automatically**.
+- Any extension, scope change, late-night continuation or additional request requires a new MMD case quote plus Model approval before it becomes official.
+- MMD MODEL may show the exact payout locked for the case, but must not infer a Private payout from a Public package matrix.
+
+### REVIEW · `model_work_lane=needs_review`
+
+No pricing matrix is allowed. Payout terms fail closed until MMD assigns the correct money lane and locks the case.
+
+### Confidential is not a money lane
+
+`Confidential` describes disclosure/privacy handling, not pricing authority.
+
+A person with a Public Profile may receive an offer whose details are confidential while the Session remains `public_model`. Conversely, a job explicitly classified by MMD as Private uses `private_model` money rules.
+
+**Never change the money lane merely because the job is hidden from public view.**
+
 ## Core rule
 
 **Client Price and Model Payout are separate amounts and separate visibility surfaces.**
