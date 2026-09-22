@@ -15,6 +15,7 @@ import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
+import { readControlRoomV2LiveHealth } from "./control-room-v2-live-health.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -47,25 +48,27 @@ export default {
         return withCors(json({ ok: false, error: "method_not_allowed" }, 405), cors);
       }
 
-      return withCors(json(await buildAdminDashboard(env)), cors);
+      const liveSystemHealth = url.searchParams.get("system_health") === "live";
+      return withCors(json(await buildAdminDashboard(env, { liveSystemHealth })), cors);
     }
 
     return coreWorker.fetch(req, env, ctx);
   },
 };
 
-export async function buildAdminDashboard(env) {
+export async function buildAdminDashboard(env, { liveSystemHealth = false } = {}) {
   const now = new Date();
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult] = await Promise.allSettled([
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, liveHealthResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
     readHypeTelegramRouterHealth(env),
+    liveSystemHealth ? readControlRoomV2LiveHealth(env) : Promise.resolve(null),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
@@ -139,9 +142,11 @@ export async function buildAdminDashboard(env) {
     data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
     reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
   };
+  const liveProbe = liveHealthResult.status === "fulfilled" ? liveHealthResult.value : null;
   const controlRoomV2 = buildControlRoomV2SystemHealth({
     dashboardStatus,
     telegramRouterHealth,
+    liveProbe,
   });
 
   return {
@@ -175,6 +180,9 @@ export async function buildAdminDashboard(env) {
       member_source: resultReason(membersResult),
       reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
       telegram_router_source: telegramRouterResult.status === "fulfilled" ? cleanDebugStatus(telegramRouterHealth?.status) : resultReason(telegramRouterResult),
+      control_room_v2_live_source: liveSystemHealth
+        ? (liveHealthResult.status === "fulfilled" ? "ok" : resultReason(liveHealthResult))
+        : "not_requested",
     },
   };
 }
