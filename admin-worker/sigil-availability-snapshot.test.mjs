@@ -318,6 +318,32 @@ test("availability adoption reminder refuses fresh state and never guesses that 
   assert.equal(payload.safe_availability_state, "available_today");
 });
 
+test("calendar-owner reminder relay cannot publish availability snapshots", async () => {
+  const store = kv();
+  const response = await handleSigilAvailabilityInternalRequest(new Request(
+    "https://admin-worker.local/v1/internal/sigil/availability-snapshot",
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secret",
+        "x-mmd-internal-call": "true",
+        "x-mmd-service-binding": "calendar-owner",
+      },
+      body: JSON.stringify({
+        model_key: "mdl_pri_str_master",
+        availability_state: "available_now",
+      }),
+    },
+  ), {
+    INTERNAL_TOKEN: "secret",
+    SIGIL_AVAILABILITY_SNAPSHOTS: store,
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).error, "internal_auth_required");
+  assert.equal(store.writes.length, 0);
+});
+
 test("model app cannot send adoption reminders", async () => {
   const response = await handleSigilAvailabilityInternalRequest(new Request(
     "https://admin-worker.local/v1/internal/sigil/availability-adoption/remind",
