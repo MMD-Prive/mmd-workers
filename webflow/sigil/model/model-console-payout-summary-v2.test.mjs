@@ -11,6 +11,13 @@ test("payout summary accepts canonical model payout and terms", () => {
   assert.match(source, /เวลาจบที่ MMD ยืนยัน/);
 });
 
+test("payout summary distinguishes Public and Private money systems", () => {
+  assert.match(source, /PUBLIC MONEY · PACKAGE \/ SESSION/);
+  assert.match(source, /PRIVATE MONEY · CASE LOCKED/);
+  assert.match(source, /ไม่ใช้ราคา Package, OT หรือ After Midnight Matrix ของ Public โดยอัตโนมัติ/);
+  assert.match(source, /MMD ออกเรท Private ของเคสใหม่และยืนยันก่อน/);
+});
+
 test("payout summary explains official extension boundary", () => {
   assert.match(source, /MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยัน/);
   assert.match(source, /OT หลัง 00:00/);
