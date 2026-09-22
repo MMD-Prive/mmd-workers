@@ -1,6 +1,9 @@
 import {
+  availabilityCoverageCounts,
+  availabilityCoverageRow,
   boundedConsoleAvailabilityBody,
   matchConsoleAvailabilitySnapshotPath,
+  modelAvailabilityCoverageIdentity,
   resolveConsoleAvailabilityTarget,
 } from "./sigil-availability-producer.mjs";
 
@@ -276,40 +279,14 @@ async function availabilityCoverage(req, env, url, ctx) {
   if (!inventory.ok) return out(req, env, inventory.data, inventory.status);
 
   const items = Array.isArray(inventory.data?.items) ? inventory.data.items : [];
-  const models = items.map((record) => {
-    const fields = record?.fields || record || {};
-    const modelKey = String(fields.unique_key || fields.model_lookup_key || fields.model_code || "").trim();
-    if (!modelKey) return null;
-    return {
-      id: String(record?.id || modelKey),
-      model_key: modelKey,
-      display_name: String(fields.working_name || fields.nickname || fields.name || modelKey).slice(0, 80),
-    };
-  }).filter(Boolean);
+  const models = items.map(modelAvailabilityCoverageIdentity).filter(Boolean);
 
   const snapshots = await Promise.all(models.map(async (model) => {
     const result = await callAvailabilitySnapshotRead(env, model.model_key, ctx);
-    const data = result.data || {};
-    return {
-      model_id: model.id,
-      model_key: model.model_key,
-      display_name: model.display_name,
-      snapshot_state: result.ok ? data.snapshot_state || "missing" : "unavailable",
-      fresh: result.ok && data.fresh === true,
-      age_seconds: Number.isFinite(Number(data.age_seconds)) ? Number(data.age_seconds) : null,
-      ttl_remaining_seconds: Number.isFinite(Number(data.ttl_remaining_seconds)) ? Number(data.ttl_remaining_seconds) : null,
-      safe_availability_state: String(data.snapshot?.safe_availability_state || ""),
-      confidence: String(data.snapshot?.confidence || ""),
-      updated_at: data.snapshot?.updated_at || null,
-      expires_at: data.snapshot?.expires_at || null,
-    };
+    return availabilityCoverageRow(model, result);
   }));
 
-  const counts = snapshots.reduce((acc, item) => {
-    const key = item.snapshot_state || "unknown";
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
-  }, {});
+  const counts = availabilityCoverageCounts(snapshots);
 
   return out(req, env, {
     ok: true,
