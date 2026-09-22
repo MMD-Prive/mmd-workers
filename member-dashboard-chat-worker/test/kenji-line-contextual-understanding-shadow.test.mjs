@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 import {
   KENJI_LINE_CONTEXTUAL_UNDERSTANDING_SCHEMA,
+  KENJI_CONTEXTUAL_SHADOW_INTERNALS,
   observeKenjiLineContextualUnderstandingShadow,
 } from "../src/kenji-line-contextual-understanding-shadow.mjs";
 
@@ -269,6 +270,10 @@ test("explicit topic switch does not inherit the previous subject", async () => 
   assert.equal(result.relation, "topic_switch");
   assert.equal(result.topic_relation, "new_topic");
   assert.equal(result.referent_state, "not_needed");
+});
+
+test("Phase 2 model deadline is bounded to the post-response shadow budget", () => {
+  assert.equal(KENJI_CONTEXTUAL_SHADOW_INTERNALS.MODEL_TIMEOUT_MS, 12_000);
 });
 
 test("Phase 2 production config is shadow-only while LINE auto reply stays off", () => {
