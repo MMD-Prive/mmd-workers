@@ -1,0 +1,53 @@
+{
+  "version": "mmd-driver-companion-packages-v1",
+  "currency": "THB",
+  "product": "driver_companion",
+  "public_packages": [
+    {
+      "key": "pick_me_up",
+      "name": "PICK ME UP",
+      "price_thb": 1490,
+      "included_minutes": 90,
+      "included_km": 20,
+      "airport_wait_minutes": 0
+    },
+    {
+      "key": "airport_please",
+      "name": "AIRPORT, PLEASE.",
+      "price_thb": 1890,
+      "included_minutes": 120,
+      "included_km": 40,
+      "airport_wait_minutes": 60
+    },
+    {
+      "key": "wait_for_me",
+      "name": "WAIT FOR ME",
+      "price_thb": 2690,
+      "included_minutes": 180,
+      "included_km": 50,
+      "airport_wait_minutes": 0
+    },
+    {
+      "key": "half_day_with_him",
+      "name": "HALF DAY WITH HIM",
+      "price_thb": 3490,
+      "included_minutes": 240,
+      "included_km": 70,
+      "airport_wait_minutes": 0
+    }
+  ],
+  "public_rules": {
+    "overtime_thb_per_hour": 790,
+    "extra_km_thb": 25,
+    "late_night_surcharge_thb": 300,
+    "late_night_window": "22:00-06:00",
+    "tollway": "actual",
+    "parking": "actual",
+    "confirmation": "MMD must verify Driver, vehicle and availability before confirmation"
+  },
+  "query_contract": {
+    "role": "driver_companion",
+    "package_param": "package",
+    "booking_path": "/booking"
+  }
+}
