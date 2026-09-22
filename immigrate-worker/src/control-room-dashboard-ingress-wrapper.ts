@@ -1,7 +1,8 @@
 import canonicalWorker from "./canonical-admin-login-wrapper";
 import type { Env } from "./types";
 
-const DASHBOARD_PATH = "/v1/admin/dashboard";\nconst DASHBOARD_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
+const DASHBOARD_PATH = "/v1/admin/dashboard";
+const DASHBOARD_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
 const DASHBOARD_OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const CLIENT_INTELLIGENCE_PATH = "/v1/admin/clients/intelligence";
 const CLIENT_INTELLIGENCE_AUDIT_PATH = "/v1/admin/clients/intelligence/audit";
