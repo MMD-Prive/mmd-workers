@@ -257,7 +257,7 @@ function normalizeEvidenceStage(value) {
   const raw = toStr(value).toLowerCase();
   if (!raw) return "";
 
-  const allowed = new Set(["deposit", "final", "tips", "full", "membership"]);
+  const allowed = new Set(["deposit", "final", "tips", "full", "extension", "membership"]);
   if (allowed.has(raw)) return raw;
   return "";
 }
