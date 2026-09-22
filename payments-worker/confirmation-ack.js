@@ -1,3 +1,4 @@
+import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_ACK_PATH = "/v1/confirm/ack";
 export const CONFIRM_CONTEXT_PATH = "/v1/confirm/context";
@@ -344,6 +345,12 @@ export async function handleConfirmationAck(request, env = {}) {
   if (authorized.response) return authorized.response;
 
   try {
+    const revision = await confirmationRevision(env, authorized.session, authorized.claims.session_id);
+    if (revision.confirmation_change_pending) return withCors(request, env, json({ok:false,error:"confirmation_change_pending"},409));
+    const seenRevision = clean(authorized.body?.confirmation_revision, 80);
+    if ((revision.confirmation_revision_required || seenRevision) && seenRevision !== revision.confirmation_revision) {
+      return withCors(request, env, json({ok:false,error:"confirmation_details_changed_reload_required"},409));
+    }
     const ack = await patchAcknowledgement(env, authorized.session, authorized.expectedRole);
     return withCors(request, env, json({
       ok: true,

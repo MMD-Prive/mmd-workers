@@ -5,6 +5,11 @@ on:
     paths:
       - "admin-worker/src/admin-login-hero-worker.js"
       - "admin-worker/src/payment-review-runtime.js"
+      - "admin-worker/src/customer-change-resolution.js"
+      - "admin-worker/customer-change-resolution.test.mjs"
+      - "shared/confirmation-revision*"
+      - "payments-worker/confirmation-ack*"
+      - "payments-worker/confirmation-details*"
       - "admin-worker/src/payment-confirmation-followthrough.js"
       - "admin-worker/src/job-readiness-followthrough.js"
       - "admin-worker/job-readiness-followthrough.test.mjs"
@@ -77,6 +82,9 @@ jobs:
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
           node --test admin-worker/payment-review-simple.test.mjs admin-worker/payment-confirmation-followthrough.test.mjs admin-worker/job-readiness-followthrough.test.mjs
           node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
+
+      - name: Customer change resolution and acknowledgement revision
+        run: node --test admin-worker/customer-change-resolution.test.mjs shared/confirmation-revision.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
 
       - name: Payment workspace interaction guards
         run: |

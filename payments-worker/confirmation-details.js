@@ -1,5 +1,6 @@
 import { verifyConfirmToken } from "./index.js";
 import { stablePaymentRef } from "./unified-payment-proof.js";
+import { confirmationRevision } from "../shared/confirmation-revision.mjs";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 export const CONFIRM_DETAILS_PATH = "/v1/confirm/details";
@@ -79,6 +80,7 @@ export async function handleConfirmationDetails(request, env = {}) {
     const pricing = parseMarkedJson(note, "SIGIL Pricing v1");
     const vip = parseMarkedJson(note, "SIGIL VIP Detail v1");
     const common = {
+      ...await confirmationRevision(env, session, claims.session_id),
       ok: true,
       authority: "payments-worker",
       schema: "confirmation_details_v1",

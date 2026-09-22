@@ -10,6 +10,7 @@ import { dispatchApprovedJobLinks } from "./payment-approved-job-link-dispatch.j
 import { enrichPaymentReviewContext } from "./payment-review-display-context.js";
 import { discoveryTables, enrichDiscoveryNames, recentPaymentJobs } from "./payment-review-discovery.js";
 import { paymentConfirmationFollowthrough } from "./payment-confirmation-followthrough.js";
+import { previewCustomerChange, resolveCustomerChange } from "./customer-change-resolution.js";
 
 const QUEUE_PATH = "/v1/admin/payments/review-queue";
 const REVIEW_PATH = "/v1/admin/payments/review";
@@ -56,7 +57,7 @@ export async function handlePaymentReviewRequest(request, env = {}, actor = null
 
   try {
     requireAirtable(env);
-    if (path === QUEUE_PATH) return await listReviewQueue(request, env);
+    if (path === QUEUE_PATH) return await listReviewQueue(request, env, { id: actorId, role: actorRole });
     if (path === EVIDENCE_PATH) return await getPaymentEvidence(request, env);
     return await commitReview(request, env, { id: actorId, role: actorRole });
   } catch (error) {
@@ -94,8 +95,11 @@ async function getPaymentEvidence(request, env) {
   return new Response(request.method === "HEAD" ? null : object.body, { status: 200, headers });
 }
 
-async function listReviewQueue(request, env) {
+async function listReviewQueue(request, env, actor) {
   const url = new URL(request.url);
+  if (url.searchParams.get("view") === "change_request") {
+    return json(await previewCustomerChange(env, Object.fromEntries(url.searchParams), changeDependencies(env, actor)));
+  }
   if (url.searchParams.get("view") === "confirmation") {
     return json(await followthrough(env, Object.fromEntries(url.searchParams)));
   }
@@ -156,6 +160,7 @@ async function commitReview(request, env, actor) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw httpError(400, "invalid_review_request");
   if (body.action === "retry_confirmation") return json(await followthrough(env, body, { retry: true, actor }));
+  if (body.action === "resolve_customer_change") return json(await resolveCustomerChange(env, body, changeDependencies(env, actor)));
 
   const decision = safeCode(body.decision);
   const proofId = safeText(body.proof_id, 120);
@@ -738,6 +743,22 @@ function followthrough(env, input, options = {}) {
     ...options, list: (table, params) => airtableList(env, table, params),
     paymentsTable: paymentsTable(env), sessionsTable: discoveryTables(env).sessions,
   });
+}
+
+function changeDependencies(env, actor) {
+  return { actor, sessionsTable: discoveryTables(env).sessions,
+    list: (table, params) => airtableList(env, table, params),
+    patch: async (table, id, fields) => {
+      const url = airtableUrl(env, table);
+      url.pathname += `/${encodeURIComponent(id)}`;
+      url.searchParams.set("returnFieldsByFieldId", "true");
+      const response = await airtableFetch(env, new Request(url, { method: "PATCH",
+        headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }), signal: AbortSignal.timeout(20000) }));
+      if (!response.ok) throw httpError(503, "change_write_unavailable");
+      return response.json();
+    },
+  };
 }
 
 async function airtablePage(env, tableName, params = {}) {

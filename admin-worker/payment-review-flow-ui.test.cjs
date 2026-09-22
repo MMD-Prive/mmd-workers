@@ -90,3 +90,20 @@ test('both acknowledgements with a pending change show next action, before/after
 test('unknown readiness and change-source outage cannot show a complete checklist or zero pending requests',async()=>{
  for(const readiness of [undefined,{...readyFixture,next_action:'reload_changes',checklist_complete:false,change_requests:{source_status:'unavailable',open_count:null,items:[]}}]){const paid={...job,payments:[{...job.payments[0],state:'paid',proof_ids:[]}]};const h=setup({items:[],jobs:[paid],fetch:async url=>url.includes('view=confirmation')?{ok:true,status:200,json:async()=>({...confirmation,readiness})}:null});try{await tick();await tick();h.search('Que');await h.open();assert.match(h.q('[data-pf-readiness]').textContent,/ยังตรวจ|ยังอ่าน/);assert.doesNotMatch(h.q('[data-pf-readiness]').textContent,/ค้าง 0|ไม่มีคำขอที่รอตรวจ/);assert.match(h.q('[data-pf-confirm]').textContent,/Telegram ทีมงาน/);}finally{h.dom.window.close()}}
 });
+
+test('change review requires note and checkbox; response loss retries the frozen command and cannot refresh away an active write',async()=>{
+ const paid={...job,payments:[{...job.payments[0],state:'paid',proof_ids:[]}]};let finish,attempt=0;
+ const preview={ok:true,session_id:'sess-a',request_id:'r1',expected_version:'a'.repeat(64),request_type:'location_change',can_apply:true,can_review:true,current:{location_name:'Old'},after:{location_name:'New'},remark:'Customer note'};
+ const h=setup({items:[],jobs:[paid],fetch:async(url,opts)=>{
+  if(opts.method==='POST'){attempt++;if(attempt===1)return new Promise(resolve=>finish=resolve);throw Error('network')}
+  if(url.includes('view=change_request'))return{ok:true,status:200,json:async()=>preview};
+  if(url.includes('view=confirmation'))return{ok:true,status:200,json:async()=>({...confirmation,readiness:readyFixture})};
+ }});
+ try{await tick();await tick();h.search('Que');await h.open();h.q('[data-pf-change-open]').click();await tick();await tick();
+ const btn=h.q('[data-pf-change-decision="approve"]');assert.equal(btn.disabled,true);
+ h.q('[data-pf-change-note]').value='Confirmed with both parties';h.q('[data-pf-change-note]').dispatchEvent(new h.dom.window.Event('input',{bubbles:true}));assert.equal(btn.disabled,true);h.q('[data-pf-change-check]').click();assert.equal(btn.disabled,false);
+ btn.click();await tick();assert.equal(btn.disabled,true);const before=h.calls.length;h.q('[data-pf-confirm-refresh]').click();assert.equal(h.calls.length,before);
+ finish({ok:false,status:503,json:async()=>({ok:false,error:'unavailable'})});await tick();await tick();assert.equal(h.q('[data-pf-change-note]').readOnly,true);assert.equal(h.q('[data-pf-change-decision="reject"]').hidden,true);
+ btn.click();await tick();const posts=h.calls.filter(x=>x.opts.method==='POST');assert.equal(posts.length,2);assert.equal(posts[0].opts.body,posts[1].opts.body);assert.equal(JSON.parse(posts[0].opts.body).expected_version,preview.expected_version);
+ }finally{h.dom.window.close()}
+});
