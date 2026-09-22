@@ -76,20 +76,20 @@ jobs:
           health=""
           for attempt in {1..12}; do
             health="$(curl --retry 3 --retry-delay 2 --retry-all-errors -fsS https://himai-shop-worker.mmdbkk.com/health || true)"
-            if node -e 'const b=JSON.parse(process.argv[1]); if (b.lock === "himai-shop-worker-v2026-04-29-shop-routes" && Array.isArray(b.routes) && b.routes.includes("POST /shop/api/distributor/assistant")) process.exit(0); process.exit(1);' "$health" 2>/dev/null; then
+            if node -e 'const b=JSON.parse(process.argv[1]); if (b.lock === "himai-shop-worker-v2026-09-22-supplier-dashboard-v2" && Array.isArray(b.routes) && b.routes.includes("GET /shop/api/distributor/workflow") && b.routes.includes("POST /shop/api/distributor/delivery-update")) process.exit(0); process.exit(1);' "$health" 2>/dev/null; then
               break
             fi
             echo "Waiting for production propagation (attempt $attempt/12)"
             sleep 5
           done
           echo "$health"
-          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.worker !== "himai-shop-worker") process.exit(1); if (!Array.isArray(b.routes) || !b.routes.includes("POST /shop/api/distributor/assistant")) process.exit(1);' "$health"
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.worker !== "himai-shop-worker") process.exit(1); if (!Array.isArray(b.routes) || !b.routes.includes("GET /shop/api/distributor/workflow") || !b.routes.includes("POST /shop/api/distributor/delivery-update")) process.exit(1);' "$health"
 
           surface="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://himai-shop-worker.mmdbkk.com/shop)"
           node -e 'const b=JSON.parse(process.argv[1]); if (b.ok !== true || b.brand !== "Himai Shop") process.exit(1);' "$surface"
 
           portal_status="$(curl -sS -o /tmp/himai-portal-response.json -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/api/distributor/portal)"
           test "$portal_status" = "401"
-          page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"
+          page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/supplier)"
           test "$page_status" = "200"
-          grep -q "Distributor Portal" /tmp/himai-distributor.html
+          grep -Eq "HIMAI SHOP|Himai Shop" /tmp/himai-distributor.html\n\n          legacy_page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor-legacy.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"\n          test "$legacy_page_status" = "200"

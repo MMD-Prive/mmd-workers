@@ -1,0 +1,49 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { handleSupplierPortal } from "../src/supplier-portal.js";
+import { renderDistributorPortalPage } from "../src/distributor-portal-page.js";
+import { handleSupplierAssistant } from "../../himai-shop-worker/src/supplier-assistant.js";
+
+test("supplier dashboard page exposes scoped operational lanes", async () => {
+  const response = renderDistributorPortalPage();
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  for (const expected of [
+    "Supplier Dashboard",
+    "Stock ของคุณ",
+    "Orders ที่มีสินค้าของคุณ",
+    "เติมของ & ส่งของ",
+    "ยอดเงิน",
+    "/shop/api/distributor/refill-draft",
+    "/shop/api/distributor/workflow",
+    "/shop/api/distributor/delivery-update",
+  ]) {
+    assert.match(html, new RegExp(expected.replace(/[.*+?^$\{\}()|[\]\\]/g, "\\$&")));
+  }
+  assert.match(html, /ไม่แสดงชื่อ เบอร์ หรือข้อมูลส่วนตัวของลูกค้า/);
+});
+
+test("supplier portal fails closed without supplier token", async () => {
+  const response = await handleSupplierPortal(
+    new Request("https://example.com/shop/api/distributor/portal"),
+    {}
+  );
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.error, "missing_supplier_token");
+});
+
+test("supplier workflow mutations fail closed without supplier token", async () => {
+  const response = await handleSupplierAssistant(
+    new Request("https://example.com/shop/api/distributor/delivery-update", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refill_id: "refill-test", status: "shipped" }),
+    }),
+    {}
+  );
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.error, "missing_supplier_token");
+});

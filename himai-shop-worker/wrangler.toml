@@ -17,7 +17,9 @@ MMD_SHOP_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev
 HIMAI_SHOP_AI_ENABLED = "true"
 AI_PROVIDER = "openai"
 OPENAI_MODEL = "gpt-4.1-mini"
-SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor"
+SUPPLIER_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/supplier"
+TELEGRAM_CHAT_ID = "-1003546439681"
+TG_THREAD_HIMAI_ALERTS = "159"
 
 # ---- Secrets (set via wrangler secret) ----
 # ADMIN_BEARER

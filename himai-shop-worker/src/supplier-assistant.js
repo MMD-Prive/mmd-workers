@@ -12,9 +12,17 @@ const REFILL_DRAFT_PATHS = new Set([
   "/shop/api/supplier/refill-draft",
   "/shop/api/distributor/refill-draft",
 ]);
+const WORKFLOW_PATHS = new Set([
+  "/shop/api/supplier/workflow",
+  "/shop/api/distributor/workflow",
+]);
+const DELIVERY_PATHS = new Set([
+  "/shop/api/supplier/delivery-update",
+  "/shop/api/distributor/delivery-update",
+]);
 const CHANNELS = new Set(["line", "telegram", "none"]);
 const DEFAULT_MODEL = "gpt-4.1-mini";
-const DEFAULT_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/distributor";
+const DEFAULT_DASHBOARD_URL = "https://himai-shop-worker.mmdbkk.com/shop/supplier";
 const MAX_MESSAGE_LENGTH = 1600;
 
 export async function handleSupplierAssistant(request, env) {
@@ -22,7 +30,7 @@ export async function handleSupplierAssistant(request, env) {
   const path = normalizePath(url.pathname);
   const method = request.method.toUpperCase();
 
-  if ((ASSISTANT_PATHS.has(path) || PREFERENCE_PATHS.has(path) || REFILL_DRAFT_PATHS.has(path)) && method === "OPTIONS") {
+  if ((ASSISTANT_PATHS.has(path) || PREFERENCE_PATHS.has(path) || REFILL_DRAFT_PATHS.has(path) || WORKFLOW_PATHS.has(path) || DELIVERY_PATHS.has(path)) && method === "OPTIONS") {
     return new Response(null, { status: 204, headers: corsHeaders(request, env) });
   }
 
@@ -44,6 +52,14 @@ export async function handleSupplierAssistant(request, env) {
 
   if (method === "POST" && REFILL_DRAFT_PATHS.has(path)) {
     return createRefillDraft(request, env);
+  }
+
+  if (method === "GET" && WORKFLOW_PATHS.has(path)) {
+    return getSupplierWorkflow(request, env);
+  }
+
+  if (method === "POST" && DELIVERY_PATHS.has(path)) {
+    return createDeliveryUpdate(request, env);
   }
 
   return null;
@@ -169,9 +185,13 @@ async function answerSupplier(request, env) {
       "stock",
       "sold",
       "reserved",
+      "orders",
+      "supplier_balance",
+      "payout_history",
       "refill_signal",
       "notification_preference",
       "refill_draft",
+      "delivery_update",
     ],
   }));
 }
@@ -282,11 +302,148 @@ async function createRefillDraft(request, env) {
   const stored = await writeDraft(env, key, draft);
   if (!stored) return withCors(request, env, json({ ok: false, error: "draft_storage_not_configured" }, 503));
 
+  const ownerNotification = await notifyOwnerSupplierWorkflow(env, {
+    title: "HIMAI SUPPLIER · REFILL REQUEST",
+    supplier: draft.supplier,
+    lines: draft.items.map((item) => "• " + item.product_name + " × " + item.quantity),
+    reference: draft.id,
+  });
+
   return withCors(request, env, json({
     ok: true,
     draft,
-    message: "สร้างคำขอเติมสินค้าแบบร่างแล้ว รอ Boss Per อนุมัติ",
+    owner_notification: ownerNotification,
+    message: "ส่งคำขอเติมสินค้าแล้ว รอ MMD ตรวจและยืนยัน",
   }, 201));
+}
+
+async function getSupplierWorkflow(request, env) {
+  const token = readToken(request);
+  if (!token) return withCors(request, env, json({ ok: false, error: "missing_supplier_token" }, 401));
+
+  const portal = await loadPortalForToken(env, token).catch(() => null);
+  if (!portal?.ok) return withCors(request, env, json({ ok: false, error: "supplier_truth_unavailable" }, 502));
+
+  const key = await supplierKey(token);
+  const [draftResult, deliveryResult] = await Promise.all([
+    readDrafts(env, key),
+    readDeliveries(env, key),
+  ]);
+
+  const drafts = Array.isArray(draftResult?.drafts) ? draftResult.drafts : [];
+  const deliveries = Array.isArray(deliveryResult?.deliveries) ? deliveryResult.deliveries : [];
+
+  return withCors(request, env, json({
+    ok: true,
+    supplier: safeSupplierName(portal, resolveTokenConfig(env, token)),
+    refill_requests: drafts.slice(0, 20),
+    delivery_updates: deliveries.slice(0, 50),
+    rules: {
+      supplier_can_mark_received: false,
+      received_requires_mmd_confirmation: true,
+      stock_increases_only_after_mmd_receives: true,
+    },
+  }));
+}
+
+async function createDeliveryUpdate(request, env) {
+  const token = readToken(request);
+  if (!token) return withCors(request, env, json({ ok: false, error: "missing_supplier_token" }, 401));
+
+  const body = await request.json().catch(() => null);
+  const refillId = clean(body?.refill_id, 160);
+  const status = clean(body?.status, 40).toLowerCase();
+  if (!refillId) return withCors(request, env, json({ ok: false, error: "refill_id_required" }, 400));
+  if (["received", "delivered", "stocked"].includes(status)) {
+    return withCors(request, env, json({ ok: false, error: "owner_confirmation_required" }, 409));
+  }
+  if (!["preparing", "shipped"].includes(status)) {
+    return withCors(request, env, json({ ok: false, error: "status_must_be_preparing_or_shipped" }, 400));
+  }
+
+  const portal = await loadPortalForToken(env, token).catch(() => null);
+  if (!portal?.ok) return withCors(request, env, json({ ok: false, error: "supplier_truth_unavailable" }, 502));
+
+  const key = await supplierKey(token);
+  const draftResult = await readDrafts(env, key);
+  const drafts = Array.isArray(draftResult?.drafts) ? draftResult.drafts : [];
+  const refill = drafts.find((item) => clean(item?.id, 160) === refillId);
+  if (!refill) return withCors(request, env, json({ ok: false, error: "refill_request_not_found" }, 404));
+
+  const update = {
+    id: "delivery-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    refill_id: refillId,
+    status,
+    supplier: safeSupplierName(portal, resolveTokenConfig(env, token)),
+    tracking_reference: clean(body?.tracking_reference || body?.tracking, 160),
+    note: clean(body?.note, 500),
+    created_at: new Date().toISOString(),
+    received_by_mmd: false,
+  };
+  const stored = await writeDelivery(env, key, update);
+  if (!stored) return withCors(request, env, json({ ok: false, error: "delivery_storage_not_configured" }, 503));
+
+  const ownerNotification = await notifyOwnerSupplierWorkflow(env, {
+    title: status === "shipped" ? "HIMAI SUPPLIER · SHIPPED" : "HIMAI SUPPLIER · PREPARING",
+    supplier: update.supplier,
+    lines: [
+      "Refill: " + refillId,
+      update.tracking_reference ? "Tracking: " + update.tracking_reference : "",
+      update.note ? "Note: " + update.note : "",
+    ].filter(Boolean),
+    reference: update.id,
+  });
+
+  return withCors(request, env, json({
+    ok: true,
+    delivery: update,
+    owner_notification: ownerNotification,
+    message: status === "shipped"
+      ? "แจ้งส่งของให้ MMD แล้ว รอ MMD ยืนยันรับก่อน Stock จะเพิ่ม"
+      : "บันทึกว่ากำลังเตรียมสินค้าแล้ว",
+  }, 201));
+}
+
+async function notifyOwnerSupplierWorkflow(env, payload) {
+  const chatId = clean(env.TELEGRAM_CHAT_ID || "-1003546439681", 80);
+  const threadId = Number(env.TG_THREAD_HIMAI_ALERTS || 159);
+  if (!env.TELEGRAM_WORKER?.fetch || !clean(env.AUTH_SERVICE_HIMAI_TO_TELEGRAM) || !chatId) {
+    return { ok: false, skipped: true, reason: "owner_notification_not_configured" };
+  }
+
+  const text = [
+    "<b>" + escapeHtml(payload.title || "HIMAI SUPPLIER") + "</b>",
+    "<b>Supplier:</b> " + escapeHtml(payload.supplier || "Supplier"),
+    "",
+    ...(Array.isArray(payload.lines) ? payload.lines.map((line) => escapeHtml(line)) : []),
+    payload.reference ? "" : null,
+    payload.reference ? "<b>Ref:</b> " + escapeHtml(payload.reference) : null,
+  ].filter((line) => line !== null && line !== undefined).join("\n");
+
+  try {
+    const response = await env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker.internal/telegram/internal/send", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + clean(env.AUTH_SERVICE_HIMAI_TO_TELEGRAM),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: chatId,
+        message_thread_id: threadId || undefined,
+        text: text.slice(0, 4000),
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      }),
+    }));
+    const data = await response.json().catch(() => ({}));
+    return {
+      ok: response.ok && data?.ok === true && data?.telegram?.ok === true,
+      status: response.status,
+      error: data?.error || data?.telegram?.error || null,
+    };
+  } catch (error) {
+    return { ok: false, error: clean(error?.message || error, 180) };
+  }
 }
 
 async function loadPortalForToken(env, token) {
@@ -320,9 +477,35 @@ async function loadPortalResponse(env, token) {
 }
 
 function buildSafeSnapshot(portal) {
+  const orders = (Array.isArray(portal?.orders) ? portal.orders : []).slice(0, 20).map((order) => ({
+    order_id: clean(order?.order_id, 120),
+    order_date: clean(order?.order_date, 80),
+    order_status: clean(order?.order_status, 80),
+    payment_status: clean(order?.payment_status, 80),
+    channel: clean(order?.channel, 80),
+    quantity: numberOrNull(order?.quantity) || 0,
+    line_total_thb: numberOrNull(order?.line_total_thb) || 0,
+    items: (Array.isArray(order?.items) ? order.items : []).slice(0, 20).map((item) => ({
+      product_name: clean(item?.product_name, 160),
+      quantity: numberOrNull(item?.quantity) || 0,
+      status: clean(item?.status, 80),
+    })),
+  }));
+  const finance = portal?.finance || {};
   return {
     supplier: safeSupplierName(portal, null),
     products: safeProducts(portal),
+    orders,
+    finance: {
+      open_balance_thb: numberOrNull(finance?.open_balance_thb) || 0,
+      paid_total_thb: numberOrNull(finance?.paid_total_thb) || 0,
+      payouts: (Array.isArray(finance?.payouts) ? finance.payouts : []).slice(0, 20).map((row) => ({
+        payout_date: clean(row?.payout_date, 80),
+        amount_thb: numberOrNull(row?.amount_thb) || 0,
+        method: clean(row?.method, 80),
+        status: clean(row?.status, 80),
+      })),
+    },
     updated_at: clean(portal?.updated_at, 80),
   };
 }
@@ -354,6 +537,8 @@ function deterministicReply(message, snapshot) {
       "• sold / ขายแล้ว",
       "• reserved / จอง",
       "• refill / สินค้าที่ควรเติม",
+      "• orders / ออเดอร์ของสินค้าคุณ",
+      "• balance / ยอดค้างและประวัติการจ่าย",
       "• ตั้งแจ้งเตือน LINE หรือ Telegram",
       "• สร้างคำขอเติมสินค้าแบบร่างเพื่อรอ Boss Per อนุมัติ",
       "Dashboard: " + DEFAULT_DASHBOARD_URL,
@@ -361,7 +546,7 @@ function deterministicReply(message, snapshot) {
   }
 
   if (/(dashboard|แดชบอร์ด|หน้าเว็บ|portal)/i.test(lower)) {
-    return "เปิด Distributor Dashboard ได้ที่ " + DEFAULT_DASHBOARD_URL;
+    return "เปิด Supplier Dashboard ได้ที่ " + DEFAULT_DASHBOARD_URL;
   }
 
   if (/(แจ้งเตือน|notification|alert|line|telegram|เทเลแกรม)/i.test(lower)) {
@@ -389,7 +574,20 @@ function deterministicReply(message, snapshot) {
   }
 
   if (/(ออเดอร์|order|สถานะงาน|สถานะคำสั่งซื้อ)/i.test(lower)) {
-    return "เรื่องคำสั่งซื้อให้ดูจาก Dashboard หรือประสาน MMD โดยตรงครับ ผมจะไม่แสดงข้อมูลลูกค้าหรือข้อมูลของ supplier รายอื่น";
+    const orders = snapshot.orders || [];
+    if (!orders.length) return "ตอนนี้ยังไม่มี Order ที่มีสินค้าของคุณในข้อมูลล่าสุดครับ";
+    return "Order ล่าสุดของสินค้าคุณ:\n" + orders.slice(0, 8).map((order) =>
+      "• " + (order.order_id || "Order") + " · " + (order.order_status || "—") + " · " + order.quantity + " ชิ้น · ฿" + order.line_total_thb.toLocaleString("th-TH")
+    ).join("\n");
+  }
+
+  if (/(ยอดค้าง|ค้างจ่าย|ยอดเงิน|เงิน|balance|payout|จ่ายแล้ว|ยอดจ่าย)/i.test(lower)) {
+    const finance = snapshot.finance || {};
+    return [
+      "ยอดของบัญชี Supplier นี้:",
+      "• รอจ่าย: ฿" + (numberOrNull(finance.open_balance_thb) || 0).toLocaleString("th-TH"),
+      "• จ่ายแล้ว: ฿" + (numberOrNull(finance.paid_total_thb) || 0).toLocaleString("th-TH"),
+    ].join("\n");
   }
 
   if (/(ราคา|price)/i.test(lower)) {
@@ -403,7 +601,7 @@ function deterministicReply(message, snapshot) {
 
 function fallbackReply(message, snapshot) {
   const low = snapshot.products.filter((product) => product.low_stock === true);
-  return "ผมช่วยตอบเรื่อง stock, ยอดขาย, ยอดจอง, สินค้าที่ควรเติม และ Dashboard ของสินค้าที่อยู่ในสิทธิ์คุณได้ครับ พิมพ์ “stock”, “ขายแล้ว”, “เติมสินค้า” หรือ “help” ได้เลย";
+  return "ผมช่วยตอบเรื่อง stock, ยอดขาย, ยอดจอง, orders, ยอดค้าง, payout, สินค้าที่ควรเติม และ Dashboard ของสินค้าที่อยู่ในสิทธิ์คุณได้ครับ พิมพ์ “stock”, “orders”, “ยอดค้าง”, “เติมสินค้า” หรือ “help” ได้เลย";
 }
 
 async function aiReply(env, message, snapshot) {
@@ -588,6 +786,18 @@ async function writeDraft(env, key, draft) {
   return stateRpc(env, "write-draft", { key, draft });
 }
 
+async function readDrafts(env, key) {
+  return stateRpc(env, "read-drafts", { key });
+}
+
+async function writeDelivery(env, key, delivery) {
+  return stateRpc(env, "write-delivery", { key, delivery });
+}
+
+async function readDeliveries(env, key) {
+  return stateRpc(env, "read-deliveries", { key });
+}
+
 async function stateRpc(env, action, payload) {
   const namespace = env.SUPPLIER_ALERT_STATE;
   if (!namespace?.idFromName || !namespace?.get) return null;
@@ -632,6 +842,18 @@ export class SupplierAlertState {
       const next = [body.draft, ...(Array.isArray(drafts) ? drafts : [])].slice(0, 20);
       await this.state.storage.put("drafts:" + key, next);
       return json({ ok: true, stored: true });
+    }
+    if (action === "read-drafts") {
+      return json({ ok: true, drafts: await this.state.storage.get("drafts:" + key) || [] });
+    }
+    if (action === "write-delivery") {
+      const deliveries = await this.state.storage.get("deliveries:" + key) || [];
+      const next = [body.delivery, ...(Array.isArray(deliveries) ? deliveries : [])].slice(0, 50);
+      await this.state.storage.put("deliveries:" + key, next);
+      return json({ ok: true, stored: true });
+    }
+    if (action === "read-deliveries") {
+      return json({ ok: true, deliveries: await this.state.storage.get("deliveries:" + key) || [] });
     }
 
     return json({ ok: false, error: "state_action_not_found" }, 404);

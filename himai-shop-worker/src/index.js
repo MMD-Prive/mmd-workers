@@ -1,4 +1,4 @@
-const LOCK = "himai-shop-worker-v2026-04-29-shop-routes";
+const LOCK = "himai-shop-worker-v2026-09-22-supplier-dashboard-v2";
 const DEFAULT_DASHBOARD_UPSTREAM = "https://admin-worker.malemodel-bkk.workers.dev";
 const DEFAULT_CATALOG_UPSTREAM = "https://himai-chat-worker.malemodel-bkk.workers.dev";
 
@@ -21,7 +21,7 @@ export default {
       const assistantResponse = await handleSupplierAssistant(request, env);
       if (assistantResponse) return assistantResponse;
 
-      if (method === "GET" && url.pathname === "/shop/distributor") {
+      if (method === "GET" && ["/shop/distributor", "/shop/supplier"].includes(url.pathname)) {
         return await proxyCanonicalPath(request, env, "/shop/distributor");
       }
 
@@ -43,10 +43,13 @@ export default {
               "GET /mmd-shop/catalog",
               "GET /api/mmd-shop/catalog",
               "GET /shop/distributor",
+              "GET /shop/supplier",
               "GET /shop/api/distributor/portal",
               "POST /shop/api/distributor/assistant",
               "GET,POST /shop/api/distributor/notification-preference",
               "POST /shop/api/distributor/refill-draft",
+              "GET /shop/api/distributor/workflow",
+              "POST /shop/api/distributor/delivery-update",
               "GET /v1/admin/dashboard/ceo",
               "ANY /internal/admin/*",
               "ANY /v1/admin/*",
