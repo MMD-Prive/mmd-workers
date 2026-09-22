@@ -33,6 +33,7 @@ jobs:
       WORKER_NAME: "member-dashboard-chat-worker"
       NO_COLOR: "1"
       AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
+      MY_MMD_E2E_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -294,6 +295,18 @@ jobs:
             }
           ' "$payments_body"
 
+          payment_center_headers="$RUNNER_TEMP/my-mmd-payment-center.headers"
+          payment_center_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$payment_center_headers" -o /dev/null -w "%{http_code}"             https://www.mmdbkk.com/my-mmd/payments || true)"
+          test "$payment_center_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payment_center_headers"
+          grep -qi '^x-mmd-presentation-owner: lovable' "$payment_center_headers"
+
+          continue_headers="$RUNNER_TEMP/liff-continue-payment.headers"
+          continue_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$continue_headers" -o /dev/null -w "%{http_code}"             'https://www.mmdbkk.com/member/liff?intent=continue_payment' || true)"
+          test "$continue_code" = "200"
+          grep -qi '^x-mmd-liff-return-target: /my-mmd/payments' "$continue_headers"
+          grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$continue_headers"
+
           auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
           auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
           curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
@@ -303,6 +316,77 @@ jobs:
           grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
+
+      - name: Authenticated My MMD Payment Center acceptance
+        id: member_payments_authenticated
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${MY_MMD_E2E_ID_TOKEN:-}" ]; then
+            echo "MY_MMD_E2E_ID_TOKEN is not configured. Refusing synthetic production acceptance." >&2
+            exit 1
+          fi
+          echo "::add-mask::$MY_MMD_E2E_ID_TOKEN"
+
+          jar="$RUNNER_TEMP/member-payments-live.cookies"
+          start_headers="$RUNNER_TEMP/member-payments-live-start.headers"
+          start_body="$RUNNER_TEMP/member-payments-live-start.json"
+          start_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$start_headers" -c "$jar" -o "$start_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/start             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary "$(jq -nc --arg id_token "$MY_MMD_E2E_ID_TOKEN" '{id_token:$id_token,intent:"continue_payment",liff_intent:"continue_payment"}')")"
+          test "$start_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$start_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$start_headers"
+          grep -q '__Host-mmd_liff_session' "$jar"
+          jq -e '.ok == true and (.data | type == "object")' "$start_body" >/dev/null
+
+          # Create/reuse a real backend-owned pending public Membership intent on the
+          # dedicated E2E account. This proves the signed handoff without fabricating
+          # payment truth or granting entitlement.
+          purchase_body="$RUNNER_TEMP/member-payments-live-purchase.json"
+          purchase_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -b "$jar" -c "$jar" -o "$purchase_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/public-membership/purchase             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary '{"package_code":"mmd_member"}')"
+          test "$purchase_code" = "200"
+          jq -e '.ok == true and .official_verification_required == true and .entitlement_granted == false and (.customer_payment_url | startswith("https://mmdbkk.com/pay/checkout?t="))' "$purchase_body" >/dev/null
+
+          auth_headers="$RUNNER_TEMP/member-payments-live.headers"
+          auth_body="$RUNNER_TEMP/member-payments-live.json"
+          auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$auth_headers" -b "$jar" -c "$jar" -o "$auth_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             https://www.mmdbkk.com/v1/member/payments)"
+          test "$auth_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$auth_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$auth_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$auth_headers"
+
+          node - "$auth_body" <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (body?.ok !== true || body?.schema !== "mmd_member_payments_v1") throw new Error("unexpected Payment Center BFF schema");
+          if (body?.authority !== "member-pages-worker" || body?.money_authority !== "payments-worker") throw new Error("payment authority boundary mismatch");
+          if (body?.surface_role !== "status_history_navigation") throw new Error("unexpected Payment Center surface role");
+          if (!Array.isArray(body?.records)) throw new Error("payment records are not an array");
+          const forbidden = new Set(["line_user_id","lineUserId","airtable_record_id","record_id","admin_note","internal_note","bank_account","promptpay_destination","qr_payload","verification_actor"]);
+          const walk = (value, path = "$") => {
+            if (!value || typeof value !== "object") return;
+            if (Array.isArray(value)) return value.forEach((v, i) => walk(v, path + "[" + i + "]"));
+            for (const [key, child] of Object.entries(value)) {
+              if (forbidden.has(key)) throw new Error("customer-unsafe field leaked at " + path + "." + key);
+              walk(child, path + "." + key);
+            }
+          };
+          walk(body);
+          const current = body.records.find((record) => record && record.payment_ref);
+          if (!current) throw new Error("real pending payment intent missing from Payment Center");
+          if (current.official_status === "pending_review" && current.customer_payment_url) throw new Error("pending_review leaked a payment CTA");
+          const signed = new URL(current.customer_payment_url);
+          if (signed.origin !== "https://mmdbkk.com" || signed.pathname !== "/pay/checkout" || [...signed.searchParams.keys()].join(",") !== "t" || !signed.searchParams.get("t")) {
+            throw new Error("Payment Center did not preserve the exact canonical signed handoff");
+          }
+          console.log("PASS real-member Payment Center acceptance; records=" + body.records.length);
+          NODE
+
+          reject_body="$RUNNER_TEMP/member-payments-live-reject.json"
+          reject_code="$(curl -sS -b "$jar" -o "$reject_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             'https://www.mmdbkk.com/v1/member/payments?payment_ref=browser-selected')"
+          test "$reject_code" = "400"
+          jq -e '.error.code == "BROWSER_PAYMENT_CONTEXT_REJECTED"' "$reject_body" >/dev/null
 
       - name: Smoke internal AI service binding
         id: ai_binding_smoke
