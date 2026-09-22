@@ -65,3 +65,40 @@ export function boundedConsoleAvailabilityBody(body = {}, modelKey = "") {
     },
   };
 }
+
+
+export function modelAvailabilityCoverageIdentity(record = {}) {
+  const fields = record?.fields || record || {};
+  const modelKey = text(fields.unique_key || fields.model_lookup_key || fields.model_code);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(modelKey)) return null;
+  return {
+    id: text(record?.id || modelKey),
+    model_key: modelKey,
+    display_name: text(fields.working_name || fields.nickname || fields.name || modelKey).slice(0, 80),
+  };
+}
+
+export function availabilityCoverageRow(model = {}, result = {}) {
+  const data = result?.data || {};
+  return {
+    model_id: text(model.id),
+    model_key: text(model.model_key),
+    display_name: text(model.display_name).slice(0, 80),
+    snapshot_state: result?.ok ? text(data.snapshot_state || "missing") : "unavailable",
+    fresh: result?.ok && data.fresh === true,
+    age_seconds: Number.isFinite(Number(data.age_seconds)) ? Number(data.age_seconds) : null,
+    ttl_remaining_seconds: Number.isFinite(Number(data.ttl_remaining_seconds)) ? Number(data.ttl_remaining_seconds) : null,
+    safe_availability_state: text(data.snapshot?.safe_availability_state),
+    confidence: text(data.snapshot?.confidence),
+    updated_at: data.snapshot?.updated_at || null,
+    expires_at: data.snapshot?.expires_at || null,
+  };
+}
+
+export function availabilityCoverageCounts(items = []) {
+  return (Array.isArray(items) ? items : []).reduce((acc, item) => {
+    const key = text(item?.snapshot_state || "unknown") || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+}
