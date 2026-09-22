@@ -1,4 +1,5 @@
 import { renderOwnerControlRoomPage as renderLegacyOwnerControlRoomPage } from "./control-room-owner-ui-legacy";
+import { MMD_OPERATIONS_FLOW, MMD_OPERATIONS_STYLE } from "./control-room-mmd-flow";
 
 const encoder = new TextEncoder();
 const AI_OPS_SCRIPT = '<script src="/v1/admin/ai-ops/client.js?v=3" defer data-mmd-ai-ops-script="v3"></script>';
@@ -8,6 +9,8 @@ const CONTROL_ROOM_CANON_SCRIPT = `<script data-mmd-control-room-canon-v3>(funct
 
 function canonicalizeOwnerControlRoom(html: string): string {
   return html
+    .replace('<div class="g4">', `${MMD_OPERATIONS_FLOW}<div class="g4">`)
+    .replace('</head>', `${MMD_OPERATIONS_STYLE}</head>`)
     .replaceAll("/internal/admin/jobs/create-session", "/internal/admin/jobs/create-job")
     .replaceAll("Create Session", "Create Job")
     .replaceAll("<span>SESSION</span>", "<span>JOB</span>")
@@ -30,6 +33,7 @@ export function renderOwnerControlRoomPage(): Response {
   headers.set("x-mmd-command-center-flow", "ask-needs-per-prepared-watching");
   headers.set("x-mmd-ai-ops-layer", "v3");
   headers.set("x-mmd-control-room-safety-location", "v1");
+  headers.set("x-mmd-control-room-mmd-flow", "20260922");
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
