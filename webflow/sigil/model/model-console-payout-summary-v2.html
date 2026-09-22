@@ -32,20 +32,31 @@ function moneyShort(n){return new Intl.NumberFormat('th-TH',{maximumFractionDigi
 function officialEnd(session){const x=session&&session.end_time;if(!x)return'';const d=new Date(x);if(Number.isNaN(d.getTime()))return String(x);return new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(d)}
 function renderTerms(session,card){
  const t=session&&session.payout_terms;if(!t||typeof t!=='object'||!card)return;
+ const lane=String(t.money_lane||session.model_work_lane||'').toLowerCase();
+ const isPrivate=lane==='private_model';
  const rows=[];
  const push=(label,v,suffix=' / ชม.')=>{const n=Number(v);if(Number.isFinite(n)&&n>0)rows.push('<div class="smcv3-payout-terms__row"><span>'+label+'</span><strong>'+moneyShort(n)+suffix+'</strong></div>')};
- push('OT / ชั่วโมง',t.overtime_payout_thb_per_hour);
- push('OT ก่อน 00:00',t.overtime_before_midnight_payout_thb_per_hour);
- push('จองล่วงหน้าหลัง 00:00',t.after_midnight_prebook_premium_payout_thb_per_hour);
- push('OT หลัง 00:00',t.overtime_after_midnight_payout_thb_per_hour);
- push('OT หลัง 03:00',t.overtime_after_0300_payout_thb_per_hour);
- push('รอบดึกเพิ่มถึงตัว',t.late_night_payout_thb,'');
- push('ระยะเกิน / km',t.extra_km_payout_thb,' / km');
- push('เพิ่มแขก / คน',t.extra_guest_payout_thb,' / คน');
- const exp=Array.isArray(t.reimbursable_expenses)&&t.reimbursable_expenses.length?'เบิกตามจริง: '+t.reimbursable_expenses.join(' · '):'';
+ if(!isPrivate){
+  push('OT / ชั่วโมง',t.overtime_payout_thb_per_hour);
+  push('OT ก่อน 00:00',t.overtime_before_midnight_payout_thb_per_hour);
+  push('จองล่วงหน้าหลัง 00:00',t.after_midnight_prebook_premium_payout_thb_per_hour);
+  push('OT หลัง 00:00',t.overtime_after_midnight_payout_thb_per_hour);
+  push('OT หลัง 03:00',t.overtime_after_0300_payout_thb_per_hour);
+  push('รอบดึกเพิ่มถึงตัว',t.late_night_payout_thb,'');
+  push('ระยะเกิน / km',t.extra_km_payout_thb,' / km');
+  push('เพิ่มแขก / คน',t.extra_guest_payout_thb,' / คน');
+ }
+ const exp=!isPrivate&&Array.isArray(t.reimbursable_expenses)&&t.reimbursable_expenses.length?'เบิกตามจริง: '+t.reimbursable_expenses.join(' · '):'';
  const end=officialEnd(session);
  const terms=document.createElement('div');terms.className='smcv3-payout-terms';terms.setAttribute('data-model-payout-terms','');
- terms.innerHTML='<span class="smcv3-payout-terms__title">PAYOUT SUMMARY · คุณได้รับ</span><div class="smcv3-payout-terms__grid">'+(end?'<div class="smcv3-payout-terms__row"><span>เวลาจบที่ MMD ยืนยัน</span><strong>'+end+'</strong></div>':'')+rows.join('')+'</div>'+(exp?'<p class="smcv3-payout-terms__foot">'+exp+'</p>':'')+(t.extension_requires_mmd_confirmation?'<div class="smcv3-payout-terms__lock">การต่อเวลา/เปลี่ยนแผน ต้อง Request ใน MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยันก่อน จึงอยู่ภายใต้ Booking เดิมต่อ</div>':'');
+ const title=isPrivate?'PRIVATE MONEY · CASE LOCKED':'PUBLIC MONEY · PACKAGE / SESSION';
+ const laneNote=isPrivate
+  ?'<p class="smcv3-payout-terms__foot"><strong>งาน Private ใช้เรทที่ MMD lock เฉพาะงานนี้</strong><br>ไม่ใช้ราคา Package, OT หรือ After Midnight Matrix ของ Public โดยอัตโนมัติ</p>'
+  :'<p class="smcv3-payout-terms__foot">งาน Public ใช้เงื่อนไข Package/Session ที่ MMD อนุมัติสำหรับงานนี้</p>';
+ const extension=isPrivate
+  ?'หากต่อเวลา เปลี่ยนกิจกรรม หรือเพิ่มขอบเขต: ลูกค้า Request → คุณ Approve → MMD ออกเรท Private ของเคสใหม่และยืนยันก่อน จึงถือเป็นข้อตกลงของ MMD'
+  :'การต่อเวลา/เปลี่ยนแผน ต้อง Request ใน MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยันก่อน จึงอยู่ภายใต้ Booking เดิมต่อ';
+ terms.innerHTML='<span class="smcv3-payout-terms__title">'+title+'</span><div class="smcv3-payout-terms__grid">'+(end?'<div class="smcv3-payout-terms__row"><span>เวลาจบที่ MMD ยืนยัน</span><strong>'+end+'</strong></div>':'')+rows.join('')+'</div>'+laneNote+(exp?'<p class="smcv3-payout-terms__foot">'+exp+'</p>':'')+(t.extension_requires_mmd_confirmation?'<div class="smcv3-payout-terms__lock">'+extension+'</div>':'');
  card.append(terms);
 }
 function removeAlert(){root.querySelector('[data-model-payment-alert]')?.remove()}
