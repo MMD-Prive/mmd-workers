@@ -210,7 +210,7 @@ export default {
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
       const jobBody = await request.clone().json().catch(() => ({}));
-      const resolvedMoney = resolveJobModelMoneyContext(jobBody);
+      const resolvedMoney = resolveJobModelMoneyContext(jobBody, request.url);
       if (!resolvedMoney.ok) return modelMoneyValidationResponse(resolvedMoney);
       jobMoneyContext = resolvedMoney.context;
     }
