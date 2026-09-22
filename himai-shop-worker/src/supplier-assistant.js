@@ -185,9 +185,13 @@ async function answerSupplier(request, env) {
       "stock",
       "sold",
       "reserved",
+      "orders",
+      "supplier_balance",
+      "payout_history",
       "refill_signal",
       "notification_preference",
       "refill_draft",
+      "delivery_update",
     ],
   }));
 }
@@ -473,9 +477,35 @@ async function loadPortalResponse(env, token) {
 }
 
 function buildSafeSnapshot(portal) {
+  const orders = (Array.isArray(portal?.orders) ? portal.orders : []).slice(0, 20).map((order) => ({
+    order_id: clean(order?.order_id, 120),
+    order_date: clean(order?.order_date, 80),
+    order_status: clean(order?.order_status, 80),
+    payment_status: clean(order?.payment_status, 80),
+    channel: clean(order?.channel, 80),
+    quantity: numberOrNull(order?.quantity) || 0,
+    line_total_thb: numberOrNull(order?.line_total_thb) || 0,
+    items: (Array.isArray(order?.items) ? order.items : []).slice(0, 20).map((item) => ({
+      product_name: clean(item?.product_name, 160),
+      quantity: numberOrNull(item?.quantity) || 0,
+      status: clean(item?.status, 80),
+    })),
+  }));
+  const finance = portal?.finance || {};
   return {
     supplier: safeSupplierName(portal, null),
     products: safeProducts(portal),
+    orders,
+    finance: {
+      open_balance_thb: numberOrNull(finance?.open_balance_thb) || 0,
+      paid_total_thb: numberOrNull(finance?.paid_total_thb) || 0,
+      payouts: (Array.isArray(finance?.payouts) ? finance.payouts : []).slice(0, 20).map((row) => ({
+        payout_date: clean(row?.payout_date, 80),
+        amount_thb: numberOrNull(row?.amount_thb) || 0,
+        method: clean(row?.method, 80),
+        status: clean(row?.status, 80),
+      })),
+    },
     updated_at: clean(portal?.updated_at, 80),
   };
 }
@@ -507,6 +537,8 @@ function deterministicReply(message, snapshot) {
       "• sold / ขายแล้ว",
       "• reserved / จอง",
       "• refill / สินค้าที่ควรเติม",
+      "• orders / ออเดอร์ของสินค้าคุณ",
+      "• balance / ยอดค้างและประวัติการจ่าย",
       "• ตั้งแจ้งเตือน LINE หรือ Telegram",
       "• สร้างคำขอเติมสินค้าแบบร่างเพื่อรอ Boss Per อนุมัติ",
       "Dashboard: " + DEFAULT_DASHBOARD_URL,
@@ -542,7 +574,20 @@ function deterministicReply(message, snapshot) {
   }
 
   if (/(ออเดอร์|order|สถานะงาน|สถานะคำสั่งซื้อ)/i.test(lower)) {
-    return "เรื่องคำสั่งซื้อให้ดูจาก Dashboard หรือประสาน MMD โดยตรงครับ ผมจะไม่แสดงข้อมูลลูกค้าหรือข้อมูลของ supplier รายอื่น";
+    const orders = snapshot.orders || [];
+    if (!orders.length) return "ตอนนี้ยังไม่มี Order ที่มีสินค้าของคุณในข้อมูลล่าสุดครับ";
+    return "Order ล่าสุดของสินค้าคุณ:\n" + orders.slice(0, 8).map((order) =>
+      "• " + (order.order_id || "Order") + " · " + (order.order_status || "—") + " · " + order.quantity + " ชิ้น · ฿" + order.line_total_thb.toLocaleString("th-TH")
+    ).join("\n");
+  }
+
+  if (/(ยอดค้าง|ค้างจ่าย|ยอดเงิน|เงิน|balance|payout|จ่ายแล้ว|ยอดจ่าย)/i.test(lower)) {
+    const finance = snapshot.finance || {};
+    return [
+      "ยอดของบัญชี Supplier นี้:",
+      "• รอจ่าย: ฿" + (numberOrNull(finance.open_balance_thb) || 0).toLocaleString("th-TH"),
+      "• จ่ายแล้ว: ฿" + (numberOrNull(finance.paid_total_thb) || 0).toLocaleString("th-TH"),
+    ].join("\n");
   }
 
   if (/(ราคา|price)/i.test(lower)) {
@@ -556,7 +601,7 @@ function deterministicReply(message, snapshot) {
 
 function fallbackReply(message, snapshot) {
   const low = snapshot.products.filter((product) => product.low_stock === true);
-  return "ผมช่วยตอบเรื่อง stock, ยอดขาย, ยอดจอง, สินค้าที่ควรเติม และ Dashboard ของสินค้าที่อยู่ในสิทธิ์คุณได้ครับ พิมพ์ “stock”, “ขายแล้ว”, “เติมสินค้า” หรือ “help” ได้เลย";
+  return "ผมช่วยตอบเรื่อง stock, ยอดขาย, ยอดจอง, orders, ยอดค้าง, payout, สินค้าที่ควรเติม และ Dashboard ของสินค้าที่อยู่ในสิทธิ์คุณได้ครับ พิมพ์ “stock”, “orders”, “ยอดค้าง”, “เติมสินค้า” หรือ “help” ได้เลย";
 }
 
 async function aiReply(env, message, snapshot) {
