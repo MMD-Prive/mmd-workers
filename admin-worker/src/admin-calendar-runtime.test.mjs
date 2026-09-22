@@ -111,4 +111,8 @@ test('worker calendar page is noindex and fetches protected API', async()=>{
   assert.equal(page.headers.get('x-robots-tag'),'noindex, nofollow');
   assert.match(html,/\/v1\/admin\/calendar/);
   assert.match(html,/Client \+ Job \+ Model \+ Deposit \+ Cal booking UID/);
+  assert.match(html,/ตารางงาน/);
+  assert.match(html,/รอมัดจำ/);
+  assert.match(html,/เช็กราคา/);
+  assert.doesNotMatch(html,/>Therapists<|>Pricing Review</);
 });
