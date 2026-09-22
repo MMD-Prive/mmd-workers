@@ -10,6 +10,16 @@ const CAL_SYNC_HEALTH_URL = 'https://cal-sync.internal/health';
 const CAL_SYNC_PUBLIC_FALLBACK = 'https://cal-sync-worker.malemodel-bkk.workers.dev/health';
 const CALENDAR_PRESENTATION_URL = 'https://mmdprive.webflow.io/internal/admin/calendar';
 const CALENDAR_OWNER_UI_VERSION = 'calendar-owner-ui-v3-20260922';
+const CALENDAR_MODEL_PHOTO_PATH = '/v1/admin/calendar/model-photo';
+const MODELS_TABLE_ID = 'tblI4B0bI446vp9GX';
+const MODEL_FIELD = Object.freeze({
+  name:'fldShiT60bmCxFxRu',
+  profilePhoto:'fldXWXqa3bnAgxN4Y',
+  driveFolderId:'fldcWVb2LDRxrQDmT',
+  primaryImageKey:'fldv23n7zYXKfM4z6',
+  publicImageUrl:'fldC94pnSJxBsyAqS',
+});
+
 const clean = value => String(value ?? '').trim();
 const escapeHtml = value => clean(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -18,6 +28,102 @@ const escapeHtml = value => clean(value).replace(/[&<>"']/g, c => ({'&':'&amp;',
 export async function readCalendarOwnerActor(request, env) {
   const actor = await readCredentialBoundAdminActor(request, env);
   return actor && ROLES.has(clean(actor.role).toLowerCase()) ? actor : null;
+}
+
+function safeHttpsUrl(value) {
+  try {
+    const url = new URL(clean(value));
+    return url.protocol === 'https:' ? url.toString() : '';
+  } catch { return ''; }
+}
+
+function firstAttachmentUrl(value) {
+  if (!Array.isArray(value) || !value.length) return '';
+  return safeHttpsUrl(value[0]?.url || value[0]?.thumbnails?.large?.url || value[0]?.thumbnails?.full?.url);
+}
+
+function imageContentType(key, object) {
+  const type = clean(object?.httpMetadata?.contentType).toLowerCase();
+  if (/^image\/(?:jpeg|png|webp|gif|avif)$/.test(type)) return type;
+  const lower = clean(key).toLowerCase();
+  if (/\.jpe?g$/.test(lower)) return 'image/jpeg';
+  if (/\.png$/.test(lower)) return 'image/png';
+  if (/\.webp$/.test(lower)) return 'image/webp';
+  if (/\.gif$/.test(lower)) return 'image/gif';
+  if (/\.avif$/.test(lower)) return 'image/avif';
+  return '';
+}
+
+async function readCalendarModelPhotoRecord(env, modelId) {
+  const token = clean(env.AIRTABLE_API_KEY || env.AIRTABLE_TOKEN);
+  const base = clean(env.AIRTABLE_BASE_ID) || 'appsV1ILPRfIjkaYg';
+  if (!token) return null;
+  const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(base)}/${MODELS_TABLE_ID}/${encodeURIComponent(modelId)}`);
+  url.searchParams.set('returnFieldsByFieldId','true');
+  const response = await fetch(url, { headers:{authorization:`Bearer ${token}`,accept:'application/json'} });
+  if (!response.ok) return null;
+  return response.json().catch(() => null);
+}
+
+async function driveModelPhotoResponse(env, folderId, modelName='') {
+  const binding = env.MODEL_DRIVE_DIRECTORY;
+  if (!binding || typeof binding.fetch !== 'function') return null;
+  let resolvedId = clean(folderId, 180);
+  if (!resolvedId && modelName) {
+    const search = new URL('https://model-drive-directory.internal/__internal/model-drive/search');
+    search.searchParams.set('q', clean(modelName, 120));
+    search.searchParams.set('lane','all');
+    const result = await binding.fetch(new Request(search.toString(), { headers:{accept:'application/json'} }));
+    const body = await result.json().catch(() => null);
+    if (result.ok && Array.isArray(body?.items)) {
+      const exact = body.items.filter(item => clean(item?.folder_name).toLowerCase() === clean(modelName).toLowerCase());
+      if (exact.length === 1) resolvedId = clean(exact[0]?.drive_folder_id, 180);
+    }
+  }
+  if (!resolvedId) return null;
+  const target = new URL('https://model-drive-directory.internal/__internal/model-drive/photo');
+  target.searchParams.set('drive_folder_id', resolvedId);
+  const response = await binding.fetch(new Request(target.toString(), { headers:{accept:'image/avif,image/webp,image/png,image/jpeg'} }));
+  return response.ok ? response : null;
+}
+
+export async function calendarModelPhotoResponse(request, env = {}) {
+  const url = new URL(request.url);
+  if (url.pathname !== CALENDAR_MODEL_PHOTO_PATH || request.method !== 'GET') {
+    return new Response('Not Found', { status:404 });
+  }
+  const modelId = clean(url.searchParams.get('model_id'), 80);
+  if (!/^rec[A-Za-z0-9]{14}$/.test(modelId)) return new Response('Bad Request', { status:400 });
+
+  const record = await readCalendarModelPhotoRecord(env, modelId);
+  if (!record?.id) return new Response('Not Found', { status:404 });
+  const fields = record.fields || {};
+  const primaryKey = clean(fields[MODEL_FIELD.primaryImageKey], 500);
+  if (primaryKey && env.MMD_MODEL_ASSETS && typeof env.MMD_MODEL_ASSETS.get === 'function') {
+    try {
+      const object = await env.MMD_MODEL_ASSETS.get(primaryKey);
+      const type = imageContentType(primaryKey, object);
+      if (object && type) {
+        return new Response(object.body, { status:200, headers:{
+          'content-type':type,'cache-control':'no-store, private','content-disposition':'inline',
+          'x-content-type-options':'nosniff','x-mmd-calendar-model-photo':'r2'
+        }});
+      }
+    } catch {}
+  }
+
+  const direct = safeHttpsUrl(fields[MODEL_FIELD.publicImageUrl]) || firstAttachmentUrl(fields[MODEL_FIELD.profilePhoto]);
+  if (direct) return Response.redirect(direct, 302);
+
+  const drive = await driveModelPhotoResponse(env, fields[MODEL_FIELD.driveFolderId], fields[MODEL_FIELD.name]);
+  if (drive) {
+    const headers = new Headers(drive.headers);
+    headers.set('cache-control','no-store, private');
+    headers.set('x-mmd-calendar-model-photo','drive');
+    return new Response(drive.body, { status:200, headers });
+  }
+
+  return new Response('Not Found', { status:404, headers:{'cache-control':'no-store, private'} });
 }
 
 export function calendarDate(value) {
