@@ -177,6 +177,8 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/\.webflow\\\.io/);
   assert.match(html,/calendar-owner-ui-v3-20260922/);
   assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
+  assert.match(html,/cleanInlineArtifacts/);
+  assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
   for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
   assert.doesNotMatch(html,/CAL_API_KEY|AIRTABLE_API_KEY|ADMIN_BEARER|ADMIN_SESSION_SECRET/);
