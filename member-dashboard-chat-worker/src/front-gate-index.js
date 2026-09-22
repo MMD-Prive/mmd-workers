@@ -73,16 +73,37 @@ async function forwardMmsTherapistAuth(request, env) {
   });
 }
 
-function isStatusLiffShellRequest(request) {
-  const url = new URL(request.url);
-  const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
-  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return false;
-  const intent = String(url.searchParams.get("intent") || url.searchParams.get("liff_intent") || "").trim().toLowerCase();
-  const campaign = String(url.searchParams.get("campaign") || "").trim().toLowerCase();
-  return intent === "status" && !campaign;
+function liffStateSearchParams(url) {
+  const raw = String(url.searchParams.get("liff.state") || url.searchParams.get("liff_state") || "").trim();
+  if (!raw) return new URLSearchParams();
+  let state = raw;
+  try { state = decodeURIComponent(raw); } catch (_) {}
+  const queryIndex = state.indexOf("?");
+  if (queryIndex >= 0) return new URLSearchParams(state.slice(queryIndex + 1));
+  if (state.startsWith("intent=") || state.startsWith("liff_intent=")) return new URLSearchParams(state);
+  return new URLSearchParams();
 }
 
-function injectStatusReturnBridge(html) {
+function liffAuthReturnTarget(request) {
+  const url = new URL(request.url);
+  const path = url.pathname.toLowerCase().replace(/\/{2,}/g, "/");
+  if (!MEMBER_LIFF_SHELL_PATHS.has(path)) return "";
+  const state = liffStateSearchParams(url);
+  const intent = String(
+    url.searchParams.get("intent")
+      || url.searchParams.get("liff_intent")
+      || state.get("intent")
+      || state.get("liff_intent")
+      || "",
+  ).trim().toLowerCase();
+  const campaign = String(url.searchParams.get("campaign") || state.get("campaign") || "").trim().toLowerCase();
+  if (campaign) return "";
+  if (intent === "status") return "/member/my-mmd";
+  if (intent === "continue_payment") return "/member/payments";
+  return "";
+}
+
+function injectStatusReturnBridge(html, target = "/member/my-mmd") {
   const source = String(html || "");
   const nonceMatch = source.match(/<script\b[^>]*\bnonce=["']([^"']+)["']/i);
   if (!nonceMatch || !source.includes("</body>")) return source;
@@ -90,7 +111,7 @@ function injectStatusReturnBridge(html) {
   const nonce = nonceMatch[1];
   const bridge = `<script nonce="${nonce}">
 (() => {
-  const target = "/member/my-mmd";
+  const target = ${JSON.stringify(target)};
   const profileEndpoint = "/member/api/liff/profile";
   const telegramBindEndpoint = "/member/api/liff/telegram-bind";
   const maxAttempts = 20;
@@ -214,16 +235,18 @@ function injectStatusReturnBridge(html) {
 }
 
 async function maybeReturnStatusLiffToMyMmd(request, response) {
-  if (!isStatusLiffShellRequest(request) || request.method === "HEAD" || !response.ok) return response;
+  const target = liffAuthReturnTarget(request);
+  if (!target || request.method === "HEAD" || !response.ok) return response;
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   if (!contentType.includes("text/html")) return response;
 
   const html = await response.text();
-  const rewritten = injectStatusReturnBridge(html);
+  const rewritten = injectStatusReturnBridge(html, target);
   const headers = new Headers(response.headers);
   for (const name of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(name);
   headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
-  headers.set("x-mmd-liff-return-bridge", "my-mmd-status-telegram-v2");
+  headers.set("x-mmd-liff-return-bridge", target === "/member/payments" ? "my-mmd-payment-center-v1" : "my-mmd-status-telegram-v2");
+  headers.set("x-mmd-liff-return-target", target);
   return new Response(rewritten, {
     status: response.status,
     statusText: response.statusText,
