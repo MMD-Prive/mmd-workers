@@ -18,6 +18,15 @@
 #sigil-model-console-v3 .smcv3-payment-alert__label{display:block;color:var(--gold,#f0cd7a);font-size:10px;font-weight:900;letter-spacing:.09em}
 #sigil-model-console-v3 .smcv3-payment-alert strong{display:block;margin-top:5px;color:var(--ink,#fff);font-size:15px}
 #sigil-model-console-v3 .smcv3-payment-alert p{margin:6px 0 0;color:var(--soft,#ddd);font-size:12px;line-height:1.55}
+#sigil-model-console-v3 .smcv3-extension-request{margin-top:12px;padding:16px;border:1px solid rgba(240,205,122,.5);border-radius:18px;background:linear-gradient(145deg,rgba(240,205,122,.13),rgba(255,255,255,.025))}
+#sigil-model-console-v3 .smcv3-extension-request__label{display:block;color:var(--gold,#f0cd7a);font-size:10px;font-weight:900;letter-spacing:.1em}
+#sigil-model-console-v3 .smcv3-extension-request h3{margin:6px 0 4px;color:var(--ink,#fff);font-size:18px}
+#sigil-model-console-v3 .smcv3-extension-request p{margin:5px 0;color:var(--soft,#ddd);font-size:11px;line-height:1.55}
+#sigil-model-console-v3 .smcv3-extension-request__amount{display:block;margin:10px 0;color:#fff;font-size:24px;font-weight:950}
+#sigil-model-console-v3 .smcv3-extension-request__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+#sigil-model-console-v3 .smcv3-extension-request__actions button{min-height:44px;border-radius:12px;border:1px solid rgba(240,205,122,.35);background:#f0cd7a;color:#17120a;font-weight:900}
+#sigil-model-console-v3 .smcv3-extension-request__actions button:last-child{background:transparent;color:#ddd}
+#sigil-model-console-v3 .smcv3-extension-request__actions button:disabled{opacity:.5}
 </style>
 <script id="smcv3-payout-only-js">
 (()=>{'use strict';
@@ -25,6 +34,8 @@ const root=document.getElementById('sigil-model-console-v3');
 if(!root||root.dataset.payoutOnlyReady==='1')return;
 root.dataset.payoutOnlyReady='1';
 const endpoint=root.dataset.currentEndpoint||'/v1/model/session/current';
+const actionEndpoint=root.dataset.actionEndpoint||'/v1/model/session/action';
+const sessionToken=new URLSearchParams(location.search).get('t')||'';
 const money=n=>new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(n)+' THB';
 const statusText=s=>({expected:'ยอดที่ตกลง',pending:'รอดำเนินการ',pending_review:'กำลังตรวจสอบ',verified:'ยืนยันแล้ว',paid:'ชำระแล้ว',hold:'พักรายการ',checking:'กำลังตรวจสอบ'})[String(s||'').toLowerCase()]||'กำลังตรวจสอบ';
 function remove(){root.querySelector('[data-model-payout-card]')?.remove()}
@@ -83,16 +94,47 @@ function render(session){
  if(!card){card=document.createElement('section');card.className='smcv3-card smcv3-payout-only';card.setAttribute('data-model-payout-card','');summary.insertAdjacentElement('afterend',card)}
  card.innerHTML='<div class="smcv3-payout-only__row"><div><span class="smcv3-payout-only__label">ยอดเงินถึงตัวคุณ</span><strong class="smcv3-payout-only__amount">'+money(amount)+'</strong></div><span class="smcv3-payout-only__status">'+statusText(session&&session.payout_status)+'</span></div><p class="smcv3-payout-only__note">ยอดนี้คือค่าตัวที่คุณได้รับตามงานนี้ ไม่ใช่ราคาที่ลูกค้าจ่าย</p>';renderTerms(session,card);
 }
+function removeExtension(){root.querySelector('[data-model-extension-request]')?.remove()}
+function extensionEnd(value){const d=new Date(String(value||''));return Number.isNaN(d.getTime())?String(value||'—'):new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
+async function decideExtension(action,requestId,card){
+ const buttons=[...card.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
+ try{
+  const res=await fetch(new URL(actionEndpoint,location.origin),{
+   method:'POST',credentials:'include',cache:'no-store',
+   headers:{'content-type':'application/json',accept:'application/json'},
+   body:JSON.stringify({t:sessionToken,action,extension_request_id:requestId})
+  });
+  const data=await res.json().catch(()=>null);
+  if(!res.ok||!data||data.ok!==true)throw new Error(String(data&&data.error||'extension_decision_failed'));
+  await load();
+ }catch(e){
+  card.querySelector('p:last-of-type').textContent='ตอนนี้ยังบันทึกคำตอบไม่ได้ กรุณาลองอีกครั้ง';
+  buttons.forEach(x=>x.disabled=false);
+ }
+}
+function renderExtension(extension){
+ removeExtension();
+ if(!extension||extension.status!=='requested'||!extension.request_id)return;
+ const summary=root.querySelector('.smcv3-summary');if(!summary)return;
+ const card=document.createElement('section');card.className='smcv3-extension-request';card.setAttribute('data-model-extension-request','');
+ const minutes=Number(extension.requested_minutes)||0;
+ card.innerHTML='<span class="smcv3-extension-request__label">CUSTOMER EXTENSION REQUEST</span><h3>ลูกค้าขอต่อเวลา '+minutes+' นาที</h3><p>'+extensionEnd(extension.original_end_at)+' → <strong>'+extensionEnd(extension.requested_end_at)+'</strong></p><span class="smcv3-extension-request__amount">คุณได้รับเพิ่ม '+moneyShort(extension.model_payout_thb)+'</span><p>กดรับเฉพาะเมื่อคุณสะดวก เวลาจะยังไม่เปลี่ยนจนกว่าลูกค้าชำระและ MMD ยืนยัน</p><div class="smcv3-extension-request__actions"><button type="button" data-ext-approve>APPROVE EXTENSION</button><button type="button" data-ext-decline>DECLINE</button></div><p></p>';
+ card.querySelector('[data-ext-approve]').addEventListener('click',()=>decideExtension('approve_extension',extension.request_id,card));
+ card.querySelector('[data-ext-decline]').addEventListener('click',()=>decideExtension('decline_extension',extension.request_id,card));
+ const payout=root.querySelector('[data-model-payout-card]');
+ (payout||summary).insertAdjacentElement('afterend',card);
+}
 async function load(){
  try{
   const res=await fetch(new URL(endpoint,location.origin),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}});
   const data=await res.json();
   if(!res.ok||data.ok===false)throw new Error('not_available');
   const session=data.session||(data.data&&data.data.session);
-  if(!session){remove();return}
+  if(!session){remove();removeExtension();return}
   render(session);
   renderAlert(session);
- }catch(e){remove();removeAlert()}
+  renderExtension(data.extension_request||(data.data&&data.data.extension_request));
+ }catch(e){remove();removeAlert();removeExtension()}
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load,{once:true});else load();
 root.querySelectorAll('[data-refresh]').forEach(x=>x.addEventListener('click',()=>setTimeout(load,250)));
