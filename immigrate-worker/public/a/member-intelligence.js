@@ -9,7 +9,21 @@
   const lower=(value)=>clean(value).toLowerCase();
   const display=(value)=>clean(value)||"—";
   const loginNext=`/internal/admin/login?next=${encodeURIComponent(location.pathname+location.search)}`;
-  const state={records:[],selected:null,memory:null};
+  const intelligencePath="/v1/admin/clients/intelligence";
+  const auditPath="/v1/admin/clients/intelligence/audit";
+  const draftSchema="mmd.kenji_continuity_operator_draft.v1";
+  const state={
+    records:[],
+    selected:null,
+    memory:null,
+    intelligence:null,
+    selectionSeq:0,
+    draftText:"",
+    draftAvailable:false,
+    runtimeCopyAllowed:false,
+    viewAudited:false,
+    copying:false
+  };
 
   function setText(id,value){
     const element=byId(id);
@@ -56,6 +70,259 @@
     const payload=await response.json().catch(()=>({ok:false,error:"invalid_json"}));
     if(!response.ok||payload?.ok===false)throw new Error(clean(payload?.error)||`http_${response.status}`);
     return payload;
+  }
+
+  function ensureDraftUi(){
+    const detail=byId("miDetail");
+    if(!detail)return null;
+    let card=byId("miDraftCard");
+    if(card)return card;
+
+    if(!byId("miDraftStyle")){
+      const style=document.createElement("style");
+      style.id="miDraftStyle";
+      style.textContent=`
+#mmdMemberIntelligence .mi-draft-card{grid-column:1/-1;margin-top:18px;padding:20px;border:1px solid rgba(31,54,42,.17);border-radius:22px;background:linear-gradient(145deg,#f8faf6,#edf3eb);box-shadow:0 16px 42px rgba(20,35,27,.08)}
+#mmdMemberIntelligence .mi-draft-card[data-tone="ok"]{border-color:rgba(55,113,73,.34)}
+#mmdMemberIntelligence .mi-draft-card[data-tone="bad"]{border-color:rgba(151,63,54,.42);background:linear-gradient(145deg,#fff9f7,#f7eae6)}
+#mmdMemberIntelligence .mi-draft-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+#mmdMemberIntelligence .mi-draft-kicker{display:block;color:#5f7466;font-size:9px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+#mmdMemberIntelligence .mi-draft-head h3{margin:5px 0 0;font-size:20px;line-height:1.25}
+#mmdMemberIntelligence .mi-draft-state{flex:0 0 auto;padding:6px 9px;border-radius:999px;background:#e3ebe1;color:#365843;font-size:9px;font-weight:900;letter-spacing:.06em}
+#mmdMemberIntelligence .mi-draft-state[data-tone="bad"]{background:#f2ded9;color:#8f3d34}
+#mmdMemberIntelligence .mi-draft-copy{width:100%;min-height:110px;margin:14px 0 0;padding:14px;border:1px solid rgba(31,54,42,.14);border-radius:15px;background:#fff;color:#17281e;font:500 14px/1.75 system-ui,sans-serif;resize:vertical}
+#mmdMemberIntelligence .mi-draft-copy:disabled{color:#728078;background:#f5f6f3}
+#mmdMemberIntelligence .mi-draft-reason{margin:10px 0 0;color:#5d6e64;font-size:11px;line-height:1.6}
+#mmdMemberIntelligence .mi-draft-meta{display:grid;gap:7px;margin-top:13px}
+#mmdMemberIntelligence .mi-draft-meta div{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.68);font-size:10px;line-height:1.5}
+#mmdMemberIntelligence .mi-draft-meta small{color:#718078;font-weight:800}
+#mmdMemberIntelligence .mi-draft-meta b{min-width:0;overflow-wrap:anywhere;color:#263b2f}
+#mmdMemberIntelligence .mi-draft-review{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:12px;border:1px solid rgba(31,54,42,.14);border-radius:14px;background:#fff;color:#35493d;font-size:11px;line-height:1.55}
+#mmdMemberIntelligence .mi-draft-review input{flex:0 0 auto;width:18px;height:18px;margin:1px 0 0;accent-color:#405947}
+#mmdMemberIntelligence .mi-draft-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+#mmdMemberIntelligence .mi-draft-button{min-height:44px;border:0;border-radius:999px;background:#233b2d;color:#fff;padding:10px 17px;font-size:11px;font-weight:900;letter-spacing:.04em}
+#mmdMemberIntelligence .mi-draft-button:disabled{cursor:not-allowed;opacity:.42}
+#mmdMemberIntelligence .mi-draft-audit{margin:0;color:#6d7d73;font-size:10px;line-height:1.5}
+@media(max-width:620px){#mmdMemberIntelligence .mi-draft-card{padding:16px}#mmdMemberIntelligence .mi-draft-meta div{grid-template-columns:1fr;gap:3px}}
+`;
+      document.head.appendChild(style);
+    }
+
+    card=document.createElement("section");
+    card.id="miDraftCard";
+    card.className="mi-draft-card";
+    card.setAttribute("data-tone","warn");
+    card.setAttribute("aria-labelledby","miDraftTitle");
+    card.innerHTML=`<div class="mi-draft-head"><div><small class="mi-draft-kicker">CUSTOMER CONTINUITY · OPERATOR ONLY</small><h3 id="miDraftTitle">Kenji Reply Draft</h3></div><span class="mi-draft-state" id="miDraftState" data-tone="bad">LOCKED</span></div><textarea class="mi-draft-copy" id="miDraftText" readonly disabled aria-label="Kenji operator reply draft"></textarea><p class="mi-draft-reason" id="miDraftReason">กำลังอ่าน Conversation Matrix และ safety gates…</p><div class="mi-draft-meta"><div><small>MATRIX</small><b id="miDraftMatrix">WAITING</b></div><div><small>KILL SWITCH</small><b id="miDraftKill">UNKNOWN · COPY LOCKED</b></div><div><small>AUTHORITY</small><b>Context only · live truth wins · no customer send</b></div></div><label class="mi-draft-review"><input id="miDraftReview" type="checkbox" disabled><span>ผมตรวจ draft และจะ re-check payment / booking / access / availability จากระบบเจ้าของข้อมูลก่อนนำไปใช้</span></label><div class="mi-draft-actions"><button class="mi-draft-button" id="miDraftCopy" type="button" disabled aria-disabled="true">COPY LOCKED</button><p class="mi-draft-audit" id="miDraftAudit" role="status" aria-live="polite">View audit ยังไม่บันทึก</p></div>`;
+    detail.appendChild(card);
+
+    byId("miDraftReview")?.addEventListener("change",syncCopyButton);
+    byId("miDraftCopy")?.addEventListener("click",copyDraft);
+    return card;
+  }
+
+  function safeDraftContract(payload){
+    const draft=payload?.ai?.suggested_reply||{};
+    const guards=draft.guardrails||{};
+    const continuity=payload?.ai?.continuity_status||{};
+    return payload?.identity?.status==="canonical"
+      &&payload?.identity?.verified===true
+      &&draft.schema===draftSchema
+      &&draft.mode==="operator_draft"
+      &&draft.available===true
+      &&clean(draft.text).length>0
+      &&draft.send_allowed===false
+      &&draft.requires_owner_review===true
+      &&guards.customer_auto_send===false
+      &&guards.business_truth_claims===false
+      &&guards.memory_is_context_only===true
+      &&continuity.source_status==="live"
+      &&continuity.freshness==="fresh"
+      &&continuity.context_only===true
+      &&continuity.live_truth_wins===true;
+  }
+
+  function draftReason(reason){
+    const labels={
+      phase4_mode_off:"Operator Draft ยังปิดอยู่ใน rollout mode",
+      verified_canonical_identity_required:"ต้องยืนยัน Canonical Client ก่อน",
+      high_confidence_identity_required:"Identity confidence ยังไม่สูงพอ",
+      customer_safe_name_required:"ยังไม่มีชื่อที่ปลอดภัยสำหรับ customer copy",
+      reviewed_returning_relationship_required:"Relationship evidence ยังไม่ผ่าน review",
+      verified_open_thread_required:"ยังไม่มี verified open thread ให้ต่อบทสนทนา",
+      active_matrix_required:"Conversation Matrix ยังไม่ active",
+      continuity_authority_boundary_required:"Matrix authority boundary ยังไม่ครบ",
+      matrix_version_required:"Matrix version ยังไม่พร้อม",
+      open_conversation_stage_required:"Conversation stage ไม่ใช่เคสที่เปิดอยู่",
+      continuity_review_required:"Conversation Matrix ต้อง review ก่อน",
+      continuity_stale:"Conversation Matrix stale · ต้อง refresh",
+      matrix_freshness_unavailable:"ตรวจ freshness ของ Matrix ไม่ได้",
+      matrix_stale_or_expired:"Conversation Matrix หมดอายุหรือเก่าเกินกำหนด",
+      line_channel_required:"Draft นี้ใช้ได้เฉพาะ LINE / LIFF context",
+      canonical_client_not_resolved:"ยัง resolve Canonical Client ไม่ได้"
+    };
+    return labels[clean(reason)]||"Safety gates ยังไม่ครบ · ไม่แสดง customer draft";
+  }
+
+  function formatMoment(value){
+    const parsed=new Date(clean(value));
+    if(!clean(value)||Number.isNaN(parsed.getTime()))return "—";
+    try{return parsed.toLocaleString("th-TH",{dateStyle:"medium",timeStyle:"short"})}catch(_){return parsed.toISOString()}
+  }
+
+  function resetDraftUi(reason="กำลังอ่าน Conversation Matrix และ safety gates…"){
+    ensureDraftUi();
+    state.intelligence=null;
+    state.draftText="";
+    state.draftAvailable=false;
+    state.runtimeCopyAllowed=false;
+    state.viewAudited=false;
+    state.copying=false;
+    const review=byId("miDraftReview");
+    if(review){review.checked=false;review.disabled=true}
+    const text=byId("miDraftText");
+    if(text){text.value="";text.disabled=true}
+    setText("miDraftState","LOCKED");
+    setTone("miDraftState","bad");
+    setText("miDraftReason",reason);
+    setText("miDraftMatrix","WAITING");
+    setText("miDraftKill","UNKNOWN · COPY LOCKED");
+    setText("miDraftAudit","View audit ยังไม่บันทึก");
+    setTone("miDraftCard","warn");
+    syncCopyButton();
+  }
+
+  function syncCopyButton(){
+    const button=byId("miDraftCopy");
+    const review=byId("miDraftReview");
+    if(!button)return;
+    const enabled=state.draftAvailable
+      &&state.runtimeCopyAllowed
+      &&state.viewAudited
+      &&review?.checked===true
+      &&state.copying===false;
+    button.disabled=!enabled;
+    button.setAttribute("aria-disabled",enabled?"false":"true");
+    if(state.copying)button.textContent="AUDITING…";
+    else if(enabled)button.textContent="COPY REVIEWED DRAFT";
+    else button.textContent="COPY LOCKED";
+  }
+
+  async function recordDraftAudit(action,clientId,ownerReviewConfirmed=false){
+    return api(auditPath,{
+      method:"POST",
+      body:JSON.stringify({
+        action,
+        client_id:clientId,
+        owner_review_confirmed:ownerReviewConfirmed
+      })
+    });
+  }
+
+  async function renderDraft(payload,clientId,selectionSeq){
+    ensureDraftUi();
+    state.intelligence=payload;
+    const draft=payload?.ai?.suggested_reply||{};
+    const matrix=payload?.ai?.continuity_status||{};
+    const runtime=payload?.ai?.runtime_controls||{};
+    const safe=safeDraftContract(payload);
+    state.draftAvailable=safe;
+    state.draftText=safe?clean(draft.text):"";
+    state.runtimeCopyAllowed=runtime.status==="live"&&runtime.operator_copy_allowed===true;
+    state.viewAudited=false;
+
+    const matrixBits=[
+      clean(matrix.freshness).toUpperCase()||"UNKNOWN",
+      `source ${clean(matrix.source_status)||"unknown"}`,
+      Number(matrix.matrix_version)>0?`v${Number(matrix.matrix_version)}`:"",
+      matrix.updated_at?`updated ${formatMoment(matrix.updated_at)}`:"",
+      matrix.expires_at?`expires ${formatMoment(matrix.expires_at)}`:""
+    ].filter(Boolean);
+    setText("miDraftMatrix",matrixBits.join(" · "));
+
+    const runtimeLabel=runtime.status!=="live"
+      ?"UNKNOWN · COPY LOCKED"
+      :state.runtimeCopyAllowed
+        ?"CLEAR · LINE + GLOBAL"
+        :`ACTIVE · ${runtime.all_mutations_kill_switch==="active"?"GLOBAL":"LINE"} · COPY LOCKED`;
+    setText("miDraftKill",runtimeLabel);
+
+    const text=byId("miDraftText");
+    const review=byId("miDraftReview");
+    if(text){text.value=state.draftText;text.disabled=!safe}
+    if(review){review.checked=false;review.disabled=!safe||!state.runtimeCopyAllowed}
+
+    if(!safe){
+      setText("miDraftState","UNAVAILABLE");
+      setTone("miDraftState","bad");
+      setText("miDraftReason",draftReason(draft.reason));
+      setText("miDraftAudit","ไม่มี draft ที่ผ่าน safety contract · ไม่บันทึก copy audit");
+      setTone("miDraftCard","bad");
+      syncCopyButton();
+      return;
+    }
+
+    setText("miDraftState",state.runtimeCopyAllowed?"REVIEW ONLY":"COPY LOCKED");
+    setTone("miDraftState",state.runtimeCopyAllowed?"ok":"bad");
+    setText("miDraftReason","Draft จาก allowlisted continuity context เท่านั้น · Per ต้องตรวจ live truth ก่อนนำไปใช้ · ระบบนี้ส่งให้ลูกค้าไม่ได้");
+    setText("miDraftAudit","กำลังบันทึก safe view audit…");
+    setTone("miDraftCard",state.runtimeCopyAllowed?"ok":"warn");
+    syncCopyButton();
+
+    try{
+      await recordDraftAudit("view",clientId,false);
+      if(selectionSeq!==state.selectionSeq||clean(state.selected?.client_id)!==clientId)return;
+      state.viewAudited=true;
+      setText("miDraftAudit",state.runtimeCopyAllowed?"View audited · ติ๊ก review เพื่อเปิด Copy":"View audited · Copy ถูกล็อกโดย runtime control");
+    }catch(error){
+      if(selectionSeq!==state.selectionSeq||lower(error?.message)==="unauthorized")return;
+      state.viewAudited=false;
+      setText("miDraftAudit","AUDIT UNAVAILABLE · Copy ถูกล็อกแบบ fail-closed");
+      setTone("miDraftCard","bad");
+    }
+    syncCopyButton();
+  }
+
+  async function copyDraft(){
+    const review=byId("miDraftReview");
+    const clientId=clean(state.selected?.client_id);
+    if(!clientId||!state.draftAvailable||!state.runtimeCopyAllowed||!state.viewAudited||review?.checked!==true||state.copying)return;
+    state.copying=true;
+    syncCopyButton();
+    try{
+      await recordDraftAudit("copy",clientId,true);
+      if(!navigator.clipboard?.writeText)throw new Error("clipboard_unavailable");
+      await navigator.clipboard.writeText(state.draftText);
+      setText("miDraftAudit","Copied · owner review + copy authorization audited");
+      const button=byId("miDraftCopy");
+      if(button)button.textContent="COPIED";
+    }catch(error){
+      if(lower(error?.message)!=="unauthorized")setText("miDraftAudit","Copy ไม่สำเร็จ · audit/clipboard gate ยังล็อกอยู่");
+      setTone("miDraftCard","bad");
+    }finally{
+      state.copying=false;
+      syncCopyButton();
+    }
+  }
+
+  function memoryFromIntelligence(payload,record){
+    const identity=payload?.identity||{};
+    const relationship=payload?.relationship||{};
+    const current=payload?.current_state||{};
+    const membership=current.membership||{};
+    const access=current.access||{};
+    return {
+      display_name:identity.display_name||recordName(record),
+      verification_status:identity.verified===true?"verified":"review_required",
+      relationship_tier:access.relationship_tier||relationship.relationship_state||membership.tier||"",
+      membership_tier:membership.tier||"",
+      membership_status:membership.status||"unknown",
+      package_code:membership.package_code||"",
+      renewal_due:membership.renewal_due||"",
+      renewal_status:membership.renewal_status||"",
+      access_status:access.status||"unknown",
+      source:membership.source||access.source||"Client Intelligence facade"
+    };
   }
 
   function recordName(record){
@@ -215,6 +482,7 @@
     setTone("miReviewCard","warn");
     renderEvidence(record,null);
     setHandoffLinks(record);
+    resetDraftUi();
   }
 
   function paintMemory(record,memory){
@@ -247,7 +515,9 @@
   }
 
   async function selectRecord(record,prefetched){
+    const selectionSeq=++state.selectionSeq;
     state.selected=record;
+    state.intelligence=null;
     renderRecords(state.records);
     setDetailVisible(true);
     paintLineage(record);
@@ -257,15 +527,25 @@
       return;
     }
 
-    setStatus("กำลังอ่าน bounded member context…","warn");
+    const clientId=clean(record.client_id);
+    setStatus("กำลังอ่าน bounded member context + Conversation Matrix…","warn");
     try{
-      const payload=prefetched||await api(`/v1/admin/kenji/control/memory?client_id=${encodeURIComponent(record.client_id)}`);
-      const memory=payload?.data_status==="live"?payload.memory:null;
+      const payload=prefetched||await api(`${intelligencePath}?client_id=${encodeURIComponent(clientId)}`);
+      if(selectionSeq!==state.selectionSeq)return;
+      if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
+      const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,record);
       paintMemory(record,memory);
-      setStatus(memory?"พร้อม · Verified backend projection loaded":"REVIEW · ไม่พบ bounded member context",memory?"ok":"warn");
+      await renderDraft(payload,clientId,selectionSeq);
+      if(selectionSeq!==state.selectionSeq)return;
+      const ready=memory&&payload?.data_status==="live";
+      setStatus(
+        ready?"พร้อม · Client Intelligence + Matrix loaded":memory?"REVIEW · Projection degraded":"REVIEW · ไม่พบ bounded member context",
+        ready?"ok":"warn"
+      );
     }catch(error){
-      if(lower(error?.message)==="unauthorized")return;
+      if(selectionSeq!==state.selectionSeq||lower(error?.message)==="unauthorized")return;
       paintMemory(record,null);
+      resetDraftUi("Client Intelligence อ่านไม่ได้ · Copy ถูกล็อกแบบ fail-closed");
       setStatus(failureMessage(error),"bad");
     }
   }
@@ -277,8 +557,10 @@
         ?await api("/v1/admin/clients/lineage-lookup",{method:"POST",body:JSON.stringify({query})})
         :await api("/v1/admin/clients/recent");
       state.records=Array.isArray(payload?.records)?payload.records:[];
+      state.selectionSeq+=1;
       state.selected=null;
       state.memory=null;
+      state.intelligence=null;
       renderRecords(state.records);
       setDetailVisible(false);
 
@@ -309,12 +591,14 @@
 
     try{
       setStatus("กำลังเปิด Canonical Client…","warn");
-      const payload=await api(`/v1/admin/kenji/control/memory?client_id=${encodeURIComponent(clientId)}`);
-      const memory=payload?.data_status==="live"?payload.memory:null;
+      const payload=await api(`${intelligencePath}?client_id=${encodeURIComponent(clientId)}`);
+      if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
+      const identity=payload?.identity||{};
+      const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,{});
       const record={
         client_id:clientId,
-        client_name:memory?.display_name||"Canonical Client",
-        canonical_name:memory?.display_name||"",
+        client_name:identity.display_name||memory?.display_name||"Canonical Client",
+        canonical_name:identity.display_name||memory?.display_name||"",
         matched_on:"direct_client_id",
         confidence:100,
         lineage_source:"canonical_client_direct",
@@ -343,6 +627,7 @@
   function boot(){
     if(!byId("mmdMemberIntelligence"))return;
 
+    ensureDraftUi();
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");
     addNavigation("Control Room","/internal/admin/control-room","miNavControlRoom");
 

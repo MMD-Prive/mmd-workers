@@ -14,6 +14,10 @@ import {
   handleClientIntelligenceRequest,
 } from "./client-intelligence-endpoint.js";
 import {
+  CLIENT_INTELLIGENCE_AUDIT_PATH,
+  handleClientIntelligenceAuditRequest,
+} from "./client-intelligence-audit.js";
+import {
   handleModelJobDayGuideRequest,
   isModelJobDayGuideRequest,
 } from "./model-job-day-guide.js";
@@ -101,6 +105,9 @@ export default {
     }
     if (path === CLIENT_INTELLIGENCE_PATH) {
       return handleCredentialBoundClientIntelligence(request, env);
+    }
+    if (path === CLIENT_INTELLIGENCE_AUDIT_PATH) {
+      return handleCredentialBoundClientIntelligenceAudit(request, env);
     }
 
     // Canonicalize the optional SIGIL Jobs membership_action before the request
@@ -275,6 +282,28 @@ async function handleCredentialBoundClientIntelligence(request, env) {
   const responseHeaders = new Headers(response.headers);
   responseHeaders.delete("content-length");
   return new Response(null, { status: response.status, headers: responseHeaders });
+}
+
+async function handleCredentialBoundClientIntelligenceAudit(request, env) {
+  if (request.method.toUpperCase() !== "POST") {
+    return clientIntelligenceJson({ ok: false, error: "method_not_allowed" }, 405, { allow: "POST" });
+  }
+
+  const url = new URL(request.url);
+  if (url.hostname !== "mmdbkk.com" && url.hostname !== "www.mmdbkk.com") {
+    return clientIntelligenceJson({ ok: false, error: "client_intelligence_host_not_allowed" }, 403);
+  }
+  if (request.headers.get("Origin") !== url.origin) {
+    return clientIntelligenceJson({ ok: false, error: "forbidden_origin" }, 403);
+  }
+
+  const actor = await readCredentialBoundAdminActor(request, env);
+  if (!actor) return clientIntelligenceJson({ ok: false, error: "unauthorized" }, 401);
+  if (String(actor.role || "").toLowerCase() === "mms_partner") {
+    return clientIntelligenceJson({ ok: false, error: "mms_partner_scope_forbidden" }, 403);
+  }
+
+  return handleClientIntelligenceAuditRequest(request, env, actor);
 }
 
 function dashboardJson(data, status = 200) {

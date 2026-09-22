@@ -18,9 +18,11 @@ test("client intelligence stays on narrow same-origin ingress routes", async () 
   }
 
   assert.match(wrapper, /CLIENT_INTELLIGENCE_PATH = "\/v1\/admin\/clients\/intelligence"/);
+  assert.match(wrapper, /CLIENT_INTELLIGENCE_AUDIT_PATH = "\/v1\/admin\/clients\/intelligence\/audit"/);
   assert.match(wrapper, /env\.ADMIN_WORKER\.fetch\(forwarded\)/);
   assert.match(wrapper, /headers\.delete\("authorization"\)/);
   assert.match(wrapper, /headers\.delete\("x-confirm-key"\)/);
   assert.match(wrapper, /immigrate-client-intelligence/);
+  assert.match(wrapper, /immigrate-client-intelligence-audit/);
   assert.doesNotMatch(wrangler, /pattern = "(?:www\.)?mmdbkk\.com\/v1\/admin\/\*"/);
 });

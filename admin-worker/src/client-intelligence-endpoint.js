@@ -2,6 +2,7 @@ import {
   handleKenjiControlRequest,
   KENJI_CONTROL_ENDPOINTS,
 } from "./kenji-control-endpoints.js";
+import { readKenjiRuntimeControls } from "./kenji-control-actions.js";
 import { buildKenjiContinuityOperatorDraft } from "../../shared/kenji-continuity-operator-draft.mjs";
 
 export const CLIENT_INTELLIGENCE_PATH = "/v1/admin/clients/intelligence";
@@ -21,7 +22,7 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
     return json({ ok: false, error: "canonical_client_id_required" }, 400);
   }
 
-  const [memorySource, matrixSource, conversationsSource] = await Promise.all([
+  const [memorySource, matrixSource, conversationsSource, runtimeControlSource] = await Promise.all([
     readKenjiSource(request, env, KENJI_CONTROL_ENDPOINTS.memory, { client_id: clientId }),
     readKenjiSource(request, env, KENJI_CONTROL_ENDPOINTS.conversations, {
       client_id: clientId,
@@ -31,6 +32,7 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
       client_id: clientId,
       limit: "8",
     }),
+    readRuntimeControlSource(env),
   ]);
 
   const memoryPayload = memorySource.payload || {};
@@ -52,7 +54,11 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
         relationship_state: "unknown",
       },
       current_state: emptyCurrentState(),
-      ai: emptyAdvisory("canonical_client_not_resolved", env.KENJI_CONTINUITY_PHASE4_MODE),
+      ai: emptyAdvisory(
+        "canonical_client_not_resolved",
+        env.KENJI_CONTINUITY_PHASE4_MODE,
+        runtimeControlSource,
+      ),
       unresolved: ["canonical_client_not_resolved"],
       sources: sourceSummary(memorySource, matrixSource, conversationsSource),
       authority: authorityProjection(),
@@ -66,6 +72,8 @@ export async function handleClientIntelligenceRequest(request, env = {}) {
     conversationsPayload: conversationsSource.payload || {},
     generatedAt: new Date().toISOString(),
     continuityMode: env.KENJI_CONTINUITY_PHASE4_MODE,
+    matrixSourceStatus: sourceDataStatus(matrixSource),
+    runtimeControlSource,
   });
 
   const degraded = [memorySource, matrixSource, conversationsSource].some((item) => item.status === "error");
@@ -83,6 +91,8 @@ export function buildClientIntelligenceProjection({
   conversationsPayload = {},
   generatedAt = new Date().toISOString(),
   continuityMode = "off",
+  matrixSourceStatus = "unknown",
+  runtimeControlSource = { status: "unavailable", controls: null },
 } = {}) {
   const memory = memoryPayload?.data_status === "live" ? memoryPayload.memory || {} : {};
   const matrix = matrixPayload?.data_status === "live" ? matrixPayload.matrix || {} : {};
@@ -159,6 +169,14 @@ export function buildClientIntelligenceProjection({
     openLoops,
     liveTruthDomains,
   });
+  const continuityStatus = buildContinuityStatus({
+    matrix,
+    matrixPayload,
+    matrixSourceStatus,
+    suggestedReply,
+  });
+  const runtimeControls = buildRuntimeControlProjection(runtimeControlSource);
+  const identityVerified = clean(memory.verification_status).toLowerCase() === "verified";
 
   return {
     ok: true,
@@ -168,6 +186,7 @@ export function buildClientIntelligenceProjection({
       status: isRecordId(canonicalClientId) ? "canonical" : "identity_review",
       display_name: clean(memory.display_name),
       confidence: isRecordId(canonicalClientId) ? 1 : 0,
+      verified: identityVerified,
     },
     relationship: {
       summary: relationshipSummary,
@@ -180,6 +199,8 @@ export function buildClientIntelligenceProjection({
       notices,
       next_best_action: nextBestAction,
       suggested_reply: suggestedReply,
+      continuity_status: continuityStatus,
+      runtime_controls: runtimeControls,
       follow_up: followUp,
       advisory_only: true,
       analysis_basis: "deterministic_context_v1",
@@ -187,6 +208,51 @@ export function buildClientIntelligenceProjection({
     unresolved,
     sources: [],
     authority: authorityProjection(),
+  };
+}
+
+function buildContinuityStatus({
+  matrix = {},
+  matrixPayload = {},
+  matrixSourceStatus = "unknown",
+  suggestedReply = {},
+} = {}) {
+  const status = clean(matrix.matrix_status).toLowerCase() || "unknown";
+  const requestedSourceStatus = clean(matrixSourceStatus).toLowerCase();
+  const sourceStatus = requestedSourceStatus && requestedSourceStatus !== "unknown"
+    ? requestedSourceStatus
+    : clean(matrixPayload?.data_status).toLowerCase() || "unknown";
+  const reason = clean(suggestedReply.reason).toLowerCase();
+  let freshness = "unknown";
+  if (["error", "unavailable", "empty"].includes(sourceStatus)) freshness = "unavailable";
+  else if (["continuity_stale", "matrix_stale_or_expired"].includes(reason) || status === "stale") freshness = "stale";
+  else if (suggestedReply.available === true) freshness = "fresh";
+  else if (status === "active") freshness = "review_required";
+
+  return {
+    source: "conversation_matrix",
+    source_status: sourceStatus,
+    matrix_status: status,
+    matrix_version: Number(matrix.version) || 0,
+    updated_at: firstText(matrix.state_updated_at, matrix.last_interaction_at) || null,
+    expires_at: clean(matrix.state_expires_at) || null,
+    freshness,
+    context_only: matrixPayload.context_only === true,
+    live_truth_wins: matrixPayload.live_truth_wins === true,
+  };
+}
+
+export function buildRuntimeControlProjection(source = {}) {
+  const live = clean(source.status).toLowerCase() === "live" && source.controls && typeof source.controls === "object";
+  const lineKill = live ? source.controls.line_oa_auto_reply === true : null;
+  const globalKill = live ? source.controls.all_kenji_mutations === true : null;
+  const copyAllowed = live && !lineKill && !globalKill;
+  return {
+    status: live ? "live" : "unavailable",
+    line_oa_kill_switch: live ? (lineKill ? "active" : "clear") : "unknown",
+    all_mutations_kill_switch: live ? (globalKill ? "active" : "clear") : "unknown",
+    operator_copy_allowed: copyAllowed,
+    reason: !live ? "runtime_control_unavailable" : copyAllowed ? "clear" : "kill_switch_active",
   };
 }
 
@@ -498,9 +564,32 @@ function sourceSummary(...sources) {
   return sources.map((source) => compact({
     type: source.type,
     status: source.status,
+    data_status: source.payload?.data_status,
     http_status: source.http_status,
     error: source.error,
   }));
+}
+
+function sourceDataStatus(source = {}) {
+  if (clean(source.status).toLowerCase() !== "live") return clean(source.status) || "error";
+  return clean(source.payload?.data_status).toLowerCase() || "live";
+}
+
+async function readRuntimeControlSource(env = {}) {
+  try {
+    return {
+      type: "kenji_runtime_controls",
+      status: "live",
+      controls: await readKenjiRuntimeControls(env),
+    };
+  } catch (error) {
+    return {
+      type: "kenji_runtime_controls",
+      status: "unavailable",
+      controls: null,
+      error: clean(error?.message || error) || "runtime_control_unavailable",
+    };
+  }
 }
 
 function emptyCurrentState() {
@@ -512,7 +601,7 @@ function emptyCurrentState() {
   };
 }
 
-function emptyAdvisory(reason, continuityMode = "off") {
+function emptyAdvisory(reason, continuityMode = "off", runtimeControlSource = {}) {
   const suggestedReply = {
     ...buildKenjiContinuityOperatorDraft({}, { mode: continuityMode }),
     reason,
@@ -522,6 +611,11 @@ function emptyAdvisory(reason, continuityMode = "off") {
     notices: [],
     next_best_action: null,
     suggested_reply: suggestedReply,
+    continuity_status: buildContinuityStatus({
+      matrixSourceStatus: "empty",
+      suggestedReply,
+    }),
+    runtime_controls: buildRuntimeControlProjection(runtimeControlSource),
     follow_up: {
       recommended: false,
       reason,

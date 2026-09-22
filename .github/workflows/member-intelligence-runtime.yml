@@ -5,7 +5,10 @@ on:
     paths:
       - "immigrate-worker/public/a/member-intelligence.js"
       - "immigrate-worker/src/canonical-admin-login-core.ts"
+      - "immigrate-worker/src/control-room-dashboard-ingress-wrapper.ts"
       - "immigrate-worker/wrangler.toml"
+      - "immigrate-worker/package.json"
+      - "immigrate-worker/test/client-intelligence-ingress.test.mjs"
       - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
       - ".github/workflows/member-intelligence-runtime.yml"
       - ".github/workflows/deploy-immigrate-worker.yml"
@@ -15,7 +18,10 @@ on:
     paths:
       - "immigrate-worker/public/a/member-intelligence.js"
       - "immigrate-worker/src/canonical-admin-login-core.ts"
+      - "immigrate-worker/src/control-room-dashboard-ingress-wrapper.ts"
       - "immigrate-worker/wrangler.toml"
+      - "immigrate-worker/package.json"
+      - "immigrate-worker/test/client-intelligence-ingress.test.mjs"
       - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
       - ".github/workflows/member-intelligence-runtime.yml"
       - ".github/workflows/deploy-immigrate-worker.yml"
@@ -38,7 +44,7 @@ jobs:
         run: node --check immigrate-worker/public/a/member-intelligence.js
 
       - name: Run Member Intelligence authority contract
-        run: node immigrate-worker/test/member-intelligence-runtime.test.mjs
+        run: node --test immigrate-worker/test/member-intelligence-runtime.test.mjs immigrate-worker/test/client-intelligence-ingress.test.mjs
 
       - name: Verify Control Room runtime lane
         run: |
@@ -147,6 +153,8 @@ jobs:
                 && grep -Eiq '^x-mmd-member-intelligence-authority:[[:space:]]*canonical-read-models-only' "$headers" \
                 && grep -q '/v1/admin/clients/recent' "$body" \
                 && grep -q '/v1/admin/clients/lineage-lookup' "$body" \
+                && grep -q '/v1/admin/clients/intelligence' "$body" \
+                && grep -q 'mmd.kenji_continuity_operator_draft.v1' "$body" \
                 && grep -q 'My MMD Resolver' "$body"; then
                 echo "Member Intelligence runtime verified for ${origin} on attempt ${attempt}"
                 ready=1
