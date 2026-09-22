@@ -79,12 +79,31 @@
     `);
   }
 
+  if (stage2 && !root.querySelector("[data-sport-packages]")) {
+    stage2.insertAdjacentHTML("beforebegin", `
+      <section class="mp8-driver-packages" data-sport-packages hidden aria-labelledby="mp8-sport-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · SPORT ACTIVITY</p>
+          <h3 id="mp8-sport-packages-title">กิจกรรมที่อยากทำ สนุกขึ้นเมื่อมีคนไปด้วย</h3>
+          <p>Running, Tennis, Badminton, Gym buddy หรือ Outdoor activity ที่อยากมี Companion ที่เข้ากับจังหวะของคุณ — MMD จะยืนยัน activity fit และ availability ก่อนทุกงาน</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">MOVE WITH ME</h4><strong class="mp8-driver-package__price">฿3,500</strong></div><p class="mp8-driver-package__line">หนึ่งกิจกรรมหลัก เช่น Tennis, Badminton, Gym buddy หรือ Run + Coffee หลังจบกิจกรรม</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>One activity</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=sport_activity&package=move_with_me">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">GAME DAY</h4><strong class="mp8-driver-package__price">฿5,500</strong></div><p class="mp8-driver-package__line">วันกิจกรรมที่มีเวลาเต็มขึ้น เช่น Court time → Lunch หรือสอง activity blocks ในโซนเดียวกัน</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>1–2 activity blocks</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=sport_activity&package=game_day">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">ACTIVE DAY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">ใช้วันหยุดแบบ active ตั้งแต่กิจกรรมเช้า ไปจนถึงจุดพักหรือมื้ออาหารที่วางไว้ด้วยกัน</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full day plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=sport_activity&package=active_day">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">Sport Activity คือ Companion สำหรับทำกิจกรรมร่วมกัน ไม่ใช่ Personal Trainer, Therapist หรือผู้ให้คำแนะนำทางการแพทย์ · MMD จะยืนยันความเหมาะสมของ Model กับกิจกรรมก่อนทุกครั้ง · ค่า venue/court/class/equipment/ticket/เดินทาง/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿990/ชม. · OT หลัง 00:00 ฿1,490/ชม. · หลัง 03:00 ฿1,790/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
+      </section>
+    `);
+  }
+
   var driverPackages = root.querySelector("[data-driver-packages]");
   var culinaryPackages = root.querySelector("[data-culinary-packages]");
   var dayOffPackages = root.querySelector("[data-dayoff-packages]");
   var nightLifePackages = root.querySelector("[data-nightlife-packages]");
   var socialPackages = root.querySelector("[data-social-packages]");
   var bangkokPackages = root.querySelector("[data-bangkok-packages]");
+  var sportPackages = root.querySelector("[data-sport-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -269,6 +288,7 @@
       if (nightLifePackages) nightLifePackages.hidden = activeRole !== "nightlife_companion";
       if (socialPackages) socialPackages.hidden = activeRole !== "social_appearance";
       if (bangkokPackages) bangkokPackages.hidden = activeRole !== "bangkok_companion";
+      if (sportPackages) sportPackages.hidden = activeRole !== "sport_activity";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -283,6 +303,8 @@
                 ? socialPackages
                 : activeRole === "bangkok_companion" && bangkokPackages
                   ? bangkokPackages
+                  : activeRole === "sport_activity" && sportPackages
+                    ? sportPackages
                   : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -307,6 +329,7 @@
   if (nightLifePackages) nightLifePackages.hidden = true;
   if (socialPackages) socialPackages.hidden = true;
   if (bangkokPackages) bangkokPackages.hidden = true;
+  if (sportPackages) sportPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

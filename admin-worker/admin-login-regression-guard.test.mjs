@@ -28,6 +28,16 @@ test("admin deploy actions use Node24 runtimes without changing the application 
   assert.doesNotMatch(workflow, /ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION/);
 });
 
+test("normal admin deploy preserves the SIGIL availability KV binding", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/deploy-admin-worker.yml", import.meta.url), "utf8");
+  assert.match(workflow, /Ensure SIGIL availability KV binding/);
+  assert.match(workflow, /MMD_SIGIL_AVAILABILITY_SNAPSHOTS_V1/);
+  assert.match(workflow, /binding = \"SIGIL_AVAILABILITY_SNAPSHOTS\"/);
+  assert.match(workflow, /ADMIN_WORKER_WRANGLER_CONFIG=\$\{output\}/);
+  assert.match(workflow, /versions upload --dry-run --keep-vars \\\n\s+--config "\$\{ADMIN_WORKER_WRANGLER_CONFIG\}"/);
+  assert.match(workflow, /versions upload \\\n\s+--keep-vars \\\n\s+--config "\$\{ADMIN_WORKER_WRANGLER_CONFIG\}"/);
+});
+
 test("dashboard deploy smoke distinguishes allowed production ingress from a blocked direct host", async () => {
   const workflow = await readFile(new URL("../.github/workflows/deploy-admin-worker.yml", import.meta.url), "utf8");
   assert.match(workflow, /ADMIN_DASHBOARD_PRODUCTION_URL: https:\/\/mmdbkk\.com\/v1\/admin\/dashboard/);

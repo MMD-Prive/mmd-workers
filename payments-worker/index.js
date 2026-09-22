@@ -135,7 +135,7 @@ function makePaymentRef(prefix = "pay") {
 
 function normalizeStage(value) {
   const s = toStr(value).toLowerCase();
-  const allowed = ["deposit", "final", "tips", "full", "membership", "shop"];
+  const allowed = ["deposit", "final", "tips", "full", "extension", "membership", "shop"];
   if (!allowed.includes(s)) throw new Error("invalid_payment_stage");
   return s;
 }
@@ -557,7 +557,7 @@ async function createOrUpdatePaymentIntent(env, payload) {
     [toStr(env.AT_PAYMENTS__SESSION_ID || "session_id")]: toStr(payload.session_id) || undefined,
     [toStr(env.AT_PAYMENTS__PAYMENT_STAGE || "payment_stage")]: toStr(payload.payment_stage) || undefined,
     [toStr(env.AT_PAYMENTS__PAYMENT_TYPE || "payment_type")]:
-      ["deposit", "final", "tips", "full"].includes(toStr(payload.payment_stage)) ? toStr(payload.payment_stage) : undefined,
+      ["deposit", "final", "tips", "full", "extension"].includes(toStr(payload.payment_stage)) ? toStr(payload.payment_stage) : undefined,
     [toStr(env.AT_PAYMENTS__CREATED_AT || "Created At")]: existing?.id ? undefined : (payload.created_at || nowIso()),
   });
 

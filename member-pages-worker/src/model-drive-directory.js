@@ -2,6 +2,7 @@ const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const INTERNAL_HOST = "model-drive-directory.internal";
 const SEARCH_PATH = "/__internal/model-drive/search";
 const RESOLVE_PATH = "/__internal/model-drive/resolve";
+const PHOTO_PATH = "/__internal/model-drive/photo";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SIGNATURE_TTL_SECONDS = 90;
 
@@ -13,13 +14,14 @@ const DEFAULT_EXCLUSIVE_ROOT = "1j1NRB44PboVQR91M8-17Vb8kcCTCLS97";
 export const MODEL_DRIVE_DIRECTORY_HOST = INTERNAL_HOST;
 export const MODEL_DRIVE_SEARCH_PATH = SEARCH_PATH;
 export const MODEL_DRIVE_RESOLVE_PATH = RESOLVE_PATH;
+export const MODEL_DRIVE_PHOTO_PATH = PHOTO_PATH;
 export const MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID = DEFAULT_EXCLUSIVE_ROOT;
 
 export function isModelDriveDirectoryRequest(request) {
   if (!(request instanceof Request)) return false;
   let url;
   try { url = new URL(request.url); } catch { return false; }
-  const routeMatches = (request.method === "GET" && url.pathname === SEARCH_PATH)
+  const routeMatches = (request.method === "GET" && (url.pathname === SEARCH_PATH || url.pathname === PHOTO_PATH))
     || (request.method === "POST" && url.pathname === RESOLVE_PATH);
   if (!routeMatches) return false;
   return url.hostname === INTERNAL_HOST || url.hostname.endsWith(".workers.dev");
@@ -39,6 +41,13 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
 
   try {
     const accessToken = await googleDriveAccessToken(env);
+    if (request.method === "GET" && url.pathname === PHOTO_PATH) {
+      const folderId = clean(url.searchParams.get("drive_folder_id"), 160);
+      if (!isDriveId(folderId)) return json({ ok: false, error: "drive_folder_id_invalid" }, 400);
+      const resolved = await resolveApprovedModelFolder(accessToken, folderId, env);
+      if (!resolved) return json({ ok: false, error: "drive_folder_not_approved" }, 404);
+      return streamApprovedModelPhoto(accessToken, resolved.drive_folder_id);
+    }
     if (request.method === "GET") {
       const q = clean(url.searchParams.get("q"), 120);
       const lane = normalizeLane(url.searchParams.get("lane"));
@@ -212,6 +221,66 @@ function approvedRoots(env) {
     private: clean(env.DRIVE_MODEL_PRIVATE_ROOT_FOLDER_ID || DEFAULT_PRIVATE_ROOT, 160),
     exclusive: clean(env.DRIVE_MODEL_EXCLUSIVE_ROOT_FOLDER_ID || DEFAULT_EXCLUSIVE_ROOT, 160),
   };
+}
+
+async function streamApprovedModelPhoto(accessToken, folderId) {
+  const file = await findFirstModelImage(accessToken, folderId);
+  if (!file) return json({ ok: false, error: "model_photo_not_found" }, 404);
+  const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`);
+  url.searchParams.set("alt", "media");
+  url.searchParams.set("supportsAllDrives", "true");
+  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  if (!response.ok || !response.body) return json({ ok: false, error: "model_photo_read_failed" }, response.status || 503);
+  const headers = new Headers({
+    "cache-control": "no-store, private",
+    "content-type": file.mimeType,
+    "content-disposition": "inline",
+    "x-content-type-options": "nosniff",
+    "x-mmd-model-photo-source": "google-drive-approved-root",
+  });
+  return new Response(response.body, { status: 200, headers });
+}
+
+async function findFirstModelImage(accessToken, rootFolderId) {
+  const queue = [{ id: rootFolderId, depth: 0 }];
+  const visited = new Set();
+  const images = [];
+  while (queue.length && visited.size < 30) {
+    const current = queue.shift();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    const children = await driveListChildren(accessToken, current.id);
+    for (const item of children) {
+      if (item.mimeType === FOLDER_MIME && current.depth < 2) {
+        queue.push({ id: item.id, depth: current.depth + 1 });
+        continue;
+      }
+      if (/^image\/(?:jpeg|png|webp)$/i.test(item.mimeType || "")) images.push(item);
+    }
+    if (images.length) break;
+  }
+  return images.sort((a, b) => modelPhotoRank(a.name) - modelPhotoRank(b.name) || a.name.localeCompare(b.name))[0] || null;
+}
+
+async function driveListChildren(accessToken, folderId) {
+  const url = new URL(`${DRIVE_API}/files`);
+  url.searchParams.set("q", `'${escapeDriveQuery(folderId)}' in parents and trashed=false`);
+  url.searchParams.set("fields", "files(id,name,mimeType,parents,trashed)");
+  url.searchParams.set("pageSize", "100");
+  url.searchParams.set("spaces", "drive");
+  url.searchParams.set("includeItemsFromAllDrives", "true");
+  url.searchParams.set("supportsAllDrives", "true");
+  const response = await fetch(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload || !Array.isArray(payload.files)) throw new Error("drive_model_photo_list_failed");
+  return payload.files.filter(item => item?.id && item.trashed !== true).map(sanitizeFile);
+}
+
+function modelPhotoRank(name) {
+  const value = clean(name, 240).toLowerCase();
+  if (/profile|cover|hero|main|primary|หน้าปก/.test(value)) return 0;
+  if (/01|1\.|_1|front|face/.test(value)) return 1;
+  return 5;
 }
 
 async function driveGetFolder(accessToken, folderId) {

@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   CLIENT_INTELLIGENCE_AUDIT_PATH,
+  CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
   handleClientIntelligenceAuditRequest,
   isClientIntelligenceAuditRequest,
 } from "./src/client-intelligence-audit.js";
@@ -101,6 +102,27 @@ function auditEnv(capture) {
   };
 }
 
+async function issueFeedbackReceipt(capture, overrides = {}) {
+  const response = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "feedback",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+      outcome: "accepted",
+      reason_code: "ready_as_is",
+    }),
+    auditEnv(capture),
+    ACTOR,
+    { loadProjection: async () => projection(overrides) },
+  );
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.copy_eligible, true);
+  assert.match(body.feedback_receipt, /^v1\./);
+  return body.feedback_receipt;
+}
+
 test("operator draft audit route is exact POST-only", () => {
   assert.equal(isClientIntelligenceAuditRequest(CLIENT_INTELLIGENCE_AUDIT_PATH, "POST"), true);
   assert.equal(isClientIntelligenceAuditRequest(`${CLIENT_INTELLIGENCE_AUDIT_PATH}/extra`, "POST"), false);
@@ -117,8 +139,14 @@ test("active admin entrypoint keeps audit credential-bound and same-origin", asy
 
 test("safe copy authorization writes only bounded hashed audit fields", async () => {
   const capture = {};
+  const feedbackReceipt = await issueFeedbackReceipt(capture);
   const response = await handleClientIntelligenceAuditRequest(
-    request({ action: "copy", client_id: CLIENT_ID, owner_review_confirmed: true }),
+    request({
+      action: "copy",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_receipt: feedbackReceipt,
+    }),
     auditEnv(capture),
     ACTOR,
     { loadProjection: async () => projection() },
@@ -196,6 +224,240 @@ test("view audit remains observable while an active kill switch keeps copy locke
   assert.equal(response.status, 201);
   assert.equal((await response.json()).audit_state, "view_recorded");
   assert.equal(capture.value.body.records[0].fields.Action, "client.intelligence.operator_draft.viewed");
+});
+
+test("operator feedback stores one bounded outcome without customer or draft content", async () => {
+  const capture = {};
+  const response = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "feedback",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+      outcome: "needs_edit",
+      reason_code: "tone_adjustment",
+    }),
+    auditEnv(capture),
+    ACTOR,
+    { loadProjection: async () => projection() },
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.audit_state, "feedback_recorded");
+  assert.equal(body.feedback_schema, CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA);
+  assert.deepEqual(body.operator_feedback, {
+    outcome: "needs_edit",
+    reason_code: "tone_adjustment",
+  });
+  assert.equal(body.operator_feedback_recorded, true);
+  assert.equal(body.copy_eligible, true);
+  assert.match(body.feedback_receipt, /^v1\./);
+  assert.match(body.feedback_receipt_expires_at, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(body.customer_delivery_attempted, false);
+  assert.equal(body.business_truth_mutated, false);
+  assert.deepEqual(
+    Object.keys(capture.value.body.records[0].fields).sort(),
+    ["Action", "Event ID", "Result"].sort(),
+  );
+  assert.equal(
+    capture.value.body.records[0].fields.Action,
+    "client.intelligence.operator_draft.feedback.needs_edit.tone_adjustment",
+  );
+  const stored = JSON.stringify(capture.value.body);
+  assert.doesNotMatch(stored, /recCLIENT12345678|วินนี่|เรื่องชำระเงิน|per@example\.com|operator_draft\.v1/);
+  assert.doesNotMatch(body.feedback_receipt, /recCLIENT12345678|วินนี่|เรื่องชำระเงิน|per@example\.com/);
+});
+
+test("feedback remains available for observation while a kill switch keeps copy locked", async () => {
+  const capture = {};
+  const response = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "feedback",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+      outcome: "rejected",
+      reason_code: "stale_context",
+    }),
+    auditEnv(capture),
+    ACTOR,
+    {
+      loadProjection: async () => projection({
+        ai: { runtime_controls: { operator_copy_allowed: false, line_oa_kill_switch: "active" } },
+      }),
+    },
+  );
+
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.audit_state, "feedback_recorded");
+  assert.equal(body.copy_eligible, false);
+  assert.equal(body.feedback_receipt, null);
+  assert.equal(
+    capture.value.body.records[0].fields.Action,
+    "client.intelligence.operator_draft.feedback.rejected.stale_context",
+  );
+});
+
+test("copy requires a fresh feedback receipt bound to actor and current draft", async () => {
+  const missing = await handleClientIntelligenceAuditRequest(
+    request({ action: "copy", client_id: CLIENT_ID, owner_review_confirmed: true }),
+    auditEnv({}),
+    ACTOR,
+    { loadProjection: async () => projection() },
+  );
+  assert.equal(missing.status, 409);
+  assert.equal((await missing.json()).error, "operator_feedback_receipt_required");
+
+  const capture = {};
+  const receipt = await issueFeedbackReceipt(capture);
+  const tampered = `${receipt.slice(0, -1)}${receipt.endsWith("a") ? "b" : "a"}`;
+  const invalidSignature = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "copy",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_receipt: tampered,
+    }),
+    auditEnv({}),
+    ACTOR,
+    { loadProjection: async () => projection() },
+  );
+  assert.equal(invalidSignature.status, 409);
+
+  const wrongActor = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "copy",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_receipt: receipt,
+    }),
+    auditEnv({}),
+    { id: "another-owner@example.com", role: "owner" },
+    { loadProjection: async () => projection() },
+  );
+  assert.equal(wrongActor.status, 409);
+
+  const changedDraft = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "copy",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_receipt: receipt,
+    }),
+    auditEnv({}),
+    ACTOR,
+    {
+      loadProjection: async () => projection({
+        ai: { suggested_reply: { text: "คุณวินนี่ครับ ผมจะตรวจเรื่องเดิมจากระบบล่าสุดให้นะครับ" } },
+      }),
+    },
+  );
+  assert.equal(changedDraft.status, 409);
+});
+
+test("copy rejects an expired feedback receipt", async () => {
+  const issuedAt = Date.parse("2026-09-22T12:00:00.000Z");
+  const feedback = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "feedback",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+      outcome: "accepted",
+      reason_code: "ready_as_is",
+    }),
+    auditEnv({}),
+    ACTOR,
+    {
+      loadProjection: async () => projection(),
+      now: () => issuedAt,
+    },
+  );
+  const receipt = (await feedback.json()).feedback_receipt;
+  assert.match(receipt, /^v1\./);
+
+  const expired = await handleClientIntelligenceAuditRequest(
+    request({
+      action: "copy",
+      client_id: CLIENT_ID,
+      owner_review_confirmed: true,
+      feedback_receipt: receipt,
+    }),
+    auditEnv({}),
+    ACTOR,
+    {
+      loadProjection: async () => projection(),
+      now: () => issuedAt + (11 * 60 * 1000),
+    },
+  );
+  assert.equal(expired.status, 409);
+  assert.equal((await expired.json()).error, "operator_feedback_receipt_required");
+});
+
+test("feedback rejects unreviewed, mismatched, free-text, and unknown-field payloads", async () => {
+  const attempts = [
+    {
+      body: {
+        action: "feedback",
+        client_id: CLIENT_ID,
+        feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+        outcome: "accepted",
+        reason_code: "ready_as_is",
+      },
+      status: 422,
+      error: "owner_review_confirmation_required",
+    },
+    {
+      body: {
+        action: "feedback",
+        client_id: CLIENT_ID,
+        owner_review_confirmed: true,
+        feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+        outcome: "accepted",
+        reason_code: "tone_adjustment",
+      },
+      status: 422,
+      error: "invalid_operator_feedback",
+    },
+    {
+      body: {
+        action: "feedback",
+        client_id: CLIENT_ID,
+        owner_review_confirmed: true,
+        feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+        outcome: "needs_edit",
+        reason_code: "free text from operator",
+      },
+      status: 422,
+      error: "invalid_operator_feedback",
+    },
+    {
+      body: {
+        action: "feedback",
+        client_id: CLIENT_ID,
+        owner_review_confirmed: true,
+        feedback_schema: CLIENT_INTELLIGENCE_FEEDBACK_SCHEMA,
+        outcome: "rejected",
+        reason_code: "wrong_context",
+        edited_text: "must never be accepted",
+      },
+      status: 400,
+      error: "invalid_request_fields",
+    },
+  ];
+
+  for (const attempt of attempts) {
+    const response = await handleClientIntelligenceAuditRequest(
+      request(attempt.body),
+      {},
+      ACTOR,
+      { loadProjection: async () => projection() },
+    );
+    assert.equal(response.status, attempt.status);
+    assert.equal((await response.json()).error, attempt.error);
+  }
 });
 
 test("audit fails closed for non-owner actors and unsafe or unavailable drafts", async () => {

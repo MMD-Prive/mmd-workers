@@ -14,10 +14,12 @@ import coreWorker, { isAuthed as isCoreAuthed } from "./index.js";
 import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
-import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";\nimport { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
+import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
+import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
-const DASHBOARD_PATH = "/v1/admin/dashboard";\nconst OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
+const DASHBOARD_PATH = "/v1/admin/dashboard";
+const OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
