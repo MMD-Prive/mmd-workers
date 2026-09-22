@@ -251,7 +251,8 @@ test("availability adoption reminder sends one bounded LINE push and writes a 24
     assert.equal(lineBody.to, "U0123456789abcdef0123456789abcdef");
     assert.match(lineBody.messages[0].text, /อัปเดตสถานะวันนี้/);
     assert.match(lineBody.messages[0].text, /\/sigil\/model\/dashboard\/availability/);
-    assert.equal(store.writes.at(-1).key, "availability-adoption:v1:reminder:mdl_pri_str_master");
+    assert.equal(store.writes.some(entry => entry.key === "availability-adoption:v1:reminder:mdl_pri_str_master"), true);
+  assert.equal(store.writes.some(entry => entry.key === "availability-adoption:v1:recovery:mdl_pri_str_master"), true);
     assert.equal(store.writes.at(-1).options.expirationTtl, 86400);
 
     const second = await handleSigilAvailabilityInternalRequest(new Request(
