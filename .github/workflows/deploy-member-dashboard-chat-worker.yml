@@ -390,7 +390,7 @@ jobs:
 
       - name: Smoke internal AI service binding
         id: ai_binding_smoke
-        if: steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
         shell: bash
         run: |
           response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
@@ -403,7 +403,7 @@ jobs:
 
       - name: Smoke Kenji Phase 2 contextual understanding shadow
         id: kenji_contextual_shadow_smoke
-        if: steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
         shell: bash
         run: |
           set -euo pipefail
@@ -439,7 +439,7 @@ jobs:
 
       - name: Smoke real canonical Kenji recommendation service binding
         id: kenji_recommendation_shadow_smoke
-        if: steps.route_sync.outcome == 'success'
+        if: always() && steps.route_sync.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -488,7 +488,7 @@ jobs:
 
       - name: Smoke eligible-client Kenji recommendations
         id: kenji_eligible_recommendation_shadow_smoke
-        if: steps.kenji_recommendation_shadow_smoke.outcome == 'success'
+        if: always() && steps.kenji_recommendation_shadow_smoke.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
