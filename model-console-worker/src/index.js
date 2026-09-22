@@ -1,6 +1,9 @@
 import {
+  availabilityCoverageCounts,
+  availabilityCoverageRow,
   boundedConsoleAvailabilityBody,
   matchConsoleAvailabilitySnapshotPath,
+  modelAvailabilityCoverageIdentity,
   resolveConsoleAvailabilityTarget,
 } from "./sigil-availability-producer.mjs";
 
@@ -56,6 +59,10 @@ export default {
         return forward(req, env, "admin", `/v1/admin/models/list${url.search}`, { method: "GET" }, ctx);
       }
 
+      if (method === "GET" && path === "/v1/console/availability/coverage") {
+        return availabilityCoverage(req, env, url, ctx);
+      }
+
       const modelRoute = matchModelRoute(path);
       if (modelRoute && method === "GET") {
         if (!modelRoute.section) return model360(req, env, modelRoute.id, ctx);
@@ -71,6 +78,23 @@ export default {
       }
 
       const availabilityTargetId = matchConsoleAvailabilitySnapshotPath(path);
+      if (method === "GET" && availabilityTargetId) {
+        const identity = await callWorker(
+          env.ADMIN_WORKER_BASE_URL,
+          `/v1/admin/models/list?q=${enc(availabilityTargetId)}&limit=20`,
+          env,
+          { method: "GET" },
+          ctx,
+        );
+        if (!identity.ok) return out(req, env, identity.data, identity.status);
+
+        const target = resolveConsoleAvailabilityTarget(identity.data, availabilityTargetId);
+        if (!target.ok) return out(req, env, { ok: false, error: target.error }, target.status);
+
+        const response = await callAvailabilitySnapshotRead(env, target.model_key, ctx);
+        return out(req, env, response.data, response.status);
+      }
+
       if (method === "POST" && availabilityTargetId) {
         const body = await readJson(req);
         const identity = await callWorker(
@@ -214,6 +238,63 @@ async function callAvailabilityProducer(env, body, ctx = {}) {
   let data;
   try { data = raw ? JSON.parse(raw) : { ok: response.ok }; } catch { data = { ok: false, error: "invalid_availability_producer_response" }; }
   return { ok: response.ok && data?.ok !== false, status: response.status, data };
+}
+
+async function callAvailabilitySnapshotRead(env, modelKey, ctx = {}) {
+  const baseUrl = env.ADMIN_WORKER_BASE_URL;
+  const token = String(env.INTERNAL_TOKEN || "").trim();
+  if (!baseUrl || !token) {
+    return { ok: false, status: 503, data: { ok: false, error: "availability_reader_not_configured" } };
+  }
+  const response = await fetch(
+    `${trim(baseUrl)}/v1/internal/sigil/availability-snapshot?model_key=${enc(modelKey)}`,
+    {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${token}`,
+        "X-MMD-Internal-Call": "true",
+        "X-MMD-Service-Binding": "model-console-worker",
+        "X-MMD-Operator": ctx.actor || "model-console",
+        "X-Request-ID": ctx.request_id || crypto.randomUUID(),
+      },
+    },
+  );
+  const raw = await response.text();
+  let data;
+  try { data = raw ? JSON.parse(raw) : { ok: response.ok }; } catch { data = { ok: false, error: "invalid_availability_reader_response" }; }
+  return { ok: response.ok && data?.ok !== false, status: response.status, data };
+}
+
+async function availabilityCoverage(req, env, url, ctx) {
+  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 50, 1), 100);
+  const q = String(url.searchParams.get("q") || "").trim();
+  const inventory = await callWorker(
+    env.ADMIN_WORKER_BASE_URL,
+    `/v1/admin/models/list?limit=${limit}${q ? `&q=${enc(q)}` : ""}`,
+    env,
+    { method: "GET" },
+    ctx,
+  );
+  if (!inventory.ok) return out(req, env, inventory.data, inventory.status);
+
+  const items = Array.isArray(inventory.data?.items) ? inventory.data.items : [];
+  const models = items.map(modelAvailabilityCoverageIdentity).filter(Boolean);
+
+  const snapshots = await Promise.all(models.map(async (model) => {
+    const result = await callAvailabilitySnapshotRead(env, model.model_key, ctx);
+    return availabilityCoverageRow(model, result);
+  }));
+
+  const counts = availabilityCoverageCounts(snapshots);
+
+  return out(req, env, {
+    ok: true,
+    schema: "mmd.sigil-availability-coverage.v1",
+    generated_at: new Date().toISOString(),
+    counts,
+    items: snapshots,
+  });
 }
 
 function internalHeaders(env, ctx = {}) {
