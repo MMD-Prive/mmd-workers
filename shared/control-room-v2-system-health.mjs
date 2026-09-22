@@ -50,9 +50,29 @@ function system({ key, label, status, evidenceType, source, href = null, detail 
 export function buildControlRoomV2SystemHealth({
   dashboardStatus = {},
   telegramRouterHealth = null,
+  liveProbe = null,
 } = {}) {
   const telegramStatus = clean(telegramRouterHealth?.status) || dashboardStatus?.telegram;
+  const liveWorkers = liveProbe?.workers;
+  const liveAnalytics = liveProbe?.analytics;
+  const websiteLive = liveProbe?.website;
   const systems = [
+    system({
+      key: "website",
+      label: "Website",
+      status: websiteLive ? (websiteLive.ok === true ? "ok" : "action_needed") : "ok",
+      evidenceType: websiteLive ? "live" : "production_acceptance",
+      source: "Webflow",
+      detail: websiteLive ? ("HTTP " + String(websiteLive.status || 0) + " · refreshed live") : "Phase 1 production presentation smoke accepted",
+    }),
+    system({
+      key: "workers",
+      label: "Workers",
+      status: liveWorkers ? (liveWorkers.healthy === liveWorkers.total ? "ok" : liveWorkers.healthy > 0 ? "degraded" : "action_needed") : "ok",
+      evidenceType: liveWorkers ? "live" : "production_acceptance",
+      source: "authority_workers",
+      detail: liveWorkers ? (String(liveWorkers.healthy || 0) + "/" + String(liveWorkers.total || 0) + " authority workers healthy") : "Authority runtime accepted 6/6 in Phase 0/1",
+    }),
     system({
       key: "routes",
       label: "Routes",
@@ -64,10 +84,12 @@ export function buildControlRoomV2SystemHealth({
     system({
       key: "analytics",
       label: "PostHog",
-      status: "ok",
-      evidenceType: ACCEPTED.analytics.evidence_type,
-      source: "phase0_authority_acceptance",
-      detail: "Authority runtime accepted 6/6 · business events remain transaction-driven",
+      status: liveAnalytics ? (liveAnalytics.all_configured === true ? "ok" : liveAnalytics.configured > 0 ? "degraded" : "action_needed") : "ok",
+      evidenceType: liveAnalytics ? "live" : ACCEPTED.analytics.evidence_type,
+      source: liveAnalytics ? "authority_runtime_health" : "phase0_authority_acceptance",
+      detail: liveAnalytics
+        ? (String(liveAnalytics.configured || 0) + "/" + String(liveAnalytics.total || 0) + " PostHog authority runtimes configured")
+        : "Authority runtime accepted 6/6 · business events remain transaction-driven",
     }),
     system({
       key: "payments",
@@ -122,10 +144,13 @@ export function buildControlRoomV2SystemHealth({
   return {
     schema: SCHEMA,
     mode: "read_only",
+    refresh_mode: liveProbe ? "live_on_demand" : "baseline",
+    refreshed_at: liveProbe?.checked_at || null,
     overall_status: overall,
     systems,
     phase0: { ...ACCEPTED.analytics },
     phase1: { ...ACCEPTED.routes },
+    release: liveProbe?.release || null,
     operational_watch: {
       label: "HYPE / STUCK / SLA",
       load_mode: "on_demand",
