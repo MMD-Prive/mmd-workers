@@ -169,6 +169,19 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
   const query = url.search || "";
   const token = url.searchParams.get("t") || "";
   const page = route.systemPage || "review";
+  if (page === "dashboard" && !token) {
+    const loginUrl = new URL("/sigil/model/dashboard/partner-login", url.origin);
+    const response = new Response(null, {
+      status: 302,
+      headers: {
+        location: loginUrl.toString(),
+        "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+        "referrer-policy": "no-referrer"
+      }
+    });
+    addPartnerHeaders(response.headers, route);
+    return response;
+  }
   const copy = systemPageCopy(page, Boolean(token));
   const tokenQuery = token ? "?t=" + encodeURIComponent(token) : "";
   const dashboardHref = "/partner/dashboard" + tokenQuery;
@@ -217,8 +230,8 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
     return {
       title: "SĪGIL Partner Dashboard",
       heading: "Partner control room.",
-      lead: hasToken ? "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว." : "เข้าสู่ระบบด้วย LINE บัญชีเดิมที่เชื่อมกับ Partner.",
-      body: hasToken ? "Partner เป็นผู้ควบคุมข้อมูล Private และเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน." : "หลัง LINE verification คุณสามารถเปิด Dashboard และเลือกเชื่อม Telegram เพิ่มสำหรับการแจ้งเตือนได้.",
+      lead: "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว.",
+      body: "Partner เป็นผู้ควบคุมข้อมูล Private และเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน.",
       card: "CONTROL ROOM"
     };
   }
@@ -237,20 +250,17 @@ function renderSystemActions(page: string, tokenQuery: string, reviewHref: strin
     return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Continue to Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">Open Dashboard</a></p>";
   }
   if (page === "dashboard") {
-    if (!tokenQuery) return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE</a></p>";
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"/partner\">Partner Home</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a></p>";
   }
   return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">Read Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">Open Partner Dashboard</a></p>" : "");
 }
 
 function renderDashboardPanel(page: string, token: string): string {
-  if (page !== "dashboard") return "";
-  if (!token) return "<section class=\"mmdp-dashboard\"><h2>บัญชี Partner ของคุณ</h2><p>ใช้บัญชี LINE ที่เคยส่งคำขอไว้ สถานะและสิทธิ์จะตรวจสอบจากบัญชีเดิม</p></section>";
+  if (page !== "dashboard" || !token) return "";
   const audiences = ["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"];
   const audienceHtml = audiences.map((value) => "<label><input type=\"checkbox\" name=\"audience_scope\" value=\"" + escapeHtml(value) + "\"><span>" + escapeHtml(value) + "</span></label>").join("");
   const sharedFields = "<label><span>ชื่อที่ใช้แสดง</span><input name=\"display_name\" maxlength=\"120\"></label><label><span>อายุ</span><input name=\"age\" type=\"number\" min=\"18\" max=\"70\"></label><label><span>ส่วนสูง (cm)</span><input name=\"height_cm\" type=\"number\" min=\"120\" max=\"230\"></label><label><span>น้ำหนัก (kg)</span><input name=\"weight_kg\" type=\"number\" min=\"35\" max=\"250\"></label><label class=\"wide\"><span>ข้อมูลแนะนำตัว</span><textarea name=\"profile_summary\"></textarea></label><label class=\"wide\"><span>ทักษะ / จุดแข็ง</span><textarea name=\"skills_summary\"></textarea></label><label class=\"wide\"><span>ประสบการณ์ / ผลงาน</span><textarea name=\"experience_summary\"></textarea></label><label class=\"wide\"><span>ข้อความสำหรับขาย</span><textarea name=\"sales_copy\"></textarea></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 1</span><input name=\"portfolio_url_1\" type=\"url\" placeholder=\"https://\"></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 2</span><input name=\"portfolio_url_2\" type=\"url\" placeholder=\"https://\"></label><label class=\"wide\"><span>URL ข่าวหรือผลงาน 3</span><input name=\"portfolio_url_3\" type=\"url\" placeholder=\"https://\"></label>";
   return "<section data-partner-control-room>" +
-    "<a class=\"mmdp-btn\" data-reconnect-line hidden href=\"https://mmdbkk.com/sigil/model/dashboard/partner-login\">เข้าสู่ระบบด้วย LINE อีกครั้ง</a>" +
     "<p class=\"pcr-flash\" data-flash hidden></p>" +
     "<div class=\"pcr-privacy\"><span aria-hidden=\"true\">🔒</span><div><b>Partner Private by default</b><p>Partner เป็นผู้ควบคุมข้อมูลส่วนตัวและโน้ตภายใน พร้อมเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน</p></div></div>" +
     "<div class=\"pcr-shell\"><aside class=\"pcr-side\"><small>Control Room</small><button type=\"button\" data-view=\"home\" aria-current=\"page\">Home & Jobs</button><button type=\"button\" data-view=\"models\">Models</button><button type=\"button\" data-view=\"earnings\">Earnings</button><button type=\"button\" data-view=\"privacy\">Private Vault</button></aside>" +
