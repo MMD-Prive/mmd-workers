@@ -77,6 +77,6 @@ test("stale Phase 1 blockers are removed from unresolved queue", () => {
     assert.equal(keys.has(stale), false, stale);
   }
   for (const item of canon.unresolved_decisions) {
-    assert.notMatch(String(item.production_ownership_status || ""), /^UNRESOLVED/);
+    assert.doesNotMatch(String(item.production_ownership_status || ""), /^UNRESOLVED/);
   }
 });
