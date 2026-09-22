@@ -29,8 +29,8 @@ function clean(value) {
 
 function liveStatus(value) {
   const token = clean(value);
-  if (["พร้อม", "ready", "configured", "clear", "ok", "live", "healthy"].includes(token)) return "ok";
-  if (["บางส่วน", "partial", "degraded", "warning", "watch", "unknown", "ยังยืนยันไม่ได้"].includes(token)) return "degraded";
+  if (["พร้อม", "ข้อมูลจริง", "ready", "configured", "clear", "ok", "live", "healthy"].includes(token)) return "ok";
+  if (["บางส่วน", "ข้อมูลจริงบางส่วน", "ยังไม่มีข้อมูล", "partial", "degraded", "warning", "watch", "unknown", "ยังยืนยันไม่ได้"].includes(token)) return "degraded";
   if (["มีปัญหา", "unavailable", "failed", "error", "critical", "overdue", "down"].includes(token)) return "action_needed";
   return token ? "degraded" : "degraded";
 }
