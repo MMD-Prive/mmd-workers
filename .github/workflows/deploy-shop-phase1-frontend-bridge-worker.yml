@@ -59,7 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           src="workers/shop-phase1-frontend-bridge-worker/wrangler.toml"
-          tmp="$RUNNER_TEMP/shop-phase1-bridge-no-routes.toml"
+          tmp="workers/shop-phase1-frontend-bridge-worker/.wrangler-no-routes.toml"
+          trap 'rm -f "$tmp"' EXIT
           node - "$src" "$tmp" <<'NODE'
           const fs = require("node:fs");
           const [src, out] = process.argv.slice(2);
