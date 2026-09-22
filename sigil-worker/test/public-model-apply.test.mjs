@@ -51,6 +51,7 @@ function validPayload(overrides = {}) {
     phone: "+66 81 234 5678",
     telegram: "@smoke_private",
     work_types: ["Modeling", "Public Events", "Private Review Only"],
+    mmd_requested_public_roles: ["everyday_companion", "social_appearance"],
     consent: true,
     ...overrides,
   };
@@ -398,6 +399,20 @@ test("POST rejects upload object keys, URLs, raw data, and browser statuses", as
     assert.equal(body.ok, false);
     assert.equal(body.error, "invalid_payload");
   }
+});
+
+test("POST rejects unsupported requested public roles", async () => {
+  const response = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST",
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ mmd_requested_public_roles: ["driver_companion", "doctor_without_verification"] })),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.error, "invalid_payload");
+  assert.equal(body.fields.requested_roles, "contains unsupported role");
+  assert.equal(JSON.stringify(body).includes("doctor_without_verification"), false);
 });
 
 test("POST rejects unsupported public model work types", async () => {
