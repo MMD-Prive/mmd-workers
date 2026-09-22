@@ -16,6 +16,8 @@ test('LINE entry is private, branded, and requires explicit login',async()=>{
   assert.match(html,/Recognized Partner Access/);
   assert.match(html,/Partner Control Layer/);
   assert.match(html,/เข้าสู่ระบบด้วย LINE/);
+  assert.doesNotMatch(html,/\.brand-mark\{[^}]*border:1px/);
+  assert.doesNotMatch(html,/\.brand-mark\{[^}]*background:rgba/);
   assert.match(html,/รักษา identity เดิมของคุณตลอด flow/);
   assert.doesNotMatch(html,/ระบบไม่สร้างบัญชีซ้ำ/);
   assert.match(html,/class="line-arrow"/);
