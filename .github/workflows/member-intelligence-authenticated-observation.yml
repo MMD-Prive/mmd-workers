@@ -1,0 +1,67 @@
+name: Member Intelligence Authenticated Observation
+
+on:
+  pull_request:
+    paths:
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_CONTINUITY_PHASE4D_AUTHENTICATED_OBSERVATION.md"
+      - ".github/workflows/member-intelligence-authenticated-observation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_CONTINUITY_PHASE4D_AUTHENTICATED_OBSERVATION.md"
+      - ".github/workflows/member-intelligence-authenticated-observation.yml"
+  workflow_dispatch:
+    inputs:
+      scan_limit:
+        description: Maximum recent canonical clients to inspect without emitting identifiers
+        required: true
+        default: "24"
+        type: choice
+        options:
+          - "8"
+          - "16"
+          - "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: member-intelligence-authenticated-observation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract-and-observation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ORIGIN: https://mmdbkk.com
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check observation syntax
+        run: node --check scripts/member-intelligence-authenticated-observation.mjs
+
+      - name: Test privacy and read-only contracts
+        run: node --test scripts/member-intelligence-authenticated-observation.test.mjs
+
+      - name: Require main for production observation
+        if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/main'
+        run: |
+          echo "Production observation is restricted to main." >&2
+          exit 1
+
+      - name: Run authenticated production observation
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        env:
+          ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+          OBSERVATION_SCAN_LIMIT: ${{ inputs.scan_limit }}
+        run: node scripts/member-intelligence-authenticated-observation.mjs
