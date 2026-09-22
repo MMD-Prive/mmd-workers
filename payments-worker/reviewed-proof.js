@@ -3,7 +3,7 @@ import { applyMembershipPromotion, currentPrivateMembershipPromotion } from "../
 const REVIEW_SOURCE = "payment_review_console";
 const LINE_OFC_SOURCE = "line_ofc_payment_ingress";
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
-const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership", "shop"]);
+const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "extension", "membership", "shop"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const RECOVERY_CONTEXT = "liff_renewal_recovery";
 const CANONICAL_ENTITLEMENTS = "tblNImdF9PKAxhXGi";
