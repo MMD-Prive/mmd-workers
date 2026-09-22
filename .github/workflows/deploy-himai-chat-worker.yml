@@ -1,5 +1,6 @@
 name: Deploy himai-chat-worker
 # PostHog authority deploy retry 2026-09-22
+# Phase 3A analytics instrumentation recovery redeploy 2026-09-22
 # Router closure rerun: 2026-09-21 configured-state verification
 
 on:

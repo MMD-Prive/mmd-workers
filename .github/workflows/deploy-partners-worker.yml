@@ -16,7 +16,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: telegram-router-secret-rotation-production
+  # partners-worker only verifies the existing Telegram service secret; it does not rotate it.
+  # Keep Partner deploys independent so shared router secret rotations cannot cancel this run while pending.
+  group: partners-worker-production
   cancel-in-progress: false
 
 jobs:
