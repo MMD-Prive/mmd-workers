@@ -1,0 +1,56 @@
+{
+  "version": "mmd-culinary-companion-packages-v1",
+  "currency": "THB",
+  "product": "culinary_companion",
+  "public_packages": [
+    {
+      "key": "cook_with_me",
+      "name": "COOK WITH ME",
+      "price_thb": 1990,
+      "included_minutes": 120,
+      "base_guests": 2,
+      "verified_culinary_required": false
+    },
+    {
+      "key": "dinner_made_for_you",
+      "name": "DINNER, MADE FOR YOU",
+      "price_thb": 2990,
+      "included_minutes": 180,
+      "base_guests": 2,
+      "verified_culinary_required": false
+    },
+    {
+      "key": "market_to_table",
+      "name": "MARKET TO TABLE",
+      "price_thb": 3790,
+      "included_minutes": 240,
+      "base_guests": 2,
+      "verified_culinary_required": false
+    },
+    {
+      "key": "private_table",
+      "name": "PRIVATE TABLE",
+      "price_thb": 4990,
+      "included_minutes": 240,
+      "base_guests": 2,
+      "verified_culinary_required": true
+    }
+  ],
+  "public_rules": {
+    "ingredients": "actual_cost",
+    "overtime_thb_per_hour": 690,
+    "extra_guest_service_fee_thb": 500,
+    "extra_guest_ingredients": "actual_cost",
+    "parking": "actual",
+    "special_travel": "actual",
+    "severe_allergy": "manual_review_required",
+    "confirmation": "MMD must verify culinary role, skill where required, menu fit, location and availability before confirmation"
+  },
+  "query_contract": {
+    "role": "culinary_companion",
+    "package_param": "package",
+    "booking_path": "/booking",
+    "booking_service": "Culinary Companion",
+    "booking_mood": "Easy Dinner"
+  }
+}

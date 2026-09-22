@@ -10,6 +10,7 @@
   var track = root.querySelector(".mp8-track--profiles");
   var stage2 = root.querySelector("[data-role-stage2]");
   var driverPackages = root.querySelector("[data-driver-packages]");
+  var culinaryPackages = root.querySelector("[data-culinary-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -189,9 +190,14 @@
         candidate.setAttribute("aria-pressed", candidate === button ? "true" : "false");
       });
       if (driverPackages) driverPackages.hidden = activeRole !== "driver_companion";
+      if (culinaryPackages) culinaryPackages.hidden = activeRole !== "culinary_companion";
       if (stage2) stage2.hidden = false;
       render();
-      var focusTarget = activeRole === "driver_companion" && driverPackages ? driverPackages : stage2;
+      var focusTarget = activeRole === "driver_companion" && driverPackages
+        ? driverPackages
+        : activeRole === "culinary_companion" && culinaryPackages
+          ? culinaryPackages
+          : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -210,6 +216,7 @@
 
   track.replaceChildren();
   if (driverPackages) driverPackages.hidden = true;
+  if (culinaryPackages) culinaryPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 
