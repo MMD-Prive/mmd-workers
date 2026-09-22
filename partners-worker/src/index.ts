@@ -4476,7 +4476,7 @@ const PARTNER_LINE_LOGIN = `<!doctype html>
     .grain{position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,black,transparent 85%)}
     .topbar{position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px}
     .brand{display:flex;align-items:center;gap:10px;text-decoration:none}
-    .brand-mark{width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(213,174,102,.42);border-radius:9px;background:rgba(8,8,7,.34);backdrop-filter:blur(12px)}
+    .brand-mark{width:30px;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
     .brand-copy{display:flex;flex-direction:column;gap:3px}
     .brand-copy b{color:var(--ivory);font-family:var(--font-en);font-size:11px;line-height:1;font-weight:700;letter-spacing:.14em}
     .brand-copy span{color:var(--gold2);font-family:var(--font-en);font-size:8px;line-height:1.1;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
