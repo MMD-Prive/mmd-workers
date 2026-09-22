@@ -68,6 +68,29 @@ function safeProviderToken(value) {
     .slice(0, 60);
 }
 
+function safeRateValue(value) {
+  return text(value, 80)
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, "")
+    .slice(0, 60);
+}
+
+function providerRateLimitDiagnostics(response, providerError = null) {
+  const headers = response?.headers;
+  return {
+    provider_code: safeProviderToken(providerError?.error?.code),
+    provider_type: safeProviderToken(providerError?.error?.type),
+    provider_param: safeProviderToken(providerError?.error?.param),
+    retry_after: safeRateValue(headers?.get?.("retry-after")),
+    limit_requests: safeRateValue(headers?.get?.("x-ratelimit-limit-requests")),
+    limit_tokens: safeRateValue(headers?.get?.("x-ratelimit-limit-tokens")),
+    remaining_requests: safeRateValue(headers?.get?.("x-ratelimit-remaining-requests")),
+    remaining_tokens: safeRateValue(headers?.get?.("x-ratelimit-remaining-tokens")),
+    reset_requests: safeRateValue(headers?.get?.("x-ratelimit-reset-requests")),
+    reset_tokens: safeRateValue(headers?.get?.("x-ratelimit-reset-tokens")),
+  };
+}
+
 function eventText(event = {}) {
   if (event?.type === "message" && event?.message?.type === "text") return text(event.message.text, MAX_TURN_TEXT);
   if (event?.type === "postback") return text(event?.postback?.displayText || event?.postback?.data, MAX_TURN_TEXT);
@@ -273,9 +296,9 @@ function normalizeModelResult(parsed = {}, turnCount = 0) {
 
 async function modelUnderstanding({ env = {}, history = {}, event = {}, fetchImpl = fetch } = {}) {
   const apiKey = text(env.OPENAI_API_KEY, 300);
-  if (!apiKey) return { ok: false, attempted: false, reason: "openai_key_missing", result: null };
+  if (!apiKey) return { ok: false, attempted: false, reason: "openai_key_missing", diagnostics: {}, result: null };
   const turns = transcriptTurns(history);
-  if (turns.length < 2) return { ok: false, attempted: false, reason: "insufficient_turns", result: null };
+  if (turns.length < 2) return { ok: false, attempted: false, reason: "insufficient_turns", diagnostics: {}, result: null };
 
   const transcript = turns
     .map((turn) => `[${turn.index}] ${turn.role === "assistant" ? "ASSISTANT_SENT" : "CUSTOMER"}: ${turn.content}`)
@@ -375,33 +398,34 @@ Rules:
     });
     if (!response.ok) {
       const providerError = await response.json().catch(() => null);
-      const providerCode = safeProviderToken(providerError?.error?.code);
-      const providerType = safeProviderToken(providerError?.error?.type);
-      const suffix = providerCode || providerType;
+      const diagnostics = providerRateLimitDiagnostics(response, providerError);
+      const suffix = diagnostics.provider_code || diagnostics.provider_type;
       return {
         ok: false,
         attempted: true,
         reason: `openai_http_${response.status}${suffix ? `_${suffix}` : ""}`,
+        diagnostics,
         result: null,
       };
     }
     const body = await response.json().catch(() => null);
-    if (!body) return { ok: false, attempted: true, reason: "openai_invalid_json", result: null };
+    if (!body) return { ok: false, attempted: true, reason: "openai_invalid_json", diagnostics: {}, result: null };
     if (body.status && body.status !== "completed") {
       return {
         ok: false,
         attempted: true,
         reason: `openai_status_${text(body.status, 40).toLowerCase() || "unknown"}`,
+        diagnostics: {},
         result: null,
       };
     }
     const raw = extractOutputText(body);
-    if (!raw) return { ok: false, attempted: true, reason: "openai_output_missing", result: null };
+    if (!raw) return { ok: false, attempted: true, reason: "openai_output_missing", diagnostics: {}, result: null };
     try {
       const parsed = JSON.parse(raw);
-      return { ok: true, attempted: true, reason: "", result: normalizeModelResult(parsed, turns.length) };
+      return { ok: true, attempted: true, reason: "", diagnostics: {}, result: normalizeModelResult(parsed, turns.length) };
     } catch (_) {
-      return { ok: false, attempted: true, reason: "openai_output_parse_failed", result: null };
+      return { ok: false, attempted: true, reason: "openai_output_parse_failed", diagnostics: {}, result: null };
     }
   } catch (error) {
     const timedOut = controller.signal.aborted || error?.name === "AbortError";
@@ -409,6 +433,7 @@ Rules:
       ok: false,
       attempted: true,
       reason: timedOut ? "openai_timeout" : "openai_request_failed",
+      diagnostics: {},
       result: null,
     };
   } finally {
@@ -458,6 +483,7 @@ export async function observeKenjiLineContextualUnderstandingShadow({
     model_attempted: modeled?.attempted === true,
     model_success: modeled?.ok === true,
     model_failure_reason: modeled?.ok ? "" : text(modeled?.reason, 80),
+    model_failure_diagnostics: modeled?.ok ? {} : object(modeled?.diagnostics),
     shadow_only: true,
     auto_send_allowed: false,
     customer_copy_changed: false,

@@ -68,6 +68,48 @@ test("contextual smoke proves model semantics without customer side effects", as
   assert.match(requestBody.input, /มีแนวนี้อีกไหม/);
 });
 
+test("contextual smoke exposes bounded 429 diagnostics without provider message text", async () => {
+  const result = await runKenjiContextualUnderstandingShadowSmoke({
+    OPENAI_API_KEY: "test-key",
+    KENJI_CONTEXTUAL_OPENAI_MODEL: "gpt-4.1-mini",
+  }, {
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: {
+        code: "rate_limit_exceeded",
+        type: "requests",
+        param: "requests_per_minute",
+        message: "PRIVATE PROVIDER DETAIL",
+      },
+    }), {
+      status: 429,
+      headers: {
+        "content-type": "application/json",
+        "retry-after": "3",
+        "x-ratelimit-remaining-requests": "0",
+        "x-ratelimit-reset-requests": "2.5s",
+      },
+    }),
+  });
+
+  assert.equal(result.status, 502);
+  assert.equal(result.payload.model_failure_reason, "openai_http_429_rate_limit_exceeded");
+  assert.deepEqual(result.payload.model_failure_diagnostics, {
+    provider_code: "rate_limit_exceeded",
+    provider_type: "requests",
+    provider_param: "requests_per_minute",
+    retry_after: "3",
+    limit_requests: "",
+    limit_tokens: "",
+    remaining_requests: "0",
+    remaining_tokens: "",
+    reset_requests: "2.5s",
+    reset_tokens: "",
+  });
+  assert.equal(JSON.stringify(result.payload).includes("PRIVATE PROVIDER DETAIL"), false);
+  assert.equal(result.payload.customer_side_effects, false);
+  assert.equal(result.payload.auto_send_allowed, false);
+});
+
 test("contextual smoke fails closed when model semantics do not satisfy the contract", async () => {
   const result = await runKenjiContextualUnderstandingShadowSmoke({
     OPENAI_API_KEY: "test-key",
