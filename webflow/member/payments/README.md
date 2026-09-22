@@ -1,63 +1,54 @@
-# Webflow /member/payments · Owner Boundary
+# Webflow /member/payments · Compatibility Boundary
 
-Updated: 2026-09-19  
+Updated: 2026-09-22  
 Webflow page id: `69dfd6c51dd636056fdb35ea`  
 Root: `#mmd-payments-maxx`
 
 ## Role
 
-Canonical customer-facing payment status / history / navigation surface.
+This page is now a **compatibility presentation** for payment status/history/navigation.
 
-Root ownership markers:
-- `data-presentation-owner="webflow"`
-- `data-status-bff-owner="member-pages-worker"`
-- `data-money-authority="payments-worker"`
-- `data-surface-role="status-history-navigation"`
+The canonical My MMD Payment Center is:
+`/my-mmd/payments`
 
-Current page contract:
-- `data-payments-endpoint="/v1/member/payments"`
+Fresh My MMD navigation and LIFF `continue_payment` use the canonical My MMD route.
 
-Source implementation is now defined as:
-`member-dashboard-chat-worker exact ingress -> MEMBER_PAGES_WORKER service binding -> member-pages-worker/src/member-payments-bff.js`.
+The shared read contract remains:
+`GET /v1/member/payments`
 
-Production acceptance is still required before legacy/admin delegation is retired.
+Source chain:
+`My MMD / compatibility presentation -> member-dashboard-chat-worker -> MEMBER_PAGES_WORKER -> member-pages-worker/src/member-payments-bff.js -> payments-worker money truth`.
 
 ## Authority
 
-Webflow may render safe records and expose an exact backend-issued signed payment action.
-
-Webflow must not:
+Neither Webflow nor the My MMD presentation may:
 - calculate amount;
-- mint or replace payment_ref;
+- mint or replace `payment_ref`;
 - generate QR/bank/card destination;
 - verify payment;
 - activate membership;
-- expose admin review controls.
+- expose admin review controls;
+- infer entitlement.
 
 Money truth remains `payments-worker`; Official Verify is final.
 
-See:
-- `docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md`
-
-
 ## BFF response contract
 
-`GET /v1/member/payments` (and HEAD) uses the signed LIFF/member session only.
+`GET /v1/member/payments` uses the signed LIFF/member session only.
 
 Response:
-- `schema = mmd_member_payments_v1`
-- `authority = member-pages-worker`
-- `money_authority = payments-worker`
-- `member` contains display-only member context
-- `records` contains customer-safe current intent + verified historical payments only
+- `schema = mmd_member_payments_v1`;
+- `authority = member-pages-worker`;
+- `money_authority = payments-worker`;
+- `member` contains display-only member context;
+- `records` contains customer-safe current intent + verified historical payments only.
 
-Current intent:
-- comes only from a backend-created payment intent remembered in the short-lived LIFF session;
-- may expose only the exact backend-issued `/pay/checkout?t=...` or `/sigil/pay?t=...` URL;
-- never accepts browser-selected member/payment context.
+A current record may expose only the exact backend-issued `/pay/checkout?t=...` or `/sigil/pay?t=...` URL. `pending_review` must suppress payment/resubmit actions.
 
-Verified history:
-- comes from the safe member profile / Customer 360 projection;
-- never exposes admin review fields, raw Airtable IDs, risk/fraud fields, bank destination, QR authority or internal notes.
+## Production status
 
-Production status: source ready in the feature change; route/deploy + authenticated live acceptance remain pending until merged and verified.
+Production acceptance passed on 2026-09-22 at source SHA `d29f81c84d71e891e31ebdf8bfa451417166e9b8`.
+
+See:
+- `docs/locks/MMD_MEMBER_PAYMENTS_OWNER_LOCK_20260919.md`
+- `docs/ops/MMD_MEMBER_PAYMENTS_PRODUCTION_ACCEPTANCE_20260919.md`
