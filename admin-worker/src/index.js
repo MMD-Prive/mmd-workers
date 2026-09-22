@@ -2647,6 +2647,20 @@ function publicExtensionTable(env) {
 function publicExtensionStatus(value) {
   return str(value).trim().toLowerCase().replace(/[\s-]+/g, "_");
 }
+function publicExtensionSessionEndIso(tables, record) {
+  const fields = record?.fields || {};
+  const raw = str(fields[tables.sessions.fields.endTime] || fields.end_time || "");
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return new Date(direct).toISOString();
+  const date = str(fields[tables.sessions.fields.jobDate] || fields.job_date || "");
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && match) {
+    const parsed = Date.parse(`${date}T${match[1].padStart(2, "0")}:${match[2]}:00+07:00`);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  return "";
+}
+
 function publicExtensionOneLink(value) {
   if (!Array.isArray(value) || value.length !== 1) return "";
   return str(typeof value[0] === "string" ? value[0] : value[0]?.id);
@@ -2751,9 +2765,9 @@ async function handlePublicExtensionModelAction(env, body, context) {
     return modelSessionJson({ ok: false, error: "extension_request_mismatch" }, 409);
   }
   const currentStatus = publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.status]);
-  const currentEnd = str(context.session?.fields?.[context.tables.sessions.fields.endTime] || "");
+  const currentEnd = publicExtensionSessionEndIso(context.tables, context.session);
   const originalEnd = str(f[PUBLIC_EXTENSION_FIELDS.originalEnd] || "");
-  if (currentEnd && originalEnd && Date.parse(currentEnd) !== Date.parse(originalEnd)) {
+  if (!currentEnd || !originalEnd || Date.parse(currentEnd) !== Date.parse(originalEnd)) {
     return modelSessionJson({ ok: false, error: "extension_session_end_changed" }, 409);
   }
   const now = new Date().toISOString();
