@@ -1118,6 +1118,7 @@ async function handleAcceptTerms(request: Request, env: RuntimeEnv, ctx: Executi
     insertValue: `${updatedRecord.id}:${agreementVersion}`,
     properties: {
       surface: "partner",
+      flow: "partner_onboarding",
       world: "partner",
       terms_version: agreementVersion,
       status: "active",
