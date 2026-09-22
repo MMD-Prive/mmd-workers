@@ -17,7 +17,7 @@ export { PointsPhase1Coordinator } from "./points-phase1.js";
 const NOTIFY_PATH = "/v1/payments/notify";
 const HISTORICAL_REVIEW_PATH = "/v1/internal/payments/historical-slip/reviewed";
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
-const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
+const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "extension", "membership"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export default {
