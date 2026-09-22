@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-reminder'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -116,6 +116,53 @@ test('signed owner can stream therapist profile photo without exposing the priva
   assert.equal(response.headers.get('x-mmd-calendar-therapist-photo'),'mms-private-r2');
   assert.doesNotMatch(response.url||'',/profile_photo|mmsapp_/);
   assert.deepEqual(calls.map(x=>x.split('?')[0]),['/internal/mms/admin/snapshot','/internal/mms/admin/file']);
+});
+
+test('signed owner can remind one non-fresh LINE-linked Model without exposing identity',async()=>{
+  const writes=[];
+  const values=new Map();
+  const store={
+    async get(key,type){
+      if(!values.has(key))return null;
+      const value=values.get(key);
+      return type==='json'?JSON.parse(value):value;
+    },
+    async put(key,value,options){writes.push({key,value,options});values.set(key,value);}
+  };
+  const calls=[];
+  const scoped={
+    ...env,
+    INTERNAL_TOKEN:'internal-secret',
+    LINE_CHANNEL_ACCESS_TOKEN:'line-secret',
+    SIGIL_AVAILABILITY_SNAPSHOTS:store,
+  };
+  const old=globalThis.fetch;
+  globalThis.fetch=async(input,init={})=>{
+    const url=new URL(input instanceof Request?input.url:String(input));
+    calls.push({url:url.toString(),init});
+    if(url.hostname==='api.airtable.com')return Response.json({records:[{id:'recModel1234567890',fields:{
+      unique_key:'mdl_pri_str_master',
+      working_name:'Master',
+      line_user_id:'U0123456789abcdef0123456789abcdef',
+      status:'active',
+    }}]});
+    if(url.hostname==='api.line.me')return Response.json({}, {status:200});
+    throw new Error('unexpected adoption host '+url.hostname);
+  };
+  try{
+    const base=await request('/v1/admin/calendar/availability-reminder','owner','POST');
+    const req=new Request(base.url,{method:'POST',headers:{...Object.fromEntries(base.headers.entries()),'content-type':'application/json'},body:JSON.stringify({model_key:'mdl_pri_str_master'})});
+    const response=await entry.fetch(req,scoped,{});
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('x-mmd-calendar-availability-adoption'),'v1');
+    const body=await response.json();
+    assert.equal(body.ok,true);
+    assert.equal(body.model_key,'mdl_pri_str_master');
+    assert.equal(body.channel,'line');
+    assert.doesNotMatch(JSON.stringify(body),/U0123456789abcdef|line-secret|internal-secret/);
+    assert.equal(calls.filter(x=>new URL(x.url).hostname==='api.line.me').length,1);
+    assert.equal(writes.at(-1).key,'availability-adoption:v1:reminder:mdl_pri_str_master');
+  }finally{globalThis.fetch=old}
 });
 
 test('signed owner API reads MMD calendar without requiring auth/me actor projection',async()=>{
@@ -223,6 +270,13 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/Model App/);
   assert.match(html,/Model Console/);
   assert.match(html,/SIGIL ready/);
+  assert.match(html,/\/v1\/admin\/calendar\/availability-reminder/);
+  assert.match(html,/\/v1\/admin\/model\/activation\/issue/);
+  assert.match(html,/เตือน LINE/);
+  assert.match(html,/สร้าง LINE link/);
+  assert.match(html,/ผูก Model Key/);
+  assert.match(html,/data-cal-remind/);
+  assert.match(html,/data-cal-activate/);
   assert.doesNotMatch(html,/\/available\|active\|ready\/\.test/);
   assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
