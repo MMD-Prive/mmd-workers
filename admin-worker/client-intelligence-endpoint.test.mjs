@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CLIENT_INTELLIGENCE_PATH,
   buildClientIntelligenceProjection,
+  buildRuntimeControlProjection,
   isClientIntelligenceRequest,
 } from "./src/client-intelligence-endpoint.js";
 
@@ -19,6 +20,15 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
     clientId,
     generatedAt: "2026-09-08T06:00:00.000Z",
     continuityMode: "operator_draft",
+    matrixSourceStatus: "live",
+    runtimeControlSource: {
+      status: "live",
+      controls: {
+        line_oa_auto_reply: false,
+        model_keyword_auto_reply: false,
+        all_kenji_mutations: false,
+      },
+    },
     memoryPayload: {
       ok: true,
       data_status: "live",
@@ -74,6 +84,7 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
   assert.equal(projection.ok, true);
   assert.equal(projection.identity.status, "canonical");
   assert.equal(projection.identity.display_name, "วินนี่");
+  assert.equal(projection.identity.verified, true);
   assert.equal(projection.current_state.membership.status, "active");
   assert.equal(projection.current_state.payment.status, "unknown");
   assert.equal(projection.current_state.payment.authority, "canonical_backend");
@@ -86,6 +97,11 @@ test("projection keeps canonical truth separate from advisory intelligence", () 
   assert.equal(projection.ai.suggested_reply.requires_owner_review, true);
   assert.match(projection.ai.suggested_reply.text, /คุณวินนี่ครับ/);
   assert.match(projection.ai.suggested_reply.text, /เรื่องชำระเงิน/);
+  assert.equal(projection.ai.continuity_status.freshness, "fresh");
+  assert.equal(projection.ai.continuity_status.source_status, "live");
+  assert.equal(projection.ai.continuity_status.matrix_version, 7);
+  assert.equal(projection.ai.runtime_controls.status, "live");
+  assert.equal(projection.ai.runtime_controls.operator_copy_allowed, true);
   assert.doesNotMatch(
     JSON.stringify(projection.ai.suggested_reply),
     /proof_123|ลูกค้าถามเรื่อง access หลังชำระ renewal|paid|active/,
@@ -116,6 +132,8 @@ test("projection does not invent next action or reply without evidence", () => {
   assert.equal(projection.ai.next_best_action, null);
   assert.equal(projection.ai.suggested_reply.available, false);
   assert.equal(projection.ai.suggested_reply.text, null);
+  assert.equal(projection.ai.continuity_status.freshness, "unavailable");
+  assert.equal(projection.ai.runtime_controls.operator_copy_allowed, false);
   assert.equal(projection.ai.follow_up.recommended, false);
   assert.deepEqual(projection.ai.notices, []);
 });
@@ -155,4 +173,26 @@ test("projection keeps continuity rollout off unless the explicit mode is enable
   assert.equal(projection.ai.suggested_reply.available, false);
   assert.equal(projection.ai.suggested_reply.reason, "phase4_mode_off");
   assert.equal(projection.ai.suggested_reply.send_allowed, false);
+});
+
+test("runtime control projection locks copy when controls are unavailable or a kill switch is active", () => {
+  const unavailable = buildRuntimeControlProjection({ status: "unavailable", controls: null });
+  assert.equal(unavailable.status, "unavailable");
+  assert.equal(unavailable.operator_copy_allowed, false);
+  assert.equal(unavailable.reason, "runtime_control_unavailable");
+
+  const lineKilled = buildRuntimeControlProjection({
+    status: "live",
+    controls: { line_oa_auto_reply: true, all_kenji_mutations: false },
+  });
+  assert.equal(lineKilled.line_oa_kill_switch, "active");
+  assert.equal(lineKilled.operator_copy_allowed, false);
+  assert.equal(lineKilled.reason, "kill_switch_active");
+
+  const globalKilled = buildRuntimeControlProjection({
+    status: "live",
+    controls: { line_oa_auto_reply: false, all_kenji_mutations: true },
+  });
+  assert.equal(globalKilled.all_mutations_kill_switch, "active");
+  assert.equal(globalKilled.operator_copy_allowed, false);
 });

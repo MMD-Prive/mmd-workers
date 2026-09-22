@@ -14,6 +14,7 @@ const ALLOWED_CHANNELS = new Set(["line", "line_oa", "line_ofc", "liff"]);
 const RETURNING_RELATIONSHIPS = new Set([
   "known_customer",
   "repeat_customer",
+  "verified_public_member",
   "active_member",
   "expired_member",
   "private_access_verified",

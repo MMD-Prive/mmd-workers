@@ -29,7 +29,8 @@ It is not a payment, membership, access, entitlement or messaging authority.
   "identity": {
     "status": "canonical",
     "display_name": "...",
-    "confidence": 1
+    "confidence": 1,
+    "verified": true
   },
   "relationship": {
     "summary": "...",
@@ -61,6 +62,24 @@ It is not a payment, membership, access, entitlement or messaging authority.
         "memory_is_context_only": true,
         "protected_truth_refresh_required": true
       }
+    },
+    "continuity_status": {
+      "source": "conversation_matrix",
+      "source_status": "live",
+      "matrix_status": "active",
+      "matrix_version": 7,
+      "updated_at": "2026-09-08T...Z",
+      "expires_at": "2026-09-15T...Z",
+      "freshness": "fresh",
+      "context_only": true,
+      "live_truth_wins": true
+    },
+    "runtime_controls": {
+      "status": "live",
+      "line_oa_kill_switch": "clear",
+      "all_mutations_kill_switch": "clear",
+      "operator_copy_allowed": true,
+      "reason": "clear"
     },
     "follow_up": {
       "recommended": false,
@@ -111,6 +130,23 @@ A draft is available only when all gates pass:
 The copy uses only an allowlisted topic label. It never interpolates Matrix summaries, open loops, pending actions, pending references, payment artifacts, canonical status values, credentials, or customer identifiers. Protected topics always tell the operator/customer that the latest status must be checked with the owning system before confirmation.
 
 `off` and every unknown mode fail closed with no draft. Moving beyond operator review requires a separate approved messaging contract, explicit owner approval, shadow evidence, and a production rollback plan.
+
+## Phase 4B operator view and copy audit
+
+The Member Intelligence browser runtime reads the facade above and may render an available Phase 4A draft. It must validate the complete safety envelope again before showing copy controls. The UI displays Matrix source/freshness and the canonical Kenji runtime-control snapshot. Missing runtime controls, an active LINE kill switch, or an active global mutation kill switch keeps copy locked.
+
+Copy requires all of the following:
+
+- a credential-bound owner/admin session;
+- a successful safe view audit;
+- explicit operator review confirmation in the current browser view;
+- a fresh server-side re-read of the same eligible draft;
+- live runtime controls with no applicable kill switch;
+- a successful copy-authorization audit before clipboard mutation.
+
+Audit events use `POST /v1/admin/clients/intelligence/audit` and write only `Event ID`, `Action`, and normalized `Result` to the canonical `System — Access Log`. Client, actor, and draft references appear only as bounded keyed HMAC-SHA-256 prefixes inside the event ID. The raw Client record ID, name, draft text, Matrix notes, payment artifacts, credentials, and business-state values are never stored in this audit event.
+
+This UI has no LINE reply/push adapter and no send button. `send_allowed=false`, `customer_auto_send=false`, and `requires_owner_review=true` remain mandatory. The audit route reports `customer_delivery_attempted=false` and `business_truth_mutated=false`.
 
 ## Authority rule
 
