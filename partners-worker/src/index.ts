@@ -167,6 +167,7 @@ const SESSION_FIELDS = {
   startTime: "fldBeG0FkWwa8kgnp",
   endTime: "fldiDSz0wW9Ct9I3P",
   locationName: "fldIiRpaxoafjTkFt",
+  customerAckAt: "fldJSS5GNN7quJwa8",
   workLane: "fldzYGziqLqTQaoaK",
   workType: "fldZiv3GeiafJTuRv",
   partnerIdSnapshot: "fld0jkscGAtyX7i2J",
@@ -1542,6 +1543,10 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
   const lifecycle = normalizeStatus(fieldText(record, SESSION_FIELDS.lifecycle) || fieldText(record, SESSION_FIELDS.status));
   const snapshot = parseJson(fieldText(record, SESSION_FIELDS.partnerSnapshotJson) || "{}");
   const canonicalModel = fieldLinkIds(record, SESSION_FIELDS.canonicalModel)[0] || (isRecord(snapshot) ? readString(snapshot, "model_record_id") : "");
+  const customerAckAt = fieldText(record, SESSION_FIELDS.customerAckAt);
+  const canonicalLocation = fieldText(record, SESSION_FIELDS.locationName);
+  const locationConfirmed = Boolean(customerAckAt && canonicalLocation);
+  const partnerSourceRate = isRecord(snapshot) ? readFiniteNumber(snapshot.partner_source_rate_thb) : null;
   return {
     session_record_id: record.id,
     session_id: fieldText(record, SESSION_FIELDS.sessionId) || record.id,
@@ -1552,7 +1557,10 @@ function normalizePartnerSession(record: AirtableRecord, officiallyVerified = fa
     date: fieldText(record, SESSION_FIELDS.jobDate),
     start_at: fieldText(record, SESSION_FIELDS.startTime),
     end_at: fieldText(record, SESSION_FIELDS.endTime),
-    location: "ประสานพื้นที่กับ MMD",
+    location: locationConfirmed ? canonicalLocation : "รอยืนยันสถานที่กับลูกค้า",
+    location_status: locationConfirmed ? "confirmed_with_customer" : "pending_customer_confirmation",
+    location_confirmed_at: customerAckAt || null,
+    partner_source_rate_thb: partnerSourceRate,
     work_lane: fieldText(record, SESSION_FIELDS.workLane),
     work_type: fieldText(record, SESSION_FIELDS.workType),
     status: partnerStatus,
@@ -3088,7 +3096,9 @@ async function handlePartnerJobConfirmInternal(request: Request, env: RuntimeEnv
     [SESSION_FIELDS.partnerConfirmationStatus]: nextStatus,
     [SESSION_FIELDS.partnerConfirmedAt]: now,
     [SESSION_FIELDS.partnerConfirmationRevision]: nextRevision,
-    [SESSION_FIELDS.partnerConfirmationNote]: note || (nextStatus === "confirmed" ? "Confirmed via verified Partner Telegram." : nextStatus === "declined" ? "Declined via verified Partner Telegram." : "Partner requested changes via verified Telegram.")
+    [SESSION_FIELDS.partnerConfirmationNote]: note || (nextStatus === "confirmed" ? "Confirmed by Partner." : nextStatus === "declined" ? "Declined by Partner." : "Partner requested changes."),
+    [SESSION_FIELDS.partnerNotificationStatus]: "acknowledged",
+    [SESSION_FIELDS.partnerNotificationError]: null
   }, true);
 
   const safeSession = fieldText(session, SESSION_FIELDS.sessionId) || sessionRecordId;

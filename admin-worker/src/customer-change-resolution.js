@@ -13,6 +13,9 @@ export const CHANGE_SESSION_FIELDS = Object.freeze({
   location_name:"fldIiRpaxoafjTkFt", google_map_url:"fldoUDQ8sH93idPx0", session_status:"fldmwuvOaiCFdzzRa",
   model:"fldrXQAyOMPCvbOaY", client:"fld6P6if0vDZCeV0C", state:"fld57fhdWqIcOy4Jp",
   customer_ack:"fldJSS5GNN7quJwa8", model_ack:"fldFgkHXivIAThfDz",
+  partner_id:"fld0jkscGAtyX7i2J", partner_confirmation_status:"fldrAQxUX4pRqz6qr",
+  partner_confirmed_at:"fldLonXanVTSybnpv", partner_confirmation_note:"fldjAwRLqxhJ7GjJL",
+  partner_notification_status:"fldv1X9HIfgUjwpJw", partner_notification_error:"fldGLKYcQVPZelwue",
 });
 const S = CHANGE_SESSION_FIELDS;
 const KEYS = ["job_date","start_time","end_time","location_name","google_map_url"];
@@ -77,6 +80,13 @@ function plan(session,request) {
   if(type!=="remark"&&!Object.keys(patch).length&&!block)block="no_job_change";
   if(Object.keys(patch).length&&!block) {
     patch[S.customer_ack]=null;patch[S.model_ack]=null;
+    if(clean(current.partner_id)) {
+      patch[S.partner_confirmation_status]="pending";
+      patch[S.partner_confirmed_at]=null;
+      patch[S.partner_confirmation_note]="รายละเอียดงานมีการเปลี่ยนแปลง · กรุณาตรวจและยืนยันข้อมูลล่าสุด";
+      patch[S.partner_notification_status]="pending_change";
+      patch[S.partner_notification_error]=null;
+    }
     const schedule=buildReconfirmSchedule(after.job_date);
     if(!schedule)fail(409,"canonical_job_date_required");
     Object.assign(patch,{
