@@ -12,7 +12,7 @@ const SIGIL_AVAILABILITY_ADOPTION_REMINDER_TTL_SECONDS = 24 * 60 * 60;
 const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
 const MODEL_BLOCKED_STATES = new Set(["inactive", "blocked", "suspended", "paused", "archived", "retired"]);
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
-const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker"]);
+const ALLOWED_INTERNAL_CALLERS = new Set(["model-console-worker", "model-app-worker", "calendar-owner"]);
 
 function text(value) {
   return String(value == null ? "" : value).trim();
@@ -260,7 +260,9 @@ async function pushAvailabilityReminderLine(env = {}, model = {}) {
 }
 
 async function handleAvailabilityAdoptionReminder(request, env = {}, caller = "") {
-  if (caller !== "model-console-worker") return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (!["model-console-worker", "calendar-owner"].includes(caller)) {
+    return json({ ok: false, error: "internal_auth_required" }, 401);
+  }
 
   const contentType = text(request.headers.get("content-type")).toLowerCase();
   if (!contentType.includes("application/json")) {
@@ -378,6 +380,9 @@ export async function handleSigilAvailabilityInternalRequest(request, env = {}) 
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
+  if (!["model-console-worker", "model-app-worker"].includes(caller)) {
+    return json({ ok: false, error: "internal_auth_required" }, 401);
+  }
   const source = caller === "model-console-worker" ? "model_console" : "model_app";
   const confidence = source === "model_console" ? "operator_confirmed" : "model_confirmed";
   const result = await writeSigilAvailabilitySnapshot(env, body, {
