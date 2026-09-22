@@ -268,6 +268,7 @@ html,body{background:#09090c!important}
 .mcal__metricsub{margin-top:10px!important;opacity:.68!important}
 .mcal__datebar{position:sticky!important;top:10px!important;z-index:9!important;margin-top:12px!important;padding:9px 10px!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:16px!important;background:rgba(15,14,19,.9)!important;backdrop-filter:blur(18px)!important;-webkit-backdrop-filter:blur(18px)!important}
 .mcal__tabs{margin-top:10px!important;gap:7px!important}
+.mcal__legend,.mcal__hours{display:none!important}
 .mcal__tab{min-height:38px!important;padding:0 13px!important;font-size:8px!important}
 .mcal__notice{display:none!important}
 .mcal__workspace{grid-template-columns:minmax(0,1.65fr) minmax(280px,.55fr)!important;gap:12px!important;margin-top:12px!important}
@@ -304,6 +305,16 @@ html,body{background:#09090c!important}
     root.setAttribute('data-owner-ui','v3');
 
     const normalise=value=>String(value||'').replace(/\s+/g,' ').trim();
+    const cleanInlineArtifacts=()=>{
+      const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+      const nodes=[];
+      while(walker.nextNode())nodes.push(walker.currentNode);
+      nodes.forEach(node=>{
+        const before=String(node.nodeValue||'');
+        if(/##INLINE\d+##/i.test(before))node.nodeValue=before.replace(/##INLINE\d+##/gi,'').trim();
+      });
+    };
+    cleanInlineArtifacts();
     const production=!/\.webflow\.io$/i.test(location.hostname);
 
     if(production){
