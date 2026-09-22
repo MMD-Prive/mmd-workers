@@ -188,8 +188,10 @@ jobs:
                     /Control Room|CONTROL ROOM|Owner Control/i.test(bodyText);
                   const ownerOperatingSystem = /MMD PRIVÉ\s+PER\s*[·•-]?\s*COMMAND CENTER/i.test(bodyText) &&
                     /OWNER MODE/i.test(bodyText);
+                  const operationsDashboard = document.title === 'Operations Dashboard | MMD Privé Internal' ||
+                    /หน้าหลัก\s+วันนี้ของ MMD|ต้องทำต่อ/i.test(bodyText);
                   const loginStillPresent = Boolean(document.querySelector('#adminLoginForm, #ownerLoginForm'));
-                  return (legacyControlRoom || ownerOperatingSystem) && !loginStillPresent;
+                  return (legacyControlRoom || ownerOperatingSystem || operationsDashboard) && !loginStillPresent;
                 }, { timeout: 15000 });
               } catch (error) {
                 waitError = error;
