@@ -10,6 +10,7 @@ on:
       - "shared/shop-brand-context.mjs"
       - "shared/posthog-authority-events.mjs"
       - "payments-worker/**"
+      - "shared/confirmation-revision*"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
       - "shared/membership-promotion-policy.mjs"
