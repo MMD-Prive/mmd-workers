@@ -1,4 +1,5 @@
 const CONSOLE_INBOX_TABLE_FALLBACK = "tblFHmfpB2TTrzO2e";
+const AI_MESSAGE_EVENTS_TABLE_FALLBACK = "tbljCYfYqfm8gBTPq";
 const HISTORY_LIMIT = 50;
 const TURN_TEXT_MAX = 900;
 const CONTEXT_TURN_LIMIT = 24;
@@ -48,6 +49,10 @@ function boundedText(value, max = TURN_TEXT_MAX) {
 
 function consoleInboxTable(env = {}) {
   return text(env.AIRTABLE_TABLE_CONSOLE_INBOX_ID || env.AIRTABLE_SYNC_TABLE || CONSOLE_INBOX_TABLE_FALLBACK);
+}
+
+function aiMessageEventsTable(env = {}) {
+  return text(env.AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID || AI_MESSAGE_EVENTS_TABLE_FALLBACK);
 }
 
 function canonicalLineUserId(event = {}) {
@@ -100,6 +105,47 @@ async function listAirtableHistory(env = {}, lineUserId = "", fetchImpl = fetch)
   }
 }
 
+async function listAirtableDeliveredReplies(env = {}, lineUserId = "", fetchImpl = fetch) {
+  const apiKey = text(env.AIRTABLE_API_KEY);
+  const baseId = text(env.AIRTABLE_BASE_ID);
+  const table = aiMessageEventsTable(env);
+  if (!apiKey || !baseId || !table || !lineUserId) {
+    return { ok: false, records: [], reason: "outbound_history_storage_unavailable" };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("kenji_outbound_history_timeout"), HISTORY_READ_TIMEOUT_MS);
+  try {
+    const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", String(HISTORY_LIMIT));
+    url.searchParams.set(
+      "filterByFormula",
+      `AND({line_user_id}="${escapeFormula(lineUserId)}",{channel}="LINE_OFC",{final_status}="sent")`,
+    );
+    [
+      "event_id",
+      "created_at",
+      "channel",
+      "line_user_id",
+      "generated_reply",
+      "response_mode",
+      "final_status",
+      "payload_json",
+    ].forEach((field) => url.searchParams.append("fields[]", field));
+    const response = await fetchImpl(url.toString(), {
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) return { ok: false, records: [], reason: `outbound_history_http_${response.status}` };
+    const payload = await response.json().catch(() => ({}));
+    return { ok: true, records: Array.isArray(payload?.records) ? payload.records : [], reason: "" };
+  } catch (_) {
+    return { ok: false, records: [], reason: "outbound_history_storage_unavailable" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function outboundWasActuallySent(fields = {}, payload = {}) {
   const status = text(payload.delivery_status || payload.line_delivery_status || fields.status).toLowerCase();
   return payload.actual_sent === true
@@ -125,6 +171,27 @@ function turnFromRecord(record = {}) {
     content,
     occurred_at: text(payload.sent_at || payload.received_at || fields.created_at || record.createdTime),
     evidence: role === "assistant" ? "actual_sent" : "customer_received",
+  };
+}
+
+function turnFromAiMessageEvent(record = {}) {
+  const fields = object(record.fields);
+  const payload = object(fields.payload_json);
+  const finalStatus = text(fields.final_status).toLowerCase();
+  const channel = text(fields.channel).toUpperCase();
+  const deliverySucceeded = payload.line_delivery_succeeded === true
+    || (payload.line_delivery_attempted === true && Number(payload.line_delivery_status) >= 200 && Number(payload.line_delivery_status) < 300);
+  if (channel !== "LINE_OFC" || finalStatus !== "sent" || !deliverySucceeded) return null;
+
+  const content = boundedText(fields.generated_reply || payload.sent_text || payload.reply_text);
+  if (!content) return null;
+
+  return {
+    role: "assistant",
+    content,
+    occurred_at: text(fields.created_at || record.createdTime),
+    evidence: "line_delivery_succeeded",
+    source_event_id: text(fields.event_id),
   };
 }
 
@@ -284,20 +351,27 @@ export async function buildKenjiLineConversationHistory({ env = {}, event = {}, 
     };
   }
 
-  const stored = await listAirtableHistory(env, lineUserId, fetchImpl);
+  const [stored, delivered] = await Promise.all([
+    listAirtableHistory(env, lineUserId, fetchImpl),
+    listAirtableDeliveredReplies(env, lineUserId, fetchImpl),
+  ]);
   const turns = dedupeTurns([
     ...stored.records.map(turnFromRecord).filter(Boolean),
+    ...delivered.records.map(turnFromAiMessageEvent).filter(Boolean),
     currentInboundTurn(event),
   ].filter(Boolean))
     .sort((left, right) => String(left.occurred_at).localeCompare(String(right.occurred_at)))
     .slice(-CONTEXT_TURN_LIMIT);
   const customerMessages = turns.filter((turn) => turn.role === "customer").length;
-  const confirmedAssistantMessages = turns.filter((turn) => turn.role === "assistant" && turn.evidence === "actual_sent").length;
+  const confirmedAssistantMessages = turns.filter((turn) => (
+    turn.role === "assistant"
+    && ["actual_sent", "line_delivery_succeeded"].includes(turn.evidence)
+  )).length;
   const memory = buildKenjiLineConversationMemory(turns);
 
   return {
     enabled: true,
-    available: stored.ok,
+    available: stored.ok || delivered.ok,
     schema: KENJI_LINE_CONVERSATION_HISTORY_SCHEMA,
     turns,
     memory,
@@ -309,7 +383,7 @@ export async function buildKenjiLineConversationHistory({ env = {}, event = {}, 
       // delivery record exists, even if customer history is present.
       reply_history_complete: confirmedAssistantMessages > 0,
     },
-    reason: stored.reason || "ready",
+    reason: stored.ok || delivered.ok ? "ready" : (stored.reason || delivered.reason || "history_storage_unavailable"),
   };
 }
 
@@ -354,11 +428,11 @@ export async function recordDeliveredKenjiLineReply({ env = {}, event = {}, repl
       body: JSON.stringify({
         fields: {
           inbox_id: inboxId,
-          source: "line_ofc_outbound",
+          source: "line_oa",
           line_user_id: lineUserId,
           line_id: `outbound_${sourceEventId}`.slice(0, 160),
           admin_note: answer,
-          status: "sent",
+          status: "done",
           payload_json: JSON.stringify({
             schema: KENJI_LINE_CONVERSATION_HISTORY_SCHEMA,
             direction: "outbound",
