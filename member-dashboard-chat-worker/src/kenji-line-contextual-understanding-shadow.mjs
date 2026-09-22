@@ -2,7 +2,10 @@ export const KENJI_LINE_CONTEXTUAL_UNDERSTANDING_SCHEMA = "mmd.kenji_line_contex
 export const KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED_ENV = "KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED";
 
 const DEFAULT_CONTEXT_MODEL = "gpt-4.1-mini";
-const MODEL_TIMEOUT_MS = 5_500;
+// Shadow work is dispatched through ctx.waitUntil after the LINE response, so
+// this deadline does not add customer webhook latency. Keep it aligned with
+// ai-worker's production read-only inference budget.
+const MODEL_TIMEOUT_MS = 12_000;
 const MAX_TRANSCRIPT_TURNS = 12;
 const MAX_TURN_TEXT = 520;
 
