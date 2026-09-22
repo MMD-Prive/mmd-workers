@@ -494,6 +494,7 @@ export async function observeKenjiLineContextualUnderstandingShadow({
 }
 
 export const KENJI_CONTEXTUAL_SHADOW_INTERNALS = Object.freeze({
+  MODEL_TIMEOUT_MS,
   RELATIONS,
   TOPIC_RELATIONS,
   REFERENT_STATES,
