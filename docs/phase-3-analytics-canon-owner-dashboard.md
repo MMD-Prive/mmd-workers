@@ -1,92 +1,189 @@
-# Phase 3 — Analytics Canon + Owner Dashboard
+# Phase 3B — Analytics Canon + Owner Dashboard
 
-Status: CANON LOCKED / DASHBOARD WRITE BLOCKED BY CONNECTOR SCOPE
+Status: **MMD OWNER DASHBOARD IMPLEMENTED / POSTHOG-NATIVE WRITE MIRROR BLOCKED BY CONNECTOR SCOPE**
 
-## 1. Canon rules
+Canonical analytics schema: `mmd_analytics_canon_v2`.
 
-MMD uses browser events for intent and server authority events for completed business facts.
+## 1. Identity rule
 
-Do not emit duplicate synonyms:
-- `booking_submitted` is deprecated. Canon = `booking_received`.
-- `payment_completed` is deprecated. Canon = `payment_verified`.
+MMD analytics has two deliberately separate identity layers.
 
-Canonical schema: `mmd_analytics_canon_v1`.
+### Intent
 
-## 2. Owner funnels
+Browser/client events use the PostHog client-person identity.
 
-### Public → Booking → Payment
+Examples:
+- `profile_viewed`
+- `booking_started`
+- `payment_started`
+- `my_mmd_login_started`
+- route `$pageview`
+
+Person funnels are allowed only inside this layer when the steps share the same client identity.
+
+### Business Truth
+
+Server authority events use a record/session-scoped hashed authority identity.
+
+Examples:
+- `booking_received`
+- `payment_verified`
+- `membership_activated`
+- `my_mmd_session_started`
+- `mms_prebooking_received`
+- `shop_order_created`
+- `partner_terms_accepted`
+
+These are the source of truth for completed business facts.
+
+**Do not calculate a person conversion rate across Intent and Business Truth.** Their distinct IDs are intentionally different. Until an explicit privacy-safe correlation key exists, cross-layer comparison is volume/trend only and must not be labelled a conversion rate.
+
+## 2. Six canonical lanes
+
+### Public → Booking
+
+Intent:
 1. `profile_viewed`
 2. `booking_started`
-3. `booking_received`
-4. `payment_started`
-5. `payment_verified`
+
+Business Truth:
+- `booking_received` · `flow=booking_intake`
+- `payment_verified` · `flow=booking_payment`
 
 ### Membership
-1. `$pageview` route contains `/member/membership`
-2. `payment_started` with `flow=membership` when available
-3. `payment_verified` with `flow=membership` when available
-4. `membership_activated`
+
+Intent routes:
+- `/member/membership`
+- `/pay/membership`
+
+Business Truth:
+- `payment_verified` · `flow=membership_payment`
+- `membership_activated` · `flow=membership_activation`
 
 ### MY MMD
-1. `$pageview` route contains `/member/login`
-2. `my_mmd_session_started`
+
+Intent:
+- `/member/login`
+- `my_mmd_login_started`
+
+Business Truth:
+- `my_mmd_session_started` · `flow=my_mmd_login`
 
 ### MMS
-1. `$pageview` route contains `/male-massage/home`
-2. `mms_prebooking_received`
-3. `payment_started` with `flow=mms` when available
-4. `payment_verified` with `flow=mms` when available
+
+Intent routes:
+- `/male-massage/home`
+- `/male-massage/member/mms-booking`
+
+Business Truth:
+- `mms_prebooking_received` · `flow=mms_prebooking`
+- `payment_verified` · `flow=mms_payment`
 
 ### Shop
-1. `$pageview` route contains `/mmd-shop`
-2. `shop_order_created`
-3. `payment_started` with `flow=shop` when available
-4. `payment_verified` with `flow=shop` when available
+
+Intent routes:
+- `/mmd-shop`
+- `/shop`
+- `/mmd-shop/order`
+
+Business Truth:
+- `shop_order_created` · `flow=shop_checkout`
+- `payment_verified` · `flow=shop_payment`
 
 ### Partner
-1. `$pageview` route contains `/partner/referral`
-2. `partner_terms_accepted`
 
-## 3. Owner Dashboard tiles
+Intent routes:
+- `/partner`
+- `/partner/terms`
 
-Create one dashboard named **MMD Owner — Conversion & Revenue** with:
-- Public → Booking → Payment funnel
-- Membership funnel
-- MY MMD login-to-session funnel
-- MMS funnel
-- Shop funnel
-- Partner funnel
-- payment_verified count, sum(amount_thb), and trend
-- membership_activated trend
-- analytics_runtime_health by authority
-- top conversion routes
-- 7d vs previous 7d conversion comparison
+Business Truth:
+- `partner_terms_accepted` · `flow=partner_onboarding`
 
-Default dashboard window: 30 days.
-Operational comparison: last 7 days vs previous 7 days.
+## 3. MMD Owner Dashboard
 
-## 4. Current production baseline observed 2026-09-22
+Canonical surface: `/internal/admin/control-room`.
 
-Observed funnel:
-- profile_viewed: 5
-- booking_started: 1
-- payment_started: 0
+Authenticated data route:
+`GET /v1/admin/dashboard/analytics`.
 
-The server authorities currently reporting `analytics_runtime_health` are:
-- sigil-booking-worker
-- mms-worker
-- payments-worker
-- partners-worker
-- himai-chat-worker
-- member-pages-worker
+The Control Room presents three explicit sections:
 
-Authority conversion events are wired in code, but may not appear in the recent event taxonomy until a matching production action occurs.
+1. **Intent** — client-side entry and intent volumes.
+2. **Business Truth** — server-authority completion counts and verified revenue.
+3. **Authority Health** — `analytics_runtime_health` for the six production authorities.
 
-## 5. Acceptance
+The endpoint is read-only. It never mutates Payment, Membership, Job, entitlement, Shop, Partner, or analytics source data.
 
-Phase 3 is CLOSED only when:
-- all six funnels can be executed against production data;
-- no deprecated duplicate conversion names are emitted;
-- the Owner Dashboard exists in PostHog and refreshes from production;
-- at least one real production event is observed for each authority completion event when the corresponding business action occurs;
-- dashboard write access is available to the automation/connector used for setup.
+Runtime rules:
+- missing/unobserved event = `null` / UI `—`, never fabricated `0`;
+- the PostHog project ingest token is never used as a read credential;
+- read access comes only from backend `POSTHOG_READ_API_KEY` or `POSTHOG_PERSONAL_API_KEY`;
+- if a read credential is unavailable, endpoint state = `read_scope_missing`;
+- browser receives aggregate metrics only and never receives the PostHog credential.
+
+Default window: 30 days.
+Comparison window: current 7 days vs previous 7 days.
+
+## 4. Current production baseline observed on 22 Sep 2026
+
+Recent PostHog data observed during Phase 3B:
+
+| Event | Events (30d) | People | Notes |
+|---|---:|---:|---|
+| `profile_viewed` | 7 | 6 | client intent |
+| `booking_started` | 5 | 3 | client intent |
+| `payment_started` | 7 | 7 | global client intent; not yet lane-safe |
+| `my_mmd_login_started` | 14 | 14 | client intent |
+| `my_mmd_session_started` | 7 | 7 | server authority identity |
+
+Validated client-only person funnel:
+- `profile_viewed → booking_started`: 6 → 1 people, 16.67% conversion.
+- average and median conversion time observed: 2m 14s.
+
+A test query of `my_mmd_login_started → my_mmd_session_started` returned 14 → 0 matched people even though seven session events exist. This is expected evidence of the separate identity namespaces and **must not be interpreted as a 0% MY MMD success rate**.
+
+At Phase 3B construction time, the following authority completion events had not yet occurred in the recent PostHog taxonomy:
+- `booking_received`
+- `payment_verified`
+- `membership_activated`
+- `mms_prebooking_received`
+- `shop_order_created`
+- `partner_terms_accepted`
+
+They remain `—` until a real corresponding production action occurs. Synthetic business transactions are not created to populate the dashboard.
+
+Operational analytics health was observed from all six required authorities:
+- `sigil-booking-worker`
+- `payments-worker`
+- `member-pages-worker`
+- `mms-worker`
+- `himai-chat-worker`
+- `partners-worker`
+
+## 5. PostHog-native mirror
+
+The connected PostHog integration currently has read/query access but lacks:
+- `dashboard:write`
+- `insight:write`
+- `data_catalog:write` / `data_catalog:read` where saved catalog metrics are desired.
+
+Therefore the canonical Owner Dashboard is implemented in MMD Control Room first.
+
+When those PostHog scopes are granted, create/mirror one native dashboard named:
+
+**MMD Owner — Intent & Business Truth**
+
+It must preserve the same identity separation and must not introduce a mixed client/server person funnel.
+
+## 6. Acceptance
+
+Phase 3B Control Room implementation is accepted when:
+- canon v2 tests pass;
+- `/v1/admin/dashboard/analytics` is authenticated and fail-closed;
+- unauthenticated access remains 401;
+- Control Room renders Intent, Business Truth, and Authority Health separately;
+- unobserved truth events render `—`, not zero;
+- no cross-layer person conversion is computed;
+- production deploy/smoke passes.
+
+The PostHog-native mirror remains a separate scope-dependent acceptance item and does not change MMD business truth.

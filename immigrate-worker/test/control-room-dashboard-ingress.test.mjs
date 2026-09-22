@@ -92,3 +92,29 @@ test("dashboard ingress refuses non-production hosts", async () => {
   assert.equal((await response.json()).error, "dashboard_bridge_host_not_allowed");
   assert.equal(calls, 0);
 });
+
+
+test("owner analytics ingress keeps the same credential-bound read-only bridge", async () => {
+  const calls = [];
+  const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/dashboard/analytics", {
+    headers: {
+      Cookie: "mmd_admin_gate_v1=test-cookie",
+      Authorization: "Bearer browser-must-not-forward",
+    },
+  }), {
+    ADMIN_WORKER: {
+      fetch: async (request) => {
+        calls.push(request);
+        return Response.json({ ok: true, schema: "mmd.owner_analytics_dashboard.v1", read_only: true });
+      },
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://mmdbkk.com/v1/admin/dashboard/analytics");
+  assert.equal(calls[0].headers.get("cookie"), "mmd_admin_gate_v1=test-cookie");
+  assert.equal(calls[0].headers.get("authorization"), null);
+  assert.equal(calls[0].headers.get("x-mmd-auth-bridge"), "immigrate-control-room-analytics");
+  assert.equal(response.headers.get("x-mmd-control-room-dashboard-ingress"), "immigrate-to-admin-analytics-v1");
+});

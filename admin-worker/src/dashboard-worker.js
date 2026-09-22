@@ -15,9 +15,11 @@ import { handlePaymentReviewRequest } from "./payment-review-runtime.js";
 import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-runtime.js";
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
+import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
+const OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
@@ -34,7 +36,7 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if (path === DASHBOARD_PATH) {
+    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH) {
       if (!isAllowedOrigin(req, env)) {
         return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
       }
@@ -47,6 +49,9 @@ export default {
         return withCors(json({ ok: false, error: "method_not_allowed" }, 405), cors);
       }
 
+      if (path === OWNER_ANALYTICS_PATH) {
+        return withCors(json(await buildOwnerAnalyticsDashboard(env)), cors);
+      }
       return withCors(json(await buildAdminDashboard(env)), cors);
     }
 
