@@ -11,6 +11,7 @@ const CAL_SYNC_PUBLIC_FALLBACK = 'https://cal-sync-worker.malemodel-bkk.workers.
 const CALENDAR_PRESENTATION_URL = 'https://mmdprive.webflow.io/internal/admin/calendar';
 const CALENDAR_OWNER_UI_VERSION = 'calendar-owner-ui-v3-20260922';
 const CALENDAR_MODEL_PHOTO_PATH = '/v1/admin/calendar/model-photo';
+const CALENDAR_THERAPIST_PHOTO_PATH = '/v1/admin/calendar/therapist-photo';
 const MODELS_TABLE_ID = 'tblI4B0bI446vp9GX';
 const MODEL_FIELD = Object.freeze({
   name:'fldShiT60bmCxFxRu',
@@ -124,6 +125,65 @@ export async function calendarModelPhotoResponse(request, env = {}) {
   }
 
   return new Response('Not Found', { status:404, headers:{'cache-control':'no-store, private'} });
+}
+
+async function readCalendarTherapistPhotoSource(env, therapistId) {
+  const binding = env.MMS_WORKER;
+  if (!binding || typeof binding.fetch !== 'function') return null;
+  const snapshot = await binding.fetch(new Request('https://mms.internal/internal/mms/admin/snapshot', {
+    method:'GET',
+    headers:{accept:'application/json'},
+  }));
+  if (!snapshot.ok) return null;
+  const body = await snapshot.json().catch(() => null);
+  if (!body?.ok || !Array.isArray(body.therapists)) return null;
+  return body.therapists.find(item => clean(item?.therapist_id, 80) === therapistId) || null;
+}
+
+export async function calendarTherapistPhotoResponse(request, env = {}) {
+  const url = new URL(request.url);
+  if (url.pathname !== CALENDAR_THERAPIST_PHOTO_PATH || request.method !== 'GET') {
+    return new Response('Not Found', { status:404 });
+  }
+  const therapistId = clean(url.searchParams.get('therapist_id'), 80);
+  if (!/^[A-Za-z0-9_-]{4,80}$/.test(therapistId)) return new Response('Bad Request', { status:400 });
+
+  const source = await readCalendarTherapistPhotoSource(env, therapistId);
+  if (!source) return new Response('Not Found', { status:404, headers:{'cache-control':'no-store, private'} });
+
+  const direct = safeHttpsUrl(source.public_photo_url);
+  if (direct) return Response.redirect(direct, 302);
+
+  const key = clean(source.profile_photo_r2_key, 500);
+  if (!/^mms\/applications\/mmsapp_[a-f0-9]{24}\/profile_photo\//.test(key)) {
+    return new Response('Not Found', { status:404, headers:{'cache-control':'no-store, private'} });
+  }
+
+  const binding = env.MMS_WORKER;
+  const target = new URL('https://mms.internal/internal/mms/admin/file');
+  target.searchParams.set('key', key);
+  const response = await binding.fetch(new Request(target.toString(), {
+    method:'GET',
+    headers:{accept:'image/avif,image/webp,image/png,image/jpeg'},
+  }));
+  if (!response.ok || !response.body) {
+    return new Response('Not Found', { status:404, headers:{'cache-control':'no-store, private'} });
+  }
+
+  const type = clean(response.headers.get('content-type'), 120);
+  if (!/^image\/(?:jpeg|png|webp|gif|avif)$/i.test(type)) {
+    return new Response('Unsupported Media Type', { status:415, headers:{'cache-control':'no-store, private'} });
+  }
+  return new Response(response.body, {
+    status:200,
+    headers:{
+      'content-type':type,
+      'cache-control':'no-store, private',
+      'content-disposition':'inline',
+      'x-content-type-options':'nosniff',
+      'x-mmd-calendar-therapist-photo':'mms-private-r2',
+    },
+  });
 }
 
 export function calendarDate(value) {
