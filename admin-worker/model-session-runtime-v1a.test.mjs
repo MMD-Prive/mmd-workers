@@ -342,7 +342,9 @@ test("model payout terms stay model-safe and use session pay_model_thb as base t
   try {
     const { response, body } = await getCurrent(t);
     assert.equal(response.status, 200);
-    assert.equal(body.session.payout_terms.policy_version, "mmd_model_payout_v1_20260922");
+    assert.equal(body.session.payout_terms.policy_version, "mmd_public_model_money_v1_20260922");
+    assert.equal(body.session.payout_terms.money_lane, "public_model");
+    assert.equal(body.session.payout_terms.compensation_mode, "public_package_matrix");
     assert.equal(body.session.payout_terms.base_payout_thb, body.session.pay_model_thb);
     const json = JSON.stringify(body.session.payout_terms);
     assert.doesNotMatch(json, /customer_amount_due|customer_sell|margin|commission|payment_ref|bank|slip/i);
