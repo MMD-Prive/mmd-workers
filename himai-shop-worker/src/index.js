@@ -22,7 +22,7 @@ export default {
       if (assistantResponse) return assistantResponse;
 
       if (method === "GET" && ["/shop/distributor", "/shop/supplier"].includes(url.pathname)) {
-        return await proxyCanonicalPath(request, env, "/shop/supplier");
+        return await proxyCanonicalPath(request, env, "/shop/distributor");
       }
 
       if (method === "GET" && (url.pathname === "/health" || url.pathname === "/ping")) {
