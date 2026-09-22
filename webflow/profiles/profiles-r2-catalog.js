@@ -9,8 +9,42 @@
   var femaleGate = "/believe/inme";
   var track = root.querySelector(".mp8-track--profiles");
   var stage2 = root.querySelector("[data-role-stage2]");
+
+  if (stage2 && !root.querySelector("[data-dayoff-packages]")) {
+    stage2.insertAdjacentHTML("beforebegin", `
+      <section class="mp8-driver-packages" data-dayoff-packages hidden aria-labelledby="mp8-dayoff-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · DAY OFF</p>
+          <h3 id="mp8-dayoff-packages-title">วันหยุดนี้ ไม่ต้องไปคนเดียว</h3>
+          <p>ไม่ใช่แพ็กเกจกาแฟ แต่เป็นช่วงเวลาที่มีแผนจริง เลือกคนที่เหมาะกับกิจกรรม แล้วให้ MMD ช่วยดูความลงตัวของวันนั้น</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">DAY OFF — SHORT</h4><strong class="mp8-driver-package__price">฿3,500</strong></div><p class="mp8-driver-package__line">หนึ่งกิจกรรมหลัก + อีกหนึ่งจุด เช่น Exhibition + Dinner, Movie + Supper หรือ Shopping + Dessert</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>สูงสุด 2 stops</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=everyday_companion&package=day_off_short">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">DAY OFF — HALF DAY</h4><strong class="mp8-driver-package__price">฿5,500</strong></div><p class="mp8-driver-package__line">หลายกิจกรรมในครึ่งวัน เช่น Lunch → Gallery → Shopping → Dessert พร้อม Mini Plan จาก MMD ได้</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>2–3 activities</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=everyday_companion&package=day_off_half_day">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">DAY OFF — FULL DAY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">ให้ MMD ช่วยวางวันทั้งวันจาก mood และสิ่งที่คุณชอบ สำหรับวันหยุดที่อยากเปลี่ยน routine จริง ๆ</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full day plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=everyday_companion&package=day_off_full_day">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">DAY OFF แนะนำ 10:00–20:00 · OT ก่อน 00:00 ฿990/ชม. · เวลาที่จองไว้ล่วงหน้าหลัง 00:00 +฿500/ชม. · OT หลัง 00:00 ฿1,490/ชม. · หลัง 03:00 ฿1,790/ชม. · หลัง 06:00 ต้องให้ MMD review ใหม่ · Premium กับ OT ไม่คิดซ้อนในนาทีเดียวกัน · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน · ค่าอาหาร/เครื่องดื่ม/Ticket/Activity/เดินทาง/Parking คิดตามจริง</p>
+      </section>
+      <section class="mp8-driver-packages" data-nightlife-packages hidden aria-labelledby="mp8-nightlife-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · NIGHT LIFE</p>
+          <h3 id="mp8-nightlife-packages-title">คืนนี้ จะให้จบแค่ Dinner หรือไปต่อ?</h3>
+          <p>สำหรับ Dinner, Bar, Concert, Club, Celebration และคืนที่ต้องการคนเดิมอยู่ด้วยตามช่วงเวลาที่จอง</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">NIGHT OUT</h4><strong class="mp8-driver-package__price">฿4,500</strong></div><p class="mp8-driver-package__line">Dinner + Drink, Concert + Late Supper หรือ Event + After spot แบบไม่ต้องยาวทั้งคืน</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>Night Life</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=nightlife_companion&package=night_out">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">DINNER TO MIDNIGHT</h4><strong class="mp8-driver-package__price">฿6,500</strong></div><p class="mp8-driver-package__line">Dinner → Cocktail Bar → Night Spot สำหรับคืนที่อยากให้จังหวะต่อเนื่องและไม่ต้องเปลี่ยนคนกลางทาง</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>Dinner → Night</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=nightlife_companion&package=dinner_to_midnight">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">OWN THE NIGHT</h4><strong class="mp8-driver-package__price">฿8,900</strong></div><p class="mp8-driver-package__line">Dinner → Bar → Club / Concert → Late Supper สำหรับคืนที่ตั้งใจออกไปใช้จริง ๆ</p><div class="mp8-driver-package__meta"><span>7 ชั่วโมง</span><span>Full Night</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=nightlife_companion&package=own_the_night">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">NIGHT LIFE เริ่มได้ตั้งแต่ช่วงเย็น · OT ก่อน 00:00 ฿990/ชม. · เวลาที่จองไว้ล่วงหน้าหลัง 00:00 +฿500/ชม. · OT หลัง 00:00 ฿1,490/ชม. · OT หลัง 03:00 ฿1,790/ชม. · หลัง 06:00 ต้องให้ MMD review ใหม่ · Premium กับ OT ไม่คิดซ้อนในนาทีเดียวกัน · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน · ค่าอาหาร/เครื่องดื่ม/Table minimum/Ticket/Club/Concert/Taxi/Parking คิดตามจริง</p>
+      </section>
+    `);
+  }
+
   var driverPackages = root.querySelector("[data-driver-packages]");
   var culinaryPackages = root.querySelector("[data-culinary-packages]");
+  var dayOffPackages = root.querySelector("[data-dayoff-packages]");
+  var nightLifePackages = root.querySelector("[data-nightlife-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -191,13 +225,19 @@
       });
       if (driverPackages) driverPackages.hidden = activeRole !== "driver_companion";
       if (culinaryPackages) culinaryPackages.hidden = activeRole !== "culinary_companion";
+      if (dayOffPackages) dayOffPackages.hidden = activeRole !== "everyday_companion";
+      if (nightLifePackages) nightLifePackages.hidden = activeRole !== "nightlife_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
         ? driverPackages
         : activeRole === "culinary_companion" && culinaryPackages
           ? culinaryPackages
-          : stage2;
+          : activeRole === "everyday_companion" && dayOffPackages
+            ? dayOffPackages
+            : activeRole === "nightlife_companion" && nightLifePackages
+              ? nightLifePackages
+              : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -217,6 +257,8 @@
   track.replaceChildren();
   if (driverPackages) driverPackages.hidden = true;
   if (culinaryPackages) culinaryPackages.hidden = true;
+  if (dayOffPackages) dayOffPackages.hidden = true;
+  if (nightLifePackages) nightLifePackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

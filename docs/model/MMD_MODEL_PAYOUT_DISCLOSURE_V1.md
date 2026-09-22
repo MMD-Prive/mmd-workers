@@ -101,7 +101,7 @@ Culinary add-on payout:
 
 ## Everyday / Night Life payout matrix
 
-Status: **RESERVED FOR NEXT PUBLIC PACKAGE RELEASE.** Do not expose these as live public packages until the corresponding package contract is merged and published.
+Status: **ACTIVE PUBLIC PACKAGE MATRIX.** Applies only when `model_work_lane=public_model` and the Session package code is one of the approved package keys below. It never applies automatically to Private/SIGIL jobs.
 
 ### DAY OFF
 
