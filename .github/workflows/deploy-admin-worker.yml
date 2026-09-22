@@ -181,11 +181,53 @@ jobs:
           node ../scripts/ensure-private-media-bucket.mjs
           node --experimental-global-webcrypto --test ../shared/private-media.test.mjs model-schema-patch-v1.test.mjs
 
+      - name: Ensure SIGIL availability KV binding
+        id: availability_kv
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          (async () => {
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+            const token = (process.env.CLOUDFLARE_API_TOKEN || "").trim();
+            const title = "MMD_SIGIL_AVAILABILITY_SNAPSHOTS_V1";
+            if (!account || !token) throw new Error("Cloudflare KV credentials are missing");
+            const api = `https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces`;
+            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+            const call = async (url, init = {}) => {
+              const response = await fetch(url, { ...init, headers: { ...headers, ...(init.headers || {}) } });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok || data.success !== true) throw new Error(JSON.stringify(data.errors || data));
+              return data.result;
+            };
+            const namespaces = await call(`${api}?per_page=1000&order=title&direction=asc`);
+            let namespace = namespaces.find((item) => item.title === title);
+            if (!namespace) namespace = await call(api, { method: "POST", body: JSON.stringify({ title }) });
+            if (!/^[a-f0-9]{32}$/i.test(String(namespace.id || ""))) throw new Error("Cloudflare returned an invalid KV namespace ID");
+
+            const source = fs.readFileSync("wrangler.toml", "utf8").trimEnd();
+            const binding = source.includes('binding = "SIGIL_AVAILABILITY_SNAPSHOTS"') ? "" : [
+              "",
+              "# GENERATED SIGIL AVAILABILITY KV",
+              "[[kv_namespaces]]",
+              'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"',
+              `id = "${namespace.id}"`,
+              "",
+            ].join("\n");
+            const output = ".wrangler-admin-production.toml";
+            fs.writeFileSync(output, `${source}${binding}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_WORKER_WRANGLER_CONFIG=${output}\n`);
+            console.log(`Resolved ${title} for SIGIL_AVAILABILITY_SNAPSHOTS`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          grep -Fq 'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"' .wrangler-admin-production.toml
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         shell: bash
         run: |
           npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+            --config "${ADMIN_WORKER_WRANGLER_CONFIG}" \
             --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}"
 
       - name: Upload admin-worker version
@@ -198,6 +240,7 @@ jobs:
           echo "ADMIN_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
+            --config "${ADMIN_WORKER_WRANGLER_CONFIG}" \
             --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}" \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
@@ -219,7 +262,8 @@ jobs:
           migration_config=".wrangler-migration-no-routes.toml"
           node <<'NODE'
           const fs = require("node:fs");
-          const input = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const config = process.env.ADMIN_WORKER_WRANGLER_CONFIG || "wrangler.toml";
+          const input = fs.readFileSync(config, "utf8").split(/\r?\n/);
           const output = [];
           let skippingRoute = false;
           for (const line of input) {

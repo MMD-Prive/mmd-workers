@@ -9,7 +9,7 @@ const f = {
   sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
   jobId:'fldwreJwlz8sWd6GM', jobModel:'fldscPK15ejBw0BAH', jobClient:'fldlPdR0pmynCY6fW', jobBudget:'fldSspHLxJPQOg7wA',
   paySid:'fld2wdhBvc8xrV6y5', payRef:'fldOO6SY49iDw8VBZ', payAmount:'fldvCSwrUW8OMAooS', payVerify:'fldJ7a0Ube9F0bmRy', payStage:'fldrr9g8ZZjqAbdKQ', payStatus:'fldEJ1hmm7KwWuI6q',
-  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelAvailability:'fld6RuUDmGcGDc34i',
+  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i',
   calUid:'fld42rRY3ufGeXCcf', calSid:'fldd0STLRxOGIKXPn', calJid:'fldzvGB5u7t55kwUQ', calStatus:'fld449t1h6s7jbcnf', calTrigger:'fldNhk22zLTvR9Y4C', calEvent:'fldfC6D0RXyogXcMG'
 };
 
@@ -21,7 +21,7 @@ function fixture({ verified=false, duration=3, crossMidnight=false }={}) {
     [IDS.jobs]:[{id:'recJob',fields:{[f.jobId]:'JOB-17',[f.jobClient]:['recClient'],[f.jobModel]:['recModel'],[f.jobBudget]:20000}}],
     [IDS.payments]:[{id:'recPay',fields:{[f.paySid]:'SES-17',[f.payRef]:'PAY-17',[f.payAmount]:10000,[f.payVerify]:verified?'official_verified':'pending_review',[f.payStage]:'deposit',[f.payStatus]:verified?'paid':'pending'}}],
     [IDS.clients]:[{id:'recClient',fields:{[f.clientName]:'คุณเอ็ม'}}],
-    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17',[f.modelAvailability]:'Available'}}],
+    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17',[f.modelKey]:'mdl_pub_model_a',[f.modelAvailability]:'Available'}}],
     [IDS.cal]:[{id:'recCal',fields:{[f.calUid]:'cal-uid-real-17',[f.calSid]:'SES-17',[f.calJid]:'JOB-17',[f.calStatus]:'linked',[f.calTrigger]:'BOOKING_CREATED',[f.calEvent]:'2026-09-14T02:00:00Z'}}],
   };
 }
@@ -33,6 +33,33 @@ function installFetch(data){
     return Response.json({records:data[table]||[]});
   };
   return ()=>{globalThis.fetch=original};
+}
+function availabilitySnapshot(state='available_today', confidence='model_confirmed', ttlMs=60*60*1000){
+  const now=Date.now();
+  return {
+    schema:'sigil_availability_snapshot_v1',
+    model_key:'mdl_pub_model_a',
+    safe_availability_state:state,
+    availability_bucket:state==='available_now'?'now':state==='available_today'?'today':state,
+    city:'Bangkok',
+    zones:[],
+    operational_flags:{},
+    confidence,
+    updated_at:new Date(now-60_000).toISOString(),
+    expires_at:new Date(now+ttlMs).toISOString(),
+  };
+}
+function availabilityKv(entries={}){
+  return {
+    async list({prefix}={}){
+      return {keys:Object.keys(entries).filter(k=>!prefix||k.startsWith(prefix)).map(name=>({name})),list_complete:true};
+    },
+    async get(key,type){
+      const value=entries[key];
+      if(!value)return null;
+      return type==='json'?structuredClone(value):JSON.stringify(value);
+    },
+  };
 }
 
 test('calendar joins client job model deposit and real Cal booking UID', async()=>{
@@ -60,6 +87,9 @@ test('calendar returns live model and MMS therapist availability even on an empt
   try{
     const out=await readAdminCalendar({
       AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_pub_model_a':availabilitySnapshot('available_today','model_confirmed'),
+      }),
       MMS_WORKER:{
         async fetch(request){
           assert.equal(new URL(request.url).hostname,'mms.internal');
@@ -80,12 +110,49 @@ test('calendar returns live model and MMS therapist availability even on an empt
     },'2026-09-19');
     assert.equal(out.items.length,0);
     assert.equal(out.availability.models[0].name,'Model A');
-    assert.equal(out.availability.models[0].availability_status,'Available');
+    assert.equal(out.availability.models[0].availability_status,'available_today');
+    assert.equal(out.availability.models[0].snapshot_state,'fresh');
+    assert.equal(out.availability.models[0].confidence,'model_confirmed');
+    assert.equal(out.availability.model_source_status,'ok');
+    assert.equal(out.availability.model_counts.fresh,1);
     assert.equal(out.availability.therapists[0].display_name,'Therapist A');
     assert.equal(out.availability.therapists[0].availability_status,'Limited');
     assert.equal(out.availability.therapists[0].public_photo_url,'https://images.example.test/therapist-a.webp');
     assert.equal(out.availability.therapist_source_status,'ok');
     assert.doesNotMatch(JSON.stringify(out.availability),/must-not-project/);
+  } finally { restore(); }
+});
+
+test('calendar never guesses availability from stale Airtable profile fields when no fresh snapshot exists', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({}),
+    },'2026-09-19');
+    assert.equal(out.availability.models[0].availability_status,'unconfirmed');
+    assert.equal(out.availability.models[0].snapshot_state,'missing');
+    assert.equal(out.availability.models[0].availability_fresh,false);
+    assert.equal(out.availability.model_counts.unconfirmed,1);
+    assert.notEqual(out.availability.models[0].availability_status,'Available');
+  } finally { restore(); }
+});
+
+test('expired availability snapshots fail closed and do not stay available', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const stale=availabilitySnapshot('available_now','operator_confirmed',-60_000);
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({'availability:v1:mdl_pub_model_a':stale}),
+    },'2026-09-19');
+    assert.equal(out.availability.models[0].availability_status,'unconfirmed');
+    assert.equal(out.availability.models[0].snapshot_state,'stale');
+    assert.equal(out.availability.model_counts.stale,1);
   } finally { restore(); }
 });
 

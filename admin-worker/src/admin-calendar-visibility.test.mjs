@@ -216,6 +216,14 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/\['วันนี้','รอมัดจำ','ยืนยันแล้ว','นายแบบ','เช็กราคา'\]/);
   assert.match(html,/งานยาว \/ ข้ามคืน/);
   assert.match(html,/นายแบบ & Therapist/);
+  assert.match(html,/function availabilityView\(x\)/);
+  assert.match(html,/ว่างตอนนี้/);
+  assert.match(html,/ว่างวันนี้/);
+  assert.match(html,/รอยืนยันใหม่/);
+  assert.match(html,/Model App/);
+  assert.match(html,/Model Console/);
+  assert.match(html,/SIGIL ready/);
+  assert.doesNotMatch(html,/\/available\|active\|ready\/\.test/);
   assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
   for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);

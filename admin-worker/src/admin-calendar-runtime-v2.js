@@ -1,3 +1,5 @@
+import { safeAvailabilityReceipt, SIGIL_AVAILABILITY_KV_PREFIX } from "../../shared/sigil-availability-snapshot-v1.mjs";
+
 const API = "https://api.airtable.com/v0";
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
 const TABLE = Object.freeze({
@@ -30,7 +32,14 @@ const F = Object.freeze({
     type: "fldydUWHhqVLMkNSC", depositStatus: "fldD0mQWTfdmyBAeT", verifiedAt: "fldPNK6qgxCSdaJRM", updatedAt: "fldtNVdDacEH03W4f",
   },
   client: { name: "fldrHqkGQzvBLRxlP", display: "fldGUsLfrAdrN2Hhc" },
-  model: { name: "fldShiT60bmCxFxRu", modelId: "fldVWbT0gsSe0hn7Q", availability: "fld6RuUDmGcGDc34i" },
+  model: {
+    name: "fldShiT60bmCxFxRu",
+    modelId: "fldVWbT0gsSe0hn7Q",
+    modelKey: "fldYvAbkENGQ4NaaI",
+    availability: "fld6RuUDmGcGDc34i",
+    availableNow: "fldwMpYGpA5RvC76m",
+    status: "fldRcAE3bL8dKmURH",
+  },
   cal: {
     uid: "fld42rRY3ufGeXCcf", bookingId: "fld4PDFuJecAY3HCf", eventTypeId: "fldzl67JJBq9QKoc2",
     sessionId: "fldd0STLRxOGIKXPn", jobId: "fldzvGB5u7t55kwUQ", status: "fld449t1h6s7jbcnf",
@@ -169,15 +178,119 @@ async function readMmsTherapistAvailability(env = {}) {
   }
 }
 
-function modelAvailability(records = []) {
+const SAFE_AVAILABILITY_STATES = new Set([
+  "available_now",
+  "available_today",
+  "available_soon",
+  "limited",
+  "unavailable",
+  "unknown",
+]);
+
+function modelKey(record) {
+  const value = clean(field(record, F.model.modelKey), 120);
+  return /^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(value) ? value : "";
+}
+
+async function availabilitySnapshotKeys(binding) {
+  if (!binding || typeof binding.list !== "function") return null;
+  const names = new Set();
+  let cursor = undefined;
+  for (let page = 0; page < 10; page += 1) {
+    const result = await binding.list({
+      prefix: SIGIL_AVAILABILITY_KV_PREFIX,
+      limit: 1000,
+      ...(cursor ? { cursor } : {}),
+    });
+    for (const item of Array.isArray(result?.keys) ? result.keys : []) {
+      const name = clean(item?.name, 240);
+      if (name.startsWith(SIGIL_AVAILABILITY_KV_PREFIX)) names.add(name);
+    }
+    if (result?.list_complete !== false || !result?.cursor) break;
+    cursor = result.cursor;
+  }
+  return names;
+}
+
+async function readCalendarAvailabilitySnapshots(env = {}, records = [], nowMs = Date.now()) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  if (!binding || typeof binding.get !== "function") {
+    return { status: "storage_unavailable", by_model_key: new Map() };
+  }
+
+  const modelKeys = [...new Set(records.map(modelKey).filter(Boolean))];
+  if (!modelKeys.length) return { status: "ok", by_model_key: new Map() };
+
+  let existing = null;
+  try {
+    existing = await availabilitySnapshotKeys(binding);
+  } catch {
+    existing = null;
+  }
+
+  const targetKeys = existing
+    ? modelKeys.filter(key => existing.has(`${SIGIL_AVAILABILITY_KV_PREFIX}${key}`))
+    : modelKeys;
+
+  const byModelKey = new Map();
+  let readFailures = 0;
+  await Promise.all(targetKeys.map(async key => {
+    let raw;
+    try {
+      raw = await binding.get(`${SIGIL_AVAILABILITY_KV_PREFIX}${key}`, "json");
+    } catch {
+      readFailures += 1;
+      return;
+    }
+    if (!raw || typeof raw !== "object") return;
+    const receipt = safeAvailabilityReceipt(raw);
+    const state = clean(receipt.safe_availability_state, 40).toLowerCase();
+    const expiresMs = Date.parse(clean(receipt.expires_at, 100));
+    const updatedMs = Date.parse(clean(receipt.updated_at, 100));
+    const fresh = SAFE_AVAILABILITY_STATES.has(state) && Number.isFinite(expiresMs) && expiresMs > nowMs;
+    byModelKey.set(key, {
+      snapshot_state: fresh ? "fresh" : Number.isFinite(expiresMs) ? "stale" : "invalid_expiry",
+      fresh,
+      safe_availability_state: fresh ? state : "",
+      confidence: clean(receipt.confidence, 40) || null,
+      updated_at: Number.isFinite(updatedMs) ? receipt.updated_at : null,
+      expires_at: Number.isFinite(expiresMs) ? receipt.expires_at : null,
+      age_seconds: Number.isFinite(updatedMs) ? Math.max(0, Math.floor((nowMs - updatedMs) / 1000)) : null,
+      ttl_remaining_seconds: fresh ? Math.max(0, Math.ceil((expiresMs - nowMs) / 1000)) : 0,
+    });
+  }));
+
+  return {
+    status: readFailures ? "partial" : "ok",
+    by_model_key: byModelKey,
+  };
+}
+
+function modelAvailability(records = [], snapshotIndex = { status: "storage_unavailable", by_model_key: new Map() }) {
   return records
-    .map(record => ({
-      record_id: record?.id || null,
-      model_id: clean(field(record, F.model.modelId), 120) || null,
-      name: clean(field(record, F.model.name), 160) || null,
-      availability_status: clean(field(record, F.model.availability), 100) || "Unknown",
-    }))
-    .filter(item => item.model_id || item.name)
+    .map(record => {
+      const key = modelKey(record);
+      const snapshot = key ? snapshotIndex.by_model_key.get(key) : null;
+      const state = snapshot?.fresh ? snapshot.safe_availability_state : "";
+      const snapshotState = !key
+        ? "identity_missing"
+        : snapshot?.snapshot_state || (snapshotIndex.status === "storage_unavailable" ? "source_unavailable" : "missing");
+      return {
+        record_id: record?.id || null,
+        model_id: clean(field(record, F.model.modelId), 120) || null,
+        model_key: key || null,
+        name: clean(field(record, F.model.name), 160) || null,
+        availability_status: state || "unconfirmed",
+        snapshot_state: snapshotState,
+        availability_fresh: snapshot?.fresh === true,
+        confidence: snapshot?.confidence || null,
+        updated_at: snapshot?.updated_at || null,
+        expires_at: snapshot?.expires_at || null,
+        age_seconds: snapshot?.age_seconds ?? null,
+        ttl_remaining_seconds: snapshot?.ttl_remaining_seconds ?? null,
+      };
+    })
+    .filter(item => item.model_id || item.model_key || item.name)
     .slice(0, 300);
 }
 
@@ -188,8 +301,18 @@ export async function readAdminCalendar(env, dateText = "") {
     list(env, TABLE.models, Object.values(F.model), "", 300),
     readMmsTherapistAvailability(env),
   ]);
+  const modelSnapshotIndex = await readCalendarAvailabilitySnapshots(env, allModels);
+  const modelAvailabilityRows = modelAvailability(allModels, modelSnapshotIndex);
   const availability = {
-    models: modelAvailability(allModels),
+    models: modelAvailabilityRows,
+    model_source_status: modelSnapshotIndex.status,
+    model_counts: {
+      fresh: modelAvailabilityRows.filter(item => item.availability_fresh).length,
+      unconfirmed: modelAvailabilityRows.filter(item => item.snapshot_state === "missing").length,
+      stale: modelAvailabilityRows.filter(item => item.snapshot_state === "stale" || item.snapshot_state === "invalid_expiry").length,
+      identity_missing: modelAvailabilityRows.filter(item => item.snapshot_state === "identity_missing").length,
+      source_unavailable: modelAvailabilityRows.filter(item => item.snapshot_state === "source_unavailable").length,
+    },
     therapists: mmsAvailability.therapists,
     therapist_source_status: mmsAvailability.status,
   };
@@ -207,6 +330,7 @@ export async function readAdminCalendar(env, dateText = "") {
   ]);
   const byRecord = records => new Map(records.map(r => [r.id, r]));
   const clientsById = byRecord(clients), modelsById = byRecord(allModels);
+  const availabilityByModelRecord = new Map(modelAvailabilityRows.map(item => [item.record_id, item]));
   const jobsById = new Map(jobs.map(j => [clean(field(j, F.job.id), 180), j]));
   const paymentsBySession = new Map();
   for (const p of payments) { const key = clean(field(p, F.payment.sessionId), 180); if (!paymentsBySession.has(key)) paymentsBySession.set(key, []); paymentsBySession.get(key).push(p); }
@@ -236,7 +360,21 @@ export async function readAdminCalendar(env, dateText = "") {
       internal_hold: hold, conflict: false,
       client: { record_id: clientId || null, name: clean(field(client,F.client.display),160) || clean(field(client,F.client.name),160) || clean(field(s,F.session.clientName),160) || null },
       job: { record_id: j?.id || null, job_id: jid, status: clean(field(j,F.job.status),100) || null, duration_hours: hours, budget_thb: number(field(j,F.job.budget)) },
-      model: { record_id: modelId || null, model_id: clean(field(model,F.model.modelId),120) || null, name: clean(field(model,F.model.name),160) || clean(field(s,F.session.modelName),160) || clean(field(j,F.job.modelName),160) || null, availability_status: clean(field(model,F.model.availability),100) || null },
+      model: (() => {
+        const live = availabilityByModelRecord.get(modelId) || null;
+        return {
+          record_id: modelId || null,
+          model_id: clean(field(model,F.model.modelId),120) || null,
+          model_key: live?.model_key || modelKey(model) || null,
+          name: clean(field(model,F.model.name),160) || clean(field(s,F.session.modelName),160) || clean(field(j,F.job.modelName),160) || null,
+          availability_status: live?.availability_status || "unconfirmed",
+          snapshot_state: live?.snapshot_state || "missing",
+          availability_fresh: live?.availability_fresh === true,
+          confidence: live?.confidence || null,
+          updated_at: live?.updated_at || null,
+          expires_at: live?.expires_at || null,
+        };
+      })(),
       deposit: { payment_ref: p ? clean(field(p,F.payment.ref),180)||null : clean(field(s,F.session.paymentRef),180)||null, amount_thb: p ? number(field(p,F.payment.amount)) : number(field(s,F.session.depositPaid)), verification_status: p ? clean(field(p,F.payment.verification),100)||clean(field(p,F.payment.depositStatus),100)||clean(field(p,F.payment.status),100)||null : clean(field(s,F.session.paymentStatus),100)||clean(field(j,F.job.depositStatus),100)||null, verified: paid, authority: "payments-worker" },
       pricing: { final_quote_thb: number(field(s,F.session.finalPrice)) ?? number(field(s,F.session.total)) ?? number(field(j,F.job.budget)), review_required: (hours != null && hours > 5) || crossesMidnight(start,end), duration_hours: hours, crosses_midnight: crossesMidnight(start,end), authority: "mmd" },
       cal: c ? { booking_uid: clean(field(c,F.cal.uid),180)||null, booking_id: clean(field(c,F.cal.bookingId),120)||null, event_type_id: clean(field(c,F.cal.eventTypeId),120)||null, mapping_status: clean(field(c,F.cal.status),80)||null, last_trigger_event: clean(field(c,F.cal.trigger),120)||null, last_event_at: clean(field(c,F.cal.eventAt),60)||null } : { booking_uid:null, booking_id:null, event_type_id:null, mapping_status:"unlinked", last_trigger_event:null, last_event_at:null },
@@ -245,7 +383,7 @@ export async function readAdminCalendar(env, dateText = "") {
   overlap(items);
   return contract(day.date, items, availability);
 }
-function contract(date, items, availability = { models: [], therapists: [], therapist_source_status: "unavailable" }) {
+function contract(date, items, availability = { models: [], model_source_status: "unavailable", model_counts: {}, therapists: [], therapist_source_status: "unavailable" }) {
   return {
     ok:true,
     schema:"mmd.admin.calendar.v1",
