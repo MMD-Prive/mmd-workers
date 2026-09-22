@@ -138,6 +138,10 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"LINE Seed Sans TH"/);
     assert.match(html, /customer_360/);
     assert.match(html, /points\.status === "verified"/);
+    assert.match(html, /id="points-lifetime-spend"/);
+    assert.match(html, /id="points-365-spend"/);
+    assert.match(html, /Points สะสมตลอดอายุ · ยังไม่ตัด 365 วัน/);
+    assert.match(html, /formatThb\(points\.lifetime_service_spend_thb\)/);
     assert.match(html, /navHome:"👤 HOME"/);
     assert.match(html, /navHome:"👤 HOME"[\s\S]*navPackage:"📦 PACKAGE"/);
     assert.match(html, /pointsTitle:"⭐ 积分"/);
