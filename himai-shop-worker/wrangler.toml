@@ -6,7 +6,16 @@ workers_dev = true
 routes = [
   { pattern = "himai-shop-worker.mmdbkk.com", custom_domain = true },
   # Compatibility for the current Webflow embed on /ceo/dashboard.
-  { pattern = "admin-worker.mmdbkk.com", custom_domain = true }
+  { pattern = "admin-worker.mmdbkk.com", custom_domain = true },
+
+  # Public supplier portal routes on the existing mmdbkk.com Cloudflare zone.
+  # Keep the scope narrow so the rest of Webflow remains untouched.
+  { pattern = "mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/distributor*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/shop/supplier*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/supplier*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/shop/api/distributor/*", zone_name = "mmdbkk.com" }
 ]
 
 [vars]
@@ -26,7 +35,7 @@ TG_THREAD_HIMAI_ALERTS = "159"
 # INTERNAL_TOKEN                         - shared auth for himai-chat-worker LINE push
 # OPENAI_API_KEY                         - optional natural-language AI layer
 # AUTH_SERVICE_HIMAI_TO_TELEGRAM         - Service auth for himai-chat-worker LINE push
-# HIMAI_DISTRIBUTOR_PORTAL_TOKENS        - same scoped supplier access map used by portal
+# HIMAI_DISTRIBUTOR_PORTAL_TOKENS        # same scoped supplier access map used by portal
 
 [[services]]
 binding = "ADMIN_WORKER"
