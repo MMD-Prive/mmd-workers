@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -88,6 +88,36 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
     }
   });
 });
+test('signed owner can stream therapist profile photo without exposing the private R2 key',async()=>{
+  const calls=[];
+  const mms={
+    async fetch(req){
+      const url=new URL(req.url);calls.push(url.pathname+url.search);
+      assert.equal(url.hostname,'mms.internal');
+      if(url.pathname==='/internal/mms/admin/snapshot'){
+        return Response.json({ok:true,therapists:[{
+          therapist_id:'mmst_test_1234',
+          display_name:'Boss',
+          public_photo_url:'',
+          profile_photo_r2_key:'mms/applications/mmsapp_0123456789abcdef01234567/profile_photo/boss.png',
+        }]});
+      }
+      if(url.pathname==='/internal/mms/admin/file'){
+        assert.match(url.searchParams.get('key')||'',/^mms\/applications\/mmsapp_/);
+        return new Response(new Uint8Array([137,80,78,71]),{status:200,headers:{'content-type':'image/png'}});
+      }
+      return new Response('not found',{status:404});
+    }
+  };
+  const scoped={...env,MMS_WORKER:mms};
+  const response=await entry.fetch(await request('/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234'),scoped,{});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('content-type'),'image/png');
+  assert.equal(response.headers.get('x-mmd-calendar-therapist-photo'),'mms-private-r2');
+  assert.doesNotMatch(response.url||'',/profile_photo|mmsapp_/);
+  assert.deepEqual(calls.map(x=>x.split('?')[0]),['/internal/mms/admin/snapshot','/internal/mms/admin/file']);
+});
+
 test('signed owner API reads MMD calendar without requiring auth/me actor projection',async()=>{
   await withFetch(upstream,async()=>{
     const r=await entry.fetch(await request('/v1/admin/calendar?date=2026-09-17'),env,{});
@@ -178,6 +208,7 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/calendar-owner-ui-v3-20260922/);
   assert.match(html,/calendar-owner-ui-v5-20260922/);
   assert.match(html,/\/v1\/admin\/calendar\/model-photo\?model_id=/);
+  assert.match(html,/\/v1\/admin\/calendar\/therapist-photo\?therapist_id=/);
   assert.match(html,/วันนี้มีอะไรบ้าง/);
   assert.match(html,/ดูงาน รอมัดจำ คิวชน และเวลาว่างในจอเดียว/);
   assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
