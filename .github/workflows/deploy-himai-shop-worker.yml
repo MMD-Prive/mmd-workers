@@ -96,3 +96,13 @@ jobs:
 
           legacy_page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-distributor-legacy.html -w "%{http_code}" https://himai-shop-worker.mmdbkk.com/shop/distributor)"
           test "$legacy_page_status" = "200"
+
+          # Verify the new Cloudflare zone routes on both public hosts.
+          for host in mmdbkk.com www.mmdbkk.com; do
+            public_page_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "/tmp/himai-${host}.html" -w "%{http_code}" "https://${host}/shop/distributor")"
+            test "$public_page_status" = "200"
+            grep -Eq "HIMAI SHOP|Himai Shop" "/tmp/himai-${host}.html"
+
+            public_api_status="$(curl -sS -o "/tmp/himai-${host}-api.json" -w "%{http_code}" "https://${host}/shop/api/distributor/portal")"
+            test "$public_api_status" = "401"
+          done
