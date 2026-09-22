@@ -55,8 +55,18 @@
   function text(value) { return String(value == null ? '' : value).trim(); }
   function money(value) { return value == null ? 'ยังอ่านยอดไม่ได้' : `${Number(value).toLocaleString('th-TH', { maximumFractionDigits: 2 })} บาท`; }
   function kind(item) { return item.can_approve ? 'review' : item.context_issues?.length ? 'risk' : 'review'; }
-  function label(item) { return item.can_approve ? 'พร้อมยืนยัน' : item.context_issues?.length ? 'ต้องเติมข้อมูล' : 'รอตรวจ'; }
+  function label(item) { return item.settlement_recovery ? 'เก็บงานยืนยัน' : item.can_approve ? 'พร้อมยืนยัน' : item.context_issues?.length ? 'ต้องเติมข้อมูล' : 'รอตรวจ'; }
   function setLive(value, className) { live.textContent = value; live.className = `psi-live${className ? ` ${className}` : ''}`; }
+  function friendlyReviewError(error) {
+    const raw = String(error?.message || error || '').trim();
+    if (/airtable|invalid_permissions_or_model_not_found/i.test(raw)) {
+      return 'ระบบหลังบ้านบันทึกส่วนต่อท้ายไม่ครบ · กำลังให้หน้าโหลดสถานะ Money Truth ล่าสุดใหม่';
+    }
+    if (/canonical_payment_context_missing|canonical_session_context_missing|payment_proof_not_reviewable/i.test(raw)) {
+      return 'ข้อมูล Payment / Session ยังไม่ครบสำหรับยืนยัน · กรุณารีเฟรชแล้วตรวจรายการอีกครั้ง';
+    }
+    return raw || 'ระบบบันทึกไม่สำเร็จ';
+  }
   function purpose(item) { return stageLabels[text(item.payment_stage).toLowerCase()] || item.inferred_label || 'ยังจัดประเภทไม่ได้'; }
   function searchable(item) {
     return [item.customer_name, item.payer_name, item.evidence_amount_thb, item.payment_ref, item.channel, item.created_at, item.inferred_label, item.payment_stage]
@@ -134,7 +144,7 @@
   }
 
   function clientHref(item) {
-    const clientId = item.client_id || item.canonical_client_id || '';
+    const clientId = item.client_record_id || item.client_id || item.canonical_client_id || '';
     return clientId
       ? `/internal/admin/member-intelligence?client_id=${encodeURIComponent(clientId)}`
       : '/internal/admin/member-intelligence';
@@ -148,7 +158,7 @@
     const review = item.reviewable
       ? `<div class="psi-reviewbox"><label for="psi-reason">สรุปจากระบบ / หมายเหตุเพิ่มเติม</label><textarea id="psi-reason" placeholder="ระบบสรุปให้แล้ว — แก้หรือเพิ่มเฉพาะกรณีจำเป็น">${esc(reason)}</textarea><div class="psi-actions"><button type="button" data-action="approve" ${item.can_approve ? '' : 'disabled'}>ยืนยันรับเงิน · Official Verify</button><button type="button" data-action="issue">บันทึกว่าต้องตรวจต่อ</button><button type="button" data-action="reject">Reject หลักฐาน</button></div><div class="psi-save" id="psi-save">${item.can_approve ? 'ข้อมูล canonical ครบ · พร้อม Official Verify' : `ยังยืนยันไม่ได้ · ${esc(issues.join(' · ') || 'context ไม่ครบ')}`}</div></div>`
       : '';
-    detail.innerHTML = `<p class="psi-kicker">CEO · PAYMENT DECISION</p><h2>${esc(item.customer_name || item.payer_name || 'ยังไม่ทราบลูกค้า')}</h2><div class="psi-info"><div><span>ประเภทเงิน</span><strong>${esc(purpose(item))}</strong></div><div><span>ยอดในหลักฐาน</span><strong>${esc(money(item.evidence_amount_thb))}</strong></div><div><span>Canonical match</span><strong>${esc(matchText(item))}</strong></div><div><span>Payment reference</span><strong>${esc(item.payment_ref || 'ยังไม่พบ')}</strong></div><div><span>Session / Job</span><strong>${esc(item.session_id || 'ยังไม่ผูก')}</strong></div><div><span>Image / extraction</span><strong>${esc((item.extraction_method || 'not_run') + (item.extraction_error ? ` · ${item.extraction_error}` : ''))}</strong></div></div><div class="psi-next"><strong>${item.can_approve ? 'สิ่งที่เปอร์ต้องทำ' : 'ระบบยังต้องเติมข้อมูล'}</strong><p>${item.can_approve ? 'ตรวจสรุปด้านบน แล้วกด “ยืนยันรับเงิน” ได้เลย ไม่ต้องพิมพ์เหตุผลใหม่' : esc(issues.join(' · ') || 'ระบบยังไม่มี canonical context ที่ครบพอ')}</p></div><a class="psi-client-link" href="${clientHref(item)}">เปิด Member Intelligence ↗</a> <a class="psi-client-link" href="/internal/admin/payments">เปิด Money Control ↗</a>${review}`;
+    detail.innerHTML = `<p class="psi-kicker">CEO · PAYMENT DECISION</p><h2>${esc(item.customer_name || item.payer_name || 'ยังไม่ทราบลูกค้า')}</h2><div class="psi-info"><div><span>ประเภทเงิน</span><strong>${esc(purpose(item))}</strong></div><div><span>ยอดในหลักฐาน</span><strong>${esc(money(item.evidence_amount_thb))}</strong></div><div><span>Canonical match</span><strong>${esc(matchText(item))}</strong></div><div><span>Payment reference</span><strong>${esc(item.payment_ref || 'ยังไม่พบ')}</strong></div><div><span>Session / Job</span><strong>${esc(item.session_id || 'ยังไม่ผูก')}</strong></div><div><span>Image / extraction</span><strong>${esc((item.extraction_method || 'not_run') + (item.extraction_error ? ` · ${item.extraction_error}` : ''))}</strong></div></div><div class="psi-next"><strong>${item.can_approve ? 'สิ่งที่เปอร์ต้องทำ' : 'ระบบยังต้องเติมข้อมูล'}</strong><p>${item.settlement_recovery ? 'Money Truth ยืนยันแล้วจากรอบก่อน · กดเพื่อปิด Proof / Audit ที่ค้าง โดยไม่สร้างยอดซ้ำ' : item.can_approve ? 'ตรวจสรุปด้านบน แล้วกด “ยืนยันรับเงิน” ได้เลย ไม่ต้องพิมพ์เหตุผลใหม่' : esc(issues.join(' · ') || 'ระบบยังไม่มี canonical context ที่ครบพอ')}</p></div><a class="psi-client-link" href="${clientHref(item)}">เปิด Member Intelligence ↗</a> <a class="psi-client-link" href="/internal/admin/payments">เปิด Money Control ↗</a>${review}`;
     if (!item.reviewable) return;
     const textarea = document.getElementById('psi-reason');
     const save = document.getElementById('psi-save');
@@ -191,8 +201,9 @@
       await load();
     } catch (error) {
       save.className = 'psi-save is-bad';
-      save.textContent = `บันทึกไม่สำเร็จ · ${String(error.message || error)}`;
-      setLive('SAVE ERROR', 'is-offline');
+      save.textContent = `บันทึกไม่สำเร็จ · ${friendlyReviewError(error)}`;
+      setLive('SAVE ERROR · REFRESHING STATE', 'is-offline');
+      window.setTimeout(() => load(), 700);
       buttons.forEach((button) => {
         if (button.dataset.action !== 'approve' || item.can_approve) button.disabled = false;
       });
@@ -202,7 +213,7 @@
   async function load() {
     setLive('CONNECTING', '');
     try {
-      const response = await fetch(`${base}/review-queue?limit=50`, {
+      const response = await fetch(`${base}/review-queue?limit=50&include_context=1`, {
         credentials: 'include',
         headers: { accept: 'application/json' },
         cache: 'no-store',
