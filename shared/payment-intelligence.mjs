@@ -38,7 +38,7 @@ export const PUBLIC_MEMBERSHIP_CATALOG = Object.freeze({
   }),
 });
 const MEMBERSHIP_STAGES = new Set(["membership", "member", "renewal", "member_renewal", "membership_fee", "signup"]);
-const SERVICE_STAGES = new Set(["deposit", "final", "balance", "tips", "tip", "full", "service", "booking"]);
+const SERVICE_STAGES = new Set(["deposit", "final", "balance", "tips", "tip", "full", "extension", "service", "booking"]);
 const MEMBERSHIP_PACKAGES = new Set(["standard", "premium", "mmd_member", "elite", "red_card"]);
 const MEMBERSHIP_SOURCE_RE = /(?:^|[_\s-])(pay_membership|member_payments|membership|member_renewal|renewal)(?:$|[_\s-])/i;
 const MEMBERSHIP_CONTEXT_RE = /(?:ค่าสมาชิก|ต่ออายุ(?:สมาชิก)?|สมัคร(?:สมาชิก)?|membership|member\s*(?:fee|renewal)|renewal|renew\b|mmd\s*member|elite\s*membership|red\s*card|private\s*(?:standard|premium))/i;
