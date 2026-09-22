@@ -81,6 +81,8 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.equal(r.headers.get('x-mmd-calendar-presentation'),'webflow');
       assert.match(html,/calendar-connection-state/);
       assert.match(html,/__MMD_CALENDAR_WEBFLOW_V2__/);
+      assert.match(html,/calendar-owner-ui-v3-20260922/);
+      assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
     }
@@ -173,6 +175,8 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/fetch\('\/v1\/admin\/calendar\?date='/);
   assert.match(html,/credentials:'include'/);
   assert.match(html,/\.webflow\\\.io/);
+  assert.match(html,/calendar-owner-ui-v3-20260922/);
+  assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
   for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
   assert.doesNotMatch(html,/CAL_API_KEY|AIRTABLE_API_KEY|ADMIN_BEARER|ADMIN_SESSION_SECRET/);
