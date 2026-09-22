@@ -69,6 +69,7 @@ test('calendar returns live model and MMS therapist availability even on an empt
               therapist_id:'mmst_test1234567890123456',
               display_name:'Therapist A',
               availability_status:'Limited',
+              public_photo_url:'https://images.example.test/therapist-a.webp',
               status:'Active',
               matching_enabled:true,
               internal_notes:'must-not-project',
@@ -82,6 +83,7 @@ test('calendar returns live model and MMS therapist availability even on an empt
     assert.equal(out.availability.models[0].availability_status,'Available');
     assert.equal(out.availability.therapists[0].display_name,'Therapist A');
     assert.equal(out.availability.therapists[0].availability_status,'Limited');
+    assert.equal(out.availability.therapists[0].public_photo_url,'https://images.example.test/therapist-a.webp');
     assert.equal(out.availability.therapist_source_status,'ok');
     assert.doesNotMatch(JSON.stringify(out.availability),/must-not-project/);
   } finally { restore(); }
