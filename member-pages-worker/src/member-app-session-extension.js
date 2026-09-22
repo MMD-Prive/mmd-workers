@@ -251,7 +251,7 @@ export function isMemberAppSessionExtensionPath(input){
   const path=normalizePath(input instanceof URL?input.pathname:new URL(String(input)).pathname);
   return path===MEMBER_EXTENSION_PATH||path===MEMBER_EXTENSION_REQUEST_PATH;
 }
-export async function handleMemberAppSessionExtensionApi(request,env={},readSession){
+export async function handleMemberAppSessionExtensionApi(request,env={},readSession,rememberPaymentSnapshot=null){
   const path=normalizePath(new URL(request.url).pathname);
   const method=request.method.toUpperCase();
   if(path===MEMBER_EXTENSION_PATH&&method!=="GET")return fail(405,"METHOD_NOT_ALLOWED");
@@ -266,6 +266,19 @@ export async function handleMemberAppSessionExtensionApi(request,env={},readSess
     let extension=await currentExtension(env,session);
     if(extension&&["model_approved","payment_required","payment_pending","payment_verified"].includes(code(extension.fields?.[EF.status]))){
       extension=await finalizeVerifiedExtension(env,session,extension);
+    }
+    const extSafe=safeExtension(extension);
+    if(extSafe?.customer_payment_url&&extSafe?.payment_ref&&typeof rememberPaymentSnapshot==="function"){
+      await rememberPaymentSnapshot(request,env,{
+        payment_ref:extSafe.payment_ref,
+        session_id:clean(extension.fields?.[EF.sessionId],180),
+        payment_stage:"extension",
+        amount_thb:extSafe.customer_amount_thb,
+        package_code:clean(extension.fields?.[EF.packageCode],120),
+        customer_payment_url:extSafe.customer_payment_url,
+        status:extSafe.status,
+        source:"public_session_extension_v1",
+      }).catch(()=>false);
     }
     const refreshedSession=code(extension?.fields?.[EF.status])==="mmd_confirmed"
       ? await getById(env,table(env,"AIRTABLE_TABLE_SESSIONS",SESSIONS_DEFAULT),session.id)
