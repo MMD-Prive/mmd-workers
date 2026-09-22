@@ -1,4 +1,5 @@
 name: HYPE closed-loop production smoke
+# Phase 3A production receipt rerun after analytics deploy recovery 2026-09-22
 
 on:
   workflow_dispatch:
