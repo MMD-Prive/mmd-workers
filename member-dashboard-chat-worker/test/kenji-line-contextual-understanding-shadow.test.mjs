@@ -106,6 +106,40 @@ test("Phase 2 model reads the whole visible thread and returns semantics only", 
   assert.match(request.instructions, /Do not answer the customer/);
 });
 
+test("model failure reason stays internal and fallback remains shadow-only", async () => {
+  const result = await observeKenjiLineContextualUnderstandingShadow({
+    env: {
+      KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED: "true",
+      OPENAI_API_KEY: "test-key",
+      OPENAI_MODEL: "gpt-5.6",
+    },
+    history: {
+      available: true,
+      turns: [
+        { role: "customer", content: "คนนี้ดูดี", evidence: "customer_received" },
+        { role: "assistant", content: "ตัวเลือก A เรท 25k ครับ", evidence: "line_delivery_succeeded" },
+        { role: "customer", content: "แต่แพงไปหน่อย", evidence: "customer_received" },
+        { role: "customer", content: "มีแนวนี้อีกไหม", evidence: "current_webhook" },
+      ],
+      memory: { known_facts: [], corrections: [] },
+    },
+    event: event("มีแนวนี้อีกไหม"),
+    fetchImpl: async () => {
+      const error = new Error("synthetic abort");
+      error.name = "AbortError";
+      throw error;
+    },
+  });
+
+  assert.equal(result.analysis_source, "deterministic_fallback");
+  assert.equal(result.model_attempted, true);
+  assert.equal(result.model_success, false);
+  assert.equal(result.model_failure_reason, "openai_timeout");
+  assert.equal(result.shadow_only, true);
+  assert.equal(result.auto_send_allowed, false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, "answer"), false);
+});
+
 test("correction fallback patches only the field the customer changed", async () => {
   const result = await observeKenjiLineContextualUnderstandingShadow({
     env: { KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED: "true" },
