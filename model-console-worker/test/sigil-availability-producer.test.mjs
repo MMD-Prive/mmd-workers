@@ -2,10 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  availabilityAdoptionCounts,
+  availabilityAdoptionRow,
   availabilityCoverageCounts,
   availabilityCoverageRow,
   boundedConsoleAvailabilityBody,
+  matchConsoleAvailabilityReminderPath,
   matchConsoleAvailabilitySnapshotPath,
+  modelAvailabilityAdoptionIdentity,
   modelAvailabilityCoverageIdentity,
   resolveConsoleAvailabilityTarget,
 } from "../src/sigil-availability-producer.mjs";
@@ -16,6 +20,11 @@ test("Model Console availability route is exact and model-bound", () => {
     "mdl_pri_str_master",
   );
   assert.equal(matchConsoleAvailabilitySnapshotPath("/v1/console/models/x/availability"), "");
+  assert.equal(
+    matchConsoleAvailabilityReminderPath("/v1/console/models/mdl_pri_str_master/availability-reminder"),
+    "mdl_pri_str_master",
+  );
+  assert.equal(matchConsoleAvailabilityReminderPath("/v1/console/models/x/availability"), "");
 });
 
 test("Model Console resolves one exact canonical model key", () => {
@@ -140,5 +149,104 @@ test("coverage counts aggregate only projected states", () => {
     fresh: 1,
     missing: 2,
     unavailable: 1,
+  });
+});
+
+test("adoption identity exposes contact readiness without raw LINE or Telegram IDs", () => {
+  const identity = modelAvailabilityAdoptionIdentity({
+    id: "recMaster",
+    fields: {
+      unique_key: "mdl_pri_str_master",
+      working_name: "Master",
+      status: "active",
+      line_user_id: "U0123456789abcdef0123456789abcdef",
+      telegram_user_id: "222222222",
+      telegram_verification_status: "verified",
+      admin_note: "PRIVATE",
+    },
+  });
+  assert.deepEqual(identity, {
+    id: "recMaster",
+    model_key: "mdl_pri_str_master",
+    display_name: "Master",
+    canonical_status: "active",
+    excluded: false,
+    line_connected: true,
+    telegram_connected: true,
+  });
+  assert.doesNotMatch(JSON.stringify(identity), /U0123456789abcdef|222222222|PRIVATE/i);
+});
+
+test("adoption row keeps missing canonical key as identity recovery instead of guessing", () => {
+  const row = availabilityAdoptionRow({
+    id: "recLegacy",
+    model_key: "",
+    display_name: "Legacy Model",
+    canonical_status: "unreviewed",
+    line_connected: true,
+    telegram_connected: false,
+  }, {});
+  assert.equal(row.snapshot_state, "identity_missing");
+  assert.equal(row.fresh, false);
+  assert.equal(row.reminder_eligible, false);
+  assert.equal(row.recovery_action, "link_canonical_model_key");
+});
+
+test("adoption row makes only non-fresh LINE-linked models reminder-eligible", () => {
+  const missing = availabilityAdoptionRow({
+    id: "recMaster",
+    model_key: "mdl_pri_str_master",
+    display_name: "Master",
+    canonical_status: "active",
+    line_connected: true,
+    telegram_connected: true,
+  }, {
+    ok: true,
+    data: { snapshot_state: "missing", fresh: false, snapshot: null },
+  });
+  assert.equal(missing.reminder_eligible, true);
+  assert.equal(missing.reminder_channel, "line");
+  assert.equal(missing.recovery_action, "remind_model");
+
+  const fresh = availabilityAdoptionRow({
+    id: "recMaster",
+    model_key: "mdl_pri_str_master",
+    display_name: "Master",
+    canonical_status: "active",
+    line_connected: true,
+  }, {
+    ok: true,
+    data: {
+      snapshot_state: "fresh",
+      fresh: true,
+      age_seconds: 40,
+      ttl_remaining_seconds: 1000,
+      snapshot: {
+        safe_availability_state: "available_today",
+        confidence: "model_confirmed",
+        updated_at: "2026-09-23T01:00:00.000Z",
+        expires_at: "2026-09-23T06:00:00.000Z",
+      },
+    },
+  });
+  assert.equal(fresh.reminder_eligible, false);
+  assert.equal(fresh.recovery_action, "none");
+});
+
+test("adoption counts separate fresh, remindable, no-channel and identity gaps", () => {
+  assert.deepEqual(availabilityAdoptionCounts([
+    { snapshot_state: "fresh", fresh: true },
+    { snapshot_state: "missing", fresh: false, reminder_eligible: true },
+    { snapshot_state: "stale", fresh: false, reminder_eligible: false },
+    { snapshot_state: "identity_missing", fresh: false, reminder_eligible: false },
+    { snapshot_state: "excluded", fresh: false, reminder_eligible: false },
+  ]), {
+    total: 5,
+    fresh: 1,
+    needs_confirmation: 3,
+    remindable: 1,
+    no_channel: 1,
+    identity_missing: 1,
+    excluded: 1,
   });
 });
