@@ -2,14 +2,12 @@ name: Control Room V2 Production Acceptance
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "shared/control-room-v2-system-health.mjs"
-      - "immigrate-worker/src/control-room-owner-ui.ts"
-      - "admin-worker/src/dashboard-worker.js"
-      - ".github/workflows/control-room-v2-production-acceptance.yml"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+      - Deploy immigrate-worker
+    types:
+      - completed
 
 permissions:
   contents: read
@@ -20,6 +18,7 @@ concurrency:
 
 jobs:
   acceptance:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
@@ -58,31 +57,59 @@ jobs:
             if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("owner session cookie missing");
 
             let pageUrl = new URL("/internal/admin/control-room", origin);
-            let page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
-            if ([301, 302, 303, 307, 308].includes(page.status)) {
-              const location = page.headers.get("location") || "";
-              if (!location) throw new Error("Control Room redirect missing location");
-              pageUrl = new URL(location, pageUrl);
-              if (!["mmdbkk.com", "www.mmdbkk.com"].includes(pageUrl.hostname) || pageUrl.pathname !== "/internal/admin/control-room") {
-                throw new Error(`unexpected Control Room redirect: ${pageUrl.href}`);
-              }
-              page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
-            }
-            const html = await page.text();
-            if (page.status !== 200) throw new Error(`Control Room expected 200, got ${page.status}`);
-            if (page.headers.get("x-mmd-control-room-v2") !== "system-health-v1") throw new Error("Control Room V2 header missing");
-            if (page.headers.get("x-mmd-control-room-phase1") !== "closed") throw new Error("Phase 1 closure header missing");
-            for (const marker of ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2"]) {
-              if (!html.includes(marker)) throw new Error(`Control Room marker missing: ${marker}`);
-            }
+            let page = null;
+            let html = "";
+            let payload = null;
+            let v2 = null;
+            let lastReason = "not_started";
 
-            const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
-              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
-              cache: "no-store",
-            });
-            const payload = await dashboard.json().catch(() => null);
-            if (dashboard.status !== 200 || payload?.ok !== true) throw new Error(`dashboard truth failed: ${dashboard.status}`);
-            const v2 = payload?.control_room_v2;
+            for (let attempt = 1; attempt <= 24; attempt += 1) {
+              pageUrl = new URL("/internal/admin/control-room", origin);
+              page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+              if ([301, 302, 303, 307, 308].includes(page.status)) {
+                const location = page.headers.get("location") || "";
+                if (!location) throw new Error("Control Room redirect missing location");
+                pageUrl = new URL(location, pageUrl);
+                if (!["mmdbkk.com", "www.mmdbkk.com"].includes(pageUrl.hostname) || pageUrl.pathname !== "/internal/admin/control-room") {
+                  throw new Error(`unexpected Control Room redirect: ${pageUrl.href}`);
+                }
+                page = await fetch(pageUrl, { headers: { Cookie: cookie }, redirect: "manual" });
+              }
+
+              html = await page.text();
+              const pageReady =
+                page.status === 200 &&
+                page.headers.get("x-mmd-control-room-v2") === "system-health-v1" &&
+                page.headers.get("x-mmd-control-room-phase1") === "closed" &&
+                ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2"].every((marker) => html.includes(marker));
+
+              const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
+                headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+                cache: "no-store",
+              });
+              payload = await dashboard.json().catch(() => null);
+              v2 = payload?.control_room_v2;
+              const keys = new Set((v2?.systems || []).map((item) => item?.key));
+              const dashboardReady =
+                dashboard.status === 200 &&
+                payload?.ok === true &&
+                v2?.schema === "mmd.control_room_v2.system_health.v1" &&
+                ["website","workers","deploy","routes","analytics","payments","telegram","line","data","jobs"].every((key) => keys.has(key));
+
+              if (pageReady && dashboardReady) break;
+
+              lastReason = JSON.stringify({
+                attempt,
+                page_status: page.status,
+                page_v2: page.headers.get("x-mmd-control-room-v2"),
+                phase1_header: page.headers.get("x-mmd-control-room-phase1"),
+                dashboard_status: dashboard.status,
+                schema: v2?.schema || null,
+                systems: [...keys],
+              });
+              if (attempt === 24) throw new Error(`Control Room V2 did not converge after deploy: ${lastReason}`);
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
             if (v2?.schema !== "mmd.control_room_v2.system_health.v1") throw new Error("Control Room V2 schema mismatch");
             if (v2?.phase1?.status !== "CLOSED" || Number(v2?.phase1?.blocking_unresolved_count) !== 0) {
               throw new Error("Phase 1 machine closure not projected");
