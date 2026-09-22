@@ -78,7 +78,7 @@ test("owner Model Console reminder resolves exact canonical model and delegates 
 test("Model Console public adoption UI stays owner-triggered and has no bulk auto-send action", async () => {
   const { readFile } = await import("node:fs/promises");
   const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-  assert.match(html, /Availability Adoption V1/);
+  assert.match(html, /Availability Adoption Phase 2/);
   assert.match(html, /Auto-send ปิดอยู่/);
   assert.match(html, /availability-reminder/);
   assert.match(html, /เตือน LINE/);
