@@ -7,8 +7,11 @@ import { safeModelKey } from "../../shared/kenji-recommendation-contract-v1.mjs"
 
 export const SIGIL_AVAILABILITY_INTERNAL_PATH = "/v1/internal/sigil/availability-snapshot";
 export const SIGIL_AVAILABILITY_ADOPTION_REMIND_PATH = "/v1/internal/sigil/availability-adoption/remind";
+export const SIGIL_AVAILABILITY_ADOPTION_ACTIVATION_ISSUED_PATH = "/v1/internal/sigil/availability-adoption/activation-issued";
 const SIGIL_AVAILABILITY_ADOPTION_REMINDER_PREFIX = "availability-adoption:v1:reminder:";
+const SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX = "availability-adoption:v1:recovery:";
 const SIGIL_AVAILABILITY_ADOPTION_REMINDER_TTL_SECONDS = 24 * 60 * 60;
+const SIGIL_AVAILABILITY_ADOPTION_RECOVERY_TTL_SECONDS = 90 * 24 * 60 * 60;
 const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
 const MODEL_BLOCKED_STATES = new Set(["inactive", "blocked", "suspended", "paused", "archived", "retired"]);
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
@@ -43,6 +46,7 @@ export function isSigilAvailabilityInternalRequest(path = "", method = "") {
   const normalizedMethod = String(method || "").toUpperCase();
   if (path === SIGIL_AVAILABILITY_INTERNAL_PATH) return ["GET", "POST"].includes(normalizedMethod);
   if (path === SIGIL_AVAILABILITY_ADOPTION_REMIND_PATH) return normalizedMethod === "POST";
+  if (path === SIGIL_AVAILABILITY_ADOPTION_ACTIVATION_ISSUED_PATH) return normalizedMethod === "POST";
   return false;
 }
 
@@ -140,7 +144,7 @@ function formulaText(value) {
   return `"${text(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-async function findAdoptionModel(env = {}, modelKeyInput = "") {
+async function findAdoptionModel(env = {}, modelKeyInput = "", options = {}) {
   const modelKey = safeModelKey(modelKeyInput);
   if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
 
@@ -175,7 +179,7 @@ async function findAdoptionModel(env = {}, modelKeyInput = "") {
   }
 
   const lineUserId = text(fields.line_user_id);
-  if (!LINE_USER_ID_RE.test(lineUserId)) {
+  if (!LINE_USER_ID_RE.test(lineUserId) && options.allow_unlinked !== true) {
     return {
       ok: false,
       status: 409,
@@ -188,9 +192,10 @@ async function findAdoptionModel(env = {}, modelKeyInput = "") {
   return {
     ok: true,
     status: 200,
+    model_record_id: text(record.id, 40),
     model_key: modelKey,
     display_name: text(fields.working_name).slice(0, 80) || modelKey,
-    line_user_id: lineUserId,
+    line_user_id: LINE_USER_ID_RE.test(lineUserId) ? lineUserId : "",
   };
 }
 
@@ -222,6 +227,52 @@ async function writeAdoptionReminderReceipt(env = {}, modelKey = "", receipt = {
     return { ok: true };
   } catch {
     return { ok: false, status: 503, error: "availability_reminder_write_failed" };
+  }
+}
+
+function safeRecoveryEvidence(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  const modelKey = safeModelKey(value.model_key);
+  if (!modelKey) return null;
+  const issuedAt = text(value.activation_link_issued_at, 100);
+  const expiresAt = text(value.activation_link_expires_at, 100);
+  const reminderAt = text(value.reminder_sent_at, 100);
+  return {
+    schema: "mmd.availability_adoption_recovery.v1",
+    model_key: modelKey,
+    ...(issuedAt ? { activation_link_issued_at: issuedAt } : {}),
+    ...(expiresAt ? { activation_link_expires_at: expiresAt } : {}),
+    ...(reminderAt ? { reminder_sent_at: reminderAt, reminder_channel: "line" } : {}),
+    updated_at: text(value.updated_at, 100) || null,
+  };
+}
+
+async function readAdoptionRecoveryEvidence(env = {}, modelKeyInput = "") {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  const modelKey = safeModelKey(modelKeyInput);
+  if (!binding || typeof binding.get !== "function") return { ok: false, status: 503, error: "availability_snapshot_storage_unavailable" };
+  if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
+  try {
+    const value = await binding.get(SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX + modelKey, "json");
+    return { ok: true, evidence: safeRecoveryEvidence(value) };
+  } catch {
+    return { ok: false, status: 503, error: "availability_recovery_read_failed" };
+  }
+}
+
+async function writeAdoptionRecoveryEvidence(env = {}, modelKeyInput = "", patch = {}) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  const modelKey = safeModelKey(modelKeyInput);
+  if (!binding || typeof binding.put !== "function") return { ok: false, status: 503, error: "availability_snapshot_storage_unavailable" };
+  if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
+  const prior = await readAdoptionRecoveryEvidence(env, modelKey);
+  if (!prior.ok) return prior;
+  const next = safeRecoveryEvidence({ ...(prior.evidence || {}), model_key: modelKey, ...patch, updated_at: new Date().toISOString() });
+  try {
+    await binding.put(SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX + modelKey, JSON.stringify(next), { expirationTtl: SIGIL_AVAILABILITY_ADOPTION_RECOVERY_TTL_SECONDS });
+    return { ok: true, evidence: next };
+  } catch {
+    return { ok: false, status: 503, error: "availability_recovery_write_failed" };
   }
 }
 
@@ -329,6 +380,9 @@ async function handleAvailabilityAdoptionReminder(request, env = {}, caller = ""
     }, stored.status || 503);
   }
 
+  const tracked = await writeAdoptionRecoveryEvidence(env, modelKey, { reminder_sent_at: sentAt });
+  if (!tracked.ok) return json({ ok: false, error: tracked.error, delivery_state: "sent_but_recovery_evidence_failed", model_key: modelKey }, tracked.status || 503);
+
   return json({
     ok: true,
     schema: "mmd.availability_adoption_reminder.v1",
@@ -336,8 +390,26 @@ async function handleAvailabilityAdoptionReminder(request, env = {}, caller = ""
     display_name: model.display_name,
     channel: "line",
     sent_at: sentAt,
+    recovery_evidence: tracked.evidence,
     cooldown_seconds: SIGIL_AVAILABILITY_ADOPTION_REMINDER_TTL_SECONDS,
   });
+}
+
+async function handleAvailabilityAdoptionActivationIssued(request, env = {}, caller = "") {
+  if (caller !== "calendar-owner") return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (!text(request.headers.get("content-type")).toLowerCase().includes("application/json")) return json({ ok: false, error: "content_type_json_required" }, 415);
+  const body = await request.json().catch(() => null);
+  const modelKey = safeModelKey(body?.model_key);
+  const modelRecordId = text(body?.model_record_id, 40);
+  if (!modelKey || !/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) return json({ ok: false, error: "activation_evidence_invalid" }, 400);
+  const model = await findAdoptionModel(env, modelKey, { allow_unlinked: true });
+  if (!model.ok) return json({ ok: false, error: model.error }, model.status || 400);
+  if (model.model_record_id !== modelRecordId) return json({ ok: false, error: "activation_evidence_model_mismatch" }, 409);
+  const tracked = await writeAdoptionRecoveryEvidence(env, modelKey, {
+    activation_link_issued_at: new Date().toISOString(),
+    ...(text(body?.expires_at, 100) ? { activation_link_expires_at: text(body.expires_at, 100) } : {}),
+  });
+  return json(tracked.ok ? { ok: true, schema: "mmd.availability_adoption_recovery.v1", model_key: modelKey, recovery_evidence: tracked.evidence } : { ok: false, error: tracked.error }, tracked.status || (tracked.ok ? 200 : 503));
 }
 
 export async function handleSigilAvailabilityInternalRequest(request, env = {}) {
@@ -348,11 +420,16 @@ export async function handleSigilAvailabilityInternalRequest(request, env = {}) 
   if (pathname === SIGIL_AVAILABILITY_ADOPTION_REMIND_PATH) {
     return handleAvailabilityAdoptionReminder(request, env, caller);
   }
+  if (pathname === SIGIL_AVAILABILITY_ADOPTION_ACTIVATION_ISSUED_PATH) {
+    return handleAvailabilityAdoptionActivationIssued(request, env, caller);
+  }
 
   if (request.method.toUpperCase() === "GET") {
     if (caller !== "model-console-worker") return json({ ok: false, error: "internal_auth_required" }, 401);
     const modelKey = new URL(request.url).searchParams.get("model_key") || "";
     const result = await readSigilAvailabilitySnapshot(env, modelKey);
+    const recovery = result.ok ? await readAdoptionRecoveryEvidence(env, modelKey) : null;
+    if (recovery && !recovery.ok) return json({ ok: false, error: recovery.error }, recovery.status || 503);
     return json(
       result.ok
         ? {
@@ -364,6 +441,7 @@ export async function handleSigilAvailabilityInternalRequest(request, env = {}) 
             age_seconds: result.age_seconds,
             ttl_remaining_seconds: result.ttl_remaining_seconds,
             snapshot: result.receipt,
+            adoption_evidence: recovery?.evidence || null,
           }
         : { ok: false, error: result.error },
       result.status || (result.ok ? 200 : 400),

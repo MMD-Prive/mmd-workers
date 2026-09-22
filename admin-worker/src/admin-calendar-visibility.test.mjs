@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-reminder'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-reminder','/v1/admin/calendar/availability-activation'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -161,7 +161,8 @@ test('signed owner can remind one non-fresh LINE-linked Model without exposing i
     assert.equal(body.channel,'line');
     assert.doesNotMatch(JSON.stringify(body),/U0123456789abcdef|line-secret|internal-secret/);
     assert.equal(calls.filter(x=>new URL(x.url).hostname==='api.line.me').length,1);
-    assert.equal(writes.at(-1).key,'availability-adoption:v1:reminder:mdl_pri_str_master');
+    assert.equal(writes.some(x=>x.key==='availability-adoption:v1:reminder:mdl_pri_str_master'),true);
+    assert.equal(writes.some(x=>x.key==='availability-adoption:v1:recovery:mdl_pri_str_master'),true);
   }finally{globalThis.fetch=old}
 });
 
@@ -271,7 +272,7 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/Model Console/);
   assert.match(html,/SIGIL ready/);
   assert.match(html,/\/v1\/admin\/calendar\/availability-reminder/);
-  assert.match(html,/\/v1\/admin\/model\/activation\/issue/);
+  assert.match(html,/\/v1\/admin\/calendar\/availability-activation/);
   assert.match(html,/เตือน LINE/);
   assert.match(html,/สร้าง LINE link/);
   assert.match(html,/ผูก Model Key/);

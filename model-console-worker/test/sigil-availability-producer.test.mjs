@@ -190,6 +190,7 @@ test("adoption row keeps missing canonical key as identity recovery instead of g
   assert.equal(row.fresh, false);
   assert.equal(row.reminder_eligible, false);
   assert.equal(row.recovery_action, "link_canonical_model_key");
+  assert.equal(row.recovery_stage, "identity_recovery_required");
 });
 
 test("adoption row makes only non-fresh LINE-linked models reminder-eligible", () => {
@@ -207,6 +208,7 @@ test("adoption row makes only non-fresh LINE-linked models reminder-eligible", (
   assert.equal(missing.reminder_eligible, true);
   assert.equal(missing.reminder_channel, "line");
   assert.equal(missing.recovery_action, "remind_model");
+  assert.equal(missing.recovery_stage, "availability_confirmation_required");
 
   const fresh = availabilityAdoptionRow({
     id: "recMaster",
@@ -231,6 +233,15 @@ test("adoption row makes only non-fresh LINE-linked models reminder-eligible", (
   });
   assert.equal(fresh.reminder_eligible, false);
   assert.equal(fresh.recovery_action, "none");
+  assert.equal(fresh.recovery_stage, "coverage_current");
+});
+
+test("adoption recovery evidence only advances stages after observed canonical facts", () => {
+  const pending = availabilityAdoptionRow({ id: "recMaster", model_key: "mdl_pri_str_master", display_name: "Master", line_connected: false }, { ok: true, data: { snapshot_state: "missing", fresh: false, adoption_evidence: { activation_link_issued_at: "2026-09-23T01:00:00.000Z" } } });
+  assert.equal(pending.recovery_stage, "line_link_issued_waiting_for_connection");
+  const recovered = availabilityAdoptionRow({ id: "recMaster", model_key: "mdl_pri_str_master", display_name: "Master", line_connected: true }, { ok: true, data: { snapshot_state: "fresh", fresh: true, snapshot: { safe_availability_state: "available_today" }, adoption_evidence: { reminder_sent_at: "2026-09-23T01:00:00.000Z" } } });
+  assert.equal(recovered.recovery_stage, "coverage_recovered");
+  assert.doesNotMatch(JSON.stringify(recovered), /activation_url|U[0-9a-f]{32}/i);
 });
 
 test("adoption counts separate fresh, remindable, no-channel and identity gaps", () => {
@@ -248,5 +259,10 @@ test("adoption counts separate fresh, remindable, no-channel and identity gaps",
     no_channel: 1,
     identity_missing: 1,
     excluded: 1,
+    line_link_required: 0,
+    line_link_issued: 0,
+    availability_confirmation_required: 0,
+    reminder_sent_waiting_for_confirmation: 0,
+    coverage_recovered: 0,
   });
 });

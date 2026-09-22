@@ -41,7 +41,7 @@ jobs:
           node --test test/sigil-availability-producer.test.mjs test/availability-adoption-route.test.mjs
           ! grep -q 'placeholder="ADMIN_BEARER"' public/index.html
           grep -q "credentials:'include'" public/index.html
-          grep -q "Availability Adoption V1" public/index.html
+          grep -q "Availability Adoption Phase 2" public/index.html
           grep -q "availability-reminder" public/index.html
           grep -q "Auto-send ปิดอยู่" public/index.html
           grep -q '"generic_proxy_disabled"' src/index.js

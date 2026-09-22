@@ -108,6 +108,15 @@ export function modelAvailabilityAdoptionIdentity(record = {}) {
 }
 
 export function availabilityAdoptionRow(model = {}, result = {}) {
+  const evidence = result?.data?.adoption_evidence && typeof result.data.adoption_evidence === "object"
+    ? result.data.adoption_evidence
+    : null;
+  const observed = {
+    activation_link_issued_at: text(evidence?.activation_link_issued_at) || null,
+    activation_link_expires_at: text(evidence?.activation_link_expires_at) || null,
+    reminder_sent_at: text(evidence?.reminder_sent_at) || null,
+  };
+
   if (!model?.model_key) {
     return {
       model_id: text(model?.id),
@@ -125,6 +134,8 @@ export function availabilityAdoptionRow(model = {}, result = {}) {
       reminder_eligible: false,
       reminder_channel: "",
       recovery_action: "link_canonical_model_key",
+      recovery_stage: "identity_recovery_required",
+      recovery_observed: observed,
     };
   }
 
@@ -145,12 +156,19 @@ export function availabilityAdoptionRow(model = {}, result = {}) {
       reminder_eligible: false,
       reminder_channel: "",
       recovery_action: "none",
+      recovery_stage: "excluded",
+      recovery_observed: observed,
     };
   }
 
   const row = availabilityCoverageRow(model, result);
   const needsConfirmation = row.fresh !== true;
   const lineConnected = model?.line_connected === true;
+  const recoveryStage = row.fresh
+    ? (observed.activation_link_issued_at || observed.reminder_sent_at ? "coverage_recovered" : "coverage_current")
+    : !lineConnected
+      ? (observed.activation_link_issued_at ? "line_link_issued_waiting_for_connection" : "line_link_required")
+      : (observed.reminder_sent_at ? "reminder_sent_waiting_for_confirmation" : "availability_confirmation_required");
   return {
     ...row,
     canonical_status: text(model?.canonical_status || "unreviewed"),
@@ -163,6 +181,8 @@ export function availabilityAdoptionRow(model = {}, result = {}) {
       : lineConnected
         ? "remind_model"
         : "connect_line_identity",
+    recovery_stage: recoveryStage,
+    recovery_observed: observed,
   };
 }
 
@@ -175,6 +195,11 @@ export function availabilityAdoptionCounts(items = []) {
     no_channel: 0,
     identity_missing: 0,
     excluded: 0,
+    line_link_required: 0,
+    line_link_issued: 0,
+    availability_confirmation_required: 0,
+    reminder_sent_waiting_for_confirmation: 0,
+    coverage_recovered: 0,
   };
   for (const item of Array.isArray(items) ? items : []) {
     counts.total += 1;
@@ -189,9 +214,14 @@ export function availabilityAdoptionCounts(items = []) {
     }
     if (item?.fresh === true) {
       counts.fresh += 1;
+      if (item?.recovery_stage === "coverage_recovered") counts.coverage_recovered += 1;
       continue;
     }
     counts.needs_confirmation += 1;
+    if (item?.recovery_stage === "line_link_required") counts.line_link_required += 1;
+    if (item?.recovery_stage === "line_link_issued_waiting_for_connection") counts.line_link_issued += 1;
+    if (item?.recovery_stage === "availability_confirmation_required") counts.availability_confirmation_required += 1;
+    if (item?.recovery_stage === "reminder_sent_waiting_for_confirmation") counts.reminder_sent_waiting_for_confirmation += 1;
     if (item?.reminder_eligible === true) counts.remindable += 1;
     else counts.no_channel += 1;
   }
