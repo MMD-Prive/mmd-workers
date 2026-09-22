@@ -307,7 +307,6 @@ Rules:
     instructions,
     input: `Known evidence-backed facts: ${knownFacts || "none"}\n\nTranscript:\n${transcript}`,
     max_output_tokens: 300,
-    reasoning: { effort: "low" },
     text: {
       format: {
         type: "json_schema",

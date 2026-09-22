@@ -106,6 +106,7 @@ test("Phase 2 model reads the whole visible thread and returns semantics only", 
   assert.match(request.input, /มีแนวนี้อีกไหม/);
   assert.match(request.instructions, /Do not answer the customer/);
   assert.equal(request.model, "gpt-4.1-mini");
+  assert.equal(Object.prototype.hasOwnProperty.call(request, "reasoning"), false);
 });
 
 test("model failure reason stays internal and fallback remains shadow-only", async () => {
