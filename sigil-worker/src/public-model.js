@@ -49,6 +49,7 @@ export const PUBLIC_MODEL_ROLE_KEYS = new Set([
   "creative_companion",
   "medical_professional",
 ]);
+export const PUBLIC_MODEL_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
 const FORBIDDEN_FIELDS = new Set([
   "airtable_record_id",
   "application_id",
@@ -111,6 +112,13 @@ const APPLICATION_FIELDS = Object.freeze({
   payloadHash: "fldqaQb5BMoCGF7XE",
   intakeStatus: "fldHk2h9Rf6g5UlZw",
   requestedRoles: "fldYsWJXXuXzt7I2N",
+  nonMemberImageConsent: "fldUMJEUVK3GNmomA",
+  nonMemberPromoRoles: "fldQgqdiVPTMRfawj",
+  publicPromoConsentStatus: "fldsD2K6T1UGyggvp",
+  publicPromoConsentAt: "fld8M8tXWQsDpsouB",
+  publicPromoConsentVersion: "fldbI0gUNjwtIUXd2",
+  publicPromoConsentRevokedAt: "fld1A7uvWaJIhwjOg",
+  publicPromoConsentSource: "fldB5TqIGAOvF01uj",
   duplicateKey: "flddQezHdP6zdvQuZ",
   requestFingerprint: "fldcpQbNo9G0BAvlF",
   uploadSessionId: "fldg2EOpp5GEhHUdI",
@@ -569,8 +577,29 @@ function validateApplicationPayload(body) {
   const workTypes = body.work_types ?? body.interested_work_types ?? body.workTypes;
   const workTypeError = validateWorkTypes(workTypes);
   if (workTypeError) fields.work_types = workTypeError;
-  const roleError = validatePublicRoles(body.mmd_requested_public_roles ?? body.requested_roles);
+  const requestedRoles = body.mmd_requested_public_roles ?? body.requested_roles;
+  const roleError = validatePublicRoles(requestedRoles);
   if (roleError) fields.requested_roles = roleError;
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  const promoRoles = body.mmd_nonmember_promo_roles;
+  if (body.mmd_nonmember_profile_image_consent !== undefined && typeof body.mmd_nonmember_profile_image_consent !== "boolean") {
+    fields.mmd_nonmember_profile_image_consent = "must be boolean";
+  }
+  if (imageConsent) {
+    const promoRoleError = validatePublicRoles(promoRoles);
+    if (promoRoleError) fields.mmd_nonmember_promo_roles = promoRoleError;
+    const requestedSet = new Set(Array.isArray(requestedRoles) ? requestedRoles : []);
+    if (Array.isArray(promoRoles) && promoRoles.some((role) => !requestedSet.has(role))) {
+      fields.mmd_nonmember_promo_roles = "must be a subset of requested_roles";
+    }
+    if (body.mmd_public_promo_consent_version !== PUBLIC_MODEL_PROMO_CONSENT_VERSION) {
+      fields.mmd_public_promo_consent_version = "unsupported consent version";
+    }
+  } else if (Array.isArray(promoRoles) && promoRoles.length) {
+    fields.mmd_nonmember_promo_roles = "must be empty without image consent";
+  }
+
   const forbidden = findForbiddenField(body);
   if (forbidden) fields.forbidden_field = "contains server-controlled or raw upload field";
   const refs = validateUploadRefs(body);
@@ -754,6 +783,20 @@ function applicationAirtableFields(body, normalized, uploads, context) {
   if (Array.isArray(requestedRoles) && requestedRoles.length) {
     fields[APPLICATION_FIELDS.requestedRoles] = [...new Set(requestedRoles.map((item) => boundedString(item, 80)).filter((item) => PUBLIC_MODEL_ROLE_KEYS.has(item)))];
   }
+
+  const imageConsent = body.mmd_nonmember_profile_image_consent === true;
+  const promoRoles = imageConsent && Array.isArray(body.mmd_nonmember_promo_roles)
+    ? [...new Set(body.mmd_nonmember_promo_roles.map((item) => boundedString(item, 80)).filter((item) => PUBLIC_MODEL_ROLE_KEYS.has(item)))]
+    : [];
+  fields[APPLICATION_FIELDS.nonMemberImageConsent] = imageConsent;
+  fields[APPLICATION_FIELDS.publicPromoConsentStatus] = imageConsent ? "granted" : "not_granted";
+  if (promoRoles.length) fields[APPLICATION_FIELDS.nonMemberPromoRoles] = promoRoles;
+  if (imageConsent) {
+    fields[APPLICATION_FIELDS.publicPromoConsentAt] = context.now;
+    fields[APPLICATION_FIELDS.publicPromoConsentVersion] = PUBLIC_MODEL_PROMO_CONSENT_VERSION;
+    fields[APPLICATION_FIELDS.publicPromoConsentSource] = "/apply/public-model";
+  }
+
   assign(fields, APPLICATION_FIELDS.privacyLevel, boundedString(body.privacy_level, 160));
   assign(fields, APPLICATION_FIELDS.experienceMonths, numberOrUndefined(body.mmd_experience_months, 0, 11));
   assign(fields, APPLICATION_FIELDS.experienceYears, numberOrUndefined(body.mmd_experience_years, 0, 80));
@@ -1083,6 +1126,8 @@ export const publicModelTestInternals = {
   APPLICATION_FIELDS,
   UPLOAD_FIELDS,
   MAX_UPLOAD_BYTES: PUBLIC_MODEL_MAX_UPLOAD_BYTES,
+  PROMO_CONSENT_VERSION: PUBLIC_MODEL_PROMO_CONSENT_VERSION,
   validateApplicationPayload,
   validateUploadMetadata,
+  applicationAirtableFields,
 };
