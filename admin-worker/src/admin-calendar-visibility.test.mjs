@@ -176,6 +176,9 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/credentials:'include'/);
   assert.match(html,/\.webflow\\\.io/);
   assert.match(html,/calendar-owner-ui-v3-20260922/);
+  assert.match(html,/calendar-owner-ui-v5-20260922/);
+  assert.match(html,/วันนี้มีอะไรบ้าง/);
+  assert.match(html,/ดูงาน รอมัดจำ คิวชน และเวลาว่างในจอเดียว/);
   assert.match(html,/ดูคิว งานที่ยืนยันแล้ว งานรอมัดจำ/);
   assert.match(html,/cleanInlineArtifacts/);
   assert.match(html,/\['วันนี้','รอมัดจำ','ยืนยันแล้ว','นายแบบ','เช็กราคา'\]/);
