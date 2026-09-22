@@ -502,6 +502,7 @@ async function handlePrebooking(request, env, cors, requestId, ctx) {
     insertValue: prebookingId,
     properties: {
       surface: "mms",
+      flow: "mms_prebooking",
       world: "mms",
       status,
       sync_status: sync.status,

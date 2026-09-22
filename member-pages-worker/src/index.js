@@ -68,6 +68,7 @@ function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
     insertValue: sessionToken,
     properties: {
       surface: "my_mmd",
+      flow: "my_mmd_login",
       world: "member",
       status: "verified",
       route: "/member/api/liff/start",
