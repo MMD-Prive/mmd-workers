@@ -458,7 +458,9 @@ async function handleCredentialBoundAdminLogin(request, env) {
       return adminLoginFailure(request, env, requestedNext, "mms_partner_credential_collision", "รหัส Partner ต้องแยกจากรหัส Owner", 503, wantsJson);
     }
     if (code !== adminSecret) return adminLoginFailure(request, env, requestedNext, "invalid_access_code", "รหัสยังไม่ถูกต้อง", 401, wantsJson);
-    actor = { id: "per", role: "admin", auth_method: "credential" };
+    // The dedicated credential is Per's owner credential. Keep the elevated role
+    // scoped to this exact authenticated path; partner/password sessions remain isolated.
+    actor = { id: "per", role: "owner", auth_method: "credential" };
     next = requestedNext;
   }
 
