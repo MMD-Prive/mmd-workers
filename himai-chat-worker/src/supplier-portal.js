@@ -1,4 +1,4 @@
-const DEFAULT_PRODUCT_FIELDS = [
+import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";\n\nconst DEFAULT_PRODUCT_FIELDS = [
   "Product Name",
   "SKU",
   "Brand Availability",
@@ -81,17 +81,24 @@ const PAYOUT_FIELDS = Object.freeze({
   status: "fldgo6dkYaHg8pgSr"
 });
 
+const LIFF_PORTAL_PATH = "/shop/api/supplier/liff-portal";
+
 export async function handleSupplierPortal(request, env) {
   const url = new URL(request.url);
   const method = request.method.toUpperCase();
   const pathname = url.pathname;
+  const supplierPortalPath = pathname === "/shop/api/supplier/portal" || pathname === "/shop/api/distributor/portal";
 
-  if (method === "OPTIONS" && (pathname === "/shop/api/supplier/portal" || pathname === "/shop/api/distributor/portal")) {
+  if (method === "OPTIONS" && (supplierPortalPath || pathname === LIFF_PORTAL_PATH)) {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
-  if (method === "GET" && (pathname === "/shop/api/supplier/portal" || pathname === "/shop/api/distributor/portal")) {
+  if (method === "GET" && supplierPortalPath) {
     return getSupplierPortal(request, env);
+  }
+
+  if (method === "POST" && pathname === LIFF_PORTAL_PATH) {
+    return getSupplierLiffPortal(request, env);
   }
 
   return null;
@@ -108,6 +115,42 @@ async function getSupplierPortal(request, env) {
     return json({ ok: false, error: "invalid_supplier_token" }, 403);
   }
 
+  return json(await buildSupplierPortalPayload(env, supplierAccess));
+}
+
+async function getSupplierLiffPortal(request, env) {
+  const body = await request.json().catch(() => null);
+  const accessToken = cleanText(body?.access_token || body?.accessToken, 4096);
+  if (!accessToken) {
+    return json({ ok: false, error: "line_access_token_required" }, 401);
+  }
+
+  let lineProfile;
+  try {
+    lineProfile = await loadLineProfile(accessToken);
+  } catch (_) {
+    return json({ ok: false, error: "line_profile_failed" }, 401);
+  }
+
+  const supplierAccess = resolveSupplierAccessByLineUserId(env, lineProfile.userId);
+  if (!supplierAccess) {
+    return json({ ok: false, error: "supplier_line_not_authorized" }, 403);
+  }
+
+  return json(await buildSupplierPortalPayload(env, supplierAccess));
+}
+
+async function loadLineProfile(accessToken) {
+  const response = await fetch("https://api.line.me/v2/profile", {
+    headers: { authorization: "Bearer " + accessToken, accept: "application/json" },
+  });
+  const data = await response.json().catch(() => ({}));
+  const userId = cleanText(data?.userId, 255);
+  if (!response.ok || !userId) throw new Error("line_profile_failed");
+  return { userId };
+}
+
+async function buildSupplierPortalPayload(env, supplierAccess) {
   const [catalog, stockByProduct, movements] = await Promise.all([
     loadHimaiProducts(env),
     loadHimaiStockByProduct(env),
@@ -121,9 +164,10 @@ async function getSupplierPortal(request, env) {
     ...visibleCatalog.flatMap((product) => Array.isArray(product.supplier_ids) ? product.supplier_ids : [])
   ].filter(Boolean));
 
-  const [orders, finance] = await Promise.all([
+  const [orders, finance, reservedByProduct] = await Promise.all([
     loadSupplierOrders(env, visibleProductIds, visibleSupplierIds),
-    loadSupplierFinance(env, visibleSupplierIds)
+    loadSupplierFinance(env, visibleSupplierIds),
+    loadActiveSupplierReservations(env, visibleProductIds, visibleSupplierIds),
   ]);
 
   const visibleProducts = visibleCatalog.map((product) => {
@@ -131,6 +175,7 @@ async function getSupplierPortal(request, env) {
     const productMovements = movements.filter((movement) => movementMatchesProduct(movement, product));
     const totals = summarizeMovements(productMovements);
     const available = stock.available;
+    const reservedTotal = reservedByProduct.get(product.id) || 0;
     const lowStockThreshold = numberOrNull(supplierAccess.low_stock_threshold) ?? 10;
 
     return {
@@ -147,7 +192,7 @@ async function getSupplierPortal(request, env) {
       available,
       low_stock: stock.low || (available !== null && available <= lowStockThreshold),
       sold_total: totals.out,
-      reserved_total: totals.reserve,
+      reserved_total: reservedTotal,
       refill_signal: buildRefillSignal(available, stock.low, lowStockThreshold),
       movements: productMovements.slice(0, 12).map(toSafeMovement)
     };
@@ -163,10 +208,15 @@ async function getSupplierPortal(request, env) {
     paid_total_thb: numberOrNull(finance?.paid_total_thb) || 0
   };
 
-  return json({
+  return {
     ok: true,
-    shop: "shop",
+    shop: "mmd-shop",
     portal: "supplier_dashboard_v2",
+    stock_source: "mmd_shop_inventory_batches",
+    reservation_policy: {
+      ttl_minutes: Math.max(5, Math.min(240, Number(env.MMD_SHOP_RESERVATION_TTL_MINUTES || 45) || 45)),
+      available_excludes_active_reservations: true,
+    },
     distributor: {
       name: supplierAccess.supplier_name || supplierAccess.name || "Supplier",
       role: supplierAccess.role || "Supplier",
@@ -190,7 +240,46 @@ async function getSupplierPortal(request, env) {
     orders,
     finance,
     updated_at: new Date().toISOString()
-  });
+  };
+}
+
+async function loadActiveSupplierReservations(env, visibleProductIds, visibleSupplierIds) {
+  if (!visibleProductIds.size && !visibleSupplierIds.size) return new Map();
+
+  const orderRecords = await airtableListByFieldIds(
+    env,
+    env.MMD_SHOP_ORDERS_TABLE_ID || TABLES.orders,
+    [ORDER_FIELDS.orderStatus, ORDER_FIELDS.paymentStatus, ORDER_FIELDS.notes],
+  );
+  const totals = new Map();
+  const now = Date.now();
+
+  for (const record of orderRecords) {
+    const fields = record.fields || {};
+    const orderStatus = selectName(fields[ORDER_FIELDS.orderStatus]).toLowerCase();
+    const paymentStatus = selectName(fields[ORDER_FIELDS.paymentStatus]).toLowerCase();
+    if (["cancelled", "fulfilled"].includes(orderStatus) || paymentStatus === "paid") continue;
+
+    const reservation = readMmdShopReservation(fields[ORDER_FIELDS.notes]);
+    if (!reservation || !["reserved", "payment_review"].includes(reservation.state)) continue;
+
+    const expiresAt = Date.parse(reservation.expires_at || "");
+    if (reservation.state === "reserved" && Number.isFinite(expiresAt) && expiresAt <= now) continue;
+
+    for (const allocation of Array.isArray(reservation.allocations) ? reservation.allocations : []) {
+      const productId = cleanText(allocation?.product_id, 120);
+      const supplierIds = linkedFieldIds(allocation?.supplier_ids);
+      const scoped = visibleProductIds.has(productId)
+        || supplierIds.some((supplierId) => visibleSupplierIds.has(supplierId));
+      if (!scoped || !visibleProductIds.has(productId)) continue;
+
+      const quantity = Math.max(0, numberOrNull(allocation?.quantity) || 0);
+      if (!quantity) continue;
+      totals.set(productId, (totals.get(productId) || 0) + quantity);
+    }
+  }
+
+  return totals;
 }
 
 async function loadSupplierOrders(env, visibleProductIds, visibleSupplierIds) {
