@@ -1,15 +1,22 @@
 name: Private Teaser real-member production E2E
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/private-teaser-real-member-production-e2e.yml"
+      - "scripts/private-teaser-real-member-readiness.mjs"
+      - "scripts/private-teaser-real-member-e2e.mjs"
   workflow_dispatch:
     inputs:
       model_slug:
-        description: "Approved public model slug with an active teaser-safe asset"
+        description: "Approved model slug with an active teaser-safe asset"
         required: true
         default: "toto"
         type: string
       preview_kind:
-        description: "One-use teaser media kind to consume"
+        description: "One-use teaser media kind"
         required: true
         default: "private_pic"
         type: choice
@@ -17,15 +24,10 @@ on:
           - private_pic
           - private_clip
       work_lane:
-        description: "Sales/offer lane used for eligibility resolution"
+        description: "Offer lane used for eligibility"
         required: true
         default: "companion"
         type: string
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/private-teaser-real-member-production-e2e.yml"
 
 permissions:
   contents: read
@@ -45,140 +47,22 @@ jobs:
       REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
       AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
-      MODELS_TABLE: tblI4B0bI446vp9GX
-      MEDIA_TABLE: tblrpQXhHnbTU9RhW
-      RULES_TABLE: tblSbxUGTFqd2CgPy
-
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Inspect non-mutating production readiness
-        id: readiness
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${REAL_MEMBER_LIFF_ID_TOKEN:-}" ]; then
-            echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
-          fi
-          if [ -n "${AIRTABLE_API_KEY:-}" ]; then
-            echo "::add-mask::$AIRTABLE_API_KEY"
-          fi
-
-          node <<'NODE'
-          const fs = require("node:fs");
-          const apiKey = String(process.env.AIRTABLE_API_KEY || "").trim();
-          const tokenPresent = Boolean(String(process.env.REAL_MEMBER_LIFF_ID_TOKEN || "").trim());
-          const baseId = process.env.AIRTABLE_BASE_ID;
-          const result = {
-            token_present: tokenPresent,
-            airtable_present: Boolean(apiKey),
-            model_state: "unchecked",
-            active_offer_rule_count: null,
-            approved_teaser_asset_count: null,
-            ready: false,
-          };
-
-          const publicSlug = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100);
-          const selectName = (value) => value && typeof value === "object" ? String(value.name || "") : String(value || "");
-          const allRecords = async (table, fields = []) => {
-            const records = [];
-            let offset = "";
-            for (let page = 0; page < 20; page += 1) {
-              const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-              url.searchParams.set("pageSize", "100");
-              for (const field of fields) url.searchParams.append("fields[]", field);
-              if (offset) url.searchParams.set("offset", offset);
-              const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-              const body = await response.json().catch(() => ({}));
-              if (!response.ok) throw new Error(`Airtable readiness read failed HTTP ${response.status}`);
-              records.push(...(body.records || []));
-              offset = String(body.offset || "");
-              if (!offset) break;
-            }
-            return records;
-          };
-
-          if (apiKey) {
-            try {
-              const models = await allRecords(process.env.MODELS_TABLE, ["working_name"]);
-              const matches = models.filter((record) => publicSlug(record.fields?.working_name) === "toto");
-              result.model_state = matches.length === 1 ? "found" : matches.length === 0 ? "missing" : "ambiguous";
-
-              if (matches.length === 1) {
-                const modelId = matches[0].id;
-                const media = await allRecords(process.env.MEDIA_TABLE, ["Model", "media_type", "review_status", "teaser_safe", "file_type"]);
-                result.approved_teaser_asset_count = media.filter((record) => {
-                  const f = record.fields || {};
-                  return Array.isArray(f.Model) &&
-                    f.Model.includes(modelId) &&
-                    f.review_status === "approved" &&
-                    f.teaser_safe === true &&
-                    ["flash_preview", "private_gallery"].includes(String(f.media_type || "")) &&
-                    ["image/jpeg", "image/png", "image/webp", "video/mp4"].includes(String(f.file_type || ""));
-                }).length;
-
-                const rules = await allRecords(process.env.RULES_TABLE, ["Model", "status", "sales_visibility"]);
-                result.active_offer_rule_count = rules.filter((record) => {
-                  const f = record.fields || {};
-                  return Array.isArray(f.Model) &&
-                    f.Model.includes(modelId) &&
-                    ["active", "approved", "live", "published"].includes(selectName(f.status).toLowerCase()) &&
-                    selectName(f.sales_visibility).toLowerCase() !== "off";
-                }).length;
-              }
-            } catch (error) {
-              result.model_state = "source_unavailable";
-              result.read_error = String(error?.message || error).slice(0, 160);
-            }
-          }
-
-          result.ready = result.token_present &&
-            result.airtable_present &&
-            result.model_state === "found" &&
-            Number(result.active_offer_rule_count || 0) > 0 &&
-            Number(result.approved_teaser_asset_count || 0) > 0;
-
-          for (const [key, value] of Object.entries(result)) {
-            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${String(value).replace(/\n/g, " ")}\n`);
-          }
-          console.log(`Private Teaser real-member readiness: ${result.ready ? "READY" : "BLOCKED"}`);
-          console.log(`TOTO model=${result.model_state}; active_rules=${result.active_offer_rule_count}; approved_teaser_assets=${result.approved_teaser_asset_count}`);
-          NODE
-
-      - name: Record readiness receipt
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TOKEN_PRESENT: ${{ steps.readiness.outputs.token_present }}
-          AIRTABLE_PRESENT: ${{ steps.readiness.outputs.airtable_present }}
-          MODEL_STATE: ${{ steps.readiness.outputs.model_state }}
-          ACTIVE_RULES: ${{ steps.readiness.outputs.active_offer_rule_count }}
-          APPROVED_ASSETS: ${{ steps.readiness.outputs.approved_teaser_asset_count }}
-          READY: ${{ steps.readiness.outputs.ready }}
-        run: |
-          set -euo pipefail
-          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## Private Teaser Viewer V1 — REAL MEMBER E2E READINESS
-
-          - source_sha: \`${GITHUB_SHA}\`
-          - checked_at: \`${checked_at}\`
-          - production environment real-member token: \`${TOKEN_PRESENT}\`
-          - Airtable audit credential: \`${AIRTABLE_PRESENT}\`
-          - TOTO canonical model: \`${MODEL_STATE}\`
-          - active sellable offer rules: \`${ACTIVE_RULES}\`
-          - approved teaser-safe assets: \`${APPROVED_ASSETS}\`
-          - **ready_for_real_grant_consume: \`${READY}\`**
-          - mutation performed: \`false\`"
+      - name: Validate readiness runner syntax
+        run: node --check scripts/private-teaser-real-member-readiness.mjs
+      - name: Inspect production readiness without business mutation
+        run: node scripts/private-teaser-real-member-readiness.mjs
 
   e2e:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
-    timeout-minutes: 10
     env:
       ORIGIN: https://www.mmdbkk.com
       MODEL_SLUG: ${{ inputs.model_slug }}
@@ -187,465 +71,18 @@ jobs:
       REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
       AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
       AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      GITHUB_TOKEN: ${{ github.token }}
       CLIENTS_TABLE: tblVv58TCbwh5j1fS
       ENTITLEMENTS_TABLE: tblNImdF9PKAxhXGi
       GRANTS_TABLE: tblbP1csaTYfffS01
       MEDIA_TABLE: tblrpQXhHnbTU9RhW
       CONSUMPTION_TABLE: tblcjjCW0pXvlhNQQ
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Require real member and audit credentials
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${REAL_MEMBER_LIFF_ID_TOKEN:-}" ]; then
-            echo "MY_MMD_E2E_ID_TOKEN is not configured. Refusing to downgrade the real-member teaser acceptance to a synthetic session." >&2
-            exit 1
-          fi
-          if [ -z "${AIRTABLE_API_KEY:-}" ]; then
-            echo "Airtable audit credential is missing. Refusing to consume real teaser media without post-consumption audit evidence." >&2
-            exit 1
-          fi
-          echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
-          echo "::add-mask::$AIRTABLE_API_KEY"
-
-      - name: Establish real verified member session
-        shell: bash
-        run: |
-          set -euo pipefail
-          jar="$RUNNER_TEMP/private-teaser-real-member.cookies"
-          headers="$RUNNER_TEMP/private-teaser-real-member-start.headers"
-          body="$RUNNER_TEMP/private-teaser-real-member-start.json"
-
-          code="$(curl --silent --show-error \
-            -D "$headers" -c "$jar" -o "$body" -w "%{http_code}" \
-            -X POST "$ORIGIN/member/api/liff/start" \
-            -H "Origin: $ORIGIN" \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            --data-binary "$(jq -nc --arg id_token "$REAL_MEMBER_LIFF_ID_TOKEN" '{id_token:$id_token,intent:"status",liff_intent:"status"}')")"
-
-          echo "LIFF start HTTP $code"
-          test "$code" = "200"
-          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
-          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$headers"
-          grep -q '__Host-mmd_liff_session' "$jar"
-          jq -e '.ok == true and (.data | type == "object")' "$body" >/dev/null
-          echo "COOKIE_JAR=$jar" >> "$GITHUB_ENV"
-
-      - name: Snapshot canonical entitlement state before grant
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require("node:fs");
-          const crypto = require("node:crypto");
-
-          const apiKey = process.env.AIRTABLE_API_KEY;
-          const baseId = process.env.AIRTABLE_BASE_ID;
-          const idToken = process.env.REAL_MEMBER_LIFF_ID_TOKEN;
-
-          const decodeJwtPayload = (token) => {
-            const parts = String(token || "").split(".");
-            if (parts.length < 2) throw new Error("real LINE ID token is not a JWT");
-            return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-          };
-          const formulaEscape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-          const fetchJson = async (url) => {
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(`Airtable read failed HTTP ${response.status}`);
-            return body;
-          };
-          const allRecords = async (table, fields = []) => {
-            const records = [];
-            let offset = "";
-            for (let page = 0; page < 20; page += 1) {
-              const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-              url.searchParams.set("pageSize", "100");
-              for (const field of fields) url.searchParams.append("fields[]", field);
-              if (offset) url.searchParams.set("offset", offset);
-              const body = await fetchJson(url);
-              records.push(...(body.records || []));
-              offset = String(body.offset || "");
-              if (!offset) break;
-            }
-            return records;
-          };
-
-          const payload = decodeJwtPayload(idToken);
-          const lineUserId = String(payload.sub || "").trim();
-          if (!/^U[0-9A-Za-z_-]{20,80}$/.test(lineUserId)) throw new Error("LINE ID token does not expose a valid subject");
-
-          const clientUrl = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.CLIENTS_TABLE)}`);
-          clientUrl.searchParams.set("maxRecords", "2");
-          clientUrl.searchParams.set("filterByFormula", `{line_user_id}='${formulaEscape(lineUserId)}'`);
-          clientUrl.searchParams.append("fields[]", "line_user_id");
-          const clients = (await fetchJson(clientUrl)).records || [];
-          if (clients.length !== 1) throw new Error(`real member must resolve to exactly one Client; got ${clients.length}`);
-
-          const clientId = clients[0].id;
-          console.log(`::add-mask::${clientId}`);
-
-          const entitlements = (await allRecords(process.env.ENTITLEMENTS_TABLE, [
-            "client",
-            "capability",
-            "access_status",
-            "member_status",
-            "member_lifecycle_status",
-            "payment_ref",
-          ])).filter((record) => Array.isArray(record.fields?.client) && record.fields.client.includes(clientId));
-
-          const canonical = entitlements
-            .map((record) => ({
-              id: record.id,
-              client: record.fields?.client || [],
-              capability: record.fields?.capability || null,
-              access_status: record.fields?.access_status || null,
-              member_status: record.fields?.member_status || null,
-              member_lifecycle_status: record.fields?.member_lifecycle_status || null,
-              payment_ref: record.fields?.payment_ref || "",
-            }))
-            .sort((a, b) => a.id.localeCompare(b.id));
-
-          const fingerprint = crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-          fs.appendFileSync(process.env.GITHUB_ENV, `E2E_CLIENT_RECORD_ID=${clientId}\nENTITLEMENT_FINGERPRINT_BEFORE=${fingerprint}\nENTITLEMENT_COUNT_BEFORE=${canonical.length}\n`);
-          console.log(`PASS pre-grant entitlement snapshot; records=${canonical.length}`);
-          NODE
-
-      - name: Verify real-member teaser availability
-        shell: bash
-        run: |
-          set -euo pipefail
-          headers="$RUNNER_TEMP/private-teaser-availability.headers"
-          body="$RUNNER_TEMP/private-teaser-availability.json"
-          url="$ORIGIN/api/member/app/private-teaser/availability?model_slug=$(node -p 'encodeURIComponent(process.env.MODEL_SLUG)')&work_lane=$(node -p 'encodeURIComponent(process.env.WORK_LANE)')"
-
-          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error \
-            -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" -w "%{http_code}" \
-            -H "Origin: $ORIGIN" "$url")"
-
-          echo "Private Teaser availability HTTP $code"
-          test "$code" = "200"
-          grep -qi '^cache-control: .*no-store' "$headers"
-          node - "$body" <<'NODE'
-          const fs = require("node:fs");
-          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          if (body?.ok !== true || body?.availability?.eligible !== true) {
-            throw new Error(`real member/model is not teaser-eligible: ${JSON.stringify(body)}`);
-          }
-          const kind = process.env.PREVIEW_KIND;
-          const count = kind === "private_clip" ? Number(body.availability.clip_count || 0) : Number(body.availability.pic_count || 0);
-          if (count < 1) throw new Error(`no approved ${kind} teaser asset is available for ${process.env.MODEL_SLUG}`);
-          console.log(`PASS real-member teaser availability; kind=${kind}; available=${count}`);
-          NODE
-
-      - name: Create exactly one real teaser grant
-        shell: bash
-        run: |
-          set -euo pipefail
-          headers="$RUNNER_TEMP/private-teaser-grant.headers"
-          body="$RUNNER_TEMP/private-teaser-grant.json"
-
-          # Deliberately no automatic retry: this endpoint creates a one-use grant.
-          code="$(curl --silent --show-error \
-            -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" -w "%{http_code}" \
-            -X POST "$ORIGIN/api/member/app/private-teaser/grant" \
-            -H "Origin: $ORIGIN" \
-            -H "Accept: application/json" \
-            -H "Content-Type: application/json" \
-            --data-binary "$(jq -nc --arg model "$MODEL_SLUG" --arg lane "$WORK_LANE" --arg kind "$PREVIEW_KIND" '{model_slug:$model,work_lane:$lane,preview_kind:$kind}')")"
-
-          echo "Private Teaser grant HTTP $code"
-          test "$code" = "200"
-          grep -qi '^cache-control: .*no-store' "$headers"
-
-          viewer_url="$(jq -er '.grant.viewer_url' "$body")"
-          case "$viewer_url" in
-            /my-mmd/private-preview/view#t=*) ;;
-            *) echo "Unexpected teaser viewer URL" >&2; exit 1 ;;
-          esac
-          if printf '%s' "$viewer_url" | grep -Eq '^https?://|private-model-media|r2\.cloudflarestorage|X-Amz-'; then
-            echo "Grant exposed a host/storage locator" >&2
-            exit 1
-          fi
-
-          token_fragment="${viewer_url#*#t=}"
-          preview_token="$(node -e 'process.stdout.write(decodeURIComponent(process.argv[1]))' "$token_fragment")"
-          test -n "$preview_token"
-          echo "::add-mask::$preview_token"
-
-          token_hash="$(PREVIEW_TOKEN="$preview_token" node - <<'NODE'
-          const crypto = require("node:crypto");
-          process.stdout.write(crypto.createHash("sha256").update(process.env.PREVIEW_TOKEN).digest("hex"));
-          NODE
-          )"
-          echo "PREVIEW_TOKEN=$preview_token" >> "$GITHUB_ENV"
-          echo "PREVIEW_TOKEN_HASH=$token_hash" >> "$GITHUB_ENV"
-          echo "PASS real teaser grant issued; raw token masked and retained only in the job environment"
-
-      - name: Audit active grant binding before view
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require("node:fs");
-
-          const apiKey = process.env.AIRTABLE_API_KEY;
-          const baseId = process.env.AIRTABLE_BASE_ID;
-          const formulaEscape = (value) => String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-          const readJson = async (url) => {
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(`Airtable read failed HTTP ${response.status}`);
-            return body;
-          };
-
-          const grantUrl = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.GRANTS_TABLE)}`);
-          grantUrl.searchParams.set("maxRecords", "2");
-          grantUrl.searchParams.set("filterByFormula", `{preview_token_hash}='${formulaEscape(process.env.PREVIEW_TOKEN_HASH)}'`);
-          const grants = (await readJson(grantUrl)).records || [];
-          if (grants.length !== 1) throw new Error(`preview token hash must resolve to one grant; got ${grants.length}`);
-
-          const grant = grants[0];
-          const f = grant.fields || {};
-          const one = (value) => Array.isArray(value) && value.length === 1;
-          if (!one(f.Client) || f.Client[0] !== process.env.E2E_CLIENT_RECORD_ID) throw new Error("grant Client binding mismatch");
-          if (!one(f.Model) || !one(f["Media Asset"])) throw new Error("grant must bind exactly one Model and one Media Asset");
-          if (Array.isArray(f.Payment) ? f.Payment.length !== 0 : Boolean(f.Payment)) throw new Error("pre-booking teaser grant must not link Payment");
-          if (f.grant_status !== "active" || f.required_gate !== "verified_prebooking_eligibility") throw new Error("grant lifecycle/gate mismatch");
-          if (f.deposit_verified !== false || String(f.official_verification_ref || "") !== "") throw new Error("teaser grant incorrectly depends on payment verification");
-          if (Number(f.view_limit) !== 1 || Number(f.view_count) !== 0) throw new Error("one-view grant counters are not initialized correctly");
-          if (f.signed_url_status !== "not_issued") throw new Error("teaser grant must not issue a signed storage URL");
-          if (f.preview_token_hash !== process.env.PREVIEW_TOKEN_HASH) throw new Error("stored preview token hash mismatch");
-
-          const expiresMs = Date.parse(String(f.expires_at || ""));
-          const ttlMs = expiresMs - Date.now();
-          if (!Number.isFinite(expiresMs) || ttlMs <= 0 || ttlMs > 16 * 60 * 1000) throw new Error("teaser grant TTL is outside the 15-minute policy window");
-
-          const payload = JSON.parse(String(f.payload_json || "{}"));
-          if (payload.access_lane !== "private_teaser" || payload.authorization_basis !== "verified_prebooking_eligibility") throw new Error("teaser authorization basis mismatch");
-          if (payload.preview_kind !== process.env.PREVIEW_KIND || payload.token_storage !== "sha256_hash_only") throw new Error("teaser payload policy mismatch");
-
-          const modelId = f.Model[0];
-          const mediaId = f["Media Asset"][0];
-          for (const value of [grant.id, String(f.grant_id || ""), modelId, mediaId]) console.log(`::add-mask::${value}`);
-
-          const mediaUrl = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.MEDIA_TABLE)}/${encodeURIComponent(mediaId)}`;
-          const media = await readJson(mediaUrl);
-          const mf = media.fields || {};
-          if (!Array.isArray(mf.Model) || mf.Model.length !== 1 || mf.Model[0] !== modelId) throw new Error("media Model binding mismatch");
-          if (mf.review_status !== "approved" || mf.teaser_safe !== true) throw new Error("media is not Owner-approved for teaser projection");
-          if (!["flash_preview", "private_gallery"].includes(mf.media_type)) throw new Error("media type is outside teaser policy");
-          if (!["image/jpeg", "image/png", "image/webp", "video/mp4"].includes(String(mf.file_type || ""))) throw new Error("media MIME is outside teaser policy");
-
-          fs.appendFileSync(process.env.GITHUB_ENV,
-            `GRANT_RECORD_ID=${grant.id}\nGRANT_PUBLIC_ID=${String(f.grant_id || "")}\nMODEL_RECORD_ID=${modelId}\nMEDIA_RECORD_ID=${mediaId}\n`
-          );
-          console.log("PASS grant audit: one Client + one Model + one Media Asset; Payment empty; 15-minute one-view policy locked");
-          NODE
-
-      - name: Verify status is non-consuming
-        shell: bash
-        run: |
-          set -euo pipefail
-          encoded_token="$(PREVIEW_TOKEN="$PREVIEW_TOKEN" node -p 'encodeURIComponent(process.env.PREVIEW_TOKEN)')"
-          headers="$RUNNER_TEMP/private-teaser-status-before.headers"
-          body="$RUNNER_TEMP/private-teaser-status-before.json"
-
-          code="$(curl --retry 4 --retry-delay 2 --retry-all-errors --silent --show-error \
-            -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$body" -w "%{http_code}" \
-            -H "Origin: $ORIGIN" "$ORIGIN/api/member/app/private-preview/status?t=$encoded_token")"
-          echo "Private Preview pre-consume status HTTP $code"
-          test "$code" = "200"
-          jq -e --arg kind "$PREVIEW_KIND" '.ok == true and .preview.kind == $kind and .preview.viewLimit == 1 and .preview.accessLane == "private_teaser"' "$body" >/dev/null
-
-          node <<'NODE'
-          const apiKey = process.env.AIRTABLE_API_KEY;
-          const baseId = process.env.AIRTABLE_BASE_ID;
-          const get = async (url) => {
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(`Airtable read failed HTTP ${response.status}`);
-            return body;
-          };
-          const grant = await get(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.GRANTS_TABLE)}/${process.env.GRANT_RECORD_ID}`);
-          if (grant.fields?.grant_status !== "active" || Number(grant.fields?.view_count) !== 0) throw new Error("status check consumed or mutated the grant");
-
-          const logs = [];
-          let offset = "";
-          for (let page = 0; page < 20; page += 1) {
-            const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.CONSUMPTION_TABLE)}`);
-            url.searchParams.set("pageSize", "100");
-            if (offset) url.searchParams.set("offset", offset);
-            const body = await get(url);
-            logs.push(...(body.records || []));
-            offset = String(body.offset || "");
-            if (!offset) break;
-          }
-          const matching = logs.filter((record) => Array.isArray(record.fields?.Grant) && record.fields.Grant.includes(process.env.GRANT_RECORD_ID));
-          if (matching.length !== 0) throw new Error("status check unexpectedly created a consumption audit row");
-          console.log("PASS status is read-only: grant remains active and no consumption audit exists");
-          NODE
-
-      - name: Consume real teaser exactly once
-        shell: bash
-        run: |
-          set -euo pipefail
-          headers="$RUNNER_TEMP/private-teaser-consume.headers"
-          media="$RUNNER_TEMP/private-teaser-consumed.bin"
-
-          # Deliberately no retry: consuming is an irreversible one-use mutation.
-          code="$(curl --silent --show-error \
-            -D "$headers" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$media" -w "%{http_code}" \
-            -X POST "$ORIGIN/api/member/app/private-preview/consume" \
-            -H "Origin: $ORIGIN" \
-            -H "Content-Type: application/json" \
-            --data-binary "$(jq -nc --arg t "$PREVIEW_TOKEN" '{t:$t}')")"
-
-          echo "Private Preview consume HTTP $code"
-          test "$code" = "200"
-          grep -qi '^x-mmd-preview-consumed: true' "$headers"
-          grep -Fqi "x-mmd-preview-kind: $PREVIEW_KIND" "$headers"
-          grep -qi '^cache-control: .*no-store' "$headers"
-          test -s "$media"
-          bytes="$(wc -c < "$media" | tr -d ' ')"
-          test "$bytes" -gt 0
-          echo "PASS one-use consume delivered protected media bytes; payload not printed"
-
-      - name: Verify replay fails closed
-        shell: bash
-        run: |
-          set -euo pipefail
-          encoded_token="$(PREVIEW_TOKEN="$PREVIEW_TOKEN" node -p 'encodeURIComponent(process.env.PREVIEW_TOKEN)')"
-
-          status_body="$RUNNER_TEMP/private-teaser-status-replay.json"
-          status_code="$(curl --silent --show-error -b "$COOKIE_JAR" -o "$status_body" -w "%{http_code}" \
-            -H "Origin: $ORIGIN" "$ORIGIN/api/member/app/private-preview/status?t=$encoded_token")"
-          echo "Private Preview replay status HTTP $status_code"
-          test "$status_code" = "410"
-          jq -e '.ok == false and .error.code == "PREVIEW_CONSUMED"' "$status_body" >/dev/null
-
-          consume_body="$RUNNER_TEMP/private-teaser-consume-replay.json"
-          consume_code="$(curl --silent --show-error -b "$COOKIE_JAR" -o "$consume_body" -w "%{http_code}" \
-            -X POST "$ORIGIN/api/member/app/private-preview/consume" \
-            -H "Origin: $ORIGIN" \
-            -H "Content-Type: application/json" \
-            --data-binary "$(jq -nc --arg t "$PREVIEW_TOKEN" '{t:$t}')")"
-          echo "Private Preview replay consume HTTP $consume_code"
-          test "$consume_code" = "410"
-          jq -e '.ok == false and .error.code == "PREVIEW_CONSUMED"' "$consume_body" >/dev/null
-          echo "PASS replay is fail-closed"
-
-      - name: Audit grant consumption and unchanged entitlements
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const crypto = require("node:crypto");
-
-          const apiKey = process.env.AIRTABLE_API_KEY;
-          const baseId = process.env.AIRTABLE_BASE_ID;
-          const get = async (url) => {
-            const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(`Airtable read failed HTTP ${response.status}`);
-            return body;
-          };
-          const allRecords = async (table, fields = []) => {
-            const records = [];
-            let offset = "";
-            for (let page = 0; page < 20; page += 1) {
-              const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
-              url.searchParams.set("pageSize", "100");
-              for (const field of fields) url.searchParams.append("fields[]", field);
-              if (offset) url.searchParams.set("offset", offset);
-              const body = await get(url);
-              records.push(...(body.records || []));
-              offset = String(body.offset || "");
-              if (!offset) break;
-            }
-            return records;
-          };
-
-          const grant = await get(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(process.env.GRANTS_TABLE)}/${process.env.GRANT_RECORD_ID}`);
-          const gf = grant.fields || {};
-          if (gf.grant_status !== "consumed" || Number(gf.view_count) !== 1 || gf.signed_url_status !== "consumed") {
-            throw new Error("grant mirror did not confirm one consumption");
-          }
-          if (Array.isArray(gf.Payment) ? gf.Payment.length !== 0 : Boolean(gf.Payment)) throw new Error("consumption unexpectedly linked a Payment");
-
-          const logs = await allRecords(process.env.CONSUMPTION_TABLE);
-          const matching = logs.filter((record) => Array.isArray(record.fields?.Grant) && record.fields.Grant.includes(process.env.GRANT_RECORD_ID));
-          if (matching.length !== 1) throw new Error(`expected exactly one consumption audit row; got ${matching.length}`);
-          const log = matching[0].fields || {};
-          if (log.outcome !== "consumed" || log.media_kind !== process.env.PREVIEW_KIND) throw new Error("consumption audit outcome/kind mismatch");
-          if (!Array.isArray(log.Client) || log.Client.length !== 1 || log.Client[0] !== process.env.E2E_CLIENT_RECORD_ID) throw new Error("consumption audit Client mismatch");
-          if (!Array.isArray(log.Model) || log.Model.length !== 1 || log.Model[0] !== process.env.MODEL_RECORD_ID) throw new Error("consumption audit Model mismatch");
-          if (!Array.isArray(log["Media Asset"]) || log["Media Asset"].length !== 1 || log["Media Asset"][0] !== process.env.MEDIA_RECORD_ID) throw new Error("consumption audit Media Asset mismatch");
-          if (!log.consumed_at) throw new Error("consumption audit timestamp missing");
-
-          const entitlements = (await allRecords(process.env.ENTITLEMENTS_TABLE, [
-            "client",
-            "capability",
-            "access_status",
-            "member_status",
-            "member_lifecycle_status",
-            "payment_ref",
-          ])).filter((record) => Array.isArray(record.fields?.client) && record.fields.client.includes(process.env.E2E_CLIENT_RECORD_ID));
-
-          const canonical = entitlements
-            .map((record) => ({
-              id: record.id,
-              client: record.fields?.client || [],
-              capability: record.fields?.capability || null,
-              access_status: record.fields?.access_status || null,
-              member_status: record.fields?.member_status || null,
-              member_lifecycle_status: record.fields?.member_lifecycle_status || null,
-              payment_ref: record.fields?.payment_ref || "",
-            }))
-            .sort((a, b) => a.id.localeCompare(b.id));
-          const fingerprint = crypto.createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
-
-          if (String(canonical.length) !== String(process.env.ENTITLEMENT_COUNT_BEFORE)) throw new Error("member entitlement record count changed during teaser E2E");
-          if (fingerprint !== process.env.ENTITLEMENT_FINGERPRINT_BEFORE) throw new Error("member entitlement state changed during teaser E2E");
-
-          console.log("PASS post-consumption audit: one durable consumption row; grant consumed once; Payment empty; entitlements unchanged");
-          NODE
-
-      - name: Record real-member production acceptance receipt
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## ✅ Private Teaser Viewer V1 — REAL MEMBER GRANT/CONSUME ACCEPTED
-
-          - source_sha: \`${GITHUB_SHA}\`
-          - checked_at: \`${checked_at}\`
-          - model_slug: \`${MODEL_SLUG}\`
-          - preview_kind: \`${PREVIEW_KIND}\`
-          - identity: real LINE ID token → verified MY MMD session
-          - availability: eligible with an Owner-approved teaser-safe asset
-          - grant: exactly one Client + one Model + one Media Asset
-          - grant basis: \`verified_prebooking_eligibility\`
-          - grant Payment link: empty
-          - storage exposure: no public/signed R2 URL
-          - status before consume: 200 and non-mutating
-          - consume: 200, protected bytes delivered once
-          - replay status + replay consume: 410 \`PREVIEW_CONSUMED\`
-          - Airtable consumption audit: exactly one matching consumed row
-          - grant mirror: consumed / view_count=1 / signed_url_status=consumed
-          - member entitlement fingerprint: unchanged before vs after
-          - raw LINE ID, Client ID, preview token, media bytes: not recorded in receipt"
-
-          echo "PRIVATE_TEASER_REAL_MEMBER_E2E=PRODUCTION_ACCEPTED"
+      - name: Validate E2E runner syntax
+        run: node --check scripts/private-teaser-real-member-e2e.mjs
+      - name: Run first real-member grant and consume acceptance
+        run: node scripts/private-teaser-real-member-e2e.mjs
