@@ -321,6 +321,81 @@ test("availability adoption reminder sends one bounded LINE push and writes a 24
   }
 });
 
+test("availability adoption reminder prefers canonical member-dashboard LINE service binding without admin LINE token", async () => {
+  const store = kv();
+  const fetchCalls = [];
+  const bindingCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    fetchCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com") {
+      return Response.json({
+        records: [{
+          id: "recModel1234567890",
+          fields: {
+            unique_key: "mdl_pri_str_master",
+            working_name: "EMs16",
+            line_user_id: "U0123456789abcdef0123456789abcdef",
+            status: "active",
+          },
+        }],
+      });
+    }
+    if (url.hostname === "api.line.me") throw new Error("admin-worker must not call LINE directly when binding exists");
+    return new Response("not found", { status: 404 });
+  };
+
+  const lineBinding = {
+    async fetch(request) {
+      bindingCalls.push(request);
+      assert.equal(new URL(request.url).hostname, "member-dashboard-chat-worker.local");
+      assert.equal(new URL(request.url).pathname, "/__internal/line/model-availability-reminder");
+      assert.equal(request.method, "POST");
+      assert.equal(request.headers.get("x-mmd-internal-call"), "true");
+      assert.equal(request.headers.get("x-mmd-service-binding"), "admin-worker");
+      const body = await request.clone().json();
+      assert.equal(body.line_user_id, "U0123456789abcdef0123456789abcdef");
+      assert.equal(body.display_name, "EMs16");
+      return Response.json({ ok: true, status: "sent", transport: "member-dashboard-chat-worker" });
+    },
+  };
+
+  try {
+    const response = await handleSigilAvailabilityInternalRequest(new Request(
+      "https://admin-worker.local/v1/internal/sigil/availability-adoption/remind",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer secret",
+          "x-mmd-internal-call": "true",
+          "x-mmd-service-binding": "calendar-owner",
+        },
+        body: JSON.stringify({ model_key: "mdl_pri_str_master" }),
+      },
+    ), {
+      INTERNAL_TOKEN: "secret",
+      AIRTABLE_API_KEY: "airtable-secret",
+      AIRTABLE_BASE_ID: "app_test",
+      MEMBER_DASHBOARD_CHAT_WORKER: lineBinding,
+      SIGIL_AVAILABILITY_SNAPSHOTS: store,
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.transport, "member-dashboard-chat-worker");
+    assert.equal(bindingCalls.length, 1);
+    assert.equal(fetchCalls.filter(call => new URL(call.url).hostname === "api.line.me").length, 0);
+    assert.doesNotMatch(JSON.stringify(payload), /U0123456789abcdef|airtable-secret/i);
+    assert.equal(store.writes.some(entry => entry.key === "availability-adoption:v1:reminder:mdl_pri_str_master"), true);
+    assert.equal(store.writes.some(entry => entry.key === "availability-adoption:v1:recovery:mdl_pri_str_master"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("availability adoption reminder refuses fresh state and never guesses that a reminder is needed", async () => {
   const store = kv({
     "availability:v1:mdl_pri_str_master": JSON.stringify({
