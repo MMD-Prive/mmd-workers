@@ -49,3 +49,34 @@ test("Per credential creates an owner-bound admin session for Owner Actions", as
     auth_method: "credential",
   });
 });
+
+
+test("legacy fallback credential remains admin and cannot mint an owner session", async () => {
+  const fallbackEnv = {
+    ADMIN_ACCESS_CODE: "legacy-admin-test-credential",
+    ADMIN_SESSION_SECRET: "legacy-admin-test-session-secret",
+  };
+  const login = new Request(`https://mmdbkk.com${ADMIN_LOGIN_SESSION_PATH}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      origin: "https://mmdbkk.com",
+      "x-mmd-login-fetch": "1",
+    },
+    body: JSON.stringify({
+      action: "owner_login",
+      access_code: fallbackEnv.ADMIN_ACCESS_CODE,
+      next: "/internal/admin/control-room",
+    }),
+  });
+
+  const response = await adminWorker.fetch(login, fallbackEnv, {});
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).role, "admin");
+
+  const actor = await readCredentialBoundAdminActor(new Request(
+    "https://mmdbkk.com/v1/admin/dashboard/owner-actions",
+    { headers: { cookie: response.headers.get("set-cookie") || "" } },
+  ), fallbackEnv);
+  assert.equal(actor?.role, "admin");
+});
