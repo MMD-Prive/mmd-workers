@@ -84,6 +84,22 @@ jobs:
               href: "/internal/admin/member-intelligence",
               authority: "my_mmd_entitlement_resolver_v1",
             },
+            hype_entitlement_notification_overdue: {
+              href: "/internal/admin/member-intelligence",
+              authority: "my_mmd_entitlement_resolver_v1",
+            },
+            hype_recovery_unassigned_overdue: {
+              href: "/internal/admin/recovery?assignment=unassigned",
+              authority: "recovery_queue_operational_metadata",
+            },
+            hype_coupon_manual_review_overdue: {
+              href: "/internal/admin/member-intelligence",
+              authority: "care_back_claim_policy",
+            },
+            hype_telegram_bind_overdue: {
+              href: "/internal/admin/control-room",
+              authority: "telegram_identity_bind_authority",
+            },
             hype_operational_watch: {
               href: "/internal/admin/control-room",
               authority: "hype_coordinator_read_only",
@@ -333,7 +349,7 @@ jobs:
               : "| — | — | 0 | — |";
 
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
-              "## Phase 5B — Owner Actions Daily Adoption Receipt",
+              "## Phase 5D — Owner Actions Cohort Adoption Receipt",
               "",
               `- State: **${receipt.adoption_state}**`,
               `- Checked at: \`${receipt.checked_at}\``,
