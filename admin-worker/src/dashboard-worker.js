@@ -23,6 +23,7 @@ import { readPartnerFinanceAuditCoverage } from "./partner-owner-console.js";
 import { readMmsOwnerActionCoverage } from "./mms-admin-runtime.js";
 import { readCrossSystemStuckSlaWatch } from "./hype-cross-system-stuck-sla.js";
 import { readRecoveryQueueIntelligence } from "./recovery-control.js";
+import { readAdminCalendar } from "./admin-calendar-runtime-v2.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -90,7 +91,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
   const ownerRecoveryQueue = ownerActionRecoveryQueue(env, ownerActor, now);
-  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, financeAuditResult, mmsResult, hypeResult] = await Promise.allSettled([
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, financeAuditResult, mmsResult, hypeResult, availabilityResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
@@ -100,6 +101,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     ownerActionCoverage(env, ownerActor),
     ownerActionMmsCoverage(env, ownerActor),
     ownerActionHypeCoverage(env, ownerActor, now, ownerRecoveryQueue),
+    ownerActionAvailabilityCoverage(env, ownerActor, now),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
@@ -160,10 +162,12 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const financeAudit = coverageResult(financeAuditResult, "finance_audit_unavailable");
   const mms = coverageResult(mmsResult, "mms_snapshot_unavailable");
   const hype = coverageResult(hypeResult, "hype_watch_unavailable");
+  const availability = coverageResult(availabilityResult, "availability_coverage_unavailable");
   const sourceCoverage = [
     sourceCoverageEntry("finance_audit", "Finance Audit", financeAudit, "/internal/admin/partners", "canonical_finance_timeline"),
     sourceCoverageEntry("mms", "MMS", mms, "/internal/admin/mms", "mms-worker"),
     sourceCoverageEntry("hype", "HYPE operational watch", hype, "/internal/admin/control-room", "hype_coordinator_read_only"),
+    sourceCoverageEntry("availability", "Availability", availability, "/internal/admin/calendar", "sigil_availability_snapshot_v1"),
   ];
   const telegramStatus = telegramRouterHealth?.status === "configured"
     ? "พร้อม"
@@ -230,6 +234,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
       finance_audit: financeAudit,
       mms,
       hype,
+      availability,
       source_coverage: sourceCoverage,
       unavailable_sources: sourceCoverage.filter((source) => source.state !== "connected").map((source) => source.source),
     },
@@ -260,6 +265,38 @@ function ownerActionRecoveryQueue(env, actor, now) {
     : Promise.resolve({ ok: false, error: "owner_scope_required" });
 }
 
+function ownerActionAvailabilityCoverage(env, actor, now) {
+  if (!actor) return Promise.resolve({ available: false, reason: "owner_scope_required" });
+  return readAdminCalendar(env, bangkokDateOffset(now, 0)).then((calendar) => {
+    const health = calendar?.availability?.coverage_health;
+    if (!health || health.schema !== "mmd.availability.coverage-health.v1") {
+      return { available: false, reason: "availability_coverage_contract_missing" };
+    }
+    const sourceAttention = health.review_status === "source_attention";
+    return {
+      available: true,
+      complete: !sourceAttention,
+      status: sourceAttention ? "partial" : "ok",
+      authority: "sigil_availability_snapshot_v1",
+      coverage_health: {
+        schema: health.schema,
+        review_status: cleanDebugStatus(health.review_status),
+        canonical_models: nonNegativeInteger(health.canonical_models),
+        fresh_models: nonNegativeInteger(health.fresh_models),
+        fresh_coverage_percent: Number.isFinite(Number(health.fresh_coverage_percent)) ? Number(health.fresh_coverage_percent) : null,
+        identity_missing: nonNegativeInteger(health.identity_missing),
+        unconfirmed_models: nonNegativeInteger(health.unconfirmed_models),
+        source_unavailable_models: nonNegativeInteger(health.source_unavailable_models),
+        owner_action_required: nonNegativeInteger(health.owner_action_required),
+        follow_up_due: nonNegativeInteger(health.follow_up_due),
+        waiting_for_model: nonNegativeInteger(health.waiting_for_model),
+        automatic_send: false,
+        no_guess: true,
+      },
+    };
+  });
+}
+
 function ownerActionHypeCoverage(env, actor, now, recoveryQueue) {
   return actor
     ? Promise.resolve(recoveryQueue).then((value) => readCrossSystemStuckSlaWatch(env, { now, recoveryQueue: value }))
@@ -282,6 +319,11 @@ function sourceCoverageEntry(source, label, value, href, fallbackAuthority) {
 function ownerCoverageActionCount(source, value) {
   if (source === "finance_audit") return nonNegativeInteger(value?.reconciliation_count) + nonNegativeInteger(value?.payout_hold_count);
   if (source === "mms") return nonNegativeInteger(value?.application_review_count) + nonNegativeInteger(value?.prebooking_coordination_count);
+  if (source === "availability") {
+    const health = value?.coverage_health || {};
+    if (health.review_status === "source_attention") return Math.max(1, nonNegativeInteger(health.source_unavailable_models));
+    return nonNegativeInteger(health.owner_action_required);
+  }
   return nonNegativeInteger(value?.counts?.total);
 }
 

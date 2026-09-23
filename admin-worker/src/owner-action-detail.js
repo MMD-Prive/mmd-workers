@@ -17,6 +17,10 @@ const DETAIL_COPY = Object.freeze({
     reason: "Finance Audit พบความสอดคล้องที่ต้องตรวจใน authority ทางการเงิน",
     decision_boundary: "เปิด Finance & Audit เพื่อตรวจ timeline และ reconciliation จาก canonical finance authority เท่านั้น",
   },
+  availability_exception_review: {
+    reason: "Daily Coverage Review พบ exception ของ Availability ที่ต้องย้อนดู source หรือ recovery action ตามหลักฐานจริง",
+    decision_boundary: "เปิด Calendar เพื่อตรวจ coverage-health และจัดการเฉพาะ action ที่มี authority อยู่แล้ว; ห้ามเดาสถานะว่างหรือส่ง reminder อัตโนมัติ",
+  },
   finance_payout_hold: {
     reason: "Finance Audit ระบุรายการที่ยังพักจ่าย",
     decision_boundary: "เปิด Finance & Audit เพื่อตรวจเหตุผลและหลักฐานใน authority ทางการเงินเท่านั้น",

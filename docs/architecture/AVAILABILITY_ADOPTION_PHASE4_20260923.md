@@ -1,6 +1,6 @@
 # Availability Adoption Phase 4 — Coverage Health & Owner Daily Review
 
-Status: implementation candidate
+Status: production accepted
 Date: 2026-09-23
 
 ## Outcome
@@ -32,3 +32,14 @@ The response exposes exact derived counts and `fresh_coverage_percent`; it does 
 - `automatic_send: false` and `no_guess: true` are explicit in the contract;
 - all reminder and activation actions remain owner clicks under their existing authorization and cooldown gates;
 - raw LINE IDs, activation URLs, tokens, and private notes are not included in health data.
+
+
+## Production acceptance
+
+- PR #1668 introduced the daily coverage-health projection and Owner Daily Review.
+- PR #1694 hardened inactive/excluded inventory and source-unavailable classification.
+- PR #1696 unblocked the admin-worker production deploy.
+- Calendar Production Connection run 35842387238 passed validate + connect with real Owner access on apex and www.
+- The 51-test Calendar validation suite passed with fail-closed coverage and protected owner routes.
+
+Operational follow-up is tracked as Availability Operations — Daily Coverage & Exception Review. Calendar remains the source surface; Control Room may surface exception counts but does not duplicate or mutate availability truth.
