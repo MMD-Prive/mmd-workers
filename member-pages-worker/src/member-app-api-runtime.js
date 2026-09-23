@@ -263,10 +263,13 @@ async function readIdentityRecoveryState(env = {}, session = null) {
     url.searchParams.set("maxRecords", "5");
     url.searchParams.set("sort[0][field]", "created_at");
     url.searchParams.set("sort[0][direction]", "desc");
-    const response = await fetch(url.toString(), {
+    const request = new Request(url.toString(), {
       headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
       signal: controller.signal,
     });
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(request)
+      : await fetch(request);
     const payload = await response.json().catch(() => null);
     const record = response.ok && Array.isArray(payload?.records) ? payload.records[0] : null;
     return identityRecoveryStateFromEvidence(session, record);
