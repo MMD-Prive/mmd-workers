@@ -15,6 +15,7 @@
   const identityReadinessSchema="mmd.kenji_verified_identity_readiness.v1";
   const identityRecoverySchema="mmd.kenji_identity_evidence_recovery.v1";
   const identityEvidenceProtocolSchema="mmd.kenji_identity_evidence_owner_review_protocol.v1";
+  const sourceEvidenceWorkbenchSchema="mmd.kenji_source_evidence_owner_workbench.v1";
   const recoveryScanLimit=24;
   const feedbackSchema="mmd.kenji_continuity_operator_feedback.v1";
   const feedbackReasonLabels={
@@ -51,7 +52,9 @@
     recoveryFilter:"pending",
     recoveryLoading:false,
     recoveryErrors:0,
-    recoverySeq:0
+    recoverySeq:0,
+    sourceEvidenceWorkbench:null,
+    sourceEvidenceRereading:false
   };
 
   function setText(id,value){
@@ -269,6 +272,56 @@
     const draft=byId("miDraftCard");
     if(draft)detail.insertBefore(card,draft);
     else detail.appendChild(card);
+    return card;
+  }
+
+  function ensureSourceEvidenceWorkbenchUi(){
+    const detail=byId("miDetail");
+    if(!detail)return null;
+    let card=byId("miSourceEvidenceWorkbench");
+    if(card)return card;
+
+    if(!byId("miSourceEvidenceWorkbenchStyle")){
+      const style=document.createElement("style");
+      style.id="miSourceEvidenceWorkbenchStyle";
+      style.textContent=`
+#mmdMemberIntelligence .mi-source-evidence-workbench{grid-column:1/-1;margin-top:18px;padding:18px 20px;border:1px solid rgba(31,54,42,.17);border-radius:22px;background:linear-gradient(145deg,#f8faf6,#eef3ec);box-shadow:0 16px 42px rgba(20,35,27,.07)}
+#mmdMemberIntelligence .mi-source-evidence-workbench[data-tone="ok"]{border-color:rgba(55,113,73,.36);background:linear-gradient(145deg,#f7faf5,#eaf2e8)}
+#mmdMemberIntelligence .mi-source-evidence-workbench[data-tone="bad"]{border-color:rgba(151,63,54,.42);background:linear-gradient(145deg,#fff9f7,#f7eae6)}
+#mmdMemberIntelligence .mi-source-evidence-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+#mmdMemberIntelligence .mi-source-evidence-kicker{display:block;color:#5f7466;font-size:9px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+#mmdMemberIntelligence .mi-source-evidence-head h3{margin:5px 0 0;font-size:20px;line-height:1.25}
+#mmdMemberIntelligence .mi-source-evidence-state{flex:0 0 auto;padding:6px 9px;border-radius:999px;background:#e3ebe1;color:#365843;font-size:9px;font-weight:900;letter-spacing:.05em}
+#mmdMemberIntelligence .mi-source-evidence-workbench[data-tone="bad"] .mi-source-evidence-state{background:#f2ded9;color:#8f3d34}
+#mmdMemberIntelligence .mi-source-evidence-reason{margin:10px 0 0;color:#5d6e64;font-size:11px;line-height:1.65}
+#mmdMemberIntelligence .mi-source-evidence-steps{display:grid;gap:7px;margin:13px 0 0;padding:0;list-style:none}
+#mmdMemberIntelligence .mi-source-evidence-step{display:grid;grid-template-columns:28px minmax(0,1fr);gap:9px;align-items:start;padding:10px;border-radius:12px;background:rgba(255,255,255,.72);color:#2d4334;font-size:11px;line-height:1.5}
+#mmdMemberIntelligence .mi-source-evidence-step b{display:grid;place-items:center;width:22px;height:22px;border-radius:999px;background:#dde9de;color:#365843;font-size:9px}
+#mmdMemberIntelligence .mi-source-evidence-step[data-step="resolve_identity_conflict"] b,#mmdMemberIntelligence .mi-source-evidence-step[data-step="restore_identity_evidence_read"] b{background:#f2ded9;color:#8f3d34}
+#mmdMemberIntelligence .mi-source-evidence-meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+#mmdMemberIntelligence .mi-source-evidence-meta div{padding:9px 10px;border-radius:12px;background:rgba(255,255,255,.68)}
+#mmdMemberIntelligence .mi-source-evidence-meta small,#mmdMemberIntelligence .mi-source-evidence-meta b{display:block}
+#mmdMemberIntelligence .mi-source-evidence-meta small{color:#718078;font-size:8px;font-weight:900;letter-spacing:.08em}
+#mmdMemberIntelligence .mi-source-evidence-meta b{margin-top:4px;color:#263b2f;font-size:10px;line-height:1.45}
+#mmdMemberIntelligence .mi-source-evidence-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}
+#mmdMemberIntelligence .mi-source-evidence-link,#mmdMemberIntelligence .mi-source-evidence-reread{display:inline-grid;place-items:center;min-height:38px;padding:8px 13px;border:1px solid rgba(31,54,42,.18);border-radius:999px;background:#fff;color:#314b39;text-decoration:none;font-size:9px;font-weight:900}
+#mmdMemberIntelligence .mi-source-evidence-reread:disabled{cursor:not-allowed;opacity:.42}
+#mmdMemberIntelligence .mi-source-evidence-guard{margin:0;color:#6d7d73;font-size:9px;line-height:1.55}
+@media(max-width:620px){#mmdMemberIntelligence .mi-source-evidence-workbench{padding:16px}#mmdMemberIntelligence .mi-source-evidence-meta{grid-template-columns:1fr}#mmdMemberIntelligence .mi-source-evidence-actions{align-items:stretch;flex-direction:column}#mmdMemberIntelligence .mi-source-evidence-link,#mmdMemberIntelligence .mi-source-evidence-reread{width:100%}}
+`;
+      document.head.appendChild(style);
+    }
+
+    card=document.createElement("section");
+    card.id="miSourceEvidenceWorkbench";
+    card.className="mi-source-evidence-workbench";
+    card.setAttribute("data-tone","warn");
+    card.setAttribute("aria-labelledby","miSourceEvidenceTitle");
+    card.innerHTML=`<div class="mi-source-evidence-head"><div><small class="mi-source-evidence-kicker">SOURCE EVIDENCE · OWNER ONLY · ONE CLIENT AT A TIME</small><h3 id="miSourceEvidenceTitle">Source Evidence Capture Workbench</h3></div><span class="mi-source-evidence-state" id="miSourceEvidenceState">LOCKED</span></div><p class="mi-source-evidence-reason" id="miSourceEvidenceReason">เลือก Canonical Client หนึ่งรายเพื่ออ่าน protocol ล่าสุด</p><ol class="mi-source-evidence-steps" id="miSourceEvidenceSteps"></ol><div class="mi-source-evidence-meta"><div><small>CLIENT SCOPE</small><b id="miSourceEvidenceScope">ONE CLIENT</b></div><div><small>FRESH RE-READ</small><b id="miSourceEvidenceFreshRead">REQUIRED</b></div><div><small>DECISION AUTHORITY</small><b id="miSourceEvidenceAuthority">Clients.Verification Status</b></div></div><div class="mi-source-evidence-actions"><a class="mi-source-evidence-link" id="miSourceEvidenceCustomer360" href="/internal/admin/customer-data">เปิด Customer 360 หลักฐาน</a><button class="mi-source-evidence-reread" id="miSourceEvidenceReread" type="button" disabled>RE-READ LATEST EVIDENCE</button><p class="mi-source-evidence-guard">เปิด source evidence เพื่อ owner review เท่านั้น · ไม่ capture อัตโนมัติ, ไม่เขียนหลักฐาน, ไม่ตั้ง Verified, ไม่ merge identity, ไม่เปลี่ยนสิทธิ์ และไม่มี bulk action</p></div>`;
+    const draft=byId("miDraftCard");
+    if(draft)detail.insertBefore(card,draft);
+    else detail.appendChild(card);
+    byId("miSourceEvidenceReread")?.addEventListener("click",()=>{void rereadSelectedSourceEvidence();});
     return card;
   }
 
@@ -505,6 +558,78 @@
       &&protocol.grants_points===false;
   }
 
+  function sourceEvidenceWorkbenchFromPayload(payload){
+    if(!identityReadinessContract(payload)||!identityRecoveryContract(payload)||!identityEvidenceProtocolContract(payload))return null;
+    const identity=payload?.identity||{};
+    const readiness=identity.readiness||{};
+    const recovery=identity.recovery||{};
+    const protocol=identity.evidence_protocol||{};
+    const states={
+      evidence_review_required:"evidence_review_first",
+      evidence_capture_required:"source_capture_required",
+      owner_review_required:"owner_verification_review",
+      complete:"complete",
+      conflict_locked:"locked_conflict",
+      unavailable_locked:"locked_unavailable"
+    };
+    const allowedSteps=new Set([
+      "capture_canonical_line_identity",
+      "review_line_ofc_evidence",
+      "capture_verified_liff_session",
+      "reread_identity_evidence",
+      "owner_review_verification_status",
+      "resolve_identity_conflict",
+      "restore_identity_evidence_read"
+    ]);
+    const steps=Array.isArray(protocol.steps)?protocol.steps.map(clean):[];
+    const status=states[clean(protocol.status)];
+    if(!status||!steps.every((step)=>allowedSteps.has(step)))return null;
+    const locked=["locked_conflict","locked_unavailable"].includes(status);
+    return {
+      schema:sourceEvidenceWorkbenchSchema,
+      mode:"owner_read_only",
+      status,
+      steps,
+      client_scope_required:protocol?.handoff?.client_scope_required===true,
+      fresh_reread_required:protocol?.review?.fresh_read_required===true,
+      authority:clean(protocol?.review?.verification_status_authority),
+      handoff_path:clean(protocol?.handoff?.path),
+      reread_allowed:!locked&&status!=="complete",
+      guardrails:{
+        evidence_written:false,
+        automatic_capture_allowed:false,
+        automatic_verification_allowed:false,
+        verification_status_mutated:false,
+        identity_mutated:false,
+        entitlement_changed:false,
+        customer_send_allowed:false,
+        bulk_owner_action_allowed:false,
+        human_owner_decision_required:readiness.requires_owner_decision===true||status==="complete"
+      },
+      recovery_status:clean(recovery.status)
+    };
+  }
+
+  function sourceEvidenceWorkbenchContract(payload){
+    const workbench=sourceEvidenceWorkbenchFromPayload(payload);
+    const guards=workbench?.guardrails||{};
+    return workbench?.schema===sourceEvidenceWorkbenchSchema
+      &&workbench?.mode==="owner_read_only"
+      &&workbench.client_scope_required===true
+      &&workbench.fresh_reread_required===true
+      &&workbench.authority==="Clients.Verification Status"
+      &&workbench.handoff_path==="/internal/admin/customer-data"
+      &&guards.evidence_written===false
+      &&guards.automatic_capture_allowed===false
+      &&guards.automatic_verification_allowed===false
+      &&guards.verification_status_mutated===false
+      &&guards.identity_mutated===false
+      &&guards.entitlement_changed===false
+      &&guards.customer_send_allowed===false
+      &&guards.bulk_owner_action_allowed===false
+      &&guards.human_owner_decision_required===true;
+  }
+
   function recoveryStatusLabel(recovery){
     const labels={
       complete:"หลักฐานครบ",
@@ -540,6 +665,129 @@
       unavailable_locked:"หยุด · กู้การอ่านหลักฐาน"
     };
     return labels[clean(protocol?.status)]||"PROTOCOL INVALID";
+  }
+
+  function sourceEvidenceWorkbenchLabel(workbench){
+    const labels={
+      evidence_review_first:"EVIDENCE REVIEW FIRST",
+      source_capture_required:"SOURCE CAPTURE REQUIRED",
+      owner_verification_review:"OWNER REVIEW READY",
+      complete:"EVIDENCE COMPLETE",
+      locked_conflict:"CONFLICT · LOCKED",
+      locked_unavailable:"UNAVAILABLE · LOCKED"
+    };
+    return labels[clean(workbench?.status)]||"CONTRACT LOCKED";
+  }
+
+  function sourceEvidenceWorkbenchReason(workbench){
+    const reasons={
+      evidence_review_first:"ตรวจ LINE OFC / LIFF evidence ที่มีอยู่ก่อนเสมอ แล้ว re-read projection ล่าสุดก่อนตัดสินใจใด ๆ",
+      source_capture_required:"ยังขาด source evidence · ทำงานใน Customer 360 ของ Canonical Client รายนี้ แล้วกลับมา re-read เท่านั้น",
+      owner_verification_review:"หลักฐานครบตาม contract แล้ว · Per เป็นผู้ตัดสิน Clients.Verification Status ในระบบเจ้าของข้อมูล",
+      complete:"หลักฐานครบตาม projection ล่าสุด · ไม่มี action อัตโนมัติจาก workbench นี้",
+      locked_conflict:"หลักฐานขัดกัน · หยุดการทำงานใน workbench และแก้ที่ source of truth ก่อน",
+      locked_unavailable:"อ่าน source evidence ไม่ได้อย่างปลอดภัย · หยุดการทำงานและกู้การอ่านข้อมูลก่อน"
+    };
+    return reasons[clean(workbench?.status)]||"Source evidence contract ไม่ครบ · workbench ถูกล็อกแบบ fail-closed";
+  }
+
+  function sourceEvidenceStepLabel(step){
+    const labels={
+      capture_canonical_line_identity:"ตรวจ Canonical Client และ LINE identity ที่ source of truth",
+      review_line_ofc_evidence:"ตรวจหลักฐาน LINE OFC ที่มีอยู่ก่อน capture เพิ่ม",
+      capture_verified_liff_session:"ตรวจหรือ capture หลักฐาน MY MMD / LIFF ใน source system",
+      reread_identity_evidence:"re-read Client Intelligence ล่าสุดก่อน owner decision",
+      owner_review_verification_status:"Per ตรวจและตัดสิน Clients.Verification Status เอง",
+      resolve_identity_conflict:"หยุด · แก้ identity conflict ที่ source of truth",
+      restore_identity_evidence_read:"หยุด · กู้การอ่าน source evidence ก่อน"
+    };
+    return labels[clean(step)]||"ขั้นตอนหลักฐานไม่อยู่ใน allowlist";
+  }
+
+  function resetSourceEvidenceWorkbench(){
+    ensureSourceEvidenceWorkbenchUi();
+    state.sourceEvidenceWorkbench=null;
+    setText("miSourceEvidenceState","LOCKED");
+    setText("miSourceEvidenceReason","เลือก Canonical Client หนึ่งรายเพื่ออ่าน protocol ล่าสุด");
+    setText("miSourceEvidenceScope","ONE CLIENT");
+    setText("miSourceEvidenceFreshRead","REQUIRED");
+    setText("miSourceEvidenceAuthority","Clients.Verification Status");
+    setTone("miSourceEvidenceWorkbench","warn");
+    const steps=byId("miSourceEvidenceSteps");
+    if(steps)steps.replaceChildren();
+    const link=byId("miSourceEvidenceCustomer360");
+    if(link)link.href="/internal/admin/customer-data";
+    const reread=byId("miSourceEvidenceReread");
+    if(reread){reread.disabled=true;reread.textContent="RE-READ LATEST EVIDENCE"}
+  }
+
+  function renderSourceEvidenceWorkbench(payload,clientId){
+    resetSourceEvidenceWorkbench(clientId);
+    if(!sourceEvidenceWorkbenchContract(payload)){
+      setText("miSourceEvidenceState","CONTRACT LOCKED");
+      setText("miSourceEvidenceReason","Source evidence / recovery / owner protocol contract ไม่ครบ · workbench ถูกล็อกแบบ fail-closed");
+      setText("miSourceEvidenceScope","LOCKED");
+      setText("miSourceEvidenceFreshRead","CONTRACT INVALID");
+      setText("miSourceEvidenceAuthority","CONTRACT INVALID");
+      setTone("miSourceEvidenceWorkbench","bad");
+      return false;
+    }
+
+    const workbench=sourceEvidenceWorkbenchFromPayload(payload);
+    state.sourceEvidenceWorkbench=workbench;
+    setText("miSourceEvidenceState",sourceEvidenceWorkbenchLabel(workbench));
+    setText("miSourceEvidenceReason",sourceEvidenceWorkbenchReason(workbench));
+    setText("miSourceEvidenceScope",workbench.client_scope_required?"ONE CANONICAL CLIENT":"LOCKED");
+    setText("miSourceEvidenceFreshRead",workbench.fresh_reread_required?"REQUIRED BEFORE DECISION":"LOCKED");
+    setText("miSourceEvidenceAuthority",workbench.authority);
+    const steps=byId("miSourceEvidenceSteps");
+    if(steps){
+      workbench.steps.forEach((step,index)=>{
+        const item=document.createElement("li");
+        item.className="mi-source-evidence-step";
+        item.dataset.step=step;
+        const number=document.createElement("b");
+        number.textContent=String(index+1);
+        const label=document.createElement("span");
+        label.textContent=sourceEvidenceStepLabel(step);
+        item.append(number,label);
+        steps.appendChild(item);
+      });
+      if(!workbench.steps.length){
+        const item=document.createElement("li");
+        item.className="mi-source-evidence-step";
+        item.dataset.step="complete";
+        item.textContent="ไม่มี source evidence action ที่ workbench จะทำอัตโนมัติ";
+        steps.appendChild(item);
+      }
+    }
+    const link=byId("miSourceEvidenceCustomer360");
+    if(link)link.href=`${workbench.handoff_path}?client_id=${encodeURIComponent(clientId)}`;
+    const reread=byId("miSourceEvidenceReread");
+    if(reread){
+      reread.disabled=!workbench.reread_allowed||state.sourceEvidenceRereading;
+      reread.textContent=state.sourceEvidenceRereading?"RE-READING…":"RE-READ LATEST EVIDENCE";
+    }
+    setTone("miSourceEvidenceWorkbench",workbench.status==="complete"?"ok":workbench.status.startsWith("locked_")?"bad":"warn");
+    return true;
+  }
+
+  async function rereadSelectedSourceEvidence(){
+    const record=state.selected;
+    const clientId=clean(record?.client_id);
+    const workbench=state.sourceEvidenceWorkbench;
+    if(!record||!clientId||!workbench?.reread_allowed||state.sourceEvidenceRereading)return;
+    state.sourceEvidenceRereading=true;
+    renderSourceEvidenceWorkbench(state.intelligence||{},clientId);
+    state.intelligenceCache.delete(clientId);
+    setStatus("กำลัง re-read source evidence ของ Canonical Client รายนี้ · ยังไม่มีการเขียนหรือยืนยันอัตโนมัติ","warn");
+    try{
+      await selectRecord(record);
+    }finally{
+      state.sourceEvidenceRereading=false;
+      const currentClientId=clean(state.selected?.client_id);
+      if(currentClientId===clientId&&state.intelligence)renderSourceEvidenceWorkbench(state.intelligence,clientId);
+    }
   }
 
   function resetIdentityReadinessUi(clientId=""){
@@ -1242,6 +1490,7 @@
     renderEvidence(record,null);
     setHandoffLinks(record);
     resetIdentityReadinessUi(clean(record?.client_id));
+    resetSourceEvidenceWorkbench();
     resetDraftUi();
   }
 
@@ -1296,6 +1545,7 @@
       const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,record);
       paintMemory(record,memory);
       renderIdentityReadiness(payload,clientId);
+      renderSourceEvidenceWorkbench(payload,clientId);
       await renderDraft(payload,clientId,selectionSeq);
       if(selectionSeq!==state.selectionSeq)return;
       const ready=memory&&payload?.data_status==="live";
@@ -1311,6 +1561,13 @@
       setText("miIdentityReadinessReason","Client Intelligence อ่านไม่ได้ · Kenji ถูกล็อกแบบ fail-closed");
       setText("miIdentityRecoveryAction","กู้ทางอ่านหลักฐาน");
       setTone("miIdentityReadinessCard","bad");
+      resetSourceEvidenceWorkbench();
+      setText("miSourceEvidenceState","UNAVAILABLE · LOCKED");
+      setText("miSourceEvidenceReason","Client Intelligence อ่านไม่ได้ · source evidence workbench ถูกล็อกแบบ fail-closed");
+      setText("miSourceEvidenceScope","LOCKED");
+      setText("miSourceEvidenceFreshRead","UNAVAILABLE");
+      setText("miSourceEvidenceAuthority","UNAVAILABLE");
+      setTone("miSourceEvidenceWorkbench","bad");
       resetDraftUi("Client Intelligence อ่านไม่ได้ · Copy ถูกล็อกแบบ fail-closed");
       setStatus(failureMessage(error),"bad");
     }
@@ -1409,6 +1666,7 @@
 
     ensureRecoveryQueueUi();
     ensureIdentityReadinessUi();
+    ensureSourceEvidenceWorkbenchUi();
     ensureDraftUi();
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");
     addNavigation("Control Room","/internal/admin/control-room","miNavControlRoom");
