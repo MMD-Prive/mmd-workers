@@ -63,6 +63,7 @@ function packageRecord(code, overrides = {}) {
 
 function harness({ members = [member()], entitlements = [], packages = [packageRecord("standard"), packageRecord("premium")], failCreate = false } = {}) {
   let counter = 1;
+  const writes = [];
   const tables = { members: structuredClone(members), entitlements: structuredClone(entitlements), packages: structuredClone(packages) };
   const env = {
     AIRTABLE_API_KEY: "test-key",
@@ -96,6 +97,7 @@ function harness({ members = [member()], entitlements = [], packages = [packageR
         if (request.method === "POST") {
           if (failCreate && table === "entitlements") return json({ error: "synthetic_write_failure" }, 503);
           const body = await request.json();
+          writes.push({ table, method: "POST", body: structuredClone(body) });
           const created = (body.records || []).map((item) => {
             const row = { id: `recCreated${String(counter++).padStart(8, "0")}`, fields: structuredClone(item.fields || {}) };
             rows.push(row);
@@ -106,6 +108,7 @@ function harness({ members = [member()], entitlements = [], packages = [packageR
 
         if (request.method === "PATCH") {
           const body = await request.json();
+          writes.push({ table, method: "PATCH", body: structuredClone(body) });
           const updated = [];
           for (const item of body.records || []) {
             const row = rows.find((candidate) => candidate.id === item.id);
@@ -120,7 +123,7 @@ function harness({ members = [member()], entitlements = [], packages = [packageR
       },
     },
   };
-  return { env, tables };
+  return { env, tables, writes };
 }
 
 function reviewedRequest({ amount = 1199, packageCode = "standard", stage = "membership", email = EMAIL, paymentRef = "PAY-001", extra = {} } = {}) {
@@ -246,6 +249,47 @@ test("Public 690 payment maps to public_member without requiring Private package
   assert.equal(plan.status, "ready");
   assert.equal(plan.capability, "public_member");
   assert.equal(plan.membership_term, "1_year");
+});
+
+test("Public Member canonical write typecasts policy-owned legacy Airtable selects", async () => {
+  const h = harness({ packages: [] });
+  const response = await reconcileReviewedMembershipEntitlement(
+    reviewedRequest({ amount: 690, packageCode: "mmd_member", paymentRef: "PAY-PUBLIC-WRITE" }),
+    reviewedResponse(),
+    h.env,
+  );
+  const body = await response.json();
+  assert.equal(body.entitlement_materialized, true);
+  assert.equal(body.membership_write_through.package_code, "mmd_member");
+  assert.equal(body.membership_write_through.capability, "public_member");
+  const write = h.writes.find((item) => item.table === "entitlements" && item.method === "POST");
+  assert.ok(write);
+  assert.equal(write.body.typecast, true);
+  assert.equal(write.body.records[0].fields.member_status, "active");
+  assert.equal(write.body.records[0].fields.member_lifecycle_status, "active");
+  assert.equal(write.body.records[0].fields.access_status, "active");
+  assert.equal(write.body.records[0].fields.entitlement_level, "public_member");
+  assert.equal(write.body.records[0].fields.package_code, "mmd_member");
+});
+
+test("Elite and Red Card plans preserve canonical package identity and term", async () => {
+  for (const [packageCode, amount, capability, years] of [
+    ["elite", 4990, "public_member", "2_years"],
+    ["red_card", 11499, "red_card", "1_year"],
+  ]) {
+    const h = harness({ packages: [] });
+    const plan = await resolveWriteThroughPlan(h.env, {
+      payment_stage: "membership",
+      payment_ref: `PAY-${packageCode.toUpperCase()}`,
+      amount_thb: amount,
+      member_email: EMAIL,
+      package_code: packageCode,
+    }, { verified_at: NOW });
+    assert.equal(plan.status, "ready");
+    assert.equal(plan.package_code, packageCode);
+    assert.equal(plan.capability, capability);
+    assert.equal(plan.membership_term, years);
+  }
 });
 
 test("amount and package mismatch never materialize entitlement", async () => {
