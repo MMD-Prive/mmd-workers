@@ -32,6 +32,21 @@ async function listByFormula(table, formula, fields=[]) {
   for (const field of fields) url.searchParams.append("fields[]",field);
   return (await airtable(url)).records || [];
 }
+async function allRecords(table, fields=[]) {
+  const records=[];
+  let offset="";
+  for(let page=0;page<25;page+=1){
+    const url=new URL(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize","100");
+    for(const field of fields) url.searchParams.append("fields[]",field);
+    if(offset) url.searchParams.set("offset",offset);
+    const body=await airtable(url);
+    records.push(...(body.records||[]));
+    offset=String(body.offset||"");
+    if(!offset) break;
+  }
+  return records;
+}
 async function readRecord(table,id) {
   return airtable(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(table)}/${encodeURIComponent(id)}`);
 }
@@ -129,11 +144,13 @@ const fileName=filenameMatch[1].trim();
 if(!fileName || /[\x00-\x1f/\\]/.test(fileName)) throw new Error("approved source filename is invalid");
 console.log(`::add-mask::${fileName}`);
 
-const existing=await listByFormula(
+const existing=(await allRecords(
   MEDIA,
-  `AND(FIND('${escapeFormula(model.id)}',ARRAYJOIN({Model})),{file_name}='${escapeFormula(fileName)}')`,
   ["Model","file_name","review_status","teaser_safe","private_safe","flash_safe","public_safe","r2_bucket","media_id"]
-);
+)).filter((record)=>Array.isArray(record.fields?.Model) &&
+  record.fields.Model.length===1 &&
+  record.fields.Model[0]===model.id &&
+  String(record.fields?.file_name||"")===fileName);
 if(existing.length>1) throw new Error(`duplicate exact private-media candidates exist; got ${existing.length}`);
 
 let mediaRecord=existing[0]||null;
@@ -208,8 +225,10 @@ const expected = {
 };
 for(const [key,value] of Object.entries(expected)) if(!value) throw new Error(`post-approval verification failed: ${key}`);
 
-const grants=await listByFormula(GRANTS,`FIND('${escapeFormula(mediaRecord.id)}',ARRAYJOIN({Media Asset}))`,["Media Asset","grant_status"]);
-const logs=await listByFormula(CONSUMPTION,`FIND('${escapeFormula(mediaRecord.id)}',ARRAYJOIN({Media Asset}))`,["Media Asset","outcome"]);
+const grants=(await allRecords(GRANTS,["Media Asset","grant_status"]))
+  .filter((record)=>Array.isArray(record.fields?.["Media Asset"]) && record.fields["Media Asset"].includes(mediaRecord.id));
+const logs=(await allRecords(CONSUMPTION,["Media Asset","outcome"]))
+  .filter((record)=>Array.isArray(record.fields?.["Media Asset"]) && record.fields["Media Asset"].includes(mediaRecord.id));
 if(grants.length!==0) throw new Error(`asset preparation unexpectedly has grants: ${grants.length}`);
 if(logs.length!==0) throw new Error(`asset preparation unexpectedly has consumption rows: ${logs.length}`);
 
