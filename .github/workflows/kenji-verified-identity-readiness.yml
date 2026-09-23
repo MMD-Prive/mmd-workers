@@ -22,6 +22,7 @@ on:
       - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
       - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
       - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
+      - "docs/operations/KENJI_PHASE4J_EVIDENCE_CAPTURE_BACKLOG_TRIAGE.md"
       - ".github/workflows/kenji-verified-identity-readiness.yml"
   push:
     branches:
@@ -43,6 +44,7 @@ on:
       - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
       - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
       - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
+      - "docs/operations/KENJI_PHASE4J_EVIDENCE_CAPTURE_BACKLOG_TRIAGE.md"
       - ".github/workflows/kenji-verified-identity-readiness.yml"
   workflow_dispatch:
     inputs:
