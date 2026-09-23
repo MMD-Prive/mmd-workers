@@ -86,6 +86,79 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
 });
 
 
+
+test("availability operations surface only actionable or source exceptions", () => {
+  const queue = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "owner_action_required",
+        owner_action_required: 3,
+        follow_up_due: 1,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 3 },
+    ],
+  });
+
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count, item.urgency]), [
+    ["availability_exception_review", 3, "urgent"],
+  ]);
+  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.href]), [
+    ["availability", "connected", "/internal/admin/calendar"],
+  ]);
+
+  const current = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "coverage_current",
+        owner_action_required: 0,
+        follow_up_due: 0,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+  assert.equal(current.actions.some((item) => item.action_key === "availability_exception_review"), false);
+  assert.equal(current.source_coverage[0].state, "connected");
+});
+
+test("availability source attention is fail-closed and routes to Calendar", () => {
+  const input = {
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "source_attention",
+        owner_action_required: 0,
+        follow_up_due: 0,
+        source_unavailable_models: 2,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "partial", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 2 },
+    ],
+    unavailable_sources: ["availability"],
+  };
+  const queue = buildOwnerActionsQueue(input);
+  const action = queue.actions.find((item) => item.action_key === "availability_exception_review");
+  assert.equal(action.count, 2);
+  assert.equal(action.urgency, "attention");
+  assert.equal(action.authority, "sigil_availability_snapshot_v1");
+  assert.equal(action.href, "/internal/admin/calendar");
+  assert.deepEqual(queue.unavailable_sources, ["availability"]);
+
+  const detail = buildOwnerActionDetail(input, "availability_exception_review");
+  assert.equal(detail.drilldown.source_surface, "/internal/admin/calendar");
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /ห้ามเดาสถานะว่าง/);
+});
+
 test("owner action detail is a source-safe owner-only read projection", () => {
   const detail = buildOwnerActionDetail({
     now: "2026-09-23T00:00:00.000Z",
