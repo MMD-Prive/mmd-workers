@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { handlePrivateMediaReview, REVIEW_API, REVIEW_PAGE } from './src/private-media-review.js';
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { privateMediaFixture } from '../shared/private-media-fixture.mjs';
+import { findExactOwnerApprovedDriveMedia } from './src/google-drive-owner-media.js';
 
 let serviceAccountJsonPromise;
 async function testServiceAccountJson() {
@@ -158,6 +159,21 @@ test('owner can import only the exact Drive image named in Private Teaser consen
   assert.equal(approved.status,200,await approved.clone().text());assert.equal((await approved.json()).teaser_safe,true);
   assert.equal(f.asset.fields.review_status,'approved');assert.equal(f.asset.fields.private_safe,true);assert.equal(f.asset.fields.teaser_safe,true);assert.equal(f.asset.fields.public_safe,false);
  }finally{globalThis.fetch=original;}
+});
+
+test('admin Drive reader fails closed when the exact approved filename is duplicated',async()=>{
+ const http=async(input)=>{
+  const url=new URL(String(input));
+  if(url.pathname!=='/drive/v3/files')throw new Error('unexpected');
+  return Response.json({files:[
+   {id:'file-a',name:'approved-photo.jpg',mimeType:'image/jpeg',parents:['1ApprovedModelDrive12345'],trashed:false},
+   {id:'file-b',name:'approved-photo.jpg',mimeType:'image/jpeg',parents:['1ApprovedModelDrive12345'],trashed:false},
+  ]});
+ };
+ await assert.rejects(
+  findExactOwnerApprovedDriveMedia('token','1ApprovedModelDrive12345','approved-photo.jpg',http),
+  error=>error?.code==='owner_drive_exact_file_ambiguous'&&error?.status===409,
+ );
 });
 
 test('cross-origin posts, missing review hash, stale state and missing rejection note cause no writes',async()=>{
