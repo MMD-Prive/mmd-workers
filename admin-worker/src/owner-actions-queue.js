@@ -6,6 +6,7 @@ const PRIORITY = Object.freeze({
   historical_recovery: 90,
   finance_reconciliation: 85,
   job_reconfirm_overdue: 80,
+  availability_exception_review: 78,
   finance_payout_hold: 75,
   job_reconfirm_pending: 70,
   mms_prebooking_coordination: 65,
@@ -22,6 +23,7 @@ export function buildOwnerActionsQueue(input = {}) {
     historicalRecoveryAction(input.historical_recovery),
     financeReconciliationAction(input.finance_audit),
     reconfirmAction(input.reconfirm, "overdue"),
+    availabilityExceptionAction(input.availability),
     financePayoutHoldAction(input.finance_audit),
     reconfirmAction(input.reconfirm, "pending"),
     mmsPrebookingCoordinationAction(input.mms),
@@ -52,6 +54,7 @@ export function buildOwnerActionsQueue(input = {}) {
       job_truth: "canonical_sessions_and_reconfirm",
       membership_truth: "my_mmd_entitlement_resolver_v1",
       finance_truth: "partner_finance_audit",
+      availability_truth: "sigil_availability_snapshot_v1",
       dedupe: "one_action_per_decision_class; source records remain in their owning surface",
       no_auto_send: true,
       no_business_truth_mutation: true,
@@ -101,6 +104,35 @@ function financeReconciliationAction(source) {
     href: "/internal/admin/partners",
     authority: "canonical_finance_timeline",
   }) : null;
+}
+
+function availabilityExceptionAction(source) {
+  if (!source || source.available !== true) return null;
+  const health = source.coverage_health && typeof source.coverage_health === "object" ? source.coverage_health : {};
+  const reviewStatus = clean(health.review_status);
+  if (!["source_attention", "owner_action_required"].includes(reviewStatus)) return null;
+
+  const sourceUnavailable = nonNegative(health.source_unavailable_models);
+  const ownerActionRequired = nonNegative(health.owner_action_required);
+  const followUpDue = nonNegative(health.follow_up_due);
+  const count = reviewStatus === "source_attention"
+    ? Math.max(1, sourceUnavailable)
+    : ownerActionRequired;
+  if (!count) return null;
+
+  const sourceAttention = reviewStatus === "source_attention";
+  return action({
+    key: "availability_exception_review",
+    priority: PRIORITY.availability_exception_review,
+    urgency: !sourceAttention && followUpDue > 0 ? "urgent" : "attention",
+    title: sourceAttention ? "ตรวจ Availability source" : "ตรวจ Availability ที่ต้องจัดการ",
+    summary: sourceAttention
+      ? `มี ${count} จุดที่ source ของ Availability ยังอ่านไม่ครบ`
+      : `มี ${count} นายแบบที่ต้องจัดการใน Daily Coverage Review`,
+    count,
+    href: "/internal/admin/calendar",
+    authority: "sigil_availability_snapshot_v1",
+  });
 }
 
 function financePayoutHoldAction(source) {
@@ -222,12 +254,12 @@ function action(input) {
 }
 
 function normalizeUnavailable(value) {
-  const allowed = new Set(["finance_audit", "mms", "hype"]);
+  const allowed = new Set(["finance_audit", "mms", "hype", "availability"]);
   return asArray(value).map(clean).filter((item) => allowed.has(item));
 }
 
 function normalizeCoverage(value, unavailable) {
-  const allowed = new Set(["finance_audit", "mms", "hype"]);
+  const allowed = new Set(["finance_audit", "mms", "hype", "availability"]);
   const seen = new Set();
   return asArray(value).map((item) => {
     const source = clean(item?.source);
