@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { handleSupplierPortal, SUPPLIER_PORTAL_INTERNALS as supplierPortal } from "../src/supplier-portal.js";
 import { renderDistributorPortalPage } from "../src/distributor-portal-page.js";
+import { renderSupplierLiffPage } from "../src/supplier-liff-page.js";
 import { handleSupplierAssistant } from "../../himai-shop-worker/src/supplier-assistant.js";
 
 test("supplier dashboard page exposes scoped operational lanes", async () => {
@@ -85,4 +86,19 @@ test("LIFF supplier snapshot resolves only an exact active LINE binding", () => 
   );
   assert.equal(supplierPortal.resolveSupplierAccessByLineUserId(env, "U-disabled"), null);
   assert.equal(supplierPortal.resolveSupplierAccessByLineUserId(env, "U-nin-extra"), null);
+});
+
+
+test("supplier LIFF page uses the production LINE app and canonical snapshot endpoint", async () => {
+  const response = renderSupplierLiffPage({});
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /text\/html/);
+  assert.match(response.headers.get("x-robots-tag") || "", /noindex/);
+  const html = await response.text();
+  assert.match(html, /2011701290-xBE3CirT/);
+  assert.match(html, /\/shop\/api\/supplier\/liff-portal/);
+  assert.match(html, /https:\/\/static\.line-scdn\.net\/liff\/edge\/2\/sdk\.js/);
+  assert.match(html, /กำลังจอง/);
+  assert.match(html, /ยอดค้างจ่าย/);
+  assert.doesNotMatch(html, /mock/i);
 });
