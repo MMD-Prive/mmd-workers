@@ -49,12 +49,13 @@ function availabilitySnapshot(state='available_today', confidence='model_confirm
     expires_at:new Date(now+ttlMs).toISOString(),
   };
 }
-function availabilityKv(entries={}){
+function availabilityKv(entries={}, {throwOnGet=[]}={}){
   return {
     async list({prefix}={}){
       return {keys:Object.keys(entries).filter(k=>!prefix||k.startsWith(prefix)).map(name=>({name})),list_complete:true};
     },
     async get(key,type){
+      if(throwOnGet.includes(key))throw Error('kv_read_failed');
       const value=entries[key];
       if(!value)return null;
       return type==='json'?structuredClone(value):JSON.stringify(value);
@@ -183,6 +184,42 @@ test('calendar recovery queue follows canonical connection and safe evidence onl
     assert.equal(row.follow_up_at,'2099-01-01T00:00:00.000Z');
     assert.equal(out.availability.recovery_counts.line_link_issued_waiting_for_connection,1);
     assert.doesNotMatch(JSON.stringify(row),/PRIVATE|activation_url|U0123456789abcdef/);
+  } finally { restore(); }
+});
+
+test('calendar recovery queue fails closed when one model evidence read fails', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({}, {throwOnGet:['availability-adoption:v1:recovery:mdl_pub_model_a']}),
+    },'2026-09-19');
+    const row=out.availability.models[0];
+    assert.equal(out.availability.recovery_source_status,'partial');
+    assert.equal(row.snapshot_state,'source_unavailable');
+    assert.equal(row.recovery_stage,'source_unavailable');
+    assert.equal(row.recovery_action,'wait_for_source');
+  } finally { restore(); }
+});
+
+test('an expired confirmation after a reminder starts a new recovery gap', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_pub_model_a':availabilitySnapshot('available_today','model_confirmed',-60_000),
+        'availability-adoption:v1:recovery:mdl_pub_model_a':{reminder_sent_at:'2020-01-01T00:00:00.000Z'},
+      }),
+    },'2026-09-19');
+    const row=out.availability.models[0];
+    assert.equal(row.snapshot_state,'stale');
+    assert.equal(row.recovery_stage,'availability_confirmation_required');
+    assert.equal(row.recovery_action,'remind_model');
   } finally { restore(); }
 });
 
