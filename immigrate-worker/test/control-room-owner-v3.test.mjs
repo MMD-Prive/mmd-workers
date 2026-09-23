@@ -121,6 +121,9 @@ try {
   assert.match(body, /วันนี้ควรเคลียร์อะไร/);
   assert.match(body, /fetch\('\/v1\/admin\/dashboard\/owner-actions'/);
   assert.match(body, /detail_href/);
+  assert.match(body, /unavailable\.length\?'PARTIAL':'CLEAR'/);
+  assert.match(body, /detailSeq=0/);
+  assert.match(body, /seq!==detailSeq/);
   assert.match(body, /ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth/);
 
   assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
