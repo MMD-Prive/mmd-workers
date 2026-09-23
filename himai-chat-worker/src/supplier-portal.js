@@ -1,4 +1,6 @@
-import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";\n\nconst DEFAULT_PRODUCT_FIELDS = [
+import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
+
+const DEFAULT_PRODUCT_FIELDS = [
   "Product Name",
   "SKU",
   "Brand Availability",
