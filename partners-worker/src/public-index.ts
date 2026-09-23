@@ -193,14 +193,14 @@ function renderPartnerSystemPage(request: Request, url: URL, route: PartnerPubli
     "<style data-mmd-partner-design>" + PARTNER_DESIGN_CSS + PARTNER_CONTROL_ROOM_CSS + "</style></head>" +
     "<body data-mmd-partner-page=\"" + escapeHtml(route.page) + "\"><main class=\"mmd-partner-system\" data-system-page=\"" + escapeHtml(page) + "\">" +
     "<nav class=\"mmdp-nav\"><a class=\"mmdp-brand\" href=\"/partner\"><b lang='en'>SĪGIL</b><span lang='en'>Partner Division</span></a>" +
-    "<div><a href=\"/partner/model\">Model Partner</a><a href=\"/partner/apply\">Start Intake</a><a href=\"/partner/terms\">Partner Terms</a></div></nav>" +
+    "<div><a href=\"/partner/model\">Modeling Partner</a><a href=\"/partner/apply\">เริ่ม Partner Intake</a><a href=\"/partner/terms\">อ่าน Partner Terms</a></div></nav>" +
     "<section class=\"mmdp-hero\"><div><p class=\"mmdp-eyebrow\" lang=\"en\">SĪGIL Partner Lane</p><h1>" + escapeHtml(copy.heading) + "</h1>" +
     "<p class=\"mmdp-lead\">" + escapeHtml(copy.lead) + "</p><p>" + escapeHtml(copy.body) + "</p>" +
     renderSystemActions(page, tokenQuery, reviewHref, termsHref, dashboardHref) + "</div>" +
-    "<aside class=\"mmdp-card\"><small lang='en'>YUKI REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
+    "<aside class=\"mmdp-card\"><small lang='en'>MMD REVIEW</small><strong>" + escapeHtml(copy.card) + "</strong><span lang='en'>Partner Control Layer</span></aside></section>" +
     renderDashboardPanel(page, token) +
     "<section class=\"mmdp-grid\"><article><span>01</span><h2>Intake</h2><p>ส่งข้อมูลที่จำเป็นต่อ Partner Review พร้อมกำหนดขอบเขตความเป็นส่วนตัวของแต่ละเคส</p></article>" +
-    "<article><span>02</span><h2>Review</h2><p>Yuki จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
+    "<article><span>02</span><h2>Review</h2><p>MMD Partner Desk จัด lane จากบทบาท แหล่งที่มา ความพร้อม และรูปแบบความร่วมมือที่เหมาะสม</p></article>" +
     "<article><span>03</span><h2>Recognition</h2><p>เมื่อสถานะพร้อมเดินต่อ ให้ยืนยันผ่าน LINE แล้วเข้าสู่ Partner Terms และ Dashboard</p></article></section>" +
     "</main><footer class=\"mmd-partner-canon-footer\"><span>MMD PRIVÉ · BANGKOK</span><span>Private by design.</span></footer>" + renderDashboardScript(page) + "</body></html>";
 
@@ -219,8 +219,8 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
   if (page === "recognized") {
     return {
       title: "MMD Partner Recognized",
-      heading: hasToken ? "Recognition confirmed." : "Open your Recognition link.",
-      lead: hasToken ? "สถานะ Partner พร้อมเข้าสู่ Partner Terms และ Dashboard ด้วย private token ที่ผูกกับ Partner record ของคุณ." : "ใช้ Recognition link ที่ทีม MMD Privé ส่งให้ เพื่อยืนยัน Partner record และเข้าสู่ขั้นตอนถัดไปอย่างปลอดภัย.",
+      heading: hasToken ? "Partner Recognition ยืนยันแล้ว." : "เปิด Recognition link ของคุณ.",
+      lead: hasToken ? "สถานะ Partner ของคุณพร้อมสำหรับ Partner Terms และ Dashboard ผ่าน private token ที่ผูกกับ Partner record เดียวกัน." : "ใช้ Recognition link จาก MMD Privé เพื่อยืนยัน Partner record และเปิดขั้นตอนถัดไปอย่างเป็นส่วนตัว.",
       body: hasToken ? "Private token เชื่อม Partner Terms, Dashboard และสิทธิ์ที่เกี่ยวข้องกับ record เดียวกัน โดยข้อมูลระบบสำคัญถูกดูแลฝั่ง backend." : "Recognition link พาคุณเข้าสู่ Partner Terms และ Dashboard ตามสิทธิ์ที่ผูกกับ Partner record ของคุณ.",
       card: hasToken ? "RECOGNIZED" : "SECURE RECOGNITION"
     };
@@ -229,8 +229,8 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
   if (page === "dashboard") {
     return {
       title: "SĪGIL Partner Dashboard",
-      heading: "Partner control room.",
-      lead: "จัดการคิว โมเดล เรท การมองเห็น และรายได้ของโมเดลในสังกัดจากพื้นที่เดียว.",
+      heading: "พื้นที่ทำงานของ Partner.",
+      lead: "จัดการคิว น้อง ๆ ผู้ชาย นายแบบ และนักแสดงชายในความดูแล รวมถึงเรท การมองเห็น และรายได้จากพื้นที่เดียว.",
       body: "Partner เป็นผู้ควบคุมข้อมูล Private และเลือก Share with MMD เฉพาะรายการที่ต้องใช้ร่วมกัน.",
       card: "CONTROL ROOM"
     };
@@ -238,21 +238,21 @@ function systemPageCopy(page: string, hasToken: boolean): { title: string; headi
 
   return {
     title: "MMD Partner Review",
-    heading: "Partner Review is in progress.",
-    lead: "ข้อมูลของคุณเข้าสู่ Partner Review แล้ว Yuki กำลังจัด lane และขอบเขตที่เหมาะกับบทบาทของคุณ.",
-    body: "ขั้นตอนถัดไปคือ Recognition เมื่อข้อมูลพร้อมเดินต่อ หรือ Yuki จะติดต่อกลับเพื่อเติมรายละเอียดที่ช่วยให้ Review ชัดขึ้น.",
+    heading: "Partner Review กำลังดำเนินการ.",
+    lead: "ข้อมูลของคุณเข้าสู่ Partner Review แล้ว MMD Partner Desk กำลังจัด lane และขอบเขตที่เหมาะกับบทบาทของคุณ.",
+    body: "เมื่อข้อมูลพร้อม ขั้นตอน Recognition จะเปิดขึ้น หรือ MMD Partner Desk จะขอรายละเอียดที่ช่วยให้ Review ชัดขึ้น.",
     card: "IN REVIEW"
   };
 }
 
 function renderSystemActions(page: string, tokenQuery: string, reviewHref: string, termsHref: string, dashboardHref: string): string {
   if (page === "recognized") {
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Continue to Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">Open Dashboard</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(dashboardHref) + "\">เปิด Partner Dashboard</a></p>";
   }
   if (page === "dashboard") {
-    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">Partner Terms</a></p>";
+    return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a></p>";
   }
-  return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">Read Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">Open Partner Dashboard</a></p>" : "");
+  return "<p class=\"mmdp-actions\"><a class=\"mmdp-btn\" href=\"/partner\">Partner Home</a><a class=\"mmdp-btn ghost\" href=\"" + escapeHtml(termsHref) + "\">อ่าน Partner Terms</a></p>" + (tokenQuery ? "<p><a href=\"" + escapeHtml(dashboardHref) + "\">เปิด Partner Dashboard</a></p>" : "");
 }
 
 function renderDashboardPanel(page: string, token: string): string {
@@ -633,7 +633,7 @@ const PARTNER_FORM_BRIDGE_JS = String.raw`
       name_alias: fieldValue(form, "name_alias") || valueByLabel(form, ["ชื่อของคุณ", "บริษัท", "ทีม"]),
       access_source: fieldValue(form, "access_source") || role.access_source,
       value_bring: valueBring || (selectedRoleLabel() ? "Partner direction: " + selectedRoleLabel() : "Partner introduction"),
-      why_consider: whyConsider || "Submitted from partner introduction page for Yuki review.",
+      why_consider: whyConsider || "Submitted from partner introduction page for MMD Partner Desk review.",
       experience: fieldValue(form, "experience") || [readiness, yukiNote].filter(Boolean).join(" / "),
       contact: composeContact(form),
       talent_name: fieldValue(form, "talent_name"),
@@ -678,7 +678,7 @@ const PARTNER_FORM_BRIDGE_JS = String.raw`
       if (button.tagName === "BUTTON") {
         if (isSubmitting) {
           button.dataset.idleText = button.textContent || "Submit";
-          button.textContent = "Submitting to Yuki Review...";
+          button.textContent = "กำลังส่งเข้า Partner Review...";
         } else if (button.dataset.idleText) {
           button.textContent = button.dataset.idleText;
         }
@@ -754,11 +754,11 @@ const PARTNER_FORM_BRIDGE_JS = String.raw`
 
     form.dataset.sigilSubmitting = "true";
     setSubmitting(form, true);
-    setStatus(form, "Submitting to private review / กำลังส่งข้อมูลให้ Yuki Review");
+    setStatus(form, "กำลังส่งข้อมูลเข้า Partner Review");
 
     submitPartnerRequest(form)
       .then(function () {
-        setStatus(form, "Submission received / ส่งข้อมูลให้ Yuki Review แล้วครับ");
+        setStatus(form, "รับข้อมูลแล้ว และเริ่ม Partner Review");
         form.dataset.sigilSubmitted = "true";
       })
       .catch(function (error) {
