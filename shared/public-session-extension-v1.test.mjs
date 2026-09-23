@@ -35,6 +35,20 @@ test("Sport Activity extension follows its public package matrix",()=>{
   assert.equal(result.official_end_changes_only_after,"model_approved+payment_verified+mmd_confirmed");
 });
 
+test("Wellness Companion extension protects the qualified-rate floor",()=>{
+  const result=pricePublicExtension({
+    packageCode:"reset_with_me",
+    originalEndAt:"2026-09-22T06:00:00.000Z",
+    requestedEndAt:"2026-09-22T07:30:00.000Z",
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.customer_amount_thb,2535);
+  assert.equal(result.model_payout_thb,1500);
+  assert.equal(result.requested_minutes,90);
+  assert.equal(result.policy_version,PUBLIC_EXTENSION_POLICY_VERSION);
+  assert.equal(result.official_end_changes_only_after,"model_approved+payment_verified+mmd_confirmed");
+});
+
 test("after 03:00 changes band and after 06:00 fails closed",()=>{
   const priced=pricePublicExtension({
     packageCode:"formal_evening",
