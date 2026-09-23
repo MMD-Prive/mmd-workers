@@ -24,3 +24,23 @@ test("legacy post-commit points hook cannot touch Airtable", () => {
   assert.match(fn, /canonical_writer:\s*"points_phase1"/);
   assert.doesNotMatch(fn, /findPointLedgerByPaymentRef|airtableCreate|airtablePatch|airtableFetch/);
 });
+
+test("membership schema typecast is restricted to internal Official Verify and allowlisted packages", () => {
+  const guardStart = indexSource.indexOf("export function reviewedMembershipSchemaTypecast");
+  const guardEnd = indexSource.indexOf("async function createOrUpdatePaymentIntent", guardStart);
+  assert.ok(guardStart >= 0 && guardEnd > guardStart);
+  const guard = indexSource.slice(guardStart, guardEnd);
+  assert.match(guard, /allow_membership_schema_typecast !== true/);
+  assert.match(guard, /payment_stage.*membership/);
+  assert.match(guard, /CANONICAL_MEMBERSHIP_PACKAGES/);
+  assert.match(indexSource, /"mmd_member", "elite", "red_card", "standard", "premium"/);
+
+  const verifyStart = indexSource.indexOf("async function handleVerify");
+  const notifyStart = indexSource.indexOf("async function handleNotify");
+  const nextHandler = indexSource.indexOf("async function handle", notifyStart + 10);
+  assert.ok(verifyStart >= 0 && notifyStart > verifyStart);
+  const publicVerify = indexSource.slice(verifyStart, notifyStart);
+  const internalNotify = indexSource.slice(notifyStart, nextHandler > notifyStart ? nextHandler : indexSource.length);
+  assert.doesNotMatch(publicVerify, /allow_membership_schema_typecast:\s*true/);
+  assert.match(internalNotify, /allow_membership_schema_typecast:\s*true/);
+});

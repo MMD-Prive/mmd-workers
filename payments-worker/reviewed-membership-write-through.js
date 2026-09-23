@@ -448,7 +448,11 @@ async function airtableCreate(env, tableName, fields) {
   const response = await airtableFetch(env, new Request(airtableUrl(env, tableName).toString(), {
     method: "POST",
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ fields }], typecast: false }),
+    // Reached only after service-authenticated Official Verify, canonical
+    // package/amount policy validation, and exact member resolution.
+    // This permits policy-owned Public Membership values to extend legacy
+    // Airtable single-select choices without giving the browser schema authority.
+    body: JSON.stringify({ records: [{ fields }], typecast: true }),
   }));
   const payload = await response.json().catch(() => ({}));
   const row = payload?.records?.[0];
@@ -460,7 +464,7 @@ async function airtableUpdate(env, tableName, recordId, fields) {
   const response = await airtableFetch(env, new Request(airtableUrl(env, tableName).toString(), {
     method: "PATCH",
     headers: { Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ records: [{ id: recordId, fields }], typecast: false }),
+    body: JSON.stringify({ records: [{ id: recordId, fields }], typecast: true }),
   }));
   if (!response.ok) throw httpError(response.status || 502, `airtable_${response.status || "malformed"}`);
   return response.json().catch(() => ({}));
