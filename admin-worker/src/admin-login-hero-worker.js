@@ -1,6 +1,7 @@
 import { handlePartnerOwnerConsole, isPartnerOwnerConsoleRequest } from "./partner-owner-console.js";
 import { handleModelOwnerReviewQueue, isModelOwnerReviewQueueRequest } from "./model-owner-review-queue.js";
 import { drainApprovedJobLinkNotifications } from "./payment-approved-job-link-dispatch.js";
+import { reconcilePendingMembershipRecoveries } from "./membership-payment-pending-recovery.js";
 import { isPrivateMediaReviewRequest, handlePrivateMediaReview } from './private-media-review.js';
 import worker from "./job-orchestrator-owner-ops-wrapper.js";
 import { handleModelConsoleAudit, isModelConsoleAuditRequest } from "./model-console-audit.js";
@@ -177,6 +178,7 @@ export default {
   async scheduled(event, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
     await drainApprovedJobLinkNotifications(runtimeEnv);
+    await reconcilePendingMembershipRecoveries(runtimeEnv);
     if (typeof worker.scheduled === "function") await worker.scheduled(event, runtimeEnv, ctx);
   },
   async fetch(request, env, ctx) {
