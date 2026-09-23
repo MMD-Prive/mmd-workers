@@ -240,6 +240,34 @@ test("status LIFF remains auth-bridge-only and returns to the single /my-mmd/ su
   assert.match(html, /\/member\/api\/liff\/profile/);
 });
 
+test("private_teaser LIFF verifies the member then returns only to the allowlisted MY MMD teaser model", async () => {
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      fetch: async () => new Response(
+        `<!doctype html><html><head></head><body><main>PRIVATE TEASER BRIDGE</main><div id="message"></div><div id="actions"></div><script nonce="teaser123">const target = "/member/my-mmd"; const profileEndpoint = "/member/api/liff/profile";</script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      ),
+    },
+  };
+
+  const response = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_teaser&model=toto"),
+    runtime,
+  );
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-liff-return-target"), "/my-mmd/private-preview?from=line_verify&model=toto");
+  assert.equal(response.headers.get("x-mmd-liff-ui-mode"), "auth-bridge-only");
+  assert.match(html, /const target = "\/my-mmd\/private-preview\?from=line_verify&model=toto"/);
+
+  const hostile = await worker.fetch(
+    new Request("https://mmdbkk.com/member/liff?intent=private_teaser&model=https%3A%2F%2Fevil.example"),
+    runtime,
+  );
+  assert.equal(hostile.headers.get("x-mmd-liff-return-target"), null);
+});
+
 test("continue_payment LIFF stays auth-bridge-only and returns to My MMD Payment Center", async () => {
   const runtime = {
     MEMBER_PAGES_WORKER: {

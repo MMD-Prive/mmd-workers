@@ -417,6 +417,11 @@ function liffAuthBridgeTarget(request) {
   const campaign = String(url.searchParams.get("campaign") || stateParams.get("campaign") || "").trim().toLowerCase();
 
   if (campaign) return "";
+  if (intent === "private_teaser") {
+    const model = String(url.searchParams.get("model") || stateParams.get("model") || "").trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
+    return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
+  }
   if (!intent || intent === "unknown" || intent === "status") return "/my-mmd/";
   if (intent === "continue_payment") return "/my-mmd/payments";
   return "";
