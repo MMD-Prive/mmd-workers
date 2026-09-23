@@ -8,6 +8,8 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const LEGACY_STAGING_TABLE = "tbl1u0foFBvgFpT9G";
 const LEGACY_PAGE_SIZE = 100;
 const LEGACY_MAX_PAGES = 10;
+const IDENTITY_MERGE_REQUESTS_TABLE = "MMD — Identity Merge Requests";
+const IDENTITY_RECOVERY_MANUAL_SOURCE = "membership_payment_e2e_first_real_payment_acceptance";
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBERSHIP_SIGNUP_URL = "/sigil/member/membership?source=line&intent=signup";
 const MEMBERSHIP_RENEW_URL = "/sigil/member/membership?source=line&intent=renew";
@@ -204,7 +206,83 @@ export async function readMemberAppSession(request, env = {}) {
     memberId: asString(state.session.member_id, 160) || null,
     memberProfile: asObject(state.session.member_profile),
     paymentSnapshot: paymentSnapshotFromSession(state.session),
+    identityRecoveryState: asString(state.session.identity_recovery_state, 64) || null,
   };
+}
+
+function normalizedRecoveryStatus(value) {
+  return asString(value, 80).toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+export function identityRecoveryStateFromEvidence(session = null, record = null) {
+  if (!session?.lineUserId) return null;
+  if (session.memberExists === true) return "linked";
+
+  const sessionState = normalizedRecoveryStatus(session.identityRecoveryState);
+  if (["linked", "already_linked", "applied"].includes(sessionState)) return "linked";
+  if (["known_identity", "review_required"].includes(sessionState)) return "review_required";
+
+  if (!record || typeof record !== "object") return "auto_resolving";
+  const fields = asObject(record.fields);
+  const status = normalizedRecoveryStatus(fields.status);
+  const matchType = normalizedRecoveryStatus(fields.match_type);
+  const sourcePath = asString(fields.source_path, 240);
+
+  if (status === "applied") return "linked";
+  if (
+    status === "review_required"
+    && matchType === "not_found"
+    && sourcePath === IDENTITY_RECOVERY_MANUAL_SOURCE
+  ) {
+    return "manual_required";
+  }
+  if (
+    ["pending_verification", "email_verified", "approved", "review_required"].includes(status)
+    || sourcePath === "/member/api/liff/recovery"
+  ) {
+    return "review_required";
+  }
+  return "auto_resolving";
+}
+
+export async function readIdentityRecoveryState(env = {}, session = null) {
+  const base = identityRecoveryStateFromEvidence(session, null);
+  if (base === null || base === "linked" || base === "review_required") return base;
+
+  const apiKey = String(env.AIRTABLE_API_KEY || "").trim();
+  const baseId = String(env.AIRTABLE_BASE_ID || "").trim();
+  const lineUserId = asString(session?.lineUserId, 160);
+  const table = String(env.AIRTABLE_TABLE_IDENTITY_MERGE_REQUESTS || IDENTITY_MERGE_REQUESTS_TABLE).trim();
+  if (!apiKey || !baseId || !table || !/^U[a-f0-9]{32}$/i.test(lineUserId)) return base;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  try {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(baseId)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("filterByFormula", `{line_user_id}=${formulaString(lineUserId)}`);
+    url.searchParams.set("maxRecords", "5");
+    url.searchParams.set("sort[0][field]", "created_at");
+    url.searchParams.set("sort[0][direction]", "desc");
+    const request = new Request(url.toString(), {
+      headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
+      signal: controller.signal,
+    });
+    const response = env.AIRTABLE_HTTP?.fetch
+      ? await env.AIRTABLE_HTTP.fetch(request)
+      : await fetch(request);
+    const payload = await response.json().catch(() => null);
+    const record = response.ok && Array.isArray(payload?.records) ? payload.records[0] : null;
+    return identityRecoveryStateFromEvidence(session, record);
+  } catch {
+    return base;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function withIdentityRecovery(membership, state) {
+  if (!state) return membership;
+  return { ...membership, identity_recovery: { state } };
 }
 
 export async function rememberMemberPaymentSnapshot(request, env = {}, input = {}) {
@@ -664,7 +742,11 @@ async function adaptDashboard(request, env, delegate) {
   const legacy = membershipNeedsLegacy || pointsNeedsRecoveryCheck
     ? await readLegacyDisplay(env, sessionSnapshot.lineUserId)
     : null;
-  const membership = enrichMembership(baseMembership, sessionSnapshot, membershipNeedsLegacy ? legacy : null);
+  const identityRecoveryState = await readIdentityRecoveryState(env, sessionSnapshot);
+  const membership = withIdentityRecovery(
+    enrichMembership(baseMembership, sessionSnapshot, membershipNeedsLegacy ? legacy : null),
+    identityRecoveryState,
+  );
   const pointsRecoveryPending = Boolean(
     pointsNeedsRecoveryCheck
     && legacy?.historicalServiceEvidence,
@@ -720,7 +802,11 @@ async function adaptMembership(request, env, delegate) {
   const needsLegacy = Boolean(sessionSnapshot?.lineUserId)
     && (sessionSnapshot.memberExists === false || baseMembership.levelVerified !== true || baseMembership.status === "checking");
   const legacy = needsLegacy ? await readLegacyDisplay(env, sessionSnapshot.lineUserId) : null;
-  return responseFrom(result.upstream, enrichMembership(baseMembership, sessionSnapshot, legacy));
+  const identityRecoveryState = await readIdentityRecoveryState(env, sessionSnapshot);
+  return responseFrom(
+    result.upstream,
+    withIdentityRecovery(enrichMembership(baseMembership, sessionSnapshot, legacy), identityRecoveryState),
+  );
 }
 
 async function adaptPoints(request, env, delegate) {
