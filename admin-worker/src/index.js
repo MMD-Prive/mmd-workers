@@ -2,6 +2,11 @@ import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.
 import { requestPaymentsConfirmLink } from "./payments-issuer-transport.js";
 import { assertConfirmationUrlPair } from "./confirmation-link-role-guard.js";
 import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlement-resolver.js";
+import {
+  fastTrustLineFormula,
+  fastTrustRenamedName,
+  resolveFastTrustAirtableSource,
+} from "../../shared/my-mmd-fast-trust-source.mjs";
 import { planPrivateUpload, completePrivateMetadata, readMedia, readMediaByRecord, assertPrivateObject, ownedBy, privateBucket } from "../../shared/private-media.mjs";
 // src/index.js
 // =========================================================
@@ -5006,6 +5011,76 @@ async function airtableListByFormula(env, tableName, filterByFormula, limit = 50
   return (r.data?.records || []).map((rec) => ({ id: rec.id, fields: rec.fields || {}, createdTime: rec.createdTime }));
 }
 
+
+const CREATE_JOB_FAST_TRUST_RANK = Object.freeze({ vip: 1, svip: 2, black_card: 3 });
+
+function createJobFastTrustTierFromRenamedName(value) {
+  const text = str(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/(?:\s*[-–—|/]\s*)+$/, "")
+    .trim();
+  if (!text) return "";
+  if (/(?:^|[^A-Za-z0-9])black\s*card$/i.test(text)) return "black_card";
+  if (/(?:^|[^A-Za-z0-9])svip$/i.test(text)) return "svip";
+  if (/(?:^|[^A-Za-z0-9])vip$/i.test(text)) return "vip";
+  return "";
+}
+
+function createJobFastTrustLinkedClientIds(record, source = {}) {
+  const fields = record?.fields || {};
+  const values = [];
+  for (const field of [source.canonicalClientField, "Canonical Client", "matched_client", "matched_client_id"]) {
+    if (!field || fields[field] == null) continue;
+    values.push(...(Array.isArray(fields[field]) ? fields[field] : [fields[field]]));
+  }
+  return [...new Set(values
+    .map((value) => str(value && typeof value === "object" ? (value.id || value.recordId || value.value) : value))
+    .filter((value) => /^rec[A-Za-z0-9]{14,}$/.test(value)))];
+}
+
+async function resolveCanonicalClientFastTrustPrivateAccess(env, clientRecordId, lineUserId) {
+  const clientId = str(clientRecordId);
+  const lineId = str(lineUserId);
+  if (!/^rec[A-Za-z0-9]{14,}$/.test(clientId) || !/^U[0-9a-f]{32}$/i.test(lineId)) {
+    return { found: false };
+  }
+
+  const source = resolveFastTrustAirtableSource(env);
+  const formula = fastTrustLineFormula(lineId, source);
+  if (!source?.table || !formula) return { found: false };
+
+  const records = await airtableListByFormula(env, source.table, formula, 20);
+  const candidates = [];
+  for (const record of records) {
+    if (!createJobFastTrustLinkedClientIds(record, source).includes(clientId)) continue;
+    const packageCode = createJobFastTrustTierFromRenamedName(fastTrustRenamedName(record, source));
+    if (!packageCode) continue;
+    candidates.push({
+      package_code: packageCode,
+      rank: CREATE_JOB_FAST_TRUST_RANK[packageCode] || 0,
+    });
+  }
+  if (!candidates.length) return { found: false };
+
+  candidates.sort((a, b) => b.rank - a.rank);
+  const packageCode = candidates[0].package_code;
+  const tier = packageCode === "svip" || packageCode === "black_card" ? "black_card" : "vip";
+  return {
+    found: true,
+    tier,
+    package_code: packageCode,
+    membership_status: "active",
+    allowed_folders: PRIVATE_ACCESS_FOLDERS[tier].slice(),
+    entitlement_authority: "my_mmd_entitlement_resolver_v1",
+    entitlement_schema_version: "my_mmd_entitlement_resolver_v1",
+    entitlement_recovery_source: "line_oa_renamed_name_fast_trust",
+    canonical_client_record_id: clientId,
+    line_user_id: lineId,
+    fast_trust: true,
+  };
+}
+
 async function resolveAuthoritativeMemberAccess(env, ids = {}) {
   const membersTable = env.AIRTABLE_TABLE_MEMBERS || "members";
 
@@ -5041,6 +5116,38 @@ async function resolveAuthoritativeMemberAccess(env, ids = {}) {
       telegram_username: str(ids.telegram_username || directClientAccess.identity.telegram_username),
     };
   }
+
+  // MY MMD Fast Trust is already the protected-member recovery rule for an
+  // exact verified LINE identity carrying an MMD-controlled trailing
+  // VIP/SVIP/Black Card marker. Create Job must honor the same authority when
+  // the canonical Client is linked but its entitlement row has not yet been
+  // materialized. Require the Fast Trust staging row to point back to this
+  // exact canonical Client; browser labels never grant access.
+  const fastTrustAccess = await resolveCanonicalClientFastTrustPrivateAccess(
+    env,
+    directClientAccess.client_record_id || ids.client_id,
+    ids.line_user_id,
+  );
+  if (fastTrustAccess.found) {
+    return {
+      resolved: true,
+      member_record_id: "",
+      member_id: "",
+      member_email: str(directClientAccess.identity?.member_email || ids.member_email).toLowerCase(),
+      membership_status: fastTrustAccess.membership_status,
+      tier: fastTrustAccess.tier,
+      package_code: fastTrustAccess.package_code,
+      expire_at: "",
+      allowed_folders: fastTrustAccess.allowed_folders,
+      entitlement_authority: fastTrustAccess.entitlement_authority,
+      entitlement_schema_version: fastTrustAccess.entitlement_schema_version,
+      entitlement_recovery_source: fastTrustAccess.entitlement_recovery_source,
+      canonical_client_record_id: fastTrustAccess.canonical_client_record_id,
+      line_user_id: fastTrustAccess.line_user_id,
+      fast_trust: true,
+    };
+  }
+
   const lookups = [
     ["client_id", ids.client_id, false],
     ["member_id", ids.member_id, false],

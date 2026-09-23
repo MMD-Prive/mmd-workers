@@ -17,6 +17,7 @@ const env = {
   AIRTABLE_TABLE_CLIENTS: "clients",
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_ACCESS_LOG: "access_log",
+  AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE: "fast_trust_staging",
 };
 
 const future = "2099-01-01";
@@ -32,6 +33,20 @@ const tables = {
         "MMD — Member Entitlements": ["recEntSvip000001XX"],
       },
     },
+    {
+      id: "recClientFastSvip01",
+      fields: {
+        "Client Name": "PM",
+        line_user_id: "U61cd65864c63533673f67a6e6e6ed407",
+      },
+    },
+    {
+      id: "recClientFastMismatch01",
+      fields: {
+        "Client Name": "Mismatch",
+        line_user_id: "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
+    },
   ],
   members: [
     member("recMemStandard0001", "client_standard", "mem_standard", "standard@example.test"),
@@ -45,6 +60,24 @@ const tables = {
   ],
   member_entitlements: [
     entitlement("recEntSvip000001XX", "mem_svip", "svip", future),
+  ],
+  fast_trust_staging: [
+    {
+      id: "recFastTrustPee001",
+      fields: {
+        "LINE User ID": "U61cd65864c63533673f67a6e6e6ed407",
+        "Current LINE Rename": "พี - SVIP -",
+        "Canonical Client": ["recClientFastSvip01"],
+      },
+    },
+    {
+      id: "recFastTrustMismatch",
+      fields: {
+        "LINE User ID": "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Current LINE Rename": "Mismatch - SVIP -",
+        "Canonical Client": ["recSomeOtherClient01"],
+      },
+    },
   ],
   member_packages: [
     pkg("recPkgStandard001", "standard@example.test", "Standard", future),
@@ -188,11 +221,14 @@ function formulaMatches(fields, formula) {
     const field = String(search[2] || "");
     return String(fields[field] ?? "").toLowerCase().includes(needle);
   }
-  const equals = [...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g)];
+  const equals = [
+    ...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g),
+    ...formula.matchAll(/\{([^}]+)\}=\s*'([^']*)'/g),
+  ];
   if (equals.length > 1 || /^AND\(/i.test(formula)) {
     return equals.every(([, field, value]) => String(fields[field] ?? "") === value);
   }
-  const value = (formula.match(/=\s*"([^"]*)"/) || [])[1] || "";
+  const value = (formula.match(/=\s*"([^"]*)"/) || formula.match(/=\s*'([^']*)'/) || [])[1] || "";
   const field = (formula.match(/\{([^}]+)\}/) || [])[1] || "";
   if (!field) return true;
   const actual = String(fields[field] ?? "");
@@ -267,6 +303,29 @@ assert.equal(svipByCanonicalClient.tier, "black_card");
 assert.equal(svipByCanonicalClient.entitlement_authority, "my_mmd_entitlement_resolver_v1");
 assert.equal(svipByCanonicalClient.canonical_client_record_id, "recClientQue00001");
 assert.deepEqual(svipByCanonicalClient.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+const fastTrustSvip = await resolveAuthoritativeMemberAccess(env, { client_id: "recClientFastSvip01" });
+assert.equal(fastTrustSvip.resolved, true);
+assert.equal(fastTrustSvip.tier, "black_card");
+assert.equal(fastTrustSvip.package_code, "svip");
+assert.equal(fastTrustSvip.fast_trust, true);
+assert.equal(fastTrustSvip.entitlement_recovery_source, "line_oa_renamed_name_fast_trust");
+assert.equal(fastTrustSvip.canonical_client_record_id, "recClientFastSvip01");
+assert.deepEqual(fastTrustSvip.allowed_folders, ["standard", "premium", "vip", "exclusive"]);
+
+{
+  const fastTrustCreate = await enforcePrivateCreateAccess(
+    env,
+    privateBody("recClientFastSvip01", "premium", "recPremiumModel001"),
+  );
+  assert.equal(fastTrustCreate.memberAccess.fast_trust, true);
+  assert.equal(fastTrustCreate.memberAccess.package_code, "svip");
+  assert.equal(fastTrustCreate.ownerJobGrant, null);
+}
+await rejectsWithCode(
+  enforcePrivateCreateAccess(env, privateBody("recClientFastMismatch01", "premium", "recPremiumModel001")),
+  "AUTHORITATIVE_MEMBER_NOT_FOUND",
+);
 
 await rejectsWithCode(
   enforcePrivateCreateAccess(env, privateBody("client_standard", "premium", "recPremiumModel001", { forgedAccessLevel: "black_card" })),
