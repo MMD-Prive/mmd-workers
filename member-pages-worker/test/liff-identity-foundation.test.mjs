@@ -451,7 +451,9 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(profile.response.status, 200);
     assert.equal(profile.payload.ok, true);
     assert.equal(profile.payload.data.display_name, "มาดามใจ");
-    assert.equal(profile.payload.data.tier, "SVIP");
+    // The foundation serializer deliberately masks protected labels; the
+    // runtime Fast Trust overlay restores the customer-visible SVIP tier.
+    assert.equal(profile.payload.data.tier, "Member");
     assert.equal(profile.payload.data.membership_status, "active");
     assert.equal(recoveredResolver.calls.length, 1);
     assert.equal(recoveredResolver.calls[0]._path, "/__internal/member-profile/read");
@@ -484,7 +486,9 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
 
     assert.equal(dashboard.response.status, 200);
     assert.equal(dashboard.payload.ok, true);
-    assert.equal(dashboard.payload.data.member.tier.value, "SVIP");
+    // The raw foundation keeps the protected tier field in checking state.
+    // runtime-index overlays the exact-UID Fast Trust tier after this 200 response.
+    assert.equal(dashboard.payload.data.member.tier.status, "checking");
     assert.equal(dashboard.payload.data.member.membership_status.value, "active");
   });
 
