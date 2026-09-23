@@ -99,6 +99,11 @@ function liffAuthReturnTarget(request) {
   ).trim().toLowerCase();
   const campaign = String(url.searchParams.get("campaign") || state.get("campaign") || "").trim().toLowerCase();
   if (campaign) return "";
+  if (intent === "private_teaser") {
+    const model = String(url.searchParams.get("model") || state.get("model") || "").trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,99}$/.test(model)) return "";
+    return `/my-mmd/private-preview?from=line_verify&model=${encodeURIComponent(model)}`;
+  }
   if (intent === "status") return "/member/my-mmd";
   if (intent === "continue_payment") return "/member/payments";
   return "";
