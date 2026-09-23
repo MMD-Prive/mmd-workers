@@ -86,6 +86,37 @@ test("Member Intelligence builds a bounded read-only identity evidence recovery 
   assert.doesNotMatch(source, /identity-evidence-recovery[^\n]*(?:method:\s*"POST"|method:\s*'POST')/i);
 });
 
+test("Member Intelligence provides a one-client source evidence owner workbench without mutations", () => {
+  const workbenchSource = source.slice(
+    source.indexOf("function ensureSourceEvidenceWorkbenchUi()"),
+    source.indexOf("function resetIdentityReadinessUi("),
+  );
+  assert.match(source, /mmd\.kenji_source_evidence_owner_workbench\.v1/);
+  assert.match(source, /Source Evidence Capture Workbench/);
+  assert.match(source, /ONE CLIENT AT A TIME/);
+  assert.match(source, /EVIDENCE REVIEW FIRST/);
+  assert.match(source, /sourceEvidenceWorkbenchContract\(payload\)/);
+  assert.match(source, /review_line_ofc_evidence/);
+  assert.match(source, /capture_verified_liff_session/);
+  assert.match(source, /reread_identity_evidence/);
+  assert.match(source, /owner_review_verification_status/);
+  assert.match(source, /client_scope_required:protocol\?\.handoff\?\.client_scope_required===true/);
+  assert.match(source, /fresh_reread_required:protocol\?\.review\?\.fresh_read_required===true/);
+  assert.match(source, /automatic_capture_allowed:false/);
+  assert.match(source, /automatic_verification_allowed:false/);
+  assert.match(source, /verification_status_mutated:false/);
+  assert.match(source, /identity_mutated:false/);
+  assert.match(source, /entitlement_changed:false/);
+  assert.match(source, /customer_send_allowed:false/);
+  assert.match(source, /bulk_owner_action_allowed:false/);
+  assert.match(source, /state\.intelligenceCache\.delete\(clientId\)/);
+  assert.match(source, /await selectRecord\(record\)/);
+  assert.match(source, /workbench\.handoff_path\}\?client_id=/);
+  assert.doesNotMatch(workbenchSource, /method:\s*["']POST["']/);
+  assert.doesNotMatch(workbenchSource, /identity\/(?:verify|merge|commit)/i);
+  assert.doesNotMatch(workbenchSource, /membership[_-](?:activate|renew|grant)/i);
+});
+
 test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {
   assert.match(source, /mmd\.kenji_continuity_operator_feedback\.v1/);
   assert.match(source, /data-feedback-outcome="accepted"/);
