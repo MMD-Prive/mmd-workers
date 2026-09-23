@@ -30,6 +30,18 @@ test("owner actions queue deduplicates within each authoritative decision class"
   assert.deepEqual(queue.unavailable_sources, ["finance_audit", "mms", "hype"]);
 });
 
+test("owner actions queue uses stable source record ids for memberships and full authoritative lists", () => {
+  const queue = buildOwnerActionsQueue({
+    money: Array.from({ length: 8 }, (_, index) => ({ proof_id: `proof-${index}` })),
+    historical_recovery: Array.from({ length: 7 }, (_, index) => ({ proof_id: `historical-${index}` })),
+    members: [{ id: "rec-member-1" }, { id: "rec-member-2" }, { id: "rec-member-2" }],
+  });
+  const byKey = Object.fromEntries(queue.actions.map((item) => [item.action_key, item.count]));
+  assert.equal(byKey.payment_review, 8);
+  assert.equal(byKey.historical_recovery, 7);
+  assert.equal(byKey.membership_review, 2);
+});
+
 test("owner actions queue does not expose source names, payment refs, or raw notes", () => {
   const queue = buildOwnerActionsQueue({
     money: [{ proof_id: "proof-secret", customer_name: "Private Name", payment_ref: "bank-secret" }],
