@@ -74,7 +74,7 @@ for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/a
 });
 test('real production entrypoint renders authenticated Webflow Calendar presentation on both slash forms',async()=>{
   await withFetch(upstream,async()=>{
-    for(const path of ['/internal/admin/calendar?date=2026-09-17','/internal/admin/calendar/?date=2026-09-17']){
+    for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/internal/admin/calendar?date=2026-09-17','/internal/admin/calendar/?date=2026-09-17']){
       const r=await entry.fetch(await request(path),env,{});const html=await r.text();
       assert.equal(r.status,200);
       assert.equal(r.headers.get('x-mmd-calendar-surface'),'admin-worker-webflow-v2');
@@ -92,6 +92,8 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.match(html,/Action ถัดไป/);
       assert.match(html,/รอคิวก่อนหน้า/);
       assert.match(html,/ทีละ 1 คน/);
+      assert.match(html,/const selected=date\(\),url='\/v1\/admin\/calendar'\+\(selected\?'\?date='/);
+      assert.doesNotMatch(html,/fetch\('\/v1\/admin\/calendar\?date='\+encodeURIComponent\(date\(\)\)/);
       assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
