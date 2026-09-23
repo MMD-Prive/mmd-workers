@@ -191,7 +191,7 @@ jobs:
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             page="$(curl --location --retry 5 --retry-delay 2 --retry-all-errors --fail --silent --show-error "$origin/partner/dashboard?t=production-smoke-placeholder")"
             grep -Fq 'data-partner-control-room' <<<"$page"
-            grep -Fq 'MMD ไม่มีสิทธิ์อ่าน' <<<"$page"
+            grep -Fq 'อยู่ภายใต้การควบคุมของ Partner' <<<"$page"
             grep -Fq 'Private Vault' <<<"$page"
 
             for path in \
