@@ -3,6 +3,7 @@ const INTERNAL_HOST = "model-drive-directory.internal";
 const SEARCH_PATH = "/__internal/model-drive/search";
 const RESOLVE_PATH = "/__internal/model-drive/resolve";
 const PHOTO_PATH = "/__internal/model-drive/photo";
+const CANONICAL_FILE_PATH = "/__internal/model-drive/canonical-file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SIGNATURE_TTL_SECONDS = 90;
 
@@ -15,6 +16,7 @@ export const MODEL_DRIVE_DIRECTORY_HOST = INTERNAL_HOST;
 export const MODEL_DRIVE_SEARCH_PATH = SEARCH_PATH;
 export const MODEL_DRIVE_RESOLVE_PATH = RESOLVE_PATH;
 export const MODEL_DRIVE_PHOTO_PATH = PHOTO_PATH;
+export const MODEL_DRIVE_CANONICAL_FILE_PATH = CANONICAL_FILE_PATH;
 export const MODEL_DRIVE_EXCLUSIVE_ROOT_FOLDER_ID = DEFAULT_EXCLUSIVE_ROOT;
 
 export function isModelDriveDirectoryRequest(request) {
@@ -22,7 +24,7 @@ export function isModelDriveDirectoryRequest(request) {
   let url;
   try { url = new URL(request.url); } catch { return false; }
   const routeMatches = (request.method === "GET" && (url.pathname === SEARCH_PATH || url.pathname === PHOTO_PATH))
-    || (request.method === "POST" && url.pathname === RESOLVE_PATH);
+    || (request.method === "POST" && (url.pathname === RESOLVE_PATH || url.pathname === CANONICAL_FILE_PATH));
   if (!routeMatches) return false;
   return url.hostname === INTERNAL_HOST || url.hostname.endsWith(".workers.dev");
 }
@@ -48,6 +50,19 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
       const resolved = await resolveApprovedModelFolder(accessToken, folderId, env);
       if (!resolved) return json({ ok: false, error: "drive_folder_not_approved" }, 404);
       return streamApprovedModelPhoto(accessToken, resolved.drive_folder_id, fileName);
+    }
+    if (request.method === "POST" && url.pathname === CANONICAL_FILE_PATH) {
+      const body = await request.json().catch(() => null);
+      const folderId = clean(body?.drive_folder_id, 160);
+      const fileName = clean(body?.file_name, 240);
+      if (!isDriveId(folderId)) return json({ ok: false, error: "drive_folder_id_invalid" }, 400);
+      if (!fileName || /[\u0000-\u001f\u007f/\\]/.test(fileName)) return json({ ok: false, error: "drive_file_name_invalid" }, 400);
+      // This path is intentionally separate from approved-root discovery. The caller
+      // must already have canonical owner approval for the exact folder + filename.
+      // It is only reachable through the internal service host (or a signed worker call).
+      const folder = await driveGetFolder(accessToken, folderId);
+      if (!folder) return json({ ok: false, error: "canonical_drive_folder_unavailable" }, 404);
+      return streamApprovedModelPhoto(accessToken, folder.id, fileName, "google-drive-canonical-owner-approved");
     }
     if (request.method === "GET") {
       const q = clean(url.searchParams.get("q"), 120);
@@ -224,7 +239,7 @@ function approvedRoots(env) {
   };
 }
 
-async function streamApprovedModelPhoto(accessToken, folderId, exactFileName = "") {
+async function streamApprovedModelPhoto(accessToken, folderId, exactFileName = "", sourceLabel = "google-drive-approved-root") {
   const file = exactFileName
     ? await findExactModelImage(accessToken, folderId, exactFileName)
     : await findFirstModelImage(accessToken, folderId);
@@ -239,7 +254,7 @@ async function streamApprovedModelPhoto(accessToken, folderId, exactFileName = "
     "content-type": file.mimeType,
     "content-disposition": "inline",
     "x-content-type-options": "nosniff",
-    "x-mmd-model-photo-source": "google-drive-approved-root",
+    "x-mmd-model-photo-source": sourceLabel,
   });
   return new Response(response.body, { status: 200, headers });
 }
