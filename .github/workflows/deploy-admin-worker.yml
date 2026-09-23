@@ -763,7 +763,9 @@ jobs:
         run: |
           set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production auth guards: \`dashboard + protected Kenji shell + Model Review/QA/Publish/Audit ingress + Payment Entitlement + Payment Review guards passed\`\n- route mutation: \`required exact/wildcard admin-worker routes verified via Zone Workers Routes API\`\n\nMMS authenticated production smoke is temporarily excluded from this deploy gate."
+          if ! gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ admin-worker LIVE + ROUTES VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- deployment_ref: \`${ADMIN_WORKER_VERSION_ID}\`\n- endpoint: \`${ADMIN_DASHBOARD_PRODUCTION_URL}\`\n- production auth guards: \`dashboard + protected Kenji shell + Model Review/QA/Publish/Audit ingress + Payment Entitlement + Payment Review guards passed\`\n- route mutation: \`required exact/wildcard admin-worker routes verified via Zone Workers Routes API\`\n\nMMS authenticated production smoke is temporarily excluded from this deploy gate."; then
+            echo "::warning::Live deployment is verified, but the launch-issue receipt comment could not be recorded."
+          fi
 
       - name: Require verified live deployment
         if: always()
