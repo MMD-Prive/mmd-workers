@@ -243,6 +243,8 @@ test('rendered Webflow scripts are syntactically valid and connection check is e
     assert.match(html,/availability-activation/);
     assert.match(html,/reminder_follow_up_due/);
     assert.match(html,/DAILY COVERAGE REVIEW/);
+    assert.match(html,/ไม่นับในทีมใช้งาน/);
+    assert.match(html,/coverage_recovered','excluded/);
     const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
     const connection=JSON.parse(html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)[1]);
@@ -274,6 +276,8 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/ว่างตอนนี้/);
   assert.match(html,/ว่างวันนี้/);
   assert.match(html,/รอยืนยันใหม่/);
+  assert.match(html,/snap==='excluded'/);
+  assert.match(html,/ไม่นับในทีมใช้งาน/);
   assert.match(html,/Model App/);
   assert.match(html,/Model Console/);
   assert.match(html,/SIGIL ready/);

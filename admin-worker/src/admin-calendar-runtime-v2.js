@@ -196,6 +196,10 @@ function modelKey(record) {
   return /^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(value) ? value : "";
 }
 
+function isExcludedModelStatus(value) {
+  return ["inactive", "blocked", "suspended", "paused", "archived", "retired"].includes(clean(value, 120).toLowerCase().trim());
+}
+
 async function availabilitySnapshotKeys(binding) {
   if (!binding || typeof binding.list !== "function") return null;
   const names = new Set();
@@ -237,6 +241,7 @@ async function readCalendarAvailabilitySnapshots(env = {}, records = [], nowMs =
     : modelKeys;
 
   const byModelKey = new Map();
+  const failedModelKeys = new Set();
   let readFailures = 0;
   await Promise.all(targetKeys.map(async key => {
     let raw;
@@ -244,6 +249,7 @@ async function readCalendarAvailabilitySnapshots(env = {}, records = [], nowMs =
       raw = await binding.get(`${SIGIL_AVAILABILITY_KV_PREFIX}${key}`, "json");
     } catch {
       readFailures += 1;
+      failedModelKeys.add(key);
       return;
     }
     if (!raw || typeof raw !== "object") return;
@@ -267,6 +273,7 @@ async function readCalendarAvailabilitySnapshots(env = {}, records = [], nowMs =
   return {
     status: readFailures ? "partial" : "ok",
     by_model_key: byModelKey,
+    failed_model_keys: failedModelKeys,
   };
 }
 
@@ -300,6 +307,7 @@ async function readCalendarRecoveryEvidence(env = {}, records = []) {
 }
 
 function recoveryProjection({ snapshotState, fresh, lineConnected, modelKey: key, evidence = null, snapshotUpdatedAt = null }, nowMs = Date.now()) {
+  if (snapshotState === "excluded") return { recovery_stage: "excluded", recovery_action: "none", follow_up_at: null };
   if (!key) return { recovery_stage: "identity_recovery_required", recovery_action: "link_canonical_model_key", follow_up_at: null };
   if (snapshotState === "source_unavailable") return { recovery_stage: "source_unavailable", recovery_action: "wait_for_source", follow_up_at: null };
   if (fresh) {
@@ -338,13 +346,17 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
       const key = modelKey(record);
       const snapshot = key ? snapshotIndex.by_model_key.get(key) : null;
       const evidence = key ? recoveryIndex.by_model_key.get(key) || null : null;
-      const state = snapshot?.fresh ? snapshot.safe_availability_state : "";
+      const excluded = isExcludedModelStatus(field(record, F.model.status));
+      const state = !excluded && snapshot?.fresh ? snapshot.safe_availability_state : "";
+      const snapshotReadFailed = Boolean(key && snapshotIndex.failed_model_keys?.has(key));
       const recoveryReadFailed = Boolean(key && recoveryIndex.failed_model_keys?.has(key));
-      const snapshotState = !key
-        ? "identity_missing"
-        : recoveryReadFailed
-          ? "source_unavailable"
-        : snapshot?.snapshot_state || (snapshotIndex.status === "storage_unavailable" ? "source_unavailable" : "missing");
+      const snapshotState = excluded
+        ? "excluded"
+        : !key
+          ? "identity_missing"
+          : snapshotReadFailed || recoveryReadFailed
+            ? "source_unavailable"
+            : snapshot?.snapshot_state || (snapshotIndex.status === "storage_unavailable" ? "source_unavailable" : "missing");
       const lineConnected = /^U[0-9a-f]{32}$/i.test(clean(field(record, F.model.lineUserId), 80));
       return {
         record_id: record?.id || null,
@@ -353,7 +365,7 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
         name: clean(field(record, F.model.name), 160) || null,
         availability_status: state || "unconfirmed",
         snapshot_state: snapshotState,
-        availability_fresh: snapshot?.fresh === true,
+        availability_fresh: !excluded && snapshot?.fresh === true,
         confidence: snapshot?.confidence || null,
         updated_at: snapshot?.updated_at || null,
         expires_at: snapshot?.expires_at || null,
@@ -361,7 +373,7 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
         ttl_remaining_seconds: snapshot?.ttl_remaining_seconds ?? null,
         line_connected: lineConnected,
         recovery_evidence: evidence,
-        ...recoveryProjection({ snapshotState, fresh: snapshot?.fresh === true, lineConnected, modelKey: key, evidence, snapshotUpdatedAt: snapshot?.updated_at || null }, nowMs),
+        ...recoveryProjection({ snapshotState, fresh: !excluded && snapshot?.fresh === true, lineConnected, modelKey: key, evidence, snapshotUpdatedAt: snapshot?.updated_at || null }, nowMs),
       };
     })
     .filter(item => item.model_id || item.model_key || item.name)
