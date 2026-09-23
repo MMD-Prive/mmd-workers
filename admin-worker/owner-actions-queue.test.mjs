@@ -254,6 +254,25 @@ test("HYPE cohort detail routes to the owning source and remains read-only", () 
   assert.match(detail.drilldown.decision_boundary, /business truth/);
 });
 
+test("known Owner Action detail stays safe when the action clears between queue and drilldown", () => {
+  const detail = buildOwnerActionDetail({}, "hype_telegram_bind_overdue");
+
+  assert.equal(detail.ok, true);
+  assert.equal(detail.state, "cleared_since_queue");
+  assert.equal(detail.action.action_key, "hype_telegram_bind_overdue");
+  assert.equal(detail.action.count, 0);
+  assert.equal(detail.action.review_required, false);
+  assert.equal(detail.action.authority, "telegram_identity_bind_authority");
+  assert.equal(detail.action.href, "/internal/admin/control-room");
+  assert.equal(detail.drilldown.state, "cleared_since_queue");
+  assert.equal(detail.drilldown.observed_count, 0);
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.personal_data_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /snapshot เก่า/);
+});
+
 test("owner action detail is a source-safe owner-only read projection", () => {
   const detail = buildOwnerActionDetail({
     now: "2026-09-23T00:00:00.000Z",

@@ -4,6 +4,25 @@
 
 import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
 
+const DETAIL_CANON = Object.freeze({
+  payment_review: Object.freeze({ title: "ตรวจการชำระเงิน", href: "/internal/admin/payments", authority: "payments-worker" }),
+  historical_recovery: Object.freeze({ title: "ตรวจหลักฐานย้อนหลัง", href: "/internal/admin/payments/historical-backfill", authority: "historical-slip-backfill-runtime" }),
+  finance_reconciliation: Object.freeze({ title: "ตรวจความสอดคล้องทางการเงิน", href: "/internal/admin/partners", authority: "canonical_finance_timeline" }),
+  availability_exception_review: Object.freeze({ title: "ตรวจ Availability exception", href: "/internal/admin/calendar", authority: "sigil_availability_snapshot_v1" }),
+  finance_payout_hold: Object.freeze({ title: "ตรวจรายการพักจ่าย", href: "/internal/admin/partners", authority: "canonical_finance_timeline" }),
+  job_reconfirm_overdue: Object.freeze({ title: "ยืนยันงานที่เลยเวลา", href: "/internal/admin/jobs", authority: "canonical_sessions_and_reconfirm" }),
+  job_reconfirm_pending: Object.freeze({ title: "ยืนยันงานก่อนเริ่ม", href: "/internal/admin/jobs", authority: "canonical_sessions_and_reconfirm" }),
+  membership_review: Object.freeze({ title: "ตรวจสถานะสมาชิก", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
+  mms_prebooking_coordination: Object.freeze({ title: "ประสาน MMS prebooking", href: "/internal/admin/mms", authority: "mms-worker" }),
+  mms_application_review: Object.freeze({ title: "ตรวจใบสมัคร MMS", href: "/internal/admin/mms", authority: "mms-worker" }),
+  hype_entitlement_notification_overdue: Object.freeze({ title: "ตาม Entitlement notification ที่เลยเวลา", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
+  hype_recovery_unassigned_overdue: Object.freeze({ title: "รับ Recovery ที่เลยเวลาและยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned", authority: "recovery_queue_operational_metadata" }),
+  hype_coupon_manual_review_overdue: Object.freeze({ title: "ตรวจ Coupon manual review ที่เลยเวลา", href: "/internal/admin/member-intelligence", authority: "care_back_claim_policy" }),
+  hype_telegram_bind_overdue: Object.freeze({ title: "ตรวจ Telegram bind ที่หมดเวลา", href: "/internal/admin/control-room", authority: "telegram_identity_bind_authority" }),
+  hype_operational_watch: Object.freeze({ title: "ตรวจ HYPE overdue exception ชนิดใหม่", href: "/internal/admin/control-room", authority: "hype_coordinator_read_only" }),
+  owner_exception: Object.freeze({ title: "เรื่องที่ต้องให้เปอร์ดู", href: "/internal/admin/control-room", authority: "owner_review" }),
+});
+
 const DETAIL_COPY = Object.freeze({
   payment_review: {
     reason: "หลักฐานการชำระเงินยังรอการตรวจจาก Money Truth",
@@ -74,24 +93,45 @@ const DETAIL_COPY = Object.freeze({
 export function buildOwnerActionDetail(input = {}, actionKey) {
   const key = String(actionKey || "").trim();
   const queue = buildOwnerActionsQueue(input);
-  const action = queue.actions.find((item) => item.action_key === key);
+  const activeAction = queue.actions.find((item) => item.action_key === key);
   const copy = DETAIL_COPY[key];
-  if (!action || !copy) return null;
+  const canon = DETAIL_CANON[key];
+  if (!copy || !canon) return null;
+
+  const cleared = !activeAction;
+  const action = activeAction || {
+    action_key: key,
+    priority: 0,
+    urgency: "clear",
+    title: canon.title,
+    summary: "รายการนี้ไม่อยู่ใน Owner Actions ปัจจุบันแล้ว",
+    count: 0,
+    href: canon.href,
+    detail_href: `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`,
+    authority: canon.authority,
+    review_required: false,
+    send_allowed: false,
+    mutation_allowed: false,
+  };
 
   return {
     ok: true,
     contract: "mmd_owner_action_detail_v1",
     mode: "owner_review_only",
+    state: cleared ? "cleared_since_queue" : "active",
     generated_at: queue.generated_at,
     action,
     drilldown: {
       action_key: action.action_key,
-      reason: copy.reason,
+      state: cleared ? "cleared_since_queue" : "active",
+      reason: cleared ? "รายการถูกเคลียร์หรือเปลี่ยนสถานะหลังจากเปิด Owner Actions queue" : copy.reason,
       observed_count: action.count,
       urgency: action.urgency,
       authority: action.authority,
       source_surface: action.href,
-      decision_boundary: copy.decision_boundary,
+      decision_boundary: cleared
+        ? "ไม่ต้องตัดสินใจจาก snapshot เก่า ให้กลับไปอ่าน source authority ใหม่หากต้องตรวจต่อ"
+        : copy.decision_boundary,
       records_exposed: false,
       personal_data_exposed: false,
       payment_reference_exposed: false,
