@@ -302,6 +302,7 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
     overdue: deduped.filter((item) => item.sla_status === "overdue").length,
     watch: deduped.filter((item) => item.sla_status === "watch").length,
     owner_actionable_overdue: ownerActionableOverdue.length,
+    owner_actionable_by_kind: countBy(ownerActionableOverdue, "kind"),
     by_kind: countBy(deduped, "kind"),
   };
   const sourceStatus = normalizedSourceStatus(options.sourceStatus, sources);
