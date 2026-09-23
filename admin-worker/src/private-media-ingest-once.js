@@ -1,6 +1,7 @@
 import { mediaRequest, planPrivateUpload, uploadPrivateMedia, readMedia } from '../../shared/private-media.mjs';
 
 export const PRIVATE_MEDIA_INGEST_ONCE_PATH = '/v1/admin/private-media/ingest-once';
+export const PRIVATE_MEDIA_INGEST_STAGED_PATH = '/v1/admin/private-media/ingest-staged';
 const CAPABILITY_TABLE = 'tbldR4n2KP5fF0Zxk';
 const headers = {
   'cache-control':'private, no-store',
@@ -124,5 +125,75 @@ export async function handlePrivateMediaIngestOnce(request,env){
     }
   }catch(error){
     return json({ok:false,error:error?.code||'private_media_ingest_unavailable'},error?.status||503);
+  }
+}
+
+
+async function findCapabilityByPublicId(env,capabilityId){
+  const query=new URLSearchParams({filterByFormula:`{capability_id}='${escapeFormula(capabilityId)}'`,maxRecords:'2'});
+  const body=await mediaRequest(env, env.AIRTABLE_TABLE_PRIVATE_MEDIA_INGEST_CAPABILITIES || CAPABILITY_TABLE, `?${query}`);
+  const rows=Array.isArray(body.records)?body.records:[];
+  return rows.length===1?rows[0]:null;
+}
+
+async function consumeVerifiedCapabilityBytes(env,capability,buffer,{requestedBy}={}){
+  const f=capability.fields||{};
+  if(f.status!=='ready')throw Object.assign(new Error('ingest_capability_not_ready'),{code:'ingest_capability_not_ready',status:409});
+  const expiresAt=Date.parse(clean(f.expires_at,100));
+  if(!Number.isFinite(expiresAt)||expiresAt<=Date.now()){
+    await patchCapability(env,capability.id,{status:'expired'});
+    throw Object.assign(new Error('ingest_capability_expired'),{code:'ingest_capability_expired',status:410});
+  }
+  const modelId=clean(f.model_record_id,100);
+  const fileName=clean(f.file_name,240);
+  const contentType=clean(f.content_type,120).toLowerCase();
+  const expectedSize=Number(f.file_size_bytes);
+  const expectedSha=clean(f.content_sha256,80).toLowerCase();
+  if(!/^rec[A-Za-z0-9]+$/.test(modelId)||!fileName||!['image/jpeg','image/png','image/webp','video/mp4'].includes(contentType)||
+    !Number.isSafeInteger(expectedSize)||expectedSize<1||!/^[a-f0-9]{64}$/.test(expectedSha)){
+    throw Object.assign(new Error('ingest_capability_corrupt'),{code:'ingest_capability_corrupt',status:409});
+  }
+  if(buffer.byteLength!==expectedSize)throw Object.assign(new Error('ingest_size_mismatch'),{code:'ingest_size_mismatch',status:400});
+  if(await sha256Hex(buffer)!==expectedSha)throw Object.assign(new Error('ingest_hash_mismatch'),{code:'ingest_hash_mismatch',status:409});
+
+  await patchCapability(env,capability.id,{status:'consuming'});
+  try{
+    const plan=await planPrivateUpload(env,modelId,{file_name:fileName,content_type:contentType,file_size_bytes:expectedSize});
+    const result=await uploadPrivateMedia(new Request('https://private-media-ingest.internal/upload',{
+      method:'POST',headers:{'content-type':contentType},body:buffer,
+    }),env,modelId,plan.asset_id,{requestedBy:clean(requestedBy,160)||'owner:private-ingest'});
+    const media=await readMedia(env,plan.asset_id);
+    await patchCapability(env,capability.id,{
+      status:'consumed',consumed_at:new Date().toISOString(),media_asset_record_id:media.id,failure_reason:'',source_attachment:[],
+    });
+    return {ok:result.ok===true,status:result.status,media_asset_id:media.id,review_required:true};
+  }catch(error){
+    await patchCapability(env,capability.id,{status:'failed',failure_reason:clean(error?.code||error?.message||'ingest_failed',160)}).catch(()=>{});
+    throw error;
+  }
+}
+
+export async function handlePrivateMediaStagedIngest(input,env,{actorId='owner'}={}){
+  try{
+    const capabilityId=clean(input?.capability_id,180);
+    if(!/^private_teaser_[A-Za-z0-9_-]{8,160}$/.test(capabilityId))return json({ok:false,error:'ingest_capability_id_invalid'},400);
+    const capability=await findCapabilityByPublicId(env,capabilityId);
+    if(!capability)return json({ok:false,error:'ingest_capability_invalid'},404);
+    const f=capability.fields||{};
+    if(f.status!=='ready')return json({ok:false,error:'ingest_capability_not_ready'},409);
+    const attachments=Array.isArray(f.source_attachment)?f.source_attachment:[];
+    if(attachments.length!==1)return json({ok:false,error:'ingest_staging_attachment_required'},409);
+    const attachment=attachments[0]||{};
+    if(clean(attachment.filename,240)!==clean(f.file_name,240)||!/^https:\/\//.test(clean(attachment.url,4000))){
+      return json({ok:false,error:'ingest_staging_attachment_mismatch'},409);
+    }
+    const transport=env.PRIVATE_INGEST_HTTP?.fetch?.bind(env.PRIVATE_INGEST_HTTP)||fetch;
+    const response=await transport(attachment.url,{headers:{accept:clean(f.content_type,120)}});
+    if(!response.ok)return json({ok:false,error:'ingest_staging_fetch_failed'},503);
+    const buffer=await response.arrayBuffer();
+    const result=await consumeVerifiedCapabilityBytes(env,capability,buffer,{requestedBy:`owner:${clean(actorId,100)}:staged_private_ingest`});
+    return json({...result,source:'private_airtable_staging'});
+  }catch(error){
+    return json({ok:false,error:error?.code||'private_media_staged_ingest_unavailable'},error?.status||503);
   }
 }

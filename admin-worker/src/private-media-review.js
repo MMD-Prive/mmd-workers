@@ -3,7 +3,7 @@ import { mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaBy
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
 import { readOwnerApprovedDriveMedia } from './google-drive-owner-media.js';
-import { handlePrivateMediaIngestOnce, isPrivateMediaIngestOnceRequest } from './private-media-ingest-once.js';
+import { handlePrivateMediaIngestOnce, handlePrivateMediaStagedIngest, isPrivateMediaIngestOnceRequest, PRIVATE_MEDIA_INGEST_STAGED_PATH } from './private-media-ingest-once.js';
 
 export const REVIEW_PAGE = '/internal/admin/mmd-review';
 export const REVIEW_API = '/v1/admin/private-media';
@@ -49,6 +49,13 @@ export async function handlePrivateMediaReview(request, env, ctx) {
     });
   }
   try {
+    if (path === PRIVATE_MEDIA_INGEST_STAGED_PATH && request.method === 'POST') {
+      if (request.headers.get('origin') !== url.origin) return json({ ok: false, error: 'forbidden_origin' }, 403);
+      if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ ok: false, error: 'json_required' }, 415);
+      const input = await request.json().catch(() => null);
+      if (!input || typeof input !== 'object') return json({ ok: false, error: 'invalid_json' }, 400);
+      return handlePrivateMediaStagedIngest(input, env, { actorId: actor.id });
+    }
     if (path === OWNER_UPLOAD_PLAN_API && request.method === 'POST') {
       if (request.headers.get('origin') !== url.origin) return json({ ok: false, error: 'forbidden_origin' }, 403);
       if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ ok: false, error: 'json_required' }, 415);
