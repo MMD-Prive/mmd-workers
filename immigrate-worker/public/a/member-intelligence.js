@@ -12,6 +12,7 @@
   const intelligencePath="/v1/admin/clients/intelligence";
   const auditPath="/v1/admin/clients/intelligence/audit";
   const draftSchema="mmd.kenji_continuity_operator_draft.v1";
+  const identityReadinessSchema="mmd.kenji_verified_identity_readiness.v1";
   const feedbackSchema="mmd.kenji_continuity_operator_feedback.v1";
   const feedbackReasonLabels={
     needs_edit:[
@@ -162,12 +163,208 @@
     return card;
   }
 
+  function ensureIdentityReadinessUi(){
+    const detail=byId("miDetail");
+    if(!detail)return null;
+    let card=byId("miIdentityReadinessCard");
+    if(card)return card;
+
+    if(!byId("miIdentityReadinessStyle")){
+      const style=document.createElement("style");
+      style.id="miIdentityReadinessStyle";
+      style.textContent=`
+#mmdMemberIntelligence .mi-identity-readiness{grid-column:1/-1;margin-top:18px;padding:18px 20px;border:1px solid rgba(31,54,42,.17);border-radius:22px;background:linear-gradient(145deg,#fbfaf6,#f1eee5);box-shadow:0 16px 42px rgba(20,35,27,.07)}
+#mmdMemberIntelligence .mi-identity-readiness[data-tone="ok"]{border-color:rgba(55,113,73,.36);background:linear-gradient(145deg,#f7faf5,#eaf2e8)}
+#mmdMemberIntelligence .mi-identity-readiness[data-tone="bad"]{border-color:rgba(151,63,54,.42);background:linear-gradient(145deg,#fff9f7,#f7eae6)}
+#mmdMemberIntelligence .mi-identity-readiness-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+#mmdMemberIntelligence .mi-identity-readiness-kicker{display:block;color:#866d3e;font-size:9px;font-weight:900;letter-spacing:.14em;text-transform:uppercase}
+#mmdMemberIntelligence .mi-identity-readiness h3{margin:5px 0 0;font-size:20px;line-height:1.25}
+#mmdMemberIntelligence .mi-identity-readiness-state{flex:0 0 auto;padding:6px 9px;border-radius:999px;background:#ece5d5;color:#755d31;font-size:9px;font-weight:900;letter-spacing:.05em}
+#mmdMemberIntelligence .mi-identity-readiness[data-tone="ok"] .mi-identity-readiness-state{background:#dfeadf;color:#31583e}
+#mmdMemberIntelligence .mi-identity-readiness[data-tone="bad"] .mi-identity-readiness-state{background:#f2ded9;color:#8f3d34}
+#mmdMemberIntelligence .mi-identity-readiness-reason{margin:10px 0 0;color:#5d665f;font-size:11px;line-height:1.65}
+#mmdMemberIntelligence .mi-identity-readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+#mmdMemberIntelligence .mi-identity-readiness-grid div{padding:10px;border-radius:12px;background:rgba(255,255,255,.72)}
+#mmdMemberIntelligence .mi-identity-readiness-grid small,#mmdMemberIntelligence .mi-identity-readiness-grid b{display:block}
+#mmdMemberIntelligence .mi-identity-readiness-grid small{color:#7d776e;font-size:8px;font-weight:900;letter-spacing:.08em}
+#mmdMemberIntelligence .mi-identity-readiness-grid b{margin-top:4px;color:#29372e;font-size:10px;line-height:1.45}
+#mmdMemberIntelligence .mi-identity-readiness-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+#mmdMemberIntelligence .mi-identity-readiness-foot p{margin:0;color:#6e756f;font-size:9px;line-height:1.5}
+#mmdMemberIntelligence .mi-identity-readiness-link{flex:0 0 auto;display:inline-grid;place-items:center;min-height:38px;padding:8px 13px;border:1px solid rgba(31,54,42,.18);border-radius:999px;color:#314b39;background:#fff;text-decoration:none;font-size:9px;font-weight:900}
+@media(max-width:620px){#mmdMemberIntelligence .mi-identity-readiness{padding:16px}#mmdMemberIntelligence .mi-identity-readiness-grid{grid-template-columns:1fr}#mmdMemberIntelligence .mi-identity-readiness-foot{align-items:flex-start;flex-direction:column}#mmdMemberIntelligence .mi-identity-readiness-link{width:100%}}
+`;
+      document.head.appendChild(style);
+    }
+
+    card=document.createElement("section");
+    card.id="miIdentityReadinessCard";
+    card.className="mi-identity-readiness";
+    card.setAttribute("data-tone","warn");
+    card.setAttribute("aria-labelledby","miIdentityReadinessTitle");
+    card.innerHTML=`<div class="mi-identity-readiness-head"><div><small class="mi-identity-readiness-kicker">IDENTITY · READ-ONLY · OWNER AUTHORITY</small><h3 id="miIdentityReadinessTitle">Verified Identity Readiness</h3></div><span class="mi-identity-readiness-state" id="miIdentityReadinessState">WAITING</span></div><p class="mi-identity-readiness-reason" id="miIdentityReadinessReason">กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…</p><div class="mi-identity-readiness-grid"><div><small>AUTHORITY</small><b id="miIdentityReadinessAuthority">Clients.Verification Status</b></div><div><small>ALIGNMENT</small><b id="miIdentityReadinessAlignment">WAITING</b></div><div><small>EVIDENCE</small><b id="miIdentityReadinessEvidence">WAITING</b></div></div><div class="mi-identity-readiness-foot"><p>Kenji อ่าน readiness เท่านั้น · ไม่ตั้ง Verified, merge identity หรือเปลี่ยนสิทธิ์อัตโนมัติ</p><a class="mi-identity-readiness-link" id="miIdentityReadinessLink" href="/internal/admin/customer-data">เปิด Customer 360 เพื่อตรวจ</a></div>`;
+    const draft=byId("miDraftCard");
+    if(draft)detail.insertBefore(card,draft);
+    else detail.appendChild(card);
+    return card;
+  }
+
+  function identityReadinessContract(payload){
+    const identity=payload?.identity||{};
+    const readiness=identity.readiness||{};
+    const evidence=readiness?.evidence||{};
+    const authority=readiness?.authority||{};
+    const statuses=new Set(["verified","ready_for_owner_verification","review_required","conflict","insufficient_evidence","unavailable"]);
+    const alignmentStatuses=new Set(["verified_match","review_required","mismatch","insufficient_evidence","unavailable"]);
+    const blockerSet=new Set(["identity_alignment_mismatch","identity_evidence_unavailable","canonical_line_identity_required","reviewed_line_ofc_required","verified_liff_session_required","owner_verification_status_required"]);
+    const nextActions={
+      verified:"none",
+      ready_for_owner_verification:"owner_review_verification_status",
+      review_required:"review_identity_evidence",
+      conflict:"resolve_identity_conflict",
+      insufficient_evidence:"collect_verified_identity_evidence",
+      unavailable:"retry_identity_evidence_read"
+    };
+    const status=clean(readiness?.status);
+    const alignmentStatus=clean(evidence.alignment_status);
+    const blockers=Array.isArray(readiness?.blockers)?readiness.blockers.map(clean):[];
+    const base=identity.status==="canonical"
+      &&typeof identity.verified==="boolean"
+      &&readiness?.schema===identityReadinessSchema
+      &&readiness?.mode==="read_only"
+      &&statuses.has(status)
+      &&authority.verification==="Clients.Verification Status"
+      &&authority.alignment==="customer_identity_alignment_read_only_v1"
+      &&authority.rights==="my_mmd_entitlement_resolver_v1"
+      &&typeof evidence.authoritative_verification_present==="boolean"
+      &&evidence.authoritative_verification_present===identity.verified
+      &&alignmentStatuses.has(alignmentStatus)
+      &&typeof evidence.canonical_client_ready==="boolean"
+      &&typeof evidence.reviewed_line_ofc_matched==="boolean"
+      &&typeof evidence.verified_liff_session_matched==="boolean"
+      &&blockers.length<=4
+      &&new Set(blockers).size===blockers.length
+      &&blockers.every((blocker)=>blockerSet.has(blocker))
+      &&readiness.next_action===nextActions[status]
+      &&typeof readiness?.owner_review_ready==="boolean"
+      &&typeof readiness?.requires_owner_decision==="boolean"
+      &&typeof readiness?.kenji_continuity_ready==="boolean"
+      &&readiness?.automatic_verification_allowed===false
+      &&readiness?.identity_mutated===false
+      &&readiness?.grants_access===false
+      &&readiness?.grants_membership===false
+      &&readiness?.grants_points===false;
+    if(!base)return false;
+
+    const exactMatch=alignmentStatus==="verified_match"
+      &&evidence.canonical_client_ready===true
+      &&evidence.reviewed_line_ofc_matched===true
+      &&evidence.verified_liff_session_matched===true;
+    const expectedBlockers=[];
+    if(status==="conflict")expectedBlockers.push("identity_alignment_mismatch");
+    if(status==="unavailable")expectedBlockers.push("identity_evidence_unavailable");
+    if(!evidence.canonical_client_ready&&status!=="unavailable")expectedBlockers.push("canonical_line_identity_required");
+    if(!evidence.reviewed_line_ofc_matched&&!["conflict","unavailable"].includes(status))expectedBlockers.push("reviewed_line_ofc_required");
+    if(!evidence.verified_liff_session_matched&&!["conflict","unavailable"].includes(status))expectedBlockers.push("verified_liff_session_required");
+    if(status==="ready_for_owner_verification")expectedBlockers.push("owner_verification_status_required");
+    if(blockers.length!==expectedBlockers.length||blockers.some((blocker,index)=>blocker!==expectedBlockers[index]))return false;
+    if(status==="verified")return identity.verified===true
+      &&exactMatch
+      &&blockers.length===0
+      &&readiness.owner_review_ready===false
+      &&readiness.requires_owner_decision===false
+      &&readiness.kenji_continuity_ready===true;
+    if(status==="ready_for_owner_verification")return identity.verified===false
+      &&exactMatch
+      &&blockers.length===1
+      &&blockers[0]==="owner_verification_status_required"
+      &&readiness.owner_review_ready===true
+      &&readiness.requires_owner_decision===true
+      &&readiness.kenji_continuity_ready===false;
+    if(status==="conflict")return alignmentStatus==="mismatch"
+      &&blockers.includes("identity_alignment_mismatch")
+      &&readiness.owner_review_ready===false
+      &&readiness.requires_owner_decision===true
+      &&readiness.kenji_continuity_ready===false;
+    if(status==="review_required")return alignmentStatus==="review_required"
+      &&readiness.owner_review_ready===false
+      &&readiness.requires_owner_decision===true
+      &&readiness.kenji_continuity_ready===false;
+    if(status==="insufficient_evidence")return alignmentStatus==="insufficient_evidence"
+      &&readiness.owner_review_ready===false
+      &&readiness.requires_owner_decision===true
+      &&readiness.kenji_continuity_ready===false;
+    return alignmentStatus==="unavailable"
+      &&blockers.includes("identity_evidence_unavailable")
+      &&readiness.owner_review_ready===false
+      &&readiness.requires_owner_decision===true
+      &&readiness.kenji_continuity_ready===false;
+  }
+
+  function resetIdentityReadinessUi(clientId=""){
+    ensureIdentityReadinessUi();
+    setText("miIdentityReadinessState","WAITING");
+    setText("miIdentityReadinessReason","กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…");
+    setText("miIdentityReadinessAuthority","Clients.Verification Status");
+    setText("miIdentityReadinessAlignment","WAITING");
+    setText("miIdentityReadinessEvidence","WAITING");
+    setTone("miIdentityReadinessCard","warn");
+    const link=byId("miIdentityReadinessLink");
+    if(link)link.href=clientId?`/internal/admin/customer-data?client_id=${encodeURIComponent(clientId)}`:"/internal/admin/customer-data";
+  }
+
+  function renderIdentityReadiness(payload,clientId){
+    const readiness=payload?.identity?.readiness||{};
+    resetIdentityReadinessUi(clientId);
+    if(!identityReadinessContract(payload)){
+      setText("miIdentityReadinessState","UNAVAILABLE · LOCKED");
+      setText("miIdentityReadinessReason","Readiness contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed");
+      setText("miIdentityReadinessAlignment","UNAVAILABLE");
+      setText("miIdentityReadinessEvidence","CONTRACT INVALID");
+      setTone("miIdentityReadinessCard","bad");
+      return false;
+    }
+
+    const status=clean(readiness.status);
+    const labels={
+      verified:"VERIFIED",
+      ready_for_owner_verification:"READY FOR PER REVIEW",
+      review_required:"REVIEW EVIDENCE",
+      conflict:"CONFLICT · LOCKED",
+      insufficient_evidence:"WAITING FOR EVIDENCE",
+      unavailable:"UNAVAILABLE · LOCKED"
+    };
+    const reasons={
+      verified:"Verification Status เป็น Verified และหลักฐานสามทางตรงกัน · Kenji ผ่าน identity gate",
+      ready_for_owner_verification:"หลักฐานสามทางตรงกันแล้ว · รอเปอร์ตรวจและตัดสิน Verification Status เอง",
+      review_required:"มีหลักฐานบางส่วน แต่ยังต้องตรวจความสัมพันธ์ก่อน",
+      conflict:"หลักฐานตัวตนขัดกัน · ต้องแก้ conflict ก่อนและ Kenji ยังคงล็อก",
+      insufficient_evidence:"หลักฐานยังไม่ครบสำหรับการตรวจ Verified Identity",
+      unavailable:"อ่านแหล่งหลักฐานไม่ได้อย่างปลอดภัย · Kenji ยังคงล็อก"
+    };
+    const evidence=readiness.evidence||{};
+    setText("miIdentityReadinessState",labels[status]||"UNAVAILABLE · LOCKED");
+    setText("miIdentityReadinessReason",reasons[status]||reasons.unavailable);
+    setText("miIdentityReadinessAuthority",evidence.authoritative_verification_present?"Verification Status · VERIFIED":"Verification Status · OWNER DECISION REQUIRED");
+    setText("miIdentityReadinessAlignment",clean(evidence.alignment_status).replace(/_/g," ").toUpperCase());
+    setText("miIdentityReadinessEvidence",[
+      evidence.canonical_client_ready?"Canonical ✓":"Canonical —",
+      evidence.reviewed_line_ofc_matched?"LINE OFC ✓":"LINE OFC —",
+      evidence.verified_liff_session_matched?"LIFF ✓":"LIFF —"
+    ].join(" · "));
+    setTone("miIdentityReadinessCard",status==="verified"?"ok":["conflict","unavailable"].includes(status)?"bad":"warn");
+    return status==="verified"&&readiness.kenji_continuity_ready===true;
+  }
+
   function safeDraftContract(payload){
     const draft=payload?.ai?.suggested_reply||{};
     const guards=draft.guardrails||{};
     const continuity=payload?.ai?.continuity_status||{};
+    const readiness=payload?.identity?.readiness||{};
     return payload?.identity?.status==="canonical"
       &&payload?.identity?.verified===true
+      &&identityReadinessContract(payload)
+      &&readiness.status==="verified"
+      &&readiness.kenji_continuity_ready===true
       &&draft.schema===draftSchema
       &&draft.mode==="operator_draft"
       &&draft.available===true
@@ -654,6 +851,7 @@
     setTone("miReviewCard","warn");
     renderEvidence(record,null);
     setHandoffLinks(record);
+    resetIdentityReadinessUi(clean(record?.client_id));
     resetDraftUi();
   }
 
@@ -707,6 +905,7 @@
       if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
       const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,record);
       paintMemory(record,memory);
+      renderIdentityReadiness(payload,clientId);
       await renderDraft(payload,clientId,selectionSeq);
       if(selectionSeq!==state.selectionSeq)return;
       const ready=memory&&payload?.data_status==="live";
@@ -717,6 +916,10 @@
     }catch(error){
       if(selectionSeq!==state.selectionSeq||lower(error?.message)==="unauthorized")return;
       paintMemory(record,null);
+      resetIdentityReadinessUi(clean(record?.client_id));
+      setText("miIdentityReadinessState","UNAVAILABLE · LOCKED");
+      setText("miIdentityReadinessReason","Client Intelligence อ่านไม่ได้ · Kenji ถูกล็อกแบบ fail-closed");
+      setTone("miIdentityReadinessCard","bad");
       resetDraftUi("Client Intelligence อ่านไม่ได้ · Copy ถูกล็อกแบบ fail-closed");
       setStatus(failureMessage(error),"bad");
     }
@@ -799,6 +1002,7 @@
   function boot(){
     if(!byId("mmdMemberIntelligence"))return;
 
+    ensureIdentityReadinessUi();
     ensureDraftUi();
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");
     addNavigation("Control Room","/internal/admin/control-room","miNavControlRoom");

@@ -1,0 +1,432 @@
+import { appendFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+export const VERIFIED_IDENTITY_OBSERVATION_SCHEMA = "mmd.kenji_verified_identity_readiness_observation.v1";
+export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_readiness.v1";
+
+const DEFAULT_ORIGIN = "https://mmdbkk.com";
+const MAX_SCAN_LIMIT = 24;
+const RECORD_ID = /^rec[A-Za-z0-9]{14}$/;
+const SESSION_COOKIE = /^mmd_admin_gate_v1=[^;\r\n]+$/;
+const ALLOWED_ORIGINS = new Set(["https://mmdbkk.com", "https://www.mmdbkk.com"]);
+const READINESS_STATUSES = new Set([
+  "verified",
+  "ready_for_owner_verification",
+  "review_required",
+  "conflict",
+  "insufficient_evidence",
+  "unavailable",
+]);
+const ALIGNMENT_STATUSES = new Set([
+  "verified_match",
+  "review_required",
+  "mismatch",
+  "insufficient_evidence",
+  "unavailable",
+]);
+const ALLOWED_BLOCKERS = new Set([
+  "identity_alignment_mismatch",
+  "identity_evidence_unavailable",
+  "canonical_line_identity_required",
+  "reviewed_line_ofc_required",
+  "verified_liff_session_required",
+  "owner_verification_status_required",
+]);
+const NEXT_ACTIONS = Object.freeze({
+  verified: "none",
+  ready_for_owner_verification: "owner_review_verification_status",
+  review_required: "review_identity_evidence",
+  conflict: "resolve_identity_conflict",
+  insufficient_evidence: "collect_verified_identity_evidence",
+  unavailable: "retry_identity_evidence_read",
+});
+
+class ObservationError extends Error {
+  constructor(code) {
+    super(code);
+    this.name = "ObservationError";
+    this.code = code;
+  }
+}
+
+function fail(code) {
+  throw new ObservationError(code);
+}
+
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeOrigin(value) {
+  let url;
+  try {
+    url = new URL(clean(value) || DEFAULT_ORIGIN);
+  } catch {
+    fail("origin_invalid");
+  }
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/") fail("origin_invalid");
+  if (!ALLOWED_ORIGINS.has(url.origin)) fail("origin_not_allowed");
+  return url.origin;
+}
+
+function normalizeScanLimit(value) {
+  const parsed = Number.parseInt(String(value ?? MAX_SCAN_LIMIT), 10);
+  if (!Number.isFinite(parsed)) return MAX_SCAN_LIMIT;
+  return Math.max(1, Math.min(parsed, MAX_SCAN_LIMIT));
+}
+
+async function safeFetch(fetchImpl, url, options, errorCode) {
+  try {
+    return await fetchImpl(url, options);
+  } catch {
+    fail(errorCode);
+  }
+}
+
+async function safeJson(response, errorCode) {
+  try {
+    return await response.json();
+  } catch {
+    fail(errorCode);
+  }
+}
+
+function statusBucket(status) {
+  if (status === 401 || status === 403) return "authorization_error";
+  if (status === 404) return "not_found";
+  if (status === 408 || status === 429) return "retryable";
+  if (status >= 500) return "server_error";
+  return "other_http_error";
+}
+
+function increment(map, key) {
+  map[key] = (map[key] || 0) + 1;
+}
+
+function exactBooleans(value, expected) {
+  return Object.entries(expected).every(([key, required]) => value?.[key] === required);
+}
+
+function safeReadinessContract(payload) {
+  const identity = payload?.identity || {};
+  const readiness = identity.readiness || {};
+  const authority = readiness.authority || {};
+  const evidence = readiness.evidence || {};
+  const status = clean(readiness.status).toLowerCase();
+  const alignmentStatus = clean(evidence.alignment_status).toLowerCase();
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers.map((item) => clean(item).toLowerCase()) : [];
+
+  if (identity.status !== "canonical"
+    || typeof identity.verified !== "boolean"
+    || readiness.schema !== VERIFIED_IDENTITY_READINESS_SCHEMA
+    || readiness.mode !== "read_only"
+    || !READINESS_STATUSES.has(status)
+    || authority.verification !== "Clients.Verification Status"
+    || authority.alignment !== "customer_identity_alignment_read_only_v1"
+    || authority.rights !== "my_mmd_entitlement_resolver_v1"
+    || typeof evidence.authoritative_verification_present !== "boolean"
+    || evidence.authoritative_verification_present !== identity.verified
+    || !ALIGNMENT_STATUSES.has(alignmentStatus)
+    || typeof evidence.canonical_client_ready !== "boolean"
+    || typeof evidence.reviewed_line_ofc_matched !== "boolean"
+    || typeof evidence.verified_liff_session_matched !== "boolean"
+    || blockers.length > 4
+    || new Set(blockers).size !== blockers.length
+    || blockers.some((item) => !ALLOWED_BLOCKERS.has(item))
+    || readiness.next_action !== NEXT_ACTIONS[status]
+    || readiness.automatic_verification_allowed !== false
+    || readiness.identity_mutated !== false
+    || readiness.grants_access !== false
+    || readiness.grants_membership !== false
+    || readiness.grants_points !== false) return false;
+
+  const exactMatch = alignmentStatus === "verified_match"
+    && evidence.canonical_client_ready === true
+    && evidence.reviewed_line_ofc_matched === true
+    && evidence.verified_liff_session_matched === true;
+  const expectedBlockers = [];
+  if (status === "conflict") expectedBlockers.push("identity_alignment_mismatch");
+  if (status === "unavailable") expectedBlockers.push("identity_evidence_unavailable");
+  if (!evidence.canonical_client_ready && status !== "unavailable") expectedBlockers.push("canonical_line_identity_required");
+  if (!evidence.reviewed_line_ofc_matched && !["conflict", "unavailable"].includes(status)) {
+    expectedBlockers.push("reviewed_line_ofc_required");
+  }
+  if (!evidence.verified_liff_session_matched && !["conflict", "unavailable"].includes(status)) {
+    expectedBlockers.push("verified_liff_session_required");
+  }
+  if (status === "ready_for_owner_verification") expectedBlockers.push("owner_verification_status_required");
+  if (blockers.length !== expectedBlockers.length
+    || blockers.some((blocker, index) => blocker !== expectedBlockers[index])) return false;
+
+  if (status === "verified") {
+    return identity.verified === true
+      && exactMatch
+      && blockers.length === 0
+      && exactBooleans(readiness, {
+        owner_review_ready: false,
+        requires_owner_decision: false,
+        kenji_continuity_ready: true,
+      });
+  }
+  if (status === "ready_for_owner_verification") {
+    return identity.verified === false
+      && exactMatch
+      && blockers.length === 1
+      && blockers[0] === "owner_verification_status_required"
+      && exactBooleans(readiness, {
+        owner_review_ready: true,
+        requires_owner_decision: true,
+        kenji_continuity_ready: false,
+      });
+  }
+  if (status === "conflict") {
+    return alignmentStatus === "mismatch"
+      && blockers.includes("identity_alignment_mismatch")
+      && exactBooleans(readiness, {
+        owner_review_ready: false,
+        requires_owner_decision: true,
+        kenji_continuity_ready: false,
+      });
+  }
+  if (status === "review_required") {
+    return alignmentStatus === "review_required"
+      && exactBooleans(readiness, {
+        owner_review_ready: false,
+        requires_owner_decision: true,
+        kenji_continuity_ready: false,
+      });
+  }
+  if (status === "insufficient_evidence") {
+    return alignmentStatus === "insufficient_evidence"
+      && exactBooleans(readiness, {
+        owner_review_ready: false,
+        requires_owner_decision: true,
+        kenji_continuity_ready: false,
+      });
+  }
+  return alignmentStatus === "unavailable"
+    && blockers.includes("identity_evidence_unavailable")
+    && exactBooleans(readiness, {
+      owner_review_ready: false,
+      requires_owner_decision: true,
+      kenji_continuity_ready: false,
+    });
+}
+
+function classify({ counts, endpointErrors, contractViolations, degradedProjections }) {
+  if (contractViolations > 0) return { status: "contract_violation", healthy: false };
+  if (endpointErrors > 0 || degradedProjections > 0 || counts.unavailable > 0) {
+    return { status: "observation_degraded", healthy: false };
+  }
+  if (counts.conflict > 0) return { status: "identity_conflict_detected", healthy: false };
+  if (counts.ready_for_owner_verification > 0) return { status: "owner_review_ready", healthy: true };
+  if (counts.verified > 0 && Object.values(counts).reduce((sum, value) => sum + value, 0) === counts.verified) {
+    return { status: "verified_identity_ready", healthy: true };
+  }
+  if (Object.values(counts).some((value) => value > 0)) return { status: "identity_evidence_pending", healthy: true };
+  return { status: "no_current_candidates", healthy: true };
+}
+
+export async function runVerifiedIdentityReadinessObservation({
+  origin = DEFAULT_ORIGIN,
+  credential,
+  scanLimit = MAX_SCAN_LIMIT,
+  fetchImpl = globalThis.fetch,
+} = {}) {
+  if (typeof fetchImpl !== "function") fail("fetch_unavailable");
+  const safeOrigin = normalizeOrigin(origin);
+  const secret = clean(credential);
+  if (!secret) fail("credential_missing");
+  const limit = normalizeScanLimit(scanLimit);
+
+  const loginResponse = await safeFetch(fetchImpl, `${safeOrigin}/internal/admin/login/session`, {
+    method: "POST",
+    headers: {
+      Origin: safeOrigin,
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-MMD-Login-Fetch": "1",
+    },
+    body: new URLSearchParams({
+      credential: secret,
+      next: "/internal/admin/member-intelligence",
+    }).toString(),
+    redirect: "manual",
+  }, "owner_login_unavailable");
+  const loginPayload = await safeJson(loginResponse, "owner_login_response_invalid");
+  if (loginResponse.status !== 200 || loginPayload?.ok !== true) fail("owner_login_rejected");
+  const cookie = clean(loginResponse.headers.get("set-cookie")).split(";", 1)[0];
+  if (!SESSION_COOKIE.test(cookie)) fail("owner_session_cookie_missing");
+
+  const unauthenticatedRecent = await safeFetch(fetchImpl, `${safeOrigin}/v1/admin/clients/recent`, {
+    method: "GET",
+    headers: { Origin: safeOrigin, Accept: "application/json" },
+    redirect: "manual",
+  }, "unauthenticated_boundary_unavailable");
+  if (unauthenticatedRecent.status !== 401) fail("unauthenticated_boundary_not_closed");
+
+  const headers = { Origin: safeOrigin, Cookie: cookie, Accept: "application/json" };
+  const recentResponse = await safeFetch(fetchImpl, `${safeOrigin}/v1/admin/clients/recent`, {
+    method: "GET",
+    headers,
+    redirect: "manual",
+  }, "recent_clients_unavailable");
+  if (recentResponse.status !== 200) fail(`recent_clients_${statusBucket(recentResponse.status)}`);
+  const recentPayload = await safeJson(recentResponse, "recent_clients_response_invalid");
+  if (recentPayload?.ok !== true || !Array.isArray(recentPayload.records)) fail("recent_clients_contract_invalid");
+
+  const ids = [];
+  const seen = new Set();
+  for (const record of recentPayload.records) {
+    const id = clean(record?.client_id);
+    if (record?.manual_public_only === true || !RECORD_ID.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= limit) break;
+  }
+
+  const counts = Object.fromEntries([...READINESS_STATUSES].map((status) => [status, 0]));
+  const blockerCounts = {};
+  const endpointErrorBuckets = {};
+  let checkedCount = 0;
+  let projectionCount = 0;
+  let degradedProjectionCount = 0;
+  let endpointErrorCount = 0;
+  let contractViolationCount = 0;
+
+  for (const id of ids) {
+    checkedCount += 1;
+    let response;
+    try {
+      response = await fetchImpl(
+        `${safeOrigin}/v1/admin/clients/intelligence?client_id=${encodeURIComponent(id)}`,
+        { method: "GET", headers, redirect: "manual" },
+      );
+    } catch {
+      endpointErrorCount += 1;
+      increment(endpointErrorBuckets, "network_error");
+      continue;
+    }
+    if (response.status !== 200) {
+      endpointErrorCount += 1;
+      increment(endpointErrorBuckets, statusBucket(response.status));
+      continue;
+    }
+
+    let payload;
+    try {
+      payload = await response.json();
+    } catch {
+      contractViolationCount += 1;
+      continue;
+    }
+    if (payload?.ok !== true || clean(payload?.client_id) !== id) {
+      contractViolationCount += 1;
+      continue;
+    }
+    projectionCount += 1;
+    const dataStatus = clean(payload.data_status).toLowerCase();
+    if (dataStatus === "degraded") {
+      degradedProjectionCount += 1;
+      continue;
+    }
+    if (dataStatus !== "live" && dataStatus !== "empty") {
+      contractViolationCount += 1;
+      continue;
+    }
+    if (!safeReadinessContract(payload)) {
+      contractViolationCount += 1;
+      continue;
+    }
+
+    const readiness = payload.identity.readiness;
+    increment(counts, readiness.status);
+    for (const blocker of readiness.blockers) increment(blockerCounts, blocker);
+  }
+
+  const result = classify({
+    counts,
+    endpointErrors: endpointErrorCount,
+    contractViolations: contractViolationCount,
+    degradedProjections: degradedProjectionCount,
+  });
+
+  return {
+    schema: VERIFIED_IDENTITY_OBSERVATION_SCHEMA,
+    mode: "authenticated_read_only",
+    status: result.status,
+    healthy: result.healthy,
+    owner_review_ready: result.status === "owner_review_ready",
+    scan: {
+      limit,
+      candidate_count: ids.length,
+      checked_count: checkedCount,
+      projection_count: projectionCount,
+      degraded_projection_count: degradedProjectionCount,
+      endpoint_error_count: endpointErrorCount,
+      endpoint_error_buckets: Object.fromEntries(Object.entries(endpointErrorBuckets).sort(([a], [b]) => a.localeCompare(b))),
+      contract_violation_count: contractViolationCount,
+    },
+    readiness: {
+      counts,
+      blocker_counts: Object.fromEntries(Object.entries(blockerCounts).sort(([a], [b]) => a.localeCompare(b))),
+    },
+    guardrails: {
+      names_emitted: false,
+      customer_identifiers_emitted: false,
+      line_tails_emitted: false,
+      verification_status_mutated: false,
+      identity_merged: false,
+      membership_or_access_mutated: false,
+      customer_send_possible: false,
+      human_decision_required: true,
+    },
+  };
+}
+
+function safeErrorCode(error) {
+  const code = clean(error?.code);
+  return /^[a-z0-9_]{1,80}$/.test(code) ? code : "unexpected_error";
+}
+
+function githubSummary(result) {
+  return [
+    "## Kenji Verified Identity Readiness",
+    "",
+    `- Status: \`${result.status}\``,
+    `- Healthy: \`${result.healthy}\``,
+    `- Candidates checked: \`${result.scan.checked_count}\` (bounded to \`${result.scan.limit}\`)`,
+    `- Verified: \`${result.readiness.counts.verified}\``,
+    `- Ready for Per review: \`${result.readiness.counts.ready_for_owner_verification}\``,
+    `- Evidence pending: \`${result.readiness.counts.review_required + result.readiness.counts.insufficient_evidence}\``,
+    `- Conflicts: \`${result.readiness.counts.conflict}\``,
+    "- Authority: Clients.Verification Status; readiness never verifies or merges identity",
+    "- Privacy: aggregate counts only; no names, record IDs, LINE tails, credentials, or session values emitted",
+    "",
+  ].join("\n");
+}
+
+async function main() {
+  try {
+    const result = await runVerifiedIdentityReadinessObservation({
+      origin: process.env.ORIGIN || DEFAULT_ORIGIN,
+      credential: process.env.ADMIN_SMOKE_CREDENTIAL,
+      scanLimit: process.env.OBSERVATION_SCAN_LIMIT,
+    });
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      try {
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY, githubSummary(result), "utf8");
+      } catch {
+        // The bounded JSON result remains authoritative when summary rendering is unavailable.
+      }
+    }
+    if (result.healthy !== true) process.exitCode = 1;
+  } catch (error) {
+    process.stderr.write(`verified_identity_readiness_failed:${safeErrorCode(error)}\n`);
+    process.exitCode = 1;
+  }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

@@ -135,6 +135,37 @@ function safeUnavailableDraftContract(payload) {
     && typeof guards.protected_truth_refresh_required === "boolean";
 }
 
+function safeVerifiedIdentityReadinessContract(payload) {
+  const identity = payload?.identity || {};
+  const readiness = identity.readiness || {};
+  const authority = readiness.authority || {};
+  const evidence = readiness.evidence || {};
+  return identity.status === "canonical"
+    && identity.verified === true
+    && readiness.schema === "mmd.kenji_verified_identity_readiness.v1"
+    && readiness.mode === "read_only"
+    && readiness.status === "verified"
+    && authority.verification === "Clients.Verification Status"
+    && authority.alignment === "customer_identity_alignment_read_only_v1"
+    && authority.rights === "my_mmd_entitlement_resolver_v1"
+    && evidence.authoritative_verification_present === true
+    && evidence.alignment_status === "verified_match"
+    && evidence.canonical_client_ready === true
+    && evidence.reviewed_line_ofc_matched === true
+    && evidence.verified_liff_session_matched === true
+    && Array.isArray(readiness.blockers)
+    && readiness.blockers.length === 0
+    && readiness.next_action === "none"
+    && readiness.owner_review_ready === false
+    && readiness.requires_owner_decision === false
+    && readiness.kenji_continuity_ready === true
+    && readiness.automatic_verification_allowed === false
+    && readiness.identity_mutated === false
+    && readiness.grants_access === false
+    && readiness.grants_membership === false
+    && readiness.grants_points === false;
+}
+
 function safeDraftContract(payload) {
   const identity = payload?.identity || {};
   const ai = payload?.ai || {};
@@ -151,6 +182,7 @@ function safeDraftContract(payload) {
 
   return identity.status === "canonical"
     && identity.verified === true
+    && safeVerifiedIdentityReadinessContract(payload)
     && ai.advisory_only === true
     && authority.ai === "advisory"
     && draft.schema === "mmd.kenji_continuity_operator_draft.v1"

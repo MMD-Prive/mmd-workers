@@ -28,6 +28,33 @@ function availableProjection(clientId, overrides = {}) {
       status: "canonical",
       verified: true,
       display_name: "Private Customer Name",
+      readiness: {
+        schema: "mmd.kenji_verified_identity_readiness.v1",
+        mode: "read_only",
+        status: "verified",
+        authority: {
+          verification: "Clients.Verification Status",
+          alignment: "customer_identity_alignment_read_only_v1",
+          rights: "my_mmd_entitlement_resolver_v1",
+        },
+        evidence: {
+          authoritative_verification_present: true,
+          alignment_status: "verified_match",
+          canonical_client_ready: true,
+          reviewed_line_ofc_matched: true,
+          verified_liff_session_matched: true,
+        },
+        blockers: [],
+        next_action: "none",
+        owner_review_ready: false,
+        requires_owner_decision: false,
+        kenji_continuity_ready: true,
+        automatic_verification_allowed: false,
+        identity_mutated: false,
+        grants_access: false,
+        grants_membership: false,
+        grants_points: false,
+      },
     },
     ai: {
       advisory_only: true,
@@ -230,6 +257,31 @@ test("fails closed when an available draft violates the safety contract", async 
   assert.equal(result.healthy, false);
   assert.equal(result.drafts.safety_contract_violation_count, 1);
   assert.equal(JSON.stringify(result).includes(unsafe.ai.suggested_reply.text), false);
+});
+
+test("fails closed when a verified draft lacks exact identity readiness", async () => {
+  const unsafe = availableProjection(CLIENT_A, {
+    identity: {
+      readiness: {
+        status: "conflict",
+        next_action: "resolve_identity_conflict",
+        evidence: { alignment_status: "mismatch" },
+        blockers: ["identity_alignment_mismatch"],
+        requires_owner_decision: true,
+        kenji_continuity_ready: false,
+      },
+    },
+  });
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, unsafe]]),
+  });
+
+  const result = await runAuthenticatedObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.drafts.safety_contract_violation_count, 1);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
 });
 
 test("marks even a partial intelligence endpoint failure as degraded", async () => {

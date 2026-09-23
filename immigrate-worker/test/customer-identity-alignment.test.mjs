@@ -19,7 +19,12 @@ try {
     platform: "browser",
     target: "es2022",
   });
-  const { deriveCustomerIdentityAlignment, augmentClientIntelligenceWithIdentityAlignment } = await import(pathToFileURL(outfile).href);
+  const {
+    VERIFIED_IDENTITY_READINESS_SCHEMA,
+    deriveCustomerIdentityAlignment,
+    deriveVerifiedIdentityReadiness,
+    augmentClientIntelligenceWithIdentityAlignment,
+  } = await import(pathToFileURL(outfile).href);
 
   const clientId = "recABCDEFGHIJKLMN";
   const canonicalLine = `U${"a".repeat(26)}123456`;
@@ -68,6 +73,63 @@ try {
   assert.equal(aligned.grants_points, false);
   assert.equal(JSON.stringify(aligned).includes(canonicalLine), false);
 
+  const ownerReady = deriveVerifiedIdentityReadiness(false, aligned);
+  assert.equal(ownerReady.schema, VERIFIED_IDENTITY_READINESS_SCHEMA);
+  assert.equal(ownerReady.mode, "read_only");
+  assert.equal(ownerReady.status, "ready_for_owner_verification");
+  assert.equal(ownerReady.owner_review_ready, true);
+  assert.equal(ownerReady.requires_owner_decision, true);
+  assert.equal(ownerReady.kenji_continuity_ready, false);
+  assert.equal(ownerReady.automatic_verification_allowed, false);
+  assert.equal(ownerReady.identity_mutated, false);
+  assert.deepEqual(ownerReady.blockers, ["owner_verification_status_required"]);
+
+  const verified = deriveVerifiedIdentityReadiness(true, aligned);
+  assert.equal(verified.status, "verified");
+  assert.equal(verified.owner_review_ready, false);
+  assert.equal(verified.requires_owner_decision, false);
+  assert.equal(verified.kenji_continuity_ready, true);
+  assert.deepEqual(verified.blockers, []);
+
+  const reviewRequired = deriveVerifiedIdentityReadiness(false, {
+    ...aligned,
+    status: "review_required",
+    line_ofc: { status: "missing", line_tail: null },
+  });
+  assert.equal(reviewRequired.status, "review_required");
+  assert.deepEqual(reviewRequired.blockers, ["reviewed_line_ofc_required"]);
+
+  const insufficient = deriveVerifiedIdentityReadiness(false, {
+    ...aligned,
+    status: "insufficient_evidence",
+    canonical_client: { status: "missing", line_tail: null },
+    line_ofc: { status: "missing", line_tail: null },
+    liff: { status: "missing", line_tail: null },
+  });
+  assert.equal(insufficient.status, "insufficient_evidence");
+  assert.deepEqual(insufficient.blockers, [
+    "canonical_line_identity_required",
+    "reviewed_line_ofc_required",
+    "verified_liff_session_required",
+  ]);
+
+  const unavailable = deriveVerifiedIdentityReadiness(false, {
+    ...aligned,
+    status: "unavailable",
+    canonical_client: { status: "missing", line_tail: null },
+    line_ofc: { status: "missing", line_tail: null },
+    liff: { status: "missing", line_tail: null },
+  });
+  assert.equal(unavailable.status, "unavailable");
+  assert.deepEqual(unavailable.blockers, ["identity_evidence_unavailable"]);
+
+  const inconsistentMatch = deriveVerifiedIdentityReadiness(true, {
+    ...aligned,
+    liff: { status: "missing", line_tail: null },
+  });
+  assert.equal(inconsistentMatch.status, "unavailable");
+  assert.equal(inconsistentMatch.kenji_continuity_ready, false);
+
   const augmented = await augmentClientIntelligenceWithIdentityAlignment(
     Response.json({ ok: true, client_id: clientId, identity: { status: "canonical" } }),
     env,
@@ -75,7 +137,10 @@ try {
   );
   const body = await augmented.json();
   assert.equal(augmented.headers.get("x-mmd-identity-alignment"), "read-only-v1");
+  assert.equal(augmented.headers.get("x-mmd-verified-identity-readiness"), "read-only-v1");
   assert.equal(body.identity.alignment.status, "verified_match");
+  assert.equal(body.identity.readiness.status, "ready_for_owner_verification");
+  assert.equal(body.identity.readiness.evidence.authoritative_verification_present, false);
   assert.equal(JSON.stringify(body).includes(canonicalLine), false);
 
   mismatch = true;
@@ -83,6 +148,10 @@ try {
   assert.equal(conflict.status, "mismatch");
   assert.equal(conflict.line_ofc.status, "mismatch");
   assert.equal(conflict.line_ofc.line_tail, "654321");
+  const blocked = deriveVerifiedIdentityReadiness(true, conflict);
+  assert.equal(blocked.status, "conflict");
+  assert.equal(blocked.kenji_continuity_ready, false);
+  assert.deepEqual(blocked.blockers, ["identity_alignment_mismatch"]);
 } finally {
   globalThis.fetch = originalFetch;
   await rm(tmp, { recursive: true, force: true });

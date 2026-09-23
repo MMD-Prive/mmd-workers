@@ -27,11 +27,17 @@ try {
   assert.equal(page.headers.get("x-mmd-customer-360"), "live-v1");
   assert.equal(page.headers.get("x-mmd-customer-intelligence"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-identity-alignment"), "read-only-v1");
+  assert.equal(page.headers.get("x-mmd-verified-identity-readiness"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-data-ui"), "readable-v2");
   assert.match(html, /data-mmd-customer-360-live-client="v1"/);
   assert.match(html, /data-mmd-customer-identity-alignment-client="v1"/);
   assert.match(html, /MY MMD \/ LIFF/);
   assert.match(html, /VERIFIED MATCH/);
+  assert.match(html, /Verified Identity Readiness/);
+  assert.match(html, /READY FOR PER REVIEW/);
+  assert.match(html, /mmd\.kenji_verified_identity_readiness\.v1/);
+  assert.match(html, /automatic_verification_allowed===false/);
+  assert.match(html, /Readiness contract ไม่ครบ · ห้ามตัดสิน Verified จากหน้านี้/);
   assert.match(html, /\/v1\/admin\/customer-data\/backfill\/continue/);
   assert.match(html, /\/v1\/admin\/clients\/intelligence/);
   assert.match(html, /Pause/);
