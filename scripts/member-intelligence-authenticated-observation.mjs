@@ -202,6 +202,46 @@ function safeIdentityRecoveryCompleteContract(payload) {
     && recovery.grants_points === false;
 }
 
+function safeIdentityEvidenceOwnerReviewProtocolCompleteContract(payload) {
+  const readiness = payload?.identity?.readiness || {};
+  const recovery = payload?.identity?.recovery || {};
+  const protocol = payload?.identity?.evidence_protocol || {};
+  const capture = protocol.capture || {};
+  const review = protocol.review || {};
+  const steps = Array.isArray(protocol.steps) ? protocol.steps : [];
+  return protocol.schema === "mmd.kenji_identity_evidence_owner_review_protocol.v1"
+    && protocol.mode === "read_only"
+    && protocol.status === "complete"
+    && protocol.checked_at === readiness.checked_at
+    && protocol.source_readiness_status === "verified"
+    && protocol.source_recovery_status === "complete"
+    && protocol.manual_source_capture_required === false
+    && capture.canonical_client === "ready"
+    && capture.reviewed_line_ofc === "matched"
+    && capture.verified_liff_session === "matched"
+    && steps.length === 0
+    && review.fresh_read_required === true
+    && review.verification_status_authority === "Clients.Verification Status"
+    && review.owner_decision_required === false
+    && protocol?.handoff?.surface === "customer_360"
+    && protocol?.handoff?.path === "/internal/admin/customer-data"
+    && protocol?.handoff?.client_scope_required === true
+    && protocol?.handoff?.mutation_control === false
+    && protocol?.authority?.verification === "Clients.Verification Status"
+    && protocol?.authority?.alignment === "customer_identity_alignment_read_only_v1"
+    && protocol?.authority?.rights === "my_mmd_entitlement_resolver_v1"
+    && protocol?.authority?.protocol === "identity_evidence_owner_review_read_only_v1"
+    && protocol.evidence_written === false
+    && protocol.automatic_recovery_allowed === false
+    && protocol.automatic_verification_allowed === false
+    && protocol.verification_status_mutated === false
+    && protocol.identity_mutated === false
+    && protocol.customer_send_allowed === false
+    && protocol.grants_access === false
+    && protocol.grants_membership === false
+    && protocol.grants_points === false;
+}
+
 function safeDraftContract(payload) {
   const identity = payload?.identity || {};
   const ai = payload?.ai || {};
@@ -220,6 +260,7 @@ function safeDraftContract(payload) {
     && identity.verified === true
     && safeVerifiedIdentityReadinessContract(payload)
     && safeIdentityRecoveryCompleteContract(payload)
+    && safeIdentityEvidenceOwnerReviewProtocolCompleteContract(payload)
     && ai.advisory_only === true
     && authority.ai === "advisory"
     && draft.schema === "mmd.kenji_continuity_operator_draft.v1"

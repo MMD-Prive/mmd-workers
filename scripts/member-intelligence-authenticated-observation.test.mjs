@@ -93,6 +93,47 @@ function availableProjection(clientId, overrides = {}) {
         grants_membership: false,
         grants_points: false,
       },
+      evidence_protocol: {
+        schema: "mmd.kenji_identity_evidence_owner_review_protocol.v1",
+        mode: "read_only",
+        status: "complete",
+        checked_at: "2026-09-23T00:00:00.000Z",
+        source_readiness_status: "verified",
+        source_recovery_status: "complete",
+        manual_source_capture_required: false,
+        steps: [],
+        capture: {
+          canonical_client: "ready",
+          reviewed_line_ofc: "matched",
+          verified_liff_session: "matched",
+        },
+        review: {
+          fresh_read_required: true,
+          verification_status_authority: "Clients.Verification Status",
+          owner_decision_required: false,
+        },
+        handoff: {
+          surface: "customer_360",
+          path: "/internal/admin/customer-data",
+          client_scope_required: true,
+          mutation_control: false,
+        },
+        authority: {
+          verification: "Clients.Verification Status",
+          alignment: "customer_identity_alignment_read_only_v1",
+          rights: "my_mmd_entitlement_resolver_v1",
+          protocol: "identity_evidence_owner_review_read_only_v1",
+        },
+        evidence_written: false,
+        automatic_recovery_allowed: false,
+        automatic_verification_allowed: false,
+        verification_status_mutated: false,
+        identity_mutated: false,
+        customer_send_allowed: false,
+        grants_access: false,
+        grants_membership: false,
+        grants_points: false,
+      },
     },
     ai: {
       advisory_only: true,
@@ -330,6 +371,27 @@ test("fails closed when a verified draft lacks a complete read-only recovery con
         queue_eligible: true,
         automatic_recovery_allowed: true,
         actions: ["owner_review_verification_status"],
+      },
+    },
+  });
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, unsafe]]),
+  });
+
+  const result = await runAuthenticatedObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.drafts.safety_contract_violation_count, 1);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
+});
+
+test("fails closed when a verified draft has a mutation-capable owner review protocol", async () => {
+  const unsafe = availableProjection(CLIENT_A, {
+    identity: {
+      evidence_protocol: {
+        evidence_written: true,
+        steps: ["reread_identity_evidence"],
       },
     },
   });

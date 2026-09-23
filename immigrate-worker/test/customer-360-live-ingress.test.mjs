@@ -29,9 +29,11 @@ try {
   assert.equal(page.headers.get("x-mmd-customer-identity-alignment"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-verified-identity-readiness"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-identity-evidence-recovery"), "read-only-v1");
+  assert.equal(page.headers.get("x-mmd-identity-evidence-owner-review"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-data-ui"), "readable-v2");
   assert.match(html, /data-mmd-customer-360-live-client="v1"/);
   assert.match(html, /data-mmd-customer-identity-alignment-client="v1"/);
+  assert.match(html, /data-mmd-customer-identity-evidence-protocol-client="v1"/);
   assert.match(html, /MY MMD \/ LIFF/);
   assert.match(html, /VERIFIED MATCH/);
   assert.match(html, /Verified Identity Readiness/);
@@ -39,6 +41,10 @@ try {
   assert.match(html, /mmd\.kenji_verified_identity_readiness\.v1/);
   assert.match(html, /automatic_verification_allowed===false/);
   assert.match(html, /Readiness contract ไม่ครบ · ห้ามตัดสิน Verified จากหน้านี้/);
+  assert.match(html, /ขั้นตอนเก็บหลักฐานและ Owner Review/);
+  assert.match(html, /mmd\.kenji_identity_evidence_owner_review_protocol\.v1/);
+  assert.match(html, /evidence_written===false/);
+  assert.match(html, /reread_identity_evidence/);
   assert.match(html, /เปิดจาก Member Intelligence · อ่านอย่างเดียว/);
   assert.match(html, /revealDirectClient/);
   assert.match(html, /decisionNode\.hidden=true/);

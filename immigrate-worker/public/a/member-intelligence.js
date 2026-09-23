@@ -14,6 +14,7 @@
   const draftSchema="mmd.kenji_continuity_operator_draft.v1";
   const identityReadinessSchema="mmd.kenji_verified_identity_readiness.v1";
   const identityRecoverySchema="mmd.kenji_identity_evidence_recovery.v1";
+  const identityEvidenceProtocolSchema="mmd.kenji_identity_evidence_owner_review_protocol.v1";
   const recoveryScanLimit=24;
   const feedbackSchema="mmd.kenji_continuity_operator_feedback.v1";
   const feedbackReasonLabels={
@@ -264,7 +265,7 @@
     card.className="mi-identity-readiness";
     card.setAttribute("data-tone","warn");
     card.setAttribute("aria-labelledby","miIdentityReadinessTitle");
-    card.innerHTML=`<div class="mi-identity-readiness-head"><div><small class="mi-identity-readiness-kicker">IDENTITY · READ-ONLY · OWNER AUTHORITY</small><h3 id="miIdentityReadinessTitle">Verified Identity Readiness</h3></div><span class="mi-identity-readiness-state" id="miIdentityReadinessState">WAITING</span></div><p class="mi-identity-readiness-reason" id="miIdentityReadinessReason">กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…</p><div class="mi-identity-readiness-grid"><div><small>AUTHORITY</small><b id="miIdentityReadinessAuthority">Clients.Verification Status</b></div><div><small>ALIGNMENT</small><b id="miIdentityReadinessAlignment">WAITING</b></div><div><small>EVIDENCE</small><b id="miIdentityReadinessEvidence">WAITING</b></div><div><small>RECOVERY</small><b id="miIdentityRecoveryAction">WAITING</b></div></div><div class="mi-identity-readiness-foot"><p>Kenji อ่าน readiness เท่านั้น · คิวนี้ไม่ตั้ง Verified, merge identity หรือเปลี่ยนสิทธิ์อัตโนมัติ</p><a class="mi-identity-readiness-link" id="miIdentityReadinessLink" href="/internal/admin/customer-data">เปิด Customer 360 เพื่อตรวจ</a></div>`;
+    card.innerHTML=`<div class="mi-identity-readiness-head"><div><small class="mi-identity-readiness-kicker">IDENTITY · READ-ONLY · OWNER AUTHORITY</small><h3 id="miIdentityReadinessTitle">Verified Identity Readiness</h3></div><span class="mi-identity-readiness-state" id="miIdentityReadinessState">WAITING</span></div><p class="mi-identity-readiness-reason" id="miIdentityReadinessReason">กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…</p><div class="mi-identity-readiness-grid"><div><small>AUTHORITY</small><b id="miIdentityReadinessAuthority">Clients.Verification Status</b></div><div><small>ALIGNMENT</small><b id="miIdentityReadinessAlignment">WAITING</b></div><div><small>EVIDENCE</small><b id="miIdentityReadinessEvidence">WAITING</b></div><div><small>RECOVERY</small><b id="miIdentityRecoveryAction">WAITING</b></div><div><small>OWNER PROTOCOL</small><b id="miIdentityEvidenceProtocol">WAITING</b></div></div><div class="mi-identity-readiness-foot"><p>Kenji อ่าน readiness/protocol เท่านั้น · ไม่เขียนหลักฐาน, ตั้ง Verified, merge identity หรือเปลี่ยนสิทธิ์อัตโนมัติ</p><a class="mi-identity-readiness-link" id="miIdentityReadinessLink" href="/internal/admin/customer-data">เปิด Customer 360 เพื่อตรวจ</a></div>`;
     const draft=byId("miDraftCard");
     if(draft)detail.insertBefore(card,draft);
     else detail.appendChild(card);
@@ -436,6 +437,74 @@
       &&recovery.grants_points===false;
   }
 
+  function identityEvidenceProtocolContract(payload){
+    if(!identityReadinessContract(payload)||!identityRecoveryContract(payload))return false;
+    const identity=payload?.identity||{};
+    const readiness=identity.readiness||{};
+    const recovery=identity.recovery||{};
+    const protocol=identity.evidence_protocol||{};
+    const capture=protocol.capture||{};
+    const review=protocol.review||{};
+    const authority=protocol.authority||{};
+    const statusByRecovery={
+      complete:"complete",
+      owner_review_ready:"owner_review_required",
+      evidence_review:"evidence_review_required",
+      evidence_required:"evidence_capture_required",
+      conflict_locked:"conflict_locked",
+      unavailable_locked:"unavailable_locked"
+    };
+    const status=statusByRecovery[recovery.status];
+    const unavailable=status==="unavailable_locked";
+    const conflict=status==="conflict_locked";
+    const canonicalState=unavailable?"unavailable":readiness.evidence.canonical_client_ready?"ready":"capture_required";
+    const lineState=unavailable?"unavailable":conflict?"conflict":recovery.evidence.reviewed_line_ofc==="matched"?"matched":recovery.evidence.reviewed_line_ofc==="review_required"?"review_required":"capture_required";
+    const liffState=unavailable?"unavailable":recovery.evidence.verified_liff_session==="matched"?"matched":recovery.evidence.verified_liff_session==="review_required"?"review_required":"capture_required";
+    const expectedSteps=[];
+    if(conflict)expectedSteps.push("resolve_identity_conflict");
+    else if(unavailable)expectedSteps.push("restore_identity_evidence_read");
+    else if(status==="owner_review_required")expectedSteps.push("reread_identity_evidence","owner_review_verification_status");
+    else if(status!=="complete"){
+      if(canonicalState==="capture_required")expectedSteps.push("capture_canonical_line_identity");
+      if(lineState!=="matched")expectedSteps.push("review_line_ofc_evidence");
+      if(liffState!=="matched")expectedSteps.push("capture_verified_liff_session");
+      expectedSteps.push("reread_identity_evidence");
+    }
+    const steps=Array.isArray(protocol.steps)?protocol.steps.map(clean):[];
+    return protocol.schema===identityEvidenceProtocolSchema
+      &&protocol.mode==="read_only"
+      &&protocol.status===status
+      &&protocol.checked_at===readiness.checked_at
+      &&protocol.source_readiness_status===readiness.status
+      &&protocol.source_recovery_status===recovery.status
+      &&protocol.manual_source_capture_required===(status==="evidence_capture_required"||status==="evidence_review_required")
+      &&capture.canonical_client===canonicalState
+      &&capture.reviewed_line_ofc===lineState
+      &&capture.verified_liff_session===liffState
+      &&steps.length===expectedSteps.length
+      &&steps.every((step,index)=>step===expectedSteps[index])
+      &&review.fresh_read_required===true
+      &&review.verification_status_authority==="Clients.Verification Status"
+      &&review.owner_decision_required===(status==="owner_review_required")
+      &&protocol?.handoff?.surface==="customer_360"
+      &&protocol?.handoff?.path==="/internal/admin/customer-data"
+      &&protocol?.handoff?.client_scope_required===true
+      &&protocol?.handoff?.mutation_control===false
+      &&authority.verification==="Clients.Verification Status"
+      &&authority.alignment==="customer_identity_alignment_read_only_v1"
+      &&authority.rights==="my_mmd_entitlement_resolver_v1"
+      &&authority.protocol==="identity_evidence_owner_review_read_only_v1"
+      &&protocol.evidence_written===false
+      &&protocol.automatic_recovery_allowed===false
+      &&protocol.automatic_verification_allowed===false
+      &&protocol.verification_status_mutated===false
+      &&protocol.identity_mutated===false
+      &&protocol.customer_send_allowed===false
+      &&protocol.grants_access===false
+      &&protocol.grants_membership===false
+      &&protocol.grants_points===false;
+  }
+
   function recoveryStatusLabel(recovery){
     const labels={
       complete:"หลักฐานครบ",
@@ -461,6 +530,18 @@
     return actions.join(" + ")||"หลักฐานครบแล้ว";
   }
 
+  function evidenceProtocolLabel(protocol){
+    const labels={
+      complete:"หลักฐานครบ · no action",
+      owner_review_required:"re-read สด → เปอร์ตรวจสถานะ",
+      evidence_review_required:"ตรวจหลักฐานจริง → re-read",
+      evidence_capture_required:"เก็บหลักฐานจริง → re-read",
+      conflict_locked:"หยุด · แก้ conflict ต้นทาง",
+      unavailable_locked:"หยุด · กู้การอ่านหลักฐาน"
+    };
+    return labels[clean(protocol?.status)]||"PROTOCOL INVALID";
+  }
+
   function resetIdentityReadinessUi(clientId=""){
     ensureIdentityReadinessUi();
     setText("miIdentityReadinessState","WAITING");
@@ -469,6 +550,7 @@
     setText("miIdentityReadinessAlignment","WAITING");
     setText("miIdentityReadinessEvidence","WAITING");
     setText("miIdentityRecoveryAction","WAITING");
+    setText("miIdentityEvidenceProtocol","WAITING");
     setTone("miIdentityReadinessCard","warn");
     const link=byId("miIdentityReadinessLink");
     if(link)link.href=clientId?`/internal/admin/customer-data?client_id=${encodeURIComponent(clientId)}`:"/internal/admin/customer-data";
@@ -477,13 +559,15 @@
   function renderIdentityReadiness(payload,clientId){
     const readiness=payload?.identity?.readiness||{};
     const recovery=payload?.identity?.recovery||{};
+    const protocol=payload?.identity?.evidence_protocol||{};
     resetIdentityReadinessUi(clientId);
-    if(!identityReadinessContract(payload)||!identityRecoveryContract(payload)){
+    if(!identityReadinessContract(payload)||!identityRecoveryContract(payload)||!identityEvidenceProtocolContract(payload)){
       setText("miIdentityReadinessState","UNAVAILABLE · LOCKED");
-      setText("miIdentityReadinessReason","Readiness / Recovery contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed");
+      setText("miIdentityReadinessReason","Readiness / Recovery / Owner Protocol contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed");
       setText("miIdentityReadinessAlignment","UNAVAILABLE");
       setText("miIdentityReadinessEvidence","CONTRACT INVALID");
       setText("miIdentityRecoveryAction","CONTRACT INVALID");
+      setText("miIdentityEvidenceProtocol","CONTRACT INVALID");
       setTone("miIdentityReadinessCard","bad");
       return false;
     }
@@ -516,6 +600,7 @@
       evidence.verified_liff_session_matched?"LIFF ✓":"LIFF —"
     ].join(" · "));
     setText("miIdentityRecoveryAction",recoveryActionLabel(recovery));
+    setText("miIdentityEvidenceProtocol",evidenceProtocolLabel(protocol));
     setTone("miIdentityReadinessCard",status==="verified"?"ok":["conflict","unavailable"].includes(status)?"bad":"warn");
     return status==="verified"&&readiness.kenji_continuity_ready===true;
   }
@@ -526,14 +611,18 @@
     const continuity=payload?.ai?.continuity_status||{};
     const readiness=payload?.identity?.readiness||{};
     const recovery=payload?.identity?.recovery||{};
+    const protocol=payload?.identity?.evidence_protocol||{};
     return payload?.identity?.status==="canonical"
       &&payload?.identity?.verified===true
       &&identityReadinessContract(payload)
       &&identityRecoveryContract(payload)
+      &&identityEvidenceProtocolContract(payload)
       &&readiness.status==="verified"
       &&readiness.kenji_continuity_ready===true
       &&recovery.status==="complete"
       &&recovery.queue_eligible===false
+      &&protocol.status==="complete"
+      &&protocol.evidence_written===false
       &&draft.schema===draftSchema
       &&draft.mode==="operator_draft"
       &&draft.available===true
