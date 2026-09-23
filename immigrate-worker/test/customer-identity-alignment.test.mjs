@@ -30,6 +30,7 @@ try {
   const canonicalLine = `U${"a".repeat(26)}123456`;
   const mismatchLine = `U${"b".repeat(26)}654321`;
   let mismatch = false;
+  let identityLinkedAt = "2026-09-11T08:00:00.000Z";
 
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
@@ -50,7 +51,7 @@ try {
       return Response.json({ records: [{ id: "recLIFF000000001", fields: {
         line_user_id: canonicalLine,
         Client: [clientId],
-        identity_linked_at: "2026-09-11T08:00:00.000Z",
+        ...(identityLinkedAt ? { identity_linked_at: identityLinkedAt } : {}),
       } }] });
     }
     if (table === "tbloDg9yx7ubS5QzW") {
@@ -129,6 +130,18 @@ try {
   });
   assert.equal(inconsistentMatch.status, "unavailable");
   assert.equal(inconsistentMatch.kenji_continuity_ready, false);
+
+  identityLinkedAt = "";
+  const unlinkedLiff = await deriveCustomerIdentityAlignment(env, clientId);
+  assert.equal(unlinkedLiff.status, "review_required");
+  assert.equal(unlinkedLiff.liff.status, "review_required");
+  assert.equal(unlinkedLiff.basis.includes("verified_liff_session"), false);
+  assert.equal(unlinkedLiff.basis.includes("liff_session_review_required"), true);
+  const unlinkedReadiness = deriveVerifiedIdentityReadiness(true, unlinkedLiff);
+  assert.equal(unlinkedReadiness.status, "review_required");
+  assert.equal(unlinkedReadiness.kenji_continuity_ready, false);
+  assert.deepEqual(unlinkedReadiness.blockers, ["verified_liff_session_required"]);
+  identityLinkedAt = "2026-09-11T08:00:00.000Z";
 
   const augmented = await augmentClientIntelligenceWithIdentityAlignment(
     Response.json({ ok: true, client_id: clientId, identity: { status: "canonical" } }),

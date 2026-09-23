@@ -38,6 +38,9 @@ try {
   assert.match(html, /mmd\.kenji_verified_identity_readiness\.v1/);
   assert.match(html, /automatic_verification_allowed===false/);
   assert.match(html, /Readiness contract ไม่ครบ · ห้ามตัดสิน Verified จากหน้านี้/);
+  assert.match(html, /เปิดจาก Member Intelligence · อ่านอย่างเดียว/);
+  assert.match(html, /revealDirectClient/);
+  assert.match(html, /decisionNode\.hidden=true/);
   assert.match(html, /\/v1\/admin\/customer-data\/backfill\/continue/);
   assert.match(html, /\/v1\/admin\/clients\/intelligence/);
   assert.match(html, /Pause/);

@@ -99,6 +99,12 @@ function lineTail(value: unknown): string | null {
   return line ? line.slice(-6) : null;
 }
 
+function verifiedTimestamp(value: unknown): string {
+  const timestamp = text(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) return "";
+  return Number.isFinite(Date.parse(timestamp)) ? timestamp : "";
+}
+
 function formulaString(value: unknown): string {
   return `"${text(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
@@ -282,7 +288,8 @@ export async function deriveCustomerIdentityAlignment(
     const liffExactRow = liffRows.find((row) => {
       const line = canonicalLineId(row.fields?.line_user_id);
       const linkedClients = recordLinks(row.fields?.Client);
-      return line === canonicalLine && linkedClients.includes(clientId);
+      const identityLinkedAt = verifiedTimestamp(row.fields?.identity_linked_at);
+      return line === canonicalLine && linkedClients.includes(clientId) && Boolean(identityLinkedAt);
     });
     const liffExact = Boolean(liffExactRow);
     const liffTail = lineTail(liffExactRow?.fields?.line_user_id);
@@ -294,7 +301,7 @@ export async function deriveCustomerIdentityAlignment(
     const basis = [
       "canonical_client",
       ofcRows.length ? "reviewed_line_ofc" : "",
-      liffRows.length ? "verified_liff_session" : "",
+      liffExact ? "verified_liff_session" : liffRows.length ? "liff_session_review_required" : "",
       auditRows.length ? "identity_resolution_audit" : "",
     ].filter(Boolean);
 
