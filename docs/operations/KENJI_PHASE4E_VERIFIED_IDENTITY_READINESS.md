@@ -33,6 +33,8 @@ The **Kenji Verified Identity Readiness** workflow can be manually dispatched fr
 
 Its output contains only aggregate counts, allowlisted blocker codes, static health states, and guardrail booleans. Names, customer record IDs, LINE tails, credentials, session values, and customer content stay out of logs and job summaries.
 
+From Phase 4F onward the same observation also validates the read-only `identity.recovery` projection and reports aggregate recovery-status and allowlisted-action counts. A missing or mutation-capable recovery contract is a contract violation.
+
 The workflow classifies results as follows:
 
 - `owner_review_ready`: at least one exact match is ready for Per's Verification Status decision;

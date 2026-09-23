@@ -166,6 +166,42 @@ function safeVerifiedIdentityReadinessContract(payload) {
     && readiness.grants_points === false;
 }
 
+function safeIdentityRecoveryCompleteContract(payload) {
+  const readiness = payload?.identity?.readiness || {};
+  const recovery = payload?.identity?.recovery || {};
+  const evidence = recovery.evidence || {};
+  const actions = Array.isArray(recovery.actions) ? recovery.actions : [];
+  return recovery.schema === "mmd.kenji_identity_evidence_recovery.v1"
+    && recovery.mode === "read_only"
+    && recovery.status === "complete"
+    && recovery.priority === "complete"
+    && recovery.checked_at === readiness.checked_at
+    && recovery.source_readiness_status === "verified"
+    && recovery.queue_eligible === false
+    && recovery.owner_review_ready === false
+    && evidence.canonical_line_identity === "ready"
+    && evidence.reviewed_line_ofc === "matched"
+    && evidence.verified_liff_session === "matched"
+    && evidence.verification_status === "verified"
+    && actions.length === 0
+    && recovery?.handoff?.surface === "customer_360"
+    && recovery?.handoff?.path === "/internal/admin/customer-data"
+    && recovery?.handoff?.client_scope_required === true
+    && recovery?.handoff?.mutation_control === false
+    && recovery?.authority?.verification === "Clients.Verification Status"
+    && recovery?.authority?.alignment === "customer_identity_alignment_read_only_v1"
+    && recovery?.authority?.rights === "my_mmd_entitlement_resolver_v1"
+    && recovery?.authority?.recovery === "identity_evidence_recovery_read_only_v1"
+    && recovery.automatic_recovery_allowed === false
+    && recovery.automatic_verification_allowed === false
+    && recovery.verification_status_mutated === false
+    && recovery.identity_mutated === false
+    && recovery.customer_send_allowed === false
+    && recovery.grants_access === false
+    && recovery.grants_membership === false
+    && recovery.grants_points === false;
+}
+
 function safeDraftContract(payload) {
   const identity = payload?.identity || {};
   const ai = payload?.ai || {};
@@ -183,6 +219,7 @@ function safeDraftContract(payload) {
   return identity.status === "canonical"
     && identity.verified === true
     && safeVerifiedIdentityReadinessContract(payload)
+    && safeIdentityRecoveryCompleteContract(payload)
     && ai.advisory_only === true
     && authority.ai === "advisory"
     && draft.schema === "mmd.kenji_continuity_operator_draft.v1"

@@ -13,6 +13,8 @@
   const auditPath="/v1/admin/clients/intelligence/audit";
   const draftSchema="mmd.kenji_continuity_operator_draft.v1";
   const identityReadinessSchema="mmd.kenji_verified_identity_readiness.v1";
+  const identityRecoverySchema="mmd.kenji_identity_evidence_recovery.v1";
+  const recoveryScanLimit=24;
   const feedbackSchema="mmd.kenji_continuity_operator_feedback.v1";
   const feedbackReasonLabels={
     needs_edit:[
@@ -42,7 +44,13 @@
     feedbackRecorded:false,
     feedbackReceipt:"",
     feedbackSubmitting:false,
-    copying:false
+    copying:false,
+    intelligenceCache:new Map(),
+    recoveryByClient:new Map(),
+    recoveryFilter:"pending",
+    recoveryLoading:false,
+    recoveryErrors:0,
+    recoverySeq:0
   };
 
   function setText(id,value){
@@ -163,6 +171,61 @@
     return card;
   }
 
+  function ensureRecoveryQueueUi(){
+    const results=byId("miResults");
+    if(!results)return null;
+    let queue=byId("miRecoveryQueue");
+    if(queue)return queue;
+
+    if(!byId("miRecoveryQueueStyle")){
+      const style=document.createElement("style");
+      style.id="miRecoveryQueueStyle";
+      style.textContent=`
+#mmdMemberIntelligence .mi-recovery-queue{margin:0 0 12px;padding:14px;border:1px solid rgba(31,54,42,.16);border-radius:18px;background:linear-gradient(145deg,#fbfaf6,#f0ede3)}
+#mmdMemberIntelligence .mi-recovery-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+#mmdMemberIntelligence .mi-recovery-kicker{display:block;color:#866d3e;font-size:8px;font-weight:900;letter-spacing:.12em}
+#mmdMemberIntelligence .mi-recovery-head h3{margin:4px 0 0;font-size:15px;line-height:1.3}
+#mmdMemberIntelligence .mi-recovery-state{flex:0 0 auto;padding:5px 8px;border-radius:999px;background:#ece5d5;color:#755d31;font-size:8px;font-weight:900}
+#mmdMemberIntelligence .mi-recovery-summary{margin:9px 0 0;color:#5d665f;font-size:10px;line-height:1.55}
+#mmdMemberIntelligence .mi-recovery-lanes{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+#mmdMemberIntelligence .mi-recovery-lanes span{padding:5px 7px;border-radius:999px;background:rgba(255,255,255,.78);color:#5d665f;font-size:8px;font-weight:850}
+#mmdMemberIntelligence .mi-recovery-filters{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+#mmdMemberIntelligence .mi-recovery-filter{flex:0 0 auto;min-height:34px;padding:7px 10px;border:1px solid rgba(31,54,42,.15);border-radius:999px;background:#fff;color:#405047;font-size:9px;font-weight:850}
+#mmdMemberIntelligence .mi-recovery-filter[data-active="true"]{border-color:#365843;background:#365843;color:#fff}
+#mmdMemberIntelligence .mi-recovery-refresh{width:100%;min-height:36px;margin-top:9px;border:1px solid rgba(31,54,42,.15);border-radius:999px;background:#fff;color:#365843;font-size:9px;font-weight:900}
+#mmdMemberIntelligence .mi-result-recovery{display:block;width:max-content;max-width:100%;margin-top:7px;padding:4px 7px;border-radius:999px;background:#eee8d9;color:#6f582d;font-size:8px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mmdMemberIntelligence .mi-result-recovery[data-tone="bad"]{background:#f2ded9;color:#8f3d34}
+#mmdMemberIntelligence .mi-result-recovery[data-tone="ok"]{background:#dfeadf;color:#31583e}
+@media(max-width:620px){#mmdMemberIntelligence .mi-recovery-queue{padding:13px}#mmdMemberIntelligence .mi-recovery-head{gap:8px}}
+`;
+      document.head.appendChild(style);
+    }
+
+    queue=document.createElement("section");
+    queue.id="miRecoveryQueue";
+    queue.className="mi-recovery-queue";
+    queue.setAttribute("aria-labelledby","miRecoveryTitle");
+    queue.innerHTML=`<div class="mi-recovery-head"><div><small class="mi-recovery-kicker">IDENTITY · RECOVERY · READ-ONLY</small><h3 id="miRecoveryTitle">คิวเติมหลักฐานตัวตน</h3></div><span class="mi-recovery-state" id="miRecoveryState">WAITING</span></div><p class="mi-recovery-summary" id="miRecoverySummary">กำลังจัดคิวจาก Canonical Client ล่าสุด โดยยังไม่ยืนยันหรือรวมตัวตนอัตโนมัติ</p><div class="mi-recovery-lanes"><span id="miRecoveryLineOfc">LINE OFC —</span><span id="miRecoveryLiff">LIFF —</span></div><div class="mi-recovery-filters" aria-label="กรองคิวหลักฐาน"><button class="mi-recovery-filter" type="button" data-recovery-filter="all">ทั้งหมด</button><button class="mi-recovery-filter" type="button" data-recovery-filter="pending" data-active="true">ทั้งหมดที่ต้องทำ</button><button class="mi-recovery-filter" type="button" data-recovery-filter="evidence_required">เติมหลักฐาน</button><button class="mi-recovery-filter" type="button" data-recovery-filter="evidence_review">ต้องตรวจ</button><button class="mi-recovery-filter" type="button" data-recovery-filter="owner_review_ready">พร้อมให้เปอร์</button><button class="mi-recovery-filter" type="button" data-recovery-filter="blocked">หยุด / ระบบ</button><button class="mi-recovery-filter" type="button" data-recovery-filter="complete">หลักฐานครบ</button></div><button class="mi-recovery-refresh" id="miRecoveryRefresh" type="button">รีเฟรชคิวหลักฐาน</button>`;
+    results.parentElement?.insertBefore(queue,results);
+    queue.querySelectorAll("[data-recovery-filter]").forEach((button)=>{
+      button.addEventListener("click",()=>{
+        state.recoveryFilter=clean(button.dataset.recoveryFilter)||"pending";
+        syncRecoveryFilterUi();
+        renderRecords(state.records);
+      });
+    });
+    byId("miRecoveryRefresh")?.addEventListener("click",()=>{
+      void refreshRecoveryQueue();
+    });
+    return queue;
+  }
+
+  function syncRecoveryFilterUi(){
+    document.querySelectorAll("#miRecoveryQueue [data-recovery-filter]").forEach((button)=>{
+      button.setAttribute("data-active",clean(button.dataset.recoveryFilter)===state.recoveryFilter?"true":"false");
+    });
+  }
+
   function ensureIdentityReadinessUi(){
     const detail=byId("miDetail");
     if(!detail)return null;
@@ -183,7 +246,7 @@
 #mmdMemberIntelligence .mi-identity-readiness[data-tone="ok"] .mi-identity-readiness-state{background:#dfeadf;color:#31583e}
 #mmdMemberIntelligence .mi-identity-readiness[data-tone="bad"] .mi-identity-readiness-state{background:#f2ded9;color:#8f3d34}
 #mmdMemberIntelligence .mi-identity-readiness-reason{margin:10px 0 0;color:#5d665f;font-size:11px;line-height:1.65}
-#mmdMemberIntelligence .mi-identity-readiness-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}
+#mmdMemberIntelligence .mi-identity-readiness-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:12px}
 #mmdMemberIntelligence .mi-identity-readiness-grid div{padding:10px;border-radius:12px;background:rgba(255,255,255,.72)}
 #mmdMemberIntelligence .mi-identity-readiness-grid small,#mmdMemberIntelligence .mi-identity-readiness-grid b{display:block}
 #mmdMemberIntelligence .mi-identity-readiness-grid small{color:#7d776e;font-size:8px;font-weight:900;letter-spacing:.08em}
@@ -201,7 +264,7 @@
     card.className="mi-identity-readiness";
     card.setAttribute("data-tone","warn");
     card.setAttribute("aria-labelledby","miIdentityReadinessTitle");
-    card.innerHTML=`<div class="mi-identity-readiness-head"><div><small class="mi-identity-readiness-kicker">IDENTITY · READ-ONLY · OWNER AUTHORITY</small><h3 id="miIdentityReadinessTitle">Verified Identity Readiness</h3></div><span class="mi-identity-readiness-state" id="miIdentityReadinessState">WAITING</span></div><p class="mi-identity-readiness-reason" id="miIdentityReadinessReason">กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…</p><div class="mi-identity-readiness-grid"><div><small>AUTHORITY</small><b id="miIdentityReadinessAuthority">Clients.Verification Status</b></div><div><small>ALIGNMENT</small><b id="miIdentityReadinessAlignment">WAITING</b></div><div><small>EVIDENCE</small><b id="miIdentityReadinessEvidence">WAITING</b></div></div><div class="mi-identity-readiness-foot"><p>Kenji อ่าน readiness เท่านั้น · ไม่ตั้ง Verified, merge identity หรือเปลี่ยนสิทธิ์อัตโนมัติ</p><a class="mi-identity-readiness-link" id="miIdentityReadinessLink" href="/internal/admin/customer-data">เปิด Customer 360 เพื่อตรวจ</a></div>`;
+    card.innerHTML=`<div class="mi-identity-readiness-head"><div><small class="mi-identity-readiness-kicker">IDENTITY · READ-ONLY · OWNER AUTHORITY</small><h3 id="miIdentityReadinessTitle">Verified Identity Readiness</h3></div><span class="mi-identity-readiness-state" id="miIdentityReadinessState">WAITING</span></div><p class="mi-identity-readiness-reason" id="miIdentityReadinessReason">กำลังเทียบ Verification Status กับหลักฐาน MY MMD / LIFF, LINE OFC และ Canonical Client…</p><div class="mi-identity-readiness-grid"><div><small>AUTHORITY</small><b id="miIdentityReadinessAuthority">Clients.Verification Status</b></div><div><small>ALIGNMENT</small><b id="miIdentityReadinessAlignment">WAITING</b></div><div><small>EVIDENCE</small><b id="miIdentityReadinessEvidence">WAITING</b></div><div><small>RECOVERY</small><b id="miIdentityRecoveryAction">WAITING</b></div></div><div class="mi-identity-readiness-foot"><p>Kenji อ่าน readiness เท่านั้น · คิวนี้ไม่ตั้ง Verified, merge identity หรือเปลี่ยนสิทธิ์อัตโนมัติ</p><a class="mi-identity-readiness-link" id="miIdentityReadinessLink" href="/internal/admin/customer-data">เปิด Customer 360 เพื่อตรวจ</a></div>`;
     const draft=byId("miDraftCard");
     if(draft)detail.insertBefore(card,draft);
     else detail.appendChild(card);
@@ -300,6 +363,104 @@
       &&readiness.kenji_continuity_ready===false;
   }
 
+  function identityRecoveryContract(payload){
+    if(!identityReadinessContract(payload))return false;
+    const identity=payload?.identity||{};
+    const readiness=identity.readiness||{};
+    const alignment=identity.alignment||{};
+    const recovery=identity.recovery||{};
+    const statusByReadiness={
+      verified:"complete",
+      ready_for_owner_verification:"owner_review_ready",
+      review_required:"evidence_review",
+      insufficient_evidence:"evidence_required",
+      conflict:"conflict_locked",
+      unavailable:"unavailable_locked"
+    };
+    const priorityByStatus={
+      complete:"complete",
+      owner_review_ready:"p3_owner_decision",
+      evidence_review:"p1_evidence_review",
+      evidence_required:"p2_evidence_collection",
+      conflict_locked:"p0_conflict",
+      unavailable_locked:"p0_unavailable"
+    };
+    const status=statusByReadiness[readiness.status];
+    const unavailable=status==="unavailable_locked";
+    const conflict=status==="conflict_locked";
+    const evidence=recovery.evidence||{};
+    const canonicalState=unavailable?"unavailable":readiness.evidence.canonical_client_ready?"ready":"required";
+    const lineStatus=clean(alignment?.line_ofc?.status);
+    const liffStatus=clean(alignment?.liff?.status);
+    const lineState=unavailable?"unavailable":conflict?"conflict":lineStatus==="matched"?"matched":lineStatus==="review_required"?"review_required":"required";
+    const liffState=unavailable?"unavailable":liffStatus==="matched"?"matched":liffStatus==="review_required"?"review_required":"required";
+    const verificationState=readiness.evidence.authoritative_verification_present?"verified":unavailable?"unavailable":status==="owner_review_ready"?"owner_review_required":"blocked";
+    const expectedActions=[];
+    if(conflict)expectedActions.push("resolve_identity_conflict");
+    else if(unavailable)expectedActions.push("retry_identity_evidence_read");
+    else{
+      if(canonicalState!=="ready")expectedActions.push("restore_canonical_line_identity");
+      if(lineState!=="matched")expectedActions.push("review_line_ofc_evidence");
+      if(liffState!=="matched")expectedActions.push("review_liff_identity_evidence");
+      if(status==="owner_review_ready")expectedActions.push("owner_review_verification_status");
+    }
+    const actions=Array.isArray(recovery.actions)?recovery.actions.map(clean):[];
+    return recovery.schema===identityRecoverySchema
+      &&recovery.mode==="read_only"
+      &&recovery.status===status
+      &&recovery.priority===priorityByStatus[status]
+      &&recovery.source_readiness_status===readiness.status
+      &&recovery.queue_eligible===(status!=="complete")
+      &&recovery.owner_review_ready===(status==="owner_review_ready")
+      &&evidence.canonical_line_identity===canonicalState
+      &&evidence.reviewed_line_ofc===lineState
+      &&evidence.verified_liff_session===liffState
+      &&evidence.verification_status===verificationState
+      &&actions.length===expectedActions.length
+      &&actions.every((action,index)=>action===expectedActions[index])
+      &&recovery?.handoff?.surface==="customer_360"
+      &&recovery?.handoff?.path==="/internal/admin/customer-data"
+      &&recovery?.handoff?.client_scope_required===true
+      &&recovery?.handoff?.mutation_control===false
+      &&recovery?.authority?.verification==="Clients.Verification Status"
+      &&recovery?.authority?.alignment==="customer_identity_alignment_read_only_v1"
+      &&recovery?.authority?.rights==="my_mmd_entitlement_resolver_v1"
+      &&recovery?.authority?.recovery==="identity_evidence_recovery_read_only_v1"
+      &&recovery.automatic_recovery_allowed===false
+      &&recovery.automatic_verification_allowed===false
+      &&recovery.verification_status_mutated===false
+      &&recovery.identity_mutated===false
+      &&recovery.customer_send_allowed===false
+      &&recovery.grants_access===false
+      &&recovery.grants_membership===false
+      &&recovery.grants_points===false;
+  }
+
+  function recoveryStatusLabel(recovery){
+    const labels={
+      complete:"หลักฐานครบ",
+      owner_review_ready:"พร้อมให้เปอร์ตรวจ",
+      evidence_review:"ตรวจหลักฐานเดิม",
+      evidence_required:"เติมหลักฐาน",
+      conflict_locked:"หยุด · หลักฐานขัดกัน",
+      unavailable_locked:"ระบบอ่านหลักฐานไม่ได้"
+    };
+    return labels[clean(recovery?.status)]||"กำลังตรวจหลักฐาน";
+  }
+
+  function recoveryActionLabel(recovery){
+    const labels={
+      restore_canonical_line_identity:"เติม LINE ใน Canonical Client",
+      review_line_ofc_evidence:"ตรวจ LINE OFC",
+      review_liff_identity_evidence:"ตรวจ MY MMD / LIFF",
+      owner_review_verification_status:"เปอร์ตรวจ Verification Status",
+      resolve_identity_conflict:"แก้หลักฐานที่ขัดกัน",
+      retry_identity_evidence_read:"กู้ทางอ่านหลักฐาน"
+    };
+    const actions=Array.isArray(recovery?.actions)?recovery.actions.map((action)=>labels[clean(action)]).filter(Boolean):[];
+    return actions.join(" + ")||"หลักฐานครบแล้ว";
+  }
+
   function resetIdentityReadinessUi(clientId=""){
     ensureIdentityReadinessUi();
     setText("miIdentityReadinessState","WAITING");
@@ -307,6 +468,7 @@
     setText("miIdentityReadinessAuthority","Clients.Verification Status");
     setText("miIdentityReadinessAlignment","WAITING");
     setText("miIdentityReadinessEvidence","WAITING");
+    setText("miIdentityRecoveryAction","WAITING");
     setTone("miIdentityReadinessCard","warn");
     const link=byId("miIdentityReadinessLink");
     if(link)link.href=clientId?`/internal/admin/customer-data?client_id=${encodeURIComponent(clientId)}`:"/internal/admin/customer-data";
@@ -314,12 +476,14 @@
 
   function renderIdentityReadiness(payload,clientId){
     const readiness=payload?.identity?.readiness||{};
+    const recovery=payload?.identity?.recovery||{};
     resetIdentityReadinessUi(clientId);
-    if(!identityReadinessContract(payload)){
+    if(!identityReadinessContract(payload)||!identityRecoveryContract(payload)){
       setText("miIdentityReadinessState","UNAVAILABLE · LOCKED");
-      setText("miIdentityReadinessReason","Readiness contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed");
+      setText("miIdentityReadinessReason","Readiness / Recovery contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed");
       setText("miIdentityReadinessAlignment","UNAVAILABLE");
       setText("miIdentityReadinessEvidence","CONTRACT INVALID");
+      setText("miIdentityRecoveryAction","CONTRACT INVALID");
       setTone("miIdentityReadinessCard","bad");
       return false;
     }
@@ -351,6 +515,7 @@
       evidence.reviewed_line_ofc_matched?"LINE OFC ✓":"LINE OFC —",
       evidence.verified_liff_session_matched?"LIFF ✓":"LIFF —"
     ].join(" · "));
+    setText("miIdentityRecoveryAction",recoveryActionLabel(recovery));
     setTone("miIdentityReadinessCard",status==="verified"?"ok":["conflict","unavailable"].includes(status)?"bad":"warn");
     return status==="verified"&&readiness.kenji_continuity_ready===true;
   }
@@ -360,11 +525,15 @@
     const guards=draft.guardrails||{};
     const continuity=payload?.ai?.continuity_status||{};
     const readiness=payload?.identity?.readiness||{};
+    const recovery=payload?.identity?.recovery||{};
     return payload?.identity?.status==="canonical"
       &&payload?.identity?.verified===true
       &&identityReadinessContract(payload)
+      &&identityRecoveryContract(payload)
       &&readiness.status==="verified"
       &&readiness.kenji_continuity_ready===true
+      &&recovery.status==="complete"
+      &&recovery.queue_eligible===false
       &&draft.schema===draftSchema
       &&draft.mode==="operator_draft"
       &&draft.available===true
@@ -707,19 +876,147 @@
     return pieces.join(" · ");
   }
 
+  function recoveryMatchesFilter(recovery){
+    const filter=state.recoveryFilter;
+    if(filter==="all")return true;
+    if(!recovery)return state.recoveryLoading&&filter==="pending";
+    if(filter==="pending")return recovery.queue_eligible===true;
+    if(filter==="blocked")return ["conflict_locked","unavailable_locked"].includes(clean(recovery.status));
+    return clean(recovery.status)===filter;
+  }
+
+  function recoveryRank(recovery){
+    const ranks={conflict_locked:0,unavailable_locked:1,evidence_review:2,evidence_required:3,owner_review_ready:4,complete:5};
+    return Object.prototype.hasOwnProperty.call(ranks,clean(recovery?.status))?ranks[clean(recovery.status)]:6;
+  }
+
+  function renderRecoveryQueueSummary(){
+    ensureRecoveryQueueUi();
+    const recoveries=[...state.recoveryByClient.values()];
+    const pending=recoveries.filter((item)=>item.queue_eligible===true).length;
+    const evidenceRequired=recoveries.filter((item)=>item.status==="evidence_required").length;
+    const evidenceReview=recoveries.filter((item)=>item.status==="evidence_review").length;
+    const lineOfc=recoveries.filter((item)=>item.actions?.includes("review_line_ofc_evidence")).length;
+    const liff=recoveries.filter((item)=>item.actions?.includes("review_liff_identity_evidence")).length;
+    const ready=recoveries.filter((item)=>item.status==="owner_review_ready").length;
+    const blocked=recoveries.filter((item)=>["conflict_locked","unavailable_locked"].includes(item.status)).length;
+    setText("miRecoveryState",state.recoveryLoading?"SCANNING":state.recoveryErrors?"REVIEW SYSTEM":"READY");
+    setText("miRecoverySummary",state.recoveryLoading
+      ?`กำลังตรวจ ${Math.min(state.records.length,recoveryScanLimit)} Canonical Clients · โหลดแล้ว ${recoveries.length}`
+      :`ต้องทำ ${pending} · เติมหลักฐาน ${evidenceRequired} · ต้องตรวจ ${evidenceReview} · พร้อมให้เปอร์ ${ready} · หยุด/ระบบ ${blocked}`);
+    setText("miRecoveryLineOfc",`LINE OFC ${lineOfc}`);
+    setText("miRecoveryLiff",`LIFF ${liff}`);
+    const refresh=byId("miRecoveryRefresh");
+    if(refresh){refresh.disabled=state.recoveryLoading;refresh.textContent=state.recoveryLoading?"กำลังตรวจคิว…":"รีเฟรชคิวหลักฐาน"}
+  }
+
+  function getClientIntelligence(clientId){
+    const id=clean(clientId);
+    const existing=state.intelligenceCache.get(id);
+    if(existing)return existing;
+    const request=api(`${intelligencePath}?client_id=${encodeURIComponent(id)}`).then((payload)=>{
+      if(clean(payload?.client_id)!==id)throw new Error("client_intelligence_mismatch");
+      return payload;
+    }).catch((error)=>{
+      if(state.intelligenceCache.get(id)===request)state.intelligenceCache.delete(id);
+      throw error;
+    });
+    state.intelligenceCache.set(id,request);
+    return request;
+  }
+
+  function lockSelectedDetailForRecoveryRefresh(){
+    const record=state.selected;
+    const clientId=clean(record?.client_id);
+    if(!record||!clientId)return "";
+
+    state.selectionSeq+=1;
+    state.memory=null;
+    state.intelligence=null;
+    paintLineage(record);
+    resetDraftUi("กำลังรีเฟรชหลักฐานตัวตน · Copy ถูกล็อกจนกว่าจะตรวจสถานะล่าสุดเสร็จ");
+    setStatus("กำลังรีเฟรชหลักฐานตัวตนล่าสุด · Kenji และ customer copy ถูกล็อกชั่วคราว","warn");
+    return clientId;
+  }
+
+  async function refreshRecoveryQueue(){
+    const selectedClientId=lockSelectedDetailForRecoveryRefresh();
+    state.intelligenceCache.clear();
+    await loadRecoveryQueue(state.records);
+    if(!selectedClientId||clean(state.selected?.client_id)!==selectedClientId)return;
+    await selectRecord(state.selected);
+  }
+
+  async function loadRecoveryQueue(records){
+    ensureRecoveryQueueUi();
+    const seq=++state.recoverySeq;
+    const ids=[];
+    const seen=new Set();
+    for(const record of records){
+      const id=clean(record?.client_id);
+      if(record?.manual_public_only||!/^rec[A-Za-z0-9]{6,32}$/.test(id)||seen.has(id))continue;
+      seen.add(id);
+      ids.push(id);
+      if(ids.length>=recoveryScanLimit)break;
+    }
+    state.recoveryByClient.clear();
+    state.recoveryErrors=0;
+    state.recoveryLoading=true;
+    renderRecoveryQueueSummary();
+    renderRecords(state.records);
+
+    let cursor=0;
+    async function worker(){
+      while(seq===state.recoverySeq){
+        const index=cursor++;
+        if(index>=ids.length)return;
+        const id=ids[index];
+        try{
+          const payload=await getClientIntelligence(id);
+          if(seq!==state.recoverySeq)return;
+          if(!identityRecoveryContract(payload))throw new Error("identity_recovery_contract_invalid");
+          state.recoveryByClient.set(id,payload.identity.recovery);
+        }catch(error){
+          if(seq!==state.recoverySeq||lower(error?.message)==="unauthorized")return;
+          state.recoveryErrors+=1;
+          state.recoveryByClient.set(id,{
+            status:"unavailable_locked",
+            priority:"p0_unavailable",
+            queue_eligible:true,
+            owner_review_ready:false,
+            actions:["retry_identity_evidence_read"],
+            contract_invalid:true
+          });
+        }
+        renderRecoveryQueueSummary();
+        renderRecords(state.records);
+      }
+    }
+
+    await Promise.all(Array.from({length:Math.min(3,ids.length)},()=>worker()));
+    if(seq!==state.recoverySeq)return;
+    state.recoveryLoading=false;
+    renderRecoveryQueueSummary();
+    renderRecords(state.records);
+  }
+
   function renderRecords(records){
     const results=byId("miResults");
     if(!results)return;
     results.replaceChildren();
-    if(!records.length){
+    const visible=records
+      .map((record,index)=>({record,index,recovery:state.recoveryByClient.get(clean(record?.client_id))}))
+      .filter((item)=>recoveryMatchesFilter(item.recovery))
+      .sort((a,b)=>recoveryRank(a.recovery)-recoveryRank(b.recovery)||a.index-b.index);
+    if(!visible.length){
       const empty=document.createElement("div");
       empty.className="mi-empty";
-      empty.textContent="ไม่พบ Canonical Client จากข้อมูลที่ยืนยันได้";
+      empty.textContent=state.recoveryLoading?"กำลังจัดคิวหลักฐาน…":"ไม่มีรายการในคิวนี้";
       results.appendChild(empty);
       return;
     }
 
-    records.forEach((record,index)=>{
+    visible.forEach(({record,index,recovery})=>{
       const button=document.createElement("button");
       button.type="button";
       button.className="mi-result";
@@ -730,7 +1027,11 @@
       title.textContent=recordName(record);
       const meta=document.createElement("span");
       meta.textContent=recordSummary(record);
-      button.append(title,meta);
+      const recoveryTag=document.createElement("small");
+      recoveryTag.className="mi-result-recovery";
+      recoveryTag.textContent=recovery?`${recoveryStatusLabel(recovery)} · ${recoveryActionLabel(recovery)}`:"กำลังตรวจหลักฐาน";
+      recoveryTag.setAttribute("data-tone",["conflict_locked","unavailable_locked"].includes(clean(recovery?.status))?"bad":clean(recovery?.status)==="complete"?"ok":"warn");
+      button.append(title,meta,recoveryTag);
       button.addEventListener("click",()=>selectRecord(record));
       results.appendChild(button);
     });
@@ -900,7 +1201,7 @@
     const clientId=clean(record.client_id);
     setStatus("กำลังอ่าน bounded member context + Conversation Matrix…","warn");
     try{
-      const payload=prefetched||await api(`${intelligencePath}?client_id=${encodeURIComponent(clientId)}`);
+      const payload=prefetched||await getClientIntelligence(clientId);
       if(selectionSeq!==state.selectionSeq)return;
       if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
       const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,record);
@@ -919,6 +1220,7 @@
       resetIdentityReadinessUi(clean(record?.client_id));
       setText("miIdentityReadinessState","UNAVAILABLE · LOCKED");
       setText("miIdentityReadinessReason","Client Intelligence อ่านไม่ได้ · Kenji ถูกล็อกแบบ fail-closed");
+      setText("miIdentityRecoveryAction","กู้ทางอ่านหลักฐาน");
       setTone("miIdentityReadinessCard","bad");
       resetDraftUi("Client Intelligence อ่านไม่ได้ · Copy ถูกล็อกแบบ fail-closed");
       setStatus(failureMessage(error),"bad");
@@ -926,11 +1228,18 @@
   }
 
   async function loadRecords(query=""){
+    state.recoverySeq+=1;
+    state.recoveryLoading=false;
+    state.recoveryFilter=query?"all":"pending";
+    syncRecoveryFilterUi();
     setStatus(query?"กำลังค้นหา Canonical Client…":"กำลังโหลด Canonical Client ล่าสุด…","warn");
     try{
       const payload=query
         ?await api("/v1/admin/clients/lineage-lookup",{method:"POST",body:JSON.stringify({query})})
         :await api("/v1/admin/clients/recent");
+      state.intelligenceCache.clear();
+      state.recoveryByClient.clear();
+      state.recoveryErrors=0;
       state.records=Array.isArray(payload?.records)?payload.records:[];
       state.selectionSeq+=1;
       state.selected=null;
@@ -942,6 +1251,8 @@
       if(payload?.manual_fallback)setStatus("IDENTITY REVIEW · พบ candidate แต่ยังไม่ใช่ Canonical Client","warn");
       else setStatus(`พร้อม · ${state.records.length} Canonical Client${state.records.length===1?"":"s"}`,"ok");
 
+      loadRecoveryQueue(state.records);
+
       const wanted=clean(new URLSearchParams(location.search).get("client_id"));
       if(wanted){
         const found=state.records.find((record)=>clean(record.client_id)===wanted);
@@ -950,7 +1261,11 @@
     }catch(error){
       if(lower(error?.message)==="unauthorized")return;
       state.records=[];
+      state.recoveryByClient.clear();
+      state.recoveryErrors=1;
+      state.recoveryLoading=false;
       renderRecords([]);
+      renderRecoveryQueueSummary();
       setDetailVisible(false);
       setStatus(failureMessage(error),"bad");
     }
@@ -966,7 +1281,7 @@
 
     try{
       setStatus("กำลังเปิด Canonical Client…","warn");
-      const payload=await api(`${intelligencePath}?client_id=${encodeURIComponent(clientId)}`);
+      const payload=await getClientIntelligence(clientId);
       if(clean(payload?.client_id)!==clientId)throw new Error("client_intelligence_mismatch");
       const identity=payload?.identity||{};
       const memory=payload?.data_status==="empty"?null:memoryFromIntelligence(payload,{});
@@ -983,6 +1298,7 @@
         entitlement_snapshot_source:memory?.source||""
       };
       state.records=[record,...state.records];
+      if(identityRecoveryContract(payload))state.recoveryByClient.set(clientId,payload.identity.recovery);
       await selectRecord(record,payload);
     }catch(error){
       if(lower(error?.message)!=="unauthorized")setStatus(failureMessage(error),"bad");
@@ -1002,6 +1318,7 @@
   function boot(){
     if(!byId("mmdMemberIntelligence"))return;
 
+    ensureRecoveryQueueUi();
     ensureIdentityReadinessUi();
     ensureDraftUi();
     addNavigation("Customer 360","/internal/admin/customer-data","miNavCustomer360");

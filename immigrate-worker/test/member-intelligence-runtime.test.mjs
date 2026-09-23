@@ -20,10 +20,13 @@ test("Member Intelligence reads only canonical same-origin admin projections", (
 test("Member Intelligence renders a fail-closed reviewed operator draft without a send path", () => {
   assert.match(source, /mmd\.kenji_continuity_operator_draft\.v1/);
   assert.match(source, /mmd\.kenji_verified_identity_readiness\.v1/);
+  assert.match(source, /mmd\.kenji_identity_evidence_recovery\.v1/);
   assert.match(source, /Verified Identity Readiness/);
   assert.match(source, /READY FOR PER REVIEW/);
   assert.match(source, /readiness\.status==="verified"/);
   assert.match(source, /readiness\.kenji_continuity_ready===true/);
+  assert.match(source, /recovery\.status==="complete"/);
+  assert.match(source, /recovery\.queue_eligible===false/);
   assert.match(source, /readiness\?\.automatic_verification_allowed===false/);
   assert.match(source, /readiness\?\.identity_mutated===false/);
   assert.match(source, /draft\.send_allowed===false/);
@@ -44,6 +47,35 @@ test("Member Intelligence renders a fail-closed reviewed operator draft without 
     "copy authorization audit must succeed before clipboard mutation",
   );
   assert.doesNotMatch(source, /api\.line\.me|\/messages\/.+\/send|pushMessage|replyMessage/);
+});
+
+test("Member Intelligence builds a bounded read-only identity evidence recovery queue", () => {
+  assert.match(source, /const recoveryScanLimit=24/);
+  assert.match(source, /คิวเติมหลักฐานตัวตน/);
+  assert.match(source, /data-recovery-filter="all"/);
+  assert.match(source, /data-recovery-filter="pending"/);
+  assert.match(source, /data-recovery-filter="evidence_required"/);
+  assert.match(source, /data-recovery-filter="evidence_review"/);
+  assert.match(source, /data-recovery-filter="owner_review_ready"/);
+  assert.match(source, /data-recovery-filter="blocked"/);
+  assert.match(source, /data-recovery-filter="complete"/);
+  assert.match(source, /review_line_ofc_evidence/);
+  assert.match(source, /review_liff_identity_evidence/);
+  assert.match(source, /owner_review_verification_status/);
+  assert.match(source, /resolve_identity_conflict/);
+  assert.match(source, /retry_identity_evidence_read/);
+  assert.match(source, /Math\.min\(3,ids\.length\)/);
+  assert.match(source, /identityRecoveryContract\(payload\)/);
+  assert.match(source, /state\.intelligenceCache/);
+  assert.match(source, /function lockSelectedDetailForRecoveryRefresh\(\)/);
+  assert.match(source, /state\.selectionSeq\+=1/);
+  assert.match(source, /Copy ถูกล็อกจนกว่าจะตรวจสถานะล่าสุดเสร็จ/);
+  assert.match(source, /await selectRecord\(state\.selected\)/);
+  assert.match(source, /เปิด Customer 360 เพื่อตรวจ/);
+  assert.match(source, /automatic_recovery_allowed===false/);
+  assert.match(source, /verification_status_mutated===false/);
+  assert.match(source, /customer_send_allowed===false/);
+  assert.doesNotMatch(source, /identity-evidence-recovery[^\n]*(?:method:\s*"POST"|method:\s*'POST')/i);
 });
 
 test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {
@@ -87,7 +119,7 @@ test("Member Intelligence fails closed on unresolved identity and browser auth l
   assert.match(source, /response\.status===401\|\|response\.status===403/);
   assert.match(source, /\/internal\/admin\/login\?next=/);
   assert.match(source, /BACKEND WAITING/);
-  assert.match(source, /Readiness contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed/);
+  assert.match(source, /Readiness \/ Recovery contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed/);
   assert.match(source, /\/internal\/admin\/customer-data\?client_id=/);
 });
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
   VERIFIED_IDENTITY_OBSERVATION_SCHEMA,
   VERIFIED_IDENTITY_READINESS_SCHEMA,
   runVerifiedIdentityReadinessObservation,
@@ -102,6 +103,39 @@ function json(body, status = 200, headers = {}) {
 function projection(clientId, status, { dataStatus = "live" } = {}) {
   const state = STATE[status];
   if (!state) throw new Error(`unknown_fixture_status:${status}`);
+  const recoveryStatus = {
+    verified: "complete",
+    ready_for_owner_verification: "owner_review_ready",
+    review_required: "evidence_review",
+    conflict: "conflict_locked",
+    insufficient_evidence: "evidence_required",
+    unavailable: "unavailable_locked",
+  }[status];
+  const priority = {
+    complete: "complete",
+    owner_review_ready: "p3_owner_decision",
+    evidence_review: "p1_evidence_review",
+    evidence_required: "p2_evidence_collection",
+    conflict_locked: "p0_conflict",
+    unavailable_locked: "p0_unavailable",
+  }[recoveryStatus];
+  const unavailable = recoveryStatus === "unavailable_locked";
+  const conflict = recoveryStatus === "conflict_locked";
+  const lineStatus = state.lineOfc ? "matched" : status === "review_required" ? "review_required" : conflict ? "mismatch" : "missing";
+  const liffStatus = state.liff ? "matched" : "missing";
+  const canonicalState = unavailable ? "unavailable" : state.canonical ? "ready" : "required";
+  const lineState = unavailable ? "unavailable" : conflict ? "conflict" : lineStatus === "matched" ? "matched" : lineStatus === "review_required" ? "review_required" : "required";
+  const liffState = unavailable ? "unavailable" : liffStatus === "matched" ? "matched" : "required";
+  const verificationState = state.verified ? "verified" : unavailable ? "unavailable" : recoveryStatus === "owner_review_ready" ? "owner_review_required" : "blocked";
+  const recoveryActions = [];
+  if (conflict) recoveryActions.push("resolve_identity_conflict");
+  else if (unavailable) recoveryActions.push("retry_identity_evidence_read");
+  else {
+    if (canonicalState !== "ready") recoveryActions.push("restore_canonical_line_identity");
+    if (lineState !== "matched") recoveryActions.push("review_line_ofc_evidence");
+    if (liffState !== "matched") recoveryActions.push("review_liff_identity_evidence");
+    if (recoveryStatus === "owner_review_ready") recoveryActions.push("owner_review_verification_status");
+  }
   return {
     ok: true,
     data_status: dataStatus,
@@ -111,6 +145,12 @@ function projection(clientId, status, { dataStatus = "live" } = {}) {
       verified: state.verified,
       display_name: "Private Customer Name",
       private_line_tail: "654321",
+      alignment: {
+        status: state.alignment,
+        canonical_client: { status: state.canonical ? "ready" : "missing", line_tail: "654321" },
+        line_ofc: { status: lineStatus, line_tail: "654321" },
+        liff: { status: liffStatus, line_tail: "654321" },
+      },
       readiness: {
         schema: VERIFIED_IDENTITY_READINESS_SCHEMA,
         mode: "read_only",
@@ -135,6 +175,43 @@ function projection(clientId, status, { dataStatus = "live" } = {}) {
         kenji_continuity_ready: state.kenjiReady,
         automatic_verification_allowed: false,
         identity_mutated: false,
+        grants_access: false,
+        grants_membership: false,
+        grants_points: false,
+      },
+      recovery: {
+        schema: IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
+        mode: "read_only",
+        status: recoveryStatus,
+        priority,
+        checked_at: "2026-09-23T00:00:00.000Z",
+        source_readiness_status: status,
+        queue_eligible: recoveryStatus !== "complete",
+        owner_review_ready: recoveryStatus === "owner_review_ready",
+        evidence: {
+          canonical_line_identity: canonicalState,
+          reviewed_line_ofc: lineState,
+          verified_liff_session: liffState,
+          verification_status: verificationState,
+        },
+        actions: recoveryActions,
+        handoff: {
+          surface: "customer_360",
+          path: "/internal/admin/customer-data",
+          client_scope_required: true,
+          mutation_control: false,
+        },
+        authority: {
+          verification: "Clients.Verification Status",
+          alignment: "customer_identity_alignment_read_only_v1",
+          rights: "my_mmd_entitlement_resolver_v1",
+          recovery: "identity_evidence_recovery_read_only_v1",
+        },
+        automatic_recovery_allowed: false,
+        automatic_verification_allowed: false,
+        verification_status_mutated: false,
+        identity_mutated: false,
+        customer_send_allowed: false,
         grants_access: false,
         grants_membership: false,
         grants_points: false,
@@ -199,6 +276,11 @@ test("reports aggregate owner-review readiness without private output or mutatio
   assert.equal(result.readiness.counts.verified, 1);
   assert.equal(result.readiness.counts.ready_for_owner_verification, 1);
   assert.deepEqual(result.readiness.blocker_counts, { owner_verification_status_required: 1 });
+  assert.equal(result.recovery.schema, IDENTITY_EVIDENCE_RECOVERY_SCHEMA);
+  assert.equal(result.recovery.counts.complete, 1);
+  assert.equal(result.recovery.counts.owner_review_ready, 1);
+  assert.deepEqual(result.recovery.action_counts, { owner_review_verification_status: 1 });
+  assert.equal(result.guardrails.automatic_recovery_possible, false);
   assert.equal(result.guardrails.verification_status_mutated, false);
   assert.equal(result.guardrails.identity_merged, false);
   assert.equal(result.guardrails.customer_send_possible, false);
@@ -233,6 +315,8 @@ test("fails closed when any sampled identity evidence conflicts", async () => {
   assert.equal(result.healthy, false);
   assert.equal(result.owner_review_ready, false);
   assert.equal(result.readiness.counts.conflict, 1);
+  assert.equal(result.recovery.counts.conflict_locked, 1);
+  assert.equal(result.recovery.action_counts.resolve_identity_conflict, 1);
   assert.deepEqual(result.readiness.blocker_counts, {
     identity_alignment_mismatch: 1,
     owner_verification_status_required: 1,
@@ -274,6 +358,24 @@ test("rejects inconsistent readiness as a contract violation", async () => {
   assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
 });
 
+test("rejects an identity recovery projection that permits automatic mutation", async () => {
+  const malformed = projection(CLIENT_A, "insufficient_evidence");
+  malformed.identity.recovery.automatic_recovery_allowed = true;
+  malformed.identity.recovery.verification_status_mutated = true;
+  malformed.identity.recovery.actions = ["owner_review_verification_status"];
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, malformed]]),
+  });
+
+  const result = await runVerifiedIdentityReadinessObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.scan.contract_violation_count, 1);
+  assert.equal(result.recovery.counts.evidence_required, 0);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
+});
+
 test("bounds scans and never emits rejected login details", async () => {
   const rejectedFetch = mockProduction({
     records: [],
@@ -305,4 +407,7 @@ test("bounds scans and never emits rejected login details", async () => {
   assert.equal(result.scan.limit, 24);
   assert.equal(result.scan.checked_count, 24);
   assert.equal(calls.filter((call) => call.pathname === "/v1/admin/clients/intelligence").length, 24);
+  assert.equal(result.recovery.counts.evidence_required, 24);
+  assert.equal(result.recovery.action_counts.review_line_ofc_evidence, 24);
+  assert.equal(result.recovery.action_counts.review_liff_identity_evidence, 24);
 });
