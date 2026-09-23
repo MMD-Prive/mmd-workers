@@ -47,8 +47,12 @@ export async function readMmsOwnerActionCoverage(env = {}) {
     snapshot.applications.filter((item) => ["submitted", "under review"].includes(normalizeMmsStatus(item?.status))),
     "application_id",
   );
-  const prebookings = uniqueMmsIds(
-    snapshot.prebookings.filter((item) => ["draft", "submitted", "matching", "options ready", "pending coordination"].includes(normalizeMmsStatus(item?.status))),
+  const routinePrebookings = uniqueMmsIds(
+    snapshot.prebookings.filter((item) => ["draft", "submitted", "matching", "options ready"].includes(normalizeMmsStatus(item?.status))),
+    "prebooking_id",
+  );
+  const exceptionPrebookings = uniqueMmsIds(
+    snapshot.prebookings.filter((item) => normalizeMmsStatus(item?.status) === "pending coordination"),
     "prebooking_id",
   );
 
@@ -56,8 +60,13 @@ export async function readMmsOwnerActionCoverage(env = {}) {
     available: true,
     authority: "mms-worker",
     complete: snapshot.complete,
+    operating_model: "bau_exception_only_v1",
     application_review_count: applications,
-    prebooking_coordination_count: prebookings,
+    prebooking_coordination_count: routinePrebookings + exceptionPrebookings,
+    routine_application_count: applications,
+    routine_prebooking_count: routinePrebookings,
+    exception_prebooking_count: exceptionPrebookings,
+    exception_count: exceptionPrebookings,
   };
 }
 
