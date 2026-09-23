@@ -58,6 +58,27 @@ test("catalog groups model folders and requires explicit eligibility per model",
   assert.equal(items.some((item) => item.slug === "legacy"), false);
 });
 
+test("catalog exposes only explicitly allowlisted assets inside a legacy model folder", () => {
+  const primary = "MMD Public Models/MMD Travel Models/Straight/tah/exec-489bda86-48b5-4a53-8e9d-c80509e03b93.png";
+  const secondary = "MMD Public Models/MMD Travel Models/Straight/tah/exec-23d0b742-1dcc-452b-9281-d57914237743.png";
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/MMD Travel Models/Straight/tah/P5130790.JPG" },
+    { key: "MMD Public Models/MMD Travel Models/Straight/tah/MEITU_20260517_125331808.jpg" },
+    { key: secondary },
+    { key: primary },
+  ], { eligibilityBySlug: new Map([["tah", eligible(["male", "female"], ["everyday_companion"], {
+    booking_mode: "direct",
+    public_asset_keys: [primary, secondary],
+  })]]) });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].photos, [
+    "https://models.mmdbkk.com/MMD%20Public%20Models/MMD%20Travel%20Models/Straight/tah/exec-489bda86-48b5-4a53-8e9d-c80509e03b93.png",
+    "https://models.mmdbkk.com/MMD%20Public%20Models/MMD%20Travel%20Models/Straight/tah/exec-23d0b742-1dcc-452b-9281-d57914237743.png",
+  ]);
+  assert.equal(JSON.stringify(items).includes("P5130790"), false);
+  assert.equal(JSON.stringify(items).includes("MEITU"), false);
+});
+
 test("catalog fails closed when there is no approved role matrix", () => {
   const items = buildPublicCatalog([
     { key: "MMD Public Models/HIMA/card.webp" },

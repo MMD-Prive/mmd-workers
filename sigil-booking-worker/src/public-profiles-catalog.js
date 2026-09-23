@@ -123,12 +123,20 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
 
   return [...groups.values()].map((group) => {
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
-    const photos = group.photos.slice(0, 6).map((photo) => photo.url);
     const eligibility = eligibilityBySlug instanceof Map ? eligibilityBySlug.get(group.slug) : null;
     // A public folder is storage only. A card may exist only when the complete
     // service matrix has a role, audience, explicit booking route, profile
     // approval and an approved public-safe image.
     if (!eligibility || !hasCompletePublicServiceMatrix(eligibility) || !validPublicPromoConsent(eligibility)) return null;
+    // A per-application allowlist is optional for backwards compatibility, but
+    // when present it is authoritative. This lets MMD promote an exact reviewed
+    // set inside a legacy model folder without exposing every historical asset.
+    const approvedAssetKeys = normalizePublicAssetKeys(eligibility.public_asset_keys);
+    const approvedPhotos = approvedAssetKeys.length
+      ? approvedAssetKeys.map((key) => group.photos.find((photo) => photo.key === key)).filter(Boolean)
+      : group.photos;
+    const photos = approvedPhotos.slice(0, 6).map((photo) => photo.url);
+    if (!photos.length) return null;
     const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
     const approvedRoles = normalizeRoleKeys(eligibility.roles);
     const promoRoles = normalizeRoleKeys(eligibility.promo_roles);
@@ -221,6 +229,7 @@ async function loadApprovedEligibility(env) {
           promo_consent_version: version,
           promo_consent_source: source,
           promo_consent_revoked_at: storedRevokedAt,
+          public_asset_keys: normalizePublicAssetKeys(payload.public_asset_keys),
         });
       }
       offset = clean(data.offset);
@@ -394,6 +403,13 @@ function modelFolderFromParts(parts) {
 function publicSafeKey(key) {
   if (!key || key.includes("\\") || key.includes("//") || /(^|\/)\.\.(?:\/|$)/.test(key)) return false;
   return !key.split("/").some((segment) => BLOCKED_SEGMENTS.has(segment.toLowerCase()));
+}
+
+function normalizePublicAssetKeys(value) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\n,]+/) : [];
+  return [...new Set(values.map((item) => clean(item).replace(/^\/+/, "")).filter((item) =>
+    item && IMAGE_EXTENSION.test(item) && publicSafeKey(item)
+  ))];
 }
 
 function catalogPrefixes(value) {
