@@ -252,7 +252,8 @@ function projectStuckSlaWatch(value = null) {
       status: "unknown",
       checked_at: null,
       attention_required: false,
-      counts: { total: 0, overdue: 0, watch: 0, owner_actionable_overdue: 0, owner_actionable_by_kind: {}, unavailable_sources: 6, unaged_records: 0, by_kind: {} },
+      counts: { total: 0, overdue: 0, watch: 0, owner_actionable_overdue: 0, owner_actionable_by_kind: {}, unavailable_sources: 6, unaged_records: 0, stale_terminal_records: 0, by_kind: {} },
+      stale_terminal_by_kind: {},
       unavailable_sources: [],
       sources: {},
       items: [],
@@ -280,8 +281,10 @@ function projectStuckSlaWatch(value = null) {
       owner_actionable_by_kind: safeCountMap(counts.owner_actionable_by_kind),
       unavailable_sources: nn(counts.unavailable_sources),
       unaged_records: nn(counts.unaged_records),
+      stale_terminal_records: nn(counts.stale_terminal_records),
       by_kind: safeCountMap(counts.by_kind),
     },
+    stale_terminal_by_kind: safeCountMap(value.stale_terminal_by_kind),
     unavailable_sources: (Array.isArray(value.unavailable_sources) ? value.unavailable_sources : [])
       .slice(0, 8)
       .map((item) => clean(item, 80))

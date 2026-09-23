@@ -162,6 +162,7 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
   const nowMs = clock.getTime();
   const thresholds = normalizeThresholds(options.thresholds);
   const unaged = {};
+  const stale = {};
   const items = [];
 
   for (const proof of array(sources.payment_proofs)) {
@@ -255,7 +256,17 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
     const claimState = normalize(firstField(fields, ["claim_status"]));
     const reviewState = normalize(firstField(fields, ["review_status"]));
     const matchState = normalize(firstField(fields, ["match_status"]));
-    if (![claimState, reviewState, matchState].includes("manual_review")) continue;
+    const hasManualSignal = [claimState, reviewState, matchState].includes("manual_review");
+    if (!hasManualSignal) continue;
+
+    const unresolved = claimState === "manual_review"
+      || reviewState === "in_review"
+      || (reviewState === "pending" && matchState === "manual_review");
+    if (!unresolved) {
+      increment(stale, "coupon_manual_review_terminal");
+      continue;
+    }
+
     const observedAt = firstText(firstField(fields, ["updated_at", "created_at"]), record?.createdTime);
     const item = timedItem({
       kind: "coupon_manual_review",
@@ -264,7 +275,7 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
       policy: thresholds.coupon_manual_review,
       reference: firstText(firstField(fields, ["claim_id"]), record?.id),
       label: firstText(firstField(fields, ["campaign_id"]), "CARE BACK"),
-      detail: "Coupon claim อยู่ manual_review",
+      detail: "Coupon claim ยังมี unresolved manual review",
       href: "/internal/admin/member-intelligence",
       authority: "care_back_claim_policy",
     });
@@ -329,10 +340,12 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
       ...counts,
       unavailable_sources: unavailableSources.length,
       unaged_records: Object.values(unaged).reduce((sum, value) => sum + nonNegative(value), 0),
+      stale_terminal_records: Object.values(stale).reduce((sum, value) => sum + nonNegative(value), 0),
     },
     unavailable_sources: unavailableSources,
     sources: sourceStatus,
     unaged_by_kind: unaged,
+    stale_terminal_by_kind: stale,
     items: deduped.slice(0, 20),
     summary: summaryText(status, counts, unavailableSources.length),
     operational_only: true,
