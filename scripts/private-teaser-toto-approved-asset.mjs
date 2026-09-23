@@ -14,6 +14,7 @@ const MODELS = env.MODELS_TABLE || "tblI4B0bI446vp9GX";
 const MEDIA = env.MEDIA_TABLE || "tblrpQXhHnbTU9RhW";
 const GRANTS = env.GRANTS_TABLE || "tblbP1csaTYfffS01";
 const CONSUMPTION = env.CONSUMPTION_TABLE || "tblcjjCW0pXvlhNQQ";
+const INGEST_CAPABILITIES = env.INGEST_CAPABILITIES_TABLE || "tbldR4n2KP5fF0Zxk";
 const MODEL_KEY = env.MODEL_UNIQUE_KEY || "toto";
 
 function escapeFormula(value) {
@@ -168,15 +169,39 @@ if(!alreadyReady){
   cookie=await adminLogin();
 
   if(!mediaRecord){
-    const imported=await postJson("/v1/admin/private-media/import-approved-drive",cookie,{
-      model_id:model.id,
-      file_name:fileName,
+    const caps=(await allRecords(
+      INGEST_CAPABILITIES,
+      ["capability_id","model_record_id","file_name","status","expires_at","source_attachment"]
+    )).filter((record)=>{
+      const cf=record.fields||{};
+      return cf.model_record_id===model.id &&
+        cf.file_name===fileName &&
+        cf.status==="ready" &&
+        Date.parse(String(cf.expires_at||""))>Date.now() &&
+        Array.isArray(cf.source_attachment) &&
+        cf.source_attachment.length===1;
     });
-    if(imported.response.status!==200 || imported.body?.ok!==true || !/^rec[A-Za-z0-9]+$/.test(String(imported.body?.media_asset_id||""))) {
-      throw new Error(`approved Drive import failed HTTP ${imported.response.status} ${JSON.stringify(imported.body)}`);
+    if(caps.length>1) throw new Error(`multiple ready staged ingest capabilities exist; got ${caps.length}`);
+    if(caps.length===1){
+      const capabilityId=String(caps[0].fields?.capability_id||"");
+      console.log(`::add-mask::${capabilityId}`);
+      const staged=await postJson("/v1/admin/private-media/ingest-staged",cookie,{capability_id:capabilityId});
+      if(staged.response.status!==200 || staged.body?.ok!==true || !/^rec[A-Za-z0-9]+$/.test(String(staged.body?.media_asset_id||""))) {
+        throw new Error(`staged private ingest failed HTTP ${staged.response.status} ${JSON.stringify(staged.body)}`);
+      }
+      mediaRecord=await readRecord(MEDIA,staged.body.media_asset_id);
+      action="staged_imported_and_approved";
+    }else{
+      const imported=await postJson("/v1/admin/private-media/import-approved-drive",cookie,{
+        model_id:model.id,
+        file_name:fileName,
+      });
+      if(imported.response.status!==200 || imported.body?.ok!==true || !/^rec[A-Za-z0-9]+$/.test(String(imported.body?.media_asset_id||""))) {
+        throw new Error(`approved Drive import failed HTTP ${imported.response.status} ${JSON.stringify(imported.body)}`);
+      }
+      mediaRecord=await readRecord(MEDIA,imported.body.media_asset_id);
+      action="imported_and_approved";
     }
-    mediaRecord=await readRecord(MEDIA,imported.body.media_asset_id);
-    action="imported_and_approved";
   } else {
     action="existing_pending_approved";
   }
