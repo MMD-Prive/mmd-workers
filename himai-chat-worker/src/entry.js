@@ -5,6 +5,7 @@ import { handleShopMovements } from "./shop-movements.js";
 import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
+import { renderSupplierLiffPage } from "./supplier-liff-page.js";
 import { handleReplaySafeShopCheckout } from "./shop-checkout-idempotency.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
@@ -60,6 +61,7 @@ export default {
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && ["/shop/distributor", "/shop/supplier"].includes(path)) return renderDistributorPortalPage();
+    if (request.method.toUpperCase() === "GET" && ["/shop/supplier/liff", "/shop/supplier/liff/"].includes(path)) return renderSupplierLiffPage(env);
 
     try {
       const checkoutResponse = await handleReplaySafeShopCheckout(request, env, ctx);
