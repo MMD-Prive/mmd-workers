@@ -153,6 +153,32 @@ jobs:
               headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
               cache: "no-store",
             });
+            const calendarResponse = await fetch(`${pageUrl.origin}/v1/admin/calendar`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const calendar = await calendarResponse.json().catch(() => null);
+            if (calendarResponse.status !== 200 || calendar?.ok !== true) {
+              throw new Error(`Calendar availability diagnostic failed: ${calendarResponse.status}`);
+            }
+            const actionableStages = new Set([
+              "identity_recovery_required",
+              "line_link_required",
+              "line_link_expired",
+              "availability_confirmation_required",
+              "reminder_follow_up_due",
+            ]);
+            const availabilityHealth = calendar?.availability?.coverage_health || null;
+            const availabilityExceptions = (calendar?.availability?.models || [])
+              .filter((item) => actionableStages.has(String(item?.recovery_stage || "")))
+              .map((item) => ({
+                name: String(item?.name || "—").slice(0, 120),
+                model_id: String(item?.model_id || "—").slice(0, 80),
+                recovery_stage: String(item?.recovery_stage || "unknown"),
+                recovery_action: String(item?.recovery_action || "none"),
+                snapshot_state: String(item?.snapshot_state || "unknown"),
+                line_connected: item?.line_connected === true,
+              }));
             const ownerActions = await ownerActionsResponse.json().catch(() => null);
             if (ownerActionsResponse.status !== 200 || ownerActions?.ok !== true) {
               throw new Error(`Owner Actions read failed: ${ownerActionsResponse.status}`);
@@ -229,6 +255,18 @@ jobs:
               owner_actions_contract: ownerActions.contract,
               availability_source_state: availabilitySource.state,
               availability_exception_present: Boolean(availabilityAction),
+              availability_health: availabilityHealth ? {
+                review_status: availabilityHealth.review_status,
+                canonical_models: availabilityHealth.canonical_models,
+                fresh_models: availabilityHealth.fresh_models,
+                fresh_coverage_percent: availabilityHealth.fresh_coverage_percent,
+                owner_action_required: availabilityHealth.owner_action_required,
+                follow_up_due: availabilityHealth.follow_up_due,
+                waiting_for_model: availabilityHealth.waiting_for_model,
+                identity_missing: availabilityHealth.identity_missing,
+                source_unavailable_models: availabilityHealth.source_unavailable_models,
+              } : null,
+              availability_exceptions: availabilityExceptions,
             }, null, 2));
           })().catch((error) => {
             console.error(error?.stack || error);
@@ -250,6 +288,7 @@ jobs:
           - Owner Analytics: Intent / Business Truth / Authority Health separated
           - Owner Actions: Availability source projected from canonical coverage health
           - Availability exception: Calendar-only, read-only, no auto-send or mutation
+          - Availability diagnostic: actionable rows logged with safe fields only (name/model_id/stage/state/LINE-connected)
           - Cross-layer person conversion: forbidden
           - Unobserved terminal event: null / —, never fabricated zero
           - Unauthenticated page/API/analytics: fail-closed
