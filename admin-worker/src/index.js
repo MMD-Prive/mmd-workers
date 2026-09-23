@@ -2081,18 +2081,25 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
         return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
       }
       const status = body.decision === "approve" ? "approved" : "rejected";
-      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
+      const requestedTeaser = body.teaser_safe === true;
+      const mediaType = normalizeSchemaPatchWord(media.fields.media_type);
+      // Teaser is its own commercial consent lane. It must be a purpose-built
+      // private asset, explicitly approved, and cannot be backfilled from a
+      // legacy/profile image simply by toggling a checkbox.
+      if (requestedTeaser && (body.decision !== "approve" || !["private_gallery", "flash_preview"].includes(mediaType))) {
+        return modelSchemaPatchJson({ ok:false, error:"teaser_media_type_invalid" }, 422);
+      }
+      const teaserSafe = status === "approved" && requestedTeaser;
+      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,teaser_safe:teaserSafe,media_sha256:asset.sha256,source:"private_media_review_v1"}});
       const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
-      // Teaser approval is an explicit, separately reviewed commercial decision.
-      // Private-safe media must never become pre-booking media by implication.
       await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{
         [fields.reviewStatus]:status,
         [fields.publicSafe]:false,
         [fields.privateSafe]:status === "approved",
         [fields.flashSafe]:status === "approved",
-        [fields.teaserSafe]:status === "approved" && body.teaser_safe === true,
+        [fields.teaserSafe]:teaserSafe,
       });
-      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
+      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,teaser_safe:teaserSafe,review});
     }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));

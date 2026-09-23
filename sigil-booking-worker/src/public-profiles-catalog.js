@@ -5,6 +5,16 @@ const PREFERRED_IMAGE = /(?:^|[-_. ])(?:card|cover|hero|main|primary|profile|01)
 const BLOCKED_SEGMENTS = new Set(["private", "evidence", "slips", "line-notes", "line_notes", "sigil", "internal"]);
 const PUBLIC_CATALOG_PATH = "/sigil/api/models/search/public-catalog";
 const MODEL_APPLICATIONS_TABLE_ID = "tblwUa8ySWln8OfaJ";
+const MODEL_MEDIA_TABLE_ID = "tblrpQXhHnbTU9RhW";
+const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
+const MODELS_FIELDS = Object.freeze({ workingName: "fldShiT60bmCxFxRu" });
+const MODEL_MEDIA_FIELDS = Object.freeze({
+  model: "fldknjo3y47i3lR33",
+  mediaType: "fldJRlyE6RMaze62",
+  reviewStatus: "fldQiEnIJj5LjGy52",
+  teaserSafe: "fldAvK1Xv0lnoZIXv",
+  fileType: "fldakN0VbkG9fuPnI",
+});
 const PUBLIC_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
 const PUBLIC_PROMO_CONSENT_SOURCES = new Set(["/apply/public-model", "mmd_model", "mmd_model_authenticated"]);
 const APPLICATION_FIELDS = Object.freeze({
@@ -46,11 +56,15 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
     const prefixes = catalogPrefixes(env.PUBLIC_MODEL_CATALOG_PREFIXES || env.PUBLIC_MODEL_CATALOG_PREFIX || DEFAULT_CATALOG_PREFIX);
     const objects = [];
     for (const prefix of prefixes) objects.push(...await listPrefix(env.MMD_MODEL_ASSETS, prefix));
-    const eligibilityBySlug = await loadApprovedEligibility(env);
+    const [eligibilityBySlug, teaserBySlug] = await Promise.all([
+      loadApprovedEligibility(env),
+      loadApprovedTeaserAvailability(env),
+    ]);
     const items = buildPublicCatalog(objects, {
       prefixes,
       publicAssetBase: env.MODEL_PUBLIC_ASSET_BASE_URL || DEFAULT_PUBLIC_ASSET_BASE,
       eligibilityBySlug,
+      teaserBySlug,
     });
     return json({
       ok: true,
@@ -65,7 +79,7 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
   }
 }
 
-export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), audienceBySlug = null } = {}) {
+export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), teaserBySlug = new Set(), audienceBySlug = null } = {}) {
   // audienceBySlug is accepted only for backward-compatible unit callers. It never
   // grants public visibility: a model still needs explicit MMD approval and current
   // non-member image-promotion consent for at least one approved role.
@@ -135,6 +149,9 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       visibility: "public",
       audience_visibility: "non_member_consented",
       source: "r2_public_model",
+      // This is a deliberately narrow discovery hint. It never contains an
+      // asset id, storage key, thumbnail, signed URL, count, or entitlement.
+      ...(teaserBySlug instanceof Set && teaserBySlug.has(group.slug) ? { private_teaser_available: true } : {}),
     };
   }).filter(Boolean).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
 }
@@ -212,6 +229,89 @@ async function loadApprovedEligibility(env) {
     console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_eligibility_unavailable", error: String(error?.message || error) }));
   }
   return index;
+}
+
+
+// Public catalogue discovery is fail-closed. A marker is exposed only when an
+// MMD-approved, purpose-built teaser asset exists; a profile image can never
+// become a Teaser merely because it is private-safe.
+async function loadApprovedTeaserAvailability(env) {
+  const slugs = new Set();
+  const modelRecordIds = new Set();
+  if (!clean(env.AIRTABLE_API_KEY) || !clean(env.AIRTABLE_BASE_ID)) return slugs;
+  try {
+    let offset = "";
+    let seen = 0;
+    do {
+      const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || MODEL_MEDIA_TABLE_ID;
+      const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("pageSize", "100");
+      url.searchParams.set("returnFieldsByFieldId", "true");
+      Object.values(MODEL_MEDIA_FIELDS).forEach((field) => url.searchParams.append("fields[]", field));
+      if (offset) url.searchParams.set("offset", offset);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+      if (!response.ok) throw new Error(`airtable_${response.status}`);
+      const data = await response.json();
+      const records = Array.isArray(data.records) ? data.records : [];
+      seen += records.length;
+      for (const record of records) {
+        const fields = record?.fields || {};
+        const mediaType = choiceName(fields[MODEL_MEDIA_FIELDS.mediaType]).toLowerCase();
+        const fileType = clean(fields[MODEL_MEDIA_FIELDS.fileType]).toLowerCase();
+        if (choiceName(fields[MODEL_MEDIA_FIELDS.reviewStatus]).toLowerCase() !== "approved") continue;
+        if (checkboxTrue(fields[MODEL_MEDIA_FIELDS.teaserSafe]) !== true) continue;
+        if (!["private_gallery", "flash_preview"].includes(mediaType)) continue;
+        if (!["image/jpeg", "image/png", "image/webp", "video/mp4"].includes(fileType)) continue;
+        const linked = Array.isArray(fields[MODEL_MEDIA_FIELDS.model]) ? fields[MODEL_MEDIA_FIELDS.model][0] : fields[MODEL_MEDIA_FIELDS.model];
+        const linkedName = typeof linked === "object" ? linked?.name : "";
+        const linkedId = clean(typeof linked === "object" ? linked?.id : linked);
+        const slug = slugify(linkedName);
+        if (slug) slugs.add(slug);
+        else if (/^rec[a-zA-Z0-9]+$/.test(linkedId)) modelRecordIds.add(linkedId);
+      }
+      offset = clean(data.offset);
+    } while (offset && seen < 500);
+    for (const name of await loadTeaserModelNames(env, modelRecordIds)) {
+      const slug = slugify(name);
+      if (slug) slugs.add(slug);
+    }
+  } catch (error) {
+    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_teaser_discovery_unavailable", error: String(error?.message || error) }));
+  }
+  return slugs;
+}
+
+
+async function loadTeaserModelNames(env, wantedIds) {
+  if (!(wantedIds instanceof Set) || wantedIds.size === 0) return [];
+  const names = [];
+  try {
+    let offset = "";
+    let seen = 0;
+    do {
+      const table = env.AIRTABLE_TABLE_MODELS || MODELS_TABLE_ID;
+      const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("pageSize", "100");
+      url.searchParams.set("returnFieldsByFieldId", "true");
+      url.searchParams.append("fields[]", MODELS_FIELDS.workingName);
+      if (offset) url.searchParams.set("offset", offset);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+      if (!response.ok) throw new Error(`airtable_${response.status}`);
+      const data = await response.json();
+      const records = Array.isArray(data.records) ? data.records : [];
+      seen += records.length;
+      for (const record of records) {
+        if (!wantedIds.has(clean(record?.id))) continue;
+        const name = clean(record?.fields?.[MODELS_FIELDS.workingName]);
+        if (name) names.push(name);
+      }
+      offset = clean(data.offset);
+    } while (offset && seen < 500 && names.length < wantedIds.size);
+  } catch (error) {
+    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_teaser_model_mapping_unavailable", error: String(error?.message || error) }));
+    return [];
+  }
+  return names;
 }
 
 function hasCompletePublicServiceMatrix(value = {}) {
