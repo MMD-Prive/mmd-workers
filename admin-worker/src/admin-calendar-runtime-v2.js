@@ -39,6 +39,8 @@ const F = Object.freeze({
     availability: "fld6RuUDmGcGDc34i",
     availableNow: "fldwMpYGpA5RvC76m",
     status: "fldRcAE3bL8dKmURH",
+    operatingRole: "fldW4h38yZnANUVY3",
+    registryRecordType: "fldKTbOlADC1OqNur",
     lineUserId: "fld2ywTFI6MZhX6PV",
   },
   cal: {
@@ -196,8 +198,20 @@ function modelKey(record) {
   return /^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(value) ? value : "";
 }
 
-function isExcludedModelStatus(value) {
-  return ["inactive", "blocked", "suspended", "paused", "archived", "retired"].includes(clean(value, 120).toLowerCase().trim());
+function isOperationalAvailabilityModel(record) {
+  const status = clean(field(record, F.model.status), 120).toLowerCase().trim();
+  if (status !== "active") return false;
+
+  const operatingRole = clean(field(record, F.model.operatingRole), 120).toLowerCase().trim();
+  if (operatingRole && operatingRole !== "receiving job model") return false;
+
+  // Legacy approved inventory predates these hygiene fields, so blank role/type
+  // remains eligible only when the explicit status is active. Any explicit
+  // non-model registry classification fails closed.
+  const registryType = clean(field(record, F.model.registryRecordType), 120).toLowerCase().trim();
+  if (registryType && registryType !== "existing model record") return false;
+
+  return true;
 }
 
 async function availabilitySnapshotKeys(binding) {
@@ -346,7 +360,7 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
       const key = modelKey(record);
       const snapshot = key ? snapshotIndex.by_model_key.get(key) : null;
       const evidence = key ? recoveryIndex.by_model_key.get(key) || null : null;
-      const excluded = isExcludedModelStatus(field(record, F.model.status));
+      const excluded = !isOperationalAvailabilityModel(record);
       const state = !excluded && snapshot?.fresh ? snapshot.safe_availability_state : "";
       const snapshotReadFailed = Boolean(key && snapshotIndex.failed_model_keys?.has(key));
       const recoveryReadFailed = Boolean(key && recoveryIndex.failed_model_keys?.has(key));
