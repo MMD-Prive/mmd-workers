@@ -6,6 +6,7 @@ import { buildAdminDashboard } from "./src/dashboard-worker.js";
 const PAYMENT_PROOF_TABLE = "tblfJfM4Sqag9zrLi";
 const MEMBERS_TABLE = "tblgWc5VRon5o8Mhk";
 const SESSIONS_TABLE = "tblC98mKWbzmPuNzX";
+const PAYMENTS_TABLE = "tblWGGJJOx5eBvBZJ";
 
 function normalPaymentProof() {
   return {
@@ -19,6 +20,8 @@ function normalPaymentProof() {
       payment_ref: "CURRENT-PAYMENT-REF-01",
       payer_name: "คุณเอ็ม",
       session: ["rec-session-current"],
+      payment: ["rec-payment-current"],
+      Client: ["rec-client-current"],
       note: JSON.stringify({
         schema: "line_payment_evidence_v3",
         r2_key: "line-ofc/payment-proofs/2026/09/line_current_01/original.png",
@@ -67,6 +70,7 @@ function env() {
     AIRTABLE_TABLE_PAYMENT_PROOFS_ID: PAYMENT_PROOF_TABLE,
     AIRTABLE_TABLE_MEMBERS_ID: MEMBERS_TABLE,
     AIRTABLE_TABLE_SESSIONS: SESSIONS_TABLE,
+    AIRTABLE_TABLE_PAYMENTS_ID: PAYMENTS_TABLE,
     AIRTABLE_HTTP: {
       async fetch(request) {
         const url = new URL(request.url);
@@ -80,7 +84,30 @@ function env() {
           return Response.json({ records: [currentProof, ...historical] });
         }
 
-        if (table === SESSIONS_TABLE) return Response.json({ records: [] });
+        if (table === PAYMENTS_TABLE) {
+          return Response.json({ records: [{
+            id: "rec-payment-current",
+            fields: {
+              "Payment Reference": "CURRENT-PAYMENT-REF-01",
+              Amount: 19250,
+              payment_stage: "final",
+              session_id: "sess-current",
+              "Payment Status": "Pending",
+              Client: ["rec-client-current"],
+            },
+          }] });
+        }
+        if (table === SESSIONS_TABLE) return Response.json({ records: [{
+          id: "rec-session-current",
+          fields: {
+            session_id: "sess-current",
+            Client: ["rec-client-current"],
+            client_name: "คุณเอ็ม",
+            model_name: "Model A",
+            job_date: "2026-09-13",
+            start_time: "18:00",
+          },
+        }] });
         if (table === MEMBERS_TABLE) {
           return Response.json({
             records: [
