@@ -3,7 +3,7 @@
 const ROUTES = Object.freeze({
   profiles: "https://mmdbkk.com/profiles",
   membership: "https://mmdbkk.com/member/membership",
-  mmsLine: "https://line.me/R/ti/p/%40malemassage",
+  mmsLine: "https://lin.ee/NkfXMu7",
 });
 
 const HANDOFF_INTENTS = new Set([

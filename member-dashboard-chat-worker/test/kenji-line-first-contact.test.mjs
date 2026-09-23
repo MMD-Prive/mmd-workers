@@ -38,7 +38,7 @@ test("First Contact answers a natural opening but sends protected matters for re
 
   const mms = decideKenjiLineFirstContact(message("อยากนวดชาย"), "mms_wellness");
   assert.match(mms.text, /LINE Official ของ MMS/);
-  assert.match(mms.text, /line\.me\/R\/ti\/p\/%40malemassage/);
+  assert.match(mms.text, /lin\.ee\/NkfXMu7/);
   assert.doesNotMatch(mms.text, /บอกวันที่|ย่านที่สะดวก|เปอร์ช่วยดูทางเลือก/);
   assert.doesNotMatch(opening.text, /นวด|MMS/);
 
@@ -81,7 +81,7 @@ test("signed LINE opening replies once while follow and protected events stay si
     assert.equal(sent.length, 2);
     assert.equal(sent[0].replyToken, "synthetic-reply-token");
     assert.equal(sent[1].replyToken, "mms-token");
-    assert.match(sent[1].messages[0].text, /line\.me\/R\/ti\/p\/%40malemassage/);
+    assert.match(sent[1].messages[0].text, /lin\.ee\/NkfXMu7/);
     assert.doesNotMatch(sent[1].messages[0].text, /บอกวันที่|ย่านที่สะดวก/);
     assert.deepEqual(body.saved.map((row) => row.replied), [false, true, true, false, false]);
     assert.equal(body.saved[2].reply_source, "mms_line_redirect");

@@ -18,7 +18,7 @@ Verify the actual OA greeting and its enabled state in LINE OA Manager before cl
 - `LINE_AUTO_REPLY_ENABLED=false` keeps the older broad Kenji Seed/knowledge/model response lanes paused.
 - A fresh Runtime Controls read remains required. The existing LINE or all-Kenji kill switch stops delivery.
 - Greeting, short discovery messages, public booking intake, membership navigation and initial price brief receive short Per-voice guidance. No exact model access, availability, final price, entitlement or payment truth is asserted.
-- MMS has a separate LINE Official Account (`@malemassage`). MMD greeting and intake must not offer MMS. An explicit massage inquiry in MMD LINE gets only the dedicated MMS LINE link; MMD does not collect the MMS brief or continue the MMS conversation.
+- MMS has a separate LINE Official Account: `@malemassage`, `https://lin.ee/NkfXMu7` (owner-confirmed). MMD greeting and intake must not offer MMS. An explicit massage inquiry in MMD LINE gets only this MMS LINE link; MMD does not collect the MMS brief or continue the MMS conversation.
 - Protected topics produce review metadata and remain silent in this lane. The existing inbound Console Inbox and AI Message Events keep the owner review evidence. This version does not claim a new HYPE delivery or closed-loop assignment.
 - Group/room, `follow`, image, empty, standby and redelivered events receive no First Contact reply. LINE-confirmed outbound messages alone become conversation history.
 
