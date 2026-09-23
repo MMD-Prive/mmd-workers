@@ -5,6 +5,7 @@ import {
   isMmdRichMenuHidden,
   classifyMmdUsers,
   getMmdRichMenuActionMap,
+  getMmdRichMenuTapFrames,
   getMmdRichMenuImageSources,
 } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
@@ -38,12 +39,12 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
   ]);
 
   assert.deepEqual(map.private, [
-    { type: "message", label: "KENJI AI", text: "Hi Kenji" },
+    { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" },
     { type: "uri", label: "MODEL CARDS", uri: "https://mmdbkk.com/member/private?source=line&entry_route=rich_menu_model_cards#detail-model" },
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/find?source=line&entry_route=rich_menu_private_booking" },
     { type: "uri", label: "MY MMD", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile" },
     { type: "uri", label: "PRIVE UPDATE", uri: "https://mmdbkk.com/member/private?source=line&entry_route=rich_menu_prive_update#access" },
-    { type: "message", label: "SUPPORT", text: "Hi Kenji" },
+    { type: "postback", label: "SUPPORT", data: "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu" },
   ]);
 });
 
@@ -54,14 +55,18 @@ test("LV1 v4.1 uses the MMD Stories image and never falls back to the ABOUT MMD 
   assert.equal(images.guest.some((url) => url.includes("6a9ef89d2b35f4308fb3de8e")), false);
 });
 
-test("Guest and Public support stay Kenji-invisible while Private keeps Kenji visible", () => {
+test("Guest and Public support stay Kenji-invisible while Private keeps a typed Kenji entry", () => {
   const map = getMmdRichMenuActionMap();
   assert.equal(map.guest[5].type, "postback");
   assert.equal(map.public[5].type, "postback");
   assert.equal(JSON.stringify(map.guest[5]).includes("Hi Kenji"), false);
   assert.equal(JSON.stringify(map.public[5]).includes("Hi Kenji"), false);
-  assert.deepEqual(map.private[0], { type: "message", label: "KENJI AI", text: "Hi Kenji" });
-  assert.deepEqual(map.private[5], { type: "message", label: "SUPPORT", text: "Hi Kenji" });
+  assert.deepEqual(map.private[0], { type: "postback", label: "KENJI AI", data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" });
+  assert.deepEqual(map.private[5], { type: "postback", label: "SUPPORT", data: "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu" });
+});
+
+test("Private tap grid excludes the character artwork", () => {
+  assert.deepEqual(getMmdRichMenuTapFrames().private, { left: .43, top: .15, right: .99, bottom: .76 });
 });
 
 test("verified customer stays Public without active private entitlement", () => {

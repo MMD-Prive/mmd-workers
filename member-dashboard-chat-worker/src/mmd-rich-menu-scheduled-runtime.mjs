@@ -8,7 +8,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260923-v4.1";
+const VERSION = "mmd-rm3-20260923-v4.2";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -55,18 +55,21 @@ const MENUS = Object.freeze({
   },
   private: {
     name: `MMD Private ${VERSION}`,
-    frame: { left: .0, top: .0, right: 1, bottom: 1 },
+    // The artwork reserves the left-hand side for the Private character.  The
+    // active cells are the right-side 3×2 grid only; a full-canvas grid made
+    // taps on the character trigger the wrong action.
+    frame: { left: .43, top: .15, right: .99, bottom: .76 },
     images: [
       `${ROOT}/6a9ef89de09b20e8750bdf5d_Rich%20Menu%20Private-p-1080.png`,
       `${ROOT}/6a9ef89de09b20e8750bdf5d_Rich%20Menu%20Private-p-800.png`,
     ],
     actions: [
-      msg("KENJI AI", "Hi Kenji"),
+      postback("KENJI AI", "mmd_action=kenji_ai&audience=private&source=private_rich_menu"),
       uri("MODEL CARDS", site("/member/private#detail-model", "rich_menu_model_cards")),
       uri("BOOKING", site("/find", "rich_menu_private_booking")),
       uri("MY MMD", liff()),
       uri("PRIVE UPDATE", site("/member/private#access", "rich_menu_prive_update")),
-      msg("SUPPORT", "Hi Kenji"),
+      postback("SUPPORT", "mmd_action=kenji_ai&entry=support&audience=private&source=private_rich_menu"),
     ],
   },
 });
@@ -82,6 +85,13 @@ export function getMmdRichMenuImageSources() {
   return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
     key,
     [...spec.images],
+  ]));
+}
+
+export function getMmdRichMenuTapFrames() {
+  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
+    key,
+    { ...spec.frame },
   ]));
 }
 
