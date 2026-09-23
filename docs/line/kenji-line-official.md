@@ -49,13 +49,14 @@ AIRTABLE_BASE_ID=...
 Cloudflare runtime flags:
 
 \`\`\`text
-LINE_AUTO_REPLY_ENABLED=true
+LINE_AUTO_REPLY_ENABLED=false
+LINE_FIRST_CONTACT_ENABLED=true
 LINE_KENJI_AI_ENABLED=true
 LINE_KENJI_KNOWLEDGE_ENABLED=true
 AIRTABLE_KENJI_KNOWLEDGE_TABLE_ID=tblsLd1uVOtG2kHoU
 \`\`\`
 
-\`LINE_KENJI_KNOWLEDGE_ENABLED\` lets the webhook load only Knowledge Board cards that are \`active\`, \`auto_reply_allowed\`, and approved for \`LINE_OFC\`. If the card source is unavailable or fails the Per Voice guard, the Worker uses the safe local fallback instead.
+First Contact V1 uses only deterministic, bounded opening replies. The broader Knowledge Board reply path remains paused until a separate review and rollout. See `docs/line/KENJI_LINE_FIRST_CONTACT_V1.md`.
 
 ## Test Phrases
 
