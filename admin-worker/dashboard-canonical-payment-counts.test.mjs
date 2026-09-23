@@ -83,14 +83,24 @@ function env() {
         if (table === SESSIONS_TABLE) return Response.json({ records: [] });
         if (table === MEMBERS_TABLE) {
           return Response.json({
-            records: [{
-              id: "rec-member-review",
-              fields: {
-                "Full Name (Display)": "คุณเอ",
-                "Membership Tier": "Premium",
-                "Membership Status": "pending",
+            records: [
+              {
+                id: "rec-member-review",
+                fields: {
+                  "Full Name (Display)": "คุณเอ",
+                  "Membership Tier": "Premium",
+                  resolver_state: "review_required",
+                },
               },
-            }],
+              {
+                id: "rec-member-expired",
+                fields: {
+                  "Full Name (Display)": "คุณบี",
+                  "Membership Tier": "SVIP",
+                  "Membership Status": "expired",
+                },
+              },
+            ],
           });
         }
 
