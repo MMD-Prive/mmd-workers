@@ -22,6 +22,8 @@ on:
       - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
       - "admin-worker/payment-review-simple.test.mjs"
       - "admin-worker/src/payment-review-line-recovery.js"
+      - "admin-worker/src/membership-payment-pending-recovery.js"
+      - "admin-worker/membership-payment-pending-recovery.test.mjs"
       - "admin-worker/src/payment-review-owner-context.js"
       - "admin-worker/src/payment-review-auto-context.js"
       - "admin-worker/line-slip-intake-review-queue.contract.test.mjs"
@@ -64,6 +66,7 @@ jobs:
           node --check admin-worker/src/payment-review-runtime.js
           node --check admin-worker/src/payment-review-discovery.js
           node --check admin-worker/src/payment-review-line-recovery.js
+          node --check admin-worker/src/membership-payment-pending-recovery.js
           node --check admin-worker/src/payment-review-owner-context.js
           node --check admin-worker/src/payment-review-auto-context.js
           node --check webflow/internal/admin/payments/payment-owner-match-v1.js
@@ -95,7 +98,7 @@ jobs:
       - name: Manual renewal recovery contract
         run: |
           set -euo pipefail
-          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs
+          node --test admin-worker/payment-review-manual-renewal-recovery.test.mjs admin-worker/membership-payment-pending-recovery.test.mjs
 
       - name: Owner payment context match contract
         run: |
