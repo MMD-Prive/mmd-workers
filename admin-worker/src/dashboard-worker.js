@@ -322,7 +322,7 @@ function ownerCoverageActionCount(source, value) {
   if (source === "availability") {
     const health = value?.coverage_health || {};
     if (health.review_status === "source_attention") return Math.max(1, nonNegativeInteger(health.source_unavailable_models));
-    return nonNegativeInteger(health.owner_action_required);
+    return nonNegativeInteger(health.follow_up_due);
   }
   return nonNegativeInteger(value?.counts?.total);
 }

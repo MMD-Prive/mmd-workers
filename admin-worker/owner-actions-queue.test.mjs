@@ -87,7 +87,7 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
 
 
 
-test("availability operations surface only actionable or source exceptions", () => {
+test("availability operations surface only SLA follow-up or source exceptions", () => {
   const queue = buildOwnerActionsQueue({
     availability: {
       available: true,
@@ -99,16 +99,32 @@ test("availability operations surface only actionable or source exceptions", () 
       },
     },
     source_coverage: [
-      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 3 },
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 1 },
     ],
   });
 
   assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count, item.urgency]), [
-    ["availability_exception_review", 3, "urgent"],
+    ["availability_exception_review", 1, "urgent"],
   ]);
   assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.href]), [
     ["availability", "connected", "/internal/admin/calendar"],
   ]);
+
+  const onboardingBacklog = buildOwnerActionsQueue({
+    availability: {
+      available: true,
+      coverage_health: {
+        review_status: "owner_action_required",
+        owner_action_required: 27,
+        follow_up_due: 0,
+        source_unavailable_models: 0,
+      },
+    },
+    source_coverage: [
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+  assert.equal(onboardingBacklog.actions.some((item) => item.action_key === "availability_exception_review"), false);
 
   const current = buildOwnerActionsQueue({
     availability: {

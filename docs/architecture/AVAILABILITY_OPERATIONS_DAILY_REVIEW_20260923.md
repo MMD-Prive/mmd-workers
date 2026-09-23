@@ -9,6 +9,16 @@ Keep Availability Recovery closed while giving the Owner one operational place t
 
 Calendar remains the canonical review surface. Control Room / Owner Actions receives only a bounded read-only projection.
 
+## Operational inventory scope
+
+Daily coverage counts an Airtable Model only when:
+
+- `status` is explicitly `active` (case-insensitive);
+- if `MMD Operating Role` is populated, it is `Receiving Job Model`;
+- if `registry_record_type` is populated, it is `Existing Model Record`.
+
+This deliberately excludes pending/blank-status inventory, Worker / MMD Assistant records, Review Needed roles, Test/Fixture, Ghost/Synthetic, Duplicate/Ambiguous, Intake Candidate, and other explicit non-model registry classifications. Legacy approved records with blank role/registry remain supported when status is explicitly active.
+
 ## Daily review contract
 
 Canonical source: `mmd.availability.coverage-health.v1`.
@@ -18,7 +28,8 @@ Owner Actions behavior:
 - `coverage_current`: show Availability source coverage as connected; create no action.
 - `waiting_for_model`: no Owner action; Calendar continues to show the waiting state.
 - `confirmation_pending`: no guessed action; Calendar remains the review surface.
-- `owner_action_required`: create one deduplicated `availability_exception_review` action using the canonical affected-row count.
+- `owner_action_required`: keep initial identity / LINE activation / first-confirmation work in Calendar's Adoption recovery queue; it is not promoted into the Control Room daily exception queue by itself.
+- `reminder_follow_up_due`: create one deduplicated `availability_exception_review` using only rows whose manual reminder has crossed the 24-hour follow-up SLA.
 - `source_attention`: create one fail-closed source exception and never convert unreadable rows into availability.
 
 The exception always links to `/internal/admin/calendar`.
@@ -39,4 +50,4 @@ Availability exceptions sit below overdue job reconfirm and above finance payout
 
 ## Operational closure rule
 
-The daily review is considered clear when Availability source coverage is connected and no `availability_exception_review` action exists. This is an operational state, not a new business-truth state.
+The Control Room daily review is considered clear when Availability source coverage is connected, no source read is incomplete, and no manual reminder has crossed its follow-up SLA. Initial Adoption backlog may still exist in Calendar without making the daily operational queue non-clear. This is an operational state, not a new business-truth state.

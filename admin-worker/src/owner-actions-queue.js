@@ -110,25 +110,24 @@ function availabilityExceptionAction(source) {
   if (!source || source.available !== true) return null;
   const health = source.coverage_health && typeof source.coverage_health === "object" ? source.coverage_health : {};
   const reviewStatus = clean(health.review_status);
-  if (!["source_attention", "owner_action_required"].includes(reviewStatus)) return null;
-
   const sourceUnavailable = nonNegative(health.source_unavailable_models);
-  const ownerActionRequired = nonNegative(health.owner_action_required);
   const followUpDue = nonNegative(health.follow_up_due);
-  const count = reviewStatus === "source_attention"
-    ? Math.max(1, sourceUnavailable)
-    : ownerActionRequired;
-  if (!count) return null;
 
+  // Initial identity/LINE onboarding remains visible in Calendar's Adoption
+  // recovery queue. Control Room daily operations surfaces only source failures
+  // or an explicit follow-up that has crossed its 24h SLA.
   const sourceAttention = reviewStatus === "source_attention";
+  if (!sourceAttention && followUpDue === 0) return null;
+
+  const count = sourceAttention ? Math.max(1, sourceUnavailable) : followUpDue;
   return action({
     key: "availability_exception_review",
     priority: PRIORITY.availability_exception_review,
-    urgency: !sourceAttention && followUpDue > 0 ? "urgent" : "attention",
-    title: sourceAttention ? "ตรวจ Availability source" : "ตรวจ Availability ที่ต้องจัดการ",
+    urgency: sourceAttention ? "attention" : "urgent",
+    title: sourceAttention ? "ตรวจ Availability source" : "ติดตาม Availability ที่เลยเวลา",
     summary: sourceAttention
       ? `มี ${count} จุดที่ source ของ Availability ยังอ่านไม่ครบ`
-      : `มี ${count} นายแบบที่ต้องจัดการใน Daily Coverage Review`,
+      : `มี ${count} นายแบบถึงเวลาตามผลหลัง reminder`,
     count,
     href: "/internal/admin/calendar",
     authority: "sigil_availability_snapshot_v1",

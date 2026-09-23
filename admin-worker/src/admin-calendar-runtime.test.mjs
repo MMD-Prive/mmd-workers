@@ -9,7 +9,7 @@ const f = {
   sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
   jobId:'fldwreJwlz8sWd6GM', jobModel:'fldscPK15ejBw0BAH', jobClient:'fldlPdR0pmynCY6fW', jobBudget:'fldSspHLxJPQOg7wA',
   paySid:'fld2wdhBvc8xrV6y5', payRef:'fldOO6SY49iDw8VBZ', payAmount:'fldvCSwrUW8OMAooS', payVerify:'fldJ7a0Ube9F0bmRy', payStage:'fldrr9g8ZZjqAbdKQ', payStatus:'fldEJ1hmm7KwWuI6q',
-  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelStatus:'fldRcAE3bL8dKmURH', modelLine:'fld2ywTFI6MZhX6PV',
+  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelStatus:'fldRcAE3bL8dKmURH', modelRole:'fldW4h38yZnANUVY3', modelRegistry:'fldKTbOlADC1OqNur', modelLine:'fld2ywTFI6MZhX6PV',
   calUid:'fld42rRY3ufGeXCcf', calSid:'fldd0STLRxOGIKXPn', calJid:'fldzvGB5u7t55kwUQ', calStatus:'fld449t1h6s7jbcnf', calTrigger:'fldNhk22zLTvR9Y4C', calEvent:'fldfC6D0RXyogXcMG'
 };
 
@@ -21,7 +21,7 @@ function fixture({ verified=false, duration=3, crossMidnight=false }={}) {
     [IDS.jobs]:[{id:'recJob',fields:{[f.jobId]:'JOB-17',[f.jobClient]:['recClient'],[f.jobModel]:['recModel'],[f.jobBudget]:20000}}],
     [IDS.payments]:[{id:'recPay',fields:{[f.paySid]:'SES-17',[f.payRef]:'PAY-17',[f.payAmount]:10000,[f.payVerify]:verified?'official_verified':'pending_review',[f.payStage]:'deposit',[f.payStatus]:verified?'paid':'pending'}}],
     [IDS.clients]:[{id:'recClient',fields:{[f.clientName]:'คุณเอ็ม'}}],
-    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17',[f.modelKey]:'mdl_pub_model_a',[f.modelAvailability]:'Available',[f.modelLine]:'U0123456789abcdef0123456789abcdef'}}],
+    [IDS.models]:[{id:'recModel',fields:{[f.modelName]:'Model A',[f.modelId]:'GWs17',[f.modelKey]:'mdl_pub_model_a',[f.modelAvailability]:'Available',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelLine]:'U0123456789abcdef0123456789abcdef'}}],
     [IDS.cal]:[{id:'recCal',fields:{[f.calUid]:'cal-uid-real-17',[f.calSid]:'SES-17',[f.calJid]:'JOB-17',[f.calStatus]:'linked',[f.calTrigger]:'BOOKING_CREATED',[f.calEvent]:'2026-09-14T02:00:00Z'}}],
   };
 }
@@ -241,6 +241,42 @@ test('daily coverage health excludes inactive inventory before computing canonic
     assert.equal(health.fresh_models,1);
     assert.equal(health.fresh_coverage_percent,100);
     assert.equal(health.review_status,'coverage_current');
+  } finally { restore(); }
+});
+
+test('daily coverage excludes non-active and explicitly non-model inventory while preserving active legacy rows', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  data[IDS.models]=[
+    {id:'recActive',fields:{[f.modelName]:'Active Model',[f.modelId]:'GWs18',[f.modelKey]:'mdl_active',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelLine]:'U11111111111111111111111111111111'}},
+    {id:'recLegacy',fields:{[f.modelName]:'Legacy Model',[f.modelId]:'EMs16',[f.modelKey]:'mdl_legacy',[f.modelStatus]:'Active',[f.modelLine]:'U22222222222222222222222222222222'}},
+    {id:'recBlank',fields:{[f.modelName]:'Blank Status',[f.modelKey]:'mdl_blank'}},
+    {id:'recPending',fields:{[f.modelName]:'Pending Model',[f.modelKey]:'mdl_pending',[f.modelStatus]:'pending'}},
+    {id:'recStaff',fields:{[f.modelName]:'Internal Staff',[f.modelKey]:'staff_key',[f.modelStatus]:'active',[f.modelRole]:'Worker / MMD Assistant',[f.modelRegistry]:'Existing Model Record'}},
+    {id:'recDuplicate',fields:{[f.modelName]:'Duplicate Model',[f.modelKey]:'dup_key',[f.modelStatus]:'active',[f.modelRegistry]:'Duplicate/Ambiguous'}},
+  ];
+  const restore=installFetch(data);
+  try{
+    const active={...availabilitySnapshot('available_today','model_confirmed'),model_key:'mdl_active'};
+    const legacy={...availabilitySnapshot('available_today','model_confirmed'),model_key:'mdl_legacy'};
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_active':active,
+        'availability:v1:mdl_legacy':legacy,
+      }),
+    },'2026-09-19');
+    const byName=Object.fromEntries(out.availability.models.map(row=>[row.name,row]));
+    assert.equal(byName['Active Model'].snapshot_state,'fresh');
+    assert.equal(byName['Legacy Model'].snapshot_state,'fresh');
+    for(const name of ['Blank Status','Pending Model','Internal Staff','Duplicate Model']){
+      assert.equal(byName[name].snapshot_state,'excluded');
+      assert.equal(byName[name].recovery_stage,'excluded');
+    }
+    assert.equal(out.availability.coverage_health.canonical_models,2);
+    assert.equal(out.availability.coverage_health.fresh_models,2);
+    assert.equal(out.availability.coverage_health.excluded_models,4);
+    assert.equal(out.availability.coverage_health.review_status,'coverage_current');
   } finally { restore(); }
 });
 
