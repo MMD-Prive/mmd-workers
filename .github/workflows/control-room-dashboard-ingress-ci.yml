@@ -46,7 +46,9 @@ jobs:
           node --experimental-global-webcrypto --test admin-worker/dashboard-canonical-payment-counts.test.mjs
           grep -F 'loadCanonicalPaymentReviewQueue(env)' admin-worker/src/dashboard-worker.js
           grep -F 'loadCanonicalHistoricalQueue(env)' admin-worker/src/dashboard-worker.js
-          grep -F 'payment_review: paymentQueue.length' admin-worker/src/dashboard-worker.js
+          grep -F 'payments: paymentQueue.length' admin-worker/src/dashboard-worker.js
+          grep -F 'payment_review: ownerPaymentReview.length' admin-worker/src/dashboard-worker.js
+          grep -F 'membership_review: membershipReview.length' admin-worker/src/dashboard-worker.js
           grep -F 'historical_recovery: historicalPending.length' admin-worker/src/dashboard-worker.js
           grep -F 'href: "/internal/admin/payments/historical-backfill"' admin-worker/src/dashboard-worker.js
 
