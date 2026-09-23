@@ -1,5 +1,5 @@
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
-import { mediaRequest, mediaTable, mediaKind, privateKey, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
+import { mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
 
@@ -8,6 +8,7 @@ export const REVIEW_API = '/v1/admin/private-media';
 export const OWNER_UPLOAD_PAGE = `${REVIEW_PAGE}/upload`;
 export const OWNER_UPLOAD_PLAN_API = `${REVIEW_API}/upload-plan`;
 export const OWNER_UPLOAD_API = `${REVIEW_API}/upload`;
+export const OWNER_DRIVE_IMPORT_API = `${REVIEW_API}/import-approved-drive`;
 const ORIGINS = new Set(['https://mmdbkk.com', 'https://www.mmdbkk.com']);
 const headers = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-robots-tag': 'noindex, nofollow' };
 const json = (body, status = 200) => Response.json(body, { status, headers });
@@ -65,6 +66,61 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       if (!/^rec[a-zA-Z0-9]+$/.test(modelId) || !/^media_[a-zA-Z0-9-]+$/.test(assetId)) return json({ ok: false, error: 'upload_identity_invalid' }, 400);
       const result = await uploadPrivateMedia(request, env, modelId, assetId, { requestedBy: `owner:${actor.id}` });
       return json({ ok: result.ok === true, asset_id: result.asset_id, status: result.status });
+    }
+    if (path === OWNER_DRIVE_IMPORT_API && request.method === 'POST') {
+      if (request.headers.get('origin') !== url.origin) return json({ ok: false, error: 'forbidden_origin' }, 403);
+      if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ ok: false, error: 'json_required' }, 415);
+      const input = await request.json().catch(() => null);
+      if (!input || typeof input !== 'object') return json({ ok: false, error: 'invalid_json' }, 400);
+      const modelId = String(input.model_id || '').trim();
+      const fileName = String(input.file_name || '').trim().slice(0, 240);
+      if (!/^rec[a-zA-Z0-9]+$/.test(modelId)) return json({ ok: false, error: 'model_id_required' }, 400);
+      if (!fileName || /[\x00-\x1f/\\]/.test(fileName)) return json({ ok: false, error: 'drive_file_name_invalid' }, 400);
+
+      const model = await mediaRequest(env, env.AIRTABLE_TABLE_MODELS || 'models', `/${encodeURIComponent(modelId)}`);
+      const mf = model?.fields || {};
+      const folderId = String(mf.drive_folder_id || '').trim();
+      const notes = String(mf.notes || '');
+      const approvedFolder = String(mf.folder_approval_status || '').trim();
+      if (!/^[A-Za-z0-9_-]{10,180}$/.test(folderId)) return json({ ok: false, error: 'approved_drive_folder_missing' }, 409);
+      if (approvedFolder && approvedFolder !== 'Approved Folder Inventory') return json({ ok: false, error: 'drive_folder_not_approved' }, 409);
+      if (!notes.includes(fileName) || !/private\s+teaser/i.test(notes) || !/verified\s*line|line[-\s]*verified/i.test(notes)) {
+        return json({ ok: false, error: 'private_teaser_source_not_owner_approved' }, 409);
+      }
+      if (!env.MODEL_DRIVE_DIRECTORY?.fetch) return json({ ok: false, error: 'model_drive_directory_unavailable' }, 503);
+
+      const sourceUrl = new URL('https://model-drive-directory.internal/__internal/model-drive/photo');
+      sourceUrl.searchParams.set('drive_folder_id', folderId);
+      sourceUrl.searchParams.set('file_name', fileName);
+      const source = await env.MODEL_DRIVE_DIRECTORY.fetch(new Request(sourceUrl));
+      if (!source.ok || !source.body) return json({ ok: false, error: 'approved_drive_media_unavailable' }, source.status === 404 ? 404 : 503);
+      const contentType = String(source.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) return json({ ok: false, error: 'approved_drive_media_type_invalid' }, 415);
+      const bytes = new Uint8Array(await source.arrayBuffer());
+      if (!bytes.length) return json({ ok: false, error: 'approved_drive_media_empty' }, 409);
+
+      const plan = await planPrivateUpload(env, modelId, {
+        file_name: fileName,
+        content_type: contentType,
+        file_size_bytes: bytes.length,
+      });
+      const uploadRequest = new Request('https://private-media-import.internal/upload', {
+        method: 'POST',
+        headers: { 'content-type': contentType },
+        body: bytes,
+      });
+      const result = await uploadPrivateMedia(uploadRequest, env, modelId, plan.asset_id, {
+        requestedBy: `owner:${actor.id}:approved_drive_import`,
+      });
+      const record = await readMedia(env, plan.asset_id);
+      return json({
+        ok: result.ok === true,
+        asset_id: result.asset_id,
+        media_asset_id: record.id,
+        status: result.status,
+        review_required: true,
+        source: 'approved_model_drive',
+      });
     }
     if (path === REVIEW_API && request.method === 'GET') {
       if (request.headers.get('sec-fetch-site') === 'cross-site') return json({ ok: false, error: 'forbidden_origin' }, 403);
