@@ -88,7 +88,8 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       // Reuse the existing canonical audit and media decision writer. Forward
       // only allowlisted fields; the signed session remains the actor source.
       const body = { model_id: input.model_id, media_asset_id: input.media_asset_id };
-      if (decision) Object.assign(body, { decision: input.decision, note: input.note.trim() });
+      const requestedTeaser = decision && input.decision === 'approve' && input.teaser_safe === true;
+      if (decision) Object.assign(body, { decision: input.decision, note: input.note.trim(), teaser_safe: requestedTeaser });
       const target = new URL(decision ? '/v1/model/media/review-decision' : '/v1/model/media/review-file', url.origin);
       const response = await coreWorker.fetch(new Request(target, { method: 'POST', headers: { cookie: request.headers.get('cookie') || '', origin: url.origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }), env, ctx);
       if (!response.ok) return json({ ok: false, error: 'review_action_failed' }, response.status);
@@ -103,8 +104,15 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       // Do not announce success until the canonical media flags read back.
       const media = await readMediaByRecord(env, input.media_asset_id);
       const approved = input.decision === 'approve', f = media.fields || {};
-      if (f.review_status !== (approved ? 'approved' : 'rejected') || Boolean(f.private_safe) !== approved || Boolean(f.flash_safe) !== approved || f.public_safe === true) return json({ ok: false, error: 'decision_readback_failed' }, 503);
-      return json({ ok: true, status: f.review_status, decision: input.decision });
+      const expectedTeaserSafe = approved && requestedTeaser;
+      if (
+        f.review_status !== (approved ? 'approved' : 'rejected') ||
+        Boolean(f.private_safe) !== approved ||
+        Boolean(f.flash_safe) !== approved ||
+        Boolean(f.teaser_safe) !== expectedTeaserSafe ||
+        f.public_safe === true
+      ) return json({ ok: false, error: 'decision_readback_failed' }, 503);
+      return json({ ok: true, status: f.review_status, decision: input.decision, teaser_safe: Boolean(f.teaser_safe) });
     }
     return json({ ok: false, error: 'not_found' }, 404);
   } catch (error) {
@@ -123,14 +131,14 @@ export async function listPrivateMediaReview(env, params) {
   if (cursor.length > 1000) throw Object.assign(new Error(), { code: 'invalid_cursor', status: 400 });
   const query = new URLSearchParams({ pageSize: '25', filterByFormula: `AND(OR({media_type}='flash_preview',{media_type}='private_gallery'),{review_status}='${status}')`, 'sort[0][field]': 'uploaded_at', 'sort[0][direction]': 'desc' });
   if (cursor) query.set('offset', cursor);
-  for (const field of ['media_id', 'Model', 'media_type', 'review_status', 'file_name', 'file_type', 'file_size_bytes', 'uploaded_at', 'r2_bucket', 'private_original_key']) query.append('fields[]', field);
+  for (const field of ['media_id', 'Model', 'media_type', 'review_status', 'teaser_safe', 'file_name', 'file_type', 'file_size_bytes', 'uploaded_at', 'r2_bucket', 'private_original_key']) query.append('fields[]', field);
   const result = await mediaRequest(env, mediaTable(env), `?${query}`);
   if (!Array.isArray(result.records)) throw new Error('invalid_registry_response');
   const items = result.records.map(record => {
     const f = record.fields || {};
     let reviewable = false;
     try { privateKey(f); reviewable = f.Model?.length === 1 && !!mediaKind(f.file_type); } catch { /* legacy originals remain locked */ }
-    return { id: record.id, model_id: f.Model?.length === 1 ? f.Model[0] : '', media_id: f.media_id || '', name: String(f.file_name || 'Private media').slice(0, 160), kind: mediaKind(f.file_type), status: f.review_status, size: f.file_size_bytes || 0, uploaded_at: f.uploaded_at || '', reviewable };
+    return { id: record.id, model_id: f.Model?.length === 1 ? f.Model[0] : '', media_id: f.media_id || '', name: String(f.file_name || 'Private media').slice(0, 160), kind: mediaKind(f.file_type), status: f.review_status, teaser_safe: f.teaser_safe === true, size: f.file_size_bytes || 0, uploaded_at: f.uploaded_at || '', reviewable };
   });
   const ids = [...new Set(items.map(item => item.model_id).filter(id => /^rec[a-zA-Z0-9]+$/.test(id)))];
   if (ids.length) {
