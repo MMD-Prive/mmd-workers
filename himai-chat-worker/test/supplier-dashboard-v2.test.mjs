@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { handleSupplierPortal } from "../src/supplier-portal.js";
+import { handleSupplierPortal, SUPPLIER_PORTAL_INTERNALS as supplierPortal } from "../src/supplier-portal.js";
 import { renderDistributorPortalPage } from "../src/distributor-portal-page.js";
 import { handleSupplierAssistant } from "../../himai-shop-worker/src/supplier-assistant.js";
 
@@ -46,4 +46,43 @@ test("supplier workflow mutations fail closed without supplier token", async () 
   assert.equal(response.status, 401);
   const body = await response.json();
   assert.equal(body.error, "missing_supplier_token");
+});
+
+
+test("LIFF supplier snapshot fails closed without a LINE access token", async () => {
+  const response = await handleSupplierPortal(
+    new Request("https://example.com/shop/api/supplier/liff-portal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }),
+    {}
+  );
+  assert.equal(response.status, 401);
+  const body = await response.json();
+  assert.equal(body.error, "line_access_token_required");
+});
+
+test("LIFF supplier snapshot resolves only an exact active LINE binding", () => {
+  const env = {
+    HIMAI_DISTRIBUTOR_PORTAL_TOKENS: JSON.stringify({
+      activeToken: {
+        supplier_name: "นิน",
+        supplier_ids: ["rec-nin"],
+        line_user_id: "U-nin",
+      },
+      disabledToken: {
+        active: false,
+        supplier_name: "ไม่ควรเห็น",
+        line_user_id: "U-disabled",
+      },
+    }),
+  };
+
+  assert.equal(
+    supplierPortal.resolveSupplierAccessByLineUserId(env, "U-nin")?.supplier_name,
+    "นิน",
+  );
+  assert.equal(supplierPortal.resolveSupplierAccessByLineUserId(env, "U-disabled"), null);
+  assert.equal(supplierPortal.resolveSupplierAccessByLineUserId(env, "U-nin-extra"), null);
 });
