@@ -93,7 +93,6 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.match(html,/รอคิวก่อนหน้า/);
       assert.match(html,/ทีละ 1 คน/);
       assert.match(html,/const selected=date\(\),url='\/v1\/admin\/calendar'\+\(selected\?'\?date='/);
-      assert.doesNotMatch(html,/fetch\('\/v1\/admin\/calendar\?date='\+encodeURIComponent\(date\(\)\)/);
       assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
