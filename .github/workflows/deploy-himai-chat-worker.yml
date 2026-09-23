@@ -188,6 +188,8 @@ jobs:
           const desired = [
             "mmdbkk.com/shop/api/*",
             "www.mmdbkk.com/shop/api/*",
+            "mmdbkk.com/shop/supplier/liff*",
+            "www.mmdbkk.com/shop/supplier/liff*",
             "mmdbkk.com/mmd-shop/api/*",
             "www.mmdbkk.com/mmd-shop/api/*",
             "mmdbkk.com/mmd-shop/order*",
