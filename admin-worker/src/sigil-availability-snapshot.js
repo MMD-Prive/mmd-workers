@@ -388,8 +388,42 @@ function adoptionReminderCopy(displayName = "") {
 }
 
 async function pushAvailabilityReminderLine(env = {}, model = {}) {
+  const binding = env.MEMBER_DASHBOARD_CHAT_WORKER;
+  if (binding && typeof binding.fetch === "function") {
+    try {
+      const response = await binding.fetch(new Request(
+        "https://member-dashboard-chat-worker.local/__internal/line/model-availability-reminder",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-mmd-internal-call": "true",
+            "x-mmd-service-binding": "admin-worker",
+          },
+          body: JSON.stringify({
+            line_user_id: model.line_user_id,
+            display_name: model.display_name,
+          }),
+        },
+      ));
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.ok === true) {
+        return { ok: true, status: 200, transport: "member-dashboard-chat-worker" };
+      }
+      return {
+        ok: false,
+        status: response.status || 502,
+        error: text(payload?.status || payload?.error) || "line_owner_transport_failed",
+      };
+    } catch {
+      return { ok: false, status: 503, error: "line_owner_transport_unavailable" };
+    }
+  }
+
+  // Compatibility fallback for non-production runtimes/tests only. Production
+  // owns LINE transport in member-dashboard-chat-worker through service binding.
   const accessToken = text(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN || env.LINE_CHANNEL_ACCESS_TOKEN);
-  if (!accessToken) return { ok: false, status: 503, error: "model_line_channel_not_configured" };
+  if (!accessToken) return { ok: false, status: 503, error: "line_owner_transport_unavailable" };
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
@@ -404,7 +438,7 @@ async function pushAvailabilityReminderLine(env = {}, model = {}) {
   });
 
   if (!response.ok) return { ok: false, status: 502, error: `line_push_http_${response.status}` };
-  return { ok: true, status: 200 };
+  return { ok: true, status: 200, transport: "admin-worker-compat" };
 }
 
 async function handleAvailabilityAdoptionReminder(request, env = {}, caller = "") {
@@ -466,6 +500,7 @@ async function handleAvailabilityAdoptionReminder(request, env = {}, caller = ""
     schema: "mmd.availability_adoption_reminder.v1",
     model_key: modelKey,
     channel: "line",
+    transport: sent.transport || "line",
     sent_at: sentAt,
   });
   if (!stored.ok) {
