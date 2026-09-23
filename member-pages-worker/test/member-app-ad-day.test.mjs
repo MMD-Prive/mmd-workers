@@ -92,7 +92,7 @@ async function withAirtableRecords(records, fn) {
   globalThis.fetch = async (input) => {
     const url = new URL(String(input));
     assert.match(url.pathname, /app-test-base/);
-    assert.match(url.searchParams.get("filterByFormula") || "", /line_user_id/);
+    assert.match(url.searchParams.get("filterByFormula") || "", /(?:LINE User ID|line_user_id)/);
     return Response.json({ records });
   };
   try {
@@ -152,6 +152,8 @@ test("New: LINE-verified non-member returns 200 lifecycle=new with immediate sig
 
 test("Legacy-only: exact LINE match may display parsed tier/status but never grants entitlement or Points", async () => {
   const env = await envForSession({ memberExists: false });
+  env.AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE = "LINE OFC Client Import Staging";
+  env.AIRTABLE_LINE_OFC_CLIENT_IMPORT_STAGING_TABLE_ID = "LINE OFC Client Import Staging";
   const legacyRecord = {
     id: "recLegacyDisplay01",
     fields: {

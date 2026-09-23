@@ -80,6 +80,24 @@ A verified LINE identity must never be classified as a new Guest merely because 
 
 This rule prevents storage/schema incidents from being converted into customer-facing membership decisions.
 
+### Canonical Client auto-link
+
+For an unresolved verified LINE identity, the resolver may repair the Member
+link without requesting an email or Member ID only when all of the following
+are true:
+
+- the exact `LINE User ID` has one `Canonical Client` link in the canonical
+  staging projection;
+- that Client supplies one canonical email and it resolves to exactly one
+  existing Member;
+- neither the Client nor Member already carries a different LINE identity;
+- no competing committed legacy link points at a different Client.
+
+The repair writes only the verified LINE field on that existing Member. It
+never writes entitlement, Points, payment, package, expiry, or access fields.
+Any ambiguity, malformed Client link, or conflicting identity remains
+`checking / review`, never an automatic merge or Guest/signup decision.
+
 A trusted marker holder must not be shown:
 
 - `สมัครสมาชิกใหม่`

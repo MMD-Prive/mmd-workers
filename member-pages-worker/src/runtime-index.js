@@ -1,4 +1,5 @@
-import worker from "./index.js";
+import baseWorker from "./index.js";
+import { MemberResolverDiagnosticEntrypoint } from "./resolver-diagnostic-entrypoint.js";
 import { authorityRuntimeHealth } from "../../shared/posthog-authority-events.mjs";
 import { rewritePendingStatusStartResponse } from "./liff-status-resolution-guard.js";
 import { isDriveBootstrapCandidate, tryDriveMemberBootstrap } from "./drive-member-bootstrap-runtime.js";
@@ -52,6 +53,7 @@ import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
 export { PrivatePreviewGate };
+export { MemberResolverDiagnosticEntrypoint };
 
 const CARE_BACK_WEBVIEW_PATHS = new Set([
   "/member/api/care-back/public-wish",
@@ -85,7 +87,7 @@ export function normalizeCareBackWebViewOrigin(request) {
   return new Request(request, { headers });
 }
 
-export default {
+const worker = {
   async fetch(request, env, ctx) {
     request = normalizeCareBackWebViewOrigin(request);
     const runtimeUrl = new URL(request.url);
@@ -140,7 +142,7 @@ export default {
     const runtimeEnv = withStatusFirstMemberResolver(request, channelCompatibleEnv);
     const firstRequest = request.clone();
     const bootstrapRequest = request.clone();
-    let firstResponse = await worker.fetch(firstRequest, runtimeEnv, ctx);
+    let firstResponse = await baseWorker.fetch(firstRequest, runtimeEnv, ctx);
     firstResponse = await applyMyMmdFastTrustResponse(request, firstResponse, env);
     firstResponse = await augmentMemberModelWishNotes(request, firstResponse, env);
     let firstPayload = await jsonPayload(firstResponse);
@@ -149,7 +151,7 @@ export default {
       request,
       response: firstResponse,
       payload: firstPayload,
-      worker,
+      worker: baseWorker,
       env: runtimeEnv,
       ctx,
     });
@@ -184,7 +186,7 @@ export default {
         package_code: bootstrap.package_code || "",
       });
       if (bootstrap.mapped) {
-        let retriedResponse = await worker.fetch(request, runtimeEnv, ctx);
+        let retriedResponse = await baseWorker.fetch(request, runtimeEnv, ctx);
         retriedResponse = await applyMyMmdFastTrustResponse(request, retriedResponse, env);
         retriedResponse = await augmentMemberModelWishNotes(request, retriedResponse, env);
         trace?.event("member_retry", retriedResponse.ok ? "complete" : "failed", "", { http_status: retriedResponse.status });
@@ -203,6 +205,8 @@ export default {
     return attachTraceId(rewritten, trace?.traceId || "");
   },
 };
+
+export default worker;
 
 async function jsonPayload(response) {
   if (!(response instanceof Response)) return null;
