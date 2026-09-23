@@ -171,7 +171,7 @@ async function createTeaserGrant(env, input) {
     duration_sec:input.asset.kind === "private_pic" ? 3 : null,
     view_limit:1,
     consume_on:input.asset.kind === "private_pic" ? "open" : "play_start",
-    viewer_url:`https://www.mmdbkk.com/my-mmd/private-preview/view#t=${encodeURIComponent(token)}`,
+    viewer_url:`/my-mmd/private-preview/view#t=${encodeURIComponent(token)}`,
   };
 }
 

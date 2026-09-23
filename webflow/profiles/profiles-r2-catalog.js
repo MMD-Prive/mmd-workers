@@ -311,7 +311,7 @@
     if (item.private_teaser_available === true && item.slug) {
       var teaser = document.createElement("a");
       teaser.className = "mp8-card__cta mp8-card__cta--teaser";
-      teaser.href = "/member/dashboard?from=profiles&intent=private_teaser&model=" + encodeURIComponent(item.slug);
+      teaser.href = "/my-mmd/private-preview?from=profiles&model=" + encodeURIComponent(item.slug);
       teaser.append(text("span", "PRIVATE PREVIEW · ยืนยันตัวตนเพื่อดูสิทธิ์"), text("b", "↗"));
       body.append(teaser);
     }

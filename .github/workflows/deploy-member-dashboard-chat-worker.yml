@@ -134,6 +134,7 @@ jobs:
           node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
           node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
           node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/private-teaser.test.mjs webflow/profiles/private-teaser-handoff.test.mjs
 
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
@@ -379,6 +380,65 @@ jobs:
           grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
           grep -qi '^cache-control: .*no-store' "$auth_headers"
 
+      - name: Smoke MY MMD Private Teaser Viewer route
+        id: private_teaser_route_smoke
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            host="${origin#https://}"
+            landing_headers="$RUNNER_TEMP/private-teaser-${host}.headers"
+            landing_body="$RUNNER_TEMP/private-teaser-${host}.html"
+            landing_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+              -D "$landing_headers" -o "$landing_body" -w "%{http_code}" \
+              "$origin/my-mmd/private-preview?model=acceptance-test")"
+            test "$landing_code" = "200"
+            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$landing_headers"
+            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$landing_headers"
+            grep -qi '^cache-control: .*no-store' "$landing_headers"
+            grep -qi '^x-frame-options: DENY' "$landing_headers"
+            grep -qi "content-security-policy: .*frame-ancestors 'none'" "$landing_headers"
+            grep -q 'Private Preview' "$landing_body"
+            grep -q '/api/member/app/private-teaser/availability?' "$landing_body"
+            if grep -Eqi 'private-model-media|r2\.cloudflarestorage|X-Amz-(Credential|Signature)' "$landing_body"; then
+              echo "Private Teaser landing leaked a storage locator or signed media URL on $host" >&2
+              exit 1
+            fi
+
+            player_headers="$RUNNER_TEMP/private-teaser-player-${host}.headers"
+            player_body="$RUNNER_TEMP/private-teaser-player-${host}.html"
+            player_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+              -D "$player_headers" -o "$player_body" -w "%{http_code}" \
+              "$origin/my-mmd/private-preview/view")"
+            test "$player_code" = "200"
+            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$player_headers"
+            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$player_headers"
+            grep -qi '^cache-control: .*no-store' "$player_headers"
+            grep -q '/api/member/app/private-preview/status?t=' "$player_body"
+            grep -q '/api/member/app/private-preview/consume' "$player_body"
+
+            api_headers="$RUNNER_TEMP/private-teaser-api-${host}.headers"
+            api_body="$RUNNER_TEMP/private-teaser-api-${host}.json"
+            api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+              -D "$api_headers" -o "$api_body" -w "%{http_code}" \
+              -H "Origin: $origin" \
+              "$origin/api/member/app/private-teaser/availability?model_slug=acceptance-test&work_lane=companion" || true)"
+            test "$api_code" = "401"
+            jq -e '.ok == false and .error.code == "MEMBER_SESSION_REQUIRED"' "$api_body" >/dev/null
+            grep -qi '^cache-control: .*no-store' "$api_headers"
+          done
+          echo "PASS Private Teaser Viewer V1 live route acceptance on apex + www; no grant or media consumption performed"
+
+      - name: Record Private Teaser Viewer production acceptance
+        if: steps.private_teaser_route_smoke.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## ✅ Private Teaser Viewer V1 — LIVE ROUTE ACCEPTED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- landing: \`/my-mmd/private-preview\` = 200 on apex + www\n- player: \`/my-mmd/private-preview/view\` = 200 on apex + www\n- UI source: \`my-mmd-private-teaser-viewer-v1\`\n- presentation owner: \`mmd-workers\`\n- unauthenticated availability API: \`401 MEMBER_SESSION_REQUIRED\` on apex + www\n- cache/frame/CSP guards: verified\n- public/signed private-media locator exposure: none detected\n- acceptance side effects: no grant created, no media consumed"
+
       - name: Authenticated My MMD Payment Center acceptance
         id: member_payments_authenticated
         if: steps.route_sync.outcome == 'success'
@@ -609,6 +669,7 @@ jobs:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
           KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
           KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
           KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
@@ -633,6 +694,8 @@ jobs:
             stopped="MMS route sync"
           elif [ "$SMOKE_OUTCOME" != "success" ]; then
             stopped="production smoke"
+          elif [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
+            stopped="MY MMD Private Teaser Viewer live route acceptance"
           elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
             stopped="Kenji Phase 2 contextual understanding shadow smoke"
           elif [ "$KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
@@ -678,6 +741,7 @@ jobs:
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
+          - Private Teaser live route acceptance: \`${PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
           Cloudflare/Wrangler detail:
@@ -692,9 +756,14 @@ jobs:
         shell: bash
         env:
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
         run: |
           if [ "$SMOKE_OUTCOME" != "success" ]; then
             echo "member-dashboard-chat-worker production smoke did not pass" >&2
+            exit 1
+          fi
+          if [ "$PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME" != "success" ]; then
+            echo "MY MMD Private Teaser Viewer live route acceptance did not pass" >&2
             exit 1
           fi
       - name: Record verified live receipt
