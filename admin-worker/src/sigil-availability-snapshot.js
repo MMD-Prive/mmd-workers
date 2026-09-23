@@ -414,13 +414,11 @@ async function pushAvailabilityReminderLine(env = {}, model = {}) {
           transport: text(payload.transport) || "events-worker-model-line",
         };
       }
-      if (text(payload?.error) !== "model_line_transport_not_ready") {
-        return {
-          ok: false,
-          status: response.status || 502,
-          error: text(payload?.error) || "model_line_transport_failed",
-        };
-      }
+      return {
+        ok: false,
+        status: response.status || 502,
+        error: text(payload?.error) || "model_line_transport_failed",
+      };
     } catch {
       return { ok: false, status: 503, error: "model_line_transport_unavailable" };
     }
@@ -477,6 +475,98 @@ async function pushAvailabilityReminderLine(env = {}, model = {}) {
 
   if (!response.ok) return { ok: false, status: 502, error: `line_push_http_${response.status}` };
   return { ok: true, status: 200, transport: "admin-worker-compat" };
+}
+
+export async function preflightAvailabilityAdoptionReminder(env = {}, modelKeyInput = "") {
+  const modelKey = safeModelKey(modelKeyInput);
+  if (!modelKey) return { ok: false, status: 400, error: "model_key_invalid" };
+
+  const availability = await readSigilAvailabilitySnapshot(env, modelKey);
+  if (!availability.ok) return { ok: false, status: availability.status || 503, error: availability.error || "availability_snapshot_unavailable" };
+  if (availability.fresh) {
+    return {
+      ok: true,
+      status: 200,
+      ready: false,
+      state: "availability_already_fresh",
+      model_key: modelKey,
+      message_sent: false,
+    };
+  }
+
+  const prior = await adoptionReminderReceipt(env, modelKey);
+  if (!prior.ok) return { ok: false, status: prior.status || 503, error: prior.error || "availability_reminder_read_failed" };
+  if (prior.receipt) {
+    return {
+      ok: true,
+      status: 200,
+      ready: false,
+      state: "availability_reminder_cooldown",
+      model_key: modelKey,
+      message_sent: false,
+    };
+  }
+
+  const model = await findAdoptionModel(env, modelKey);
+  if (!model.ok) {
+    return {
+      ok: true,
+      status: 200,
+      ready: false,
+      state: model.error || "model_identity_unavailable",
+      model_key: modelKey,
+      message_sent: false,
+    };
+  }
+
+  const binding = env.EVENTS_WORKER;
+  const auth = text(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+  if (!binding || typeof binding.fetch !== "function" || !auth) {
+    return {
+      ok: true,
+      status: 200,
+      ready: false,
+      state: "model_line_owner_not_configured",
+      model_key: modelKey,
+      message_sent: false,
+    };
+  }
+
+  try {
+    const response = await binding.fetch(new Request(
+      "https://events-worker.internal/__internal/model/availability-reminder/preflight",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-token": auth,
+        },
+        body: JSON.stringify({ line_user_id: model.line_user_id }),
+      },
+    ));
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok !== true) {
+      return {
+        ok: false,
+        status: response.status || 503,
+        error: text(payload?.error) || "model_line_preflight_failed",
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      ready: payload.ready === true,
+      state: text(payload.state) || (payload.ready === true ? "ready" : "model_line_not_ready"),
+      model_key: modelKey,
+      token_mode: ["model", "fallback", "missing", "unknown"].includes(text(payload.token_mode)) ? text(payload.token_mode) : "unknown",
+      transport: text(payload.transport) || "none",
+      recipient_reachable: payload.recipient_reachable === true,
+      provider_status: Number.isInteger(payload.provider_status) ? payload.provider_status : null,
+      message_sent: false,
+    };
+  } catch {
+    return { ok: false, status: 503, error: "model_line_preflight_unavailable" };
+  }
 }
 
 async function handleAvailabilityAdoptionReminder(request, env = {}, caller = "") {
