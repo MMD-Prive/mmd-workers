@@ -238,9 +238,11 @@ test('rendered Webflow scripts are syntactically valid and connection check is e
     const req=await request('/internal/admin/calendar?date=2026-09-17');
     const page=await calendarPageResponse(req,env,'2026-09-17');const html=await page.text();
     assert.match(html,/calendar-owner-recovery-queue-v1-20260923/);
+    assert.match(html,/calendar-coverage-health-v1-20260923/);
     assert.match(html,/calv5__people--recovery-authority/);
     assert.match(html,/availability-activation/);
     assert.match(html,/reminder_follow_up_due/);
+    assert.match(html,/DAILY COVERAGE REVIEW/);
     const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
     for(const [,attributes,source]of scripts)if(!attributes.includes('application/json'))new Script(source);
     const connection=JSON.parse(html.match(/id="calendar-connection-state">([\s\S]*?)<\/script>/)[1]);

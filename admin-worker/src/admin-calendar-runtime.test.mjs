@@ -187,6 +187,29 @@ test('calendar recovery queue follows canonical connection and safe evidence onl
   } finally { restore(); }
 });
 
+test('daily coverage health only reports fresh canonical snapshot coverage', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_pub_model_a':availabilitySnapshot('available_today','model_confirmed'),
+      }),
+    },'2026-09-19');
+    const health=out.availability.coverage_health;
+    assert.equal(health.schema,'mmd.availability.coverage-health.v1');
+    assert.equal(health.review_status,'coverage_current');
+    assert.equal(health.fresh_models,1);
+    assert.equal(health.canonical_models,1);
+    assert.equal(health.fresh_coverage_percent,100);
+    assert.equal(health.owner_action_required,0);
+    assert.equal(health.automatic_send,false);
+    assert.equal(health.no_guess,true);
+  } finally { restore(); }
+});
+
 test('calendar recovery queue fails closed when one model evidence read fails', async()=>{
   const data=fixture();
   data[IDS.sessions]=[];
@@ -201,6 +224,8 @@ test('calendar recovery queue fails closed when one model evidence read fails', 
     assert.equal(row.snapshot_state,'source_unavailable');
     assert.equal(row.recovery_stage,'source_unavailable');
     assert.equal(row.recovery_action,'wait_for_source');
+    assert.equal(out.availability.coverage_health.review_status,'source_attention');
+    assert.equal(out.availability.coverage_health.owner_action_required,0);
   } finally { restore(); }
 });
 

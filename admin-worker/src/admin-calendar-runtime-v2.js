@@ -368,6 +368,62 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
     .slice(0, 300);
 }
 
+function availabilityCoverageHealth(rows = [], { snapshotStatus = "storage_unavailable", recoveryStatus = "storage_unavailable" } = {}) {
+  const items = Array.isArray(rows) ? rows : [];
+  const actionableStages = new Set([
+    "identity_recovery_required",
+    "line_link_required",
+    "line_link_expired",
+    "availability_confirmation_required",
+    "reminder_follow_up_due",
+  ]);
+  const waitingStages = new Set([
+    "line_link_issued_waiting_for_connection",
+    "reminder_sent_waiting_for_confirmation",
+  ]);
+  const totalModels = items.length;
+  const excluded = items.filter(item => item.snapshot_state === "excluded").length;
+  const identityMissing = items.filter(item => item.snapshot_state === "identity_missing").length;
+  const canonicalModels = items.filter(item => item.model_key && item.snapshot_state !== "excluded").length;
+  const freshModels = items.filter(item => item.availability_fresh === true).length;
+  const sourceUnavailable = items.filter(item => item.snapshot_state === "source_unavailable").length;
+  const actionRequired = items.filter(item => actionableStages.has(item.recovery_stage)).length;
+  const followUpDue = items.filter(item => item.recovery_stage === "reminder_follow_up_due").length;
+  const waitingForModel = items.filter(item => waitingStages.has(item.recovery_stage)).length;
+  const unconfirmed = items.filter(item => !item.availability_fresh && item.snapshot_state !== "excluded" && item.snapshot_state !== "source_unavailable").length;
+  const sourceIncomplete = snapshotStatus !== "ok" || recoveryStatus !== "ok" || sourceUnavailable > 0;
+  const reviewStatus = sourceIncomplete
+    ? "source_attention"
+    : actionRequired > 0
+      ? "owner_action_required"
+      : waitingForModel > 0
+        ? "waiting_for_model"
+        : canonicalModels === 0
+          ? "no_canonical_models"
+          : freshModels === canonicalModels && identityMissing === 0
+            ? "coverage_current"
+            : "confirmation_pending";
+  return {
+    schema: "mmd.availability.coverage-health.v1",
+    snapshot_source_status: snapshotStatus,
+    recovery_source_status: recoveryStatus,
+    review_status: reviewStatus,
+    total_models: totalModels,
+    excluded_models: excluded,
+    canonical_models: canonicalModels,
+    identity_missing: identityMissing,
+    fresh_models: freshModels,
+    fresh_coverage_percent: canonicalModels ? Math.round((freshModels / canonicalModels) * 100) : null,
+    unconfirmed_models: unconfirmed,
+    source_unavailable_models: sourceUnavailable,
+    owner_action_required: actionRequired,
+    follow_up_due: followUpDue,
+    waiting_for_model: waitingForModel,
+    automatic_send: false,
+    no_guess: true,
+  };
+}
+
 export async function readAdminCalendar(env, dateText = "") {
   const day = range(dateText);
   const [allSessions, allModels, mmsAvailability] = await Promise.all([
@@ -396,6 +452,10 @@ export async function readAdminCalendar(env, dateText = "") {
       counts[key] = (counts[key] || 0) + 1;
       return counts;
     }, {}),
+    coverage_health: availabilityCoverageHealth(modelAvailabilityRows, {
+      snapshotStatus: modelSnapshotIndex.status,
+      recoveryStatus: recoveryIndex.status,
+    }),
     therapists: mmsAvailability.therapists,
     therapist_source_status: mmsAvailability.status,
   };
