@@ -6,6 +6,7 @@ import {
   MODEL_DRIVE_RESOLVE_PATH,
   MODEL_DRIVE_SEARCH_PATH,
   MODEL_DRIVE_PHOTO_PATH,
+  MODEL_DRIVE_CANONICAL_FILE_PATH,
   collapseDescendantsOfUniqueExactModelMatch,
   driveSearchToken,
   findExactModelImage,
@@ -26,6 +27,10 @@ test("model Drive directory only recognizes internal model-directory paths", () 
   );
   assert.equal(
     isModelDriveDirectoryRequest(new Request(`https://${MODEL_DRIVE_DIRECTORY_HOST}${MODEL_DRIVE_PHOTO_PATH}?drive_folder_id=1FolderPhoto12345`)),
+    true,
+  );
+  assert.equal(
+    isModelDriveDirectoryRequest(new Request(`https://${MODEL_DRIVE_DIRECTORY_HOST}${MODEL_DRIVE_CANONICAL_FILE_PATH}`, { method: "POST" })),
     true,
   );
   assert.equal(
