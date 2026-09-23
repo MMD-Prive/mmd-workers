@@ -18,7 +18,8 @@ const F = Object.freeze({
     location: "fldIiRpaxoafjTkFt", service: "fldjK3U9bghnj7xUe", duration: "fldP7Xx99uf5BvJpF",
     total: "fldeBf4gl5iTBj7eX", finalPrice: "fldug5LUyiLyLvrCV", depositPaid: "fldooTlKtkY8VJy7L",
     paymentRef: "fldojgjSQLaO0uQLX", paymentStatus: "fldTY5lE6m0kQf72n", state: "fldjE7J1ckyXId1Cf",
-    modelState: "fld57fhdWqIcOy4Jp", modelAckAt: "fldFgkHXivIAThfDz",
+    sessionStatus: "fldmwuvOaiCFdzzRa", status: "fldHAlxnRfpKucnNV",
+    modelState: "fld57fhdWqIcOy4Jp", modelAckAt: "fldFgkHXivIAThfDz", partnerId: "fld0jkscGAtyX7i2J",
   },
   job: {
     id: "fldwreJwlz8sWd6GM", sessionId: "fldTR8yO6xv40HjOX", client: "fldlPdR0pmynCY6fW",
@@ -41,6 +42,10 @@ const F = Object.freeze({
     status: "fldRcAE3bL8dKmURH",
     operatingRole: "fldW4h38yZnANUVY3",
     registryRecordType: "fldKTbOlADC1OqNur",
+    salesLayer: "fldOrRNL8PocDILk5",
+    modelTier: "fldM8m82fwIB9hRjz",
+    approvedPrivateSales: "fldGVmYjRgLGVUiTX",
+    offerRules: "fldxSomvQZvjYZHU6",
     lineUserId: "fld2ywTFI6MZhX6PV",
   },
   cal: {
@@ -60,6 +65,7 @@ function safeHttpsUrl(value) {
 const field = (r, id) => r?.fields?.[id];
 const link = v => Array.isArray(v) && v.length ? clean(v[0], 80) : null;
 const number = v => Number.isFinite(Number(v)) ? Number(v) : null;
+const nonNegativeInteger = v => Math.max(0, Math.trunc(Number(v) || 0));
 const state = (...v) => v.map(x => clean(x, 120).toLowerCase()).filter(Boolean).join(" ");
 const quoted = v => `'${clean(v, 180).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 function idsFormula(ids) {
@@ -386,12 +392,164 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
         age_seconds: snapshot?.age_seconds ?? null,
         ttl_remaining_seconds: snapshot?.ttl_remaining_seconds ?? null,
         line_connected: lineConnected,
+        sales_layer: clean(field(record, F.model.salesLayer), 40).toLowerCase() || null,
+        model_tier: clean(field(record, F.model.modelTier), 80) || null,
+        approved_for_private_sales: field(record, F.model.approvedPrivateSales) === true,
+        offer_rule_count: Array.isArray(field(record, F.model.offerRules)) ? field(record, F.model.offerRules).length : 0,
         recovery_evidence: evidence,
         ...recoveryProjection({ snapshotState, fresh: !excluded && snapshot?.fresh === true, lineConnected, modelKey: key, evidence, snapshotUpdatedAt: snapshot?.updated_at || null }, nowMs),
       };
     })
     .filter(item => item.model_id || item.model_key || item.name)
     .slice(0, 300);
+}
+
+function availabilityOnboardingCohort(rows = [], sessions = [], nowMs = Date.now()) {
+  const actionableStages = new Set([
+    "identity_recovery_required",
+    "line_link_required",
+    "line_link_expired",
+    "availability_confirmation_required",
+    "reminder_follow_up_due",
+  ]);
+  const byRecord = new Map();
+  for (const session of Array.isArray(sessions) ? sessions : []) {
+    const linked = Array.isArray(field(session, F.session.model)) ? field(session, F.session.model) : [];
+    if (!linked.length) continue;
+    const startAt = startOf(session);
+    const startMs = Date.parse(startAt || "");
+    const statusText = state(
+      field(session, F.session.sessionStatus),
+      field(session, F.session.status),
+      field(session, F.session.state),
+      field(session, F.session.modelState),
+    );
+    const terminal = /cancel|cancelled|canceled|completed|complete|done|void|rejected|failed/.test(statusText);
+    for (const recordIdRaw of linked) {
+      const recordId = clean(recordIdRaw, 80);
+      if (!recordId) continue;
+      const entry = byRecord.get(recordId) || { history_sessions: 0, upcoming: [] };
+      entry.history_sessions += terminal ? 0 : 1;
+      if (!terminal && Number.isFinite(startMs) && startMs >= nowMs && startMs <= nowMs + 14 * 86400000) {
+        entry.upcoming.push({
+          start_at: startAt,
+          partner_job: Boolean(clean(field(session, F.session.partnerId), 120)),
+        });
+      }
+      byRecord.set(recordId, entry);
+    }
+  }
+
+  const backlogRows = (Array.isArray(rows) ? rows : []).filter(item => actionableStages.has(clean(item?.recovery_stage, 80)));
+  const groups = new Map();
+  for (const row of backlogRows) {
+    const key = clean(row?.model_key, 120) || `record:${clean(row?.record_id, 80)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+
+  const candidates = [];
+  for (const group of groups.values()) {
+    const ranked = group.map(row => {
+      const activity = byRecord.get(clean(row?.record_id, 80)) || { history_sessions: 0, upcoming: [] };
+      return { row, activity };
+    }).sort((a, b) =>
+      Number(Boolean(b.activity.upcoming.length)) - Number(Boolean(a.activity.upcoming.length))
+      || Number(b.row?.line_connected === true) - Number(a.row?.line_connected === true)
+      || b.activity.history_sessions - a.activity.history_sessions
+      || Number(Boolean(b.row?.model_id)) - Number(Boolean(a.row?.model_id))
+      || clean(a.row?.record_id, 80).localeCompare(clean(b.row?.record_id, 80))
+    );
+    const chosen = ranked[0];
+    const row = chosen.row;
+    const activity = ranked.flatMap(item => item.activity.upcoming || []).sort((a, b) => (Date.parse(a.start_at || "") || 0) - (Date.parse(b.start_at || "") || 0));
+    const historySessions = Math.max(...ranked.map(item => nonNegativeInteger(item.activity.history_sessions)), 0);
+    const stage = clean(row?.recovery_stage, 80);
+    const upcomingJob = activity[0] || null;
+    const commercial = row?.approved_for_private_sales === true
+      || ["private", "both"].includes(clean(row?.sales_layer, 40))
+      || /exclusive|premium/i.test(clean(row?.model_tier, 80))
+      || nonNegativeInteger(row?.offer_rule_count) > 0
+      || historySessions > 0;
+
+    let bucket = "backfill";
+    let bucketRank = 5;
+    if (stage === "reminder_follow_up_due") { bucket = "sla_follow_up"; bucketRank = 0; }
+    else if (upcomingJob) { bucket = "upcoming_job"; bucketRank = 1; }
+    else if (stage === "availability_confirmation_required") { bucket = "line_ready"; bucketRank = 2; }
+    else if (stage === "identity_recovery_required") { bucket = "identity_repair"; bucketRank = 3; }
+    else if (commercial) { bucket = "commercial_active"; bucketRank = 4; }
+
+    const commercialScore =
+      (row?.approved_for_private_sales === true ? 25 : 0)
+      + (/exclusive/i.test(clean(row?.model_tier, 80)) ? 18 : /premium/i.test(clean(row?.model_tier, 80)) ? 12 : 0)
+      + (["private", "both"].includes(clean(row?.sales_layer, 40)) ? 10 : 0)
+      + Math.min(15, historySessions * 3)
+      + Math.min(10, nonNegativeInteger(row?.offer_rule_count) * 5);
+
+    candidates.push({
+      record_id: clean(row?.record_id, 80) || null,
+      model_id: clean(row?.model_id, 120) || null,
+      model_key: clean(row?.model_key, 120) || null,
+      name: clean(row?.name, 160) || null,
+      recovery_stage: stage || null,
+      next_action: clean(row?.recovery_action, 80) || null,
+      line_connected: row?.line_connected === true,
+      priority_bucket: bucket,
+      priority_reason: bucket === "sla_follow_up"
+        ? "manual_reminder_follow_up_due"
+        : bucket === "upcoming_job"
+          ? "confirmed_or_open_job_within_14_days"
+          : bucket === "line_ready"
+            ? "line_connected_ready_for_first_availability_confirmation"
+            : bucket === "identity_repair"
+              ? "canonical_identity_required_before_model_access"
+              : bucket === "commercial_active"
+                ? "commercial_or_work_history_signal"
+                : "active_operational_backfill",
+      upcoming_job_at: upcomingJob?.start_at || null,
+      partner_job: activity.some(item => item.partner_job === true),
+      history_sessions: historySessions,
+      sales_layer: clean(row?.sales_layer, 40) || null,
+      model_tier: clean(row?.model_tier, 80) || null,
+      approved_for_private_sales: row?.approved_for_private_sales === true,
+      offer_rule_count: nonNegativeInteger(row?.offer_rule_count),
+      duplicate_records_collapsed: Math.max(0, group.length - 1),
+      _rank: bucketRank,
+      _commercial_score: commercialScore,
+    });
+  }
+
+  candidates.sort((a, b) =>
+    a._rank - b._rank
+    || ((Date.parse(a.upcoming_job_at || "") || Number.MAX_SAFE_INTEGER) - (Date.parse(b.upcoming_job_at || "") || Number.MAX_SAFE_INTEGER))
+    || Number(b.line_connected) - Number(a.line_connected)
+    || b._commercial_score - a._commercial_score
+    || b.history_sessions - a.history_sessions
+    || clean(a.name, 160).localeCompare(clean(b.name, 160))
+  );
+
+  const safe = candidates.map(({ _rank, _commercial_score, ...item }) => item);
+  const counts = safe.reduce((acc, item) => {
+    const key = clean(item.priority_bucket, 60) || "unknown";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const batchSize = 5;
+  return {
+    schema: "mmd.availability.onboarding-cohorts.v1",
+    batch_size: batchSize,
+    raw_backlog_rows: backlogRows.length,
+    unique_backlog_models: safe.length,
+    duplicate_rows_collapsed: Math.max(0, backlogRows.length - safe.length),
+    current_batch: safe.slice(0, batchSize),
+    next_batch_preview: safe.slice(batchSize, batchSize * 2),
+    remaining_after_current: Math.max(0, safe.length - batchSize),
+    cohort_counts: counts,
+    automatic_send: false,
+    owner_click_required: true,
+    no_guess: true,
+  };
 }
 
 function availabilityCoverageHealth(rows = [], { snapshotStatus = "storage_unavailable", recoveryStatus = "storage_unavailable" } = {}) {
@@ -462,6 +620,7 @@ export async function readAdminCalendar(env, dateText = "") {
     readCalendarRecoveryEvidence(env, allModels),
   ]);
   const modelAvailabilityRows = modelAvailability(allModels, modelSnapshotIndex, recoveryIndex);
+  const onboarding = availabilityOnboardingCohort(modelAvailabilityRows, allSessions);
   const availability = {
     models: modelAvailabilityRows,
     model_source_status: modelSnapshotIndex.status,
@@ -482,6 +641,7 @@ export async function readAdminCalendar(env, dateText = "") {
       snapshotStatus: modelSnapshotIndex.status,
       recoveryStatus: recoveryIndex.status,
     }),
+    onboarding,
     therapists: mmsAvailability.therapists,
     therapist_source_status: mmsAvailability.status,
   };
