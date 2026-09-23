@@ -188,12 +188,26 @@ if (matching.length > 1) throw new Error("multiple active private-media rows exi
 let mediaRecord = matching[0] || null;
 let imported = false;
 if (!mediaRecord) {
-  const importedResult = await adminJson("/v1/admin/private-media/import-approved-drive", cookie, {
-    model_id: modelId,
-    file_name: approvedFileName,
-  });
-  if (importedResult.response.status !== 200 || importedResult.data?.ok !== true) {
+  let importedResult = null;
+  for (let attempt = 0; attempt < 18; attempt += 1) {
+    importedResult = await adminJson("/v1/admin/private-media/import-approved-drive", cookie, {
+      model_id: modelId,
+      file_name: approvedFileName,
+    });
+    if (importedResult.response.status === 200 && importedResult.data?.ok === true) break;
+    // This exact error is emitted before planPrivateUpload, so retrying cannot
+    // duplicate an Airtable media row or private R2 object while workers converge.
+    if (
+      importedResult.response.status === 404 &&
+      importedResult.data?.error === "approved_drive_media_unavailable"
+    ) {
+      await sleep(5000);
+      continue;
+    }
     throw new Error(`approved Drive import failed HTTP ${importedResult.response.status}`);
+  }
+  if (importedResult?.response.status !== 200 || importedResult.data?.ok !== true) {
+    throw new Error("approved Drive source did not become available before retry window closed");
   }
   const mediaRecordId = clean(importedResult.data.media_asset_id, 100);
   if (!/^rec[a-zA-Z0-9]+$/.test(mediaRecordId)) throw new Error("import did not return a canonical media record");

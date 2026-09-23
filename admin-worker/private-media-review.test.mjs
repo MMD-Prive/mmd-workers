@@ -96,8 +96,11 @@ test('owner can import only the exact Drive image named in Private Teaser consen
  env.MODEL_DRIVE_DIRECTORY={fetch:async req=>{
   driveCalls++;const url=new URL(req.url);
   assert.equal(url.hostname,'model-drive-directory.internal');
-  assert.equal(url.searchParams.get('drive_folder_id'),'1ApprovedModelDrive12345');
-  assert.equal(url.searchParams.get('file_name'),'approved-photo.jpg');
+  assert.equal(url.pathname,'/__internal/model-drive/canonical-file');
+  assert.equal(req.method,'POST');
+  const sourceBody=await req.json();
+  assert.equal(sourceBody.drive_folder_id,'1ApprovedModelDrive12345');
+  assert.equal(sourceBody.file_name,'approved-photo.jpg');
   return new Response(bytes,{status:200,headers:{'content-type':'image/jpeg','cache-control':'no-store, private'}});
  }};
 
