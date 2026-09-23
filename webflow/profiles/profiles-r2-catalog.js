@@ -133,6 +133,17 @@
         </div>
         <p class="mp8-driver-packages__rules">Creative Companion คือ shared-interest companion ไม่ใช่ช่างภาพ นักออกแบบ ศิลปินรับจ้าง ผู้ผลิตงาน หรือผู้ให้บริการวิชาชีพ · Photo walk คือการทำกิจกรรมร่วมกันเท่านั้น ไม่มีภาพส่งมอบหรือ usage rights · งานถ่ายภาพ/วิดีโอเชิงพาณิชย์, creative production หรือการใช้ภาพต้องส่ง brief และ quote แยก · MMD จะยืนยัน shared interest, context และ availability ก่อนทุกครั้ง · ค่า ticket/exhibition/venue/transport/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿1,690/ชม. · OT หลัง 00:00 ฿2,190/ชม. · หลัง 03:00 ฿2,690/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
       </section>
+      <section class="mp8-driver-packages" data-medical-request-only hidden aria-labelledby="mp8-medical-request-only-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD VERIFIED · REQUEST ONLY</p>
+          <h3 id="mp8-medical-request-only-title">คำขอที่ต้องให้ MMD ตรวจความเหมาะสมก่อน</h3>
+          <p>Medical Professional เปิดเฉพาะผู้ที่ MMD ตรวจ credential แล้ว และรับเป็น request brief เท่านั้น เพื่อให้ MMD ดู specialty, ขอบเขตวิชาชีพ, เวลา/สถานที่ และความเหมาะสมก่อนตอบกลับ</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">VERIFIED REQUEST</h4><strong class="mp8-driver-package__price">MMD REVIEW</strong></div><p class="mp8-driver-package__line">ส่งเฉพาะรายละเอียดเท่าที่จำเป็นและขอบเขตที่ต้องการให้ MMD พิจารณา — ยังไม่มีราคา การชำระเงิน การยืนยันคิว หรือการจับคู่จากหน้านี้</p><div class="mp8-driver-package__meta"><span>Credential-checked</span><span>Scope review</span><span>Request only</span></div><a class="mp8-driver-package__cta" href="/public/access?from=profiles&role=medical_professional&brief=verified_request_only">ส่ง Verified Request ให้ MMD ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">ไม่ใช่บริการฉุกเฉิน และหน้านี้ไม่ใช้สำหรับ diagnosis, treatment, therapy หรือคำแนะนำทางการแพทย์ · MMD จะไม่อ้าง claim เกิน credential ที่ตรวจแล้ว และจะไม่เสนอราคา/checkout จนกว่าจะผ่าน MMD review และกำหนดขอบเขตที่ถูกต้อง</p>
+      </section>
     `);
   }
 
@@ -146,6 +157,7 @@
   var wellnessPackages = root.querySelector("[data-wellness-packages]");
   var businessPackages = root.querySelector("[data-business-packages]");
   var creativePackages = root.querySelector("[data-creative-packages]");
+  var medicalRequestOnly = root.querySelector("[data-medical-request-only]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -190,6 +202,7 @@
         detail: "MMD จะตรวจคิว ขอบเขต และความเหมาะสมของทั้งสองฝ่ายก่อนยืนยันทุกครั้ง",
         cta: "ให้ MMD เช็กคิวและความเหมาะ",
         ctaFemale: "ไปที่ BELIEVE ก่อน",
+        medicalCta: "ส่ง Verified Request ให้ MMD review",
         chooseRole: "เลือกบทบาทด้านบนก่อน แล้วรายชื่อที่เหมาะจะปรากฏตรงนี้",
         none: "ตอนนี้ยังไม่มีคนที่ MMD เปิดสำหรับบทบาทนี้"
       },
@@ -200,6 +213,7 @@
         detail: "MMD checks availability, boundaries, and mutual fit before every confirmation.",
         cta: "Ask MMD to check availability",
         ctaFemale: "Continue through BELIEVE",
+        medicalCta: "Send a verified request for MMD review",
         chooseRole: "Choose a role above first. Only eligible profiles will appear here.",
         none: "No MMD-approved profile is currently open for this role."
       },
@@ -210,6 +224,7 @@
         detail: "每次确认前，MMD 都会检查时间、边界与双方是否合适。",
         cta: "请 MMD 检查时间与匹配度",
         ctaFemale: "先进入 BELIEVE",
+        medicalCta: "提交已验证请求给 MMD 审核",
         chooseRole: "请先选择上方角色，仅显示符合资格的资料。",
         none: "目前此角色暂无经 MMD 批准公开的资料。"
       }
@@ -280,11 +295,14 @@
 
     var link = document.createElement("a");
     link.className = "mp8-card__cta";
-    var bookingHref = "/booking?from=profiles&role=" + encodeURIComponent(activeRole) + "&model=" + encodeURIComponent(item.display_name);
+    var medicalRequestOnly = activeRole === "medical_professional";
+    var bookingHref = medicalRequestOnly
+      ? "/public/access?from=profiles&role=medical_professional&brief=verified_request_only&model=" + encodeURIComponent(item.display_name)
+      : "/booking?from=profiles&role=" + encodeURIComponent(activeRole) + "&model=" + encodeURIComponent(item.display_name);
     var femaleHref = femaleGate + "?from=profiles&role=" + encodeURIComponent(activeRole) + "&model=" + encodeURIComponent(item.display_name);
     var femaleFlow = activeGender === "female" || (activeGender === "all" && item.customer_scope === "female_only");
-    link.href = femaleFlow ? femaleHref : bookingHref;
-    link.append(text("span", femaleFlow ? words.ctaFemale : words.cta), text("b", "↗"));
+    link.href = medicalRequestOnly ? bookingHref : (femaleFlow ? femaleHref : bookingHref);
+    link.append(text("span", medicalRequestOnly ? words.medicalCta : (femaleFlow ? words.ctaFemale : words.cta)), text("b", "↗"));
     body.append(link);
 
     // The public page receives only the boolean discovery marker. The link is
@@ -346,6 +364,7 @@
       if (wellnessPackages) wellnessPackages.hidden = activeRole !== "wellness_companion";
       if (businessPackages) businessPackages.hidden = activeRole !== "business_companion";
       if (creativePackages) creativePackages.hidden = activeRole !== "creative_companion";
+      if (medicalRequestOnly) medicalRequestOnly.hidden = activeRole !== "medical_professional";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -368,7 +387,9 @@
                       ? businessPackages
                       : activeRole === "creative_companion" && creativePackages
                         ? creativePackages
-                  : stage2;
+                        : activeRole === "medical_professional" && medicalRequestOnly
+                          ? medicalRequestOnly
+                          : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }
@@ -396,6 +417,7 @@
   if (wellnessPackages) wellnessPackages.hidden = true;
   if (businessPackages) businessPackages.hidden = true;
   if (creativePackages) creativePackages.hidden = true;
+  if (medicalRequestOnly) medicalRequestOnly.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

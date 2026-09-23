@@ -987,6 +987,11 @@
       role = qs.get("role") || "",
       packageKey = qs.get("package") || "",
       model = qs.get("model") || "",
+      // Medical Professional is intentionally absent from this generic
+      // companion booking form: no public package, price, checkout or
+      // confirmation may be inferred here.  Preserve only the selected model
+      // label for the MMD-reviewed request handoff.
+      medicalRequestOnly = role === "medical_professional",
       packages = {
         pick_me_up: {
           role: "driver_companion",
@@ -1265,6 +1270,16 @@
           detail: "8 ชั่วโมง · Full Bangkok day · OT หลัง 03:00 ฿1,990/ชม.",
         },
       };
+    if (medicalRequestOnly) {
+      const handoff = new URLSearchParams({
+        from: "booking",
+        role: "medical_professional",
+        brief: "verified_request_only",
+      });
+      if (model) handoff.set("model", model);
+      window.location.replace("/public/access?" + handoff.toString());
+      return;
+    }
     const selectedPackage =
       packages[packageKey] && packages[packageKey].role === role
         ? packages[packageKey]

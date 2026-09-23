@@ -53,7 +53,9 @@ Applicant selection is never publication authority.
 - `MMD Credential Verification Status`: `not_required`, `pending`, `verified`, or `rejected`.
 - `MMD Credential Review Notes`: internal only.
 
-For `medical_professional`, the catalog must fail closed unless credential status is exactly `verified`.
+For `medical_professional`, the catalog must fail closed unless credential status is exactly `verified` **and** `MMD Public Booking Mode` is exactly `brief_only`.
+
+Medical Professional is a verified request-only lane, not a generally priced package. Public copy may invite a client to submit a bounded brief for MMD review, but must not show a public price, checkout, instant availability, clinical outcome, diagnosis, treatment, emergency response, or a claim beyond the individual credential MMD has verified. MMD must review specialty/scope, credential fit, location, availability, and any quote before a request progresses.
 
 ## Public catalog eligibility
 
