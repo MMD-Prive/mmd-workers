@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handlePrivateMediaIngestOnce, PRIVATE_MEDIA_INGEST_ONCE_PATH } from './src/private-media-ingest-once.js';
+import { handlePrivateMediaIngestOnce, handlePrivateMediaStagedIngest, PRIVATE_MEDIA_INGEST_ONCE_PATH } from './src/private-media-ingest-once.js';
 
 const enc=new TextEncoder();
 async function sha(value){
@@ -114,4 +114,37 @@ test('valid ingest creates private pending-review media once and closes capabili
 
  const replay=await handlePrivateMediaIngestOnce(f.request(),f.env);
  assert.equal(replay.status,409);assert.equal((await replay.json()).error,'ingest_capability_not_ready');
+});
+
+
+test('owner staged ingest fetches one private attachment, verifies bytes, consumes capability and clears staging',async()=>{
+ const f=await fixture({
+  capability_id:'private_teaser_test_20260923',
+  source_attachment:[{url:'https://airtableusercontent.example/private.jpg',filename:'approved.jpg'}],
+ });
+ let fetches=0;
+ f.env.PRIVATE_INGEST_HTTP={fetch:async url=>{
+  fetches++;assert.equal(String(url),'https://airtableusercontent.example/private.jpg');
+  return new Response(f.bytes,{status:200,headers:{'content-type':'image/jpeg'}});
+ }};
+ const res=await handlePrivateMediaStagedIngest({capability_id:'private_teaser_test_20260923'},f.env,{actorId:'reviewer-test'});
+ assert.equal(res.status,200,await res.clone().text());
+ const body=await res.json();
+ assert.equal(body.ok,true);assert.equal(body.status,'pending_review');assert.equal(body.source,'private_airtable_staging');
+ assert.equal(fetches,1);assert.equal(f.capability.fields.status,'consumed');assert.deepEqual(f.capability.fields.source_attachment,[]);
+ assert.equal(f.capability.fields.media_asset_record_id,'recMedia');
+ assert.equal(f.getMedia().fields.teaser_safe,false);assert.equal(f.getMedia().fields.review_status,'pending_review');
+
+ const replay=await handlePrivateMediaStagedIngest({capability_id:'private_teaser_test_20260923'},f.env,{actorId:'reviewer-test'});
+ assert.equal(replay.status,409);assert.equal(fetches,1);
+});
+
+test('staged ingest rejects attachment mismatch before fetching bytes',async()=>{
+ const f=await fixture({
+  capability_id:'private_teaser_test_20260923',
+  source_attachment:[{url:'https://airtableusercontent.example/private.jpg',filename:'wrong.jpg'}],
+ });
+ let fetches=0;f.env.PRIVATE_INGEST_HTTP={fetch:async()=>{fetches++;return new Response(f.bytes)}};
+ const res=await handlePrivateMediaStagedIngest({capability_id:'private_teaser_test_20260923'},f.env,{actorId:'reviewer-test'});
+ assert.equal(res.status,409);assert.equal(fetches,0);assert.equal(f.getMedia(),null);
 });
