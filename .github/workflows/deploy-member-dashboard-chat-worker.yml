@@ -386,49 +386,83 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          assert_viewer_headers() {
+            local headers="$1"
+            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$headers"
+            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$headers"
+            grep -qi '^cache-control: .*no-store' "$headers"
+            grep -qi '^x-frame-options: DENY' "$headers"
+            grep -qi "content-security-policy: .*frame-ancestors 'none'" "$headers"
+          }
+
+          # Canonical unauthenticated host: www renders the viewer directly.
+          www_landing_headers="$RUNNER_TEMP/private-teaser-www.headers"
+          www_landing_body="$RUNNER_TEMP/private-teaser-www.html"
+          www_landing_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$www_landing_headers" -o "$www_landing_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser www landing HTTP: $www_landing_code"
+          test "$www_landing_code" = "200"
+          assert_viewer_headers "$www_landing_headers"
+          grep -q 'Private Preview' "$www_landing_body"
+          grep -q '/api/member/app/private-teaser/availability?' "$www_landing_body"
+          if grep -Eqi 'private-model-media|r2\.cloudflarestorage|X-Amz-(Credential|Signature)' "$www_landing_body"; then
+            echo "Private Teaser landing leaked a storage locator or signed media URL on www" >&2
+            exit 1
+          fi
+
+          www_player_headers="$RUNNER_TEMP/private-teaser-player-www.headers"
+          www_player_body="$RUNNER_TEMP/private-teaser-player-www.html"
+          www_player_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$www_player_headers" -o "$www_player_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/my-mmd/private-preview/view')"
+          echo "Private Teaser www player HTTP: $www_player_code"
+          test "$www_player_code" = "200"
+          assert_viewer_headers "$www_player_headers"
+          grep -q '/api/member/app/private-preview/status?t=' "$www_player_body"
+          grep -q '/api/member/app/private-preview/consume' "$www_player_body"
+
+          # Apex without a host-only session intentionally canonicalizes to www.
+          apex_redirect_headers="$RUNNER_TEMP/private-teaser-apex-redirect.headers"
+          apex_redirect_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$apex_redirect_headers" -o /dev/null -w "%{http_code}" \
+            'https://mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser apex unauthenticated HTTP: $apex_redirect_code"
+          test "$apex_redirect_code" = "308"
+          grep -Fqi 'location: https://www.mmdbkk.com/my-mmd/private-preview?model=acceptance-test' "$apex_redirect_headers"
+          grep -qi '^x-mmd-my-mmd-canonical-host: www.mmdbkk.com' "$apex_redirect_headers"
+          grep -qi '^cache-control: .*no-store' "$apex_redirect_headers"
+
+          # Presence of the __Host- session cookie must preserve the apex host.
+          # This inert marker is never sent to a member API and cannot authenticate.
+          apex_session_headers="$RUNNER_TEMP/private-teaser-apex-session.headers"
+          apex_session_body="$RUNNER_TEMP/private-teaser-apex-session.html"
+          apex_session_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$apex_session_headers" -o "$apex_session_body" -w "%{http_code}" \
+            -H 'Cookie: __Host-mmd_liff_session=acceptance-host-preservation-only' \
+            'https://mmdbkk.com/my-mmd/private-preview?model=acceptance-test')"
+          echo "Private Teaser apex host-preservation HTTP: $apex_session_code"
+          test "$apex_session_code" = "200"
+          assert_viewer_headers "$apex_session_headers"
+          grep -q 'Private Preview' "$apex_session_body"
+
+          # Both API hosts must fail closed without a verified session.
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
             host="${origin#https://}"
-            landing_headers="$RUNNER_TEMP/private-teaser-${host}.headers"
-            landing_body="$RUNNER_TEMP/private-teaser-${host}.html"
-            landing_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
-              -D "$landing_headers" -o "$landing_body" -w "%{http_code}" \
-              "$origin/my-mmd/private-preview?model=acceptance-test")"
-            test "$landing_code" = "200"
-            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$landing_headers"
-            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$landing_headers"
-            grep -qi '^cache-control: .*no-store' "$landing_headers"
-            grep -qi '^x-frame-options: DENY' "$landing_headers"
-            grep -qi "content-security-policy: .*frame-ancestors 'none'" "$landing_headers"
-            grep -q 'Private Preview' "$landing_body"
-            grep -q '/api/member/app/private-teaser/availability?' "$landing_body"
-            if grep -Eqi 'private-model-media|r2\.cloudflarestorage|X-Amz-(Credential|Signature)' "$landing_body"; then
-              echo "Private Teaser landing leaked a storage locator or signed media URL on $host" >&2
-              exit 1
-            fi
-
-            player_headers="$RUNNER_TEMP/private-teaser-player-${host}.headers"
-            player_body="$RUNNER_TEMP/private-teaser-player-${host}.html"
-            player_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
-              -D "$player_headers" -o "$player_body" -w "%{http_code}" \
-              "$origin/my-mmd/private-preview/view")"
-            test "$player_code" = "200"
-            grep -qi '^x-mmd-ui-source: my-mmd-private-teaser-viewer-v1' "$player_headers"
-            grep -qi '^x-mmd-presentation-owner: mmd-workers' "$player_headers"
-            grep -qi '^cache-control: .*no-store' "$player_headers"
-            grep -q '/api/member/app/private-preview/status?t=' "$player_body"
-            grep -q '/api/member/app/private-preview/consume' "$player_body"
-
             api_headers="$RUNNER_TEMP/private-teaser-api-${host}.headers"
             api_body="$RUNNER_TEMP/private-teaser-api-${host}.json"
             api_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
               -D "$api_headers" -o "$api_body" -w "%{http_code}" \
               -H "Origin: $origin" \
               "$origin/api/member/app/private-teaser/availability?model_slug=acceptance-test&work_lane=companion" || true)"
+            echo "Private Teaser $host unauthenticated API HTTP: $api_code"
             test "$api_code" = "401"
             jq -e '.ok == false and .error.code == "MEMBER_SESSION_REQUIRED"' "$api_body" >/dev/null
             grep -qi '^cache-control: .*no-store' "$api_headers"
           done
-          echo "PASS Private Teaser Viewer V1 live route acceptance on apex + www; no grant or media consumption performed"
+
+          echo "PASS Private Teaser Viewer V1 canonical-host + session-preservation + fail-closed acceptance; no grant or media consumption performed"
 
       - name: Record Private Teaser Viewer production acceptance
         if: steps.private_teaser_route_smoke.outcome == 'success'
@@ -437,7 +471,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## ✅ Private Teaser Viewer V1 — LIVE ROUTE ACCEPTED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- landing: \`/my-mmd/private-preview\` = 200 on apex + www\n- player: \`/my-mmd/private-preview/view\` = 200 on apex + www\n- UI source: \`my-mmd-private-teaser-viewer-v1\`\n- presentation owner: \`mmd-workers\`\n- unauthenticated availability API: \`401 MEMBER_SESSION_REQUIRED\` on apex + www\n- cache/frame/CSP guards: verified\n- public/signed private-media locator exposure: none detected\n- acceptance side effects: no grant created, no media consumed"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## ✅ Private Teaser Viewer V1 — LIVE ROUTE ACCEPTED\n\n- source_sha: \`${GITHUB_SHA}\`\n- checked_at: \`${checked_at}\`\n- www landing: \`/my-mmd/private-preview\` = 200\n- www player: \`/my-mmd/private-preview/view\` = 200\n- apex without session: 308 canonical redirect to www\n- apex with host-only session-cookie presence: 200 and host preserved\n- UI source: \`my-mmd-private-teaser-viewer-v1\`\n- presentation owner: \`mmd-workers\`\n- unauthenticated availability API: \`401 MEMBER_SESSION_REQUIRED\` on apex + www\n- cache/frame/CSP guards: verified\n- public/signed private-media locator exposure: none detected\n- acceptance side effects: no session minted, no grant created, no media consumed"
 
       - name: Authenticated My MMD Payment Center acceptance
         id: member_payments_authenticated
