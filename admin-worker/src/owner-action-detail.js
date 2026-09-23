@@ -15,10 +15,10 @@ const DETAIL_CANON = Object.freeze({
   membership_review: Object.freeze({ title: "ตรวจสถานะสมาชิก", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
   mms_prebooking_coordination: Object.freeze({ title: "ประสาน MMS prebooking", href: "/internal/admin/mms", authority: "mms-worker" }),
   mms_application_review: Object.freeze({ title: "ตรวจใบสมัคร MMS", href: "/internal/admin/mms", authority: "mms-worker" }),
-  hype_entitlement_notification_overdue: Object.freeze({ title: "ตาม Entitlement notification ที่เลยเวลา", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
+  hype_entitlement_notification_overdue: Object.freeze({ title: "ตรวจ Entitlement Telegram sync failure", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
   hype_recovery_unassigned_overdue: Object.freeze({ title: "รับ Recovery ที่เลยเวลาและยังไม่มีคนดู", href: "/internal/admin/recovery?assignment=unassigned", authority: "recovery_queue_operational_metadata" }),
   hype_coupon_manual_review_overdue: Object.freeze({ title: "ตรวจ Coupon manual review ที่เลยเวลา", href: "/internal/admin/member-intelligence", authority: "care_back_claim_policy" }),
-  hype_telegram_bind_overdue: Object.freeze({ title: "ตรวจ Telegram bind ที่หมดเวลา", href: "/internal/admin/control-room", authority: "telegram_identity_bind_authority" }),
+  hype_telegram_bind_overdue: Object.freeze({ title: "ตรวจ Telegram bind anomaly", href: "/internal/admin/control-room", authority: "telegram_identity_bind_authority" }),
   hype_operational_watch: Object.freeze({ title: "ตรวจ HYPE overdue exception ชนิดใหม่", href: "/internal/admin/control-room", authority: "hype_coordinator_read_only" }),
   owner_exception: Object.freeze({ title: "เรื่องที่ต้องให้เปอร์ดู", href: "/internal/admin/control-room", authority: "owner_review" }),
 });
@@ -65,8 +65,8 @@ const DETAIL_COPY = Object.freeze({
     decision_boundary: "เปิด MMS เพื่อตรวจใบสมัครใน authority ของ MMS เท่านั้น",
   },
   hype_entitlement_notification_overdue: {
-    reason: "Entitlement ถูก materialize แล้ว แต่ notification ยังไม่จบและเลย SLA",
-    decision_boundary: "เปิด Member Intelligence เพื่อตรวจ entitlement/notification state จาก resolver เท่านั้น; HYPE ไม่เปลี่ยนสิทธิ์หรือส่งแทน",
+    reason: "Entitlement มี Telegram access/notification failure ที่ยังไม่จบและเลย SLA",
+    decision_boundary: "เปิด Member Intelligence เพื่อตรวจ failure จาก resolver/Telegram access authority เท่านั้น; pending_invite ปกติไม่ใช่ Owner decision และ HYPE ไม่เปลี่ยนสิทธิ์หรือส่งแทน",
   },
   hype_recovery_unassigned_overdue: {
     reason: "Recovery case เลย SLA และยังไม่มี operator รับดู",
@@ -77,8 +77,8 @@ const DETAIL_COPY = Object.freeze({
     decision_boundary: "เปิด Member Intelligence เพื่อตรวจ CARE BACK claim ตาม care_back_claim_policy เท่านั้น",
   },
   hype_telegram_bind_overdue: {
-    reason: "Telegram identity bind ยังไม่ consume และหมดเวลาตาม SLA",
-    decision_boundary: "เปิด Control Room เพื่อดู identity bind authority; ห้ามเดาตัวตนหรือสร้าง binding ใหม่อัตโนมัติ",
+    reason: "Telegram identity bind มี anomaly ที่ยังไม่เคลียร์ตาม authority",
+    decision_boundary: "เปิด Control Room เพื่อดู identity bind authority; bind ที่หมด expires_at ตามปกติเป็น stale diagnostic ไม่ใช่ Owner decision และห้ามสร้าง binding ใหม่อัตโนมัติ",
   },
   hype_operational_watch: {
     reason: "HYPE พบ overdue exception ชนิดใหม่ที่ยังไม่มี cohort contract เฉพาะ",
