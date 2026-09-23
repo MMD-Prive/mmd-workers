@@ -242,6 +242,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Create Job depends on POST /v1/confirm/link. This unauthenticated probe
+          # must fail at service auth, proving the live route accepts POST and reaches
+          # payments-worker without creating a Session, Payment, token, or money truth.
+          create_link_body="$(mktemp)"
+          create_link_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+            -o "$create_link_body" -w "%{http_code}" \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            'https://sigil.mmdbkk.com/v1/confirm/link')"
+          cat "$create_link_body"
+          test "$create_link_code" = "401"
+          grep -F '"error":"service_auth_required"' "$create_link_body"
           proof_health_body="$(mktemp)"
           proof_health_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
             -o "$proof_health_body" -w "%{http_code}" \
