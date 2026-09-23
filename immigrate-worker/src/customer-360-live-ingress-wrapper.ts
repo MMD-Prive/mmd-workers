@@ -1,6 +1,7 @@
 import canonicalWorker from "./control-room-dashboard-ingress-wrapper";
 import { CUSTOMER_360_LIVE_CLIENT } from "./customer-360-live-client";
 import { CUSTOMER_IDENTITY_ALIGNMENT_CLIENT } from "./customer-identity-alignment-client";
+import { CUSTOMER_IDENTITY_EVIDENCE_PROTOCOL_CLIENT } from "./customer-identity-evidence-protocol-client";
 import { augmentClientIntelligenceWithIdentityAlignment } from "./customer-identity-alignment";
 import type { Env } from "./types";
 
@@ -99,7 +100,8 @@ export async function decorateCustomer360Page(response: Response): Promise<Respo
   const html = await response.text();
   const liveScript = `<script data-mmd-customer-360-live-client="v1">${CUSTOMER_360_LIVE_CLIENT}</script>`;
   const alignmentScript = `<script data-mmd-customer-identity-alignment-client="v1">${CUSTOMER_IDENTITY_ALIGNMENT_CLIENT}</script>`;
-  const scripts = `${liveScript}${alignmentScript}`;
+  const protocolScript = `<script data-mmd-customer-identity-evidence-protocol-client="v1">${CUSTOMER_IDENTITY_EVIDENCE_PROTOCOL_CLIENT}</script>`;
+  const scripts = `${liveScript}${alignmentScript}${protocolScript}`;
   const body = html.includes("</body>") ? html.replace("</body>", `${scripts}</body>`) : `${html}${scripts}`;
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -109,6 +111,7 @@ export async function decorateCustomer360Page(response: Response): Promise<Respo
   headers.set("x-mmd-customer-identity-alignment", "read-only-v1");
   headers.set("x-mmd-verified-identity-readiness", "read-only-v1");
   headers.set("x-mmd-identity-evidence-recovery", "read-only-v1");
+  headers.set("x-mmd-identity-evidence-owner-review", "read-only-v1");
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 

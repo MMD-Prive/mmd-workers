@@ -21,9 +21,11 @@ try {
   });
   const {
     IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
+    IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA,
     VERIFIED_IDENTITY_READINESS_SCHEMA,
     deriveCustomerIdentityAlignment,
     deriveIdentityEvidenceRecovery,
+    deriveIdentityEvidenceOwnerReviewProtocol,
     deriveVerifiedIdentityReadiness,
     augmentClientIntelligenceWithIdentityAlignment,
   } = await import(pathToFileURL(outfile).href);
@@ -100,6 +102,16 @@ try {
   assert.equal(ownerRecovery.automatic_recovery_allowed, false);
   assert.equal(ownerRecovery.verification_status_mutated, false);
   assert.equal(ownerRecovery.customer_send_allowed, false);
+  const ownerProtocol = deriveIdentityEvidenceOwnerReviewProtocol(ownerReady, ownerRecovery);
+  assert.equal(ownerProtocol.schema, IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA);
+  assert.equal(ownerProtocol.mode, "read_only");
+  assert.equal(ownerProtocol.status, "owner_review_required");
+  assert.equal(ownerProtocol.manual_source_capture_required, false);
+  assert.deepEqual(ownerProtocol.steps, ["reread_identity_evidence", "owner_review_verification_status"]);
+  assert.equal(ownerProtocol.review.fresh_read_required, true);
+  assert.equal(ownerProtocol.review.owner_decision_required, true);
+  assert.equal(ownerProtocol.evidence_written, false);
+  assert.equal(ownerProtocol.verification_status_mutated, false);
 
   const verified = deriveVerifiedIdentityReadiness(true, aligned);
   assert.equal(verified.status, "verified");
@@ -111,6 +123,10 @@ try {
   assert.equal(completedRecovery.status, "complete");
   assert.equal(completedRecovery.queue_eligible, false);
   assert.deepEqual(completedRecovery.actions, []);
+  const completedProtocol = deriveIdentityEvidenceOwnerReviewProtocol(verified, completedRecovery);
+  assert.equal(completedProtocol.status, "complete");
+  assert.deepEqual(completedProtocol.steps, []);
+  assert.equal(completedProtocol.manual_source_capture_required, false);
 
   const reviewRequired = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -128,6 +144,10 @@ try {
   assert.equal(reviewRecovery.priority, "p1_evidence_review");
   assert.equal(reviewRecovery.evidence.reviewed_line_ofc, "review_required");
   assert.deepEqual(reviewRecovery.actions, ["review_line_ofc_evidence"]);
+  const reviewProtocol = deriveIdentityEvidenceOwnerReviewProtocol(reviewRequired, reviewRecovery);
+  assert.equal(reviewProtocol.status, "evidence_review_required");
+  assert.equal(reviewProtocol.manual_source_capture_required, true);
+  assert.deepEqual(reviewProtocol.steps, ["review_line_ofc_evidence", "reread_identity_evidence"]);
 
   const insufficient = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -156,6 +176,14 @@ try {
     "review_line_ofc_evidence",
     "review_liff_identity_evidence",
   ]);
+  const evidenceProtocol = deriveIdentityEvidenceOwnerReviewProtocol(insufficient, evidenceRecovery);
+  assert.equal(evidenceProtocol.status, "evidence_capture_required");
+  assert.deepEqual(evidenceProtocol.steps, [
+    "capture_canonical_line_identity",
+    "review_line_ofc_evidence",
+    "capture_verified_liff_session",
+    "reread_identity_evidence",
+  ]);
 
   const unavailable = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -175,6 +203,9 @@ try {
   });
   assert.equal(unavailableRecovery.status, "unavailable_locked");
   assert.deepEqual(unavailableRecovery.actions, ["retry_identity_evidence_read"]);
+  const unavailableProtocol = deriveIdentityEvidenceOwnerReviewProtocol(unavailable, unavailableRecovery);
+  assert.equal(unavailableProtocol.status, "unavailable_locked");
+  assert.deepEqual(unavailableProtocol.steps, ["restore_identity_evidence_read"]);
 
   const inconsistentMatch = deriveVerifiedIdentityReadiness(true, {
     ...aligned,
@@ -215,6 +246,10 @@ try {
   assert.equal(body.identity.recovery.status, "owner_review_ready");
   assert.deepEqual(body.identity.recovery.actions, ["owner_review_verification_status"]);
   assert.equal(augmented.headers.get("x-mmd-identity-evidence-recovery"), "read-only-v1");
+  assert.equal(augmented.headers.get("x-mmd-identity-evidence-owner-review"), "read-only-v1");
+  assert.equal(body.identity.evidence_protocol.schema, IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA);
+  assert.equal(body.identity.evidence_protocol.status, "owner_review_required");
+  assert.equal(body.identity.evidence_protocol.evidence_written, false);
   assert.equal(JSON.stringify(body).includes(canonicalLine), false);
 
   mismatch = true;
@@ -232,6 +267,9 @@ try {
   assert.equal(conflictRecovery.evidence.reviewed_line_ofc, "conflict");
   assert.equal(conflictRecovery.evidence.verification_status, "verified");
   assert.deepEqual(conflictRecovery.actions, ["resolve_identity_conflict"]);
+  const conflictProtocol = deriveIdentityEvidenceOwnerReviewProtocol(blocked, conflictRecovery);
+  assert.equal(conflictProtocol.status, "conflict_locked");
+  assert.deepEqual(conflictProtocol.steps, ["resolve_identity_conflict"]);
 } finally {
   globalThis.fetch = originalFetch;
   await rm(tmp, { recursive: true, force: true });

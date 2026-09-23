@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
+  IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA,
   VERIFIED_IDENTITY_OBSERVATION_SCHEMA,
   VERIFIED_IDENTITY_READINESS_SCHEMA,
   runVerifiedIdentityReadinessObservation,
@@ -136,6 +137,27 @@ function projection(clientId, status, { dataStatus = "live" } = {}) {
     if (liffState !== "matched") recoveryActions.push("review_liff_identity_evidence");
     if (recoveryStatus === "owner_review_ready") recoveryActions.push("owner_review_verification_status");
   }
+  const protocolStatus = {
+    complete: "complete",
+    owner_review_ready: "owner_review_required",
+    evidence_review: "evidence_review_required",
+    evidence_required: "evidence_capture_required",
+    conflict_locked: "conflict_locked",
+    unavailable_locked: "unavailable_locked",
+  }[recoveryStatus];
+  const protocolCanonical = unavailable ? "unavailable" : state.canonical ? "ready" : "capture_required";
+  const protocolLine = unavailable ? "unavailable" : conflict ? "conflict" : lineStatus === "matched" ? "matched" : lineStatus === "review_required" ? "review_required" : "capture_required";
+  const protocolLiff = unavailable ? "unavailable" : liffStatus === "matched" ? "matched" : liffStatus === "review_required" ? "review_required" : "capture_required";
+  const protocolSteps = [];
+  if (conflict) protocolSteps.push("resolve_identity_conflict");
+  else if (unavailable) protocolSteps.push("restore_identity_evidence_read");
+  else if (protocolStatus === "owner_review_required") protocolSteps.push("reread_identity_evidence", "owner_review_verification_status");
+  else if (protocolStatus !== "complete") {
+    if (protocolCanonical === "capture_required") protocolSteps.push("capture_canonical_line_identity");
+    if (protocolLine !== "matched") protocolSteps.push("review_line_ofc_evidence");
+    if (protocolLiff !== "matched") protocolSteps.push("capture_verified_liff_session");
+    protocolSteps.push("reread_identity_evidence");
+  }
   return {
     ok: true,
     data_status: dataStatus,
@@ -216,6 +238,47 @@ function projection(clientId, status, { dataStatus = "live" } = {}) {
         grants_membership: false,
         grants_points: false,
       },
+      evidence_protocol: {
+        schema: IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA,
+        mode: "read_only",
+        status: protocolStatus,
+        checked_at: "2026-09-23T00:00:00.000Z",
+        source_readiness_status: status,
+        source_recovery_status: recoveryStatus,
+        manual_source_capture_required: protocolStatus === "evidence_capture_required" || protocolStatus === "evidence_review_required",
+        steps: protocolSteps,
+        capture: {
+          canonical_client: protocolCanonical,
+          reviewed_line_ofc: protocolLine,
+          verified_liff_session: protocolLiff,
+        },
+        review: {
+          fresh_read_required: true,
+          verification_status_authority: "Clients.Verification Status",
+          owner_decision_required: protocolStatus === "owner_review_required",
+        },
+        handoff: {
+          surface: "customer_360",
+          path: "/internal/admin/customer-data",
+          client_scope_required: true,
+          mutation_control: false,
+        },
+        authority: {
+          verification: "Clients.Verification Status",
+          alignment: "customer_identity_alignment_read_only_v1",
+          rights: "my_mmd_entitlement_resolver_v1",
+          protocol: "identity_evidence_owner_review_read_only_v1",
+        },
+        evidence_written: false,
+        automatic_recovery_allowed: false,
+        automatic_verification_allowed: false,
+        verification_status_mutated: false,
+        identity_mutated: false,
+        customer_send_allowed: false,
+        grants_access: false,
+        grants_membership: false,
+        grants_points: false,
+      },
     },
   };
 }
@@ -280,7 +343,16 @@ test("reports aggregate owner-review readiness without private output or mutatio
   assert.equal(result.recovery.counts.complete, 1);
   assert.equal(result.recovery.counts.owner_review_ready, 1);
   assert.deepEqual(result.recovery.action_counts, { owner_review_verification_status: 1 });
+  assert.equal(result.owner_review_protocol.schema, IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA);
+  assert.equal(result.owner_review_protocol.counts.complete, 1);
+  assert.equal(result.owner_review_protocol.counts.owner_review_required, 1);
+  assert.deepEqual(result.owner_review_protocol.step_counts, {
+    owner_review_verification_status: 1,
+    reread_identity_evidence: 1,
+  });
   assert.equal(result.guardrails.automatic_recovery_possible, false);
+  assert.equal(result.guardrails.evidence_written, false);
+  assert.equal(result.guardrails.owner_review_protocol_mutated, false);
   assert.equal(result.guardrails.verification_status_mutated, false);
   assert.equal(result.guardrails.identity_merged, false);
   assert.equal(result.guardrails.customer_send_possible, false);
@@ -317,6 +389,7 @@ test("fails closed when any sampled identity evidence conflicts", async () => {
   assert.equal(result.readiness.counts.conflict, 1);
   assert.equal(result.recovery.counts.conflict_locked, 1);
   assert.equal(result.recovery.action_counts.resolve_identity_conflict, 1);
+  assert.equal(result.owner_review_protocol.counts.conflict_locked, 1);
   assert.deepEqual(result.readiness.blocker_counts, {
     identity_alignment_mismatch: 1,
     owner_verification_status_required: 1,
@@ -376,6 +449,23 @@ test("rejects an identity recovery projection that permits automatic mutation", 
   assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
 });
 
+test("rejects an owner review protocol that claims it can write evidence", async () => {
+  const malformed = projection(CLIENT_A, "insufficient_evidence");
+  malformed.identity.evidence_protocol.evidence_written = true;
+  malformed.identity.evidence_protocol.steps = ["capture_verified_liff_session"];
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, malformed]]),
+  });
+
+  const result = await runVerifiedIdentityReadinessObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.scan.contract_violation_count, 1);
+  assert.equal(result.owner_review_protocol.counts.evidence_capture_required, 0);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
+});
+
 test("bounds scans and never emits rejected login details", async () => {
   const rejectedFetch = mockProduction({
     records: [],
@@ -410,4 +500,7 @@ test("bounds scans and never emits rejected login details", async () => {
   assert.equal(result.recovery.counts.evidence_required, 24);
   assert.equal(result.recovery.action_counts.review_line_ofc_evidence, 24);
   assert.equal(result.recovery.action_counts.review_liff_identity_evidence, 24);
+  assert.equal(result.owner_review_protocol.counts.evidence_capture_required, 24);
+  assert.equal(result.owner_review_protocol.step_counts.capture_canonical_line_identity, 24);
+  assert.equal(result.owner_review_protocol.step_counts.capture_verified_liff_session, 24);
 });
