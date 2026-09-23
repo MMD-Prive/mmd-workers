@@ -314,6 +314,9 @@ test('prioritized onboarding cohort dedupes canonical key and prioritizes upcomi
     assert.equal(cohort.automatic_send,false);
     assert.equal(cohort.owner_click_required,true);
     assert.equal(cohort.no_guess,true);
+    assert.equal(cohort.tracking.action_sequence_mode,'one_at_a_time');
+    assert.equal(cohort.tracking.next_owner_action,null);
+    assert.equal(cohort.tracking.pending_owner_actions,cohort.current_batch.length);
     assert.doesNotMatch(JSON.stringify(cohort),/U11111111111111111111111111111111|U22222222222222222222222222222222/);
   } finally { restore(); }
 });
@@ -376,6 +379,12 @@ test('started Cohort 1 keeps the same five Models while actions move through wai
     assert.equal(cohort.tracking.counts.action_required,2);
     assert.equal(cohort.tracking.completion_percent,20);
     assert.equal(cohort.tracking.cohort_complete,false);
+    assert.equal(cohort.tracking.action_sequence_mode,'one_at_a_time');
+    assert.equal(cohort.tracking.pending_owner_actions,2);
+    assert.equal(cohort.tracking.next_owner_action.position,4);
+    assert.equal(cohort.tracking.next_owner_action.name,'Four');
+    assert.equal(cohort.tracking.next_owner_action.recovery_stage,'availability_confirmation_required');
+    assert.equal(cohort.tracking.next_owner_action.next_action,'remind_model');
     assert.deepEqual(cohort.next_batch_preview.map(item=>item.model_key),['mdl_six']);
     assert.equal(cohort.remaining_after_current,1);
     assert.doesNotMatch(JSON.stringify(cohort),/U11111111111111111111111111111111|U33333333333333333333333333333333|U44444444444444444444444444444444/);
