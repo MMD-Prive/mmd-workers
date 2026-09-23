@@ -105,36 +105,38 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
+  const ownerPaymentReview = ownerActionPaymentReviewItems(paymentQueue);
   const historicalQueue = settledRecords(historicalQueueResult);
   const historicalPending = historicalQueue.filter(isHistoricalPending);
   const sessionRecords = settledRecords(sessionsResult);
   const memberRecords = settledRecords(membersResult);
+  const membershipReview = ownerActionMembershipReviewItems(memberRecords);
 
-  const money = buildMoneyList(paymentQueue);
+  const money = buildMoneyList(ownerPaymentReview);
   const jobs = buildJobList(sessionRecords, now);
   const members = buildMemberList(memberRecords, now);
   const reconfirm = reconfirmSessionsResult.status === "fulfilled"
     ? buildReconfirmOverview(reconfirmSessionsResult.value, now, tomorrow)
     : unavailableReconfirmOverview(tomorrow, resultReason(reconfirmSessionsResult));
-  const boss = buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords });
+  const boss = buildBossList({ sessionRecords });
   const todos = buildTodos({ money, historicalPending, jobs, members, boss });
 
   const counts = {
     urgent: todos.length + boss.length,
     payments: paymentQueue.length,
-    payment_review: paymentQueue.length,
+    payment_review: ownerPaymentReview.length,
     historical_recovery: historicalPending.length,
     jobs: jobs.length,
     jobs_need_confirm: Number(reconfirm.pending || 0) + Number(reconfirm.overdue || 0),
     members: members.length,
-    membership_review: members.length,
+    membership_review: membershipReview.length,
     reconfirm_pending: reconfirm.pending,
     reconfirm_overdue: reconfirm.overdue,
   };
 
   const queues = {
     payment_review: {
-      count: paymentQueue.length,
+      count: ownerPaymentReview.length,
       href: "/internal/admin/payments",
       authority: "payment-review-runtime",
     },
@@ -149,9 +151,9 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
       authority: "session-reconfirm-runtime",
     },
     membership_review: {
-      count: members.length,
+      count: membershipReview.length,
       href: "/internal/admin/member-intelligence",
-      authority: "canonical-members",
+      authority: "my_mmd_entitlement_resolver_v1",
     },
   };
 
@@ -210,10 +212,12 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     status: dashboardStatus,
     debug: {
       payment_review_loaded: paymentQueue.length,
+      payment_owner_review_ready: ownerPaymentReview.length,
       historical_loaded: historicalQueue.length,
       historical_pending: historicalPending.length,
       sessions_loaded: sessionRecords.length,
       members_loaded: memberRecords.length,
+      membership_owner_review_ready: membershipReview.length,
       reconfirm_sessions_loaded: reconfirm.items.length,
       payment_source: resultReason(paymentQueueResult),
       historical_source: resultReason(historicalQueueResult),
@@ -226,10 +230,10 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   Object.defineProperty(payload, "owner_actions_source", {
     value: {
       now,
-      money: paymentQueue,
+      money: ownerPaymentReview,
       historical_recovery: historicalPending,
       reconfirm,
-      members: memberRecords,
+      members: membershipReview,
       boss,
       finance_audit: financeAudit,
       mms,
@@ -324,6 +328,7 @@ function ownerCoverageActionCount(source, value) {
     if (health.review_status === "source_attention") return Math.max(1, nonNegativeInteger(health.source_unavailable_models));
     return nonNegativeInteger(health.follow_up_due);
   }
+  if (source === "hype") return nonNegativeInteger(value?.counts?.owner_actionable_overdue);
   return nonNegativeInteger(value?.counts?.total);
 }
 
@@ -468,6 +473,46 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
   }
 
   return todos.slice(0, 4);
+}
+
+export function ownerActionPaymentReviewItems(items) {
+  return (Array.isArray(items) ? items : []).filter((item) =>
+    item?.reviewable === true &&
+    item?.review_lane === "owner_review" &&
+    item?.can_approve === true &&
+    !(Array.isArray(item?.context_issues) && item.context_issues.length)
+  );
+}
+
+export function ownerActionMembershipReviewItems(records) {
+  const reviewStates = new Set([
+    "review_required",
+    "needs_review",
+    "ready_for_owner_verification",
+    "conflict",
+    "ambiguous",
+    "insufficient_evidence",
+    "owner_review_required",
+    "manual_review",
+    "hold",
+    "blocked",
+  ]);
+
+  return (Array.isArray(records) ? records : []).map((record) => {
+    const fields = record?.fields || {};
+    const candidates = [
+      fields.resolver_state,
+      fields.entitlement_state,
+      fields.membership_state,
+      fields.review_state,
+      fields.identity_readiness,
+      fields["Verification Status"],
+      fields["Membership Status"],
+      fields.status,
+    ].map(normalizeWord).filter(Boolean);
+    const state = candidates.find((value) => reviewStates.has(value));
+    return state ? { id: firstText(record?.id), review_state: state } : null;
+  }).filter((item) => item?.id);
 }
 
 function buildMoneyList(items) {
@@ -631,48 +676,16 @@ function buildMemberList(records, now) {
     });
 }
 
-function buildBossList({ money, jobs, members, paymentQueue, sessionRecords, memberRecords }) {
-  const out = [];
-
-  const blackCardMember = memberRecords.find((record) => /black|vip|svip/i.test(JSON.stringify(record.fields || {})));
-  if (blackCardMember) {
-    const fields = blackCardMember.fields || {};
-    out.push({
-      title: `Black Card Review · ${firstText(fields["Full Name (Display)"], fields["Full Name"], fields.name, fields.mmd_client_name, fields.email, "สมาชิก")}`,
-      text: "มีข้อมูลระดับ VIP / Black Card ควรให้ Boss Per ตรวจเอง",
-      href: "/internal/admin/black-card-review",
-    });
-  }
-
-  const unmatchedPayment = (Array.isArray(paymentQueue) ? paymentQueue : []).find((item) =>
-    Array.isArray(item?.context_issues) && item.context_issues.includes("customer_or_job_not_linked")
+export function buildBossList({ sessionRecords = [] } = {}) {
+  const exceptionJob = (Array.isArray(sessionRecords) ? sessionRecords : []).find((record) =>
+    /(?:^|\b)(exception|hold|blocked)(?:\b|$)/i.test(JSON.stringify(record?.fields || {}))
   );
-  if (unmatchedPayment) {
-    out.push({
-      title: "ยอดโอนจับคู่ไม่ได้",
-      text: "มีรายการจ่ายเงินที่ยังจับคู่กับ Session หรือสมาชิกไม่ได้",
-      href: "/internal/admin/payments",
-    });
-  }
-
-  const exceptionJob = sessionRecords.find((record) => /exception|telegram missing|invalid|hold|blocked/i.test(JSON.stringify(record.fields || {})));
-  if (exceptionJob) {
-    out.push({
-      title: "Job Exception",
-      text: "มีงานที่สถานะไม่ปกติ ควรตรวจเองก่อนให้ flow ไปต่อ",
-      href: "/internal/admin/exceptions",
-    });
-  }
-
-  if (!out.length && (money.length > 3 || jobs.length > 5 || members.length > 3)) {
-    out.push({
-      title: "รายการวันนี้ค่อนข้างแน่น",
-      text: "ควรไล่ตรวจเงิน งาน และสมาชิกที่ใกล้หมดอายุก่อน",
-      href: "/internal/admin/dashboard",
-    });
-  }
-
-  return out.slice(0, 5);
+  if (!exceptionJob) return [];
+  return [{
+    title: "Job Exception",
+    text: "มีงานที่ถูกระบุเป็น exception / hold / blocked และต้องให้ Owner ตรวจใน authority ต้นทาง",
+    href: "/internal/admin/exceptions",
+  }];
 }
 
 async function airtableList(env, tableName, maxRecords = 20) {
