@@ -823,6 +823,7 @@ binding = "CAL_SYNC_WORKER"
 service = "cal-sync-worker"
 
 [vars]
+AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS = "tblbIhMUXMAYlXmpi"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
 # Customer Continuity Phase 4A is limited to deterministic drafts inside the
 # credential-bound Client Intelligence view. Unknown values fail closed, and
@@ -1073,6 +1074,15 @@ service = "himai-chat-worker"
 [[services]]
 binding = "MEMBER_DASHBOARD_CHAT_WORKER"
 service = "member-dashboard-chat-worker"
+
+# Owner-only, read-only receipt for Kenji Conversation Shadow Mode.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/kenji/conversation-shadow-receipt"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/kenji/conversation-shadow-receipt"
+zone_name = "mmdbkk.com"
 
 # Read-only HYPE Telegram router health fan-in. This binding exposes bounded
 # notification health only; telegram-worker remains the route owner.

@@ -38,9 +38,12 @@ jobs:
           set -euo pipefail
           node --check src/index.js
           node --check src/sigil-availability-producer.mjs
-          node --test test/sigil-availability-producer.test.mjs
+          node --test test/sigil-availability-producer.test.mjs test/availability-adoption-route.test.mjs
           ! grep -q 'placeholder="ADMIN_BEARER"' public/index.html
           grep -q "credentials:'include'" public/index.html
+          grep -q "Availability Adoption Phase 2" public/index.html
+          grep -q "availability-reminder" public/index.html
+          grep -q "Auto-send ปิดอยู่" public/index.html
           grep -q '"generic_proxy_disabled"' src/index.js
           grep -q 'SESSION_VALIDATOR_BASE_URL = "https://mmdbkk.com"' wrangler.toml
           grep -q 'ADMIN_EVENT_LOG_PATH = "/v1/admin/model-console/audit"' wrangler.toml

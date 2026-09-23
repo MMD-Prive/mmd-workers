@@ -1,0 +1,76 @@
+{
+  "version": "mmd-bangkok-companion-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "bangkok_companion",
+  "positioning": "local_companion_not_tour_guide",
+  "public_packages": [
+    {
+      "key": "bangkok_with_me",
+      "name": "BANGKOK WITH ME",
+      "price_thb": 5900,
+      "included_minutes": 240,
+      "worker_payout_thb": 3600,
+      "max_stops": 3
+    },
+    {
+      "key": "local_bangkok",
+      "name": "LOCAL BANGKOK",
+      "price_thb": 7900,
+      "included_minutes": 360,
+      "worker_payout_thb": 4800,
+      "max_stops": 4
+    },
+    {
+      "key": "your_bangkok_day",
+      "name": "YOUR BANGKOK DAY",
+      "price_thb": 10500,
+      "included_minutes": 480,
+      "worker_payout_thb": 6400,
+      "max_stops": null
+    }
+  ],
+  "licensed_guide_request": {
+    "quote_required": true,
+    "guide_license_verification_required": true,
+    "general_bangkok_companion_must_not_be_marketed_as_licensed_guide": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 1190,
+    "overtime_before_midnight_worker_thb_per_hour": 800,
+    "prebook_after_midnight_client_thb_per_hour": 500,
+    "prebook_after_midnight_worker_thb_per_hour": 350,
+    "overtime_after_midnight_client_thb_per_hour": 1690,
+    "overtime_after_midnight_worker_thb_per_hour": 1100,
+    "overtime_after_0300_client_thb_per_hour": 1990,
+    "overtime_after_0300_worker_thb_per_hour": 1300,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": [
+      "MY_MMD_request",
+      "MMD_MODEL_approve",
+      "payment_verified",
+      "MMD_confirmed"
+    ]
+  },
+  "geography": {
+    "included": "Bangkok city",
+    "outside_bangkok": "re_quote_required"
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": [
+    "food",
+    "drinks",
+    "tickets",
+    "activities",
+    "BTS_MRT",
+    "taxi",
+    "boat",
+    "parking"
+  ],
+  "scope_change": {
+    "nightlife_change": "reclassify_and_requote",
+    "driver_service": "use_driver_companion_product"
+  },
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

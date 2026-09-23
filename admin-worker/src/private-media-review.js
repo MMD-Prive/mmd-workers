@@ -1,10 +1,13 @@
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
-import { mediaRequest, mediaTable, mediaKind, privateKey, readMediaByRecord, assertPrivateObject } from '../../shared/private-media.mjs';
+import { mediaRequest, mediaTable, mediaKind, privateKey, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
 
 export const REVIEW_PAGE = '/internal/admin/mmd-review';
 export const REVIEW_API = '/v1/admin/private-media';
+export const OWNER_UPLOAD_PAGE = `${REVIEW_PAGE}/upload`;
+export const OWNER_UPLOAD_PLAN_API = `${REVIEW_API}/upload-plan`;
+export const OWNER_UPLOAD_API = `${REVIEW_API}/upload`;
 const ORIGINS = new Set(['https://mmdbkk.com', 'https://www.mmdbkk.com']);
 const headers = { 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'x-robots-tag': 'noindex, nofollow' };
 const json = (body, status = 200) => Response.json(body, { status, headers });
@@ -21,7 +24,7 @@ export async function handlePrivateMediaReview(request, env, ctx) {
   if (request.headers.has('authorization') || request.headers.has('x-confirm-key')) return json({ ok: false, error: 'browser_admin_session_required' }, 403);
   const actor = await readCredentialBoundAdminActor(request, env);
   if (!actor) {
-    if (path === REVIEW_PAGE && request.method === 'GET') return new Response(null, { status: 303, headers: { ...headers, location: `/internal/admin/login?next=${encodeURIComponent(REVIEW_PAGE)}` } });
+    if ([REVIEW_PAGE, OWNER_UPLOAD_PAGE].includes(path) && request.method === 'GET') return new Response(null, { status: 303, headers: { ...headers, location: `/internal/admin/login?next=${encodeURIComponent(path)}` } });
     return json({ ok: false, error: 'unauthorized' }, 401);
   }
   if (!['admin', 'owner'].includes(actor.role)) return json({ ok: false, error: 'admin_required' }, 403);
@@ -29,7 +32,40 @@ export async function handlePrivateMediaReview(request, env, ctx) {
     const nonce = crypto.randomUUID();
     return new Response(request.method === 'HEAD' ? null : renderPrivateMediaReview(nonce), { headers: { ...headers, 'content-type': 'text/html; charset=utf-8', 'x-mmd-admin-surface': 'private-media-review', 'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; img-src blob:; media-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'` } });
   }
+  if (path === OWNER_UPLOAD_PAGE && ['GET', 'HEAD'].includes(request.method)) {
+    const nonce = crypto.randomUUID();
+    return new Response(request.method === 'HEAD' ? null : renderOwnerPrivateMediaUpload(nonce), {
+      headers: {
+        ...headers,
+        'content-type': 'text/html; charset=utf-8',
+        'x-mmd-admin-surface': 'private-media-owner-upload',
+        'content-security-policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      },
+    });
+  }
   try {
+    if (path === OWNER_UPLOAD_PLAN_API && request.method === 'POST') {
+      if (request.headers.get('origin') !== url.origin) return json({ ok: false, error: 'forbidden_origin' }, 403);
+      if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) return json({ ok: false, error: 'json_required' }, 415);
+      const input = await request.json().catch(() => null);
+      if (!input || typeof input !== 'object') return json({ ok: false, error: 'invalid_json' }, 400);
+      const modelId = String(input.model_id || '').trim();
+      if (!/^rec[a-zA-Z0-9]+$/.test(modelId)) return json({ ok: false, error: 'model_id_required' }, 400);
+      const plan = await planPrivateUpload(env, modelId, {
+        file_name: input.file_name,
+        content_type: input.content_type,
+        file_size_bytes: input.file_size_bytes,
+      });
+      return json({ ok: true, asset_id: plan.asset_id, status: plan.status, upload_url: `${OWNER_UPLOAD_API}?asset_id=${encodeURIComponent(plan.asset_id)}&model_id=${encodeURIComponent(modelId)}` });
+    }
+    if (path === OWNER_UPLOAD_API && request.method === 'POST') {
+      if (request.headers.get('origin') !== url.origin) return json({ ok: false, error: 'forbidden_origin' }, 403);
+      const modelId = url.searchParams.get('model_id') || '';
+      const assetId = url.searchParams.get('asset_id') || '';
+      if (!/^rec[a-zA-Z0-9]+$/.test(modelId) || !/^media_[a-zA-Z0-9-]+$/.test(assetId)) return json({ ok: false, error: 'upload_identity_invalid' }, 400);
+      const result = await uploadPrivateMedia(request, env, modelId, assetId, { requestedBy: `owner:${actor.id}` });
+      return json({ ok: result.ok === true, asset_id: result.asset_id, status: result.status });
+    }
     if (path === REVIEW_API && request.method === 'GET') {
       if (request.headers.get('sec-fetch-site') === 'cross-site') return json({ ok: false, error: 'forbidden_origin' }, 403);
       return json(await listPrivateMediaReview(env, url.searchParams));
@@ -74,6 +110,10 @@ export async function handlePrivateMediaReview(request, env, ctx) {
   } catch (error) {
     return json({ ok: false, error: error?.code || 'private_media_review_unavailable' }, error?.status || 503);
   }
+}
+
+function renderOwnerPrivateMediaUpload(nonce) {
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Private Teaser Upload · MMD</title><style nonce="${nonce}">:root{font-family:ui-sans-serif,system-ui,sans-serif;color:#fff0dc;background:#0d0a08}body{margin:0;background:#0d0a08}main{max-width:620px;margin:auto;padding:32px 20px 48px}h1{font-size:24px;margin:0 0 8px}p{line-height:1.55;color:#cfbda7}.card{border:1px solid #554334;border-radius:14px;padding:18px;margin-top:20px;background:#15100d}label{display:block;margin-top:16px;font-weight:650}input{box-sizing:border-box;width:100%;margin-top:7px;padding:12px;border-radius:9px;border:1px solid #67523d;background:#0d0a08;color:#fff0dc;font:inherit}button{margin-top:20px;border:0;border-radius:9px;padding:12px 16px;background:#c79a56;color:#1a1006;font:inherit;font-weight:750;cursor:pointer}button:disabled{opacity:.55;cursor:wait}#state{white-space:pre-wrap;margin-top:18px;line-height:1.5;color:#f1d9ae}.back{color:#f1d9ae}small{display:block;color:#bda890;margin-top:8px;line-height:1.45}</style></head><body><main><a class="back" href="${REVIEW_PAGE}">← กลับไปตรวจ Private Media</a><h1>อัปโหลด Private Teaser</h1><p>ไฟล์จะเข้าพื้นที่ private เท่านั้น และจะอยู่สถานะรอตรวจจนกดอนุมัติแยกในหน้า Review</p><section class="card"><label>Model record ID<input id="model" autocomplete="off" placeholder="rec…"></label><label>รูปหรือคลิป<input id="file" type="file" accept="image/jpeg,image/png,image/webp,video/mp4"></label><small>รูป JPG/PNG/WebP สูงสุด 15 MB · คลิป MP4 สูงสุด 25 MB</small><button id="submit" type="button">อัปโหลดเพื่อรอตรวจ</button><output id="state" aria-live="polite"></output></section></main><script nonce="${nonce}">(()=>{const q=new URLSearchParams(location.search),model=document.querySelector('#model'),file=document.querySelector('#file'),button=document.querySelector('#submit'),state=document.querySelector('#state');model.value=q.get('model_id')||'';const say=t=>state.textContent=t;button.addEventListener('click',async()=>{const selected=file.files&&file.files[0],modelId=model.value.trim();if(!/^rec[a-zA-Z0-9]+$/.test(modelId))return say('กรุณาใส่ Model record ID ที่ถูกต้อง');if(!selected)return say('กรุณาเลือกไฟล์');button.disabled=true;say('กำลังสร้างรายการ private media…');try{const planResponse=await fetch('${OWNER_UPLOAD_PLAN_API}',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({model_id:modelId,file_name:selected.name,content_type:selected.type,file_size_bytes:selected.size})});const plan=await planResponse.json();if(!planResponse.ok||!plan.ok)throw new Error(plan.error||'upload_plan_failed');say('กำลังอัปโหลดเข้า private media…');const uploadResponse=await fetch(plan.upload_url,{method:'POST',credentials:'same-origin',headers:{'content-type':selected.type},body:selected});const upload=await uploadResponse.json();if(!uploadResponse.ok||!upload.ok)throw new Error(upload.error||'upload_failed');say('อัปโหลดแล้ว · รอตรวจและอนุมัติ Private Teaser ในหน้า Review');location.assign('${REVIEW_PAGE}?status=pending_review')}catch(error){say('ยังอัปโหลดไม่ได้: '+(error&&error.message||'unknown_error'));button.disabled=false}})})();</script></body></html>`;
 }
 
 export async function listPrivateMediaReview(env, params) {

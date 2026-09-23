@@ -113,7 +113,22 @@ try {
 
   assert.equal(response.headers.get('x-mmd-control-room-mmd-flow'), '20260922');
   assert.equal(response.headers.get('x-mmd-control-room-v2'), 'system-health-v1');
+  assert.equal(response.headers.get('x-mmd-owner-analytics'), 'intent-truth-v1');
   assert.equal(response.headers.get('x-mmd-control-room-phase1'), 'closed');
+  assert.equal(response.headers.get('x-mmd-owner-actions'), 'queue-detail-read-only-v1');
+  assert.match(body, /data-mmd-owner-actions="v1"/);
+  assert.match(body, /OWNER ACTIONS · READ ONLY/);
+  assert.match(body, /วันนี้ควรเคลียร์อะไร/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/owner-actions'/);
+  assert.match(body, /detail_href/);
+  assert.match(body, /unavailable\.length\?'PARTIAL':'CLEAR'/);
+  assert.match(body, /detailSeq=0/);
+  assert.match(body, /seq!==detailSeq/);
+  assert.match(body, /data-oaq-coverage/);
+  assert.match(body, /renderCoverage/);
+  assert.match(body, /source_coverage/);
+  assert.match(body, /ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth/);
+
   assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
   assert.match(body, /SYSTEM HEALTH · V2/);
   assert.match(body, /Production truth at a glance/);
@@ -121,10 +136,15 @@ try {
   assert.match(body, /mmd:control-room:dashboard/);
   assert.match(body, /window\.__mmdControlRoomDashboard/);
   assert.match(body, /data-v2-open-ai/);
-  assert.match(body, /data-v2-refresh/);
-  assert.match(body, /REFRESH LIVE/);
-  assert.match(body, /system_health=live/);
-  assert.match(body, /data-v2-release/);
+  assert.match(body, /data-mmd-owner-analytics="v1"/);
+  assert.match(body, /ANALYTICS · OWNER/);
+  assert.match(body, /Intent ≠ Business Truth/);
+  assert.match(body, /Business Truth/);
+  assert.match(body, /Authority Health/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/analytics'/);
+  assert.match(body, /Unobserved event = — · ไม่ตีความเป็น 0/);
+  assert.match(body, /READ SCOPE NEEDED/);
+  assert.doesNotMatch(body, /cross_layer_person_conversion\s*[:=]\s*true/);
   assert.match(body, /data-mmd-workflow="20260922"/);
   assert.match(body, /MMD Memory ช่วยจำคนและประวัติ/);
   assert.match(body, /หาจากงานล่าสุด/);

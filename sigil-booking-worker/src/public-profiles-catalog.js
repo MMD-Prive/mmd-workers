@@ -5,6 +5,16 @@ const PREFERRED_IMAGE = /(?:^|[-_. ])(?:card|cover|hero|main|primary|profile|01)
 const BLOCKED_SEGMENTS = new Set(["private", "evidence", "slips", "line-notes", "line_notes", "sigil", "internal"]);
 const PUBLIC_CATALOG_PATH = "/sigil/api/models/search/public-catalog";
 const MODEL_APPLICATIONS_TABLE_ID = "tblwUa8ySWln8OfaJ";
+const MODEL_MEDIA_TABLE_ID = "tblrpQXhHnbTU9RhW";
+const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
+const MODELS_FIELDS = Object.freeze({ workingName: "fldShiT60bmCxFxRu" });
+const MODEL_MEDIA_FIELDS = Object.freeze({
+  model: "fldknjo3y47i3lR33",
+  mediaType: "fldJRlyE6RMaze62",
+  reviewStatus: "fldQiEnIJj5LjGy52",
+  teaserSafe: "fldAvK1Xv0lnoZIXv",
+  fileType: "fldakN0VbkG9fuPnI",
+});
 const PUBLIC_PROMO_CONSENT_VERSION = "mmd-public-promo-consent-v1-20260922";
 const PUBLIC_PROMO_CONSENT_SOURCES = new Set(["/apply/public-model", "mmd_model", "mmd_model_authenticated"]);
 const APPLICATION_FIELDS = Object.freeze({
@@ -19,6 +29,7 @@ const APPLICATION_FIELDS = Object.freeze({
   approvedRoles: "fldz20JiFUK9ubk1c",
   bookingMode: "fldjo1NpDcB0JXk91",
   publicProfileApproved: "fldcnCF3KrdAd4cfa",
+  publicImageApproved: "fldFm1ouEn5TlyLUo",
   credentialStatus: "fldFM8T50S1zObdVP",
   nonMemberImageConsent: "fldUMJEUVK3GNmomA",
   nonMemberPromoRoles: "fldQgqdiVPTMRfawj",
@@ -45,11 +56,15 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
     const prefixes = catalogPrefixes(env.PUBLIC_MODEL_CATALOG_PREFIXES || env.PUBLIC_MODEL_CATALOG_PREFIX || DEFAULT_CATALOG_PREFIX);
     const objects = [];
     for (const prefix of prefixes) objects.push(...await listPrefix(env.MMD_MODEL_ASSETS, prefix));
-    const eligibilityBySlug = await loadApprovedEligibility(env);
+    const [eligibilityBySlug, teaserBySlug] = await Promise.all([
+      loadApprovedEligibility(env),
+      loadApprovedTeaserAvailability(env),
+    ]);
     const items = buildPublicCatalog(objects, {
       prefixes,
       publicAssetBase: env.MODEL_PUBLIC_ASSET_BASE_URL || DEFAULT_PUBLIC_ASSET_BASE,
       eligibilityBySlug,
+      teaserBySlug,
     });
     return json({
       ok: true,
@@ -64,7 +79,7 @@ export async function handlePublicProfilesCatalogRequest(request, env) {
   }
 }
 
-export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), audienceBySlug = null } = {}) {
+export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX], publicAssetBase = DEFAULT_PUBLIC_ASSET_BASE, eligibilityBySlug = new Map(), teaserBySlug = new Set(), audienceBySlug = null } = {}) {
   // audienceBySlug is accepted only for backward-compatible unit callers. It never
   // grants public visibility: a model still needs explicit MMD approval and current
   // non-member image-promotion consent for at least one approved role.
@@ -78,6 +93,7 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
           promo_roles: [],
           booking_mode: "curated",
           public_profile_approved: false,
+          public_image_approved: false,
           credential_status: "not_required",
           nonmember_image_consent: false,
           promo_consent_status: "not_granted",
@@ -107,17 +123,35 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
 
   return [...groups.values()].map((group) => {
     group.photos.sort((a, b) => Number(b.preferred) - Number(a.preferred) || a.key.localeCompare(b.key));
-    const photos = group.photos.slice(0, 6).map((photo) => photo.url);
     const eligibility = eligibilityBySlug instanceof Map ? eligibilityBySlug.get(group.slug) : null;
-    if (!eligibility || eligibility.public_profile_approved !== true || !validPublicPromoConsent(eligibility)) return null;
+    // A public folder is storage only. A card may exist only when the complete
+    // service matrix has a role, audience, explicit booking route, profile
+    // approval and an approved public-safe image.
+    if (!eligibility || !hasCompletePublicServiceMatrix(eligibility) || !validPublicPromoConsent(eligibility)) return null;
+    // A per-application allowlist is optional for backwards compatibility, but
+    // when present it is authoritative. This lets MMD promote an exact reviewed
+    // set inside a legacy model folder without exposing every historical asset.
+    const approvedAssetKeys = normalizePublicAssetKeys(eligibility.public_asset_keys);
+    const approvedPhotos = approvedAssetKeys.length
+      ? approvedAssetKeys.map((key) => group.photos.find((photo) => photo.key === key)).filter(Boolean)
+      : group.photos;
+    const photos = approvedPhotos.slice(0, 6).map((photo) => photo.url);
+    if (!photos.length) return null;
     const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
     const approvedRoles = normalizeRoleKeys(eligibility.roles);
     const promoRoles = normalizeRoleKeys(eligibility.promo_roles);
-    const publicRoles = approvedRoles.filter((role) => promoRoles.includes(role));
-    if (!acceptedCustomerGenders.length || !publicRoles.length) return null;
-    if (publicRoles.includes("medical_professional") && clean(eligibility.credential_status).toLowerCase() !== "verified") {
-      return null;
+    let publicRoles = approvedRoles.filter((role) => promoRoles.includes(role));
+    // Medical Professional is a regulated request-only lane.  Do not publish
+    // its role hint unless the credential is verified and the operational
+    // booking mode is explicitly brief_only.  A mixed-role profile may still
+    // appear for its separately approved non-medical roles.
+    if (publicRoles.includes("medical_professional") && (
+      clean(eligibility.credential_status).toLowerCase() !== "verified" ||
+      clean(eligibility.booking_mode).toLowerCase() !== "brief_only"
+    )) {
+      publicRoles = publicRoles.filter((role) => role !== "medical_professional");
     }
+    if (!acceptedCustomerGenders.length || !publicRoles.length) return null;
     return {
       slug: group.slug,
       display_name: group.display_name,
@@ -126,10 +160,13 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
       customer_scope: acceptedCustomerGenders.length === 1 ? `${acceptedCustomerGenders[0]}_only` : "all_genders",
       accepted_customer_genders: acceptedCustomerGenders,
       approved_roles: publicRoles,
-      booking_mode: normalizeBookingMode(eligibility.booking_mode),
+      booking_mode: eligibility.booking_mode,
       visibility: "public",
       audience_visibility: "non_member_consented",
       source: "r2_public_model",
+      // This is a deliberately narrow discovery hint. It never contains an
+      // asset id, storage key, thumbnail, signed URL, count, or entitlement.
+      ...(teaserBySlug instanceof Set && teaserBySlug.has(group.slug) ? { private_teaser_available: true } : {}),
     };
   }).filter(Boolean).sort((a, b) => a.display_name.localeCompare(b.display_name, "en"));
 }
@@ -191,6 +228,7 @@ async function loadApprovedEligibility(env) {
           promo_roles: promoRoles,
           booking_mode: choiceName(fields[APPLICATION_FIELDS.bookingMode]),
           public_profile_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicProfileApproved]),
+          public_image_approved: checkboxTrue(fields[APPLICATION_FIELDS.publicImageApproved]),
           credential_status: choiceName(fields[APPLICATION_FIELDS.credentialStatus]),
           nonmember_image_consent: imageConsent,
           promo_consent_status: status,
@@ -198,6 +236,7 @@ async function loadApprovedEligibility(env) {
           promo_consent_version: version,
           promo_consent_source: source,
           promo_consent_revoked_at: storedRevokedAt,
+          public_asset_keys: normalizePublicAssetKeys(payload.public_asset_keys),
         });
       }
       offset = clean(data.offset);
@@ -206,6 +245,96 @@ async function loadApprovedEligibility(env) {
     console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_eligibility_unavailable", error: String(error?.message || error) }));
   }
   return index;
+}
+
+
+// Public catalogue discovery is fail-closed. A marker is exposed only when an
+// MMD-approved, purpose-built teaser asset exists; a profile image can never
+// become a Teaser merely because it is private-safe.
+async function loadApprovedTeaserAvailability(env) {
+  const slugs = new Set();
+  const modelRecordIds = new Set();
+  if (!clean(env.AIRTABLE_API_KEY) || !clean(env.AIRTABLE_BASE_ID)) return slugs;
+  try {
+    let offset = "";
+    let seen = 0;
+    do {
+      const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || MODEL_MEDIA_TABLE_ID;
+      const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("pageSize", "100");
+      url.searchParams.set("returnFieldsByFieldId", "true");
+      Object.values(MODEL_MEDIA_FIELDS).forEach((field) => url.searchParams.append("fields[]", field));
+      if (offset) url.searchParams.set("offset", offset);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+      if (!response.ok) throw new Error(`airtable_${response.status}`);
+      const data = await response.json();
+      const records = Array.isArray(data.records) ? data.records : [];
+      seen += records.length;
+      for (const record of records) {
+        const fields = record?.fields || {};
+        const mediaType = choiceName(fields[MODEL_MEDIA_FIELDS.mediaType]).toLowerCase();
+        const fileType = clean(fields[MODEL_MEDIA_FIELDS.fileType]).toLowerCase();
+        if (choiceName(fields[MODEL_MEDIA_FIELDS.reviewStatus]).toLowerCase() !== "approved") continue;
+        if (checkboxTrue(fields[MODEL_MEDIA_FIELDS.teaserSafe]) !== true) continue;
+        if (!["private_gallery", "flash_preview"].includes(mediaType)) continue;
+        if (!["image/jpeg", "image/png", "image/webp", "video/mp4"].includes(fileType)) continue;
+        const linked = Array.isArray(fields[MODEL_MEDIA_FIELDS.model]) ? fields[MODEL_MEDIA_FIELDS.model][0] : fields[MODEL_MEDIA_FIELDS.model];
+        const linkedName = typeof linked === "object" ? linked?.name : "";
+        const linkedId = clean(typeof linked === "object" ? linked?.id : linked);
+        const slug = slugify(linkedName);
+        if (slug) slugs.add(slug);
+        else if (/^rec[a-zA-Z0-9]+$/.test(linkedId)) modelRecordIds.add(linkedId);
+      }
+      offset = clean(data.offset);
+    } while (offset && seen < 500);
+    for (const name of await loadTeaserModelNames(env, modelRecordIds)) {
+      const slug = slugify(name);
+      if (slug) slugs.add(slug);
+    }
+  } catch (error) {
+    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_teaser_discovery_unavailable", error: String(error?.message || error) }));
+  }
+  return slugs;
+}
+
+
+async function loadTeaserModelNames(env, wantedIds) {
+  if (!(wantedIds instanceof Set) || wantedIds.size === 0) return [];
+  const names = [];
+  try {
+    let offset = "";
+    let seen = 0;
+    do {
+      const table = env.AIRTABLE_TABLE_MODELS || MODELS_TABLE_ID;
+      const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+      url.searchParams.set("pageSize", "100");
+      url.searchParams.set("returnFieldsByFieldId", "true");
+      url.searchParams.append("fields[]", MODELS_FIELDS.workingName);
+      if (offset) url.searchParams.set("offset", offset);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+      if (!response.ok) throw new Error(`airtable_${response.status}`);
+      const data = await response.json();
+      const records = Array.isArray(data.records) ? data.records : [];
+      seen += records.length;
+      for (const record of records) {
+        if (!wantedIds.has(clean(record?.id))) continue;
+        const name = clean(record?.fields?.[MODELS_FIELDS.workingName]);
+        if (name) names.push(name);
+      }
+      offset = clean(data.offset);
+    } while (offset && seen < 500 && names.length < wantedIds.size);
+  } catch (error) {
+    console.warn(JSON.stringify({ worker: "sigil-booking-worker", route: PUBLIC_CATALOG_PATH, warning: "public_teaser_model_mapping_unavailable", error: String(error?.message || error) }));
+    return [];
+  }
+  return names;
+}
+
+function hasCompletePublicServiceMatrix(value = {}) {
+  if (value.public_profile_approved !== true || value.public_image_approved !== true) return false;
+  if (!normalizeCustomerGenders(value.genders).length) return false;
+  if (!normalizeRoleKeys(value.roles).length || !normalizeRoleKeys(value.promo_roles).length) return false;
+  return ["direct", "curated", "brief_only"].includes(clean(value.booking_mode).toLowerCase());
 }
 
 function validPublicPromoConsent(value = {}) {
@@ -239,11 +368,6 @@ function normalizeRoleKeys(value) {
   const allowed = new Set(["everyday_companion","driver_companion","culinary_companion","social_appearance","bangkok_companion","sport_activity","wellness_companion","business_companion","nightlife_companion","creative_companion","medical_professional"]);
   return [...new Set((Array.isArray(value) ? value : []).map((item) => clean(item).toLowerCase()).filter((item) => allowed.has(item)))];
 }
-function normalizeBookingMode(value) {
-  const mode = clean(value).toLowerCase();
-  return ["direct","brief_only"].includes(mode) ? mode : "curated";
-}
-
 function customerGendersFromScope(value) {
   const choices = (Array.isArray(value) ? value : [value]).map(choiceName).map((item) => item.toLowerCase());
   const genders = [];
@@ -286,6 +410,13 @@ function modelFolderFromParts(parts) {
 function publicSafeKey(key) {
   if (!key || key.includes("\\") || key.includes("//") || /(^|\/)\.\.(?:\/|$)/.test(key)) return false;
   return !key.split("/").some((segment) => BLOCKED_SEGMENTS.has(segment.toLowerCase()));
+}
+
+function normalizePublicAssetKeys(value) {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[\n,]+/) : [];
+  return [...new Set(values.map((item) => clean(item).replace(/^\/+/, "")).filter((item) =>
+    item && IMAGE_EXTENSION.test(item) && publicSafeKey(item)
+  ))];
 }
 
 function catalogPrefixes(value) {

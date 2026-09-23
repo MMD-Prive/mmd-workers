@@ -17,7 +17,7 @@ export { PointsPhase1Coordinator } from "./points-phase1.js";
 const NOTIFY_PATH = "/v1/payments/notify";
 const HISTORICAL_REVIEW_PATH = "/v1/internal/payments/historical-slip/reviewed";
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
-const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "membership"]);
+const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "extension", "membership"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
 export default {
@@ -89,7 +89,7 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
     if (!paymentRef) throw httpError(400, "payment_ref_required");
     if (amountThb == null) throw httpError(400, "amount_thb_required");
     if (reviewReason.length < 5) throw httpError(400, "review_reason_required");
-    if (["deposit", "final", "tips", "full"].includes(paymentStage) && !sessionId) throw httpError(400, "session_id_required_for_service_payment");
+    if (["deposit", "final", "tips", "full", "extension"].includes(paymentStage) && !sessionId) throw httpError(400, "session_id_required_for_service_payment");
     if (paymentStage === "membership" && !memberEmail) throw httpError(400, "member_email_required_for_membership_payment");
 
     const proof = await loadHistoricalProof(env, proofId);

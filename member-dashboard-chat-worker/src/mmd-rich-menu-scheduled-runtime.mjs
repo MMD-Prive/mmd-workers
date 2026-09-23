@@ -8,7 +8,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260908-v4";
+const VERSION = "mmd-rm3-20260923-v4.1";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -25,15 +25,15 @@ const MENUS = Object.freeze({
     name: `MMD Guest ${VERSION}`,
     frame: { left: .49, top: .16, right: .985, bottom: .75 },
     images: [
-      `${ROOT}/6a9ef89d2b35f4308fb3de8e_Rich%20Menu%20Guest-p-1080.png`,
-      `${ROOT}/6a9ef89d2b35f4308fb3de8e_Rich%20Menu%20Guest-p-800.png`,
+      `${ROOT}/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
+      `https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
     ],
     actions: [
       uri("START HERE", site("/public/access", "rich_menu_guest_start")),
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_guest_models")),
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
-      uri("ABOUT MMD", site("/tmib", "rich_menu_guest_about")),
+      uri("MMD STORIES", site("/tmib", "rich_menu_guest_stories")),
       postback("SUPPORT", "mmd_action=support&audience=guest&intent=ใช้บริการยังไง"),
     ],
   },
@@ -75,6 +75,13 @@ export function getMmdRichMenuActionMap() {
   return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
     key,
     spec.actions.map((action) => ({ ...action })),
+  ]));
+}
+
+export function getMmdRichMenuImageSources() {
+  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
+    key,
+    [...spec.images],
   ]));
 }
 

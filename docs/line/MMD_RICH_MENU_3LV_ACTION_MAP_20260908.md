@@ -1,6 +1,6 @@
 # MMD Privé LINE Rich Menu — 3 LV Action Map
 
-Status: canonical production map for the MMD Privé LINE OA.
+Status: canonical production map for the MMD Privé LINE OA. LV1 CTA copy updated for Rich Menu v4.1 on 2026-09-23.
 
 This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA and is not part of this runtime.
 
@@ -12,8 +12,15 @@ This map applies only to MMD Privé. MMS / Male Massage is a separate LINE OA an
 | Top-center | PUBLIC MODELS | `https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_guest_models` |
 | Top-right | BOOKING | `https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking` |
 | Bottom-left | PUBLIC SERVICES | `https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services` |
-| Bottom-center | ABOUT MMD | `https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about` |
+| Bottom-center | MMD STORIES · Discover TMIB | `https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_stories` |
 | Bottom-right | SUPPORT | Silent LINE postback → MMD support guidance; no Kenji name is shown to the customer |
+
+### LV1 image asset
+
+- Master: Webflow asset `6ab37382436bc54d0879d558`, 2500×1686 PNG.
+- LINE runtime: Webflow asset `6ab373e94a52accb54062a99`, 1080×728 PNG, 347,487 bytes.
+- Visible bottom-center copy: `MMD STORIES` / `Discover TMIB`.
+- LV2 and LV3 image assets remain unchanged.
 
 ## LV2 — Public Member
 

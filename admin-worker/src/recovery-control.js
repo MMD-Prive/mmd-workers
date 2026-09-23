@@ -335,6 +335,7 @@ export async function readRecoveryQueueIntelligence(env, options = {}, now = new
 
     return {
       ok: true,
+      complete: !payload.offset,
       cases: ordered.slice(0, limit),
       filters: {
         domain: domainFilter.value,

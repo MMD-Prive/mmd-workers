@@ -82,6 +82,9 @@ test("requires signed webhook, ingress diagnostics, and member truth bridge befo
       {
         LINE_CHANNEL_SECRET: "secret-signature-value",
         LINE_CHANNEL_ACCESS_TOKEN: "secret-token-value",
+        LINE_FIRST_CONTACT_ENABLED: "true",
+        LINE_KENJI_AI_ENABLED: "true",
+        LINE_AUTO_REPLY_ENABLED: "false",
         MEMBER_PAGES_WORKER: memberPagesHealthBinding(),
       },
     );
@@ -90,6 +93,8 @@ test("requires signed webhook, ingress diagnostics, and member truth bridge befo
     assert.equal(payload.ok, true);
     assert.equal(payload.schema, "mmd.kenji_line_transport_health.v4");
     assert.equal(payload.status, "ready");
+    assert.equal(payload.first_contact_configured, true);
+    assert.equal(payload.broad_auto_reply_configured, false);
     assert.equal(payload.signature_secret_present, true);
     assert.equal(payload.access_token_present, true);
     assert.equal(payload.line_api_reachable, true);

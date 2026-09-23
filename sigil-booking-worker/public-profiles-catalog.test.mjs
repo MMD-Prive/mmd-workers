@@ -11,6 +11,7 @@ function eligible(genders=["male","female"], roles=["everyday_companion"], overr
     promo_roles: [...roles],
     booking_mode: "curated",
     public_profile_approved: true,
+    public_image_approved: true,
     credential_status: "not_required",
     nonmember_image_consent: true,
     promo_consent_status: "granted",
@@ -57,6 +58,27 @@ test("catalog groups model folders and requires explicit eligibility per model",
   assert.equal(items.some((item) => item.slug === "legacy"), false);
 });
 
+test("catalog exposes only explicitly allowlisted assets inside a legacy model folder", () => {
+  const primary = "MMD Public Models/MMD Travel Models/Straight/tah/exec-489bda86-48b5-4a53-8e9d-c80509e03b93.png";
+  const secondary = "MMD Public Models/MMD Travel Models/Straight/tah/exec-23d0b742-1dcc-452b-9281-d57914237743.png";
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/MMD Travel Models/Straight/tah/P5130790.JPG" },
+    { key: "MMD Public Models/MMD Travel Models/Straight/tah/MEITU_20260517_125331808.jpg" },
+    { key: secondary },
+    { key: primary },
+  ], { eligibilityBySlug: new Map([["tah", eligible(["male", "female"], ["everyday_companion"], {
+    booking_mode: "direct",
+    public_asset_keys: [primary, secondary],
+  })]]) });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].photos, [
+    "https://models.mmdbkk.com/MMD%20Public%20Models/MMD%20Travel%20Models/Straight/tah/exec-489bda86-48b5-4a53-8e9d-c80509e03b93.png",
+    "https://models.mmdbkk.com/MMD%20Public%20Models/MMD%20Travel%20Models/Straight/tah/exec-23d0b742-1dcc-452b-9281-d57914237743.png",
+  ]);
+  assert.equal(JSON.stringify(items).includes("P5130790"), false);
+  assert.equal(JSON.stringify(items).includes("MEITU"), false);
+});
+
 test("catalog fails closed when there is no approved role matrix", () => {
   const items = buildPublicCatalog([
     { key: "MMD Public Models/HIMA/card.webp" },
@@ -72,6 +94,20 @@ test("catalog fails closed for empty customer scope or empty approved roles", ()
   const items = buildPublicCatalog([
     { key: "MMD Public Models/no-gender/card.webp" },
     { key: "MMD Public Models/no-role/card.webp" },
+  ], { eligibilityBySlug });
+  assert.deepEqual(items, []);
+});
+
+test("catalog fails closed unless the complete service matrix explicitly approves the public image and booking route", () => {
+  const eligibilityBySlug = new Map([
+    ["image-pending", eligible(["male"], ["everyday_companion"], { public_image_approved: false })],
+    ["booking-missing", eligible(["male"], ["everyday_companion"], { booking_mode: "" })],
+    ["booking-unknown", eligible(["male"], ["everyday_companion"], { booking_mode: "agent_decides" })],
+  ]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/image-pending/card.webp" },
+    { key: "MMD Public Models/booking-missing/card.webp" },
+    { key: "MMD Public Models/booking-unknown/card.webp" },
   ], { eligibilityBySlug });
   assert.deepEqual(items, []);
 });
@@ -109,16 +145,33 @@ test("catalog exposes only the intersection of applicant-consented and MMD-appro
   assert.deepEqual(items[0].approved_roles, ["driver_companion"]);
 });
 
-test("medical professional role requires verified credential after consent scope intersection", () => {
+test("medical professional role requires both a verified credential and a brief-only route", () => {
   const eligibilityBySlug = new Map([
     ["pending-medical", eligible(["male"], ["medical_professional"], { credential_status: "pending" })],
-    ["verified-medical", eligible(["female"], ["medical_professional"], { credential_status: "verified" })],
+    ["verified-but-curated", eligible(["male"], ["medical_professional"], { credential_status: "verified", booking_mode: "curated" })],
+    ["verified-medical", eligible(["female"], ["medical_professional"], { credential_status: "verified", booking_mode: "brief_only" })],
   ]);
   const items = buildPublicCatalog([
     { key: "MMD Public Models/pending-medical/card.webp" },
+    { key: "MMD Public Models/verified-but-curated/card.webp" },
     { key: "MMD Public Models/verified-medical/card.webp" },
   ], { eligibilityBySlug });
   assert.deepEqual(items.map((item) => item.slug), ["verified-medical"]);
+  assert.equal(items[0].booking_mode, "brief_only");
+});
+
+test("an ineligible medical role never suppresses separately approved companion roles", () => {
+  const eligibilityBySlug = new Map([
+    ["mixed-role", eligible(["male"], ["creative_companion", "medical_professional"], {
+      credential_status: "pending",
+      booking_mode: "curated",
+    })],
+  ]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/mixed-role/card.webp" },
+  ], { eligibilityBySlug });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].approved_roles, ["creative_companion"]);
 });
 
 test("handler exposes only accepted, approved, publication-approved and explicitly consented applications", async () => {
@@ -133,6 +186,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["driver_companion"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: false,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
         fldUMJEUVK3GNmomA: true,
         fldQgqdiVPTMRfawj: ["driver_companion"],
@@ -149,6 +203,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["social_appearance"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
       } },
       { fields: {
@@ -159,6 +214,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["social_appearance", "nightlife_companion"],
         fldjo1NpDcB0JXk91: "brief_only",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
         fldUMJEUVK3GNmomA: true,
         fldQgqdiVPTMRfawj: ["social_appearance"],
@@ -181,6 +237,7 @@ test("handler exposes only accepted, approved, publication-approved and explicit
         fldz20JiFUK9ubk1c: ["culinary_companion"],
         fldjo1NpDcB0JXk91: "curated",
         fldcnCF3KrdAd4cfa: true,
+        fldFm1ouEn5TlyLUo: true,
         fldFM8T50S1zObdVP: "not_required",
       } },
     ],

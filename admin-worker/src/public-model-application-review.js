@@ -188,6 +188,12 @@ async function applyRolePolicy(request, env, actor, applicationId) {
   if (!BOOKING_MODES.has(bookingMode)) return json({ ok: false, error: "invalid_booking_mode" }, 400);
   if (!CREDENTIAL_STATUSES.has(credentialStatus)) return json({ ok: false, error: "invalid_credential_status" }, 400);
   if (publicProfileApproved && approvedRoles.length === 0) return json({ ok: false, error: "approved_role_required_for_public_profile" }, 409);
+  // A medical-professional label is never a generally bookable offer.  The
+  // operational request must stay in the MMD-reviewed brief lane even when
+  // the person's credential has passed verification.
+  if (approvedRoles.includes("medical_professional") && bookingMode !== "brief_only") {
+    return json({ ok: false, error: "medical_brief_only_required" }, 409);
+  }
   if (publicProfileApproved && approvedRoles.includes("medical_professional") && credentialStatus !== "verified") {
     return json({ ok: false, error: "medical_credential_verification_required" }, 409);
   }

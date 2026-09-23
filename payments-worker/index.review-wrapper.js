@@ -1,4 +1,5 @@
 import phase1Worker from "./index.phase1.js";
+import { handlePublicSessionExtensionPayment, isPublicSessionExtensionPaymentPath } from "./public-session-extension-payment.js";
 import workerWithSlipEvidence from "./index.with-slip-evidence.js";
 import { PointsPhase1Coordinator } from "./index.phase1.js";
 import { authorityRuntimeHealth, queueAuthorityEvent } from "../shared/posthog-authority-events.mjs";
@@ -87,6 +88,10 @@ export default {
     const url = new URL(request.url);
     const path = normalizePath(url.pathname);
     const method = request.method.toUpperCase();
+
+    if (isPublicSessionExtensionPaymentPath(url)) {
+      return handlePublicSessionExtensionPayment(request, env);
+    }
 
     if (method === "GET" && (path === "/health" || path === "/ping")) {
       const response = await phase1Worker.fetch(request, env, ctx);

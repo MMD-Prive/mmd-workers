@@ -9,6 +9,8 @@ on:
       - "admin-worker/**"
       - "shared/mmd-shop-stock-reservation.mjs"
       - "shared/control-room-v2-system-health.mjs"
+      - "shared/posthog-conversion-canon.mjs"
+      - "shared/posthog-conversion-canon.test.mjs"
       - "shared/mmd-shop-fulfillment.mjs"
       - "shared/mmd-shop-stock-reconciliation.mjs"
       - "shared/private-media.mjs"
@@ -98,6 +100,8 @@ jobs:
           node --test model-session-runtime-v1a.test.mjs partner-owner-console.test.mjs
           node --check src/admin-login-page.js
           node --check src/dashboard-worker.js
+          node --check src/owner-analytics-dashboard.js
+          node --test owner-analytics-dashboard.test.mjs ../shared/posthog-conversion-canon.test.mjs
           node --check src/mms-admin-runtime.js
           node --check src/kenji-model-access-rpc.js
           node --check src/sigil-availability-snapshot.js
@@ -177,11 +181,53 @@ jobs:
           node ../scripts/ensure-private-media-bucket.mjs
           node --experimental-global-webcrypto --test ../shared/private-media.test.mjs model-schema-patch-v1.test.mjs
 
+      - name: Ensure SIGIL availability KV binding
+        id: availability_kv
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          (async () => {
+            const account = process.env.CLOUDFLARE_ACCOUNT_ID;
+            const token = (process.env.CLOUDFLARE_API_TOKEN || "").trim();
+            const title = "MMD_SIGIL_AVAILABILITY_SNAPSHOTS_V1";
+            if (!account || !token) throw new Error("Cloudflare KV credentials are missing");
+            const api = `https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces`;
+            const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+            const call = async (url, init = {}) => {
+              const response = await fetch(url, { ...init, headers: { ...headers, ...(init.headers || {}) } });
+              const data = await response.json().catch(() => ({}));
+              if (!response.ok || data.success !== true) throw new Error(JSON.stringify(data.errors || data));
+              return data.result;
+            };
+            const namespaces = await call(`${api}?per_page=1000&order=title&direction=asc`);
+            let namespace = namespaces.find((item) => item.title === title);
+            if (!namespace) namespace = await call(api, { method: "POST", body: JSON.stringify({ title }) });
+            if (!/^[a-f0-9]{32}$/i.test(String(namespace.id || ""))) throw new Error("Cloudflare returned an invalid KV namespace ID");
+
+            const source = fs.readFileSync("wrangler.toml", "utf8").trimEnd();
+            const binding = source.includes('binding = "SIGIL_AVAILABILITY_SNAPSHOTS"') ? "" : [
+              "",
+              "# GENERATED SIGIL AVAILABILITY KV",
+              "[[kv_namespaces]]",
+              'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"',
+              `id = "${namespace.id}"`,
+              "",
+            ].join("\n");
+            const output = ".wrangler-admin-production.toml";
+            fs.writeFileSync(output, `${source}${binding}\n`);
+            fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_WORKER_WRANGLER_CONFIG=${output}\n`);
+            console.log(`Resolved ${title} for SIGIL_AVAILABILITY_SNAPSHOTS`);
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
+          grep -Fq 'binding = "SIGIL_AVAILABILITY_SNAPSHOTS"' .wrangler-admin-production.toml
       - name: Validate Cloudflare version upload
         id: wrangler_dry_run
         shell: bash
         run: |
           npx --yes wrangler@4 versions upload --dry-run --keep-vars \
+            --config "${ADMIN_WORKER_WRANGLER_CONFIG}" \
             --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}"
 
       - name: Upload admin-worker version
@@ -194,6 +240,7 @@ jobs:
           echo "ADMIN_WORKER_VERSION_TAG=${tag}" >> "$GITHUB_ENV"
           npx --yes wrangler@4 versions upload \
             --keep-vars \
+            --config "${ADMIN_WORKER_WRANGLER_CONFIG}" \
             --var "ADMIN_WORKER_BUILD_SHA:${GITHUB_SHA}" \
             --tag "$tag" \
             --message "GitHub Actions ${GITHUB_SHA}" \
@@ -215,7 +262,8 @@ jobs:
           migration_config=".wrangler-migration-no-routes.toml"
           node <<'NODE'
           const fs = require("node:fs");
-          const input = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const config = process.env.ADMIN_WORKER_WRANGLER_CONFIG || "wrangler.toml";
+          const input = fs.readFileSync(config, "utf8").split(/\r?\n/);
           const output = [];
           let skippingRoute = false;
           for (const line of input) {
@@ -339,6 +387,7 @@ jobs:
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
             "/v1/admin/kenji/control/approvals*",
+            "/v1/admin/kenji/conversation-shadow-receipt",
             "/v1/model/visibility/update",
             "/v1/model/rate/request",
             "/v1/model/telegram/bind",
@@ -458,6 +507,16 @@ jobs:
           grep -q '"error":"dashboard_host_not_allowed"' "$body_file"
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            # Conversation shadow receipt is owner/admin-only and must reach
+            # admin-worker on both production hosts (never the Webflow origin).
+            receipt_headers="$(mktemp)"
+            receipt_body="$(mktemp)"
+            receipt_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -D "$receipt_headers" -o "$receipt_body" -w "%{http_code}" "$origin/v1/admin/kenji/conversation-shadow-receipt")"
+            cat "$receipt_body"
+            test "$receipt_code" = "401"
+            grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$receipt_headers"
+            grep -Eq '"error":"owner_admin_session_required"|"error":"unauthorized"|"error":"admin_session_required"' "$receipt_body"
+
             # Private Media Review must stay behind credential-bound admin auth.
             review_body="$(mktemp)"
             review_code="$(curl -sS --max-time 20 -o "$review_body" -w "%{http_code}" "$origin/v1/admin/private-media")"

@@ -99,6 +99,49 @@ Culinary add-on payout:
 - Ingredients, parking, and approved special travel are pass-through actual expenses.
 - PRIVATE TABLE requires MMD-reviewed culinary skill before assignment.
 
+## Bangkok Companion payout matrix
+
+Status: **ACTIVE PUBLIC PACKAGE MATRIX.** Applies only to `model_work_lane=public_model`.
+
+| Package | Client price | Worker payout |
+| --- | ---: | ---: |
+| BANGKOK WITH ME · 4h | ฿5,900 | ฿3,600 |
+| LOCAL BANGKOK · 6h | ฿7,900 | ฿4,800 |
+| YOUR BANGKOK DAY · 8h | ฿10,500 | ฿6,400 |
+
+Extension payout:
+
+- OT before 00:00: client ฿1,190/hour → worker ฿800/hour.
+- Pre-booked time after 00:00: client +฿500/hour → worker +฿350/hour.
+- OT after 00:00: client ฿1,690/hour → worker ฿1,100/hour.
+- OT after 03:00: client ฿1,990/hour → worker ฿1,300/hour.
+- After 06:00: manual MMD review.
+- Outside Bangkok: re-quote required.
+- If the activity changes into Night Life, MMD reclassifies and re-quotes instead of treating it as simple OT.
+
+**Bangkok Companion is a Local Companion product, not automatically a licensed tour-guide service.** Any offer marketed as a licensed guide requires MMD verification of the applicable guide credential and a separate quote.
+
+## Social Appearance payout matrix
+
+Status: **ACTIVE PUBLIC PACKAGE MATRIX.** Applies only to `model_work_lane=public_model`.
+
+| Package | Client price | Worker payout |
+| --- | ---: | ---: |
+| DINNER GUEST · 3h | ฿5,500 | ฿3,300 |
+| EVENT PARTNER · 4h | ฿6,900 | ฿4,200 |
+| FORMAL EVENING · 6h | ฿9,500 | ฿5,800 |
+
+Extension payout:
+
+- OT before 00:00: client ฿1,290/hour → worker ฿850/hour.
+- Pre-booked time after 00:00: client +฿500/hour → worker +฿350/hour.
+- OT after 00:00: client ฿1,790/hour → worker ฿1,200/hour.
+- OT after 03:00: client ฿2,090/hour → worker ฿1,400/hour.
+- After 06:00: manual MMD review.
+- If the scope changes into Night Life or Commercial work, MMD reclassifies and re-quotes instead of treating it as simple OT.
+
+**BRAND / CORPORATE is custom quote only.** Commercial image/video/name usage rights are not included in ordinary Social Appearance pricing and require separate consent plus usage terms.
+
 ## Everyday / Night Life payout matrix
 
 Status: **ACTIVE PUBLIC PACKAGE MATRIX.** Applies only when `model_work_lane=public_model` and the Session package code is one of the approved package keys below. It never applies automatically to Private/SIGIL jobs.

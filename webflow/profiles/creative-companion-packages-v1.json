@@ -1,0 +1,38 @@
+{
+  "version": "mmd-creative-companion-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "creative_companion",
+  "positioning": "shared_interest_creative_context_not_professional_creative_service",
+  "public_packages": [
+    { "key": "gallery_with_me", "name": "GALLERY WITH ME", "price_thb": 5000, "included_minutes": 180, "worker_payout_thb": 3000, "activity_scope": "one_creative_context" },
+    { "key": "creative_city", "name": "CREATIVE CITY", "price_thb": 8500, "included_minutes": 300, "worker_payout_thb": 5000, "activity_scope": "two_or_three_creative_moments" },
+    { "key": "creative_day", "name": "CREATIVE DAY", "price_thb": 13500, "included_minutes": 480, "worker_payout_thb": 8000, "activity_scope": "full_creative_day" }
+  ],
+  "safety_scope": {
+    "photography_or_video_production_included": false,
+    "professional_design_or_creative_service_included": false,
+    "deliverable_or_usage_rights_included": false,
+    "commercial_production_included": false,
+    "mmd_must_confirm_model_shared_interest_context_fit_and_availability": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 1690,
+    "overtime_before_midnight_worker_thb_per_hour": 1000,
+    "overtime_after_midnight_client_thb_per_hour": 2190,
+    "overtime_after_midnight_worker_thb_per_hour": 1350,
+    "overtime_after_0300_client_thb_per_hour": 2690,
+    "overtime_after_0300_worker_thb_per_hour": 1700,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": ["MY_MMD_request", "MMD_MODEL_approve", "payment_verified", "MMD_confirmed"]
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"],
+  "scope_change": {
+    "commercial_photo_video_or_creative_production": "mmd_requote_required",
+    "deliverable_or_usage_rights": "separate_brief_and_quote_required",
+    "overnight_or_after_0600": "re_quote_required"
+  },
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

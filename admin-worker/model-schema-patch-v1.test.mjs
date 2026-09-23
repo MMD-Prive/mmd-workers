@@ -285,8 +285,8 @@ test('MMD review verifies private bytes and records actor before approval; faile
       const response=await worker.fetch(new Request('https://mmdbkk.com/v1/model/media/review-decision',{method:'POST',headers:{authorization:'Bearer test-admin','content-type':'application/json'},body:JSON.stringify({model_id:'recModel',media_asset_id:'recMedia',decision:'approve',requested_by:'forged-model'})}),{...baseTestEnv(),PRIVATE_MODEL_MEDIA:f.env.PRIVATE_MODEL_MEDIA});
       assert.equal(response.status,failAudit?500:200,await response.clone().text());
       assert.equal(writes.length,failAudit?1:2);
-      const audit=writes[0];assert.equal(audit.records[0].fields.requested_by,'admin-worker-service');assert.match(audit.records[0].fields.payload_json,/media_sha256/);
-      if(!failAudit){assert.equal(writes[1].fields.private_safe,true);assert.equal(writes[1].fields.public_safe,false);}
+      const audit=writes[0];assert.equal(audit.records[0].fields.requested_by,'admin-worker-service');assert.match(audit.records[0].fields.payload_json,/media_sha256/);assert.match(audit.records[0].fields.payload_json,/"teaser_safe":false/);
+      if(!failAudit){assert.equal(writes[1].fields.private_safe,true);assert.equal(writes[1].fields.public_safe,false);assert.equal(writes[1].fields.teaser_safe,false);}
     },async(input,init)=>{
       const req=normalizeMockRequest(input,init);
       if(req.method==='GET')return jsonResponse(f.asset);
@@ -295,4 +295,24 @@ test('MMD review verifies private bytes and records actor before approval; faile
       return jsonResponse({id:'recMedia',fields:body.fields});
     });
   }
+});
+
+
+test("legacy profile media cannot enter the private teaser review lane", async () => {
+  const f = privateMediaFixture();
+  f.asset.fields.review_status = "pending_review";
+  f.asset.fields.media_type = "profile";
+  await withMockedFetch(async () => {
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/model/media/review-decision", {
+      method:"POST", headers:{authorization:"Bearer test-admin","content-type":"application/json"},
+      body:JSON.stringify({model_id:"recModel",media_asset_id:"recMedia",decision:"approve",teaser_safe:true}),
+    }), {...baseTestEnv(), PRIVATE_MODEL_MEDIA:f.env.PRIVATE_MODEL_MEDIA});
+    const data = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(data.error, "private_media_policy_invalid");
+  }, async (input, init) => {
+    const req = normalizeMockRequest(input, init);
+    assert.equal(req.method, "GET");
+    return jsonResponse(f.asset);
+  });
 });

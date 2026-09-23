@@ -1929,6 +1929,7 @@ export function modelSchemaPatchV1Tables(env = {}) {
         publicSafe: str(env.AT_MEDIA_ASSETS__PUBLIC_SAFE || "public_safe"),
         privateSafe: str(env.AT_MEDIA_ASSETS__PRIVATE_SAFE || "private_safe"),
         flashSafe: str(env.AT_MEDIA_ASSETS__FLASH_SAFE || "flash_safe"),
+        teaserSafe: str(env.AT_MEDIA_ASSETS__TEASER_SAFE || "teaser_safe"),
         fileName: str(env.AT_MEDIA_ASSETS__FILE_NAME || "file_name"),
         fileType: str(env.AT_MEDIA_ASSETS__FILE_TYPE || "file_type"),
         fileSizeBytes: str(env.AT_MEDIA_ASSETS__FILE_SIZE_BYTES || "file_size_bytes"),
@@ -2080,10 +2081,25 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
         return new Response(object.body,{headers:{"content-type":asset.contentType,"cache-control":"private, no-store","referrer-policy":"no-referrer","x-content-type-options":"nosniff"}});
       }
       const status = body.decision === "approve" ? "approved" : "rejected";
-      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
+      const requestedTeaser = body.teaser_safe === true;
+      const mediaType = normalizeSchemaPatchWord(media.fields.media_type);
+      // Teaser is its own commercial consent lane. It must be a purpose-built
+      // private asset, explicitly approved, and cannot be backfilled from a
+      // legacy/profile image simply by toggling a checkbox.
+      if (requestedTeaser && (body.decision !== "approve" || !["private_gallery", "flash_preview"].includes(mediaType))) {
+        return modelSchemaPatchJson({ ok:false, error:"teaser_media_type_invalid" }, 422);
+      }
+      const teaserSafe = status === "approved" && requestedTeaser;
+      const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,teaser_safe:teaserSafe,media_sha256:asset.sha256,source:"private_media_review_v1"}});
       const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
-      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
-      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
+      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{
+        [fields.reviewStatus]:status,
+        [fields.publicSafe]:false,
+        [fields.privateSafe]:status === "approved",
+        [fields.flashSafe]:status === "approved",
+        [fields.teaserSafe]:teaserSafe,
+      });
+      return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,teaser_safe:teaserSafe,review});
     }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
       return modelSchemaPatchJson(await handleModelVisibilityUpdate(env, body || {}, context));
@@ -2467,9 +2483,27 @@ function modelSessionPayoutTerms(workLane, packageCode, basePayoutThb) {
     day_off_short: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     day_off_half_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     day_off_full_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    move_with_me: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    game_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    active_day: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["venue_or_court_fee", "class_or_activity_fee", "equipment_rental", "ticket", "transport", "parking", "food_and_drinks"] },
+    reset_with_me: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    wellness_day: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    slow_reset: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["wellness_venue_or_class", "ticket", "transport", "parking", "food_and_drinks"] },
+    business_lunch: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    smart_presence: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    context_day: { overtime_before_midnight_payout_thb_per_hour: 1200, overtime_after_midnight_payout_thb_per_hour: 1550, overtime_after_0300_payout_thb_per_hour: 1900, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"] },
+    gallery_with_me: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
+    creative_city: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
+    creative_day: { overtime_before_midnight_payout_thb_per_hour: 1000, overtime_after_midnight_payout_thb_per_hour: 1350, overtime_after_0300_payout_thb_per_hour: 1700, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["ticket", "exhibition_or_venue", "transport", "parking", "food_and_drinks"] },
     night_out: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     dinner_to_midnight: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
     own_the_night: { overtime_before_midnight_payout_thb_per_hour: 650, overtime_after_midnight_payout_thb_per_hour: 1000, overtime_after_0300_payout_thb_per_hour: 1200, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    dinner_guest: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    event_partner: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    formal_evening: { overtime_before_midnight_payout_thb_per_hour: 850, overtime_after_midnight_payout_thb_per_hour: 1200, overtime_after_0300_payout_thb_per_hour: 1400, after_midnight_prebook_premium_payout_thb_per_hour: 350 },
+    bangkok_with_me: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    local_bangkok: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
+    your_bangkok_day: { overtime_before_midnight_payout_thb_per_hour: 800, overtime_after_midnight_payout_thb_per_hour: 1100, overtime_after_0300_payout_thb_per_hour: 1300, after_midnight_prebook_premium_payout_thb_per_hour: 350, reimbursable_expenses: ["food", "drinks", "tickets", "activities", "BTS_MRT", "taxi", "boat", "parking"] },
   }[code];
 
   if (!terms) {
@@ -2609,6 +2643,209 @@ async function handleModelSessionLinkIssuer(req, env) {
   });
 }
 
+const PUBLIC_EXTENSION_TABLE_DEFAULT = "tblbIhMUXMAYlXmpi";
+const PUBLIC_EXTENSION_FIELDS = Object.freeze({
+  requestId: "fldWgNAnDzvKFPqgK",
+  session: "fldJgynlVTWudlHAq",
+  sessionId: "fldYkRVUJkztQ2ThT",
+  kind: "flddIurJJZlZHmOtg",
+  status: "fld2mTgTg7JZePg9z",
+  lane: "fld14fjGt8shKWb73",
+  packageCode: "fldO8jptuBhZi6gZd",
+  originalEnd: "fld4eFaGprFvrcFrm",
+  requestedEnd: "fldVsKOtXr1SP3plX",
+  minutes: "fldJBdPuy1jhUwtrk",
+  customerAmount: "fldkGgu84J4sQjxfg",
+  modelPayout: "fldDdV5lu1GNWrbZZ",
+  policy: "fld0otgJgiw1ZXJb1",
+  modelNote: "fldLalD8oFLEV0EV0",
+  modelAt: "fldPCYvCRPCTbold6",
+  paymentRef: "fldQHdL9CPy52I7aX",
+  paymentStage: "fldBbN30nVWgAdZnc",
+  paymentUrl: "fld5dDpTX3wZHinLq",
+  updatedAt: "fldd3BmpwWa8ylpeb",
+  audit: "fldSWvZLwv0Uswtu4",
+});
+const PUBLIC_EXTENSION_MODEL_ACTIONS = new Set(["approve_extension", "decline_extension"]);
+const PUBLIC_EXTENSION_OPEN_STATES = new Set(["requested", "model_approved", "payment_required", "payment_pending", "payment_verified"]);
+
+function publicExtensionTable(env) {
+  return str(env.AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS || PUBLIC_EXTENSION_TABLE_DEFAULT);
+}
+function publicExtensionStatus(value) {
+  return str(value).trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+function publicExtensionSessionEndIso(tables, record) {
+  const fields = record?.fields || {};
+  const raw = str(fields[tables.sessions.fields.endTime] || fields.end_time || "");
+  const direct = Date.parse(raw);
+  if (Number.isFinite(direct)) return new Date(direct).toISOString();
+  const date = str(fields[tables.sessions.fields.jobDate] || fields.job_date || "");
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date) && match) {
+    const parsed = Date.parse(`${date}T${match[1].padStart(2, "0")}:${match[2]}:00+07:00`);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  return "";
+}
+function publicExtensionOneLink(value) {
+  if (!Array.isArray(value) || value.length !== 1) return "";
+  return str(typeof value[0] === "string" ? value[0] : value[0]?.id);
+}
+async function findPublicExtensionForSession(env, sessionRecord) {
+  const sessionId = str(sessionRecord?.fields?.session_id || sessionRecord?.fields?.["Session ID"]);
+  if (!sessionId || !sessionRecord?.id) return null;
+  const params = new URLSearchParams();
+  params.set("pageSize", "20");
+  params.set("filterByFormula", `{session_id}="${escapeFormulaValue(sessionId)}"`);
+  params.set("sort[0][field]", "updated_at");
+  params.set("sort[0][direction]", "desc");
+  const result = await airtableFetch(env, `/${encodeURIComponent(publicExtensionTable(env))}?${params.toString()}`);
+  if (!result.ok) return null;
+  const rows = Array.isArray(result.data?.records) ? result.data.records : [];
+  const exact = rows.filter((row) => publicExtensionOneLink(row?.fields?.[PUBLIC_EXTENSION_FIELDS.session]) === str(sessionRecord.id));
+  return exact.find((row) => PUBLIC_EXTENSION_OPEN_STATES.has(publicExtensionStatus(row?.fields?.[PUBLIC_EXTENSION_FIELDS.status])))
+    || exact[0]
+    || null;
+}
+function publicExtensionModelProjection(record) {
+  if (!record) return null;
+  const f = record.fields || {};
+  const payout = Number(f[PUBLIC_EXTENSION_FIELDS.modelPayout]);
+  return {
+    request_id: str(f[PUBLIC_EXTENSION_FIELDS.requestId]) || null,
+    request_kind: publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.kind]) || null,
+    status: publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.status]) || null,
+    original_end_at: str(f[PUBLIC_EXTENSION_FIELDS.originalEnd]) || null,
+    requested_end_at: str(f[PUBLIC_EXTENSION_FIELDS.requestedEnd]) || null,
+    requested_minutes: Number.isFinite(Number(f[PUBLIC_EXTENSION_FIELDS.minutes])) ? Number(f[PUBLIC_EXTENSION_FIELDS.minutes]) : null,
+    model_payout_thb: Number.isFinite(payout) && payout >= 0 ? payout : null,
+    pricing_policy_version: str(f[PUBLIC_EXTENSION_FIELDS.policy]) || null,
+  };
+}
+async function patchPublicExtension(env, recordId, fields) {
+  const result = await airtableFetch(env, `/${encodeURIComponent(publicExtensionTable(env))}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: compactObject(fields), typecast: true }),
+  });
+  if (!result.ok) return null;
+  return { id: result.data?.id || recordId, fields: result.data?.fields || {} };
+}
+async function issuePublicExtensionPayment(env, extensionRecord) {
+  const token = str(env.AUTH_SERVICE_ADMIN_TO_PAYMENTS);
+  if (!token || typeof env.PAYMENTS_WORKER?.fetch !== "function") {
+    return { ok: false, error: "extension_payment_service_not_ready" };
+  }
+  const f = extensionRecord?.fields || {};
+  const payload = {
+    request_id: str(f[PUBLIC_EXTENSION_FIELDS.requestId]),
+    session_id: str(f[PUBLIC_EXTENSION_FIELDS.sessionId]),
+    payment_ref: str(f[PUBLIC_EXTENSION_FIELDS.paymentRef]),
+    amount_thb: Number(f[PUBLIC_EXTENSION_FIELDS.customerAmount]),
+    original_end_at: str(f[PUBLIC_EXTENSION_FIELDS.originalEnd]),
+    requested_end_at: str(f[PUBLIC_EXTENSION_FIELDS.requestedEnd]),
+  };
+  const response = await env.PAYMENTS_WORKER.fetch(new Request("https://payments-worker.internal/v1/internal/payments/session-extension/intent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Internal-Token": token },
+    body: JSON.stringify(payload),
+  }));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data?.ok !== true || !str(data.customer_payment_url)) {
+    return { ok: false, error: str(data?.error || "extension_payment_intent_failed") };
+  }
+  return { ok: true, data };
+}
+async function ensurePublicExtensionPayment(env, extensionRecord) {
+  const status = publicExtensionStatus(extensionRecord?.fields?.[PUBLIC_EXTENSION_FIELDS.status]);
+  if (!["model_approved", "payment_required", "payment_pending"].includes(status)) return { ok: true, record: extensionRecord };
+  const intent = await issuePublicExtensionPayment(env, extensionRecord);
+  if (!intent.ok) return { ok: false, error: intent.error, record: extensionRecord };
+  const now = new Date().toISOString();
+  const patched = await patchPublicExtension(env, extensionRecord.id, {
+    [PUBLIC_EXTENSION_FIELDS.status]: "payment_required",
+    [PUBLIC_EXTENSION_FIELDS.paymentRef]: str(intent.data.payment_ref),
+    [PUBLIC_EXTENSION_FIELDS.paymentStage]: "extension",
+    [PUBLIC_EXTENSION_FIELDS.paymentUrl]: str(intent.data.customer_payment_url),
+    [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+    [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({
+      schema: "public_session_extension_v1",
+      event: "payment_intent_ready",
+      payment_ref: str(intent.data.payment_ref),
+      amount_thb: Number(intent.data.amount_thb),
+    }),
+  });
+  return patched ? { ok: true, record: patched } : { ok: false, error: "extension_payment_record_patch_failed", record: extensionRecord };
+}
+async function handlePublicExtensionModelAction(env, body, context) {
+  const action = str(body?.action).trim().toLowerCase();
+  const state = normalizeSessionState(modelSessionStateFromRecord(context.tables, context.session).state);
+  if (state !== "work_started") return modelSessionJson({ ok: false, error: "extension_requires_active_work" }, 409);
+  const sessionView = modelSessionResponseSession(context.tables, context.session);
+  if (sessionView.model_work_lane !== "public_model") return modelSessionJson({ ok: false, error: "extension_public_money_only" }, 409);
+  let extension = await findPublicExtensionForSession(env, context.session);
+  if (!extension) return modelSessionJson({ ok: false, error: "extension_request_not_found" }, 404);
+  const f = extension.fields || {};
+  const requestId = str(body?.extension_request_id);
+  if (!requestId || requestId !== str(f[PUBLIC_EXTENSION_FIELDS.requestId])) {
+    return modelSessionJson({ ok: false, error: "extension_request_mismatch" }, 409);
+  }
+  const currentStatus = publicExtensionStatus(f[PUBLIC_EXTENSION_FIELDS.status]);
+  const currentEnd = publicExtensionSessionEndIso(context.tables, context.session);
+  const originalEnd = str(f[PUBLIC_EXTENSION_FIELDS.originalEnd] || "");
+  if (!currentEnd || !originalEnd || Date.parse(currentEnd) !== Date.parse(originalEnd)) {
+    return modelSessionJson({ ok: false, error: "extension_session_end_changed" }, 409);
+  }
+  const now = new Date().toISOString();
+
+  if (action === "decline_extension") {
+    if (currentStatus === "model_declined") {
+      return modelSessionJson({ ok: true, idempotent: true, session: sessionView, extension_request: publicExtensionModelProjection(extension) });
+    }
+    if (currentStatus !== "requested") return modelSessionJson({ ok: false, error: "extension_not_pending_model_decision" }, 409);
+    extension = await patchPublicExtension(env, extension.id, {
+      [PUBLIC_EXTENSION_FIELDS.status]: "model_declined",
+      [PUBLIC_EXTENSION_FIELDS.modelAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.modelNote]: str(body?.reason).slice(0, 500),
+      [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({ schema:"public_session_extension_v1", event:"model_declined", at:now }),
+    });
+    if (!extension) return modelSessionJson({ ok: false, error: "extension_write_failed" }, 503);
+    return modelSessionJson({ ok: true, session: sessionView, extension_request: publicExtensionModelProjection(extension) });
+  }
+
+  if (currentStatus === "requested") {
+    extension = await patchPublicExtension(env, extension.id, {
+      [PUBLIC_EXTENSION_FIELDS.status]: "model_approved",
+      [PUBLIC_EXTENSION_FIELDS.modelAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.modelNote]: str(body?.note).slice(0, 500),
+      [PUBLIC_EXTENSION_FIELDS.updatedAt]: now,
+      [PUBLIC_EXTENSION_FIELDS.audit]: JSON.stringify({ schema:"public_session_extension_v1", event:"model_approved", at:now }),
+    });
+    if (!extension) return modelSessionJson({ ok: false, error: "extension_write_failed" }, 503);
+  } else if (!["model_approved","payment_required","payment_pending"].includes(currentStatus)) {
+    return modelSessionJson({ ok: false, error: "extension_not_pending_model_decision" }, 409);
+  }
+
+  const payment = await ensurePublicExtensionPayment(env, extension);
+  if (!payment.ok) {
+    return modelSessionJson({
+      ok: true,
+      payment_intent_ready: false,
+      payment_intent_error: payment.error,
+      session: sessionView,
+      extension_request: publicExtensionModelProjection(payment.record || extension),
+    });
+  }
+  return modelSessionJson({
+    ok: true,
+    payment_intent_ready: true,
+    session: sessionView,
+    extension_request: publicExtensionModelProjection(payment.record),
+  });
+}
+
 async function handleModelSessionCurrent(req, env) {
   const context = await resolveModelSessionContext(req, env);
   if (!context.ok) return modelSessionJson({ ok: false, error: context.error }, context.status);
@@ -2618,9 +2855,11 @@ async function handleModelSessionCurrent(req, env) {
     return modelSessionJson({ ok: false, error: "schema_not_ready" }, 503);
   }
 
+  const extension = await findPublicExtensionForSession(env, context.session);
   return modelSessionJson({
     ok: true,
     session: modelSessionResponseSession(context.tables, context.session),
+    extension_request: publicExtensionModelProjection(extension),
   });
 }
 
@@ -2680,6 +2919,11 @@ async function handleModelSessionAction(req, env) {
   const body = await safeJson(req);
   const authContext = await resolveModelSessionContext(req, env, body);
   if (!authContext.ok) return modelSessionJson({ ok: false, error: authContext.error }, authContext.status);
+
+  const rawAction = str(body?.action).trim().toLowerCase();
+  if (PUBLIC_EXTENSION_MODEL_ACTIONS.has(rawAction)) {
+    return handlePublicExtensionModelAction(env, body, authContext);
+  }
 
   const action = normalizeModelSessionAction(body?.action);
   if (!MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(str(body?.action)) && !MODEL_SESSION_MODEL_ALLOWED_ACTIONS.has(action)) {
@@ -2908,6 +3152,7 @@ async function handleModelMediaUploadInit(env, body) {
     [fields.publicSafe]: false,
     [fields.privateSafe]: false,
     [fields.flashSafe]: false,
+    [fields.teaserSafe]: false,
     [fields.fileName]: safeSchemaPatchFilename(body.file_name || assetId),
     [fields.fileType]: str(body.content_type || ""),
     [fields.fileSizeBytes]: body.file_size_bytes,
@@ -2955,6 +3200,7 @@ async function handleModelMediaUploadComplete(env, body) {
     [fields.r2Bucket]: str(env.MODEL_ASSETS_BUCKET_NAME || "MMD_MODEL_ASSETS"),
     [fields.reviewStatus]: "pending_review",
     [fields.flashSafe]: Boolean(body.flash_safe === true),
+    [fields.teaserSafe]: false,
     [fields.uploadedAt]: new Date().toISOString(),
   };
   const rec = existing

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handlePublicProfilesCatalogRequest } from "./src/public-profiles-catalog.js";
+import { buildPublicCatalog, handlePublicProfilesCatalogRequest } from "./src/public-profiles-catalog.js";
 
 const VERSION = "mmd-public-promo-consent-v1-20260922";
 
@@ -47,4 +47,33 @@ test("reviewed dedicated consent state overrides an older payload consent", asyn
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+
+test("public catalog exposes only a boolean teaser discovery marker", () => {
+  const eligibility = new Map([["teaser-ready", {
+    genders:["male"], roles:["driver_companion"], promo_roles:["driver_companion"], booking_mode:"curated",
+    public_profile_approved:true, public_image_approved:true, credential_status:"not_required",
+    nonmember_image_consent:true, promo_consent_status:"granted", promo_consent_at:"2026-09-22T10:00:00.000Z",
+    promo_consent_version:VERSION, promo_consent_source:"mmd_model_authenticated", promo_consent_revoked_at:"",
+  }]]);
+  const items = buildPublicCatalog([{ key:"MMD Public Models/teaser-ready/card.webp" }], {
+    eligibilityBySlug:eligibility,
+    teaserBySlug:new Set(["teaser-ready"]),
+  });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].private_teaser_available, true);
+  assert.deepEqual(Object.keys(items[0]).filter((key) => /asset|storage|url|count|grant|media/i.test(key)), ["image_url"]);
+});
+
+test("public catalog does not claim teaser availability without backend metadata", () => {
+  const eligibility = new Map([["no-teaser", {
+    genders:["male"], roles:["driver_companion"], promo_roles:["driver_companion"], booking_mode:"curated",
+    public_profile_approved:true, public_image_approved:true, credential_status:"not_required",
+    nonmember_image_consent:true, promo_consent_status:"granted", promo_consent_at:"2026-09-22T10:00:00.000Z",
+    promo_consent_version:VERSION, promo_consent_source:"mmd_model_authenticated", promo_consent_revoked_at:"",
+  }]]);
+  const items = buildPublicCatalog([{ key:"MMD Public Models/no-teaser/card.webp" }], { eligibilityBySlug:eligibility });
+  assert.equal(items.length, 1);
+  assert.equal(Object.hasOwn(items[0], "private_teaser_available"), false);
 });

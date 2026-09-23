@@ -359,8 +359,13 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
-LINE_AUTO_REPLY_ENABLED = "true"
+# Keep the older conversation/knowledge response lane paused while the bounded
+# First Contact V1 lane can answer safe opening messages under the kill switch.
+LINE_AUTO_REPLY_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
+# First Contact V1 answers only safe customer text openings. LINE OA owns the
+# add-friend greeting; all other legacy/autonomous replies remain paused.
+LINE_FIRST_CONTACT_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
@@ -376,6 +381,18 @@ AIRTABLE_TABLE_CLIENT_INTELLIGENCE_EVIDENCE_ID = "tblx7NdfHO5iY6qtg"
 # ai-worker through a private Cloudflare service binding. It does not affect
 # the LINE reply path or create any domain truth.
 KENJI_AI_WORKER_BRIDGE_ENABLED = "true"
+# Phase 1 conversation context: previous customer messages plus only replies
+# proven delivered by LINE are supplied to the internal shadow binding. This
+# never changes the LINE response path and stays fail-closed when unavailable.
+KENJI_LINE_CONVERSATION_SHADOW_ENABLED = "true"
+AIRTABLE_TABLE_AI_MESSAGE_EVENTS_ID = "tbljCYfYqfm8gBTPq"
+# Phase 2 semantic understanding stays shadow-only. It may classify how the
+# latest message relates to prior turns, but it has no customer-copy field,
+# cannot mutate domain truth, and cannot bypass LINE_AUTO_REPLY_ENABLED=false.
+KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED = "true"
+# Dedicated shadow model so contextual observation does not consume the same
+# model-rate bucket as the live Kenji response path.
+KENJI_CONTEXTUAL_OPENAI_MODEL = "gpt-4.1-mini"
 # Personal/crew LINE source IDs are never guessed. Populate this only when the
 # bot/OA is actually present in a Crew group/room and the source ID is reviewed.
 KENJI_LINE_CREW_SOURCE_IDS = ""
@@ -430,9 +447,20 @@ MMS_OPENAI_MODEL = "gpt-5.6"
 name = "KENJI_MODEL_DEDUPE"
 class_name = "KenjiModelIdempotency"
 
+# Privacy-safe owner receipt for Kenji Conversation Shadow Mode. It stores
+# only aggregate counts and the last observed timestamp—never message text,
+# LINE IDs, customer identifiers, or customer-facing copy.
+[[durable_objects.bindings]]
+name = "KENJI_SHADOW_RECEIPT"
+class_name = "KenjiShadowReceipt"
+
 [[migrations]]
 tag = "v1-kenji-model-idempotency"
 new_sqlite_classes = ["KenjiModelIdempotency"]
+
+[[migrations]]
+tag = "v2-kenji-conversation-shadow-receipt"
+new_sqlite_classes = ["KenjiShadowReceipt"]
 
 # Full CARE BACK staging front gate. No production routes are inherited into
 # named environments; this Worker is reachable only on its workers.dev URL.

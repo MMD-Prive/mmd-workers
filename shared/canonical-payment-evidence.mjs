@@ -14,7 +14,7 @@ export async function resolveLineCanonicalPayment(env, analysis = {}) {
   if (analysis.customer?.status !== "matched" || !(links.client || links.member)
       || correlation.status !== "exact" || !links.session
       || selected.session_record_id !== links.session || !selected.session_id
-      || !["deposit", "full", "final", "tips"].includes(stage)
+      || !["deposit", "full", "final", "tips", "extension"].includes(stage)
       || analysis.payment_intelligence?.ambiguous === true || !(amount > 0)) {
     return unresolved("exact_customer_session_stage_required");
   }

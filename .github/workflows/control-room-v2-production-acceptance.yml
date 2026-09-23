@@ -81,7 +81,8 @@ jobs:
                 page.status === 200 &&
                 page.headers.get("x-mmd-control-room-v2") === "system-health-v1" &&
                 page.headers.get("x-mmd-control-room-phase1") === "closed" &&
-                ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2"].every((marker) => html.includes(marker));
+                page.headers.get("x-mmd-owner-analytics") === "intent-truth-v1" &&
+                ["SYSTEM HEALTH · V2", "Production truth at a glance", "HYPE / STUCK / SLA", "data-mmd-control-room-v2", "data-mmd-owner-analytics=\"v1\"", "Intent ≠ Business Truth"].every((marker) => html.includes(marker));
 
               const dashboard = await fetch(`${pageUrl.origin}/v1/admin/dashboard`, {
                 headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
@@ -122,6 +123,35 @@ jobs:
               throw new Error("HYPE/STUCK/SLA load contract failed");
             }
 
+            const analyticsResponse = await fetch(`${pageUrl.origin}/v1/admin/dashboard/analytics`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const ownerAnalytics = await analyticsResponse.json().catch(() => null);
+            if (analyticsResponse.status !== 200 || ownerAnalytics?.ok !== true) {
+              throw new Error(`Owner Analytics read failed: ${analyticsResponse.status}`);
+            }
+            if (ownerAnalytics?.schema !== "mmd.owner_analytics_dashboard.v1" || ownerAnalytics?.analytics_schema !== "mmd_analytics_canon_v2") {
+              throw new Error("Owner Analytics schema mismatch");
+            }
+            if (ownerAnalytics?.read_only !== true || ownerAnalytics?.guardrails?.no_business_truth_mutation !== true) {
+              throw new Error("Owner Analytics read-only contract failed");
+            }
+            if (ownerAnalytics?.guardrails?.cross_layer_person_conversion !== false) {
+              throw new Error("Owner Analytics must forbid mixed client/server person conversion");
+            }
+            if (!["connected", "partial", "read_scope_missing", "query_unavailable"].includes(ownerAnalytics?.state)) {
+              throw new Error(`unexpected Owner Analytics state: ${ownerAnalytics?.state}`);
+            }
+            const truthMetrics = ownerAnalytics?.business_truth?.metrics || {};
+            for (const metric of Object.values(truthMetrics)) {
+              if (metric && metric.observed === false) {
+                for (const key of ["events_30d", "amount_30d", "payments_30d"]) {
+                  if (key in metric && metric[key] === 0) throw new Error(`Owner Analytics fabricated zero for unobserved ${key}`);
+                }
+              }
+            }
+
             const keys = new Set((v2?.systems || []).map((item) => item?.key));
             for (const key of ["website","workers","deploy","routes","analytics","payments","telegram","line","data","jobs"]) {
               if (!keys.has(key)) throw new Error(`system health lane missing: ${key}`);
@@ -132,6 +162,12 @@ jobs:
               redirect: "manual",
             });
             if (unauthDashboard.status !== 401) throw new Error(`unauth dashboard must fail closed, got ${unauthDashboard.status}`);
+
+            const unauthAnalytics = await fetch(`${pageUrl.origin}/v1/admin/dashboard/analytics`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthAnalytics.status !== 401) throw new Error(`unauth analytics must fail closed, got ${unauthAnalytics.status}`);
 
             const unauthPage = await fetch(`${pageUrl.origin}/internal/admin/control-room`, { redirect: "manual" });
             if (![302, 303, 307, 308].includes(unauthPage.status)) {
@@ -148,6 +184,8 @@ jobs:
               phase0_workers: v2.phase0.accepted_workers,
               phase1_status: v2.phase1.status,
               authority: "read_only",
+              owner_analytics_state: ownerAnalytics.state,
+              owner_analytics_schema: ownerAnalytics.analytics_schema,
             }, null, 2));
           })().catch((error) => {
             console.error(error?.stack || error);
@@ -166,5 +204,8 @@ jobs:
           - Website / Workers / Deploy Gate / Routes / PostHog / Payments / Telegram / LINE / Data / Jobs: projected
           - HYPE / STUCK / SLA: on-demand, no duplicate dashboard fetch
           - Business authority: read-only
-          - Unauthenticated page/API: fail-closed
+          - Owner Analytics: Intent / Business Truth / Authority Health separated
+          - Cross-layer person conversion: forbidden
+          - Unobserved terminal event: null / —, never fabricated zero
+          - Unauthenticated page/API/analytics: fail-closed
           EOF

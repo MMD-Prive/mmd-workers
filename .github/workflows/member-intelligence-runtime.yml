@@ -155,6 +155,7 @@ jobs:
                 && grep -q '/v1/admin/clients/lineage-lookup' "$body" \
                 && grep -q '/v1/admin/clients/intelligence' "$body" \
                 && grep -q 'mmd.kenji_continuity_operator_draft.v1' "$body" \
+                && grep -q 'mmd.kenji_continuity_operator_feedback.v1' "$body" \
                 && grep -q 'My MMD Resolver' "$body"; then
                 echo "Member Intelligence runtime verified for ${origin} on attempt ${attempt}"
                 ready=1
