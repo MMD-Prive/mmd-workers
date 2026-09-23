@@ -56,6 +56,8 @@ const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default"
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
 const SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH = "/__internal/line/shop-shipping-notify/smoke";
+const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/line/model-availability-reminder";
+const SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_SMOKE_PATH = "/__internal/line/model-availability-reminder/smoke";
 const SERVICE_KENJI_CONVERSATION_SHADOW_RECEIPT_PATH = "/__internal/kenji/conversation-shadow-receipt";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
@@ -1901,6 +1903,57 @@ async function handleServiceBoundRichMenuRoute(request, env, path) {
   return json({ ok: false, error: "not_found" }, 404);
 }
 
+function buildModelAvailabilityReminderMessage(displayName = "") {
+  const name = asString(displayName).slice(0, 80);
+  return [
+    "MMD MODEL · อัปเดตสถานะวันนี้",
+    name ? `${name} กรุณาอัปเดตสถานะที่สะดวกตอนนี้` : "กรุณาอัปเดตสถานะที่สะดวกตอนนี้",
+    "",
+    "เปิด MMD MODEL > Availability แล้วเลือกสถานะปัจจุบัน เพื่อให้คิวที่ MMD เห็นตรงกับคุณ",
+    "ถ้ายังไม่สะดวก ไม่ต้องเลือก “ว่าง” — ระบบจะรอการยืนยันจากคุณ",
+    "",
+    "https://www.mmdbkk.com/sigil/model/dashboard/availability",
+  ].join("\n");
+}
+
+async function handleServiceBoundModelAvailabilityReminderSmoke(request, env) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+  const message = buildModelAvailabilityReminderMessage(asString(body.display_name));
+  const tokenPresent = Boolean(asString(env.LINE_CHANNEL_ACCESS_TOKEN));
+  return json({
+    ok: tokenPresent,
+    status: tokenPresent ? "ready" : "line_token_missing",
+    line_push_sent: false,
+    checks: {
+      contains_mmd_model: message.includes("MMD MODEL"),
+      contains_availability_path: message.includes("/sigil/model/dashboard/availability"),
+      access_token_present: tokenPresent,
+    },
+  }, tokenPresent ? 200 : 503);
+}
+
+async function handleServiceBoundModelAvailabilityReminder(request, env) {
+  if (!hasServiceBindingAuth(request, ["admin-worker"])) return json({ ok: false, error: "internal_auth_required" }, 401);
+  if (request.method !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const body = await readJson(request);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const lineUserId = getLineUserId(body);
+  const displayName = asString(body.display_name).slice(0, 80);
+  if (!lineUserId) return json({ ok: false, error: "line_user_id_required" }, 400);
+
+  const message = buildModelAvailabilityReminderMessage(displayName);
+  const result = await deliverLineText(env, lineUserId, message, { trusted_event: true });
+  return json({
+    ok: result.ok === true,
+    status: result.ok === true ? "sent" : (result.error || "line_push_failed"),
+    transport: "member-dashboard-chat-worker",
+  }, result.ok === true ? 200 : 502);
+}
+
 function buildMmdShopShippingMessage({ customerName = "", orderId = "", courier = "Courier", tracking = "" } = {}) {
   return [
     "MMD SHOP · จัดส่งสินค้าแล้ว",
@@ -2166,6 +2219,14 @@ export default {
 
     if (url.pathname === SERVICE_KENJI_CONVERSATION_SHADOW_RECEIPT_PATH) {
       return handleKenjiConversationShadowReceipt(request, env);
+    }
+
+    if (url.pathname === SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_SMOKE_PATH) {
+      return handleServiceBoundModelAvailabilityReminderSmoke(request, env);
+    }
+
+    if (url.pathname === SERVICE_LINE_MODEL_AVAILABILITY_REMINDER_PATH) {
+      return handleServiceBoundModelAvailabilityReminder(request, env);
     }
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH) {
