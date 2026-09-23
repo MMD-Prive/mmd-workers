@@ -255,6 +255,25 @@ pattern = "www.mmdbkk.com/admin/login*"
 zone_name = "mmdbkk.com"
 
 
+
+# Exact owner-authenticated LINE Rich Menu production acceptance routes.
+# Keep these narrow: no /v1/admin/* wildcard and no browser/public publisher.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/prepare"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/prepare"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/audit"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/audit"
+zone_name = "mmdbkk.com"
+
 # MMD Shop owner workspace and authenticated API. Webflow is presentation only.
 [[routes]]
 pattern = "mmdbkk.com/internal/admin/shop/orders*"
