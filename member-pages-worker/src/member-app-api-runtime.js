@@ -245,7 +245,7 @@ export function identityRecoveryStateFromEvidence(session = null, record = null)
   return "auto_resolving";
 }
 
-async function readIdentityRecoveryState(env = {}, session = null) {
+export async function readIdentityRecoveryState(env = {}, session = null) {
   const base = identityRecoveryStateFromEvidence(session, null);
   if (base === null || base === "linked" || base === "review_required") return base;
 
