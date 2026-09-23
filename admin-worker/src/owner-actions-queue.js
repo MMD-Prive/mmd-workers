@@ -132,6 +132,7 @@ function action(input) {
     summary: input.summary,
     count: input.count,
     href: input.href,
+    detail_href: `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(input.key)}`,
     authority: input.authority,
     review_required: true,
     send_allowed: false,
