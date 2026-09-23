@@ -214,7 +214,7 @@ test("HYPE watch-only backlog stays out while overdue items split into source co
   ]);
 });
 
-test("stale terminal CARE BACK diagnostics never create an Owner Action", () => {
+test("non-actionable and stale HYPE diagnostics never create an Owner Action", () => {
   const queue = buildOwnerActionsQueue({
     hype: {
       available: true,
@@ -224,22 +224,37 @@ test("stale terminal CARE BACK diagnostics never create an Owner Action", () => 
         watch: 0,
         owner_actionable_overdue: 0,
         owner_actionable_by_kind: {},
-        stale_terminal_records: 8,
+        stale_terminal_records: 9,
+        non_actionable_records: 2,
       },
       stale_terminal_by_kind: {
         coupon_manual_review_terminal: 8,
+        telegram_bind_expired_pending: 1,
+      },
+      non_actionable_by_kind: {
+        entitlement_pending_invite_expected: 2,
       },
     },
   });
 
   assert.equal(queue.actions.some((item) => item.action_key === "hype_coupon_manual_review_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_entitlement_notification_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_telegram_bind_overdue"), false);
   assert.equal(queue.actions.some((item) => item.action_key === "hype_operational_watch"), false);
   assert.equal(queue.queue_health.schema, "mmd_owner_actions_queue_health_v1");
   assert.equal(queue.queue_health.active_owner_decisions, 0);
   assert.equal(queue.queue_health.unknown_hype_overdue, 0);
-  assert.equal(queue.queue_health.stale_terminal_records, 8);
-  assert.deepEqual(queue.queue_health.stale_terminal_by_kind, { coupon_manual_review_terminal: 8 });
+  assert.equal(queue.queue_health.stale_terminal_records, 9);
+  assert.deepEqual(queue.queue_health.stale_terminal_by_kind, {
+    coupon_manual_review_terminal: 8,
+    telegram_bind_expired_pending: 1,
+  });
+  assert.equal(queue.queue_health.non_actionable_records, 2);
+  assert.deepEqual(queue.queue_health.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 2,
+  });
   assert.equal(queue.queue_health.classification_complete, true);
+  assert.equal(queue.queue_health.phase_5_closure_ready, true);
   assert.equal(queue.queue_health.business_truth_mutated, false);
 });
 

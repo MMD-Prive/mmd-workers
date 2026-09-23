@@ -111,23 +111,24 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
   assert.equal(watch.policy_version, HYPE_STUCK_SLA_POLICY);
   assert.equal(watch.status, "overdue");
   assert.equal(watch.complete, true);
-  assert.equal(watch.counts.total, 5);
-  assert.equal(watch.counts.overdue, 3);
+  assert.equal(watch.counts.total, 4);
+  assert.equal(watch.counts.overdue, 2);
   assert.equal(watch.counts.watch, 2);
-  assert.equal(watch.counts.owner_actionable_overdue, 1);
+  assert.equal(watch.counts.owner_actionable_overdue, 0);
   assert.equal(watch.counts.stale_terminal_records, 1);
-  assert.deepEqual(watch.counts.owner_actionable_by_kind, {
-    entitlement_notification_incomplete: 1,
-  });
+  assert.equal(watch.counts.non_actionable_records, 1);
+  assert.deepEqual(watch.counts.owner_actionable_by_kind, {});
   assert.deepEqual(watch.counts.by_kind, {
     payment_proof_pending: 1,
-    entitlement_notification_incomplete: 1,
     job_confirmation_pending: 1,
     recovery_unassigned: 1,
     telegram_bind_unconsumed: 1,
   });
   assert.deepEqual(watch.stale_terminal_by_kind, {
     coupon_manual_review_terminal: 1,
+  });
+  assert.deepEqual(watch.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 1,
   });
   assert.equal(watch.items[0].sla_status, "overdue");
   assert.equal(watch.items.at(-1).sla_status, "watch");
@@ -136,6 +137,83 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
 
   const serialized = JSON.stringify(watch);
   assert.doesNotMatch(serialized, /must-not-project|U11111111111111111111111111111111|token_hash|start_arg|payment_ref/i);
+});
+
+test("Entitlement pending_invite is expected setup state while removal_failed remains actionable", () => {
+  const watch = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [
+      {
+        id: "recExpectedInvite",
+        fields: {
+          entitlement_id: "ent-expected",
+          package_code: "premium",
+          access_status: "active",
+          source: "renewal",
+          payment_ref: "pay-present",
+          telegram_access_status: "pending_invite",
+          created_at: "2026-09-21T07:00:00.000Z",
+        },
+      },
+      {
+        id: "recRemovalFailed",
+        fields: {
+          entitlement_id: "ent-failed",
+          package_code: "premium",
+          access_status: "active",
+          source: "access_sync",
+          telegram_access_status: "removal_failed",
+          updated_at: "2026-09-21T07:00:00.000Z",
+        },
+      },
+    ],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  assert.equal(watch.counts.total, 1);
+  assert.equal(watch.counts.overdue, 1);
+  assert.equal(watch.counts.owner_actionable_overdue, 1);
+  assert.equal(watch.counts.non_actionable_records, 1);
+  assert.deepEqual(watch.counts.owner_actionable_by_kind, {
+    entitlement_notification_incomplete: 1,
+  });
+  assert.deepEqual(watch.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 1,
+  });
+  assert.equal(watch.items[0].reference, "ent-failed");
+  assert.equal(watch.items[0].detail, "Entitlement Telegram access sync failed");
+});
+
+test("expired Telegram bind inside the bounded window is stale diagnostic, not Owner work", () => {
+  const watch = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [{
+      id: "recExpiredRecent",
+      fields: {
+        bind_id: "tgb_recent_expired",
+        role: "model",
+        status: "pending",
+        created_at: "2026-09-21T11:42:00.000Z",
+        expires_at: "2026-09-21T11:57:00.000Z",
+      },
+    }],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  assert.equal(watch.counts.total, 0);
+  assert.equal(watch.counts.owner_actionable_overdue, 0);
+  assert.equal(watch.counts.stale_terminal_records, 1);
+  assert.deepEqual(watch.stale_terminal_by_kind, {
+    telegram_bind_expired_pending: 1,
+  });
+  assert.equal(watch.items.length, 0);
+  assert.equal(watch.status, "clear");
 });
 
 test("CARE BACK coupon manual review counts only unresolved review states", () => {
@@ -267,8 +345,57 @@ test("expired Telegram binds older than the bounded window do not crowd out curr
   }, NOW, { sourceStatus: allSourcesAvailable() });
 
   assert.equal(watch.counts.total, 0);
+  assert.equal(watch.counts.stale_terminal_records, 0);
   assert.equal(watch.items.length, 0);
   assert.equal(watch.status, "clear");
+});
+
+test("owner summary preserves suppressed invite and expired-bind diagnostics without Owner actions", () => {
+  const diagnostics = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [{
+      id: "recExpectedInvite",
+      fields: {
+        entitlement_id: "ent-expected",
+        package_code: "premium",
+        access_status: "active",
+        source: "renewal",
+        payment_ref: "present",
+        telegram_access_status: "pending_invite",
+        created_at: "2026-09-21T07:00:00.000Z",
+      },
+    }],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [{
+      id: "recExpiredRecent",
+      fields: {
+        bind_id: "tgb_recent_expired",
+        role: "model",
+        status: "pending",
+        created_at: "2026-09-21T11:42:00.000Z",
+        expires_at: "2026-09-21T11:57:00.000Z",
+      },
+    }],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  const summary = buildHypeOwnerSummaryProjection({
+    generated_at: NOW.toISOString(),
+    counts: {},
+    status: {},
+  }, NOW, null, null, null, diagnostics);
+
+  assert.equal(summary.stuck_sla_watch.counts.total, 0);
+  assert.equal(summary.stuck_sla_watch.counts.owner_actionable_overdue, 0);
+  assert.equal(summary.stuck_sla_watch.counts.non_actionable_records, 1);
+  assert.equal(summary.stuck_sla_watch.counts.stale_terminal_records, 1);
+  assert.deepEqual(summary.stuck_sla_watch.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 1,
+  });
+  assert.deepEqual(summary.stuck_sla_watch.stale_terminal_by_kind, {
+    telegram_bind_expired_pending: 1,
+  });
 });
 
 test("owner summary projects STUCK / NEEDS ATTENTION as read-only action", () => {

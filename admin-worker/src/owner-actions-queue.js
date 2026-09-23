@@ -218,7 +218,7 @@ const HYPE_OVERDUE_COHORTS = Object.freeze([
     kind: "entitlement_notification_incomplete",
     key: "hype_entitlement_notification_overdue",
     priority: PRIORITY.hype_entitlement_notification_overdue,
-    title: "ตาม Entitlement notification ที่เลยเวลา",
+    title: "ตรวจ Entitlement Telegram sync failure",
     href: "/internal/admin/member-intelligence",
     authority: "my_mmd_entitlement_resolver_v1",
   }),
@@ -242,7 +242,7 @@ const HYPE_OVERDUE_COHORTS = Object.freeze([
     kind: "telegram_bind_unconsumed",
     key: "hype_telegram_bind_overdue",
     priority: PRIORITY.hype_telegram_bind_overdue,
-    title: "ตรวจ Telegram bind ที่หมดเวลา",
+    title: "ตรวจ Telegram bind anomaly",
     href: "/internal/admin/control-room",
     authority: "telegram_identity_bind_authority",
   }),
@@ -294,6 +294,7 @@ function buildQueueHealth({ actions, hype, unavailable }) {
   const totalHypeOverdue = nonNegative(hype?.counts?.owner_actionable_overdue);
   const unknownHypeOverdue = Math.max(0, totalHypeOverdue - knownHypeOverdue);
   const staleTerminalRecords = nonNegative(hype?.counts?.stale_terminal_records);
+  const nonActionableRecords = nonNegative(hype?.counts?.non_actionable_records);
 
   return {
     schema: "mmd_owner_actions_queue_health_v1",
@@ -301,7 +302,15 @@ function buildQueueHealth({ actions, hype, unavailable }) {
     active_owner_decisions: asArray(actions).reduce((sum, item) => sum + nonNegative(item?.count), 0),
     unknown_hype_overdue: unknownHypeOverdue,
     stale_terminal_records: staleTerminalRecords,
-    stale_terminal_by_kind: normalizeDiagnosticCounts(hype?.stale_terminal_by_kind),
+    stale_terminal_by_kind: normalizeDiagnosticCounts(hype?.stale_terminal_by_kind, [
+      "coupon_manual_review_terminal",
+      "telegram_bind_expired_pending",
+    ]),
+    non_actionable_records: nonActionableRecords,
+    non_actionable_by_kind: normalizeDiagnosticCounts(hype?.non_actionable_by_kind, [
+      "entitlement_pending_invite_expected",
+      "entitlement_removal_due_expected",
+    ]),
     unavailable_sources: asArray(unavailable).length,
     classification_complete: unknownHypeOverdue === 0,
     source_coverage_complete: asArray(unavailable).length === 0,
@@ -310,8 +319,8 @@ function buildQueueHealth({ actions, hype, unavailable }) {
   };
 }
 
-function normalizeDiagnosticCounts(value) {
-  const allowed = new Set(["coupon_manual_review_terminal"]);
+function normalizeDiagnosticCounts(value, allowedKeys = []) {
+  const allowed = new Set(asArray(allowedKeys).map((key) => clean(key)).filter(Boolean));
   const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
   return Object.fromEntries(
     Object.entries(input)
