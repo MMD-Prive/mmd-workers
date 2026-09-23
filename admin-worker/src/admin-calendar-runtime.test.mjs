@@ -158,6 +158,34 @@ test('expired availability snapshots fail closed and do not stay available', asy
   } finally { restore(); }
 });
 
+
+test('calendar recovery queue follows canonical connection and safe evidence only', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  data[IDS.models][0].fields[f.modelLine]='';
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability-adoption:v1:recovery:mdl_pub_model_a':{
+          model_key:'mdl_pub_model_a',
+          activation_link_issued_at:'2026-09-23T00:00:00.000Z',
+          activation_link_expires_at:'2099-01-01T00:00:00.000Z',
+          activation_url:'PRIVATE',
+          line_user_id:'U0123456789abcdef0123456789abcdef',
+        },
+      }),
+    },'2026-09-19');
+    const row=out.availability.models[0];
+    assert.equal(row.recovery_stage,'line_link_issued_waiting_for_connection');
+    assert.equal(row.recovery_action,'wait_for_line_connection');
+    assert.equal(row.follow_up_at,'2099-01-01T00:00:00.000Z');
+    assert.equal(out.availability.recovery_counts.line_link_issued_waiting_for_connection,1);
+    assert.doesNotMatch(JSON.stringify(row),/PRIVATE|activation_url|U0123456789abcdef/);
+  } finally { restore(); }
+});
+
 test('verified deposit clears Internal Hold without changing payment authority', async()=>{
   const restore=installFetch(fixture({verified:true}));
   try{
@@ -185,5 +213,7 @@ test('worker calendar page is noindex and fetches protected API', async()=>{
   assert.match(html,/ตารางงาน/);
   assert.match(html,/รอมัดจำ/);
   assert.match(html,/เช็กราคา/);
+  assert.match(html,/recoveryLabel/);
+  assert.match(html,/follow-up/);
   assert.doesNotMatch(html,/>Therapists<|>Pricing Review</);
 });
