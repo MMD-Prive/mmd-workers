@@ -65,7 +65,7 @@ export async function planPrivateUpload(env, modelId, input) {
   if (!created.id) throw mediaError("media_registry_unavailable", 503);
   return { ok: true, asset_id: id, kind: mediaKind(mime), status: "pending_upload", expires_at: new Date(Date.parse(now) + PRIVATE_UPLOAD_TTL_MS).toISOString(), upload_endpoint: `/v1/model/media/private-upload?asset_id=${encodeURIComponent(id)}`, review_required: true };
 }
-export async function completePrivateMetadata(env, record, modelId) {
+export async function completePrivateMetadata(env, record, modelId, { requestedBy } = {}) {
   const f = record.fields || {};
   if (!ownedBy(f, modelId)) throw mediaError("media_owner_mismatch", 403);
   if (f.review_status !== "pending_upload") throw mediaError("media_upload_state_conflict");
@@ -75,14 +75,14 @@ export async function completePrivateMetadata(env, record, modelId) {
   await mediaRequest(env, env.AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS || "MMD — Model Review Requests", "", {
     method: "POST", body: JSON.stringify({ fields: {
       request_id: `private_upload_${f.media_id}`, Model: [modelId], request_type: "media", request_status: "pending_review",
-      requested_by: `model:${modelId}`, requested_at: new Date().toISOString(), linked_media_assets: [record.id],
+      requested_by: String(requestedBy || `model:${modelId}`).slice(0, 160), requested_at: new Date().toISOString(), linked_media_assets: [record.id],
       payload_json: JSON.stringify({ private_media: true, media_id: f.media_id, preview_kind: mediaKind(f.file_type), requires_per_approval: true }),
     }, typecast: false }),
   });
   await mediaRequest(env, mediaTable(env), `/${record.id}`, { method: "PATCH", body: JSON.stringify({ fields: { review_status: "pending_review", public_safe: false, private_safe: false, flash_safe: false, teaser_safe: false }, typecast: false }) });
   return { ok: true, asset_id: f.media_id, status: "pending_review", review_required: true };
 }
-export async function uploadPrivateMedia(request, env, modelId, assetId) {
+export async function uploadPrivateMedia(request, env, modelId, assetId, options = {}) {
   const record = await readMedia(env, assetId), f = record.fields || {};
   if (!ownedBy(f, modelId)) throw mediaError("media_owner_mismatch", 403);
   if (f.review_status !== "pending_upload") throw mediaError("media_upload_state_conflict");
@@ -91,7 +91,7 @@ export async function uploadPrivateMedia(request, env, modelId, assetId) {
   const spec = MIME.get(f.file_type);
   if (!spec || !Number.isSafeInteger(f.file_size_bytes) || f.file_size_bytes < 1 || f.file_size_bytes > spec[1] || request.headers.get("content-type") !== f.file_type) throw mediaError("upload_plan_mismatch", 400);
   const key = privateKey(f), bucket = privateBucket(env);
-  if (await bucket.head(key)) return completePrivateMetadata(env, record, modelId);
+  if (await bucket.head(key)) return completePrivateMetadata(env, record, modelId, options);
   const reader = request.body?.getReader();
   if (!reader) throw mediaError("file_required", 400);
   const parts = []; let length = 0;
@@ -116,5 +116,5 @@ export async function uploadPrivateMedia(request, env, modelId, assetId) {
   const sha256 = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, "0")).join("");
   const stored = await bucket.put(key, bytes, { onlyIf: { etagDoesNotMatch: "*" }, httpMetadata: { contentType: f.file_type, cacheControl: "private, no-store" }, customMetadata: { media_id: assetId, model_record_id: modelId, sha256 } });
   if (!stored) throw mediaError("media_already_uploaded");
-  return completePrivateMetadata(env, record, modelId);
+  return completePrivateMetadata(env, record, modelId, options);
 }

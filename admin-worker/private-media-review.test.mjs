@@ -57,6 +57,14 @@ test('page has CSP and no storage; unknown suffixes fail closed',async()=>{
  const {env,request}=await setup();const res=await handlePrivateMediaReview(request(REVIEW_PAGE),env);assert.match(res.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.match(await res.text(),/MMD Review/);
  assert.equal((await handlePrivateMediaReview(request(REVIEW_PAGE+'/unknown'),env)).status,404);
 });
+test('owner upload page is admin-session protected and stays in the private-media surface',async()=>{
+ const {env,request}=await setup();
+ const {OWNER_UPLOAD_PAGE}=await import('./src/private-media-review.js');
+ const anonymous=await handlePrivateMediaReview(new Request('https://mmdbkk.com'+OWNER_UPLOAD_PAGE),env);
+ assert.equal(anonymous.status,303);assert.match(anonymous.headers.get('location'),/internal%2Fadmin%2Fmmd-review%2Fupload/);
+ const page=await handlePrivateMediaReview(request(OWNER_UPLOAD_PAGE),env);
+ assert.equal(page.status,200);assert.equal(page.headers.get('x-mmd-admin-surface'),'private-media-owner-upload');assert.match(await page.text(),/อัปโหลด Private Teaser/);
+});
 test('cross-origin posts, missing review hash, stale state and missing rejection note cause no writes',async()=>{
  const {env,request,f}=await setup();
  assert.equal((await handlePrivateMediaReview(request(REVIEW_API+'/decision',action,{origin:'https://evil.example'}),env)).status,403);

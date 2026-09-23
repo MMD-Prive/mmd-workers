@@ -36,6 +36,14 @@ test('private upload persists bytes before review and never grants approval',asy
   assert.deepEqual(fields.Model,['recModel']);assert.equal(fields.private_safe,false);assert.equal(fields.public_safe,false);
   await assert.rejects(uploadPrivateMedia(uploadRequest(),f.env,'recModel',plan.asset_id),/media_upload_state_conflict/);
 });
+test('owner upload keeps the same private checks and records the owner as requester',async()=>{
+  const f=fixture(),plan=await planPrivateUpload(f.env,'recModel',planInput);
+  const result=await uploadPrivateMedia(uploadRequest(),f.env,'recModel',plan.asset_id,{requestedBy:'owner:per'});
+  assert.equal(result.status,'pending_review');
+  assert.equal(f.reviews[0].requested_by,'owner:per');
+  assert.equal(f.records.get('recMedia').fields.private_safe,false);
+  assert.equal(f.records.get('recMedia').fields.teaser_safe,false);
+});
 test('metadata completion cannot invent a missing R2 object',async()=>{
   const f=fixture();await planPrivateUpload(f.env,'recModel',planInput);
   await assert.rejects(completePrivateMetadata(f.env,f.records.get('recMedia'),'recModel'),/private_media_object_unverified/);
