@@ -358,6 +358,8 @@ jobs:
           const paths = [
             "/internal/admin/mmd-review*",
             "/v1/admin/private-media*",
+            "/v1/admin/line/rich-menu/three-level/prepare",
+            "/v1/admin/line/rich-menu/three-level/audit",
             "/internal/admin/kenji",
             "/internal/admin/kenji/",
             "/internal/admin/kenji-knowledge",
@@ -483,6 +485,22 @@ jobs:
             cat "$shop_body"
             test "$shop_code" = "401"
             grep -Eq '"error":"admin_session_required"|"error":"unauthorized"' "$shop_body"
+          done
+
+          # Three-level LINE Rich Menu acceptance routes are exact, owner-authenticated
+          # admin APIs. Unauthenticated probes must reach admin-worker, never Webflow.
+          for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            rich_prepare_body="$(mktemp)"
+            rich_prepare_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$rich_prepare_body" -w "%{http_code}" -X POST "$origin/v1/admin/line/rich-menu/three-level/prepare" -H 'Content-Type: application/json' --data '{}')"
+            cat "$rich_prepare_body"
+            test "$rich_prepare_code" = "401"
+            grep -q '"error":"unauthorized"' "$rich_prepare_body"
+
+            rich_audit_body="$(mktemp)"
+            rich_audit_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$rich_audit_body" -w "%{http_code}" "$origin/v1/admin/line/rich-menu/three-level/audit")"
+            cat "$rich_audit_body"
+            test "$rich_audit_code" = "401"
+            grep -q '"error":"unauthorized"' "$rich_audit_body"
           done
 
           # Recovery Control must be routed to admin-worker and remain credential-session gated.
