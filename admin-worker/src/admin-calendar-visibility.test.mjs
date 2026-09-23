@@ -89,6 +89,9 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.match(html,/\/v1\/admin\/calendar\/availability-activation/);
       assert.match(html,/เริ่ม Cohort 1/);
       assert.match(html,/Owner action ล่าสุด/);
+      assert.match(html,/Action ถัดไป/);
+      assert.match(html,/รอคิวก่อนหน้า/);
+      assert.match(html,/ทีละ 1 คน/);
       assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
