@@ -1,0 +1,44 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { buildOwnerActionsQueue } from "./src/owner-actions-queue.js";
+
+test("owner actions queue deduplicates within each authoritative decision class", () => {
+  const queue = buildOwnerActionsQueue({
+    now: "2026-09-23T00:00:00.000Z",
+    money: [{ proof_id: "proof-1" }, { proof_id: "proof-1" }, { proof_id: "proof-2" }],
+    historical_recovery: [{ proof_id: "old-1" }, { proof_id: "old-1" }],
+    reconfirm: { available: true, items: [
+      { session_id: "s-1", status: "overdue" },
+      { session_id: "s-1", status: "overdue" },
+      { session_id: "s-2", status: "pending" },
+    ] },
+    members: [{ id: "m-1" }, { id: "m-1" }],
+    boss: [{ href: "/internal/admin/exceptions" }],
+    unavailable_sources: ["finance_audit", "mms", "hype", "unknown"],
+  });
+
+  assert.equal(queue.contract, "mmd_owner_actions_queue_v1");
+  assert.equal(queue.actions[0].action_key, "payment_review");
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["payment_review", 2],
+    ["historical_recovery", 1],
+    ["job_reconfirm_overdue", 1],
+    ["job_reconfirm_pending", 1],
+    ["membership_review", 1],
+    ["owner_exception", 1],
+  ]);
+  assert.deepEqual(queue.unavailable_sources, ["finance_audit", "mms", "hype"]);
+});
+
+test("owner actions queue does not expose source names, payment refs, or raw notes", () => {
+  const queue = buildOwnerActionsQueue({
+    money: [{ proof_id: "proof-secret", customer_name: "Private Name", payment_ref: "bank-secret" }],
+    boss: [{ title: "Raw private note", text: "do not project", href: "/internal/admin/exceptions" }],
+  });
+
+  assert.equal(JSON.stringify(queue).includes("Private Name"), false);
+  assert.equal(JSON.stringify(queue).includes("bank-secret"), false);
+  assert.equal(JSON.stringify(queue).includes("Raw private note"), false);
+  assert.equal(queue.send_allowed, false);
+  assert.equal(queue.mutation_allowed, false);
+});
