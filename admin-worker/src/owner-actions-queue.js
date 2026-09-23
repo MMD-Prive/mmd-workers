@@ -20,6 +20,22 @@ const PRIORITY = Object.freeze({
   owner_exception: 40,
 });
 
+const OWNER_WORKLOAD_SLO = Object.freeze({
+  urgent_review_target_minutes: 240,
+  attention_review_target_minutes: 1440,
+  breached_carry_over_target: 0,
+  timezone: "Asia/Bangkok",
+});
+
+const SOURCE_BREACHED_ACTIONS = new Set([
+  "job_reconfirm_overdue",
+  "hype_entitlement_notification_overdue",
+  "hype_recovery_unassigned_overdue",
+  "hype_coupon_manual_review_overdue",
+  "hype_telegram_bind_overdue",
+  "hype_operational_watch",
+]);
+
 export function buildOwnerActionsQueue(input = {}) {
   const now = input.now instanceof Date ? input.now : new Date(input.now || Date.now());
   const actions = [
@@ -34,7 +50,10 @@ export function buildOwnerActionsQueue(input = {}) {
     membershipReviewAction(input.members),
     ...hypeOverdueCohortActions(input.hype),
     ownerExceptionAction(input.boss),
-  ].filter(Boolean).sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
+  ]
+    .filter(Boolean)
+    .map(applyWorkloadSlo)
+    .sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
 
   const unavailable = normalizeUnavailable(input.unavailable_sources);
   const coverage = normalizeCoverage(input.source_coverage, unavailable);
@@ -66,6 +85,7 @@ export function buildOwnerActionsQueue(input = {}) {
       no_business_truth_mutation: true,
       no_raw_notes_or_payment_refs: true,
       no_pii_in_projection: true,
+      workload_slo_projection_only: true,
     },
   };
 }
@@ -307,6 +327,8 @@ function buildQueueHealth({ actions, hype, unavailable, sourceCoverage }) {
     source_coverage_complete: asArray(unavailable).length === 0,
     phase_5_closure_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0,
     phase_6_bau_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0 && mmsBauReady,
+    workload_slo: buildWorkloadSlo({ actions, unavailable, unknownHypeOverdue }),
+    phase_6b_slo_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0 && mmsBauReady,
     business_truth_mutated: false,
   };
 }
@@ -334,6 +356,73 @@ function ownerExceptionAction(items) {
     href: "/internal/admin/control-room",
     authority: "owner_review",
   }) : null;
+}
+
+function applyWorkloadSlo(item) {
+  const key = clean(item?.action_key);
+  const urgency = clean(item?.urgency);
+  const sourceBreached = SOURCE_BREACHED_ACTIONS.has(key) ||
+    (key === "availability_exception_review" && urgency === "urgent");
+  const targetMinutes = urgency === "urgent"
+    ? OWNER_WORKLOAD_SLO.urgent_review_target_minutes
+    : OWNER_WORKLOAD_SLO.attention_review_target_minutes;
+  const state = sourceBreached
+    ? "breached"
+    : urgency === "urgent"
+      ? "due_now"
+      : "due_today";
+
+  return {
+    ...item,
+    slo: {
+      schema: "mmd_owner_action_slo_v1",
+      state,
+      target_minutes: targetMinutes,
+      source_breached: sourceBreached,
+    },
+  };
+}
+
+function buildWorkloadSlo({ actions, unavailable, unknownHypeOverdue }) {
+  const list = asArray(actions);
+  const decisions = (state) => list
+    .filter((item) => clean(item?.slo?.state) === state)
+    .reduce((sum, item) => sum + nonNegative(item?.count), 0);
+  const classes = (state) => list.filter((item) => clean(item?.slo?.state) === state).length;
+
+  const breachedDecisions = decisions("breached");
+  const dueNowDecisions = decisions("due_now");
+  const dueTodayDecisions = decisions("due_today");
+  const sourceAttention = asArray(unavailable).length > 0 || nonNegative(unknownHypeOverdue) > 0;
+  const state = sourceAttention
+    ? "source_attention"
+    : breachedDecisions > 0
+      ? "breached"
+      : dueNowDecisions > 0
+        ? "due_now"
+        : dueTodayDecisions > 0
+          ? "due_today"
+          : "clear";
+
+  return {
+    schema: "mmd_owner_workload_slo_v1",
+    timezone: OWNER_WORKLOAD_SLO.timezone,
+    state,
+    active_decisions: list.reduce((sum, item) => sum + nonNegative(item?.count), 0),
+    breached_decisions: breachedDecisions,
+    breached_classes: classes("breached"),
+    due_now_decisions: dueNowDecisions,
+    due_now_classes: classes("due_now"),
+    due_today_decisions: dueTodayDecisions,
+    due_today_classes: classes("due_today"),
+    urgent_review_target_minutes: OWNER_WORKLOAD_SLO.urgent_review_target_minutes,
+    attention_review_target_minutes: OWNER_WORKLOAD_SLO.attention_review_target_minutes,
+    breached_carry_over_target: OWNER_WORKLOAD_SLO.breached_carry_over_target,
+    burn_down_remaining: list.reduce((sum, item) => sum + nonNegative(item?.count), 0),
+    burn_down_target: 0,
+    slo_met: !sourceAttention && breachedDecisions === OWNER_WORKLOAD_SLO.breached_carry_over_target,
+    projection_only: true,
+  };
 }
 
 function action(input) {
