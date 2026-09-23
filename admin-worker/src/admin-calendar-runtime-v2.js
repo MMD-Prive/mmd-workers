@@ -179,6 +179,9 @@ async function readMmsTherapistAvailability(env = {}) {
   }
 }
 
+const SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX = "availability-adoption:v1:recovery:";
+const RECOVERY_REMINDER_FOLLOW_UP_MS = 24 * 60 * 60 * 1000;
+
 const SAFE_AVAILABILITY_STATES = new Set([
   "available_now",
   "available_today",
@@ -267,15 +270,82 @@ async function readCalendarAvailabilitySnapshots(env = {}, records = [], nowMs =
   };
 }
 
-function modelAvailability(records = [], snapshotIndex = { status: "storage_unavailable", by_model_key: new Map() }) {
+async function readCalendarRecoveryEvidence(env = {}, records = []) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  if (!binding || typeof binding.get !== "function") return { status: "storage_unavailable", by_model_key: new Map() };
+  const modelKeys = [...new Set(records.map(modelKey).filter(Boolean))];
+  const byModelKey = new Map();
+  const failedModelKeys = new Set();
+  let readFailures = 0;
+  await Promise.all(modelKeys.map(async key => {
+    try {
+      const raw = await binding.get(SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX + key, "json");
+      if (!raw || typeof raw !== "object") return;
+      const activationIssuedAt = clean(raw.activation_link_issued_at, 100);
+      const activationExpiresAt = clean(raw.activation_link_expires_at, 100);
+      const reminderSentAt = clean(raw.reminder_sent_at, 100);
+      if (activationIssuedAt || activationExpiresAt || reminderSentAt) {
+        byModelKey.set(key, {
+          ...(activationIssuedAt ? { activation_link_issued_at: activationIssuedAt } : {}),
+          ...(activationExpiresAt ? { activation_link_expires_at: activationExpiresAt } : {}),
+          ...(reminderSentAt ? { reminder_sent_at: reminderSentAt } : {}),
+        });
+      }
+    } catch {
+      readFailures += 1;
+      failedModelKeys.add(key);
+    }
+  }));
+  return { status: readFailures ? "partial" : "ok", by_model_key: byModelKey, failed_model_keys: failedModelKeys };
+}
+
+function recoveryProjection({ snapshotState, fresh, lineConnected, modelKey: key, evidence = null, snapshotUpdatedAt = null }, nowMs = Date.now()) {
+  if (!key) return { recovery_stage: "identity_recovery_required", recovery_action: "link_canonical_model_key", follow_up_at: null };
+  if (snapshotState === "source_unavailable") return { recovery_stage: "source_unavailable", recovery_action: "wait_for_source", follow_up_at: null };
+  if (fresh) {
+    return {
+      recovery_stage: evidence?.activation_link_issued_at || evidence?.reminder_sent_at ? "coverage_recovered" : "coverage_current",
+      recovery_action: "none",
+      follow_up_at: null,
+    };
+  }
+  if (!lineConnected) {
+    const expiresMs = Date.parse(evidence?.activation_link_expires_at || "");
+    if (evidence?.activation_link_issued_at && Number.isFinite(expiresMs) && expiresMs > nowMs) {
+      return { recovery_stage: "line_link_issued_waiting_for_connection", recovery_action: "wait_for_line_connection", follow_up_at: evidence.activation_link_expires_at };
+    }
+    return { recovery_stage: evidence?.activation_link_issued_at ? "line_link_expired" : "line_link_required", recovery_action: "issue_line_link", follow_up_at: null };
+  }
+  const reminderSentMs = Date.parse(evidence?.reminder_sent_at || "");
+  const snapshotUpdatedMs = Date.parse(snapshotUpdatedAt || "");
+  // A later canonical confirmation has satisfied the earlier reminder.  When
+  // that snapshot later expires, it starts a new gap instead of inheriting a
+  // stale 24-hour follow-up obligation from the old reminder.
+  if (Number.isFinite(reminderSentMs) && !(Number.isFinite(snapshotUpdatedMs) && snapshotUpdatedMs >= reminderSentMs)) {
+    const followUpMs = reminderSentMs + RECOVERY_REMINDER_FOLLOW_UP_MS;
+    return {
+      recovery_stage: followUpMs <= nowMs ? "reminder_follow_up_due" : "reminder_sent_waiting_for_confirmation",
+      recovery_action: followUpMs <= nowMs ? "review_model_status" : "wait_for_confirmation",
+      follow_up_at: new Date(followUpMs).toISOString(),
+    };
+  }
+  return { recovery_stage: "availability_confirmation_required", recovery_action: "remind_model", follow_up_at: null };
+}
+
+function modelAvailability(records = [], snapshotIndex = { status: "storage_unavailable", by_model_key: new Map() }, recoveryIndex = { status: "storage_unavailable", by_model_key: new Map() }, nowMs = Date.now()) {
   return records
     .map(record => {
       const key = modelKey(record);
       const snapshot = key ? snapshotIndex.by_model_key.get(key) : null;
+      const evidence = key ? recoveryIndex.by_model_key.get(key) || null : null;
       const state = snapshot?.fresh ? snapshot.safe_availability_state : "";
+      const recoveryReadFailed = Boolean(key && recoveryIndex.failed_model_keys?.has(key));
       const snapshotState = !key
         ? "identity_missing"
+        : recoveryReadFailed
+          ? "source_unavailable"
         : snapshot?.snapshot_state || (snapshotIndex.status === "storage_unavailable" ? "source_unavailable" : "missing");
+      const lineConnected = /^U[0-9a-f]{32}$/i.test(clean(field(record, F.model.lineUserId), 80));
       return {
         record_id: record?.id || null,
         model_id: clean(field(record, F.model.modelId), 120) || null,
@@ -289,7 +359,9 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
         expires_at: snapshot?.expires_at || null,
         age_seconds: snapshot?.age_seconds ?? null,
         ttl_remaining_seconds: snapshot?.ttl_remaining_seconds ?? null,
-        line_connected: /^U[0-9a-f]{32}$/i.test(clean(field(record, F.model.lineUserId), 80)),
+        line_connected: lineConnected,
+        recovery_evidence: evidence,
+        ...recoveryProjection({ snapshotState, fresh: snapshot?.fresh === true, lineConnected, modelKey: key, evidence, snapshotUpdatedAt: snapshot?.updated_at || null }, nowMs),
       };
     })
     .filter(item => item.model_id || item.model_key || item.name)
@@ -303,8 +375,11 @@ export async function readAdminCalendar(env, dateText = "") {
     list(env, TABLE.models, Object.values(F.model), "", 300),
     readMmsTherapistAvailability(env),
   ]);
-  const modelSnapshotIndex = await readCalendarAvailabilitySnapshots(env, allModels);
-  const modelAvailabilityRows = modelAvailability(allModels, modelSnapshotIndex);
+  const [modelSnapshotIndex, recoveryIndex] = await Promise.all([
+    readCalendarAvailabilitySnapshots(env, allModels),
+    readCalendarRecoveryEvidence(env, allModels),
+  ]);
+  const modelAvailabilityRows = modelAvailability(allModels, modelSnapshotIndex, recoveryIndex);
   const availability = {
     models: modelAvailabilityRows,
     model_source_status: modelSnapshotIndex.status,
@@ -315,6 +390,12 @@ export async function readAdminCalendar(env, dateText = "") {
       identity_missing: modelAvailabilityRows.filter(item => item.snapshot_state === "identity_missing").length,
       source_unavailable: modelAvailabilityRows.filter(item => item.snapshot_state === "source_unavailable").length,
     },
+    recovery_source_status: recoveryIndex.status,
+    recovery_counts: modelAvailabilityRows.reduce((counts, item) => {
+      const key = clean(item.recovery_stage, 80) || "unknown";
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {}),
     therapists: mmsAvailability.therapists,
     therapist_source_status: mmsAvailability.status,
   };
