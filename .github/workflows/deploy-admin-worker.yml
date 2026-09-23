@@ -670,6 +670,7 @@ jobs:
             done
           done
 
+      # Issue comments are best-effort telemetry; production acceptance is enforced by the verified-live gate below.
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
@@ -752,10 +753,12 @@ jobs:
           ${deploy_detail}
           \`\`\`
           EOF
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+          if ! gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"; then
+            echo "::warning::Deploy diagnosis could not be written to the launch issue."
+          fi
 
       - name: Record verified live receipt on launch issue
-        if: steps.smoke.outcome == 'success'
+        if: always() && steps.smoke.outcome == 'success'
         shell: bash
         working-directory: .
         env:
