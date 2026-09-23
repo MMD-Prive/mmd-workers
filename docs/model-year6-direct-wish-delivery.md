@@ -8,8 +8,15 @@ Campaign: `mmd_year_6_model_direct_wish`
 
 ```text
 Model opens /sigil/model/wish
--> identity verification starts immediately
--> signed Model session is resolved / renewed through LINE LIFF
+-> browser checks the existing signed Model session
+-> if valid, the Wish form opens directly
+-> if missing/expired, preserve the local Wish draft temporarily
+-> enter LINE through the registered MMD MODEL Mini App URL
+-> LINE opens the configured dashboard endpoint
+-> exchange LINE identity for mmd_model_session_v1
+-> read the signed Model profile back
+-> once session phase is ready, return_to=wish opens /sigil/model/wish?line_return=1
+-> restore the Wish draft once and remove the bridge copy
 -> Model writes Wish
 -> optional profile media upload
 -> Model submits
@@ -27,14 +34,39 @@ The direct campaign is independent of an active Job and independent of the post-
 Opening `/sigil/model/wish` starts authentication immediately.
 
 1. Browser first checks the existing Model profile/session.
-2. If the signed Model session is missing or expired, LIFF initializes immediately.
-3. If LINE Login is required, use the full current `location.href` as `redirectUri`.
-4. Exchange LINE identity through `POST /v1/model/liff/exchange`.
-5. Re-check the Model profile before treating the form as authenticated.
+2. If the signed Model session is missing or expired, the Wish page must **not** call `liff.login({ redirectUri: location.href })`.
+3. The Wish page hands off to the permanent registered Mini App URL with the bounded intent `return_to=wish`.
+4. The configured MMD MODEL dashboard endpoint owns LIFF initialization and LINE identity exchange.
+5. Exchange LINE identity through `POST /v1/model/liff/exchange`.
+6. Re-check the signed Model profile before treating the session as ready.
+7. Only after session phase reaches `ready`, return once to `/sigil/model/wish?line_return=1`.
 
 Do not defer the primary auth flow until the Model presses Submit.
 
 If auto-auth cannot finish, present a calm retry control. Do not describe the Model as blocked, rejected, or unable to access Model Dashboard.
+
+### Endpoint audit lock
+
+Published Mini App ID:
+
+`2010864854-N34SgCqq`
+
+Permanent entry:
+
+`https://miniapp.line.me/2010864854-N34SgCqq/`
+
+The Model Wish page is a post-session destination, not the registered LIFF endpoint. Submitting either `https://www.mmdbkk.com/sigil/model/wish` or `https://mmdbkk.com/sigil/model/wish` as a direct OAuth redirect URI can produce LINE HTTP 400 `invalid url`.
+
+### Return and draft safety
+
+Only the literal `return_to=wish` target is accepted. Never accept a caller-provided absolute or relative return URL.
+
+The draft bridge may copy the existing `mmd_model_wish_draft_v5` payload from `sessionStorage` into short-lived `localStorage` only during the cross-origin Mini App handoff. The bridge copy:
+
+- expires after 30 minutes;
+- restores only when the Wish page is reopened;
+- is deleted immediately after restore;
+- never contains LINE tokens, Model IDs, session cookies, activation tokens, or entitlement claims.
 
 ## Direct Wish transport
 
@@ -128,4 +160,5 @@ Media IDs are not direct-Wish delivery authority.
 - Wish never blocks Model Dashboard.
 - Browser cannot approve its own Wish.
 - Manual review remains fail-closed for delivery, not for dashboard access.
+- Return targets remain allowlisted and bounded.
 - Do not expose internal Model IDs, Airtable IDs, R2 keys, LINE IDs, customer identity, or Per-only notes.
