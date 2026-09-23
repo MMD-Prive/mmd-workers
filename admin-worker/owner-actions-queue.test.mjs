@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildOwnerActionsQueue } from "./src/owner-actions-queue.js";
+import { buildOwnerActionDetail } from "./src/owner-action-detail.js";
 
 test("owner actions queue deduplicates within each authoritative decision class", () => {
   const queue = buildOwnerActionsQueue({
@@ -53,4 +54,23 @@ test("owner actions queue does not expose source names, payment refs, or raw not
   assert.equal(JSON.stringify(queue).includes("Raw private note"), false);
   assert.equal(queue.send_allowed, false);
   assert.equal(queue.mutation_allowed, false);
+});
+
+
+test("owner action detail is a source-safe owner-only read projection", () => {
+  const detail = buildOwnerActionDetail({
+    now: "2026-09-23T00:00:00.000Z",
+    money: [{ proof_id: "proof-secret", customer_name: "Private Name", payment_ref: "bank-secret" }],
+    unavailable_sources: ["mms"],
+  }, "payment_review");
+
+  assert.equal(detail.contract, "mmd_owner_action_detail_v1");
+  assert.equal(detail.action.detail_href, "/v1/admin/dashboard/owner-actions?action_key=payment_review");
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.personal_data_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.equal(JSON.stringify(detail).includes("Private Name"), false);
+  assert.equal(JSON.stringify(detail).includes("bank-secret"), false);
+  assert.equal(buildOwnerActionDetail({ money: [{ proof_id: "proof-1" }] }, "unknown"), null);
 });

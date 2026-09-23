@@ -17,6 +17,7 @@ import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read
 import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
 import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
 import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
+import { buildOwnerActionDetail } from "./owner-action-detail.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -63,6 +64,12 @@ export default {
           return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
         }
         const dashboard = await buildAdminDashboard(env);
+        const actionKey = url.searchParams.get("action_key");
+        if (actionKey) {
+          const detail = buildOwnerActionDetail(dashboard.owner_actions_source, actionKey);
+          if (!detail) return withCors(json({ ok: false, error: "owner_action_not_found" }, 404), cors);
+          return withCors(json(detail), cors);
+        }
         return withCors(json(buildOwnerActionsQueue(dashboard.owner_actions_source)), cors);
       }
 
