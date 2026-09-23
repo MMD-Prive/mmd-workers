@@ -33,6 +33,10 @@ import {
 import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import {
+  handleKenjiConversationShadowReceiptAdmin,
+  isKenjiConversationShadowReceiptAdminRequest,
+} from "./kenji-conversation-shadow-receipt-admin.js";
+import {
   handleModelPayoutAdjustments,
   isModelPayoutAdjustmentRequest,
 } from "./model-payout-adjustments.js";
@@ -238,6 +242,11 @@ export default {
     if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {
       const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
       return handleModelPayoutAdjustments(request, runtimeEnv, actor);
+    }
+
+    if (isKenjiConversationShadowReceiptAdminRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleKenjiConversationShadowReceiptAdmin(runtimeEnv, actor);
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
