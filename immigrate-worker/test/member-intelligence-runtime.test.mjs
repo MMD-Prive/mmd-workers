@@ -19,6 +19,13 @@ test("Member Intelligence reads only canonical same-origin admin projections", (
 
 test("Member Intelligence renders a fail-closed reviewed operator draft without a send path", () => {
   assert.match(source, /mmd\.kenji_continuity_operator_draft\.v1/);
+  assert.match(source, /mmd\.kenji_verified_identity_readiness\.v1/);
+  assert.match(source, /Verified Identity Readiness/);
+  assert.match(source, /READY FOR PER REVIEW/);
+  assert.match(source, /readiness\.status==="verified"/);
+  assert.match(source, /readiness\.kenji_continuity_ready===true/);
+  assert.match(source, /readiness\?\.automatic_verification_allowed===false/);
+  assert.match(source, /readiness\?\.identity_mutated===false/);
   assert.match(source, /draft\.send_allowed===false/);
   assert.match(source, /guards\.customer_auto_send===false/);
   assert.match(source, /guards\.business_truth_claims===false/);
@@ -80,6 +87,8 @@ test("Member Intelligence fails closed on unresolved identity and browser auth l
   assert.match(source, /response\.status===401\|\|response\.status===403/);
   assert.match(source, /\/internal\/admin\/login\?next=/);
   assert.match(source, /BACKEND WAITING/);
+  assert.match(source, /Readiness contract ไม่ครบ · Kenji ถูกล็อกแบบ fail-closed/);
+  assert.match(source, /\/internal\/admin\/customer-data\?client_id=/);
 });
 
 test("Member Intelligence does not mutate payment, membership or entitlement truth", () => {
@@ -87,6 +96,8 @@ test("Member Intelligence does not mutate payment, membership or entitlement tru
   assert.doesNotMatch(source, /verified_at\s*=/);
   assert.doesNotMatch(source, /membership[_-](?:activate|renew|grant)/i);
   assert.doesNotMatch(source, /telegram\/(?:grant|add|remove)|drive\/(?:grant|add|remove)/i);
+  assert.doesNotMatch(source, /Verification Status["']?\s*[:=]/);
+  assert.doesNotMatch(source, /identity\/(?:verify|merge|commit)/i);
   assert.match(source, /My MMD Resolver/);
 });
 

@@ -6,6 +6,7 @@ const REVIEWED_LINE_OFC_TABLE_DEFAULT = "tbl1u0foFBvgFpT9G";
 const LIFF_RENEWAL_SESSIONS_TABLE_DEFAULT = "tblXjQFwo0A2cHseh";
 const IDENTITY_AUDIT_TABLE_DEFAULT = "tbloDg9yx7ubS5QzW";
 const RIGHTS_SOURCE = "my_mmd_entitlement_resolver_v1";
+export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_readiness.v1";
 
 export type CustomerIdentityAlignmentStatus =
   | "verified_match"
@@ -23,6 +24,43 @@ export interface CustomerIdentityAlignment {
   liff: { status: "matched" | "review_required" | "missing"; line_tail: string | null };
   audit: { status: string; line_tail: string | null };
   rights_source: typeof RIGHTS_SOURCE;
+  grants_access: false;
+  grants_membership: false;
+  grants_points: false;
+}
+
+export type VerifiedIdentityReadinessStatus =
+  | "verified"
+  | "ready_for_owner_verification"
+  | "review_required"
+  | "conflict"
+  | "insufficient_evidence"
+  | "unavailable";
+
+export interface VerifiedIdentityReadiness {
+  schema: typeof VERIFIED_IDENTITY_READINESS_SCHEMA;
+  mode: "read_only";
+  status: VerifiedIdentityReadinessStatus;
+  checked_at: string;
+  authority: {
+    verification: "Clients.Verification Status";
+    alignment: "customer_identity_alignment_read_only_v1";
+    rights: typeof RIGHTS_SOURCE;
+  };
+  evidence: {
+    authoritative_verification_present: boolean;
+    alignment_status: CustomerIdentityAlignmentStatus;
+    canonical_client_ready: boolean;
+    reviewed_line_ofc_matched: boolean;
+    verified_liff_session_matched: boolean;
+  };
+  blockers: string[];
+  next_action: string;
+  owner_review_ready: boolean;
+  requires_owner_decision: boolean;
+  kenji_continuity_ready: boolean;
+  automatic_verification_allowed: false;
+  identity_mutated: false;
   grants_access: false;
   grants_membership: false;
   grants_points: false;
@@ -59,6 +97,12 @@ function canonicalLineId(value: unknown): string {
 function lineTail(value: unknown): string | null {
   const line = canonicalLineId(value);
   return line ? line.slice(-6) : null;
+}
+
+function verifiedTimestamp(value: unknown): string {
+  const timestamp = text(value);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(timestamp)) return "";
+  return Number.isFinite(Date.parse(timestamp)) ? timestamp : "";
 }
 
 function formulaString(value: unknown): string {
@@ -105,6 +149,69 @@ function unavailable(checkedAt: string): CustomerIdentityAlignment {
     liff: { status: "missing", line_tail: null },
     audit: { status: "unavailable", line_tail: null },
     rights_source: RIGHTS_SOURCE,
+    grants_access: false,
+    grants_membership: false,
+    grants_points: false,
+  };
+}
+
+export function deriveVerifiedIdentityReadiness(
+  authoritativeVerified: boolean,
+  alignment: CustomerIdentityAlignment,
+): VerifiedIdentityReadiness {
+  const alignmentStatus = alignment?.status || "unavailable";
+  const canonicalClientReady = alignment?.canonical_client?.status === "ready";
+  const lineOfcMatched = alignment?.line_ofc?.status === "matched";
+  const liffMatched = alignment?.liff?.status === "matched";
+  const exactMatch = canonicalClientReady && lineOfcMatched && liffMatched;
+  let status: VerifiedIdentityReadinessStatus = "unavailable";
+  if (alignmentStatus === "mismatch") status = "conflict";
+  else if (alignmentStatus === "verified_match" && exactMatch) {
+    status = authoritativeVerified ? "verified" : "ready_for_owner_verification";
+  } else if (alignmentStatus === "review_required") status = "review_required";
+  else if (alignmentStatus === "insufficient_evidence") status = "insufficient_evidence";
+
+  const blockers: string[] = [];
+  if (status === "conflict") blockers.push("identity_alignment_mismatch");
+  if (status === "unavailable") blockers.push("identity_evidence_unavailable");
+  if (!canonicalClientReady && status !== "unavailable") blockers.push("canonical_line_identity_required");
+  if (!lineOfcMatched && !["conflict", "unavailable"].includes(status)) blockers.push("reviewed_line_ofc_required");
+  if (!liffMatched && !["conflict", "unavailable"].includes(status)) blockers.push("verified_liff_session_required");
+  if (status === "ready_for_owner_verification") blockers.push("owner_verification_status_required");
+
+  const nextActions: Record<VerifiedIdentityReadinessStatus, string> = {
+    verified: "none",
+    ready_for_owner_verification: "owner_review_verification_status",
+    review_required: "review_identity_evidence",
+    conflict: "resolve_identity_conflict",
+    insufficient_evidence: "collect_verified_identity_evidence",
+    unavailable: "retry_identity_evidence_read",
+  };
+
+  return {
+    schema: VERIFIED_IDENTITY_READINESS_SCHEMA,
+    mode: "read_only",
+    status,
+    checked_at: alignment?.checked_at || new Date().toISOString(),
+    authority: {
+      verification: "Clients.Verification Status",
+      alignment: "customer_identity_alignment_read_only_v1",
+      rights: RIGHTS_SOURCE,
+    },
+    evidence: {
+      authoritative_verification_present: authoritativeVerified,
+      alignment_status: alignmentStatus,
+      canonical_client_ready: canonicalClientReady,
+      reviewed_line_ofc_matched: lineOfcMatched,
+      verified_liff_session_matched: liffMatched,
+    },
+    blockers: blockers.slice(0, 4),
+    next_action: nextActions[status],
+    owner_review_ready: status === "ready_for_owner_verification",
+    requires_owner_decision: status !== "verified",
+    kenji_continuity_ready: status === "verified",
+    automatic_verification_allowed: false,
+    identity_mutated: false,
     grants_access: false,
     grants_membership: false,
     grants_points: false,
@@ -181,7 +288,8 @@ export async function deriveCustomerIdentityAlignment(
     const liffExactRow = liffRows.find((row) => {
       const line = canonicalLineId(row.fields?.line_user_id);
       const linkedClients = recordLinks(row.fields?.Client);
-      return line === canonicalLine && linkedClients.includes(clientId);
+      const identityLinkedAt = verifiedTimestamp(row.fields?.identity_linked_at);
+      return line === canonicalLine && linkedClients.includes(clientId) && Boolean(identityLinkedAt);
     });
     const liffExact = Boolean(liffExactRow);
     const liffTail = lineTail(liffExactRow?.fields?.line_user_id);
@@ -193,7 +301,7 @@ export async function deriveCustomerIdentityAlignment(
     const basis = [
       "canonical_client",
       ofcRows.length ? "reviewed_line_ofc" : "",
-      liffRows.length ? "verified_liff_session" : "",
+      liffExact ? "verified_liff_session" : liffRows.length ? "liff_session_review_required" : "",
       auditRows.length ? "identity_resolution_audit" : "",
     ].filter(Boolean);
 
@@ -238,13 +346,16 @@ export async function augmentClientIntelligenceWithIdentityAlignment(
   const identity = payload.identity && typeof payload.identity === "object" && !Array.isArray(payload.identity)
     ? { ...(payload.identity as Record<string, unknown>) }
     : {};
-  identity.alignment = await deriveCustomerIdentityAlignment(env, clientId);
+  const alignment = await deriveCustomerIdentityAlignment(env, clientId);
+  identity.alignment = alignment;
+  identity.readiness = deriveVerifiedIdentityReadiness(identity.verified === true, alignment);
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store, private");
   headers.set("x-mmd-identity-alignment", "read-only-v1");
+  headers.set("x-mmd-verified-identity-readiness", "read-only-v1");
   return new Response(JSON.stringify({ ...payload, identity }), {
     status: response.status,
     statusText: response.statusText,
