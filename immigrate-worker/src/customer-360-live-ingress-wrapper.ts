@@ -108,6 +108,7 @@ export async function decorateCustomer360Page(response: Response): Promise<Respo
   headers.set("x-mmd-customer-intelligence", "read-only-v1");
   headers.set("x-mmd-customer-identity-alignment", "read-only-v1");
   headers.set("x-mmd-verified-identity-readiness", "read-only-v1");
+  headers.set("x-mmd-identity-evidence-recovery", "read-only-v1");
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
 }
 

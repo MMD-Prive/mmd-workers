@@ -28,6 +28,7 @@ try {
   assert.equal(page.headers.get("x-mmd-customer-intelligence"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-identity-alignment"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-verified-identity-readiness"), "read-only-v1");
+  assert.equal(page.headers.get("x-mmd-identity-evidence-recovery"), "read-only-v1");
   assert.equal(page.headers.get("x-mmd-customer-data-ui"), "readable-v2");
   assert.match(html, /data-mmd-customer-360-live-client="v1"/);
   assert.match(html, /data-mmd-customer-identity-alignment-client="v1"/);

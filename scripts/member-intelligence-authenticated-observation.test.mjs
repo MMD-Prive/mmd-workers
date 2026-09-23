@@ -32,6 +32,7 @@ function availableProjection(clientId, overrides = {}) {
         schema: "mmd.kenji_verified_identity_readiness.v1",
         mode: "read_only",
         status: "verified",
+        checked_at: "2026-09-23T00:00:00.000Z",
         authority: {
           verification: "Clients.Verification Status",
           alignment: "customer_identity_alignment_read_only_v1",
@@ -51,6 +52,43 @@ function availableProjection(clientId, overrides = {}) {
         kenji_continuity_ready: true,
         automatic_verification_allowed: false,
         identity_mutated: false,
+        grants_access: false,
+        grants_membership: false,
+        grants_points: false,
+      },
+      recovery: {
+        schema: "mmd.kenji_identity_evidence_recovery.v1",
+        mode: "read_only",
+        status: "complete",
+        priority: "complete",
+        checked_at: "2026-09-23T00:00:00.000Z",
+        source_readiness_status: "verified",
+        queue_eligible: false,
+        owner_review_ready: false,
+        evidence: {
+          canonical_line_identity: "ready",
+          reviewed_line_ofc: "matched",
+          verified_liff_session: "matched",
+          verification_status: "verified",
+        },
+        actions: [],
+        handoff: {
+          surface: "customer_360",
+          path: "/internal/admin/customer-data",
+          client_scope_required: true,
+          mutation_control: false,
+        },
+        authority: {
+          verification: "Clients.Verification Status",
+          alignment: "customer_identity_alignment_read_only_v1",
+          rights: "my_mmd_entitlement_resolver_v1",
+          recovery: "identity_evidence_recovery_read_only_v1",
+        },
+        automatic_recovery_allowed: false,
+        automatic_verification_allowed: false,
+        verification_status_mutated: false,
+        identity_mutated: false,
+        customer_send_allowed: false,
         grants_access: false,
         grants_membership: false,
         grants_points: false,
@@ -269,6 +307,29 @@ test("fails closed when a verified draft lacks exact identity readiness", async 
         blockers: ["identity_alignment_mismatch"],
         requires_owner_decision: true,
         kenji_continuity_ready: false,
+      },
+    },
+  });
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }],
+    projections: new Map([[CLIENT_A, unsafe]]),
+  });
+
+  const result = await runAuthenticatedObservation({ credential: CREDENTIAL, fetchImpl });
+  assert.equal(result.status, "contract_violation");
+  assert.equal(result.healthy, false);
+  assert.equal(result.drafts.safety_contract_violation_count, 1);
+  assert.equal(JSON.stringify(result).includes(CLIENT_A), false);
+});
+
+test("fails closed when a verified draft lacks a complete read-only recovery contract", async () => {
+  const unsafe = availableProjection(CLIENT_A, {
+    identity: {
+      recovery: {
+        status: "owner_review_ready",
+        queue_eligible: true,
+        automatic_recovery_allowed: true,
+        actions: ["owner_review_verification_status"],
       },
     },
   });

@@ -7,6 +7,7 @@ const LIFF_RENEWAL_SESSIONS_TABLE_DEFAULT = "tblXjQFwo0A2cHseh";
 const IDENTITY_AUDIT_TABLE_DEFAULT = "tbloDg9yx7ubS5QzW";
 const RIGHTS_SOURCE = "my_mmd_entitlement_resolver_v1";
 export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_readiness.v1";
+export const IDENTITY_EVIDENCE_RECOVERY_SCHEMA = "mmd.kenji_identity_evidence_recovery.v1";
 
 export type CustomerIdentityAlignmentStatus =
   | "verified_match"
@@ -61,6 +62,66 @@ export interface VerifiedIdentityReadiness {
   kenji_continuity_ready: boolean;
   automatic_verification_allowed: false;
   identity_mutated: false;
+  grants_access: false;
+  grants_membership: false;
+  grants_points: false;
+}
+
+export type IdentityEvidenceRecoveryStatus =
+  | "complete"
+  | "owner_review_ready"
+  | "evidence_review"
+  | "evidence_required"
+  | "conflict_locked"
+  | "unavailable_locked";
+
+export type IdentityEvidenceRecoveryAction =
+  | "restore_canonical_line_identity"
+  | "review_line_ofc_evidence"
+  | "review_liff_identity_evidence"
+  | "owner_review_verification_status"
+  | "resolve_identity_conflict"
+  | "retry_identity_evidence_read";
+
+export interface IdentityEvidenceRecovery {
+  schema: typeof IDENTITY_EVIDENCE_RECOVERY_SCHEMA;
+  mode: "read_only";
+  status: IdentityEvidenceRecoveryStatus;
+  priority:
+    | "complete"
+    | "p0_conflict"
+    | "p0_unavailable"
+    | "p1_evidence_review"
+    | "p2_evidence_collection"
+    | "p3_owner_decision";
+  checked_at: string;
+  source_readiness_status: VerifiedIdentityReadinessStatus;
+  queue_eligible: boolean;
+  owner_review_ready: boolean;
+  evidence: {
+    canonical_line_identity: "ready" | "required" | "unavailable";
+    reviewed_line_ofc: "matched" | "review_required" | "required" | "conflict" | "unavailable";
+    verified_liff_session: "matched" | "review_required" | "required" | "unavailable";
+    verification_status: "verified" | "owner_review_required" | "blocked" | "unavailable";
+  };
+  actions: IdentityEvidenceRecoveryAction[];
+  handoff: {
+    surface: "customer_360";
+    path: "/internal/admin/customer-data";
+    client_scope_required: true;
+    mutation_control: false;
+  };
+  authority: {
+    verification: "Clients.Verification Status";
+    alignment: "customer_identity_alignment_read_only_v1";
+    rights: typeof RIGHTS_SOURCE;
+    recovery: "identity_evidence_recovery_read_only_v1";
+  };
+  automatic_recovery_allowed: false;
+  automatic_verification_allowed: false;
+  verification_status_mutated: false;
+  identity_mutated: false;
+  customer_send_allowed: false;
   grants_access: false;
   grants_membership: false;
   grants_points: false;
@@ -218,6 +279,95 @@ export function deriveVerifiedIdentityReadiness(
   };
 }
 
+export function deriveIdentityEvidenceRecovery(
+  readiness: VerifiedIdentityReadiness,
+  alignment: CustomerIdentityAlignment,
+): IdentityEvidenceRecovery {
+  const statusByReadiness: Record<VerifiedIdentityReadinessStatus, IdentityEvidenceRecoveryStatus> = {
+    verified: "complete",
+    ready_for_owner_verification: "owner_review_ready",
+    review_required: "evidence_review",
+    insufficient_evidence: "evidence_required",
+    conflict: "conflict_locked",
+    unavailable: "unavailable_locked",
+  };
+  const priorityByStatus: Record<IdentityEvidenceRecoveryStatus, IdentityEvidenceRecovery["priority"]> = {
+    complete: "complete",
+    owner_review_ready: "p3_owner_decision",
+    evidence_review: "p1_evidence_review",
+    evidence_required: "p2_evidence_collection",
+    conflict_locked: "p0_conflict",
+    unavailable_locked: "p0_unavailable",
+  };
+  const status = statusByReadiness[readiness.status] || "unavailable_locked";
+  const unavailable = status === "unavailable_locked";
+  const conflict = status === "conflict_locked";
+  const canonicalState = unavailable
+    ? "unavailable"
+    : readiness.evidence.canonical_client_ready ? "ready" : "required";
+  const lineOfcState = unavailable
+    ? "unavailable"
+    : conflict ? "conflict"
+      : alignment.line_ofc.status === "matched" ? "matched"
+        : alignment.line_ofc.status === "review_required" ? "review_required" : "required";
+  const liffState = unavailable
+    ? "unavailable"
+    : alignment.liff.status === "matched" ? "matched"
+      : alignment.liff.status === "review_required" ? "review_required" : "required";
+  const verificationState = readiness.evidence.authoritative_verification_present
+    ? "verified"
+    : unavailable ? "unavailable"
+      : status === "owner_review_ready" ? "owner_review_required" : "blocked";
+
+  const actions: IdentityEvidenceRecoveryAction[] = [];
+  if (conflict) actions.push("resolve_identity_conflict");
+  else if (unavailable) actions.push("retry_identity_evidence_read");
+  else {
+    if (canonicalState !== "ready") actions.push("restore_canonical_line_identity");
+    if (lineOfcState !== "matched") actions.push("review_line_ofc_evidence");
+    if (liffState !== "matched") actions.push("review_liff_identity_evidence");
+    if (status === "owner_review_ready") actions.push("owner_review_verification_status");
+  }
+
+  return {
+    schema: IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
+    mode: "read_only",
+    status,
+    priority: priorityByStatus[status],
+    checked_at: readiness.checked_at,
+    source_readiness_status: readiness.status,
+    queue_eligible: status !== "complete",
+    owner_review_ready: status === "owner_review_ready",
+    evidence: {
+      canonical_line_identity: canonicalState,
+      reviewed_line_ofc: lineOfcState,
+      verified_liff_session: liffState,
+      verification_status: verificationState,
+    },
+    actions: actions.slice(0, 4),
+    handoff: {
+      surface: "customer_360",
+      path: "/internal/admin/customer-data",
+      client_scope_required: true,
+      mutation_control: false,
+    },
+    authority: {
+      verification: "Clients.Verification Status",
+      alignment: "customer_identity_alignment_read_only_v1",
+      rights: RIGHTS_SOURCE,
+      recovery: "identity_evidence_recovery_read_only_v1",
+    },
+    automatic_recovery_allowed: false,
+    automatic_verification_allowed: false,
+    verification_status_mutated: false,
+    identity_mutated: false,
+    customer_send_allowed: false,
+    grants_access: false,
+    grants_membership: false,
+    grants_points: false,
+  };
+}
+
 export async function deriveCustomerIdentityAlignment(
   env: Env,
   clientId: string,
@@ -347,8 +497,10 @@ export async function augmentClientIntelligenceWithIdentityAlignment(
     ? { ...(payload.identity as Record<string, unknown>) }
     : {};
   const alignment = await deriveCustomerIdentityAlignment(env, clientId);
+  const readiness = deriveVerifiedIdentityReadiness(identity.verified === true, alignment);
   identity.alignment = alignment;
-  identity.readiness = deriveVerifiedIdentityReadiness(identity.verified === true, alignment);
+  identity.readiness = readiness;
+  identity.recovery = deriveIdentityEvidenceRecovery(readiness, alignment);
 
   const headers = new Headers(response.headers);
   headers.delete("content-length");
@@ -356,6 +508,7 @@ export async function augmentClientIntelligenceWithIdentityAlignment(
   headers.set("cache-control", "no-store, private");
   headers.set("x-mmd-identity-alignment", "read-only-v1");
   headers.set("x-mmd-verified-identity-readiness", "read-only-v1");
+  headers.set("x-mmd-identity-evidence-recovery", "read-only-v1");
   return new Response(JSON.stringify({ ...payload, identity }), {
     status: response.status,
     statusText: response.statusText,

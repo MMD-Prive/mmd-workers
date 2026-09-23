@@ -20,8 +20,10 @@ try {
     target: "es2022",
   });
   const {
+    IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
     VERIFIED_IDENTITY_READINESS_SCHEMA,
     deriveCustomerIdentityAlignment,
+    deriveIdentityEvidenceRecovery,
     deriveVerifiedIdentityReadiness,
     augmentClientIntelligenceWithIdentityAlignment,
   } = await import(pathToFileURL(outfile).href);
@@ -84,6 +86,20 @@ try {
   assert.equal(ownerReady.automatic_verification_allowed, false);
   assert.equal(ownerReady.identity_mutated, false);
   assert.deepEqual(ownerReady.blockers, ["owner_verification_status_required"]);
+  const ownerRecovery = deriveIdentityEvidenceRecovery(ownerReady, aligned);
+  assert.equal(ownerRecovery.schema, IDENTITY_EVIDENCE_RECOVERY_SCHEMA);
+  assert.equal(ownerRecovery.mode, "read_only");
+  assert.equal(ownerRecovery.status, "owner_review_ready");
+  assert.equal(ownerRecovery.priority, "p3_owner_decision");
+  assert.equal(ownerRecovery.queue_eligible, true);
+  assert.equal(ownerRecovery.owner_review_ready, true);
+  assert.deepEqual(ownerRecovery.actions, ["owner_review_verification_status"]);
+  assert.equal(ownerRecovery.evidence.reviewed_line_ofc, "matched");
+  assert.equal(ownerRecovery.evidence.verified_liff_session, "matched");
+  assert.equal(ownerRecovery.handoff.mutation_control, false);
+  assert.equal(ownerRecovery.automatic_recovery_allowed, false);
+  assert.equal(ownerRecovery.verification_status_mutated, false);
+  assert.equal(ownerRecovery.customer_send_allowed, false);
 
   const verified = deriveVerifiedIdentityReadiness(true, aligned);
   assert.equal(verified.status, "verified");
@@ -91,6 +107,10 @@ try {
   assert.equal(verified.requires_owner_decision, false);
   assert.equal(verified.kenji_continuity_ready, true);
   assert.deepEqual(verified.blockers, []);
+  const completedRecovery = deriveIdentityEvidenceRecovery(verified, aligned);
+  assert.equal(completedRecovery.status, "complete");
+  assert.equal(completedRecovery.queue_eligible, false);
+  assert.deepEqual(completedRecovery.actions, []);
 
   const reviewRequired = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -99,6 +119,15 @@ try {
   });
   assert.equal(reviewRequired.status, "review_required");
   assert.deepEqual(reviewRequired.blockers, ["reviewed_line_ofc_required"]);
+  const reviewRecovery = deriveIdentityEvidenceRecovery(reviewRequired, {
+    ...aligned,
+    status: "review_required",
+    line_ofc: { status: "review_required", line_tail: aligned.line_ofc.line_tail },
+  });
+  assert.equal(reviewRecovery.status, "evidence_review");
+  assert.equal(reviewRecovery.priority, "p1_evidence_review");
+  assert.equal(reviewRecovery.evidence.reviewed_line_ofc, "review_required");
+  assert.deepEqual(reviewRecovery.actions, ["review_line_ofc_evidence"]);
 
   const insufficient = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -113,6 +142,20 @@ try {
     "reviewed_line_ofc_required",
     "verified_liff_session_required",
   ]);
+  const evidenceRecovery = deriveIdentityEvidenceRecovery(insufficient, {
+    ...aligned,
+    status: "insufficient_evidence",
+    canonical_client: { status: "missing", line_tail: null },
+    line_ofc: { status: "missing", line_tail: null },
+    liff: { status: "missing", line_tail: null },
+  });
+  assert.equal(evidenceRecovery.status, "evidence_required");
+  assert.equal(evidenceRecovery.priority, "p2_evidence_collection");
+  assert.deepEqual(evidenceRecovery.actions, [
+    "restore_canonical_line_identity",
+    "review_line_ofc_evidence",
+    "review_liff_identity_evidence",
+  ]);
 
   const unavailable = deriveVerifiedIdentityReadiness(false, {
     ...aligned,
@@ -123,6 +166,15 @@ try {
   });
   assert.equal(unavailable.status, "unavailable");
   assert.deepEqual(unavailable.blockers, ["identity_evidence_unavailable"]);
+  const unavailableRecovery = deriveIdentityEvidenceRecovery(unavailable, {
+    ...aligned,
+    status: "unavailable",
+    canonical_client: { status: "missing", line_tail: null },
+    line_ofc: { status: "missing", line_tail: null },
+    liff: { status: "missing", line_tail: null },
+  });
+  assert.equal(unavailableRecovery.status, "unavailable_locked");
+  assert.deepEqual(unavailableRecovery.actions, ["retry_identity_evidence_read"]);
 
   const inconsistentMatch = deriveVerifiedIdentityReadiness(true, {
     ...aligned,
@@ -141,6 +193,11 @@ try {
   assert.equal(unlinkedReadiness.status, "review_required");
   assert.equal(unlinkedReadiness.kenji_continuity_ready, false);
   assert.deepEqual(unlinkedReadiness.blockers, ["verified_liff_session_required"]);
+  const unlinkedRecovery = deriveIdentityEvidenceRecovery(unlinkedReadiness, unlinkedLiff);
+  assert.equal(unlinkedRecovery.status, "evidence_review");
+  assert.equal(unlinkedRecovery.evidence.verified_liff_session, "review_required");
+  assert.equal(unlinkedRecovery.evidence.verification_status, "verified");
+  assert.deepEqual(unlinkedRecovery.actions, ["review_liff_identity_evidence"]);
   identityLinkedAt = "2026-09-11T08:00:00.000Z";
 
   const augmented = await augmentClientIntelligenceWithIdentityAlignment(
@@ -154,6 +211,10 @@ try {
   assert.equal(body.identity.alignment.status, "verified_match");
   assert.equal(body.identity.readiness.status, "ready_for_owner_verification");
   assert.equal(body.identity.readiness.evidence.authoritative_verification_present, false);
+  assert.equal(body.identity.recovery.schema, IDENTITY_EVIDENCE_RECOVERY_SCHEMA);
+  assert.equal(body.identity.recovery.status, "owner_review_ready");
+  assert.deepEqual(body.identity.recovery.actions, ["owner_review_verification_status"]);
+  assert.equal(augmented.headers.get("x-mmd-identity-evidence-recovery"), "read-only-v1");
   assert.equal(JSON.stringify(body).includes(canonicalLine), false);
 
   mismatch = true;
@@ -165,6 +226,12 @@ try {
   assert.equal(blocked.status, "conflict");
   assert.equal(blocked.kenji_continuity_ready, false);
   assert.deepEqual(blocked.blockers, ["identity_alignment_mismatch"]);
+  const conflictRecovery = deriveIdentityEvidenceRecovery(blocked, conflict);
+  assert.equal(conflictRecovery.status, "conflict_locked");
+  assert.equal(conflictRecovery.priority, "p0_conflict");
+  assert.equal(conflictRecovery.evidence.reviewed_line_ofc, "conflict");
+  assert.equal(conflictRecovery.evidence.verification_status, "verified");
+  assert.deepEqual(conflictRecovery.actions, ["resolve_identity_conflict"]);
 } finally {
   globalThis.fetch = originalFetch;
   await rm(tmp, { recursive: true, force: true });

@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 
 export const VERIFIED_IDENTITY_OBSERVATION_SCHEMA = "mmd.kenji_verified_identity_readiness_observation.v1";
 export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_readiness.v1";
+export const IDENTITY_EVIDENCE_RECOVERY_SCHEMA = "mmd.kenji_identity_evidence_recovery.v1";
 
 const DEFAULT_ORIGIN = "https://mmdbkk.com";
 const MAX_SCAN_LIMIT = 24;
@@ -40,6 +41,30 @@ const NEXT_ACTIONS = Object.freeze({
   insufficient_evidence: "collect_verified_identity_evidence",
   unavailable: "retry_identity_evidence_read",
 });
+const RECOVERY_STATUS_BY_READINESS = Object.freeze({
+  verified: "complete",
+  ready_for_owner_verification: "owner_review_ready",
+  review_required: "evidence_review",
+  conflict: "conflict_locked",
+  insufficient_evidence: "evidence_required",
+  unavailable: "unavailable_locked",
+});
+const RECOVERY_PRIORITIES = Object.freeze({
+  complete: "complete",
+  owner_review_ready: "p3_owner_decision",
+  evidence_review: "p1_evidence_review",
+  evidence_required: "p2_evidence_collection",
+  conflict_locked: "p0_conflict",
+  unavailable_locked: "p0_unavailable",
+});
+const RECOVERY_ACTIONS = new Set([
+  "restore_canonical_line_identity",
+  "review_line_ofc_evidence",
+  "review_liff_identity_evidence",
+  "owner_review_verification_status",
+  "resolve_identity_conflict",
+  "retry_identity_evidence_read",
+]);
 
 class ObservationError extends Error {
   constructor(code) {
@@ -213,6 +238,80 @@ function safeReadinessContract(payload) {
     });
 }
 
+function safeRecoveryContract(payload) {
+  const identity = payload?.identity || {};
+  const readiness = identity.readiness || {};
+  const alignment = identity.alignment || {};
+  const recovery = identity.recovery || {};
+  const evidence = recovery.evidence || {};
+  const status = RECOVERY_STATUS_BY_READINESS[clean(readiness.status)];
+  const unavailable = status === "unavailable_locked";
+  const conflict = status === "conflict_locked";
+  const canonicalState = unavailable
+    ? "unavailable"
+    : readiness?.evidence?.canonical_client_ready === true ? "ready" : "required";
+  const lineStatus = clean(alignment?.line_ofc?.status);
+  const liffStatus = clean(alignment?.liff?.status);
+  const lineState = unavailable
+    ? "unavailable"
+    : conflict ? "conflict"
+      : lineStatus === "matched" ? "matched"
+        : lineStatus === "review_required" ? "review_required" : "required";
+  const liffState = unavailable
+    ? "unavailable"
+    : liffStatus === "matched" ? "matched"
+      : liffStatus === "review_required" ? "review_required" : "required";
+  const verificationState = readiness?.evidence?.authoritative_verification_present === true
+    ? "verified"
+    : unavailable ? "unavailable"
+      : status === "owner_review_ready" ? "owner_review_required" : "blocked";
+  const expectedActions = [];
+  if (conflict) expectedActions.push("resolve_identity_conflict");
+  else if (unavailable) expectedActions.push("retry_identity_evidence_read");
+  else {
+    if (canonicalState !== "ready") expectedActions.push("restore_canonical_line_identity");
+    if (lineState !== "matched") expectedActions.push("review_line_ofc_evidence");
+    if (liffState !== "matched") expectedActions.push("review_liff_identity_evidence");
+    if (status === "owner_review_ready") expectedActions.push("owner_review_verification_status");
+  }
+  const actions = Array.isArray(recovery.actions) ? recovery.actions.map((item) => clean(item)) : [];
+
+  return Boolean(status)
+    && recovery.schema === IDENTITY_EVIDENCE_RECOVERY_SCHEMA
+    && recovery.mode === "read_only"
+    && recovery.status === status
+    && recovery.priority === RECOVERY_PRIORITIES[status]
+    && recovery.checked_at === readiness.checked_at
+    && recovery.source_readiness_status === readiness.status
+    && recovery.queue_eligible === (status !== "complete")
+    && recovery.owner_review_ready === (status === "owner_review_ready")
+    && evidence.canonical_line_identity === canonicalState
+    && evidence.reviewed_line_ofc === lineState
+    && evidence.verified_liff_session === liffState
+    && evidence.verification_status === verificationState
+    && actions.length <= 4
+    && new Set(actions).size === actions.length
+    && actions.every((action) => RECOVERY_ACTIONS.has(action))
+    && actions.length === expectedActions.length
+    && actions.every((action, index) => action === expectedActions[index])
+    && recovery?.handoff?.surface === "customer_360"
+    && recovery?.handoff?.path === "/internal/admin/customer-data"
+    && recovery?.handoff?.client_scope_required === true
+    && recovery?.handoff?.mutation_control === false
+    && recovery?.authority?.verification === "Clients.Verification Status"
+    && recovery?.authority?.alignment === "customer_identity_alignment_read_only_v1"
+    && recovery?.authority?.rights === "my_mmd_entitlement_resolver_v1"
+    && recovery?.authority?.recovery === "identity_evidence_recovery_read_only_v1"
+    && recovery.automatic_recovery_allowed === false
+    && recovery.automatic_verification_allowed === false
+    && recovery.verification_status_mutated === false
+    && recovery.identity_mutated === false
+    && recovery.customer_send_allowed === false
+    && recovery.grants_access === false
+    && recovery.grants_membership === false
+    && recovery.grants_points === false;
+}
+
 function classify({ counts, endpointErrors, contractViolations, degradedProjections }) {
   if (contractViolations > 0) return { status: "contract_violation", healthy: false };
   if (endpointErrors > 0 || degradedProjections > 0 || counts.unavailable > 0) {
@@ -286,6 +385,8 @@ export async function runVerifiedIdentityReadinessObservation({
 
   const counts = Object.fromEntries([...READINESS_STATUSES].map((status) => [status, 0]));
   const blockerCounts = {};
+  const recoveryCounts = Object.fromEntries(Object.values(RECOVERY_STATUS_BY_READINESS).map((status) => [status, 0]));
+  const recoveryActionCounts = {};
   const endpointErrorBuckets = {};
   let checkedCount = 0;
   let projectionCount = 0;
@@ -333,14 +434,17 @@ export async function runVerifiedIdentityReadinessObservation({
       contractViolationCount += 1;
       continue;
     }
-    if (!safeReadinessContract(payload)) {
+    if (!safeReadinessContract(payload) || !safeRecoveryContract(payload)) {
       contractViolationCount += 1;
       continue;
     }
 
     const readiness = payload.identity.readiness;
+    const recovery = payload.identity.recovery;
     increment(counts, readiness.status);
     for (const blocker of readiness.blockers) increment(blockerCounts, blocker);
+    increment(recoveryCounts, recovery.status);
+    for (const action of recovery.actions) increment(recoveryActionCounts, action);
   }
 
   const result = classify({
@@ -370,10 +474,16 @@ export async function runVerifiedIdentityReadinessObservation({
       counts,
       blocker_counts: Object.fromEntries(Object.entries(blockerCounts).sort(([a], [b]) => a.localeCompare(b))),
     },
+    recovery: {
+      schema: IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
+      counts: recoveryCounts,
+      action_counts: Object.fromEntries(Object.entries(recoveryActionCounts).sort(([a], [b]) => a.localeCompare(b))),
+    },
     guardrails: {
       names_emitted: false,
       customer_identifiers_emitted: false,
       line_tails_emitted: false,
+      automatic_recovery_possible: false,
       verification_status_mutated: false,
       identity_merged: false,
       membership_or_access_mutated: false,
@@ -399,6 +509,9 @@ function githubSummary(result) {
     `- Ready for Per review: \`${result.readiness.counts.ready_for_owner_verification}\``,
     `- Evidence pending: \`${result.readiness.counts.review_required + result.readiness.counts.insufficient_evidence}\``,
     `- Conflicts: \`${result.readiness.counts.conflict}\``,
+    `- Recovery queue: \`${result.recovery.counts.evidence_required + result.recovery.counts.evidence_review + result.recovery.counts.owner_review_ready + result.recovery.counts.conflict_locked + result.recovery.counts.unavailable_locked}\``,
+    `- LINE OFC evidence actions: \`${result.recovery.action_counts.review_line_ofc_evidence || 0}\``,
+    `- LIFF evidence actions: \`${result.recovery.action_counts.review_liff_identity_evidence || 0}\``,
     "- Authority: Clients.Verification Status; readiness never verifies or merges identity",
     "- Privacy: aggregate counts only; no names, record IDs, LINE tails, credentials, or session values emitted",
     "",
