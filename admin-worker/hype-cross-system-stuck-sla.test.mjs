@@ -111,21 +111,23 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
   assert.equal(watch.policy_version, HYPE_STUCK_SLA_POLICY);
   assert.equal(watch.status, "overdue");
   assert.equal(watch.complete, true);
-  assert.equal(watch.counts.total, 6);
-  assert.equal(watch.counts.overdue, 4);
+  assert.equal(watch.counts.total, 5);
+  assert.equal(watch.counts.overdue, 3);
   assert.equal(watch.counts.watch, 2);
-  assert.equal(watch.counts.owner_actionable_overdue, 2);
+  assert.equal(watch.counts.owner_actionable_overdue, 1);
+  assert.equal(watch.counts.stale_terminal_records, 1);
   assert.deepEqual(watch.counts.owner_actionable_by_kind, {
     entitlement_notification_incomplete: 1,
-    coupon_manual_review: 1,
   });
   assert.deepEqual(watch.counts.by_kind, {
     payment_proof_pending: 1,
     entitlement_notification_incomplete: 1,
     job_confirmation_pending: 1,
-    coupon_manual_review: 1,
     recovery_unassigned: 1,
     telegram_bind_unconsumed: 1,
+  });
+  assert.deepEqual(watch.stale_terminal_by_kind, {
+    coupon_manual_review_terminal: 1,
   });
   assert.equal(watch.items[0].sla_status, "overdue");
   assert.equal(watch.items.at(-1).sla_status, "watch");
@@ -134,6 +136,49 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
 
   const serialized = JSON.stringify(watch);
   assert.doesNotMatch(serialized, /must-not-project|U11111111111111111111111111111111|token_hash|start_arg|payment_ref/i);
+});
+
+test("CARE BACK coupon manual review counts only unresolved review states", () => {
+  const watch = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [
+      {
+        id: "recStaleApproved",
+        fields: {
+          claim_id: "claim-stale",
+          campaign_id: "6-years-care-back",
+          claim_status: "benefit_approved",
+          review_status: "approved",
+          match_status: "manual_review",
+          updated_at: "2026-09-20T10:00:00.000Z",
+        },
+      },
+      {
+        id: "recNeedsReview",
+        fields: {
+          claim_id: "claim-review",
+          campaign_id: "6-years-care-back",
+          claim_status: "manual_review",
+          review_status: "pending",
+          match_status: "manual_review",
+          updated_at: "2026-09-20T10:00:00.000Z",
+        },
+      },
+    ],
+    telegram_binds: [],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  assert.equal(watch.counts.total, 1);
+  assert.equal(watch.counts.overdue, 1);
+  assert.equal(watch.counts.owner_actionable_overdue, 1);
+  assert.equal(watch.counts.stale_terminal_records, 1);
+  assert.deepEqual(watch.counts.owner_actionable_by_kind, { coupon_manual_review: 1 });
+  assert.deepEqual(watch.stale_terminal_by_kind, { coupon_manual_review_terminal: 1 });
+  assert.equal(watch.items[0].reference, "claim-review");
+  assert.equal(watch.items[0].detail, "Coupon claim ยังมี unresolved manual review");
 });
 
 test("missing source remains partial instead of being reported healthy", () => {
