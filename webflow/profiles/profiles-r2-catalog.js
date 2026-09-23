@@ -93,6 +93,7 @@
           <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">ACTIVE DAY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">ใช้วันหยุดแบบ active ตั้งแต่กิจกรรมเช้า ไปจนถึงจุดพักหรือมื้ออาหารที่วางไว้ด้วยกัน</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full day plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=sport_activity&package=active_day">จองแพ็กเกจนี้ ↗</a></article>
         </div>
         <p class="mp8-driver-packages__rules">Sport Activity คือ Companion สำหรับทำกิจกรรมร่วมกัน ไม่ใช่ Personal Trainer, Therapist หรือผู้ให้คำแนะนำทางการแพทย์ · MMD จะยืนยันความเหมาะสมของ Model กับกิจกรรมก่อนทุกครั้ง · ค่า venue/court/class/equipment/ticket/เดินทาง/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿990/ชม. · OT หลัง 00:00 ฿1,490/ชม. · หลัง 03:00 ฿1,790/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
+      </section>
       <section class="mp8-driver-packages" data-wellness-packages hidden aria-labelledby="mp8-wellness-packages-title">
         <div class="mp8-driver-packages__head">
           <p class="mp8-driver-packages__kicker">MMD COMPANION · WELLNESS</p>
@@ -106,6 +107,18 @@
         </div>
         <p class="mp8-driver-packages__rules">Wellness Companion คือเพื่อนร่วมวันสำหรับ lifestyle และกิจกรรมที่ตกลงกัน ไม่ใช่ Personal Trainer, Therapist, massage, recovery treatment หรือผู้ให้คำแนะนำทางการแพทย์ · หากต้องการ massage หรือ recovery service ให้ใช้ MMS Wellness route แยก · MMD จะยืนยันความเหมาะสมของ Model กับแผนและ availability ก่อนทุกครั้ง · ค่า venue/class/ticket/เดินทาง/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿1,690/ชม. · OT หลัง 00:00 ฿2,190/ชม. · หลัง 03:00 ฿2,690/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
       </section>
+      <section class="mp8-driver-packages" data-business-packages hidden aria-labelledby="mp8-business-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · BUSINESS</p>
+          <h3 id="mp8-business-packages-title">บางบริบท แค่มีคนที่วางตัวดีไปด้วยก็พอ</h3>
+          <p>Business lunch, networking event, meeting context และ smart-casual presence สำหรับวันที่อยากมี Companion ที่เข้าใจ dress code และ social context ของคุณ</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">BUSINESS LUNCH</h4><strong class="mp8-driver-package__price">฿6,500</strong></div><p class="mp8-driver-package__line">Lunch, coffee meeting หรือช่วงพบปะสำคัญที่ต้องการคนไปด้วยอย่างสุภาพและเหมาะกับบริบท</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>1 business context</span><span>Smart-casual</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=business_companion&package=business_lunch">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">SMART PRESENCE</h4><strong class="mp8-driver-package__price">฿10,500</strong></div><p class="mp8-driver-package__line">Networking event, client-facing lunch หรือ agenda ที่มีหลายช่วงในวันเดียวกัน โดย MMD ช่วยเช็ก fit และ dress context ล่วงหน้า</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>Networking / meeting day</span><span>Context brief</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=business_companion&package=smart_presence">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">CONTEXT DAY</h4><strong class="mp8-driver-package__price">฿16,500</strong></div><p class="mp8-driver-package__line">หนึ่งวันสำหรับ lunch, networking และ social business context ที่ต้องการ continuity โดยยังคงเป็น Companion คนเดิมตามเวลาที่จอง</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full business context</span><span>Curated</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=business_companion&package=context_day">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">Business Companion คือ social presence companion ไม่ใช่พนักงานบริษัท เลขานุการ ตัวแทนเจรจา ผู้รับมอบอำนาจ หรือผู้มีสิทธิ์เซ็นเอกสาร/ตกลงแทนลูกค้า · MMD จะยืนยัน context, dress code และ availability ก่อนทุกครั้ง · ค่าอาหาร/เครื่องดื่ม/venue/ticket/transport/Parking/wardrobe พิเศษคิดตามจริง · OT ก่อน 00:00 ฿1,990/ชม. · OT หลัง 00:00 ฿2,490/ชม. · หลัง 03:00 ฿2,990/ชม. · หลัง 06:00 ต้อง MMD review · หากขอบเขตเปลี่ยนเป็นงาน commercial, spokesperson หรือ professional service ต้อง Change Plan และ re-quote · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
       </section>
     `);
   }
@@ -118,6 +131,7 @@
   var bangkokPackages = root.querySelector("[data-bangkok-packages]");
   var sportPackages = root.querySelector("[data-sport-packages]");
   var wellnessPackages = root.querySelector("[data-wellness-packages]");
+  var businessPackages = root.querySelector("[data-business-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -316,6 +330,7 @@
       if (bangkokPackages) bangkokPackages.hidden = activeRole !== "bangkok_companion";
       if (sportPackages) sportPackages.hidden = activeRole !== "sport_activity";
       if (wellnessPackages) wellnessPackages.hidden = activeRole !== "wellness_companion";
+      if (businessPackages) businessPackages.hidden = activeRole !== "business_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -332,8 +347,10 @@
                   ? bangkokPackages
                   : activeRole === "sport_activity" && sportPackages
                     ? sportPackages
-                    : activeRole === "wellness_companion" && wellnessPackages
-                      ? wellnessPackages
+                  : activeRole === "wellness_companion" && wellnessPackages
+                    ? wellnessPackages
+                    : activeRole === "business_companion" && businessPackages
+                      ? businessPackages
                   : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -359,6 +376,8 @@
   if (socialPackages) socialPackages.hidden = true;
   if (bangkokPackages) bangkokPackages.hidden = true;
   if (sportPackages) sportPackages.hidden = true;
+  if (wellnessPackages) wellnessPackages.hidden = true;
+  if (businessPackages) businessPackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 
