@@ -47,6 +47,7 @@ import {
   isPrivatePreviewRequest,
   PrivatePreviewGate,
 } from "./private-preview.js";
+import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -109,6 +110,9 @@ export default {
     }
     if (isPrivatePreviewRequest(request)) {
       return handlePrivatePreview(request, env);
+    }
+    if (isPrivateTeaserRequest(request)) {
+      return handlePrivateTeaser(request, env);
     }
     if (isKenjiLineMemberTruthHealthRequest(request)) {
       return handleKenjiLineMemberTruthHealth(request, env);
