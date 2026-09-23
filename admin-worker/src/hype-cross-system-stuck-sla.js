@@ -56,6 +56,11 @@ const INCOMPLETE_NOTIFICATION_STATES = new Set([
   "failed_terminal",
 ]);
 
+const OWNER_ACTION_DEDICATED_KINDS = new Set([
+  "payment_proof_pending",
+  "job_confirmation_pending",
+]);
+
 export async function readCrossSystemStuckSlaWatch(env = {}, {
   now = new Date(),
   recoveryQueue = null,
@@ -289,10 +294,14 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
   }
 
   const deduped = dedupeItems(items).sort(compareItems);
+  const ownerActionableOverdue = deduped.filter((item) =>
+    item.sla_status === "overdue" && !OWNER_ACTION_DEDICATED_KINDS.has(item.kind)
+  );
   const counts = {
     total: deduped.length,
     overdue: deduped.filter((item) => item.sla_status === "overdue").length,
     watch: deduped.filter((item) => item.sla_status === "watch").length,
+    owner_actionable_overdue: ownerActionableOverdue.length,
     by_kind: countBy(deduped, "kind"),
   };
   const sourceStatus = normalizedSourceStatus(options.sourceStatus, sources);
