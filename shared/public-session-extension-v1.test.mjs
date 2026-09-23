@@ -61,6 +61,18 @@ test("Business Companion extension keeps its premium public matrix",()=>{
   assert.equal(result.official_end_changes_only_after,"model_approved+payment_verified+mmd_confirmed");
 });
 
+test("Creative Companion extension stays in the shared-interest public matrix",()=>{
+  const result=pricePublicExtension({
+    packageCode:"gallery_with_me",
+    originalEndAt:"2026-09-22T06:00:00.000Z",
+    requestedEndAt:"2026-09-22T07:30:00.000Z",
+  });
+  assert.equal(result.ok,true);
+  assert.equal(result.customer_amount_thb,2535);
+  assert.equal(result.model_payout_thb,1500);
+  assert.equal(result.official_end_changes_only_after,"model_approved+payment_verified+mmd_confirmed");
+});
+
 test("after 03:00 changes band and after 06:00 fails closed",()=>{
   const priced=pricePublicExtension({
     packageCode:"formal_evening",
