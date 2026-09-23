@@ -215,11 +215,11 @@ function installAirtableMock() {
 }
 
 function formulaMatches(fields, formula) {
-  const search = formula.match(/SEARCH\("([^"]*)",\s*\{([^}]+)\}/i);
-  if (search) {
-    const needle = String(search[1] || "").toLowerCase();
-    const field = String(search[2] || "");
-    return String(fields[field] ?? "").toLowerCase().includes(needle);
+  const searches = [...formula.matchAll(/SEARCH\("([^"]*)",\s*\{([^}]+)\}/gi)];
+  if (searches.length) {
+    return searches.some(([, needle, field]) =>
+      String(fields[String(field || "")] ?? "").toLowerCase().includes(String(needle || "").toLowerCase())
+    );
   }
   const equals = [
     ...formula.matchAll(/\{([^}]+)\}=\s*"([^"]*)"/g),
