@@ -350,6 +350,54 @@ test("expired Telegram binds older than the bounded window do not crowd out curr
   assert.equal(watch.status, "clear");
 });
 
+test("owner summary preserves suppressed invite and expired-bind diagnostics without Owner actions", () => {
+  const diagnostics = buildCrossSystemStuckSlaWatch({
+    payment_proofs: [],
+    entitlement_notifications: [{
+      id: "recExpectedInvite",
+      fields: {
+        entitlement_id: "ent-expected",
+        package_code: "premium",
+        access_status: "active",
+        source: "renewal",
+        payment_ref: "present",
+        telegram_access_status: "pending_invite",
+        created_at: "2026-09-21T07:00:00.000Z",
+      },
+    }],
+    job_confirmations: [],
+    recovery_queue: { ok: true, queue: { open_count: 0, attention: [] } },
+    coupon_manual_review: [],
+    telegram_binds: [{
+      id: "recExpiredRecent",
+      fields: {
+        bind_id: "tgb_recent_expired",
+        role: "model",
+        status: "pending",
+        created_at: "2026-09-21T11:42:00.000Z",
+        expires_at: "2026-09-21T11:57:00.000Z",
+      },
+    }],
+  }, NOW, { sourceStatus: allSourcesAvailable() });
+
+  const summary = buildHypeOwnerSummaryProjection({
+    generated_at: NOW.toISOString(),
+    counts: {},
+    status: {},
+  }, NOW, null, null, null, diagnostics);
+
+  assert.equal(summary.stuck_sla_watch.counts.total, 0);
+  assert.equal(summary.stuck_sla_watch.counts.owner_actionable_overdue, 0);
+  assert.equal(summary.stuck_sla_watch.counts.non_actionable_records, 1);
+  assert.equal(summary.stuck_sla_watch.counts.stale_terminal_records, 1);
+  assert.deepEqual(summary.stuck_sla_watch.non_actionable_by_kind, {
+    entitlement_pending_invite_expected: 1,
+  });
+  assert.deepEqual(summary.stuck_sla_watch.stale_terminal_by_kind, {
+    telegram_bind_expired_pending: 1,
+  });
+});
+
 test("owner summary projects STUCK / NEEDS ATTENTION as read-only action", () => {
   const stuck = buildCrossSystemStuckSlaWatch({
     payment_proofs: [{ proof_id: "proof-1", customer_name: "คุณเอ็ม", created_at: "2026-09-21T04:00:00.000Z" }],
