@@ -2,6 +2,7 @@ import { readCredentialBoundAdminActor } from './credential-bound-admin-session.
 import { mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
+import { readOwnerApprovedDriveMedia } from './google-drive-owner-media.js';
 
 export const REVIEW_PAGE = '/internal/admin/mmd-review';
 export const REVIEW_API = '/v1/admin/private-media';
@@ -87,21 +88,9 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       if (!notes.includes(fileName) || !/private\s+teaser/i.test(notes) || !/verified\s*line|line[-\s]*verified/i.test(notes)) {
         return json({ ok: false, error: 'private_teaser_source_not_owner_approved' }, 409);
       }
-      if (!env.MODEL_DRIVE_DIRECTORY?.fetch) return json({ ok: false, error: 'model_drive_directory_unavailable' }, 503);
-
-      const source = await env.MODEL_DRIVE_DIRECTORY.fetch(new Request(
-        'https://model-drive-directory.internal/__internal/model-drive/canonical-file',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ drive_folder_id: folderId, file_name: fileName }),
-        },
-      ));
-      if (!source.ok || !source.body) return json({ ok: false, error: 'approved_drive_media_unavailable' }, source.status === 404 ? 404 : 503);
-      const contentType = String(source.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) return json({ ok: false, error: 'approved_drive_media_type_invalid' }, 415);
-      const bytes = new Uint8Array(await source.arrayBuffer());
-      if (!bytes.length) return json({ ok: false, error: 'approved_drive_media_empty' }, 409);
+      const source = await readOwnerApprovedDriveMedia(env, { folderId, fileName });
+      const contentType = source.contentType;
+      const bytes = source.bytes;
 
       const plan = await planPrivateUpload(env, modelId, {
         file_name: fileName,
