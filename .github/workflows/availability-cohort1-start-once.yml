@@ -1,0 +1,179 @@
+name: Availability Cohort 1 Start Once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/availability-cohort1-start-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  start-cohort-1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Start Cohort 1 through owner-authenticated Calendar
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const EXPECTED = ["EMs16", "EMs21 J Dye", "Jasper OP", "Simba", "Porto MJ"];
+
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function main() {
+            const origin = String(process.env.ORIGIN || "").trim();
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || "").trim();
+            if (!origin || !credential) throw new Error("owner production credential unavailable");
+
+            const login = await fetch(origin + "/internal/admin/login/session", {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-MMD-Login-Fetch": "1",
+              },
+              body: new URLSearchParams({
+                credential,
+                next: "/internal/admin/calendar",
+              }).toString(),
+              redirect: "manual",
+            });
+            const loginPayload = await login.clone().json().catch(() => null);
+            if (login.status !== 200 || loginPayload?.ok !== true) {
+              throw new Error("owner login failed: " + login.status);
+            }
+            const cookie = (login.headers.get("set-cookie") || "").split(";", 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("owner session cookie missing");
+
+            async function readCalendar() {
+              let last = null;
+              for (let attempt = 1; attempt <= 5; attempt += 1) {
+                const response = await fetch(origin + "/v1/admin/calendar", {
+                  headers: {
+                    Origin: origin,
+                    Cookie: cookie,
+                    Accept: "application/json",
+                  },
+                  cache: "no-store",
+                });
+                const body = await response.json().catch(() => null);
+                last = { response, body };
+                if (response.status === 200 && body?.ok === true) return body;
+                await sleep(500 * attempt);
+              }
+              throw new Error("calendar preflight unavailable: " + (last?.response?.status || "unknown"));
+            }
+
+            const before = await readCalendar();
+            const onboarding = before?.availability?.onboarding || {};
+            const tracking = onboarding?.tracking || {};
+            const names = (onboarding.current_batch || []).map((item) => String(item?.name || ""));
+
+            if (tracking.state !== "not_started" || tracking.start_required !== true) {
+              throw new Error("Cohort 1 is not in expected not_started state: " + JSON.stringify({
+                state: tracking.state,
+                start_required: tracking.start_required,
+                cohort_id: tracking.cohort_id || null,
+              }));
+            }
+            if (JSON.stringify(names) !== JSON.stringify(EXPECTED)) {
+              throw new Error("Cohort 1 live membership drifted: " + JSON.stringify(names));
+            }
+            if ((onboarding.current_batch || []).some((item) => item?.last_owner_action || item?.last_owner_action_at)) {
+              throw new Error("unexpected pre-start owner action evidence");
+            }
+
+            const startResponse = await fetch(origin + "/v1/admin/calendar/availability-cohort/start", {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                Cookie: cookie,
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+              body: "{}",
+              cache: "no-store",
+            });
+            const started = await startResponse.json().catch(() => null);
+            if (startResponse.status !== 200 || started?.ok !== true) {
+              throw new Error("Cohort 1 start failed: " + startResponse.status + " " + String(started?.error || ""));
+            }
+            if (started?.outbound_messages_sent !== false || started?.activation_links_issued !== false) {
+              throw new Error("Cohort 1 start safety receipt missing");
+            }
+
+            const receipt = started?.cohort || null;
+            if (!receipt?.cohort_id || receipt?.cohort_number !== 1) {
+              throw new Error("Cohort 1 receipt invalid");
+            }
+            const receiptNames = (receipt.members || []).map((item) => String(item?.display_name || ""));
+            if (JSON.stringify(receiptNames) !== JSON.stringify(EXPECTED)) {
+              throw new Error("Cohort 1 receipt membership mismatch: " + JSON.stringify(receiptNames));
+            }
+            const receiptJson = JSON.stringify(receipt);
+            if (/U[0-9a-f]{32}|activation_url|access_token|cookie|credential/i.test(receiptJson)) {
+              throw new Error("Cohort 1 receipt leaked sensitive identity material");
+            }
+
+            const after = await readCalendar();
+            const afterOnboarding = after?.availability?.onboarding || {};
+            const afterTracking = afterOnboarding?.tracking || {};
+            const afterNames = (afterOnboarding.current_batch || []).map((item) => String(item?.name || ""));
+
+            if (afterTracking.state !== "active" || afterTracking.start_required !== false) {
+              throw new Error("Cohort 1 did not enter active state");
+            }
+            if (afterTracking.cohort_id !== receipt.cohort_id || afterTracking.cohort_number !== 1) {
+              throw new Error("Cohort 1 read-back receipt mismatch");
+            }
+            if (JSON.stringify(afterNames) !== JSON.stringify(EXPECTED)) {
+              throw new Error("Cohort 1 read-back membership mismatch: " + JSON.stringify(afterNames));
+            }
+            if ((afterOnboarding.current_batch || []).some((item) => item?.last_owner_action || item?.last_owner_action_at)) {
+              throw new Error("Cohort start unexpectedly created a Model owner action");
+            }
+            if (afterTracking.auto_advance !== false) throw new Error("Cohort 1 auto_advance changed");
+
+            console.log(JSON.stringify({
+              ok: true,
+              operation: "availability_cohort_1_start",
+              cohort_id: receipt.cohort_id,
+              cohort_number: receipt.cohort_number,
+              started_at: receipt.started_at,
+              members: receiptNames,
+              state: afterTracking.state,
+              start_required: afterTracking.start_required,
+              completion_percent: afterTracking.completion_percent,
+              counts: afterTracking.counts,
+              auto_advance: afterTracking.auto_advance,
+              outbound_messages_sent: false,
+              activation_links_issued: false,
+            }, null, 2));
+          }
+
+          main().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Cohort 1 start receipt
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Availability Cohort 1 Start
+          - Owner-authenticated production Calendar: PASS
+          - Live 5-Model membership preflight: PASS
+          - Cohort receipt lock: PASS
+          - Outbound LINE messages: NONE
+          - Activation links issued: NONE
+          - Auto-advance: FALSE
+          EOF
