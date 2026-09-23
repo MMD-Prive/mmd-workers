@@ -120,6 +120,19 @@
         </div>
         <p class="mp8-driver-packages__rules">Business Companion คือ social presence companion ไม่ใช่พนักงานบริษัท เลขานุการ ตัวแทนเจรจา ผู้รับมอบอำนาจ หรือผู้มีสิทธิ์เซ็นเอกสาร/ตกลงแทนลูกค้า · MMD จะยืนยัน context, dress code และ availability ก่อนทุกครั้ง · ค่าอาหาร/เครื่องดื่ม/venue/ticket/transport/Parking/wardrobe พิเศษคิดตามจริง · OT ก่อน 00:00 ฿1,990/ชม. · OT หลัง 00:00 ฿2,490/ชม. · หลัง 03:00 ฿2,990/ชม. · หลัง 06:00 ต้อง MMD review · หากขอบเขตเปลี่ยนเป็นงาน commercial, spokesperson หรือ professional service ต้อง Change Plan และ re-quote · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
       </section>
+      <section class="mp8-driver-packages" data-creative-packages hidden aria-labelledby="mp8-creative-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · CREATIVE</p>
+          <h3 id="mp8-creative-packages-title">วันที่อยากดูอะไรใหม่ ๆ ไม่ต้องไปคนเดียว</h3>
+          <p>Gallery, exhibition, photo walk, music, design หรือ creative day ที่อยากมีคนที่ share interest เดียวกันไปใช้เวลาและคุยกันใน context นั้น</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">GALLERY WITH ME</h4><strong class="mp8-driver-package__price">฿5,000</strong></div><p class="mp8-driver-package__line">Gallery, exhibition, bookstore หรือ creative coffee ที่อยากมีคนไปเดินดู พูดคุย และใช้ mood เดียวกัน</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>One creative context</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=creative_companion&package=gallery_with_me">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">CREATIVE CITY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">Photo walk, gallery route, music หรือ design context ที่มี 2–3 moments ในโซนเดียวกัน โดย MMD เช็ก shared interest และ availability ก่อน</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>2–3 creative moments</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=creative_companion&package=creative_city">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">CREATIVE DAY</h4><strong class="mp8-driver-package__price">฿13,500</strong></div><p class="mp8-driver-package__line">หนึ่งวันเต็มสำหรับ gallery, city walk, music หรือ creative plan ที่อยากค่อย ๆ ใช้เวลา โดยมี Companion คนเดิมอยู่ใน context ที่ตกลงกัน</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full creative day</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=creative_companion&package=creative_day">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">Creative Companion คือ shared-interest companion ไม่ใช่ช่างภาพ นักออกแบบ ศิลปินรับจ้าง ผู้ผลิตงาน หรือผู้ให้บริการวิชาชีพ · Photo walk คือการทำกิจกรรมร่วมกันเท่านั้น ไม่มีภาพส่งมอบหรือ usage rights · งานถ่ายภาพ/วิดีโอเชิงพาณิชย์, creative production หรือการใช้ภาพต้องส่ง brief และ quote แยก · MMD จะยืนยัน shared interest, context และ availability ก่อนทุกครั้ง · ค่า ticket/exhibition/venue/transport/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿1,690/ชม. · OT หลัง 00:00 ฿2,190/ชม. · หลัง 03:00 ฿2,690/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
+      </section>
     `);
   }
 
@@ -132,6 +145,7 @@
   var sportPackages = root.querySelector("[data-sport-packages]");
   var wellnessPackages = root.querySelector("[data-wellness-packages]");
   var businessPackages = root.querySelector("[data-business-packages]");
+  var creativePackages = root.querySelector("[data-creative-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -331,6 +345,7 @@
       if (sportPackages) sportPackages.hidden = activeRole !== "sport_activity";
       if (wellnessPackages) wellnessPackages.hidden = activeRole !== "wellness_companion";
       if (businessPackages) businessPackages.hidden = activeRole !== "business_companion";
+      if (creativePackages) creativePackages.hidden = activeRole !== "creative_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -351,6 +366,8 @@
                     ? wellnessPackages
                     : activeRole === "business_companion" && businessPackages
                       ? businessPackages
+                      : activeRole === "creative_companion" && creativePackages
+                        ? creativePackages
                   : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -378,6 +395,7 @@
   if (sportPackages) sportPackages.hidden = true;
   if (wellnessPackages) wellnessPackages.hidden = true;
   if (businessPackages) businessPackages.hidden = true;
+  if (creativePackages) creativePackages.hidden = true;
   if (resultCount) resultCount.textContent = copy().chooseRole;
   updateStats(0);
 

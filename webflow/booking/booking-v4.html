@@ -844,6 +844,13 @@
                 ><button
                   class="bk-choice"
                   type="button"
+                  data-service="Creative Companion"
+                >
+                  <strong>Creative Companion</strong>gallery, photo walk, music,
+                  design และ creative day</button
+                ><button
+                  class="bk-choice"
+                  type="button"
                   data-service="Lifestyle / Sport"
                 >
                   <strong>Lifestyle</strong>กิจกรรมและช่วงกลางวัน</button
@@ -1151,6 +1158,33 @@
           detail:
             "8 ชั่วโมง · Full business context · OT ก่อน 00:00 ฿1,990/ชม.",
         },
+        gallery_with_me: {
+          role: "creative_companion",
+          service: "Creative Companion",
+          mood: "",
+          name: "GALLERY WITH ME",
+          price: "฿5,000",
+          detail:
+            "3 ชั่วโมง · Gallery / exhibition / creative coffee · shared interest, not professional creative service",
+        },
+        creative_city: {
+          role: "creative_companion",
+          service: "Creative Companion",
+          mood: "",
+          name: "CREATIVE CITY",
+          price: "฿8,500",
+          detail:
+            "5 ชั่วโมง · Photo walk / art / music context · OT ก่อน 00:00 ฿1,690/ชม.",
+        },
+        creative_day: {
+          role: "creative_companion",
+          service: "Creative Companion",
+          mood: "",
+          name: "CREATIVE DAY",
+          price: "฿13,500",
+          detail:
+            "8 ชั่วโมง · Full creative day · OT ก่อน 00:00 ฿1,690/ชม.",
+        },
         night_out: {
           role: "nightlife_companion",
           service: "Night Life Companion",
@@ -1345,6 +1379,23 @@
         heroAction.textContent = selectedPackage
           ? "ใส่วัน เวลา และบริบท"
           : "ส่ง Business Request";
+        heroAction.setAttribute("href", "#mmd-request");
+      }
+    }
+    if (role === "creative_companion") {
+      service = "Creative Companion";
+      mood = "";
+      const heroTitle = r.querySelector(".bk-hero h1"),
+        heroCopy = r.querySelector(".bk-hero p"),
+        heroAction = r.querySelector(".bk-action");
+      if (heroTitle) heroTitle.textContent = "วันที่อยากดูอะไรใหม่ ๆ ไม่ต้องไปคนเดียว";
+      if (heroCopy)
+        heroCopy.textContent =
+          "เลือก Creative Companion package แล้วบอกสิ่งที่อยากไปดูหรือทำ MMD จะเช็ก shared interest, context และ availability ก่อนยืนยัน Photo walk เป็นกิจกรรมร่วมกัน ไม่ใช่งานถ่ายภาพหรือ creative production ที่มีงานส่งมอบ";
+      if (heroAction) {
+        heroAction.textContent = selectedPackage
+          ? "ใส่วัน เวลา และสิ่งที่อยากทำ"
+          : "ส่ง Creative Request";
         heroAction.setAttribute("href", "#mmd-request");
       }
     }
