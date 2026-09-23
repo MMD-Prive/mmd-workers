@@ -238,6 +238,7 @@ jobs:
             if (Number(cohortTracking?.pending_owner_actions || 0) !== expectedPendingOwnerActions) {
               throw new Error("Availability Cohort pending owner-action count mismatch");
             }
+            let availabilityReminderPreflight = null;
             if (expectedNextOwnerItem) {
               if (
                 !cohortTracking?.next_owner_action ||
@@ -245,6 +246,39 @@ jobs:
                 String(cohortTracking.next_owner_action.recovery_stage || "") !== String(expectedNextOwnerItem.recovery_stage || "")
               ) {
                 throw new Error("Availability Cohort next owner action does not match the first actionable receipt member");
+              }
+
+              const nextStage = String(expectedNextOwnerItem.recovery_stage || "");
+              const nextModelKey = String(expectedNextOwnerItem.model_key || "");
+              if (["availability_confirmation_required","reminder_follow_up_due"].includes(nextStage) && nextModelKey) {
+                const preflightResponse = await fetch(`${pageUrl.origin}/v1/admin/calendar/availability-reminder/preflight`, {
+                  method: "POST",
+                  headers: {
+                    Origin: pageUrl.origin,
+                    Cookie: cookie,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ model_key: nextModelKey }),
+                  cache: "no-store",
+                });
+                const preflight = await preflightResponse.json().catch(() => null);
+                if (preflightResponse.status !== 200 || preflight?.ok !== true) {
+                  throw new Error(`Availability reminder preflight unavailable: ${preflightResponse.status} ${preflight?.error || "unknown"}`);
+                }
+                if (preflight?.schema !== "mmd.availability_reminder_preflight.v1" || preflight?.message_sent !== false) {
+                  throw new Error("Availability reminder preflight safety contract failed");
+                }
+                availabilityReminderPreflight = {
+                  name: String(expectedNextOwnerItem.name || "—").slice(0, 120),
+                  ready: preflight.ready === true,
+                  state: String(preflight.state || "unknown").slice(0, 120),
+                  token_mode: String(preflight.token_mode || "unknown").slice(0, 40),
+                  transport: String(preflight.transport || "none").slice(0, 120),
+                  recipient_reachable: preflight.recipient_reachable === true,
+                  provider_status: Number.isInteger(preflight.provider_status) ? preflight.provider_status : null,
+                  message_sent: false,
+                };
               }
             } else if (cohortTracking?.next_owner_action) {
               throw new Error("Availability Cohort exposed a next owner action when none is actionable");
@@ -357,6 +391,7 @@ jobs:
               owner_actions_contract: ownerActions.contract,
               availability_source_state: availabilitySource.state,
               availability_exception_present: Boolean(availabilityAction),
+              availability_reminder_preflight: availabilityReminderPreflight,
               availability_onboarding_ui: "calendar-onboarding-cohort-v2-20260923",
               availability_onboarding_tracking: {
                 state: cohortTracking.state,
@@ -415,6 +450,7 @@ jobs:
           - Owner Actions: Availability source projected from canonical coverage health
           - Availability exception: Calendar-only, read-only, no auto-send or mutation
           - Availability diagnostic: actionable rows logged with safe fields only (name/model_id/stage/state/LINE-connected)
+          - Availability reminder preflight: next Model transport/readiness checked without sending a message
           - Availability onboarding: canonical-key dedupe + 5-Model Owner-click cohort verified
           - Availability onboarding UI: live Calendar start gate + Cohort 1 outcomes + one-at-a-time next owner action verified
           - Cross-layer person conversion: forbidden
