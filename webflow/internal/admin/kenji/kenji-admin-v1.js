@@ -267,6 +267,20 @@
   function option(value,label,current) { return '<option value="'+esc(value)+'" '+(value===current?'selected':'')+'>'+esc(label)+'</option>'; }
   function chip(name,value,label,checked) { return '<label><input type="checkbox" name="'+esc(name)+'" value="'+attr(value)+'" '+(checked?'checked':'')+'> '+esc(label)+'</label>'; }
 
+  function salesPrimaryRule(model) {
+    return model && model.sales_control && model.sales_control.primary_rule ? model.sales_control.primary_rule : {};
+  }
+
+  function salesScopes(model) {
+    var rule=salesPrimaryRule(model);
+    return Array.isArray(rule.audience_scope)?rule.audience_scope:[];
+  }
+
+  function salesDays(model) {
+    var rule=salesPrimaryRule(model);
+    return Array.isArray(rule.days_of_week)?rule.days_of_week:[];
+  }
+
   function renderModelEditor() {
     var model=state.selectedModel,node=document.getElementById("kaModelEditor"); if(!node)return;
     if(!model){node.innerHTML='<div class="ka__empty">เลือก Model ทางซ้าย หรือกด + New เพื่อเตรียม Draft</div>';return;}
@@ -276,6 +290,14 @@
     var profileState=model.profile_status||"missing_profile";
     var photoPolicy=model.photo_visibility_policy||"Per review";
     var depositGate=model.deposit_preview_gate||"Per approval";
+    var salesRule=salesPrimaryRule(model);
+    var salesScopesValue=salesScopes(model);
+    var salesDaysValue=salesDays(model);
+    var salesVisibility=salesRule.sales_visibility||"off";
+    var salesSchedule=salesRule.schedule_type||"always";
+    var salesScheduleDisplay={"always":"Always","date_range":"Date range","date_time_range":"Date + time range","weekly_recurring":"Weekly recurring"}[salesSchedule]||salesRule.schedule_type||"Always";
+    var salesPriceVisibility=salesRule.price_visibility||"Per approval only";
+    var salesStatus=salesRule.status||"Active";
     var adminMedia=model.has_admin_preview&&model.admin_preview_url
       ? '<div class="ka__modelPreview"><span>ADMIN MEDIA PREVIEW</span><img src="'+attr(model.admin_preview_url)+'" alt="'+attr((model.working_name||model.model_key||"Model")+" primary media")+'" loading="lazy" decoding="async" style="display:block;width:100%;max-height:440px;object-fit:cover;border-radius:16px;margin-top:10px"><small>Admin only · Worker-resolved primary media · customer exposure remains controlled by review/access policy</small></div>'
       : '<div class="ka__notice"><b>Admin media preview</b><br>ยังไม่มี primary image ที่ Worker อนุญาตให้ preview.</div>';
@@ -323,7 +345,20 @@
       +'<div class="ka__modelGrid"><label>Photo Visibility Policy<select id="kaModelPhotoPolicy">'+option("Active eligible only","Active eligible only",photoPolicy)+option("VIP/SVIP/Black Card only","VIP/SVIP/Black Card only",photoPolicy)+option("No photo","No photo",photoPolicy)+option("Per review","Per review",photoPolicy)+'</select></label><label>Deposit Preview Gate<select id="kaModelDepositGate">'+option("None","None",depositGate)+option("Verified deposit + Per approval","Verified deposit + Per approval",depositGate)+option("Per approval","Per approval",depositGate)+'</select></label></div>'
       +'<div class="ka__modelGrid"><label>Source Ref<input id="kaModelSourceRef" value="'+attr(model.source_ref)+'" placeholder="internal source reference"></label><div class="ka__scopeBlock"><b>Public Kenji proposal</b><div class="ka__chips">'+chip("kaModelPublicKenji","include","Include in public Kenji",!!model.include_in_public_kenji)+'</div></div></div>'
       +'<div class="ka__notice"><b>Current Model access</b><br>Identity tier: '+esc(model.identity_tier||"—")+' · access filter: '+esc(modelTierForFilter(model))+' · current visibility: '+esc(model.booking_visibility||"—")+'. ค่าเหล่านี้มาจาก Models และไม่ถูกเขียนทับจาก Keyword Profile editor.</div>'
-      +'<div class="ka__notice"><b>Safety lock</b><br>หน้านี้ไม่รับราคา, availability/คิว, เบอร์ติดต่อ, LINE/Telegram, private asset หรือ R2 key. Access visibility และ Public Kenji เป็น proposal สำหรับ Review และยังไม่เปลี่ยน Production Profile.</div>'
+      +'<div class="ka__notice"><b>Customer-safe copy lock</b><br>Customer-safe fields ไม่รับราคา, availability/คิว, contact หรือ private asset; ราคาและช่วงขายต้องแก้ใน Model Sales Control ด้านล่างเท่านั้น.</div>'
+      +'<div class="ka__recordHead"><span>MODEL SALES CONTROL</span><h3>Rate · Audience · Visibility · Schedule</h3><p>Canonical source: MMD — Model Offer Rules · configured '+esc((model.sales_control&&model.sales_control.configured_rule_count)||0)+' · active '+esc((model.sales_control&&model.sales_control.active_rule_count)||0)+'</p></div>'
+      +'<div class="ka__modelGrid"><label>Customer Sell Rate THB<input id="kaSalesCustomerRate" type="number" min="0" step="1" value="'+attr(salesRule.customer_sell_rate_thb==null?"":salesRule.customer_sell_rate_thb)+'" placeholder="25000"></label><label>Partner / Source Rate THB<input id="kaSalesSourceRate" type="number" min="0" step="1" value="'+attr(salesRule.partner_source_rate_thb==null?"":salesRule.partner_source_rate_thb)+'" placeholder="internal source rate"></label></div>'
+      +'<div class="ka__modelGrid"><label>Sales Visibility<select id="kaSalesVisibility">'+option("on","On",salesVisibility)+option("off","Off",salesVisibility)+'</select></label><label>Status<select id="kaSalesStatus">'+option("Active","Active",salesStatus)+option("Paused","Paused",salesStatus)+option("Draft","Draft",salesStatus)+'</select></label></div>'
+      +'<div class="ka__modelGrid"><label>Price Visibility<select id="kaSalesPriceVisibility">'+option("Eligible scope only","Eligible scope only",salesPriceVisibility)+option("Per approval only","Per approval only",salesPriceVisibility)+option("Never automatic","Never automatic",salesPriceVisibility)+'</select></label><label>Priority<input id="kaSalesPriority" type="number" step="1" value="'+attr(salesRule.priority==null?100:salesRule.priority)+'"></label></div>'
+      +'<div class="ka__scopeBlock"><b>Customer audience</b><div class="ka__chips">'+chip("kaSalesAudience","Public Member","Public Member",salesScopesValue.includes("public_member")||salesScopesValue.includes("Public Member"))+chip("kaSalesAudience","Elite","Elite",salesScopesValue.includes("elite")||salesScopesValue.includes("Elite"))+chip("kaSalesAudience","Red Card","Red Card",salesScopesValue.includes("red_card")||salesScopesValue.includes("Red Card"))+chip("kaSalesAudience","Standard","Standard",salesScopesValue.includes("standard")||salesScopesValue.includes("Standard"))+chip("kaSalesAudience","Premium","Premium",salesScopesValue.includes("premium")||salesScopesValue.includes("Premium"))+chip("kaSalesAudience","VIP / Black Card","VIP / Black Card",salesScopesValue.includes("vip_black_card")||salesScopesValue.includes("VIP / Black Card"))+chip("kaSalesAudience","SVIP","SVIP",salesScopesValue.includes("svip")||salesScopesValue.includes("SVIP"))+chip("kaSalesAudience","Per Review","Per Review",salesScopesValue.includes("per_review")||salesScopesValue.includes("Per Review"))+'</div></div>'
+      +'<div class="ka__modelGrid"><label>Schedule<select id="kaSalesSchedule">'+option("Always","Always",salesScheduleDisplay)+option("Date range","Date range",salesScheduleDisplay)+option("Date + time range","Date + time range",salesScheduleDisplay)+option("Weekly recurring","Weekly recurring",salesScheduleDisplay)+'</select></label><label>Offer Type<select id="kaSalesOfferType">'+option("","General",salesRule.offer_type||"")+option("PN","PN",String(salesRule.offer_type||"").toUpperCase())+option("VIP","VIP",String(salesRule.offer_type||"").toUpperCase())+option("MK","MK",String(salesRule.offer_type||"").toUpperCase())+option("Burn","Burn",String(salesRule.offer_type||""))+'</select></label></div>'
+      +'<div class="ka__modelGrid"><label>Effective From<input id="kaSalesFrom" value="'+attr(salesRule.effective_from||"")+'" placeholder="2026-09-21T18:00:00+07:00"></label><label>Effective Until<input id="kaSalesUntil" value="'+attr(salesRule.effective_until||"")+'" placeholder="2026-09-22T02:00:00+07:00"></label></div>'
+      +'<div class="ka__scopeBlock"><b>Weekly days</b><div class="ka__chips">'+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(day){return chip("kaSalesDay",day,day,salesDaysValue.includes(day));}).join("")+'</div></div>'
+      +'<div class="ka__modelGrid"><label>Start Time Bangkok<input id="kaSalesStart" value="'+attr(salesRule.start_time_local||"")+'" placeholder="19:00"></label><label>End Time Bangkok<input id="kaSalesEnd" value="'+attr(salesRule.end_time_local||"")+'" placeholder="23:30"></label></div>'
+      +'<label>Change Reason<textarea id="kaSalesReason" placeholder="เหตุผลที่แก้ rate / audience / schedule">'+esc(salesRule.change_reason||"Owner Sales Control update")+'</textarea></label>'
+      +'<div class="ka__scopeBlock"><b>Approval</b><div class="ka__chips">'+chip("kaSalesApproval","required","Per approval required",salesRule.requires_per_approval!==false)+'</div></div>'
+      +'<div class="ka__actions"><button class="is-primary" data-model-action="save-sales">Save Sales Control</button></div>'
+      +'<div class="ka__notice"><b>Sales authority</b><br>Booking, Kenji, Create Job และ Partner Dashboard จะอ่าน rule ชุดนี้ผ่าน resolver เดียวกัน โดย source rate อยู่ภายใน MMD.</div>'
       +'<div class="ka__notice"><b>Media / Compcard</b><br>ภาพและ Compcard ยังใช้ Model Console media review เดิม ไม่อัปโหลดตรงจาก browser ใน Model Keyword Studio.</div>'
       +salesPanel
       +'<div class="ka__modelPreview" id="kaModelPreview"><span>SAFE PREVIEW</span><p>กด Preview เพื่อดูเฉพาะ Customer-safe Info/Remark ที่กำลังเตรียมส่งเข้า Review</p></div>'

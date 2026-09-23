@@ -114,21 +114,28 @@ function uniqueExpiry(values: unknown[]): string {
   return unique.length === 1 ? unique[0] : "";
 }
 
-async function readResolverExpiry(
+export async function resolveCanonicalEntitlementSnapshot(
   env: Env,
   input: { line_user_id?: string; member_id?: string },
-): Promise<string> {
-  if (!toStr(input.line_user_id) && !toStr(input.member_id)) return "";
+): Promise<Record<string, unknown> | null> {
+  if (!toStr(input.line_user_id) && !toStr(input.member_id)) return null;
   const rows = await listGenericRecords(env, memberEntitlementsUrl(env), { maxRecords: 100 });
   const lineKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD, "line_user_id");
   const memberIdKeys = envFieldList(env.AIRTABLE_ENTITLEMENT_MEMBER_ID_FIELD, "member_id", "Member ID");
   const matched = rows.filter((row) => exactStableIdentityMatch(row.fields, input, lineKeys, memberIdKeys));
-  if (!matched.length) return "";
+  if (!matched.length) return null;
 
   const snapshot = resolveMemberEntitlements(matched);
-  if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot.fail_closed !== true || snapshot.member_blocked === true) {
-    return "";
-  }
+  if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1" || snapshot.fail_closed !== true) return null;
+  return snapshot as Record<string, unknown>;
+}
+
+async function readResolverExpiry(
+  env: Env,
+  input: { line_user_id?: string; member_id?: string },
+): Promise<string> {
+  const snapshot = await resolveCanonicalEntitlementSnapshot(env, input);
+  if (!snapshot || snapshot.member_blocked === true) return "";
 
   const entitlements = Array.isArray(snapshot.entitlements) ? snapshot.entitlements : [];
   for (const lifecycle of ["active", "expiring_soon", "grace", "expired"]) {

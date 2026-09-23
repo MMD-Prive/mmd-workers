@@ -150,6 +150,26 @@ test("list joins Models identity with the existing Keyword Profiles content", as
         }],
       });
     }
+    if (decoded.includes("tblModelOfferRulesCanonical")) {
+      return response({
+        records: [{
+          id: "recSalesRule123456",
+          fields: {
+            offer_rule_key: "ems04-sin-m-owner-v1",
+            Model: ["rec12345678901234"],
+            model_key: "ems04-sin-m",
+            status: "Active",
+            sales_visibility: "on",
+            audience_scope: ["Premium"],
+            customer_sell_rate_thb: 25000,
+            partner_source_rate_thb: 18000,
+            price_visibility: "Eligible scope only",
+            priority: 100,
+            version: 2,
+          },
+        }],
+      });
+    }
     throw new Error(`unexpected table call: ${url}`);
   };
 
@@ -173,10 +193,12 @@ test("list joins Models identity with the existing Keyword Profiles content", as
   assert.equal(Object.hasOwn(body.items[0], "admin_note"), false);
   assert.equal(Object.hasOwn(body.items[0], "minimum_rate_90m"), false);
   assert.equal(Object.hasOwn(body.items[0], "private_admin_note"), false);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.ok(calls.some((call) => decodeURIComponent(call.url).includes("tblModelsCanonical")));
   assert.ok(calls.some((call) => decodeURIComponent(call.url).includes("tblKeywordProfilesCanonical")));
-  assert.ok(calls.every((call) => !decodeURIComponent(call.url).includes("Offer")));
+  assert.ok(calls.some((call) => decodeURIComponent(call.url).includes("tblModelOfferRulesCanonical")));
+  assert.equal(body.items[0].sales_control.configured_rule_count, 1);
+  assert.equal(body.items[0].sales_control.primary_rule.customer_sell_rate_thb, 25000);
 });
 
 test("list fails closed when canonical Keyword Profiles cannot be read", async () => {

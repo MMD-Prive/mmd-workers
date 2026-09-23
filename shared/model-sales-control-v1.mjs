@@ -7,6 +7,8 @@ const PRICE_VISIBLE_STATES = new Set([
   "visible",
   "customer_visible",
   "customer visible",
+  "eligible_scope_only",
+  "eligible scope only",
   "approved",
   "public",
   "eligible scope only",

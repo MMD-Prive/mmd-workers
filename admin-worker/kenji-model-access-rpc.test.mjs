@@ -86,6 +86,9 @@ function airtableFetch(data, { failTables = [] } = {}) {
     const url = new URL(String(input));
     const table = decodeURIComponent(url.pathname.split("/").pop());
     if (failTables.includes(table)) return new Response("source private error", { status: 503 });
+    if (table === "offers") {
+      return new Response(JSON.stringify({ records: data.offers || [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const formula = url.searchParams.get("filterByFormula") || "";
     if (table === "rules" && !formula) {
       return new Response(JSON.stringify({ records: data.rules || [] }), { status: 200, headers: { "content-type": "application/json" } });

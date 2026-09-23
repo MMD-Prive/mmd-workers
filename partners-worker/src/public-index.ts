@@ -309,6 +309,108 @@ const DASHBOARD_JS = String.raw`
     return "<article><span>" + label + "</span><strong>" + value + "</strong></article>";
   }
 
+  function html(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g,function(ch){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]||ch);});
+  }
+
+  function canonicalAudience(value) {
+    var map={public_member:"Public Member",elite:"Elite",red_card:"Red Card",standard:"Standard",premium:"Premium",vip_black_card:"VIP / Black Card",svip:"SVIP",per_review:"Per Review"};
+    return map[String(value||"")]||String(value||"");
+  }
+
+  function scheduleLabel(value) {
+    var map={always:"Always",date_range:"Date range",date_time_range:"Date + time range",weekly_recurring:"Weekly recurring"};
+    return map[String(value||"")]||String(value||"Always");
+  }
+
+  function checkbox(name,value,current) {
+    var checked=current.indexOf(value)>=0?" checked":"";
+    return "<label class='mmdp-check'><input type='checkbox' name='"+html(name)+"' value='"+html(value)+"'"+checked+"><span>"+html(value)+"</span></label>";
+  }
+
+  function bangkokInput(value) {
+    if(!value)return"";
+    var date=new Date(value);
+    if(!Number.isFinite(date.getTime()))return"";
+    var parts=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(date);
+    var get=function(type){var part=parts.find(function(p){return p.type===type;});return part?part.value:"";};
+    return get("year")+"-"+get("month")+"-"+get("day")+"T"+get("hour")+":"+get("minute");
+  }
+
+  function renderSalesModel(model) {
+    var p=model.proposal||{};
+    var audiences=(p.audience_scope||[]).map(canonicalAudience);
+    var days=p.days_of_week||[];
+    var id=String(model.model_id||"");
+    var prefix="sales-"+id;
+    return "<article class='mmdp-sales-card' data-sales-model='"+html(id)+"'>"+
+      "<div class='mmdp-sales-title'><div><small>"+html(model.model_status||"MODEL")+"</small><h4>"+html(model.model_name||id)+"</h4></div><span>"+html(p.status||"New Draft")+"</span></div>"+
+      "<div class='mmdp-sales-grid'>"+
+        "<label>Partner / Source Rate THB<input data-sales-field='partner_source_rate_thb' type='number' min='0' step='1' value='"+html(p.source_rate_thb==null?"":p.source_rate_thb)+"'></label>"+
+        "<label>Visibility<select data-sales-field='sales_visibility'><option value='on'"+(p.sales_visibility==="on"?" selected":"")+">On</option><option value='off'"+(p.sales_visibility!=="on"?" selected":"")+">Off</option></select></label>"+
+        "<label>Schedule<select data-sales-field='schedule_type'>"+["Always","Date range","Date + time range","Weekly recurring"].map(function(v){return"<option value='"+v+"'"+(scheduleLabel(p.schedule_type)===v?" selected":"")+">"+v+"</option>";}).join("")+"</select></label>"+
+        "<label>Effective From<input data-sales-field='effective_from_at' type='datetime-local' value='"+html(bangkokInput(p.effective_from))+"'></label>"+
+        "<label>Effective Until<input data-sales-field='effective_until_at' type='datetime-local' value='"+html(bangkokInput(p.effective_until))+"'></label>"+
+        "<label>Start Bangkok<input data-sales-field='start_time_local' type='time' value='"+html(p.start_time_local||"")+"'></label>"+
+        "<label>End Bangkok<input data-sales-field='end_time_local' type='time' value='"+html(p.end_time_local||"")+"'></label>"+
+      "</div>"+
+      "<div class='mmdp-sales-section'><b>Customer audience proposal</b><div class='mmdp-sales-checks'>"+["Public Member","Elite","Red Card","Standard","Premium","VIP / Black Card","SVIP","Per Review"].map(function(v){return checkbox(prefix+"-audience",v,audiences);}).join("")+"</div></div>"+
+      "<div class='mmdp-sales-section'><b>Weekly days</b><div class='mmdp-sales-checks'>"+["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(function(v){return checkbox(prefix+"-day",v,days);}).join("")+"</div></div>"+
+      "<label>Change reason<textarea data-sales-field='change_reason' placeholder='อัปเดตเรท / availability / audience'>"+html(p.change_reason||"Partner Dashboard update")+"</textarea></label>"+
+      "<div class='mmdp-sales-foot'><p>Draft only · Per approval required · MMD customer sell rate remains internal.</p><button class='mmdp-btn' type='button' data-sales-save>Save Proposal</button></div>"+
+      "<p data-sales-status></p>"+
+    "</article>";
+  }
+
+  function field(card,name) {
+    var node=card.querySelector("[data-sales-field='"+name+"']");
+    return node?String(node.value||"").trim():"";
+  }
+
+  function checked(card,suffix) {
+    return Array.prototype.slice.call(card.querySelectorAll("input[name$='"+suffix+"']:checked")).map(function(node){return node.value;});
+  }
+
+  function localIso(value) {
+    if(!value)return"";
+    var date=new Date(value);
+    return Number.isFinite(date.getTime())?date.toISOString():"";
+  }
+
+  function saveSalesProposal(button, token, lists) {
+    var card=button.closest("[data-sales-model]");
+    if(!card)return;
+    var status=card.querySelector("[data-sales-status]");
+    var rate=Number(field(card,"partner_source_rate_thb"));
+    if(!Number.isFinite(rate)||rate<0){if(status)status.textContent="กรอก Partner / Source Rate ให้ถูกต้อง";return;}
+    button.disabled=true;
+    if(status)status.textContent="Saving proposal…";
+    var payload={
+      model_id:card.getAttribute("data-sales-model")||"",
+      partner_source_rate_thb:rate,
+      sales_visibility:field(card,"sales_visibility"),
+      audience_scope:checked(card,"-audience"),
+      schedule_type:field(card,"schedule_type"),
+      effective_from_at:localIso(field(card,"effective_from_at")),
+      effective_until_at:localIso(field(card,"effective_until_at")),
+      days_of_week:checked(card,"-day"),
+      start_time_local:field(card,"start_time_local"),
+      end_time_local:field(card,"end_time_local"),
+      change_reason:field(card,"change_reason")||"Partner Dashboard update"
+    };
+    fetch("/v1/partner/models/sales-control?t="+encodeURIComponent(token),{
+      method:"POST",
+      headers:{"accept":"application/json","content-type":"application/json"},
+      body:JSON.stringify(payload)
+    }).then(function(response){return response.json().then(function(payload){return{ok:response.ok,payload:payload};});})
+      .then(function(result){
+        if(!result.ok||!result.payload||!result.payload.ok)throw new Error((result.payload&&result.payload.error)||"sales_control_failed");
+        if(status)status.textContent="Saved · Pending Per approval · v"+String(result.payload.version||"");
+      }).catch(function(error){
+        if(status)status.textContent=error&&error.message?error.message:"Unable to save proposal.";
+      }).finally(function(){button.disabled=false;});
+  }
+
   fetch("/v1/partner/dashboard?t=" + encodeURIComponent(token), { headers: { "accept": "application/json" } })
     .then(function (response) { return response.json().then(function (payload) { return { ok: response.ok, payload: payload }; }); })
     .then(function (result) {
@@ -325,7 +427,12 @@ const DASHBOARD_JS = String.raw`
       telegram.innerHTML = partner.telegram_connected
         ? "<p><b>Telegram connected</b>" + (partner.telegram_username ? " · @" + partner.telegram_username : "") + "</p>"
         : "<p><b>Telegram Job Confirm</b> · เชื่อม Telegram เพื่อรับงานและกดยืนยันจาก MMD ได้ทันที</p><button class=\"mmdp-btn\" type=\"button\" data-connect-telegram>Connect Telegram</button><p data-telegram-status></p>";
-      lists.innerHTML = "<p>Referrals: " + ((result.payload.referrals || []).length) + " / Commissions: " + ((result.payload.commissions || []).length) + "</p>";
+      var models = result.payload.models || [];
+      lists.innerHTML = "<div class='mmdp-sales-head'><small>MODEL SALES CONTROL</small><h3>Models · Rate · Audience · Schedule</h3><p>Partner source rate และการตั้งค่าที่ส่งจากหน้านี้จะเข้า Draft เพื่อรอ Per approval ก่อน Production ทุกครั้ง</p></div>" +
+        (models.length ? models.map(renderSalesModel).join("") : "<p>ยังไม่มี Model ที่ผูกกับ Partner account นี้</p>");
+      lists.querySelectorAll("[data-sales-save]").forEach(function(button){
+        button.addEventListener("click", function(){ saveSalesProposal(button, token, lists); });
+      });
       var connect = telegram.querySelector("[data-connect-telegram]");
       if (connect) connect.addEventListener("click", function () {
         connect.disabled = true;

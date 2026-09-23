@@ -9,6 +9,7 @@ import {
   listSessionsFromAirtable,
   patchClientMemberId,
   previewLineClientUpsert,
+  resolveCanonicalEntitlementSnapshot,
   syncRecordsToAirtable,
   writeLinkAuditRecord,
 } from "./lib/airtable";
@@ -19,6 +20,8 @@ import {
   parseInviteIdentity,
   verifyInviteToken,
 } from "./lib/invite";
+// @ts-ignore -- shared JavaScript authority is consumed by the TypeScript worker.
+import { resolveModelSalesOfferFromAirtable } from "../../shared/model-sales-airtable.mjs";
 import { badRequest, internalError, json, makeMeta, redirect, unauthorized } from "./lib/response";
 import { seedLineInboxRecords, seedLogs, seedSessions } from "./lib/seed";
 import type {
@@ -1520,6 +1523,50 @@ async function handleLineIntake(request: Request, env: Env): Promise<Response> {
   }
 }
 
+async function resolveCanonicalSalesModel(env: Env, payload: CreateJobRequest): Promise<{ id: string; key: string; name: string } | null> {
+  const providedId = toStr(payload.model_record_id);
+  const query = toStr(payload.model_name);
+  if (!providedId && !query) return null;
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) throw new Error("model_sales_model_source_unavailable");
+  const table = toStr((env as unknown as Record<string, unknown>).AIRTABLE_TABLE_MODELS) || "tblI4B0bI446vp9GX";
+  const base = `https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`;
+  const headers = { Authorization: `Bearer ${env.AIRTABLE_API_KEY}`, Accept: "application/json" };
+
+  if (providedId) {
+    if (!/^rec[A-Za-z0-9]{14,24}$/.test(providedId)) throw new Error("canonical_model_id_invalid");
+    const response = await fetch(`${base}/${encodeURIComponent(providedId)}`, { headers });
+    if (response.status === 404) throw new Error("canonical_model_not_found");
+    if (!response.ok) throw new Error("model_sales_model_source_unavailable");
+    const record = await response.json().catch(() => null) as { id?: string; fields?: Record<string, unknown> } | null;
+    if (!record?.id) throw new Error("canonical_model_not_found");
+    const fields = record.fields || {};
+    return {
+      id: record.id,
+      key: toStr(fields.unique_key || fields.model_key || fields.model_record_id || record.id),
+      name: toStr(fields.working_name || fields.nickname || query),
+    };
+  }
+
+  const escaped = query.toLowerCase().replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const url = new URL(base);
+  url.searchParams.set("pageSize", "3");
+  url.searchParams.set("maxRecords", "3");
+  url.searchParams.set("filterByFormula", `OR(LOWER({working_name}&"")="${escaped}",LOWER({nickname}&"")="${escaped}",LOWER({unique_key}&"")="${escaped}")`);
+  const response = await fetch(url.toString(), { headers });
+  if (!response.ok) throw new Error("model_sales_model_source_unavailable");
+  const data = await response.json().catch(() => ({})) as { records?: Array<{ id: string; fields?: Record<string, unknown> }> };
+  const records = Array.isArray(data.records) ? data.records : [];
+  if (records.length > 1) throw new Error("canonical_model_ambiguous");
+  if (!records.length) return null;
+  const record = records[0];
+  const fields = record.fields || {};
+  return {
+    id: record.id,
+    key: toStr(fields.unique_key || fields.model_key || fields.model_record_id || record.id),
+    name: toStr(fields.working_name || fields.nickname || query),
+  };
+}
+
 async function handleCreateJob(request: Request, env: Env): Promise<Response> {
   const meta = makeMeta(request);
   const payload = (await request.json().catch(() => null)) as CreateJobRequest | null;
@@ -1537,6 +1584,62 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
   };
 
   try {
+    const canonicalModel = await resolveCanonicalSalesModel(env, payload);
+    if (canonicalModel) {
+      normalizedPayload.model_record_id = canonicalModel.id;
+      normalizedPayload.model_name = canonicalModel.name || normalizedPayload.model_name;
+    }
+    const canonicalLineUserId = toStr(payload.line_user_id) || toStr(payload.client_lineage?.line_user_id);
+    const canonicalMemberId = toStr(payload.member_id) || toStr(payload.client_lineage?.member_id);
+    const entitlementSnapshot = await resolveCanonicalEntitlementSnapshot(env, {
+      line_user_id: canonicalLineUserId,
+      member_id: canonicalMemberId,
+    });
+    const sales = await resolveModelSalesOfferFromAirtable(env, {
+      model_id: canonicalModel?.id || toStr(payload.model_record_id),
+      model_key: canonicalModel?.key || toStr(payload.model_name),
+      client_id: toStr(payload.client_id) || toStr(payload.client_lineage?.client_id),
+      requested_at: toStr(payload.requested_at) || new Date().toISOString(),
+      work_lane: toStr(payload.work_lane),
+      entitlement_snapshot: entitlementSnapshot || {},
+    });
+    const salesControl = {
+      authority: "model_sales_control_v1",
+      configured_rule_count: Number(sales.configured_rule_count || 0),
+      sellable: sales.sellable === true,
+      customer_rate_thb: Number.isFinite(Number(sales.customer_rate_thb)) ? Number(sales.customer_rate_thb) : null,
+      price_visible: sales.price_visible === true,
+      reason_code: toStr(sales.reason_code),
+      matched_rule_key: toStr(sales.matched_rule_key) || null,
+    };
+
+    if (salesControl.configured_rule_count > 0 && salesControl.sellable !== true) {
+      return json({
+        ok: false,
+        error: {
+          code: "MODEL_SALES_BLOCKED",
+          message: "Model Sales Control has no eligible active rule for this customer/time context.",
+        },
+        data: { sales_control: salesControl },
+        meta,
+      }, { status: 409 });
+    }
+    if (
+      payload.quoted_rate_thb != null &&
+      salesControl.customer_rate_thb != null &&
+      Number(payload.quoted_rate_thb) !== salesControl.customer_rate_thb
+    ) {
+      return json({
+        ok: false,
+        error: {
+          code: "MODEL_SALES_RATE_MISMATCH",
+          message: "Quoted rate does not match the canonical Model Sales Control rate.",
+        },
+        data: { sales_control: salesControl },
+        meta,
+      }, { status: 409 });
+    }
+
     const result = await intakeLineClientUpsert(env, normalizedPayload);
     const promotion = await promoteLineClientAfterIntake(env, normalizedPayload, result);
     const links = await createLineLinksAfterPromotion(env, normalizedPayload, result, promotion);
@@ -1555,6 +1658,7 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
         links,
         telegram,
         airtable,
+        sales_control: salesControl,
         artifacts: {
           member_id: toStr(promotion?.member_id),
           customer_url: toStr(links?.customer_url),
@@ -1563,6 +1667,7 @@ async function handleCreateJob(request: Request, env: Env): Promise<Response> {
           model_dashboard_url: toStr(links?.model_dashboard_url),
           airtable,
           telegram,
+          sales_control: salesControl,
         },
       },
       meta,
@@ -2999,6 +3104,14 @@ function renderAdminLoginPage(request: Request): Response {
 
         const lookupInput=document.getElementById("client_lookup_query"),lookupButton=document.getElementById("client_lookup_search"),lookupResults=document.getElementById("client_lookup_results"),selectedClientBox=document.getElementById("selected_client");let selectedClient=null;const escLookup=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));function clientLabel(c){const r=String(c.remembered_name||"").trim(),n=String(c.canonical_name||"").trim();return r&&n&&r.toLowerCase()!==n.toLowerCase()?r+" · "+n:r||n||c.client_name||"Unknown client"}function selectClient(c){selectedClient=c;document.getElementById("display_name").value=c.client_name||c.remembered_name||c.canonical_name||"";document.getElementById("nickname").value=c.username||c.line_display_name||"";document.getElementById("line_user_id").value=c.line_user_id||"";document.getElementById("line_id").value=c.line_display_name||"";document.getElementById("email").value=c.member_email||"";document.getElementById("phone").value=c.phone||"";document.getElementById("current_tier").value=c.tier||c.package_code||"";selectedClientBox.innerHTML="<strong>เลือกแล้ว: "+escLookup(clientLabel(c))+"</strong><small>"+escLookup([c.matched_on?"matched by "+c.matched_on:"",c.membership_status||"",c.package_code||""].filter(Boolean).join(" · ")||"Canonical client lineage selected")+"</small>";selectedClientBox.classList.add("is-visible")}function renderLookup(xs){if(!xs.length){lookupResults.innerHTML='<p class="lookup-empty">ไม่พบลูกค้าที่ตรงกัน — ให้ไปสร้าง/จับคู่ที่ Client Intake ก่อน ไม่ควรสร้าง Job ด้วยชื่อใหม่ลอย ๆ</p>';return}lookupResults.innerHTML=xs.map((c,i)=>{const m=[c.matched_on,c.membership_status,c.package_code,c.confidence?c.confidence+"% confidence":""].filter(Boolean).map(x=>"<span>"+escLookup(x)+"</span>").join(""),d=[c.member_email,c.phone,c.line_display_name,c.customer_telegram_username].filter(Boolean).join(" · ");return '<button type="button" class="lookup-card" data-client-index="'+i+'"><strong>'+escLookup(clientLabel(c))+'</strong><small>'+escLookup(d||"Canonical record")+'</small><div class="lookup-meta">'+m+"</div></button>"}).join("");lookupResults.querySelectorAll("[data-client-index]").forEach(b=>b.addEventListener("click",()=>selectClient(xs[Number(b.dataset.clientIndex)])))}async function lookupClient(){const q=lookupInput.value.trim();if(!q){lookupResults.innerHTML='<p class="lookup-empty">พิมพ์ข้อมูลที่มีของลูกค้าก่อนครับ</p>';return}lookupButton.disabled=true;lookupButton.textContent="Searching…";lookupResults.innerHTML='<p class="lookup-empty">กำลังค้นจาก canonical client lineage…</p>';try{const h=window.__MMD_ADMIN_GATE__?window.__MMD_ADMIN_GATE__.buildHeaders({"Content-Type":"application/json"}):new Headers({"Content-Type":"application/json"}),r=await fetch("/v1/admin/clients/lineage-lookup",{method:"POST",credentials:"same-origin",headers:h,body:JSON.stringify({query:q})}),d=await r.json().catch(()=>null);if(!r.ok||!d||d.ok===false)throw Error((d&&(d.error||d.message))||"ค้นหาลูกค้าไม่สำเร็จ");renderLookup(Array.isArray(d.records)?d.records:[])}catch(e){lookupResults.innerHTML='<p class="lookup-empty">ค้นหาไม่ได้ตอนนี้: '+escLookup(e&&e.message?e.message:e)+"</p>"}finally{lookupButton.disabled=false;lookupButton.textContent="Search"}}lookupButton.addEventListener("click",lookupClient);lookupInput.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();lookupClient()}});
 
+        var requestedAtInput = document.getElementById("requested_at");
+        if (requestedAtInput && !requestedAtInput.value) {
+          var now = new Date();
+          now.setMinutes(Math.ceil(now.getMinutes()/30)*30,0,0);
+          var local = new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
+          requestedAtInput.value = local;
+        }
+
         form.addEventListener("submit", async (event) => {
           if(!selectedClient||!selectedClient.client_id){event.preventDefault();setStatus("เลือก canonical client จากผลค้นหาก่อนสร้าง Job","error");lookupInput.focus();return;}
           event.preventDefault();
@@ -3822,6 +3935,24 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
                 <input id="model_record_id" name="model_record_id" type="text" />
               </label>
               <label>
+                Sales Work Lane
+                <select id="work_lane" name="work_lane">
+                  <option value="">General</option>
+                  <option value="PN">PN</option>
+                  <option value="VIP">VIP</option>
+                  <option value="MK">MK</option>
+                  <option value="Burn">Burn</option>
+                </select>
+              </label>
+              <label>
+                Requested At
+                <input id="requested_at" name="requested_at" type="datetime-local" step="1800" />
+              </label>
+              <label>
+                Quoted Rate THB
+                <input id="quoted_rate_thb" name="quoted_rate_thb" type="number" min="0" step="1" placeholder="canonical customer rate" />
+              </label>
+              <label>
                 Current Tier
                 <input id="current_tier" name="current_tier" type="text" placeholder="standard" />
               </label>
@@ -4004,6 +4135,9 @@ function renderCreateJobPage(request: Request, session: AdminGateSession): Respo
             phone: document.getElementById("phone").value.trim(),
             model_name: document.getElementById("model_name").value.trim(),
             model_record_id: document.getElementById("model_record_id").value.trim(),
+            work_lane: document.getElementById("work_lane").value.trim(),
+            requested_at: document.getElementById("requested_at").value ? new Date(document.getElementById("requested_at").value).toISOString() : new Date().toISOString(),
+            quoted_rate_thb: document.getElementById("quoted_rate_thb").value.trim() ? Number(document.getElementById("quoted_rate_thb").value) : undefined,
             current_tier: document.getElementById("current_tier").value.trim(),
             target_tier: document.getElementById("target_tier").value.trim(),
             manual_note_raw: document.getElementById("manual_note_raw").value.trim(),

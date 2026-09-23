@@ -285,11 +285,12 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   const model = await resolveExactModel(env, query, fetchImpl);
   if (model.status !== "resolved") return { status: "silent" };
 
-  const authorized = model.records.flatMap((record) => {
+  const authorized = [];
+  for (const record of model.records) {
     const cls = modelAccessClass(record);
-    if (!cls.active) return [];
-    if (cls.visibility === "public" && !access.allowPublic) return [];
-    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) return [];
+    if (!cls.active) continue;
+    if (cls.visibility === "public" && !access.allowPublic) continue;
+    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) continue;
     const safeModel = projectKenjiSafeModel(record);
     return safeModel ? [{ cls, safeModel, record }] : [];
   });

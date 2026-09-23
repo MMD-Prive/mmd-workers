@@ -31,29 +31,28 @@ export default {
 
     if ((method === "GET" || method === "POST") && path === MODEL_SEARCH_PATH) {
       const scope = await requestedScope(request, url);
-      if (scope === "private") {
-        const allowed = await canonicalStoredPrivateAccess(env, request, url).catch(() => false);
-        if (!allowed) {
-          return json({
-            ok: true,
-            matched: false,
-            blocked: true,
-            reason: "private_requires_entitlement_snapshot",
-            access_scope: "public_only",
-            member_status: "unknown",
-            items: [],
-          });
-        }
+      const bookingContext = await storedBookingSalesContext(env, request, url).catch(() => null);
+      if (scope === "private" && bookingContext?.private_allowed !== true) {
+        return json({
+          ok: true,
+          matched: false,
+          blocked: true,
+          reason: "private_requires_entitlement_snapshot",
+          access_scope: "public_only",
+          member_status: "unknown",
+          items: [],
+        });
       }
-      return modelImagePolicyWorker.fetch(request, env, ctx);
+      const response = await modelImagePolicyWorker.fetch(request, env, ctx);
+      return applyModelSalesPolicyToSearchResponse(response, env, request, url, bookingContext);
     }
 
     return modelImagePolicyWorker.fetch(request, env, ctx);
   },
 };
 
-async function canonicalStoredPrivateAccess(env, request, url) {
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return false;
+async function storedBookingSalesContext(env, request, url) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return null;
   let body = {};
   if (request.method.toUpperCase() === "POST") body = await request.clone().json().catch(() => ({}));
   const bookingRef = clean(url.searchParams.get("booking_ref") || body.booking_ref || body.request_id);
@@ -61,29 +60,112 @@ async function canonicalStoredPrivateAccess(env, request, url) {
   const checks = [];
   if (bookingRef) checks.push(`{booking_ref}=${formulaText(bookingRef)}`);
   if (sessionId) checks.push(`{session_id}=${formulaText(sessionId)}`);
-  if (!checks.length) return false;
+  if (!checks.length) return { entitlement_snapshot: {}, private_allowed: false, client_id: "" };
 
   const table = env.AIRTABLE_TABLE_BOOKING_REQUESTS_ID || "SIGIL Booking Requests";
   const qs = new URLSearchParams({ maxRecords: "1", pageSize: "1", filterByFormula: checks.length === 1 ? checks[0] : `OR(${checks.join(",")})` });
   const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}?${qs.toString()}`, {
     headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
   });
-  if (!response.ok) return false;
+  if (!response.ok) throw new Error("booking_context_unavailable");
   const data = await response.json().catch(() => ({}));
   const fields = data.records?.[0]?.fields || {};
 
-  // Confirmed bookings lock the entitlement decision that was valid when the
-  // booking and payment/deposit were verified. Later membership expiry must not
-  // invalidate that already-confirmed booking.
+  let snapshot = null;
+  let privateAllowed = false;
   if (fields.honor_after_expiry === true && fields.entitlement_valid_at_confirm === true && fields.payment_verified_at_confirm === true) {
     const locked = parseJson(fields.entitlement_snapshot_at_confirm);
-    if (locked?.booking_access?.private_booking === true && locked?.entitlement_snapshot?.member_blocked !== true) return true;
+    if (locked?.entitlement_snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
+      snapshot = locked.entitlement_snapshot;
+      privateAllowed = locked?.booking_access?.private_booking === true && snapshot.member_blocked !== true;
+    }
+  }
+  if (!snapshot) {
+    const parsed = parseJson(fields.resolver_payload_json);
+    if (parsed?.entitlement_snapshot?.schema_version === "my_mmd_entitlement_resolver_v1") {
+      snapshot = parsed.entitlement_snapshot;
+      privateAllowed = !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
+    }
+  }
+  const clientLink = Array.isArray(fields["Canonical Client"]) ? fields["Canonical Client"][0] : "";
+  return {
+    entitlement_snapshot: snapshot || {},
+    private_allowed: privateAllowed,
+    client_id: clean(fields.client_id || fields.client_record_id || clientLink),
+  };
+}
+
+async function canonicalStoredPrivateAccess(env, request, url) {
+  const context = await storedBookingSalesContext(env, request, url);
+  return context?.private_allowed === true;
+}
+
+export async function applyModelSalesPolicyToSearchResponse(response, env, request, url, bookingContext, options = {}) {
+  if (!response?.ok) return response;
+  const payload = await response.clone().json().catch(() => null);
+  if (!payload || payload.ok !== true) return response;
+
+  let body = {};
+  if (request.method.toUpperCase() === "POST") body = await request.clone().json().catch(() => ({}));
+  const requestedAt = clean(url.searchParams.get("requested_at") || body.requested_at) || new Date().toISOString();
+  const workLane = clean(url.searchParams.get("work_lane") || body.work_lane || body.offer_type);
+  const context = bookingContext || { entitlement_snapshot: {}, client_id: "" };
+  const sourceModels = Array.isArray(payload.items)
+    ? payload.items
+    : (payload.model && typeof payload.model === "object" ? [payload.model] : []);
+  if (!sourceModels.length) return response;
+
+  const allowed = [];
+  for (const model of sourceModels) {
+    const sales = await resolveModelSalesOfferFromAirtable(env, {
+      model_id: clean(model.model_id || model.model_record_id),
+      model_key: clean(model.model_key || model.unique_key || model.working_name),
+      client_id: clean(context.client_id),
+      requested_at: requestedAt,
+      work_lane: workLane,
+      entitlement_snapshot: context.entitlement_snapshot || {},
+    }, { fetchImpl: options.fetchImpl || fetch });
+    if (sales.configured_rule_count > 0 && sales.sellable !== true) continue;
+    allowed.push({
+      ...model,
+      sales_offer: sales.configured_rule_count > 0 ? {
+        policy_version: sales.policy_version,
+        sellable: sales.sellable === true,
+        customer_rate_thb: sales.customer_rate_thb,
+        price_visible: sales.price_visible === true,
+        term_summary: sales.term_summary || "",
+        requires_per_approval: sales.requires_per_approval === true,
+        matched_rule_key: sales.matched_rule_key || null,
+        rule_version: sales.rule_version,
+      } : {
+        policy_version: sales.policy_version,
+        sellable: null,
+        customer_rate_thb: null,
+        price_visible: false,
+        term_summary: "",
+        requires_per_approval: true,
+        matched_rule_key: null,
+        rule_version: null,
+        state: "not_configured",
+      },
+    });
   }
 
-  const parsed = parseJson(fields.resolver_payload_json);
-  const snapshot = parsed?.entitlement_snapshot;
-  if (!snapshot || snapshot.schema_version !== "my_mmd_entitlement_resolver_v1") return false;
-  return !snapshot.member_blocked && String(snapshot.access?.private_visibility_envelope || "none") !== "none";
+  const next = {
+    ...payload,
+    items: allowed.slice(0, 8),
+    model: allowed[0] || null,
+    matched: allowed.length > 0,
+    sales_policy_version: "model_sales_control_v1_20260921",
+  };
+  if (!allowed.length && sourceModels.length) {
+    next.blocked = true;
+    next.reason = "model_sales_control_no_eligible_rule";
+  }
+  const headers = new Headers(response.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  return new Response(JSON.stringify(next), { status: response.status, headers });
 }
 
 async function requestedScope(request, url) {

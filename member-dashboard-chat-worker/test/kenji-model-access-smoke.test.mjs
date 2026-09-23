@@ -42,6 +42,7 @@ function syntheticData({ capability = "private_standard", lifecycle = "active", 
         customer_safe_summary: "โปรไฟล์ที่อนุมัติสำหรับลูกค้า",
       },
     }] : [],
+    offers: [],
   };
 }
 
@@ -90,6 +91,7 @@ function installSyntheticNetwork(data, { sourceFailure = false } = {}) {
     if (url.hostname === "api.airtable.com") {
       if (sourceFailure) return new Response("synthetic source failure", { status: 503 });
       const table = decodeURIComponent(url.pathname.split("/").pop());
+      if (table === "offers") return new Response(JSON.stringify({ records: data.offers || [] }), { status: 200, headers: { "content-type": "application/json" } });
       const formula = url.searchParams.get("filterByFormula") || "";
       const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
       if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
@@ -111,6 +113,7 @@ function environments(data, rpcCalls) {
     AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
     AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
     AIRTABLE_TABLE_MODELS: "models",
+    AIRTABLE_TABLE_MODEL_OFFER_RULES_ID: "offers",
   };
   const lineEnv = {
     INTERNAL_TOKEN,
