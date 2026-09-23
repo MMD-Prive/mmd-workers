@@ -1,0 +1,371 @@
+name: Owner Actions Daily Adoption
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 1 * * *"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/owner-actions-daily-adoption.yml"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-actions-daily-adoption
+  cancel-in-progress: false
+
+jobs:
+  live-review:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL }}
+
+    steps:
+      - name: Review live Owner Actions and write adoption receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const origin = process.env.ORIGIN;
+          const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || "").trim();
+          if (!credential) throw new Error("ADMIN_LOGIN_CREDENTIAL is required for Owner Actions adoption");
+
+          const canon = Object.freeze({
+            payment_review: {
+              href: "/internal/admin/payments",
+              authority: "payments-worker",
+            },
+            historical_recovery: {
+              href: "/internal/admin/payments/historical-backfill",
+              authority: "historical-slip-backfill-runtime",
+            },
+            finance_reconciliation: {
+              href: "/internal/admin/partners",
+              authority: "canonical_finance_timeline",
+            },
+            job_reconfirm_overdue: {
+              href: "/internal/admin/jobs",
+              authority: "canonical_sessions_and_reconfirm",
+            },
+            availability_exception_review: {
+              href: "/internal/admin/calendar",
+              authority: "sigil_availability_snapshot_v1",
+            },
+            finance_payout_hold: {
+              href: "/internal/admin/partners",
+              authority: "canonical_finance_timeline",
+            },
+            job_reconfirm_pending: {
+              href: "/internal/admin/jobs",
+              authority: "canonical_sessions_and_reconfirm",
+            },
+            mms_prebooking_coordination: {
+              href: "/internal/admin/mms",
+              authority: "mms-worker",
+            },
+            mms_application_review: {
+              href: "/internal/admin/mms",
+              authority: "mms-worker",
+            },
+            membership_review: {
+              href: "/internal/admin/member-intelligence",
+              authority: "my_mmd_entitlement_resolver_v1",
+            },
+            hype_operational_watch: {
+              href: "/internal/admin/control-room",
+              authority: "hype_coordinator_read_only",
+            },
+            owner_exception: {
+              href: "/internal/admin/control-room",
+              authority: "owner_review",
+            },
+          });
+
+          const allowedHosts = new Set(["mmdbkk.com", "www.mmdbkk.com"]);
+
+          async function loginOwner() {
+            const response = await fetch(`${origin}/internal/admin/login/session`, {
+              method: "POST",
+              headers: {
+                Origin: origin,
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-MMD-Login-Fetch": "1",
+              },
+              body: new URLSearchParams({
+                credential,
+                next: "/internal/admin/control-room",
+              }).toString(),
+              redirect: "manual",
+            });
+            const payload = await response.clone().json().catch(() => null);
+            if (response.status !== 200 || payload?.ok !== true || payload?.role !== "owner") {
+              throw new Error(`Owner login failed or did not mint owner role: ${response.status}`);
+            }
+            const cookie = (response.headers.get("set-cookie") || "").split(";", 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookie)) throw new Error("Owner session cookie missing");
+            return cookie;
+          }
+
+          async function readJson(path, cookie) {
+            const response = await fetch(`${origin}${path}`, {
+              headers: {
+                Origin: origin,
+                Cookie: cookie,
+                Accept: "application/json",
+              },
+              cache: "no-store",
+              redirect: "manual",
+            });
+            const payload = await response.json().catch(() => null);
+            return { response, payload };
+          }
+
+          async function verifySourcePage(path, cookie) {
+            let url = new URL(path, origin);
+            for (let hop = 0; hop < 4; hop += 1) {
+              const response = await fetch(url, {
+                headers: {
+                  Cookie: cookie,
+                  Accept: "text/html,application/xhtml+xml",
+                },
+                cache: "no-store",
+                redirect: "manual",
+              });
+
+              if ([301, 302, 303, 307, 308].includes(response.status)) {
+                const location = response.headers.get("location") || "";
+                if (!location) throw new Error(`Source redirect missing location for ${path}`);
+                const next = new URL(location, url);
+                if (!allowedHosts.has(next.hostname) || !next.pathname.startsWith("/internal/admin/")) {
+                  throw new Error(`Unsafe source redirect for ${path}: ${next.href}`);
+                }
+                if (next.pathname.startsWith("/internal/admin/login")) {
+                  throw new Error(`Owner session lost while opening source page ${path}`);
+                }
+                url = next;
+                continue;
+              }
+
+              if (response.status !== 200) {
+                throw new Error(`Source page ${path} returned ${response.status}`);
+              }
+              if (!allowedHosts.has(url.hostname) || !url.pathname.startsWith("/internal/admin/")) {
+                throw new Error(`Source page escaped admin surface: ${url.href}`);
+              }
+              const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+              if (!contentType.includes("text/html")) {
+                throw new Error(`Source page ${path} did not return HTML`);
+              }
+              return {
+                requested_href: path,
+                final_href: url.pathname,
+                status: response.status,
+              };
+            }
+            throw new Error(`Too many redirects while opening source page ${path}`);
+          }
+
+          (async () => {
+            const cookie = await loginOwner();
+            const { response: queueResponse, payload: queue } = await readJson(
+              "/v1/admin/dashboard/owner-actions",
+              cookie,
+            );
+
+            if (queueResponse.status !== 200 || queue?.ok !== true) {
+              throw new Error(`Owner Actions queue read failed: ${queueResponse.status}`);
+            }
+            if (queue?.contract !== "mmd_owner_actions_queue_v1" || queue?.mode !== "owner_review_only") {
+              throw new Error("Owner Actions queue contract mismatch");
+            }
+            if (queue?.send_allowed !== false || queue?.mutation_allowed !== false) {
+              throw new Error("Owner Actions queue must remain read-only");
+            }
+
+            const actions = Array.isArray(queue?.actions) ? queue.actions : [];
+            const actionKeys = actions.map((item) => String(item?.action_key || ""));
+            if (new Set(actionKeys).size !== actionKeys.length) {
+              throw new Error("Duplicate action_key found in live Owner Actions queue");
+            }
+
+            const sourceChecks = [];
+            for (const action of actions) {
+              const key = String(action?.action_key || "");
+              const expected = canon[key];
+              if (!expected) throw new Error(`Unknown live Owner Action: ${key || "(blank)"}`);
+              if (action?.href !== expected.href) throw new Error(`${key} href drifted from canon`);
+              if (action?.authority !== expected.authority) throw new Error(`${key} authority drifted from canon`);
+              if (action?.detail_href !== `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`) {
+                throw new Error(`${key} detail_href drifted from canon`);
+              }
+              if (action?.review_required !== true || action?.send_allowed !== false || action?.mutation_allowed !== false) {
+                throw new Error(`${key} violated review-only guardrails`);
+              }
+              if (!Number.isInteger(Number(action?.count)) || Number(action.count) <= 0) {
+                throw new Error(`${key} has invalid aggregate count`);
+              }
+
+              const detailPath = `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`;
+              const { response: detailResponse, payload: detail } = await readJson(detailPath, cookie);
+              if (detailResponse.status !== 200 || detail?.ok !== true) {
+                throw new Error(`${key} detail read failed: ${detailResponse.status}`);
+              }
+              if (detail?.contract !== "mmd_owner_action_detail_v1" || detail?.mode !== "owner_review_only") {
+                throw new Error(`${key} detail contract mismatch`);
+              }
+              if (detail?.action?.action_key !== key || detail?.drilldown?.action_key !== key) {
+                throw new Error(`${key} detail identity mismatch`);
+              }
+              if (detail?.drilldown?.authority !== expected.authority || detail?.drilldown?.source_surface !== expected.href) {
+                throw new Error(`${key} detail authority/source mismatch`);
+              }
+              for (const field of [
+                "records_exposed",
+                "personal_data_exposed",
+                "payment_reference_exposed",
+                "raw_notes_exposed",
+                "send_allowed",
+                "mutation_allowed",
+              ]) {
+                if (detail?.drilldown?.[field] !== false) {
+                  throw new Error(`${key} unsafe detail flag: ${field}`);
+                }
+              }
+
+              sourceChecks.push({
+                action_key: key,
+                count: Number(action.count),
+                authority: expected.authority,
+                ...(await verifySourcePage(expected.href, cookie)),
+              });
+            }
+
+            const coverage = Array.isArray(queue?.source_coverage) ? queue.source_coverage : [];
+            const coverageNames = coverage.map((item) => String(item?.source || ""));
+            if (new Set(coverageNames).size !== coverageNames.length) {
+              throw new Error("Duplicate source coverage row found");
+            }
+            for (const item of coverage) {
+              if (!["connected", "partial", "unavailable"].includes(String(item?.state || ""))) {
+                throw new Error(`Invalid source coverage state for ${item?.source || "unknown"}`);
+              }
+              if (item?.read_only !== true) throw new Error(`Source coverage must remain read-only: ${item?.source || "unknown"}`);
+              if (!String(item?.href || "").startsWith("/internal/admin/")) {
+                throw new Error(`Unsafe source coverage href: ${item?.source || "unknown"}`);
+              }
+            }
+
+            const unauth = await fetch(`${origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: origin, Accept: "application/json" },
+              redirect: "manual",
+              cache: "no-store",
+            });
+            if (unauth.status !== 401) {
+              throw new Error(`Unauthenticated Owner Actions must fail closed, got ${unauth.status}`);
+            }
+
+            const unavailableSources = Array.isArray(queue?.unavailable_sources)
+              ? queue.unavailable_sources.map(String)
+              : [];
+            const adoptionState = unavailableSources.length
+              ? "PARTIAL"
+              : actions.length
+                ? "REVIEW_REQUIRED"
+                : "CLEAR";
+
+            const receipt = {
+              schema: "mmd.owner_actions_adoption_receipt.v1",
+              checked_at: new Date().toISOString(),
+              environment: "production",
+              owner_session: "per_credential",
+              contract: queue.contract,
+              mode: queue.mode,
+              adoption_state: adoptionState,
+              action_count: actions.length,
+              actions: actions.map((item) => ({
+                action_key: item.action_key,
+                count: Number(item.count),
+                urgency: item.urgency,
+                authority: item.authority,
+                href: item.href,
+              })),
+              source_checks: sourceChecks,
+              source_coverage: coverage.map((item) => ({
+                source: item.source,
+                state: item.state,
+                authority: item.authority,
+                href: item.href,
+                action_count: Number(item.action_count || 0),
+                read_only: item.read_only === true,
+              })),
+              unavailable_sources: unavailableSources,
+              guardrails: {
+                queue_read_only: queue?.send_allowed === false && queue?.mutation_allowed === false,
+                detail_safe_projection: true,
+                source_page_authenticated: true,
+                no_duplicate_action_key: true,
+                unauthenticated_fail_closed: true,
+                business_truth_mutated: false,
+              },
+            };
+
+            const receiptPath = `${process.env.GITHUB_WORKSPACE}/owner-actions-adoption-receipt.json`;
+            fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+
+            const actionRows = receipt.actions.length
+              ? receipt.actions.map((item) => `| ${item.action_key} | ${item.count} | ${item.urgency} | ${item.authority} | ${item.href} |`).join("\n")
+              : "| — | 0 | — | — | Queue clear |";
+            const coverageRows = receipt.source_coverage.length
+              ? receipt.source_coverage.map((item) => `| ${item.source} | ${item.state} | ${item.action_count} | ${item.authority} |`).join("\n")
+              : "| — | — | 0 | — |";
+
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
+              "## Phase 5B — Owner Actions Daily Adoption Receipt",
+              "",
+              `- State: **${receipt.adoption_state}**`,
+              `- Checked at: \`${receipt.checked_at}\``,
+              `- Live actions: **${receipt.action_count}**`,
+              `- Unavailable sources: **${receipt.unavailable_sources.length}**`,
+              "- Session: dedicated Per Owner credential",
+              "- Authority: read-only queue/detail; decisions remain on source pages",
+              "- Mutation: none",
+              "",
+              "| Action | Count | Urgency | Authority | Source |",
+              "| --- | ---: | --- | --- | --- |",
+              actionRows,
+              "",
+              "| Coverage source | State | Actions | Authority |",
+              "| --- | --- | ---: | --- |",
+              coverageRows,
+              "",
+              "Guardrails: no auto-send · no approval · no business-truth mutation · unauthenticated fail-closed.",
+              "",
+            ].join("\n"));
+
+            console.log(JSON.stringify(receipt, null, 2));
+          })().catch((error) => {
+            console.error(error?.stack || error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Upload adoption receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-actions-adoption-receipt
+          path: owner-actions-adoption-receipt.json
+          if-no-files-found: error
+          retention-days: 30
