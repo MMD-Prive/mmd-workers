@@ -6,10 +6,10 @@ const IDS = {
   sessions:'tblC98mKWbzmPuNzX', jobs:'tbl0jxIjN8QYwGABX', payments:'tblWGGJJOx5eBvBZJ', clients:'tblVv58TCbwh5j1fS', models:'tblI4B0bI446vp9GX', cal:'tbl6saWYEQrEdnMIK'
 };
 const f = {
-  sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
+  sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', sessionStatus:'fldmwuvOaiCFdzzRa', sessionStatus2:'fldHAlxnRfpKucnNV', sessionPartner:'fld0jkscGAtyX7i2J', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
   jobId:'fldwreJwlz8sWd6GM', jobModel:'fldscPK15ejBw0BAH', jobClient:'fldlPdR0pmynCY6fW', jobBudget:'fldSspHLxJPQOg7wA',
   paySid:'fld2wdhBvc8xrV6y5', payRef:'fldOO6SY49iDw8VBZ', payAmount:'fldvCSwrUW8OMAooS', payVerify:'fldJ7a0Ube9F0bmRy', payStage:'fldrr9g8ZZjqAbdKQ', payStatus:'fldEJ1hmm7KwWuI6q',
-  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelStatus:'fldRcAE3bL8dKmURH', modelRole:'fldW4h38yZnANUVY3', modelRegistry:'fldKTbOlADC1OqNur', modelLine:'fld2ywTFI6MZhX6PV',
+  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelStatus:'fldRcAE3bL8dKmURH', modelRole:'fldW4h38yZnANUVY3', modelRegistry:'fldKTbOlADC1OqNur', modelSales:'fldOrRNL8PocDILk5', modelTier:'fldM8m82fwIB9hRjz', modelApprovedPrivate:'fldGVmYjRgLGVUiTX', modelOfferRules:'fldxSomvQZvjYZHU6', modelLine:'fld2ywTFI6MZhX6PV',
   calUid:'fld42rRY3ufGeXCcf', calSid:'fldd0STLRxOGIKXPn', calJid:'fldzvGB5u7t55kwUQ', calStatus:'fld449t1h6s7jbcnf', calTrigger:'fldNhk22zLTvR9Y4C', calEvent:'fldfC6D0RXyogXcMG'
 };
 
@@ -277,6 +277,44 @@ test('daily coverage excludes non-active and explicitly non-model inventory whil
     assert.equal(out.availability.coverage_health.fresh_models,2);
     assert.equal(out.availability.coverage_health.excluded_models,4);
     assert.equal(out.availability.coverage_health.review_status,'coverage_current');
+  } finally { restore(); }
+});
+
+test('prioritized onboarding cohort dedupes canonical key and prioritizes upcoming work before line-ready backlog', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const future=new Date(Date.now()+3*86400000).toISOString();
+  data[IDS.models]=[
+    {id:'recBooked',fields:{[f.modelName]:'Booked Model',[f.modelId]:'EMs16',[f.modelKey]:'mdl_booked',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelSales]:'private',[f.modelTier]:'Exclusive Models',[f.modelApprovedPrivate]:true,[f.modelLine]:'U11111111111111111111111111111111'}},
+    {id:'recDuplicateA',fields:{[f.modelName]:'Duplicate Model',[f.modelKey]:'mdl_duplicate',[f.modelStatus]:'Active',[f.modelSales]:'private'}},
+    {id:'recDuplicateB',fields:{[f.modelName]:'Duplicate Model',[f.modelKey]:'mdl_duplicate',[f.modelStatus]:'Active',[f.modelSales]:'private'}},
+    {id:'recReady',fields:{[f.modelName]:'LINE Ready',[f.modelKey]:'mdl_ready',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelSales]:'private',[f.modelTier]:'Premium Models',[f.modelApprovedPrivate]:true,[f.modelLine]:'U22222222222222222222222222222222'}},
+    {id:'recBackfill',fields:{[f.modelName]:'Backfill Model',[f.modelKey]:'mdl_backfill',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record'}},
+  ];
+  data[IDS.sessions]=[
+    {id:'recFutureSession',fields:{[f.sid]:'SES-FUTURE',[f.model]:['recDuplicateA'],[f.start]:future,[f.sessionStatus]:'Confirmed',[f.sessionPartner]:'partner_kendo'}},
+  ];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({AIRTABLE_API_KEY:'test',SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({})},'2026-09-19');
+    const cohort=out.availability.onboarding;
+    assert.equal(cohort.schema,'mmd.availability.onboarding-cohorts.v1');
+    assert.equal(cohort.raw_backlog_rows,5);
+    assert.equal(cohort.unique_backlog_models,4);
+    assert.equal(cohort.duplicate_rows_collapsed,1);
+    assert.equal(cohort.current_batch[0].name,'Duplicate Model');
+    assert.equal(cohort.current_batch[0].priority_bucket,'upcoming_job');
+    assert.equal(cohort.current_batch[0].partner_job,true);
+    assert.equal(cohort.current_batch[1].name,'Booked Model');
+    assert.equal(cohort.current_batch[1].priority_bucket,'line_ready');
+    assert.equal(cohort.current_batch[2].name,'LINE Ready');
+    assert.equal(cohort.current_batch[2].priority_bucket,'line_ready');
+    assert.equal(cohort.current_batch[3].name,'Backfill Model');
+    assert.equal(cohort.current_batch[3].priority_bucket,'backfill');
+    assert.equal(cohort.automatic_send,false);
+    assert.equal(cohort.owner_click_required,true);
+    assert.equal(cohort.no_guess,true);
+    assert.doesNotMatch(JSON.stringify(cohort),/U11111111111111111111111111111111|U22222222222222222222222222222222/);
   } finally { restore(); }
 });
 
