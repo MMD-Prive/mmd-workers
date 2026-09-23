@@ -207,3 +207,43 @@ verified LINE
 ```
 
 A storage/table/field regression is an infrastructure failure, not evidence that a customer is new.
+
+
+## Identity recovery projection — 2026-09-23
+
+The My MMD presentation already contains a fail-closed RecoveryPanel and the
+same-origin submit endpoint remains `POST /member/api/liff/recovery`. The
+member app BFF now projects `membership.identity_recovery.state` from the
+verified LIFF session plus the exact LINE identity's canonical
+`MMD — Identity Merge Requests` row.
+
+The browser does not choose this state.
+
+```text
+member exists
+-> linked
+
+member missing + no canonical recovery evidence
+-> auto_resolving
+
+member missing
++ exact LINE identity has review_required/not_found
++ review source = owner-controlled first-real-payment acceptance
+-> manual_required
+
+customer submits old email / Member ID through /member/api/liff/recovery
+-> review_required while verification/review is pending
+
+canonical identity applied
+-> linked
+```
+
+`manual_required` is intentionally narrow. A new Guest, an unmatched LINE
+contact, a fuzzy rename, a payment amount, or a browser-supplied identity field
+can never unlock the manual form. Failure to read canonical review storage falls
+closed to `auto_resolving`.
+
+This closes the presentation gap discovered by the first real Membership
+Payment E2E: a verified renewal payment may remain fail-closed while identity is
+unresolved, but the exact verified LINE customer now has a safe path to provide
+their old email or Member ID without exposing LINE IDs or granting entitlement.
