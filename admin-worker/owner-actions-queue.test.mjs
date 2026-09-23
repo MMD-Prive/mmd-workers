@@ -60,7 +60,7 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
   const queue = buildOwnerActionsQueue({
     finance_audit: { available: true, reconciliation_count: 2, payout_hold_count: 1 },
     mms: { available: true, application_review_count: 3, prebooking_coordination_count: 4 },
-    hype: { available: true, counts: { total: 2, overdue: 1 } },
+    hype: { available: true, counts: { total: 2, overdue: 1, owner_actionable_overdue: 1 } },
     source_coverage: [
       { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 3 },
       { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 7 },
@@ -174,6 +174,30 @@ test("availability source attention is fail-closed and routes to Calendar", () =
   assert.equal(detail.drilldown.mutation_allowed, false);
   assert.match(detail.drilldown.decision_boundary, /ห้ามเดาสถานะว่าง/);
 });
+
+
+
+test("HYPE watch-only backlog stays out of Owner Actions until a non-dedicated item is overdue", () => {
+  const watchOnly = buildOwnerActionsQueue({
+    hype: { available: true, counts: { total: 53, overdue: 0, watch: 53, owner_actionable_overdue: 0 } },
+    source_coverage: [
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0 },
+    ],
+  });
+  assert.equal(watchOnly.actions.some((item) => item.action_key === "hype_operational_watch"), false);
+
+  const overdue = buildOwnerActionsQueue({
+    hype: { available: true, counts: { total: 53, overdue: 9, watch: 44, owner_actionable_overdue: 3 } },
+    source_coverage: [
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 3 },
+    ],
+  });
+  const action = overdue.actions.find((item) => item.action_key === "hype_operational_watch");
+  assert.equal(action.count, 3);
+  assert.equal(action.urgency, "urgent");
+  assert.match(action.summary, /dedicated Owner Action lane/);
+});
+
 
 test("owner action detail is a source-safe owner-only read projection", () => {
   const detail = buildOwnerActionDetail({
