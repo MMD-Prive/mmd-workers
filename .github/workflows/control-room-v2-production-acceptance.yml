@@ -1,6 +1,11 @@
 name: Control Room V2 Production Acceptance
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/control-room-v2-production-acceptance.yml"
   workflow_dispatch:
   workflow_run:
     workflows:
@@ -143,6 +148,35 @@ jobs:
             if (!["connected", "partial", "read_scope_missing", "query_unavailable"].includes(ownerAnalytics?.state)) {
               throw new Error(`unexpected Owner Analytics state: ${ownerAnalytics?.state}`);
             }
+
+            const ownerActionsResponse = await fetch(`${pageUrl.origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: pageUrl.origin, Cookie: cookie, Accept: "application/json" },
+              cache: "no-store",
+            });
+            const ownerActions = await ownerActionsResponse.json().catch(() => null);
+            if (ownerActionsResponse.status !== 200 || ownerActions?.ok !== true) {
+              throw new Error(`Owner Actions read failed: ${ownerActionsResponse.status}`);
+            }
+            if (ownerActions?.contract !== "mmd_owner_actions_queue_v1" || ownerActions?.mode !== "owner_review_only") {
+              throw new Error("Owner Actions contract mismatch");
+            }
+            const availabilitySource = (ownerActions?.source_coverage || []).find((item) => item?.source === "availability");
+            if (!availabilitySource) throw new Error("Availability source missing from Owner Actions");
+            if (availabilitySource?.authority !== "sigil_availability_snapshot_v1" || availabilitySource?.href !== "/internal/admin/calendar" || availabilitySource?.read_only !== true) {
+              throw new Error("Availability source authority mismatch");
+            }
+            if (ownerActions?.guardrails?.availability_truth !== "sigil_availability_snapshot_v1" || ownerActions?.guardrails?.no_auto_send !== true || ownerActions?.guardrails?.no_business_truth_mutation !== true) {
+              throw new Error("Availability Owner Actions guardrails failed");
+            }
+            const availabilityAction = (ownerActions?.actions || []).find((item) => item?.action_key === "availability_exception_review");
+            if (availabilityAction && (
+              availabilityAction?.href !== "/internal/admin/calendar" ||
+              availabilityAction?.authority !== "sigil_availability_snapshot_v1" ||
+              availabilityAction?.send_allowed !== false ||
+              availabilityAction?.mutation_allowed !== false
+            )) {
+              throw new Error("Availability exception action boundary failed");
+            }
             const truthMetrics = ownerAnalytics?.business_truth?.metrics || {};
             for (const metric of Object.values(truthMetrics)) {
               if (metric && metric.observed === false) {
@@ -169,6 +203,12 @@ jobs:
             });
             if (unauthAnalytics.status !== 401) throw new Error(`unauth analytics must fail closed, got ${unauthAnalytics.status}`);
 
+            const unauthOwnerActions = await fetch(`${pageUrl.origin}/v1/admin/dashboard/owner-actions`, {
+              headers: { Origin: pageUrl.origin },
+              redirect: "manual",
+            });
+            if (unauthOwnerActions.status !== 401) throw new Error(`unauth Owner Actions must fail closed, got ${unauthOwnerActions.status}`);
+
             const unauthPage = await fetch(`${pageUrl.origin}/internal/admin/control-room`, { redirect: "manual" });
             if (![302, 303, 307, 308].includes(unauthPage.status)) {
               throw new Error(`unauth Control Room must redirect to login, got ${unauthPage.status}`);
@@ -186,6 +226,9 @@ jobs:
               authority: "read_only",
               owner_analytics_state: ownerAnalytics.state,
               owner_analytics_schema: ownerAnalytics.analytics_schema,
+              owner_actions_contract: ownerActions.contract,
+              availability_source_state: availabilitySource.state,
+              availability_exception_present: Boolean(availabilityAction),
             }, null, 2));
           })().catch((error) => {
             console.error(error?.stack || error);
@@ -205,6 +248,8 @@ jobs:
           - HYPE / STUCK / SLA: on-demand, no duplicate dashboard fetch
           - Business authority: read-only
           - Owner Analytics: Intent / Business Truth / Authority Health separated
+          - Owner Actions: Availability source projected from canonical coverage health
+          - Availability exception: Calendar-only, read-only, no auto-send or mutation
           - Cross-layer person conversion: forbidden
           - Unobserved terminal event: null / —, never fabricated zero
           - Unauthenticated page/API/analytics: fail-closed
