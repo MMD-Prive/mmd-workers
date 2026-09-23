@@ -291,11 +291,26 @@ jobs:
             const unavailableSources = Array.isArray(queue?.unavailable_sources)
               ? queue.unavailable_sources.map(String)
               : [];
+            const queueHealth = queue?.queue_health && typeof queue.queue_health === "object"
+              ? queue.queue_health
+              : null;
+            if (!queueHealth || queueHealth?.schema !== "mmd_owner_actions_queue_health_v1") {
+              throw new Error("Owner Actions queue health contract missing");
+            }
+            if (queueHealth?.business_truth_mutated !== false) {
+              throw new Error("Owner Actions queue health must remain read-only");
+            }
+            if (Number(queueHealth?.unknown_hype_overdue || 0) > 0 && !actions.some((item) => item?.action_key === "hype_operational_watch")) {
+              throw new Error("Unknown HYPE overdue must remain visible through fail-closed fallback");
+            }
+
             const adoptionState = unavailableSources.length
               ? "PARTIAL"
-              : actions.length
-                ? "REVIEW_REQUIRED"
-                : "CLEAR";
+              : Number(queueHealth?.unknown_hype_overdue || 0) > 0
+                ? "CLASSIFICATION_REVIEW"
+                : actions.length
+                  ? "REVIEW_REQUIRED"
+                  : "CLEAR";
 
             const receipt = {
               schema: "mmd.owner_actions_adoption_receipt.v1",
@@ -323,6 +338,18 @@ jobs:
                 read_only: item.read_only === true,
               })),
               unavailable_sources: unavailableSources,
+              queue_health: {
+                schema: queueHealth.schema,
+                action_classes: Number(queueHealth.action_classes || 0),
+                active_owner_decisions: Number(queueHealth.active_owner_decisions || 0),
+                unknown_hype_overdue: Number(queueHealth.unknown_hype_overdue || 0),
+                stale_terminal_records: Number(queueHealth.stale_terminal_records || 0),
+                stale_terminal_by_kind: queueHealth.stale_terminal_by_kind || {},
+                classification_complete: queueHealth.classification_complete === true,
+                source_coverage_complete: queueHealth.source_coverage_complete === true,
+                phase_5_closure_ready: queueHealth.phase_5_closure_ready === true,
+                business_truth_mutated: queueHealth.business_truth_mutated === false,
+              },
               guardrails: {
                 queue_read_only: queue?.send_allowed === false && queue?.mutation_allowed === false,
                 detail_safe_projection: true,
@@ -344,12 +371,15 @@ jobs:
               : "| — | — | 0 | — |";
 
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
-              "## Phase 5D — Owner Actions Cohort Adoption Receipt",
+              "## Phase 5F — Owner Actions Queue Health Receipt",
               "",
               `- State: **${receipt.adoption_state}**`,
               `- Checked at: \`${receipt.checked_at}\``,
               `- Live actions: **${receipt.action_count}**`,
               `- Unavailable sources: **${receipt.unavailable_sources.length}**`,
+              `- Unknown HYPE overdue: **${receipt.queue_health.unknown_hype_overdue}**`,
+              `- Stale terminal diagnostics: **${receipt.queue_health.stale_terminal_records}**`,
+              `- Phase 5 closure ready: **${receipt.queue_health.phase_5_closure_ready ? "YES" : "NO"}**`,
               "- Session: dedicated Per Owner credential",
               "- Authority: read-only queue/detail; decisions remain on source pages",
               "- Mutation: none",
