@@ -1,0 +1,64 @@
+name: MMD Rich Menu Production Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs"
+      - "member-dashboard-chat-worker/src/mms-line-front-gate-runtime.js"
+      - "admin-worker/src/index.js"
+      - "tools/mmd-rich-menu-production-acceptance.mjs"
+      - ".github/workflows/mmd-rich-menu-production-acceptance.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mmd-rich-menu-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate current three-level Rich Menu contract
+        run: |
+          node --check member-dashboard-chat-worker/src/mmd-rich-menu-scheduled-runtime.mjs
+          node --check admin-worker/src/index.js
+          node --test member-dashboard-chat-worker/test/mmd-rich-menu-scheduled-runtime.test.mjs admin-worker/rich-menu-admin-publisher.test.mjs
+
+      - name: Prepare objects and audit production
+        run: node tools/mmd-rich-menu-production-acceptance.mjs
+
+      - name: Upload sanitized production receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmd-rich-menu-production-acceptance
+          path: ${{ runner.temp }}/mmd-rich-menu-production-acceptance.json
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Acceptance summary
+        if: success()
+        run: |
+          echo '### MMD Rich Menu production acceptance' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Current runtime: mmd-rm3-20260923-v4.2' >> "$GITHUB_STEP_SUMMARY"
+          echo '- LV1 artwork: approved v4.1 MMD STORIES / Discover TMIB asset' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Menu objects/actions/images: verified against LINE production' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Five-state resolver policy: Guest/Public/Private/Expired/Blocked verified' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Physical taps: intentionally not claimed; requires real LINE client' >> "$GITHUB_STEP_SUMMARY"
