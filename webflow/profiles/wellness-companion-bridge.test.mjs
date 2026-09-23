@@ -17,9 +17,9 @@ test("Wellness Companion packages are visible from Profiles and lock to booking"
 
 test("Wellness booking handoff stays separate from training, therapy, and MMS", () => {
   assert.match(booking, /data-service="Wellness Companion"/);
-  assert.match(booking, /if\(role==='wellness_companion'\)\{service='Wellness Companion'/);
+  assert.match(booking, /if \(role === "wellness_companion"\) \{[\s\S]*service = "Wellness Companion"/);
   assert.match(booking, /not PT, therapy, massage or medical advice/);
-  for (const key of packageKeys) assert.match(booking, new RegExp(`${key}:\\{role:'wellness_companion'`));
+  for (const key of packageKeys) assert.match(booking, new RegExp(`${key}: \\{[\\s\\S]*role: "wellness_companion"`));
 });
 
 test("Wellness payout projection protects the qualified-rate floor", () => {
