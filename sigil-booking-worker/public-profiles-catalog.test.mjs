@@ -124,16 +124,33 @@ test("catalog exposes only the intersection of applicant-consented and MMD-appro
   assert.deepEqual(items[0].approved_roles, ["driver_companion"]);
 });
 
-test("medical professional role requires verified credential after consent scope intersection", () => {
+test("medical professional role requires both a verified credential and a brief-only route", () => {
   const eligibilityBySlug = new Map([
     ["pending-medical", eligible(["male"], ["medical_professional"], { credential_status: "pending" })],
-    ["verified-medical", eligible(["female"], ["medical_professional"], { credential_status: "verified" })],
+    ["verified-but-curated", eligible(["male"], ["medical_professional"], { credential_status: "verified", booking_mode: "curated" })],
+    ["verified-medical", eligible(["female"], ["medical_professional"], { credential_status: "verified", booking_mode: "brief_only" })],
   ]);
   const items = buildPublicCatalog([
     { key: "MMD Public Models/pending-medical/card.webp" },
+    { key: "MMD Public Models/verified-but-curated/card.webp" },
     { key: "MMD Public Models/verified-medical/card.webp" },
   ], { eligibilityBySlug });
   assert.deepEqual(items.map((item) => item.slug), ["verified-medical"]);
+  assert.equal(items[0].booking_mode, "brief_only");
+});
+
+test("an ineligible medical role never suppresses separately approved companion roles", () => {
+  const eligibilityBySlug = new Map([
+    ["mixed-role", eligible(["male"], ["creative_companion", "medical_professional"], {
+      credential_status: "pending",
+      booking_mode: "curated",
+    })],
+  ]);
+  const items = buildPublicCatalog([
+    { key: "MMD Public Models/mixed-role/card.webp" },
+  ], { eligibilityBySlug });
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0].approved_roles, ["creative_companion"]);
 });
 
 test("handler exposes only accepted, approved, publication-approved and explicitly consented applications", async () => {
