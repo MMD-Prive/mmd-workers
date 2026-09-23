@@ -298,6 +298,7 @@ test("queue health fails phase closure safely on unknown HYPE overdue or unavail
   assert.equal(queue.queue_health.classification_complete, false);
   assert.equal(queue.queue_health.source_coverage_complete, false);
   assert.equal(queue.queue_health.phase_5_closure_ready, false);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
 });
 
 test("HYPE cohort detail routes to the owning source and remains read-only", () => {

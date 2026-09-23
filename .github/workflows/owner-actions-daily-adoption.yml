@@ -348,7 +348,8 @@ jobs:
                 classification_complete: queueHealth.classification_complete === true,
                 source_coverage_complete: queueHealth.source_coverage_complete === true,
                 phase_5_closure_ready: queueHealth.phase_5_closure_ready === true,
-                business_truth_mutated: queueHealth.business_truth_mutated === false,
+                business_truth_mutated: queueHealth.business_truth_mutated,
+                business_truth_unchanged: queueHealth.business_truth_mutated === false,
               },
               guardrails: {
                 queue_read_only: queue?.send_allowed === false && queue?.mutation_allowed === false,
