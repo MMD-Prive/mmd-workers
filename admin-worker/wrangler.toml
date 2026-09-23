@@ -733,6 +733,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/job/create"
 zone_name = "mmdbkk.com"
 
+# Owner-only single-job Private grant. This never grants standing membership;
+# it records one exact job fingerprint for the Create Job entitlement gate.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/job/owner-grant"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/job/owner-grant"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/v1/internal/kenji/knowledge/published"
 zone_name = "mmdbkk.com"
