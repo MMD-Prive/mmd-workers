@@ -22,6 +22,7 @@ import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.
 import { readPartnerFinanceAuditCoverage } from "./partner-owner-console.js";
 import { readMmsOwnerActionCoverage } from "./mms-admin-runtime.js";
 import { readCrossSystemStuckSlaWatch } from "./hype-cross-system-stuck-sla.js";
+import { readRecoveryQueueIntelligence } from "./recovery-control.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -88,6 +89,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
+  const ownerRecoveryQueue = ownerActionRecoveryQueue(env, ownerActor, now);
   const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, financeAuditResult, mmsResult, hypeResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
@@ -97,7 +99,7 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     readHypeTelegramRouterHealth(env),
     ownerActionCoverage(env, ownerActor),
     ownerActionMmsCoverage(env, ownerActor),
-    ownerActionHypeCoverage(env, ownerActor, now),
+    ownerActionHypeCoverage(env, ownerActor, now, ownerRecoveryQueue),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
@@ -252,8 +254,16 @@ function ownerActionMmsCoverage(env, actor) {
   return actor ? readMmsOwnerActionCoverage(env) : Promise.resolve({ available: false, reason: "owner_scope_required" });
 }
 
-function ownerActionHypeCoverage(env, actor, now) {
-  return actor ? readCrossSystemStuckSlaWatch(env, { now }) : Promise.resolve({ available: false, reason: "owner_scope_required" });
+function ownerActionRecoveryQueue(env, actor, now) {
+  return actor
+    ? readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now).catch(() => ({ ok: false, error: "recovery_queue_unavailable" }))
+    : Promise.resolve({ ok: false, error: "owner_scope_required" });
+}
+
+function ownerActionHypeCoverage(env, actor, now, recoveryQueue) {
+  return actor
+    ? Promise.resolve(recoveryQueue).then((value) => readCrossSystemStuckSlaWatch(env, { now, recoveryQueue: value }))
+    : Promise.resolve({ available: false, reason: "owner_scope_required" });
 }
 
 function sourceCoverageEntry(source, label, value, href, fallbackAuthority) {
