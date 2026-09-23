@@ -3,6 +3,7 @@
 const ROUTES = Object.freeze({
   profiles: "https://mmdbkk.com/profiles",
   membership: "https://mmdbkk.com/member/membership",
+  mmsLine: "https://line.me/R/ti/p/%40malemassage",
 });
 
 const HANDOFF_INTENTS = new Set([
@@ -51,13 +52,13 @@ export function decideKenjiLineFirstContact(event = {}, intent = "") {
   // Short opening phrases and public discovery phrases are explicitly scoped.
   if (kind === "greeting" || kind === "service_guidance" ||
       (kind === "note_only" && /^(?:แนะนำหน่อย|ช่วยแนะนำ(?:หน่อย)?|เริ่ม(?:ยังไง|ตรงไหน)|อยากดู(?:น้อง|ผู้ชาย|นายแบบ)|ดู(?:น้อง|ผู้ชาย|นายแบบ))(?:ครับ|ค่ะ|คะ|นะ)?$/i.test(raw))) {
-    return { ...base, text: "สวัสดีครับ อยากให้ช่วยเรื่องน้อง ๆ ผู้ชายสำหรับงานหรือกิจกรรม สมาชิก นวดชาย หรือรายการที่คุยไว้ครับ? บอกแบบที่สนใจมาได้เลย เดี๋ยวเปอร์ช่วยดูทางต่อให้ครับ" };
+    return { ...base, text: "สวัสดีครับ วันนี้อยากให้ช่วยเรื่องไหนครับ? ดูน้อง ๆ ผู้ชายสำหรับงานหรือกิจกรรม เรื่องสมาชิก หรือรายการที่เคยคุยไว้ บอกมาได้เลยครับ" };
   }
   if (kind === "mmd_companion") {
     return { ...base, text: `ได้ครับ เล่าให้ฟังหน่อยว่าเป็นงานหรือกิจกรรมแบบไหน และต้องการวันไหนครับ ระหว่างนี้ดูน้อง ๆ ได้ที่ ${ROUTES.profiles} ครับ` };
   }
   if (kind === "mms_wellness") {
-    return { ...base, text: "สนใจนวดชายใช่ไหมครับ บอกวันที่และย่านที่สะดวกมาก่อนได้เลย เดี๋ยวเปอร์ช่วยดูทางเลือกที่เหมาะครับ" };
+    return { ...base, text: `งานนวดชายดูแลผ่าน LINE Official ของ MMS โดยเฉพาะครับ ติดต่อได้ที่ ${ROUTES.mmsLine}`, reply_source: "mms_line_redirect" };
   }
   if (["membership", "membership_signup", "private_membership_signup", "membership_renewal"].includes(kind)) {
     return { ...base, text: `เรื่องสมาชิกเริ่มดูได้ที่ ${ROUTES.membership} ครับ ถ้าเคยเป็นสมาชิกอยู่แล้ว บอกว่าอยากเช็กสถานะหรือต่ออายุ เดี๋ยวพาไปตรวจใน MY MMD ครับ` };

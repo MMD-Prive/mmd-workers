@@ -36,6 +36,12 @@ test("First Contact answers a natural opening but sends protected matters for re
   assert.match(booking.text, /วันไหน/);
   assert.doesNotMatch(booking.text, /ยืนยันคิว|ราคา.*บาท/);
 
+  const mms = decideKenjiLineFirstContact(message("อยากนวดชาย"), "mms_wellness");
+  assert.match(mms.text, /LINE Official ของ MMS/);
+  assert.match(mms.text, /line\.me\/R\/ti\/p\/%40malemassage/);
+  assert.doesNotMatch(mms.text, /บอกวันที่|ย่านที่สะดวก|เปอร์ช่วยดูทางเลือก/);
+  assert.doesNotMatch(opening.text, /นวด|MMS/);
+
   const slip = decideKenjiLineFirstContact(message("สวัสดี โอนแล้ว ส่งสลิป"), "greeting");
   assert.equal(slip.text, "");
   assert.equal(slip.handoff_required, true);
@@ -61,6 +67,7 @@ test("signed LINE opening replies once while follow and protected events stay si
     const events = [
       { type: "follow", mode: "active", replyToken: "follow-token", source: { type: "user", userId: "U-synthetic" }, webhookEventId: "follow-1" },
       message("แนะนำหน่อย"),
+      message("อยากนวดชาย", { replyToken: "mms-token", message: { id: "mms-1", type: "text", text: "อยากนวดชาย" } }),
       message("โอนแล้วครับ", { replyToken: "payment-token", message: { id: "payment-1", type: "text", text: "โอนแล้วครับ" } }),
       message("แนะนำหน่อย", { replyToken: "standby-token", mode: "standby", message: { id: "standby-1", type: "text", text: "แนะนำหน่อย" } }),
     ];
@@ -71,10 +78,14 @@ test("signed LINE opening replies once while follow and protected events stay si
     }), env, null, { fetch: async () => Response.json({ ok: true }) });
     const body = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(sent.length, 1);
+    assert.equal(sent.length, 2);
     assert.equal(sent[0].replyToken, "synthetic-reply-token");
-    assert.deepEqual(body.saved.map((row) => row.replied), [false, true, false, false]);
-    assert.equal(body.saved[2].handoff_required, true);
+    assert.equal(sent[1].replyToken, "mms-token");
+    assert.match(sent[1].messages[0].text, /line\.me\/R\/ti\/p\/%40malemassage/);
+    assert.doesNotMatch(sent[1].messages[0].text, /บอกวันที่|ย่านที่สะดวก/);
+    assert.deepEqual(body.saved.map((row) => row.replied), [false, true, true, false, false]);
+    assert.equal(body.saved[2].reply_source, "mms_line_redirect");
+    assert.equal(body.saved[3].handoff_required, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
