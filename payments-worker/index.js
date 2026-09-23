@@ -481,18 +481,24 @@ async function airtableFindFirstByFormula(env, table, formula) {
   return data?.records?.[0] || null;
 }
 
-async function airtableCreate(env, table, fields) {
+async function airtableCreate(env, table, fields, options = {}) {
   const data = await airtableFetch(env, encodeURIComponent(table), {
     method: "POST",
-    body: JSON.stringify({ records: [{ fields }] }),
+    body: JSON.stringify({
+      records: [{ fields }],
+      ...(options.typecast === true ? { typecast: true } : {}),
+    }),
   });
   return data?.records?.[0] || null;
 }
 
-async function airtablePatch(env, table, recordId, fields) {
+async function airtablePatch(env, table, recordId, fields, options = {}) {
   const data = await airtableFetch(env, `${encodeURIComponent(table)}/${encodeURIComponent(recordId)}`, {
     method: "PATCH",
-    body: JSON.stringify({ fields }),
+    body: JSON.stringify({
+      fields,
+      ...(options.typecast === true ? { typecast: true } : {}),
+    }),
   });
   return data || null;
 }
@@ -529,9 +535,18 @@ async function findPointLedgerByPaymentRef(env, paymentRef) {
 /* -------------------------------------------------- */
 /* core actions */
 /* -------------------------------------------------- */
-async function createOrUpdatePaymentIntent(env, payload) {
+const CANONICAL_MEMBERSHIP_PACKAGES = new Set(["mmd_member", "elite", "red_card", "standard", "premium"]);
+
+function reviewedMembershipSchemaTypecast(payload = {}, options = {}) {
+  if (options.allow_membership_schema_typecast !== true) return false;
+  if (toStr(payload.payment_stage).toLowerCase() !== "membership") return false;
+  return CANONICAL_MEMBERSHIP_PACKAGES.has(toStr(payload.package_code).toLowerCase());
+}
+
+async function createOrUpdatePaymentIntent(env, payload, options = {}) {
   const table = getPaymentsTable(env);
   const existing = await findPaymentByPaymentRef(env, payload.payment_ref);
+  const typecast = reviewedMembershipSchemaTypecast(payload, options);
 
   // Canonical Payments writes use only schema-backed fields. Do not write to
   // formula aliases such as `payment_ref` / `verification_status`, and do
@@ -562,11 +577,11 @@ async function createOrUpdatePaymentIntent(env, payload) {
   });
 
   if (existing?.id) {
-    await airtablePatch(env, table, existing.id, fields);
+    await airtablePatch(env, table, existing.id, fields, { typecast });
     return { ok: true, mode: "update", record_id: existing.id };
   }
 
-  const created = await airtableCreate(env, table, fields);
+  const created = await airtableCreate(env, table, fields, { typecast });
   return { ok: true, mode: "create", record_id: created?.id || null };
 }
 
@@ -787,6 +802,11 @@ async function handleNotify(req, env) {
       verification_status: "verified",
       intent_status: receipt_url ? "manual_slip_submitted" : "manual_review",
       created_at: nowIso(),
+    }, {
+      // Only the internal Official Verify path may extend Airtable select choices
+      // for canonical membership packages. Public/browser verify paths keep
+      // schema typecasting disabled.
+      allow_membership_schema_typecast: true,
     });
 
     const session_updated = session_id && stage !== "shop"
