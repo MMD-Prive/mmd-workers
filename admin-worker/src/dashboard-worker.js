@@ -335,6 +335,7 @@ function ownerCoverageActionCount(source, value) {
 }
 
 function ownerCoverageRoutineCount(source, value) {
+  if (source === "finance_audit") return nonNegativeInteger(value?.diagnostic_count);
   if (source === "mms") {
     return nonNegativeInteger(value?.routine_application_count) + nonNegativeInteger(value?.routine_prebooking_count);
   }
@@ -348,7 +349,7 @@ function nonNegativeInteger(value) {
 
 async function loadCanonicalPaymentReviewQueue(env) {
   const response = await handlePaymentReviewRequest(
-    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100"),
+    new Request("https://admin.internal/v1/admin/payments/review-queue?limit=100&include_context=1"),
     env,
     { id: "dashboard", role: "admin" },
   );
@@ -489,6 +490,7 @@ export function ownerActionPaymentReviewItems(items) {
     item?.reviewable === true &&
     item?.review_lane === "owner_review" &&
     item?.can_approve === true &&
+    item?.settlement_recovery !== true &&
     !(Array.isArray(item?.context_issues) && item.context_issues.length)
   );
 }

@@ -26,7 +26,16 @@ export async function readPartnerFinanceAuditCoverage(env,actor){
     const payload=await response.json().catch(()=>null);
     if(!response.ok||payload?.ok!==true)return {available:false,reason:String(payload?.error||'finance_audit_unavailable').slice(0,80)};
     const summary=payload.summary||{};
-    return {available:true,authority:'canonical_finance_timeline',reconciliation_count:nonNegative(summary.sessions_reconciliation_required)+nonNegative(summary.orphan_commissions),payout_hold_count:nonNegative(summary.payout_holds)};
+    return {
+      available:true,
+      authority:'canonical_finance_timeline',
+      operating_model:'bau_exception_only_v1',
+      reconciliation_count:nonNegative(summary.sessions_owner_action_required)+nonNegative(summary.orphan_commissions_actionable),
+      payout_hold_count:nonNegative(summary.payout_holds),
+      source_reconciliation_count:nonNegative(summary.sessions_reconciliation_required),
+      stale_orphan_count:nonNegative(summary.orphan_commissions_stale),
+      diagnostic_count:nonNegative(summary.finance_diagnostic_count)
+    };
   }catch{return {available:false,reason:'finance_audit_unavailable'};}
 }
 function nonNegative(value){const n=Number(value);return Number.isFinite(n)&&n>0?Math.floor(n):0;}
@@ -126,7 +135,41 @@ function financeReconcile(row,payoutAudit){
     payoutIssues.forEach((issue)=>add(issue.code||"model_payout_reconciliation_issue",issue.severity||"high",{lane:"model_payout",...issue}));
   }
 
-  return {ok:issues.length===0,needs_reconciliation:issues.length>0,issue_count:issues.length,issues,expected_partner_commission:expected};
+  return {
+    ok:issues.length===0,
+    needs_reconciliation:issues.length>0,
+    owner_action_required:issues.some((issue)=>String(issue?.severity||"").toLowerCase()==="high"),
+    issue_count:issues.length,
+    issues,
+    expected_partner_commission:expected
+  };
+}
+
+function classifyOrphanCommission(row){
+  const status=String(row?.status||"").trim().toLowerCase();
+  const payout=String(row?.payout_status||"").trim().toLowerCase();
+  const terminal=new Set(["paid","void","cancelled","canceled","reversed","refunded"]);
+  if(terminal.has(status)||terminal.has(payout))return {actionable:false,reason:"terminal_orphan"};
+  const required=[
+    row?.commission_record_id,
+    row?.session_id,
+    row?.payment_ref,
+    row?.partner_record_id,
+    row?.model_record_id,
+    row?.system
+  ];
+  const amountOk=financeNumber(row?.commission_amount_thb)!==null&&financeNumber(row?.basis_amount_thb)!==null;
+  if(required.some((value)=>!String(value||"").trim())||!amountOk)return {actionable:false,reason:"legacy_or_incomplete_orphan"};
+  return {actionable:true,reason:"canonical_orphan"};
+}
+
+function countByReason(items){
+  const out={};
+  for(const item of items){
+    const key=String(item?.reason||"unknown").slice(0,80);
+    out[key]=(out[key]||0)+1;
+  }
+  return out;
 }
 function financeTimeline(row,payoutAudit){
   const events=[];const push=(at,type,label,amount_thb=null,meta={})=>events.push({at:at||null,type,label,amount_thb:financeNumber(amount_thb),...meta});
@@ -162,14 +205,20 @@ async function handlePartnerFinanceAudit(env,actor){
   const knownSessions=new Set(sessions.map((row)=>String(row?.session_id||"").trim()).filter(Boolean));
   const rows=sessions.map((row)=>{const sid=String(row?.session_id||"").trim();const merged={...row,commissions:bySession.get(sid)||[],model_payout:payoutBySession.get(sid)||{ok:false,error:"model_payout_audit_missing"}};const reconciliation=financeReconcile(merged,merged.model_payout);return {...merged,reconciliation,timeline:financeTimeline(merged,merged.model_payout)};});
   const orphanCommissions=commissions.filter((row)=>!knownSessions.has(String(row?.session_id||"").trim()));
+  const orphanClassifications=orphanCommissions.map((row)=>({row,...classifyOrphanCommission(row)}));
+  const actionableOrphans=orphanClassifications.filter((item)=>item.actionable);
+  const staleOrphans=orphanClassifications.filter((item)=>!item.actionable);
   const amount=(value)=>{const n=Number(value);return Number.isFinite(n)?n:0;};
   const isPaid=(row)=>String(row?.status||"").toLowerCase()==="paid"||String(row?.payout_status||"").toLowerCase()==="paid";
   const isOpen=(row)=>!isPaid(row)&&!["void","cancelled","reversed"].includes(String(row?.status||"").toLowerCase());
+  const sessionReconciliation=rows.filter((row)=>row.reconciliation?.needs_reconciliation);
+  const sessionOwnerActions=rows.filter((row)=>row.reconciliation?.owner_action_required===true);
   const reconciliationIssues=rows.reduce((sum,row)=>sum+Number(row.reconciliation?.issue_count||0),0)+orphanCommissions.length;
+  const financeDiagnosticCount=Math.max(0,sessionReconciliation.length-sessionOwnerActions.length)+staleOrphans.length;
   return json({
     ok:true,authority:"canonical_finance_timeline",read_only:true,
-    policy:{payment_truth:"verified_receipts_and_locked_partner_snapshots",partner_source_rate_is_model_payout:false,model_payout_source:"Sessions.pay_model_thb + immutable adjustments",model_payout_mutated:false,customer_payment_mutated:false,customer_or_model_confirmation_mutated:false,correction_rule:"financial history is never silently rewritten"},
-    summary:{sessions:sessions.length,settlement_locked:sessions.filter((row)=>row?.snapshot_locked===true).length,payout_holds:sessions.filter((row)=>String(row?.payout_hold||"").trim()).length,commission_rows:commissions.length,open_commission_amount_thb:commissions.filter(isOpen).reduce((sum,row)=>sum+amount(row?.commission_amount_thb),0),paid_commission_amount_thb:commissions.filter(isPaid).reduce((sum,row)=>sum+amount(row?.commission_amount_thb),0),model_payout_adjustments:rows.reduce((sum,row)=>sum+(Array.isArray(row.model_payout?.adjustments)?row.model_payout.adjustments.length:0),0),sessions_reconciliation_required:rows.filter((row)=>row.reconciliation?.needs_reconciliation).length,reconciliation_issues:reconciliationIssues,orphan_commissions:orphanCommissions.length},
+    policy:{payment_truth:"verified_receipts_and_locked_partner_snapshots",partner_source_rate_is_model_payout:false,model_payout_source:"Sessions.pay_model_thb + immutable adjustments",model_payout_mutated:false,customer_payment_mutated:false,customer_or_model_confirmation_mutated:false,correction_rule:"financial history is never silently rewritten",owner_actions:"high_severity_or_canonical_nonterminal_orphan_only"},
+    summary:{sessions:sessions.length,settlement_locked:sessions.filter((row)=>row?.snapshot_locked===true).length,payout_holds:sessions.filter((row)=>String(row?.payout_hold||"").trim()).length,commission_rows:commissions.length,open_commission_amount_thb:commissions.filter(isOpen).reduce((sum,row)=>sum+amount(row?.commission_amount_thb),0),paid_commission_amount_thb:commissions.filter(isPaid).reduce((sum,row)=>sum+amount(row?.commission_amount_thb),0),model_payout_adjustments:rows.reduce((sum,row)=>sum+(Array.isArray(row.model_payout?.adjustments)?row.model_payout.adjustments.length:0),0),sessions_reconciliation_required:sessionReconciliation.length,sessions_owner_action_required:sessionOwnerActions.length,reconciliation_issues:reconciliationIssues,orphan_commissions:orphanCommissions.length,orphan_commissions_actionable:actionableOrphans.length,orphan_commissions_stale:staleOrphans.length,orphan_commissions_stale_by_reason:countByReason(staleOrphans),finance_diagnostic_count:financeDiagnosticCount},
     rows,orphan_commissions:orphanCommissions
   });
 }
