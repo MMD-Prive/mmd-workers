@@ -112,7 +112,7 @@ async function listChildren(accessToken, folderId, http) {
     url.searchParams.set("includeItemsFromAllDrives", "true");
     url.searchParams.set("supportsAllDrives", "true");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const response = await http(url, { headers: { authorization: `Bearer ${accessToken}` } });
+    const response = await transport(url, { headers: { authorization: `Bearer ${accessToken}` } });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body || !Array.isArray(body.files)) {
       throw ownerDriveError("owner_drive_file_list_failed", 503);
@@ -151,9 +151,10 @@ export async function findExactOwnerApprovedDriveMedia(accessToken, folderId, fi
   return matches[0];
 }
 
-export async function readOwnerApprovedDriveMedia(env, { folderId, fileName }, http = fetch) {
-  const accessToken = await ownerDriveAccessToken(env, http);
-  const file = await findExactOwnerApprovedDriveMedia(accessToken, folderId, fileName, http);
+export async function readOwnerApprovedDriveMedia(env, { folderId, fileName }, http = null) {
+  const transport = http || env.GOOGLE_DRIVE_HTTP?.fetch?.bind(env.GOOGLE_DRIVE_HTTP) || fetch;
+  const accessToken = await ownerDriveAccessToken(env, transport);
+  const file = await findExactOwnerApprovedDriveMedia(accessToken, folderId, fileName, transport);
   const mime = clean(file.mimeType, 120);
   const limit = ALLOWED_MEDIA.get(mime);
   if (!limit) throw ownerDriveError("owner_drive_media_type_invalid", 415);
