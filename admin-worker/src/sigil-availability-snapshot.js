@@ -521,6 +521,7 @@ async function handleAvailabilityAdoptionReminder(request, env = {}, caller = ""
     model_key: modelKey,
     display_name: model.display_name,
     channel: "line",
+    transport: sent.transport || "line",
     sent_at: sentAt,
     recovery_evidence: tracked.evidence,
     cooldown_seconds: SIGIL_AVAILABILITY_ADOPTION_REMINDER_TTL_SECONDS,
