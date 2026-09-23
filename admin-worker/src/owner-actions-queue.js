@@ -208,13 +208,13 @@ function mmsApplicationReviewAction(source) {
 }
 
 function hypeOperationalWatchAction(source) {
-  const count = nonNegative(source?.counts?.total);
+  const count = nonNegative(source?.counts?.owner_actionable_overdue);
   return count ? action({
     key: "hype_operational_watch",
     priority: PRIORITY.hype_operational_watch,
-    urgency: source?.counts?.overdue > 0 ? "urgent" : "attention",
-    title: "ตรวจ HYPE operational watch",
-    summary: `มี ${count} จุดที่ HYPE พบว่าต้องดูจาก authority ต้นทาง`,
+    urgency: "urgent",
+    title: "ตรวจ HYPE overdue exceptions",
+    summary: `มี ${count} จุดที่เลย SLA และยังไม่มี dedicated Owner Action lane`,
     count,
     href: "/internal/admin/control-room",
     authority: "hype_coordinator_read_only",
