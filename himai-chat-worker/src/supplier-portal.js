@@ -51,7 +51,8 @@ const ORDER_FIELDS = Object.freeze({
   orderStatus: "fldnCO3H5CpJoYmWD",
   paymentStatus: "fldUpDeLdO6D9OUcd",
   total: "fldYIwMzRJdKdznkY",
-  shopBrand: "fld97aHqq3IbPam84"
+  shopBrand: "fld97aHqq3IbPam84",
+  notes: "fldWG0u77XQ5W0wpT"
 });
 
 const ITEM_FIELDS = Object.freeze({
@@ -430,6 +431,29 @@ function resolveSupplierAccess(env, token) {
   const item = distributorConfig.get(token) || legacyConfig.get(token);
   if (!item || item.active === false) return null;
   return normalizeAccessItem(token, item);
+}
+
+function resolveSupplierAccessByLineUserId(env, lineUserId) {
+  const target = cleanText(lineUserId, 255);
+  if (!target) return null;
+
+  const configs = [
+    parseSupplierTokenConfig(env.HIMAI_DISTRIBUTOR_PORTAL_TOKENS),
+    parseSupplierTokenConfig(env.HIMAI_SUPPLIER_PORTAL_TOKENS),
+  ];
+  for (const config of configs) {
+    for (const [token, item] of config.entries()) {
+      if (!item || item.active === false) continue;
+      const configuredLineUserId = cleanText(
+        item.line_user_id || item.lineUserId || item.line_user || item.line_id,
+        255,
+      );
+      if (configuredLineUserId && configuredLineUserId === target) {
+        return normalizeAccessItem(token, item);
+      }
+    }
+  }
+  return null;
 }
 
 function parseSupplierTokenConfig(raw) {
