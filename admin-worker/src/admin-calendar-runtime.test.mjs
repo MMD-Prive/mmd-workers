@@ -318,6 +318,70 @@ test('prioritized onboarding cohort dedupes canonical key and prioritizes upcomi
   } finally { restore(); }
 });
 
+test('started Cohort 1 keeps the same five Models while actions move through waiting and completed outcomes', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  data[IDS.models]=[
+    {id:'recOne12345678901',fields:{[f.modelName]:'One',[f.modelKey]:'mdl_one',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelLine]:'U11111111111111111111111111111111'}},
+    {id:'recTwo12345678901',fields:{[f.modelName]:'Two',[f.modelKey]:'mdl_two',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record'}},
+    {id:'recThree123456789',fields:{[f.modelName]:'Three',[f.modelKey]:'mdl_three',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelLine]:'U33333333333333333333333333333333'}},
+    {id:'recFour1234567890',fields:{[f.modelName]:'Four',[f.modelKey]:'mdl_four',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record',[f.modelLine]:'U44444444444444444444444444444444'}},
+    {id:'recFive1234567890',fields:{[f.modelName]:'Five',[f.modelKey]:'mdl_five',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record'}},
+    {id:'recSix12345678901',fields:{[f.modelName]:'Six',[f.modelKey]:'mdl_six',[f.modelStatus]:'Active',[f.modelRole]:'Receiving Job Model',[f.modelRegistry]:'Existing Model Record'}},
+  ];
+  const now=Date.now(),startedAt=new Date(now-2*60*60*1000).toISOString();
+  const fresh={...availabilitySnapshot('available_today','model_confirmed'),model_key:'mdl_three',updated_at:new Date(now-20*60*1000).toISOString(),expires_at:new Date(now+2*60*60*1000).toISOString()};
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability-adoption:v1:cohort:current':{
+          schema:'mmd.availability_adoption_cohort.v1',
+          cohort_id:'availability_cohort_1_test',
+          cohort_number:1,
+          started_at:startedAt,
+          started_by_role:'owner',
+          source:'calendar_owner',
+          members:[
+            {position:1,model_key:'mdl_one',record_id:'recOne12345678901',display_name:'One',priority_bucket:'line_ready'},
+            {position:2,model_key:'mdl_two',record_id:'recTwo12345678901',display_name:'Two',priority_bucket:'commercial_active'},
+            {position:3,model_key:'mdl_three',record_id:'recThree123456789',display_name:'Three',priority_bucket:'line_ready'},
+            {position:4,model_key:'mdl_four',record_id:'recFour1234567890',display_name:'Four',priority_bucket:'line_ready'},
+            {position:5,model_key:'mdl_five',record_id:'recFive1234567890',display_name:'Five',priority_bucket:'backfill'},
+          ],
+        },
+        'availability-adoption:v1:recovery:mdl_one':{model_key:'mdl_one',reminder_sent_at:new Date(now-60*60*1000).toISOString(),updated_at:new Date(now-60*60*1000).toISOString()},
+        'availability-adoption:v1:recovery:mdl_two':{model_key:'mdl_two',activation_link_issued_at:new Date(now-50*60*1000).toISOString(),activation_link_expires_at:new Date(now+23*60*60*1000).toISOString(),updated_at:new Date(now-50*60*1000).toISOString()},
+        'availability:v1:mdl_three':fresh,
+      }),
+    },'2026-09-19');
+    const cohort=out.availability.onboarding;
+    assert.equal(cohort.tracking.schema,'mmd.availability.onboarding-outcomes.v1');
+    assert.equal(cohort.tracking.state,'active');
+    assert.equal(cohort.tracking.start_required,false);
+    assert.equal(cohort.tracking.cohort_id,'availability_cohort_1_test');
+    assert.deepEqual(cohort.current_batch.map(item=>item.model_key),['mdl_one','mdl_two','mdl_three','mdl_four','mdl_five']);
+    assert.equal(cohort.current_batch[0].outcome_state,'waiting_for_availability');
+    assert.equal(cohort.current_batch[0].last_owner_action,'remind_model');
+    assert.equal(cohort.current_batch[1].outcome_state,'waiting_for_line');
+    assert.equal(cohort.current_batch[1].last_owner_action,'issue_line_link');
+    assert.equal(cohort.current_batch[2].outcome_state,'completed');
+    assert.equal(cohort.current_batch[2].safe_availability_state,'available_today');
+    assert.equal(cohort.current_batch[3].outcome_state,'action_required');
+    assert.equal(cohort.current_batch[4].outcome_state,'action_required');
+    assert.equal(cohort.tracking.counts.completed,1);
+    assert.equal(cohort.tracking.counts.waiting_for_line,1);
+    assert.equal(cohort.tracking.counts.waiting_for_availability,1);
+    assert.equal(cohort.tracking.counts.action_required,2);
+    assert.equal(cohort.tracking.completion_percent,20);
+    assert.equal(cohort.tracking.cohort_complete,false);
+    assert.deepEqual(cohort.next_batch_preview.map(item=>item.model_key),['mdl_six']);
+    assert.equal(cohort.remaining_after_current,1);
+    assert.doesNotMatch(JSON.stringify(cohort),/U11111111111111111111111111111111|U33333333333333333333333333333333|U44444444444444444444444444444444/);
+  } finally { restore(); }
+});
+
 test('calendar coverage classifies failed snapshot reads as source unavailable', async()=>{
   const data=fixture();
   data[IDS.sessions]=[];

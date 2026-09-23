@@ -159,10 +159,15 @@ jobs:
               redirect: "manual",
             });
             const calendarPageHtml = await calendarPageResponse.text();
-            if (calendarPageResponse.status !== 200 || !calendarPageHtml.includes("calendar-onboarding-cohort-v1-20260923")) {
+            if (calendarPageResponse.status !== 200 || !calendarPageHtml.includes("calendar-onboarding-cohort-v2-20260923")) {
               throw new Error(`Calendar onboarding cohort UI missing: ${calendarPageResponse.status}`);
             }
-            if (!calendarPageHtml.includes("data-cal-onboarding-cohort") || !calendarPageHtml.includes("/v1/admin/calendar/availability-reminder") || !calendarPageHtml.includes("/v1/admin/calendar/availability-activation")) {
+            if (
+              !calendarPageHtml.includes("data-cal-onboarding-cohort") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-cohort/start") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-reminder") ||
+              !calendarPageHtml.includes("/v1/admin/calendar/availability-activation")
+            ) {
               throw new Error("Calendar onboarding cohort UI action boundary missing");
             }
 
@@ -192,6 +197,36 @@ jobs:
             if (onboarding?.automatic_send !== false || onboarding?.owner_click_required !== true || onboarding?.no_guess !== true) {
               throw new Error("Availability onboarding safety boundary failed");
             }
+            const cohortTracking = onboarding?.tracking || null;
+            if (cohortTracking?.schema !== "mmd.availability.onboarding-outcomes.v1") {
+              throw new Error("Availability onboarding outcome tracking contract missing");
+            }
+            if (!["not_started", "active", "completed"].includes(cohortTracking?.state)) {
+              throw new Error(`unexpected Availability cohort state: ${cohortTracking?.state}`);
+            }
+            if (cohortTracking?.auto_advance !== false) {
+              throw new Error("Availability cohort must not auto-advance");
+            }
+            if (cohortTracking?.state === "not_started" && cohortTracking?.start_required !== true) {
+              throw new Error("Availability Cohort 1 start gate missing");
+            }
+            if (cohortTracking?.state !== "not_started" && (
+              cohortTracking?.start_required !== false ||
+              !cohortTracking?.cohort_id ||
+              !cohortTracking?.started_at
+            )) {
+              throw new Error("Availability active cohort receipt missing");
+            }
+            const outcomeStates = new Set(["action_required","waiting_for_line","waiting_for_availability","follow_up_due","completed","blocked"]);
+            for (const item of onboarding.current_batch) {
+              if (!outcomeStates.has(String(item?.outcome_state || ""))) {
+                throw new Error(`unexpected Cohort 1 outcome state: ${item?.outcome_state}`);
+              }
+            }
+            const outcomeCountTotal = Object.values(cohortTracking?.counts || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+            if (outcomeCountTotal !== onboarding.current_batch.length) {
+              throw new Error("Availability Cohort 1 outcome counts do not match membership");
+            }
             if (Number(onboarding?.unique_backlog_models || 0) > Number(onboarding?.raw_backlog_rows || 0)) {
               throw new Error("Availability onboarding dedupe count is invalid");
             }
@@ -208,6 +243,11 @@ jobs:
               partner_job: item?.partner_job === true,
               line_connected: item?.line_connected === true,
               duplicate_records_collapsed: Number(item?.duplicate_records_collapsed || 0),
+              outcome_state: String(item?.outcome_state || "unknown"),
+              last_owner_action: item?.last_owner_action || null,
+              last_owner_action_at: item?.last_owner_action_at || null,
+              completed_at: item?.completed_at || null,
+              safe_availability_state: item?.safe_availability_state || null,
             }));
             const availabilityExceptions = (calendar?.availability?.models || [])
               .filter((item) => actionableStages.has(String(item?.recovery_stage || "")))
@@ -295,7 +335,18 @@ jobs:
               owner_actions_contract: ownerActions.contract,
               availability_source_state: availabilitySource.state,
               availability_exception_present: Boolean(availabilityAction),
-              availability_onboarding_ui: "calendar-onboarding-cohort-v1-20260923",
+              availability_onboarding_ui: "calendar-onboarding-cohort-v2-20260923",
+              availability_onboarding_tracking: {
+                state: cohortTracking.state,
+                cohort_id: cohortTracking.cohort_id,
+                cohort_number: cohortTracking.cohort_number,
+                started_at: cohortTracking.started_at,
+                start_required: cohortTracking.start_required,
+                completion_percent: cohortTracking.completion_percent,
+                cohort_complete: cohortTracking.cohort_complete,
+                counts: cohortTracking.counts,
+                auto_advance: cohortTracking.auto_advance,
+              },
               availability_onboarding: {
                 raw_backlog_rows: onboarding.raw_backlog_rows,
                 unique_backlog_models: onboarding.unique_backlog_models,
@@ -340,7 +391,7 @@ jobs:
           - Availability exception: Calendar-only, read-only, no auto-send or mutation
           - Availability diagnostic: actionable rows logged with safe fields only (name/model_id/stage/state/LINE-connected)
           - Availability onboarding: canonical-key dedupe + 5-Model Owner-click cohort verified
-          - Availability onboarding UI: live Calendar injection marker + single-Model action routes verified
+          - Availability onboarding UI: live Calendar start gate + Cohort 1 outcome tracking + single-Model action routes verified
           - Cross-layer person conversion: forbidden
           - Unobserved terminal event: null / —, never fabricated zero
           - Unauthenticated page/API/analytics: fail-closed

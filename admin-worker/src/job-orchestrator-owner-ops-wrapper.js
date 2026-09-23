@@ -8,7 +8,12 @@ import {
   ownerActionHttpResponse,
 } from "./job-orchestrator-owner-ops-runtime.js";
 import { calendarApiResponse, calendarJsonResponse, calendarPageResponse, calendarModelPhotoResponse, calendarTherapistPhotoResponse, readCalendarOwnerActor, calendarDate } from "./admin-calendar-visibility.js";
-import { handleSigilAvailabilityInternalRequest } from "./sigil-availability-snapshot.js";
+import { readAdminCalendar } from "./admin-calendar-runtime-v2.js";
+import {
+  handleSigilAvailabilityInternalRequest,
+  readAvailabilityAdoptionCohort,
+  startAvailabilityAdoptionCohort,
+} from "./sigil-availability-snapshot.js";
 
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const AUTH_ME_PATH = "/v1/admin/auth/me";
@@ -18,6 +23,7 @@ const CALENDAR_MODEL_PHOTO_API_PATH = "/v1/admin/calendar/model-photo";
 const CALENDAR_THERAPIST_PHOTO_API_PATH = "/v1/admin/calendar/therapist-photo";
 const CALENDAR_AVAILABILITY_REMINDER_API_PATH = "/v1/admin/calendar/availability-reminder";
 const CALENDAR_AVAILABILITY_ACTIVATION_API_PATH = "/v1/admin/calendar/availability-activation";
+const CALENDAR_AVAILABILITY_COHORT_START_API_PATH = "/v1/admin/calendar/availability-cohort/start";
 const CALENDAR_PAGE_PATH = "/internal/admin/calendar";
 const ALL_JOBS_PAGE_PATH = "/internal/admin/jobs/all";
 const OWNER_ROLES = new Set(["owner", "admin", "super_admin", "superadmin"]);
@@ -171,6 +177,59 @@ async function calendarReconcileResponse(request, env, url, method) {
   }
 }
 
+async function calendarAvailabilityCohortStartResponse(request, env) {
+  if (request.method.toUpperCase() !== "POST") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
+  const current = await readAvailabilityAdoptionCohort(env);
+  if (!current.ok) return calendarJsonResponse({ ok: false, error: current.error || "availability_cohort_unavailable" }, current.status || 503);
+  if (current.receipt) {
+    return calendarJsonResponse({ ok: true, already_started: true, cohort: current.receipt }, 200);
+  }
+
+  let calendar;
+  try {
+    calendar = await readAdminCalendar(env, "");
+  } catch (error) {
+    return calendarJsonResponse({ ok: false, error: "availability_cohort_seed_unavailable", detail: clean(error?.message, 120) }, 503);
+  }
+  const batch = Array.isArray(calendar?.availability?.onboarding?.current_batch)
+    ? calendar.availability.onboarding.current_batch.slice(0, 5)
+    : [];
+  if (!batch.length) return calendarJsonResponse({ ok: false, error: "availability_cohort_empty" }, 409);
+
+  const started = await startAvailabilityAdoptionCohort(env, {
+    cohort_number: 1,
+    members: batch.map((item, index) => ({
+      position: index + 1,
+      model_key: clean(item?.model_key, 120),
+      record_id: clean(item?.record_id, 40),
+      model_id: clean(item?.model_id, 120),
+      display_name: clean(item?.name, 160),
+      priority_bucket: clean(item?.priority_bucket, 60),
+      priority_reason: clean(item?.priority_reason, 120),
+      upcoming_job_at: clean(item?.upcoming_job_at, 100),
+      partner_job: item?.partner_job === true,
+      duplicate_records_collapsed: Math.max(0, Math.trunc(Number(item?.duplicate_records_collapsed) || 0)),
+    })),
+  });
+  if (!started.ok) return calendarJsonResponse({ ok: false, error: started.error || "availability_cohort_start_failed" }, started.status || 503);
+  return calendarJsonResponse({
+    ok: true,
+    already_started: started.already_started === true,
+    cohort: started.receipt,
+    outbound_messages_sent: false,
+    activation_links_issued: false,
+  }, 200);
+}
+
+async function requireAvailabilityCohortMember(env, modelKey = "") {
+  const current = await readAvailabilityAdoptionCohort(env);
+  if (!current.ok) return { ok: false, status: current.status || 503, error: current.error || "availability_cohort_unavailable" };
+  if (!current.receipt) return { ok: false, status: 409, error: "availability_cohort_not_started" };
+  const member = current.receipt.members.find(item => clean(item?.model_key, 120) === modelKey);
+  if (!member) return { ok: false, status: 409, error: "model_not_in_current_availability_cohort" };
+  return { ok: true, receipt: current.receipt, member };
+}
+
 async function calendarAvailabilityReminderResponse(request, env, actor) {
   if (request.method.toUpperCase() !== "POST") {
     return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
@@ -180,6 +239,9 @@ async function calendarAvailabilityReminderResponse(request, env, actor) {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(modelKey)) {
     return calendarJsonResponse({ ok: false, error: "model_key_invalid" }, 400);
   }
+  const cohort = await requireAvailabilityCohortMember(env, modelKey);
+  if (!cohort.ok) return calendarJsonResponse({ ok: false, error: cohort.error }, cohort.status || 409);
+
   const token = clean(env.INTERNAL_TOKEN, 5000);
   if (!token) return calendarJsonResponse({ ok: false, error: "availability_reminder_not_configured" }, 503);
 
@@ -213,6 +275,9 @@ async function calendarAvailabilityActivationResponse(request, env, ctx, actor) 
   if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(modelKey)) {
     return calendarJsonResponse({ ok: false, error: "activation_evidence_invalid" }, 400);
   }
+  const cohort = await requireAvailabilityCohortMember(env, modelKey);
+  if (!cohort.ok) return calendarJsonResponse({ ok: false, error: cohort.error }, cohort.status || 409);
+
   const origin = clean(request.headers.get("origin"), 300);
   const cookie = clean(request.headers.get("cookie"), 12000);
   const issueRequest = new Request(new URL("/v1/admin/model/activation/issue", request.url).toString(), {
@@ -260,6 +325,9 @@ async function handleCalendar(request, env, ctx, url, method) {
     if (method !== "GET") return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
     return calendarTherapistPhotoResponse(request, env);
   }
+  if (url.pathname === CALENDAR_AVAILABILITY_COHORT_START_API_PATH) {
+    return calendarAvailabilityCohortStartResponse(request, env);
+  }
   if (url.pathname === CALENDAR_AVAILABILITY_REMINDER_API_PATH) {
     return calendarAvailabilityReminderResponse(request, env, actor);
   }
@@ -288,7 +356,7 @@ export default {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
     const calendarPath = url.pathname.replace(/\/$/, "");
-    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_ACTIVATION_API_PATH].includes(calendarPath)) {
+    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_ACTIVATION_API_PATH].includes(calendarPath)) {
       url.pathname = calendarPath;
       return handleCalendar(request, env, ctx, url, method);
     }
@@ -312,4 +380,4 @@ export default {
   },
 };
 
-export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_PAGE_PATH };
+export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_PAGE_PATH };

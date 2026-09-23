@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-reminder','/v1/admin/calendar/availability-activation'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-cohort/start','/v1/admin/calendar/availability-reminder','/v1/admin/calendar/availability-activation'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
@@ -82,10 +82,13 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.match(html,/calendar-connection-state/);
       assert.match(html,/__MMD_CALENDAR_WEBFLOW_V2__/);
       assert.match(html,/calendar-owner-ui-v3-20260922/);
-      assert.match(html,/calendar-onboarding-cohort-v1-20260923/);
+      assert.match(html,/calendar-onboarding-cohort-v2-20260923/);
       assert.match(html,/data-cal-onboarding-cohort/);
+      assert.match(html,/\/v1\/admin\/calendar\/availability-cohort\/start/);
       assert.match(html,/\/v1\/admin\/calendar\/availability-reminder/);
       assert.match(html,/\/v1\/admin\/calendar\/availability-activation/);
+      assert.match(html,/เริ่ม Cohort 1/);
+      assert.match(html,/Owner action ล่าสุด/);
       assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
@@ -122,10 +125,11 @@ test('signed owner can stream therapist profile photo without exposing the priva
   assert.deepEqual(calls.map(x=>x.split('?')[0]),['/internal/mms/admin/snapshot','/internal/mms/admin/file']);
 });
 
-test('signed owner can remind one non-fresh LINE-linked Model without exposing identity',async()=>{
+test('Cohort 1 must be started before Model actions and rejects Models outside the locked receipt',async()=>{
   const writes=[];
   const values=new Map();
   const store={
+    async list({prefix}={}){return{keys:[...values.keys()].filter(key=>!prefix||key.startsWith(prefix)).map(name=>({name})),list_complete:true}},
     async get(key,type){
       if(!values.has(key))return null;
       const value=values.get(key);
@@ -144,16 +148,50 @@ test('signed owner can remind one non-fresh LINE-linked Model without exposing i
   globalThis.fetch=async(input,init={})=>{
     const url=new URL(input instanceof Request?input.url:String(input));
     calls.push({url:url.toString(),init});
-    if(url.hostname==='api.airtable.com')return Response.json({records:[{id:'recModel1234567890',fields:{
-      unique_key:'mdl_pri_str_master',
-      working_name:'Master',
-      line_user_id:'U0123456789abcdef0123456789abcdef',
-      status:'active',
-    }}]});
+    if(url.hostname==='api.airtable.com'){
+      const table=decodeURIComponent(url.pathname.split('/').pop());
+      if(table==='tblI4B0bI446vp9GX')return Response.json({records:[{id:'recModel1234567890',fields:{
+        unique_key:'mdl_pri_str_master',
+        working_name:'Master',
+        line_user_id:'U0123456789abcdef0123456789abcdef',
+        status:'active',
+        fldYvAbkENGQ4NaaI:'mdl_pri_str_master',
+        fldShiT60bmCxFxRu:'Master',
+        fld2ywTFI6MZhX6PV:'U0123456789abcdef0123456789abcdef',
+        fldRcAE3bL8dKmURH:'Active',
+      }}]});
+      return Response.json({records:[]});
+    }
     if(url.hostname==='api.line.me')return Response.json({}, {status:200});
     throw new Error('unexpected adoption host '+url.hostname);
   };
   try{
+    const beforeBase=await request('/v1/admin/calendar/availability-reminder','owner','POST');
+    const beforeReq=new Request(beforeBase.url,{method:'POST',headers:{...Object.fromEntries(beforeBase.headers.entries()),'content-type':'application/json'},body:JSON.stringify({model_key:'mdl_pri_str_master'})});
+    const before=await entry.fetch(beforeReq,scoped,{});
+    assert.equal(before.status,409);
+    assert.equal((await before.json()).error,'availability_cohort_not_started');
+    assert.equal(calls.filter(x=>new URL(x.url).hostname==='api.line.me').length,0);
+
+    const startBase=await request('/v1/admin/calendar/availability-cohort/start','owner','POST');
+    const startReq=new Request(startBase.url,{method:'POST',headers:{...Object.fromEntries(startBase.headers.entries()),'content-type':'application/json'},body:'{}'});
+    const started=await entry.fetch(startReq,scoped,{});
+    assert.equal(started.status,200);
+    const startedBody=await started.json();
+    assert.equal(startedBody.ok,true);
+    assert.equal(startedBody.outbound_messages_sent,false);
+    assert.equal(startedBody.activation_links_issued,false);
+    assert.equal(startedBody.cohort.members.length,1);
+    assert.equal(startedBody.cohort.members[0].model_key,'mdl_pri_str_master');
+    assert.equal(writes.some(x=>x.key==='availability-adoption:v1:cohort:current'),true);
+
+    const outsideBase=await request('/v1/admin/calendar/availability-reminder','owner','POST');
+    const outsideReq=new Request(outsideBase.url,{method:'POST',headers:{...Object.fromEntries(outsideBase.headers.entries()),'content-type':'application/json'},body:JSON.stringify({model_key:'mdl_pri_str_outside'})});
+    const outside=await entry.fetch(outsideReq,scoped,{});
+    assert.equal(outside.status,409);
+    assert.equal((await outside.json()).error,'model_not_in_current_availability_cohort');
+    assert.equal(calls.filter(x=>new URL(x.url).hostname==='api.line.me').length,0);
+
     const base=await request('/v1/admin/calendar/availability-reminder','owner','POST');
     const req=new Request(base.url,{method:'POST',headers:{...Object.fromEntries(base.headers.entries()),'content-type':'application/json'},body:JSON.stringify({model_key:'mdl_pri_str_master'})});
     const response=await entry.fetch(req,scoped,{});
