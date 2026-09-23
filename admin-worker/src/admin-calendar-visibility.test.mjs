@@ -278,6 +278,9 @@ test('GitHub Webflow Calendar runtime compiles and reads only the protected same
   assert.match(html,/ผูก Model Key/);
   assert.match(html,/data-cal-remind/);
   assert.match(html,/data-cal-activate/);
+  assert.match(html,/recoveryLabel/);
+  assert.match(html,/reminder_follow_up_due/);
+  assert.match(html,/follow-up/);
   assert.doesNotMatch(html,/\/available\|active\|ready\/\.test/);
   assert.match(html,/##INLINE\\d\+##/);
   const scripts=[...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)];
