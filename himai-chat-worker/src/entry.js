@@ -6,6 +6,7 @@ import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 import { renderSupplierLiffPage } from "./supplier-liff-page.js";
+import { runSupplierSourceLowStockSweep } from "./supplier-low-stock-alert.js";
 import { handleReplaySafeShopCheckout } from "./shop-checkout-idempotency.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
 import { handleMmdShopProductPage, isMmdShopProductPageRequest } from "./mmd-shop-product-page.js";
@@ -127,6 +128,11 @@ export default {
           alert_skipped: result?.alert?.skipped === true,
         })))
         .catch((error) => console.error("MMD Shop stock health sweep failed:", error))
+    );
+    ctx.waitUntil(
+      runSupplierSourceLowStockSweep(env)
+        .then((result) => console.log(JSON.stringify({ event: "himai_supplier_source_low_stock_sweep", ...result })))
+        .catch((error) => console.error("Himai Supplier source low-stock sweep failed:", error))
     );
   },
 };
