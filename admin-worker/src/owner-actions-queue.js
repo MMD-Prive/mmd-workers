@@ -12,6 +12,10 @@ const PRIORITY = Object.freeze({
   mms_prebooking_coordination: 65,
   mms_application_review: 60,
   membership_review: 50,
+  hype_entitlement_notification_overdue: 49,
+  hype_recovery_unassigned_overdue: 48,
+  hype_coupon_manual_review_overdue: 47,
+  hype_telegram_bind_overdue: 46,
   hype_operational_watch: 45,
   owner_exception: 40,
 });
@@ -29,7 +33,7 @@ export function buildOwnerActionsQueue(input = {}) {
     mmsPrebookingCoordinationAction(input.mms),
     mmsApplicationReviewAction(input.mms),
     membershipReviewAction(input.members),
-    hypeOperationalWatchAction(input.hype),
+    ...hypeOverdueCohortActions(input.hype),
     ownerExceptionAction(input.boss),
   ].filter(Boolean).sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
 
@@ -207,18 +211,75 @@ function mmsApplicationReviewAction(source) {
   }) : null;
 }
 
-function hypeOperationalWatchAction(source) {
-  const count = nonNegative(source?.counts?.owner_actionable_overdue);
-  return count ? action({
-    key: "hype_operational_watch",
-    priority: PRIORITY.hype_operational_watch,
-    urgency: "urgent",
-    title: "ตรวจ HYPE overdue exceptions",
-    summary: `มี ${count} จุดที่เลย SLA และยังไม่มี dedicated Owner Action lane`,
-    count,
+const HYPE_OVERDUE_COHORTS = Object.freeze([
+  Object.freeze({
+    kind: "entitlement_notification_incomplete",
+    key: "hype_entitlement_notification_overdue",
+    priority: PRIORITY.hype_entitlement_notification_overdue,
+    title: "ตาม Entitlement notification ที่เลยเวลา",
+    href: "/internal/admin/member-intelligence",
+    authority: "my_mmd_entitlement_resolver_v1",
+  }),
+  Object.freeze({
+    kind: "recovery_unassigned",
+    key: "hype_recovery_unassigned_overdue",
+    priority: PRIORITY.hype_recovery_unassigned_overdue,
+    title: "รับ Recovery ที่เลยเวลาและยังไม่มีคนดู",
+    href: "/internal/admin/recovery?assignment=unassigned",
+    authority: "recovery_queue_operational_metadata",
+  }),
+  Object.freeze({
+    kind: "coupon_manual_review",
+    key: "hype_coupon_manual_review_overdue",
+    priority: PRIORITY.hype_coupon_manual_review_overdue,
+    title: "ตรวจ Coupon manual review ที่เลยเวลา",
+    href: "/internal/admin/member-intelligence",
+    authority: "care_back_claim_policy",
+  }),
+  Object.freeze({
+    kind: "telegram_bind_unconsumed",
+    key: "hype_telegram_bind_overdue",
+    priority: PRIORITY.hype_telegram_bind_overdue,
+    title: "ตรวจ Telegram bind ที่หมดเวลา",
     href: "/internal/admin/control-room",
-    authority: "hype_coordinator_read_only",
-  }) : null;
+    authority: "telegram_identity_bind_authority",
+  }),
+]);
+
+function hypeOverdueCohortActions(source) {
+  const counts = source?.counts?.owner_actionable_by_kind;
+  const byKind = counts && typeof counts === "object" && !Array.isArray(counts) ? counts : {};
+  const actions = HYPE_OVERDUE_COHORTS.map((cohort) => {
+    const count = nonNegative(byKind[cohort.kind]);
+    return count ? action({
+      key: cohort.key,
+      priority: cohort.priority,
+      urgency: "urgent",
+      title: cohort.title,
+      summary: `มี ${count} รายการเลย SLA จาก ${cohort.kind}`,
+      count,
+      href: cohort.href,
+      authority: cohort.authority,
+    }) : null;
+  }).filter(Boolean);
+
+  const knownCount = HYPE_OVERDUE_COHORTS.reduce((sum, cohort) => sum + nonNegative(byKind[cohort.kind]), 0);
+  const total = nonNegative(source?.counts?.owner_actionable_overdue);
+  const unknownCount = Math.max(0, total - knownCount);
+  if (unknownCount) {
+    actions.push(action({
+      key: "hype_operational_watch",
+      priority: PRIORITY.hype_operational_watch,
+      urgency: "urgent",
+      title: "ตรวจ HYPE overdue exception ชนิดใหม่",
+      summary: `มี ${unknownCount} จุดที่เลย SLA แต่ยังไม่มี cohort contract เฉพาะ`,
+      count: unknownCount,
+      href: "/internal/admin/control-room",
+      authority: "hype_coordinator_read_only",
+    }));
+  }
+
+  return actions;
 }
 
 function ownerExceptionAction(items) {
