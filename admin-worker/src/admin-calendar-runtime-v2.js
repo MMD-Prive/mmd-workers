@@ -1,4 +1,5 @@
 import { safeAvailabilityReceipt, SIGIL_AVAILABILITY_KV_PREFIX } from "../../shared/sigil-availability-snapshot-v1.mjs";
+import { readAvailabilityAdoptionCohort } from "./sigil-availability-snapshot.js";
 
 const API = "https://api.airtable.com/v0";
 const DEFAULT_BASE_ID = "appsV1ILPRfIjkaYg";
@@ -404,7 +405,97 @@ function modelAvailability(records = [], snapshotIndex = { status: "storage_unav
     .slice(0, 300);
 }
 
-function availabilityOnboardingCohort(rows = [], sessions = [], nowMs = Date.now()) {
+function onboardingMemberOutcome(row = null, startedAt = "", nowMs = Date.now()) {
+  if (!row) {
+    return {
+      outcome_state: "blocked",
+      outcome_reason: "canonical_model_missing",
+      last_owner_action: null,
+      last_owner_action_at: null,
+      completed_at: null,
+      safe_availability_state: null,
+    };
+  }
+  const evidence = row.recovery_evidence && typeof row.recovery_evidence === "object" ? row.recovery_evidence : {};
+  const startedMs = Date.parse(startedAt || "");
+  const activationMs = Date.parse(evidence.activation_link_issued_at || "");
+  const reminderMs = Date.parse(evidence.reminder_sent_at || "");
+  const activationInCohort = Number.isFinite(activationMs) && (!Number.isFinite(startedMs) || activationMs >= startedMs);
+  const reminderInCohort = Number.isFinite(reminderMs) && (!Number.isFinite(startedMs) || reminderMs >= startedMs);
+  let lastOwnerAction = null;
+  let lastOwnerActionAt = null;
+  if (activationInCohort) {
+    lastOwnerAction = "issue_line_link";
+    lastOwnerActionAt = evidence.activation_link_issued_at;
+  }
+  if (reminderInCohort && (!lastOwnerActionAt || reminderMs >= Date.parse(lastOwnerActionAt))) {
+    lastOwnerAction = "remind_model";
+    lastOwnerActionAt = evidence.reminder_sent_at;
+  }
+
+  if (row.availability_fresh === true) {
+    return {
+      outcome_state: "completed",
+      outcome_reason: "fresh_model_confirmation",
+      last_owner_action: lastOwnerAction,
+      last_owner_action_at: lastOwnerActionAt,
+      completed_at: row.updated_at || null,
+      safe_availability_state: clean(row.availability_status, 60) || "unknown",
+    };
+  }
+
+  const stage = clean(row.recovery_stage, 80);
+  if (stage === "reminder_follow_up_due") {
+    return {
+      outcome_state: "follow_up_due",
+      outcome_reason: "model_confirmation_overdue",
+      last_owner_action: lastOwnerAction,
+      last_owner_action_at: lastOwnerActionAt,
+      completed_at: null,
+      safe_availability_state: null,
+    };
+  }
+  if (stage === "reminder_sent_waiting_for_confirmation") {
+    return {
+      outcome_state: "waiting_for_availability",
+      outcome_reason: "reminder_sent_waiting_for_model",
+      last_owner_action: lastOwnerAction,
+      last_owner_action_at: lastOwnerActionAt,
+      completed_at: null,
+      safe_availability_state: null,
+    };
+  }
+  if (stage === "line_link_issued_waiting_for_connection") {
+    return {
+      outcome_state: "waiting_for_line",
+      outcome_reason: "activation_link_issued_waiting_for_connection",
+      last_owner_action: lastOwnerAction,
+      last_owner_action_at: lastOwnerActionAt,
+      completed_at: null,
+      safe_availability_state: null,
+    };
+  }
+  if (stage === "source_unavailable" || stage === "identity_recovery_required" && !row.model_key) {
+    return {
+      outcome_state: "blocked",
+      outcome_reason: stage || "source_unavailable",
+      last_owner_action: lastOwnerAction,
+      last_owner_action_at: lastOwnerActionAt,
+      completed_at: null,
+      safe_availability_state: null,
+    };
+  }
+  return {
+    outcome_state: "action_required",
+    outcome_reason: clean(row.recovery_action, 80) || "owner_action_required",
+    last_owner_action: lastOwnerAction,
+    last_owner_action_at: lastOwnerActionAt,
+    completed_at: null,
+    safe_availability_state: null,
+  };
+}
+
+function availabilityOnboardingCohort(rows = [], sessions = [], cohortReceipt = null, cohortReadStatus = "ok", nowMs = Date.now()) {
   const actionableStages = new Set([
     "identity_recovery_required",
     "line_link_required",
@@ -535,17 +626,123 @@ function availabilityOnboardingCohort(rows = [], sessions = [], nowMs = Date.now
     acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
+
   const batchSize = 5;
+  const rowByKey = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const key = clean(row?.model_key, 120);
+    if (!key) continue;
+    const current = rowByKey.get(key);
+    if (!current || (row?.line_connected === true && current?.line_connected !== true) || (row?.availability_fresh === true && current?.availability_fresh !== true)) {
+      rowByKey.set(key, row);
+    }
+  }
+
+  let currentBatch = safe.slice(0, batchSize).map(item => ({
+    ...item,
+    outcome_state: "action_required",
+    outcome_reason: item.next_action || "owner_action_required",
+    last_owner_action: null,
+    last_owner_action_at: null,
+    completed_at: null,
+    safe_availability_state: null,
+  }));
+  let nextBatchPreview = safe.slice(batchSize, batchSize * 2);
+  let remainingAfterCurrent = Math.max(0, safe.length - batchSize);
+  let tracking = {
+    schema: "mmd.availability.onboarding-outcomes.v1",
+    state: "not_started",
+    cohort_id: null,
+    cohort_number: 1,
+    started_at: null,
+    started_by_role: null,
+    current_members: currentBatch.length,
+    counts: {
+      action_required: currentBatch.length,
+      waiting_for_line: 0,
+      waiting_for_availability: 0,
+      follow_up_due: 0,
+      completed: 0,
+      blocked: 0,
+    },
+    completion_percent: 0,
+    cohort_complete: false,
+    start_required: currentBatch.length > 0,
+    auto_advance: false,
+    cohort_source_status: cohortReadStatus,
+  };
+
+  if (cohortReceipt?.members?.length) {
+    const currentKeys = new Set(cohortReceipt.members.map(member => clean(member?.model_key, 120)).filter(Boolean));
+    currentBatch = cohortReceipt.members.map(member => {
+      const key = clean(member?.model_key, 120);
+      const row = rowByKey.get(key) || null;
+      const liveOutcome = onboardingMemberOutcome(row, cohortReceipt.started_at, nowMs);
+      return {
+        record_id: clean(member?.record_id, 80) || clean(row?.record_id, 80) || null,
+        model_id: clean(member?.model_id, 120) || clean(row?.model_id, 120) || null,
+        model_key: key || null,
+        name: clean(member?.display_name, 160) || clean(row?.name, 160) || null,
+        recovery_stage: clean(row?.recovery_stage, 80) || "unknown",
+        next_action: clean(row?.recovery_action, 80) || null,
+        line_connected: row?.line_connected === true,
+        priority_bucket: clean(member?.priority_bucket, 60) || "backfill",
+        priority_reason: clean(member?.priority_reason, 120) || "cohort_receipt",
+        upcoming_job_at: clean(member?.upcoming_job_at, 100) || null,
+        partner_job: member?.partner_job === true,
+        history_sessions: 0,
+        sales_layer: clean(row?.sales_layer, 40) || null,
+        model_tier: clean(row?.model_tier, 80) || null,
+        approved_for_private_sales: row?.approved_for_private_sales === true,
+        offer_rule_count: nonNegativeInteger(row?.offer_rule_count),
+        duplicate_records_collapsed: nonNegativeInteger(member?.duplicate_records_collapsed),
+        ...liveOutcome,
+      };
+    });
+    nextBatchPreview = safe.filter(item => !currentKeys.has(clean(item?.model_key, 120))).slice(0, batchSize);
+    remainingAfterCurrent = safe.filter(item => !currentKeys.has(clean(item?.model_key, 120))).length;
+    const outcomeCounts = currentBatch.reduce((acc, item) => {
+      const key = clean(item?.outcome_state, 80) || "blocked";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {
+      action_required: 0,
+      waiting_for_line: 0,
+      waiting_for_availability: 0,
+      follow_up_due: 0,
+      completed: 0,
+      blocked: 0,
+    });
+    const completed = nonNegativeInteger(outcomeCounts.completed);
+    const total = currentBatch.length;
+    tracking = {
+      schema: "mmd.availability.onboarding-outcomes.v1",
+      state: total > 0 && completed === total ? "completed" : "active",
+      cohort_id: clean(cohortReceipt.cohort_id, 120) || null,
+      cohort_number: Math.max(1, Math.trunc(Number(cohortReceipt.cohort_number) || 1)),
+      started_at: clean(cohortReceipt.started_at, 100) || null,
+      started_by_role: "owner",
+      current_members: total,
+      counts: outcomeCounts,
+      completion_percent: total ? Math.round((completed / total) * 100) : 0,
+      cohort_complete: total > 0 && completed === total,
+      start_required: false,
+      auto_advance: false,
+      cohort_source_status: cohortReadStatus,
+    };
+  }
+
   return {
     schema: "mmd.availability.onboarding-cohorts.v1",
     batch_size: batchSize,
     raw_backlog_rows: backlogRows.length,
     unique_backlog_models: safe.length,
     duplicate_rows_collapsed: Math.max(0, backlogRows.length - safe.length),
-    current_batch: safe.slice(0, batchSize),
-    next_batch_preview: safe.slice(batchSize, batchSize * 2),
-    remaining_after_current: Math.max(0, safe.length - batchSize),
+    current_batch: currentBatch,
+    next_batch_preview: nextBatchPreview,
+    remaining_after_current: remainingAfterCurrent,
     cohort_counts: counts,
+    tracking,
     automatic_send: false,
     owner_click_required: true,
     no_guess: true,
@@ -615,12 +812,18 @@ export async function readAdminCalendar(env, dateText = "") {
     list(env, TABLE.models, Object.values(F.model), "", 300),
     readMmsTherapistAvailability(env),
   ]);
-  const [modelSnapshotIndex, recoveryIndex] = await Promise.all([
+  const [modelSnapshotIndex, recoveryIndex, cohortResult] = await Promise.all([
     readCalendarAvailabilitySnapshots(env, allModels),
     readCalendarRecoveryEvidence(env, allModels),
+    readAvailabilityAdoptionCohort(env).catch(() => ({ ok: false, status: 503, error: "availability_cohort_read_failed", receipt: null })),
   ]);
   const modelAvailabilityRows = modelAvailability(allModels, modelSnapshotIndex, recoveryIndex);
-  const onboarding = availabilityOnboardingCohort(modelAvailabilityRows, allSessions);
+  const onboarding = availabilityOnboardingCohort(
+    modelAvailabilityRows,
+    allSessions,
+    cohortResult?.ok ? cohortResult.receipt : null,
+    cohortResult?.ok ? "ok" : "unavailable",
+  );
   const availability = {
     models: modelAvailabilityRows,
     model_source_status: modelSnapshotIndex.status,
