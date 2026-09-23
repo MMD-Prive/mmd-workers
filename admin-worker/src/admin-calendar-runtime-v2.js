@@ -65,6 +65,7 @@ function safeHttpsUrl(value) {
 const field = (r, id) => r?.fields?.[id];
 const link = v => Array.isArray(v) && v.length ? clean(v[0], 80) : null;
 const number = v => Number.isFinite(Number(v)) ? Number(v) : null;
+const nonNegativeInteger = v => Math.max(0, Math.trunc(Number(v) || 0));
 const state = (...v) => v.map(x => clean(x, 120).toLowerCase()).filter(Boolean).join(" ");
 const quoted = v => `'${clean(v, 180).replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 function idsFormula(ids) {
