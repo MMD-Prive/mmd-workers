@@ -13,6 +13,14 @@ const DETAIL_COPY = Object.freeze({
     reason: "หลักฐานย้อนหลังยังต้องจับคู่ก่อนสรุปประวัติ",
     decision_boundary: "เปิด Historical Backfill เพื่อตรวจหลักฐานและการจับคู่ใน authority ของมัน",
   },
+  finance_reconciliation: {
+    reason: "Finance Audit พบความสอดคล้องที่ต้องตรวจใน authority ทางการเงิน",
+    decision_boundary: "เปิด Finance & Audit เพื่อตรวจ timeline และ reconciliation จาก canonical finance authority เท่านั้น",
+  },
+  finance_payout_hold: {
+    reason: "Finance Audit ระบุรายการที่ยังพักจ่าย",
+    decision_boundary: "เปิด Finance & Audit เพื่อตรวจเหตุผลและหลักฐานใน authority ทางการเงินเท่านั้น",
+  },
   job_reconfirm_overdue: {
     reason: "มีงานที่พ้นเวลายืนยันแล้ว",
     decision_boundary: "เปิด Jobs เพื่อตรวจสถานะและการคอนเฟิร์มจาก canonical session เท่านั้น",
@@ -24,6 +32,18 @@ const DETAIL_COPY = Object.freeze({
   membership_review: {
     reason: "มีสถานะสมาชิกที่ resolver ระบุว่าต้องตรวจ",
     decision_boundary: "เปิด Member Intelligence เพื่อดู decision ของ entitlement resolver เท่านั้น",
+  },
+  mms_prebooking_coordination: {
+    reason: "MMS มี prebooking ที่ยังอยู่ระหว่างประสานงาน",
+    decision_boundary: "เปิด MMS เพื่อตรวจสถานะและการประสานงานจาก mms-worker เท่านั้น",
+  },
+  mms_application_review: {
+    reason: "MMS มีใบสมัครที่รอการตรวจ",
+    decision_boundary: "เปิด MMS เพื่อตรวจใบสมัครใน authority ของ MMS เท่านั้น",
+  },
+  hype_operational_watch: {
+    reason: "HYPE พบ operational watch ที่ต้องย้อนดู authority ต้นทาง",
+    decision_boundary: "HYPE เป็น coordinator เท่านั้น; เปิด Control Room เพื่อหา authority ต้นทางก่อนตัดสินใจ",
   },
   owner_exception: {
     reason: "ระบบพบเรื่องที่ต้องให้ Owner ใช้ judgement",
