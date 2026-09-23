@@ -56,7 +56,7 @@ export async function planPrivateUpload(env, modelId, input) {
   const id = `media_${crypto.randomUUID()}`, now = new Date().toISOString();
   const fields = {
     media_id: id, Model: [modelId], media_type: "flash_preview", media_visibility: "private_candidate", asset_role: "flash_preview",
-    review_status: "pending_upload", public_safe: false, private_safe: false, flash_safe: false,
+    review_status: "pending_upload", public_safe: false, private_safe: false, flash_safe: false, teaser_safe: false,
     file_name: String(input.file_name || `private.${spec[0]}`).replace(/[\x00-\x1f/\\]/g, "_").slice(0, 160),
     file_type: mime, file_size_bytes: size, r2_bucket: PRIVATE_MEDIA_BUCKET,
     private_original_key: `private-model-media/${modelId}/${id}.${spec[0]}`, uploaded_at: now,
@@ -79,7 +79,7 @@ export async function completePrivateMetadata(env, record, modelId) {
       payload_json: JSON.stringify({ private_media: true, media_id: f.media_id, preview_kind: mediaKind(f.file_type), requires_per_approval: true }),
     }, typecast: false }),
   });
-  await mediaRequest(env, mediaTable(env), `/${record.id}`, { method: "PATCH", body: JSON.stringify({ fields: { review_status: "pending_review", public_safe: false, private_safe: false, flash_safe: false }, typecast: false }) });
+  await mediaRequest(env, mediaTable(env), `/${record.id}`, { method: "PATCH", body: JSON.stringify({ fields: { review_status: "pending_review", public_safe: false, private_safe: false, flash_safe: false, teaser_safe: false }, typecast: false }) });
   return { ok: true, asset_id: f.media_id, status: "pending_review", review_required: true };
 }
 export async function uploadPrivateMedia(request, env, modelId, assetId) {

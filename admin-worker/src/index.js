@@ -1929,6 +1929,7 @@ export function modelSchemaPatchV1Tables(env = {}) {
         publicSafe: str(env.AT_MEDIA_ASSETS__PUBLIC_SAFE || "public_safe"),
         privateSafe: str(env.AT_MEDIA_ASSETS__PRIVATE_SAFE || "private_safe"),
         flashSafe: str(env.AT_MEDIA_ASSETS__FLASH_SAFE || "flash_safe"),
+        teaserSafe: str(env.AT_MEDIA_ASSETS__TEASER_SAFE || "teaser_safe"),
         fileName: str(env.AT_MEDIA_ASSETS__FILE_NAME || "file_name"),
         fileType: str(env.AT_MEDIA_ASSETS__FILE_TYPE || "file_type"),
         fileSizeBytes: str(env.AT_MEDIA_ASSETS__FILE_SIZE_BYTES || "file_size_bytes"),
@@ -2082,7 +2083,15 @@ async function handleModelSchemaPatchV1Route(req, env, path) {
       const status = body.decision === "approve" ? "approved" : "rejected";
       const review = await createModelReviewRequest(env,{modelId:body.model_id,requestType:"media",status,requestedBy:context.actor,linkedMediaAssetId:media.id,note:str(body.note),payload:{decision:body.decision,media_sha256:asset.sha256,source:"private_media_review_v1"}});
       const tables = modelSchemaPatchV1Tables(env), fields = tables.mediaAssets.fields;
-      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{[fields.reviewStatus]:status,[fields.publicSafe]:false,[fields.privateSafe]:status === "approved",[fields.flashSafe]:status === "approved"});
+      // Teaser approval is an explicit, separately reviewed commercial decision.
+      // Private-safe media must never become pre-booking media by implication.
+      await modelSchemaPatchPatch(env,tables.mediaAssets,media.id,{
+        [fields.reviewStatus]:status,
+        [fields.publicSafe]:false,
+        [fields.privateSafe]:status === "approved",
+        [fields.flashSafe]:status === "approved",
+        [fields.teaserSafe]:status === "approved" && body.teaser_safe === true,
+      });
       return modelSchemaPatchJson({ok:true,status,media_id:media.fields.media_id,review});
     }
     if (path === MODEL_SCHEMA_PATCH_V1_ROUTES.visibilityUpdate) {
@@ -3127,6 +3136,7 @@ async function handleModelMediaUploadInit(env, body) {
     [fields.publicSafe]: false,
     [fields.privateSafe]: false,
     [fields.flashSafe]: false,
+    [fields.teaserSafe]: false,
     [fields.fileName]: safeSchemaPatchFilename(body.file_name || assetId),
     [fields.fileType]: str(body.content_type || ""),
     [fields.fileSizeBytes]: body.file_size_bytes,
@@ -3174,6 +3184,7 @@ async function handleModelMediaUploadComplete(env, body) {
     [fields.r2Bucket]: str(env.MODEL_ASSETS_BUCKET_NAME || "MMD_MODEL_ASSETS"),
     [fields.reviewStatus]: "pending_review",
     [fields.flashSafe]: Boolean(body.flash_safe === true),
+    [fields.teaserSafe]: false,
     [fields.uploadedAt]: new Date().toISOString(),
   };
   const rec = existing
