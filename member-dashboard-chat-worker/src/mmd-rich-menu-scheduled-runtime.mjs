@@ -25,8 +25,8 @@ const MENUS = Object.freeze({
     name: `MMD Guest ${VERSION}`,
     frame: { left: .49, top: .16, right: .985, bottom: .75 },
     images: [
-      `${ROOT}/6a9ef89d2b35f4308fb3de8e_Rich%20Menu%20Guest-p-1080.png`,
-      `${ROOT}/6a9ef89d2b35f4308fb3de8e_Rich%20Menu%20Guest-p-800.png`,
+      `${ROOT}/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
+      `https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
     ],
     actions: [
       uri("START HERE", site("/public/access", "rich_menu_guest_start")),
@@ -75,6 +75,13 @@ export function getMmdRichMenuActionMap() {
   return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
     key,
     spec.actions.map((action) => ({ ...action })),
+  ]));
+}
+
+export function getMmdRichMenuImageSources() {
+  return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
+    key,
+    [...spec.images],
   ]));
 }
 
