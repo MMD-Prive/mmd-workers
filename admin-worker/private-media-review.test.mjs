@@ -5,6 +5,25 @@ import { handlePrivateMediaReview, REVIEW_API, REVIEW_PAGE } from './src/private
 import { createCredentialBoundAdminSession } from './src/credential-bound-admin-session.js';
 import { privateMediaFixture } from '../shared/private-media-fixture.mjs';
 
+let serviceAccountJsonPromise;
+async function testServiceAccountJson() {
+ if (!serviceAccountJsonPromise) serviceAccountJsonPromise=(async()=>{
+  const pair=await crypto.subtle.generateKey(
+   {name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},
+   true,
+   ['sign','verify'],
+  );
+  const pkcs8=new Uint8Array(await crypto.subtle.exportKey('pkcs8',pair.privateKey));
+  const base64=Buffer.from(pkcs8).toString('base64').match(/.{1,64}/g).join('\n');
+  return JSON.stringify({
+   client_email:'owner-drive-test@example.iam.gserviceaccount.com',
+   private_key:`-----BEGIN PRIVATE KEY-----\n${base64}\n-----END PRIVATE KEY-----\n`,
+   token_uri:'https://oauth2.googleapis.com/token',
+  });
+ })();
+ return serviceAccountJsonPromise;
+}
+
 async function setup(role = 'owner') {
  const f = privateMediaFixture(); f.asset.fields.review_status = 'pending_review'; f.asset.fields.private_safe = false;
  const env = {...f.env, ADMIN_LOGIN_CREDENTIAL:'synthetic-admin-credential', AIRTABLE_TABLE_MODEL_MEDIA_ASSETS:'tblrpQXhHnbTU9RhW'};
@@ -93,15 +112,32 @@ test('owner can import only the exact Drive image named in Private Teaser consen
    return {etag:'stored'};
   },
  };
- env.MODEL_DRIVE_DIRECTORY={fetch:async req=>{
-  driveCalls++;const url=new URL(req.url);
-  assert.equal(url.hostname,'model-drive-directory.internal');
-  assert.equal(url.pathname,'/__internal/model-drive/canonical-file');
-  assert.equal(req.method,'POST');
-  const sourceBody=await req.json();
-  assert.equal(sourceBody.drive_folder_id,'1ApprovedModelDrive12345');
-  assert.equal(sourceBody.file_name,'approved-photo.jpg');
-  return new Response(bytes,{status:200,headers:{'content-type':'image/jpeg','cache-control':'no-store, private'}});
+ env.GOOGLE_SERVICE_ACCOUNT_JSON=await testServiceAccountJson();
+ env.GOOGLE_DRIVE_HTTP={fetch:async(input,init={})=>{
+  driveCalls++;const url=new URL(String(input));
+  if(url.origin==='https://oauth2.googleapis.com'){
+   assert.equal(init.method,'POST');
+   const form=new URLSearchParams(String(init.body||''));
+   assert.equal(form.get('grant_type'),'urn:ietf:params:oauth:grant-type:jwt-bearer');
+   assert.equal(String(form.get('assertion')||'').split('.').length,3);
+   return Response.json({access_token:'drive-owner-token'});
+  }
+  assert.equal(init.headers.authorization,'Bearer drive-owner-token');
+  if(url.pathname==='/drive/v3/files'&&url.searchParams.get('q')?.includes('1ApprovedModelDrive12345')){
+   return Response.json({files:[
+    {id:'near-file',name:'approved-photo-copy.jpg',mimeType:'image/jpeg',parents:['1ApprovedModelDrive12345'],trashed:false},
+    {id:'1ApprovedChildFolder12345',name:'Media',mimeType:'application/vnd.google-apps.folder',parents:['1ApprovedModelDrive12345'],trashed:false},
+   ]});
+  }
+  if(url.pathname==='/drive/v3/files'&&url.searchParams.get('q')?.includes('1ApprovedChildFolder12345')){
+   return Response.json({files:[
+    {id:'file-exact',name:'approved-photo.jpg',mimeType:'image/jpeg',parents:['1ApprovedChildFolder12345'],trashed:false},
+   ]});
+  }
+  if(url.pathname==='/drive/v3/files/file-exact'&&url.searchParams.get('alt')==='media'){
+   return new Response(bytes,{status:200,headers:{'content-type':'image/jpeg'}});
+  }
+  throw new Error('unexpected Drive request '+url);
  }};
 
  const denied=await handlePrivateMediaReview(request(REVIEW_API+'/import-approved-drive',{model_id:'recModel',file_name:'other.jpg'}),env);
@@ -111,7 +147,7 @@ test('owner can import only the exact Drive image named in Private Teaser consen
  assert.equal(imported.status,200,await imported.clone().text());
  const body=await imported.json();
  assert.equal(body.status,'pending_review');assert.equal(body.media_asset_id,'recImported');assert.equal(body.source,'approved_model_drive');
- assert.equal(driveCalls,1);assert.equal(f.asset.fields.review_status,'pending_review');assert.equal(f.asset.fields.private_safe,false);assert.equal(f.asset.fields.teaser_safe,false);
+ assert.equal(driveCalls,4);assert.equal(f.asset.fields.review_status,'pending_review');assert.equal(f.asset.fields.private_safe,false);assert.equal(f.asset.fields.teaser_safe,false);
  assert.equal(f.asset.fields.r2_bucket,'mmd-private-model-media');assert.match(f.asset.fields.private_original_key,/^private-model-media\/recModel\/media_/);
 
  const original=globalThis.fetch;globalThis.fetch=http;
