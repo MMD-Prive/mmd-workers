@@ -154,6 +154,68 @@ jobs:
             --message "GitHub Actions ${GITHUB_SHA}" \
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
 
+      - name: Apply pending Durable Object migration with direct deploy
+        id: migration_deploy
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          upload_log="$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
+          if ! grep -Fq "pending Durable Object migration" "$upload_log"; then
+            echo "versions upload failed for a non-migration reason; refusing direct deploy" >&2
+            exit 1
+          fi
+
+          tmp_config="wrangler.migration-deploy.toml"
+          trap 'rm -f "$tmp_config"' EXIT
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const output = [];
+          let skip = false;
+          for (const line of source) {
+            const trimmed = line.trim();
+            if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+              skip = true;
+              continue;
+            }
+            if (skip && /^\[/.test(trimmed)) {
+              skip = false;
+              if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+                skip = true;
+                continue;
+              }
+            }
+            if (!skip) output.push(line);
+          }
+          fs.writeFileSync("wrangler.migration-deploy.toml", output.join("\n"));
+          NODE
+
+          if grep -Eq '^\[\[routes\]\]|^\[triggers\]' "$tmp_config"; then
+            echo "temporary migration config still contains production route/trigger blocks" >&2
+            exit 1
+          fi
+          grep -q '^main = "src/my-mms-customer-front-gate-entry.js"$' "$tmp_config"
+          grep -q '^\[\[durable_objects.bindings\]\]$' "$tmp_config"
+          grep -q '^\[\[migrations\]\]$' "$tmp_config"
+          grep -q '^\[\[services\]\]$' "$tmp_config"
+
+          tag="gha-migration-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 deploy \
+            --config "$tmp_config" \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions Durable Object migration ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log"
+
+          version_id="$(sed -n -E 's/.*(Current|Worker) Version ID:[[:space:]]*([0-9a-fA-F-]+).*/\2/p' "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from direct migration deploy output" >&2
+            exit 2
+          fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          echo "Resolved direct-deploy version $version_id"
       - name: Resolve uploaded version ID
         id: resolve_version
         if: steps.upload.outcome == 'success'
@@ -182,7 +244,7 @@ jobs:
 
       - name: Sync MMS Therapist auth and AI smoke routes
         id: route_sync
-        if: steps.deploy.outcome == 'success'
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
         shell: bash
         run: |
           set -euo pipefail
@@ -542,6 +604,7 @@ jobs:
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
           DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
           UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          MIGRATION_DEPLOY_OUTCOME: ${{ steps.migration_deploy.outcome }}
           RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
@@ -560,11 +623,11 @@ jobs:
             stopped="tests"
           elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
             stopped="versions dry-run"
-          elif [ "$UPLOAD_OUTCOME" != "success" ]; then
-            stopped="versions upload"
-          elif [ "$RESOLVE_OUTCOME" != "success" ]; then
+          elif [ "$UPLOAD_OUTCOME" != "success" ] && [ "$MIGRATION_DEPLOY_OUTCOME" != "success" ]; then
+            stopped="versions upload / Durable Object migration deploy"
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$RESOLVE_OUTCOME" != "success" ]; then
             stopped="resolve uploaded version"
-          elif [ "$DEPLOY_OUTCOME" != "success" ]; then
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$DEPLOY_OUTCOME" != "success" ]; then
             stopped="versions deploy"
           elif [ "$ROUTE_SYNC_OUTCOME" != "success" ]; then
             stopped="MMS route sync"
@@ -587,6 +650,7 @@ jobs:
             "$RUNNER_TEMP/cloudflare-whoami.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
             "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" \
             "$RUNNER_TEMP/mms-therapist-auth.headers" \
             "$RUNNER_TEMP/mms-therapist-auth.json"; do
             if [ -f "$log" ]; then
@@ -609,6 +673,7 @@ jobs:
           - tests: \`${TESTS_OUTCOME}\`
           - versions dry-run: \`${DRY_RUN_OUTCOME}\`
           - versions upload: \`${UPLOAD_OUTCOME}\`
+          - Durable Object migration deploy: \`${MIGRATION_DEPLOY_OUTCOME}\`
           - resolve version: \`${RESOLVE_OUTCOME}\`
           - versions deploy: \`${DEPLOY_OUTCOME}\`
           - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
@@ -622,6 +687,16 @@ jobs:
           EOF
           gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
 
+      - name: Enforce production deploy success
+        if: always()
+        shell: bash
+        env:
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          if [ "$SMOKE_OUTCOME" != "success" ]; then
+            echo "member-dashboard-chat-worker production smoke did not pass" >&2
+            exit 1
+          fi
       - name: Record verified live receipt
         if: steps.smoke.outcome == 'success'
         shell: bash
