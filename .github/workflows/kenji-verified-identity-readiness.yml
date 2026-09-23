@@ -1,11 +1,15 @@
 name: Kenji Verified Identity Readiness
 
 on:
+  schedule:
+    # Monday 09:15 Asia/Bangkok. Scheduled runs always execute from default branch main.
+    - cron: "15 2 * * 1"
   pull_request:
     paths:
       - "immigrate-worker/public/a/member-intelligence.js"
       - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
       - "immigrate-worker/src/customer-identity-alignment-client.ts"
+      - "immigrate-worker/src/customer-identity-evidence-protocol-client.ts"
       - "immigrate-worker/src/customer-identity-alignment.ts"
       - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
       - "immigrate-worker/test/customer-identity-alignment.test.mjs"
@@ -16,6 +20,8 @@ on:
       - "scripts/member-intelligence-authenticated-observation.test.mjs"
       - "docs/operations/KENJI_PHASE4E_VERIFIED_IDENTITY_READINESS.md"
       - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
+      - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
       - ".github/workflows/kenji-verified-identity-readiness.yml"
   push:
     branches:
@@ -24,6 +30,7 @@ on:
       - "immigrate-worker/public/a/member-intelligence.js"
       - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
       - "immigrate-worker/src/customer-identity-alignment-client.ts"
+      - "immigrate-worker/src/customer-identity-evidence-protocol-client.ts"
       - "immigrate-worker/src/customer-identity-alignment.ts"
       - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
       - "immigrate-worker/test/customer-identity-alignment.test.mjs"
@@ -34,6 +41,8 @@ on:
       - "scripts/member-intelligence-authenticated-observation.test.mjs"
       - "docs/operations/KENJI_PHASE4E_VERIFIED_IDENTITY_READINESS.md"
       - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - "docs/operations/KENJI_PHASE4G_EVIDENCE_CAPTURE_OWNER_REVIEW_PROTOCOL.md"
+      - "docs/operations/KENJI_PHASE4H_OWNER_EVIDENCE_REVIEW_ADOPTION.md"
       - ".github/workflows/kenji-verified-identity-readiness.yml"
   workflow_dispatch:
     inputs:
@@ -102,8 +111,8 @@ jobs:
           exit 1
 
       - name: Run authenticated production readiness observation
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        if: (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
         env:
           ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
-          OBSERVATION_SCAN_LIMIT: ${{ inputs.scan_limit }}
+          OBSERVATION_SCAN_LIMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.scan_limit || '24' }}
         run: node scripts/kenji-verified-identity-readiness-observation.mjs
