@@ -48,6 +48,7 @@ import {
 import { handleMmsCustomerHistoryPage } from "./mms-customer-history-page.js";
 import { isMmsCustomerHistoryPage } from "../../shared/mms-customer-history-route.mjs";
 import { handleMemberTelegramBind, isMemberTelegramBindPath } from "./member-telegram-bind.js";
+import { handleMedicalVerifiedRequest, isMedicalVerifiedRequestPath } from "./medical-verified-request.js";
 import { queueAuthorityEvent } from "../../shared/posthog-authority-events.mjs";
 
 function queueVerifiedLiffSessionEvent(request, response, env, ctx) {
@@ -92,6 +93,13 @@ export default {
     if (isPublicMembershipPaymentPath(url)) return handlePublicMembershipPayment(request, env);
     if (isMemberPaymentsBffPath(url)) return handleMemberPaymentsBff(request, env);
     if (isMemberTelegramBindPath(url)) return handleMemberTelegramBind(request, env);
+    if (isMedicalVerifiedRequestPath(url)) {
+      try {
+        return await handleMedicalVerifiedRequest(request, env);
+      } catch (error) {
+        return Response.json({ ok: false, error: { code: String(error?.code || "MEDICAL_REQUEST_UNAVAILABLE") } }, { status: Number(error?.status) || 503, headers: { "cache-control": "no-store" } });
+      }
+    }
 
     // Boss Per-approved Phase 1 compensation is intentionally coupon-only and
     // bound to the server-verified LINE session. It must remain available even
