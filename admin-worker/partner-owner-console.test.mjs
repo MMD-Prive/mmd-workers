@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCredentialBoundAdminSession} from './src/credential-bound-admin-session.js';
-import {handlePartnerOwnerConsole} from './src/partner-owner-console.js';
+import {handlePartnerOwnerConsole,readPartnerFinanceAuditCoverage} from './src/partner-owner-console.js';
 
 const origin='https://www.mmdbkk.com';
 async function fixture(role='owner'){
@@ -62,6 +62,9 @@ test('P2A finance audit joins settlement and ledger through fixed read-only serv
   assert.equal(body.summary.paid_commission_amount_thb,700);
   assert.equal(body.summary.open_commission_amount_thb,350);
   assert.equal(body.summary.orphan_commissions,1);
+  assert.equal(body.summary.orphan_commissions_actionable,0);
+  assert.equal(body.summary.orphan_commissions_stale,1);
+  assert.equal(body.summary.finance_diagnostic_count,1);
   assert.equal(body.rows[0].commissions[0].payout_reference,'bank-001');
   assert.deepEqual(calls.map((r)=>r.url),[
     'https://partners-worker.internal/v1/partner/admin/settlements',
@@ -69,6 +72,51 @@ test('P2A finance audit joins settlement and ledger through fixed read-only serv
   ]);
   assert.ok(calls.every((r)=>r.method==='GET'));
 });
+test('Phase 5G finance coverage keeps stale or terminal orphan ledger rows as diagnostics only', async () => {
+  const stale = [
+    { commission_record_id:'recHeldLegacy000001', session_id:'job_legacy_held', status:'held', payout_status:'', commission_amount_thb:500, basis_amount_thb:5000, system:'bridge' },
+    { commission_record_id:'recSmokePaid000001', session_id:'sess_partner_smoke', payment_ref:'smoke-pay', status:'', payout_status:'paid', commission_amount_thb:350, basis_amount_thb:5000, system:'bridge' },
+    { commission_record_id:'recMalformedPaid001', session_id:'', payment_ref:'', status:'paid', payout_status:'', commission_amount_thb:0, basis_amount_thb:0, system:'' },
+    { commission_record_id:'recLegacyDuplicate01', session_id:'job_legacy_held', status:'held', payout_status:'', commission_amount_thb:500, basis_amount_thb:5000, system:'bridge' },
+  ];
+  const env={PARTNERS_WORKER:{async fetch(r){
+    if(r.url.endsWith('/settlements'))return Response.json({ok:true,sessions:[],history_complete:true});
+    if(r.url.endsWith('/ledger'))return Response.json({ok:true,commissions:stale});
+    return Response.json({ok:false,error:'unexpected'},{status:404});
+  }}};
+  const coverage=await readPartnerFinanceAuditCoverage(env,{id:'owner-fixture',role:'owner'});
+  assert.equal(coverage.available,true);
+  assert.equal(coverage.reconciliation_count,0);
+  assert.equal(coverage.payout_hold_count,0);
+  assert.equal(coverage.stale_orphan_count,4);
+  assert.equal(coverage.diagnostic_count,4);
+  assert.equal(coverage.operating_model,'bau_exception_only_v1');
+});
+
+test('Phase 5G finance coverage keeps a canonical nonterminal orphan as an Owner exception', async () => {
+  const env={PARTNERS_WORKER:{async fetch(r){
+    if(r.url.endsWith('/settlements'))return Response.json({ok:true,sessions:[],history_complete:true});
+    if(r.url.endsWith('/ledger'))return Response.json({ok:true,commissions:[{
+      commission_record_id:'recCanonicalOrphan1',
+      session_id:'sess-missing-current',
+      payment_ref:'pay-current',
+      partner_record_id:'recPartnerCurrent01',
+      model_record_id:'recModelCurrent0001',
+      system:'bridge',
+      basis_amount_thb:10000,
+      commission_amount_thb:700,
+      status:'earned',
+      payout_status:'pending'
+    }]});
+    return Response.json({ok:false,error:'unexpected'},{status:404});
+  }}};
+  const coverage=await readPartnerFinanceAuditCoverage(env,{id:'owner-fixture',role:'owner'});
+  assert.equal(coverage.available,true);
+  assert.equal(coverage.reconciliation_count,1);
+  assert.equal(coverage.stale_orphan_count,0);
+  assert.equal(coverage.diagnostic_count,0);
+});
+
 test('P2A finance audit is owner/admin authenticated and adds no finance mutation route',async()=>{
   const f=await fixture('staff');
   assert.equal((await handlePartnerOwnerConsole(f.request('/v1/admin/partners/finance-audit'),f.env,{})).status,403);
@@ -164,6 +212,7 @@ test('P2A finance timeline links payment, model payout adjustments and Partner c
     ]);
     assert.equal(body.summary.model_payout_adjustments, 1);
     assert.equal(body.summary.sessions_reconciliation_required, 1);
+    assert.equal(body.summary.sessions_owner_action_required, 1);
   } finally {
     globalThis.fetch = previousFetch;
   }

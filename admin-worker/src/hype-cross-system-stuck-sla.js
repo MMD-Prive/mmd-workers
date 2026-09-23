@@ -479,7 +479,7 @@ function normalizeThresholds(value = {}) {
 
 async function loadPaymentProofQueue(env) {
   const response = await handlePaymentReviewRequest(
-    new Request("https://admin-worker.internal/v1/admin/payments/review-queue?limit=100"),
+    new Request("https://admin-worker.internal/v1/admin/payments/review-queue?limit=100&include_context=1"),
     env,
     { id: "hype_stuck_sla_watch", role: "admin" },
   );
@@ -487,7 +487,7 @@ async function loadPaymentProofQueue(env) {
   if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) {
     throw new Error(`payment_review_queue_${response.status}_${safeCode(payload?.error || "invalid")}`);
   }
-  return payload.items;
+  return payload.items.filter((item) => item?.settlement_recovery !== true);
 }
 
 async function airtableList(env, table, {
