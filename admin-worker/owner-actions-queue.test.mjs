@@ -56,6 +56,35 @@ test("owner actions queue does not expose source names, payment refs, or raw not
   assert.equal(queue.mutation_allowed, false);
 });
 
+test("owner actions queue projects connected Finance, MMS and HYPE coverage without source records", () => {
+  const queue = buildOwnerActionsQueue({
+    finance_audit: { available: true, reconciliation_count: 2, payout_hold_count: 1 },
+    mms: { available: true, application_review_count: 3, prebooking_coordination_count: 4 },
+    hype: { available: true, counts: { total: 2, overdue: 1 } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 3 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 7 },
+      { source: "hype", label: "HYPE operational watch", state: "partial", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 2 },
+    ],
+    unavailable_sources: ["hype"],
+  });
+
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["finance_reconciliation", 2],
+    ["finance_payout_hold", 1],
+    ["mms_prebooking_coordination", 4],
+    ["mms_application_review", 3],
+    ["hype_operational_watch", 2],
+  ]);
+  assert.deepEqual(queue.unavailable_sources, ["hype"]);
+  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.read_only]), [
+    ["finance_audit", "connected", true],
+    ["mms", "connected", true],
+    ["hype", "partial", true],
+  ]);
+  assert.equal(JSON.stringify(queue).includes("bank-secret"), false);
+});
+
 
 test("owner action detail is a source-safe owner-only read projection", () => {
   const detail = buildOwnerActionDetail({
