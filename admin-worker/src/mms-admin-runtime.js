@@ -55,6 +55,7 @@ export async function readMmsOwnerActionCoverage(env = {}) {
   return {
     available: true,
     authority: "mms-worker",
+    complete: snapshot.complete,
     application_review_count: applications,
     prebooking_coordination_count: prebookings,
   };
@@ -235,6 +236,7 @@ async function readMmsSnapshot(env) {
     if (!response.ok || !data?.ok) return { ok: false };
     return {
       ok: true,
+      complete: data.complete !== false,
       applications: Array.isArray(data.applications) ? data.applications : [],
       therapists: Array.isArray(data.therapists) ? data.therapists : [],
       prebookings: Array.isArray(data.prebookings) ? data.prebookings : [],
