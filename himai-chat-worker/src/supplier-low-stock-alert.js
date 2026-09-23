@@ -11,6 +11,7 @@ const SUPPLIER_FIELDS = Object.freeze({
   lineUserId: "fld1dqO4nWB3Pf6uT",
   lineStatus: "fldZyHoik9SAUcbY6",
   status: "fld0BL7nG45ueEMKQ",
+  internalNote: "fldViZfj7hExC1svq",
   alertFingerprint: "fldLZBVVF81cWax1J",
   alertSentAt: "fld2ASkCve1aqTwl7",
 });
@@ -49,6 +50,11 @@ export async function runSupplierSourceLowStockSweep(env) {
 
     const supplierId = supplier.id;
     const supplierName = clean(fields[SUPPLIER_FIELDS.name], 200) || "Supplier";
+    const supplierMode = inferSupplierMode(fields[SUPPLIER_FIELDS.internalNote]);
+    if (supplierMode === "on_demand") {
+      results.push({ supplier: supplierName, skipped: true, reason: "on_demand_supplier" });
+      continue;
+    }
     const sourceProducts = activeProducts.filter((product) =>
       linkedIds(product.fields?.[PRODUCT_FIELDS.supplier]).includes(supplierId)
     );
@@ -255,6 +261,11 @@ function selectName(value) {
   return String(value);
 }
 
+function inferSupplierMode(note) {
+  const text = clean(note, 1000).toLowerCase();
+  return text.includes("on-demand") || text.includes("on demand") ? "on_demand" : "stocked";
+}
+
 function clean(value, max = 5000) {
   return String(value == null ? "" : value)
     .trim()
@@ -265,4 +276,5 @@ function clean(value, max = 5000) {
 export const SUPPLIER_LOW_STOCK_INTERNALS = Object.freeze({
   buildStockByProduct,
   resolveThreshold,
+  inferSupplierMode,
 });

@@ -193,6 +193,7 @@ summary:after{content:"+";color:var(--muted);font-size:20px;font-weight:400}deta
   }
   function signal(p){
     var s=String(p.refill_signal||"").toLowerCase();
+    if(s==="on_demand")return {c:"ok",t:"สั่งตามออเดอร์"};
     if(s==="refill_now"||num(p.available)<=0)return {c:"out",t:"หมดแล้ว"};
     if(s==="check_next_refill"||p.low_stock)return {c:"low",t:"ใกล้หมด"};
     return {c:"ok",t:"สต๊อกเพียงพอ"}
@@ -228,7 +229,7 @@ summary:after{content:"+";color:var(--muted);font-size:20px;font-weight:400}deta
     var s=data.summary||{},supplier=data.supplier||data.distributor||{},ttl=data.reservation_policy&&data.reservation_policy.ttl_minutes||45;
     $("hello").textContent=supplier.name?"สวัสดี "+supplier.name:"ข้อมูลสินค้าของคุณ";
     $("updated").textContent="ข้อมูลล่าสุด "+dt(data.updated_at);
-    $("m-available").textContent=count(s.stock_units);
+    $("m-available").textContent=supplier.mode==="on_demand"?"ตามออเดอร์":count(s.stock_units);
     $("m-reserved").textContent=count(s.reserved_units);
     $("m-sold").textContent=count(s.sold_units);
     $("m-payout").textContent=money(s.open_balance_thb);

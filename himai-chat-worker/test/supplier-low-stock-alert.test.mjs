@@ -19,7 +19,7 @@ function json(data, status = 200) {
   });
 }
 
-function installFetch({ fingerprint = "", lineConnected = true, available = 2 } = {}) {
+function installFetch({ fingerprint = "", lineConnected = true, available = 2, supplierNote = "" } = {}) {
   const calls = { line: [], patches: [] };
   const original = globalThis.fetch;
 
@@ -35,6 +35,7 @@ function installFetch({ fingerprint = "", lineConnected = true, available = 2 } 
             fld1dqO4nWB3Pf6uT: lineConnected ? "U-nin" : "",
             fldZyHoik9SAUcbY6: lineConnected ? "Connected" : "Not Connected",
             fld0BL7nG45ueEMKQ: "active",
+            fldViZfj7hExC1svq: supplierNote,
             fldLZBVVF81cWax1J: fingerprint,
           },
         }],
@@ -166,6 +167,20 @@ test("low stock stays queued when supplier LINE is not connected", async () => {
     assert.equal(mock.calls.line.length, 0);
     assert.equal(mock.calls.patches.length, 0);
     assert.equal(result.results[0].reason, "supplier_line_not_connected");
+  } finally {
+    mock.restore();
+  }
+});
+
+
+test("on-demand supplier is excluded from low-stock alerts even with zero tracked stock", async () => {
+  const mock = installFetch({ available: 0, supplierNote: "on-demand supplier, no stock, fulfill only when order is placed" });
+  try {
+    const result = await runSupplierSourceLowStockSweep(BASE_ENV);
+    assert.equal(result.ok, true);
+    assert.equal(mock.calls.line.length, 0);
+    assert.equal(mock.calls.patches.length, 0);
+    assert.equal(result.results[0].reason, "on_demand_supplier");
   } finally {
     mock.restore();
   }
