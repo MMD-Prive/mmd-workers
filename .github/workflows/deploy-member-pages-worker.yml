@@ -144,7 +144,7 @@ jobs:
         run: |
           npm run test:member-pages-liff
           node --test member-pages-worker/test/model-drive-directory.test.mjs
-          node --experimental-global-webcrypto --test member-pages-worker/private-preview.test.mjs shared/private-media.test.mjs
+          node --experimental-global-webcrypto --test member-pages-worker/private-preview.test.mjs member-pages-worker/private-teaser.test.mjs shared/private-media.test.mjs
           npm run check:member-pages-wrangler
 
       - name: Verify private media bucket is private
