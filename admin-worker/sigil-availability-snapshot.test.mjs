@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   handleSigilAvailabilityInternalRequest,
   isSigilAvailabilityInternalRequest,
+  readAvailabilityAdoptionCohort,
+  startAvailabilityAdoptionCohort,
   writeSigilAvailabilitySnapshot,
 } from "./src/sigil-availability-snapshot.js";
 
@@ -192,6 +194,40 @@ test("model-app cannot read operator availability coverage", async () => {
 
   assert.equal(response.status, 401);
   assert.equal((await response.json()).error, "internal_auth_required");
+});
+
+test("availability cohort receipt freezes at most five canonical Models without storing LINE identity or activation URLs", async () => {
+  const store = kv();
+  const started = await startAvailabilityAdoptionCohort({ SIGIL_AVAILABILITY_SNAPSHOTS: store }, {
+    cohort_number: 1,
+    members: [
+      { model_key: "mdl_one", record_id: "recModel1234567890", display_name: "One", priority_bucket: "upcoming_job", upcoming_job_at: "2026-10-02T12:00:00.000Z" },
+      { model_key: "mdl_two", record_id: "recModel1234567891", display_name: "Two", priority_bucket: "line_ready" },
+      { model_key: "mdl_three", record_id: "recModel1234567892", display_name: "Three", priority_bucket: "line_ready" },
+      { model_key: "mdl_four", record_id: "recModel1234567893", display_name: "Four", priority_bucket: "commercial_active" },
+      { model_key: "mdl_five", record_id: "recModel1234567894", display_name: "Five", priority_bucket: "backfill" },
+    ],
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.already_started, false);
+  assert.equal(started.receipt.cohort_number, 1);
+  assert.equal(started.receipt.members.length, 5);
+  assert.deepEqual(started.receipt.members.map(item => item.model_key), ["mdl_one","mdl_two","mdl_three","mdl_four","mdl_five"]);
+  assert.equal(store.writes.some(entry => entry.key === "availability-adoption:v1:cohort:current"), true);
+  assert.equal(store.writes.some(entry => entry.key.startsWith("availability-adoption:v1:cohort:receipt:")), true);
+  assert.doesNotMatch(JSON.stringify(started.receipt), /U[0-9a-f]{32}|activation_url|access_token/i);
+
+  const second = await startAvailabilityAdoptionCohort({ SIGIL_AVAILABILITY_SNAPSHOTS: store }, {
+    cohort_number: 1,
+    members: [{ model_key: "mdl_six", record_id: "recModel1234567895", display_name: "Six" }],
+  });
+  assert.equal(second.ok, true);
+  assert.equal(second.already_started, true);
+  assert.deepEqual(second.receipt.members.map(item => item.model_key), ["mdl_one","mdl_two","mdl_three","mdl_four","mdl_five"]);
+
+  const read = await readAvailabilityAdoptionCohort({ SIGIL_AVAILABILITY_SNAPSHOTS: store });
+  assert.equal(read.ok, true);
+  assert.equal(read.receipt.cohort_id, started.receipt.cohort_id);
 });
 
 test("availability adoption reminder sends one bounded LINE push and writes a 24h cooldown receipt", async () => {
