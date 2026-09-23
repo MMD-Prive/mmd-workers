@@ -1,0 +1,41 @@
+<!-- MMD /sigil/pay/membership private compatibility bridge · updated 2026-09-19 -->
+<meta name="robots" content="noindex,nofollow">
+<script>
+(function(){
+  "use strict";
+  var p=String(location.pathname||"").replace(/\/+$/,"")||"/";
+  var q=new URLSearchParams(location.search||"");
+  var t=q.get("t")||"";
+  var x="";
+
+  function signedPay(v){
+    var u=new URL("/sigil/pay",location.origin);
+    u.searchParams.set("t",v);
+    return u.pathname+u.search;
+  }
+
+  function privateMembership(intent){
+    var u=new URL("/sigil/member/membership",location.origin);
+    if(intent)u.searchParams.set("intent",intent);
+    ["plan","package","tier","code","promo","src","source","campaign","from"].forEach(function(k){
+      var v=q.get(k);
+      if(v)u.searchParams.set(k,v);
+    });
+    return u.pathname+u.search+(location.hash||"");
+  }
+
+  if(p==="/sigil/pay/renew"){
+    x=t?signedPay(t):privateMembership("renew");
+  }else if(p==="/sigil/pay/membership"){
+    x=t?signedPay(t):privateMembership("");
+  }else if(p==="/sigil/pay/payment"){
+    x=t?signedPay(t):"/member/payments";
+  }
+
+  if(x){
+    window.MMDLegacyPaymentRouteBridgeV1={from:p,to:x,canonical:true,updated:"2026-09-19"};
+    location.replace(x);
+  }
+})();
+</script>
+<noscript><meta http-equiv="refresh" content="0;url=/sigil/member/membership"></noscript>

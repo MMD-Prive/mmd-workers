@@ -1,0 +1,132 @@
+name: LINE OFC follower sync immediate smoke
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/line-ofc-follower-sync-immediate-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-follower-sync-immediate-smoke
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      WORKER_NAME: "member-dashboard-chat-worker"
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg"
+      SYNC_RUNS_TABLE_ID: "tbl2yGlf8XyswZ0Yw"
+    steps:
+      - name: Snapshot production cron
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/schedules"
+          curl --fail-with-body --silent --show-error "$api" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" > /tmp/original-cron.json
+          node <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync("/tmp/original-cron.json", "utf8"));
+          if (!payload?.success) throw new Error("cron_snapshot_failed");
+          const schedules = payload?.result?.schedules || [];
+          const crons = schedules.map((item) => String(item?.cron || "")).filter(Boolean);
+          if (!crons.includes("0 * * * *")) throw new Error(`unexpected_production_cron:${crons.join(",")}`);
+          fs.writeFileSync("/tmp/original-cron-body.json", JSON.stringify(crons.map((cron) => ({ cron }))));
+          fs.writeFileSync("/tmp/smoke-start-ms.txt", String(Date.now()));
+          console.log(JSON.stringify({ ok: true, production_crons: crons }));
+          NODE
+
+      - name: Temporarily run scheduled handler every minute
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/schedules"
+          body='[{"cron":"* * * * *"}]'
+          response="$(curl --fail-with-body --silent --show-error "$api" \
+            -X PUT \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -d "$body")"
+          node -e 'const p=JSON.parse(process.argv[1]);if(!p.success)process.exit(1);console.log(JSON.stringify({ok:true,temporary_crons:(p.result?.schedules||[]).map(x=>x.cron)}))' "$response"
+
+      - name: Wait for forced cron execution
+        shell: bash
+        run: sleep 150
+
+      - name: Read count-only Airtable receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("node:fs");
+          const token = String(process.env.AIRTABLE_API_KEY || "").trim();
+          const base = String(process.env.AIRTABLE_BASE_ID || "").trim();
+          const table = String(process.env.SYNC_RUNS_TABLE_ID || "").trim();
+          const startMs = Number(fs.readFileSync("/tmp/smoke-start-ms.txt", "utf8"));
+          if (!token || !base || !table || !Number.isFinite(startMs)) throw new Error("airtable_smoke_config_missing");
+          const url = new URL(`https://api.airtable.com/v0/${base}/${table}`);
+          url.searchParams.set("pageSize", "20");
+          url.searchParams.set("returnFieldsByFieldId", "true");
+          url.searchParams.set("sort[0][field]", "Started At");
+          url.searchParams.set("sort[0][direction]", "desc");
+          const response = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(`airtable_${response.status}`);
+          const row = (payload.records || []).find((record) => Date.parse(record.createdTime || 0) >= startMs - 5000);
+          if (!row) throw new Error("fresh_sync_receipt_not_found");
+          const f = row.fields || {};
+          const report = {
+            ok: true,
+            status: f.fldhRfMpXtzO9Bl69 || "",
+            supported: Boolean(f.fld42q3azGtqeE5fM),
+            followers_returned: Number(f.fldxFTybctmJyJpln || 0),
+            pages: Number(f.fldSn6VbE4pGukL4p || 0),
+            clients_scanned: Number(f.fld9ZXM2dAqv7peCf || 0),
+            already_canonical: Number(f.fldBPSFHSHvtPQ89Y || 0),
+            missing_clients: Number(f.flddYCQqVq905f4zw || 0),
+            clients_created: Number(f.fldtUEyfkdmhT63VM || 0),
+            clients_updated: Number(f.fldrVfxd6E1Tpt6Ji || 0),
+            duplicate_review: Number(f.fld3EZzIntqLdBC8M || 0),
+            profiles_requested: Number(f.fldSBVnzU5TlSToHt || 0),
+            profile_errors: Number(f.fldrRKnpfEeE0S39E || 0),
+            reason: String(f.fldbrfDSXL84FCj2W || ""),
+            source: String(f.fldmTEC9kMdH8x5Jy || ""),
+            started_at: String(f.fldTNx3KBlcRVf6Ja || ""),
+            completed_at: String(f.fld4KQJOZTbIUJZCJ || ""),
+          };
+          fs.writeFileSync("/tmp/line-ofc-follower-sync-immediate-smoke.json", JSON.stringify(report, null, 2) + "\n");
+          console.log(JSON.stringify(report));
+          if (report.source !== "line_ofc_follower_sync_v1") throw new Error("unexpected_sync_receipt_source");
+          NODE
+
+      - name: Restore hourly production cron
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f /tmp/original-cron-body.json || exit 1
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${WORKER_NAME}/schedules"
+          response="$(curl --fail-with-body --silent --show-error "$api" \
+            -X PUT \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --data-binary @/tmp/original-cron-body.json)"
+          node -e 'const p=JSON.parse(process.argv[1]);if(!p.success)process.exit(1);const c=(p.result?.schedules||[]).map(x=>x.cron);if(!c.includes("0 * * * *"))process.exit(2);console.log(JSON.stringify({ok:true,restored_crons:c}))' "$response"
+
+      - name: Upload count-only receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-follower-sync-immediate-smoke
+          path: /tmp/line-ofc-follower-sync-immediate-smoke.json
+          if-no-files-found: warn
+          retention-days: 14

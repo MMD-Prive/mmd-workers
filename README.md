@@ -1,245 +1,97 @@
-🖤 MMD Privé — Core System Architecture 
-Overview
+# MMD Workers
 
-MMD Privé is a controlled access system, not a marketplace.
+MMD is a channel-agnostic operating system with personality.
 
-This system is designed to:
+This repository contains the worker-based core of the MMD platform: the system layer that controls experience, payments, membership, automation, real-time coordination, and internal operations across channels.
 
-manage private client access
-control experience through structured flows
-automate onboarding, payment, and lifecycle
-eliminate manual chat handling
-🎯 Core Flow
-User → /trust/inme → chat-worker → payments → admin → lifecycle
-🧠 Core Principles (LOCK)
-Airtable = Source of Truth
-session_id = primary flow key
-payment_ref = financial idempotency key
-package_code = access control logic
-Workers are strictly separated
-chat-worker = public interface
-telegram-worker = internal only
-Do NOT expose Airtable or secrets to frontend
-🏗️ System Architecture
-[ Web / Telegram / LINE ]
-            ↓
-        chat-worker (AI / intake)
-            ↓
-        payments-worker (money)
-            ↓
-        admin-worker (access control)
-            ↓
-        events-worker (automation)
-            ↓
-        telegram-worker (internal)
-🧩 Airtable — Source of Truth
-Table	Purpose
-Members	identity + summary
-member_packages	package lifecycle (PRIMARY LOGIC)
-Payments	financial truth
-Sessions	flow bridge
-Activity Logs	audit trail
-⚙️ Workers
-1. chat-worker (Public Entry)
+## What this repo is
 
-Role
+`mmd-workers` is the operational backbone of MMD.
 
-entry point from /trust/inme
-collect user intent
-create session
-route to payment
+It is not a single app and not a single workflow. It is a multi-layer system designed to run human experience through controlled flows, clear worker boundaries, and character-led interfaces.
 
-Writes → Sessions
+At the center of the platform is one principle:
 
-session_id
-memberstack_id
-package_code
-membership_action
-payment_ref
-created_at
-2. payments-worker (Money Layer)
+**System at the core. Character at the surface. Experience as the output.**
 
-Role
+## Architecture at a glance
 
-create payment session
-verify payment (PromptPay)
-write Payments
-trigger admin-worker
+### Experience Layer
+- `chat-worker`
+- TMIB character interface
+- Web / LINE / Telegram / future channels
 
-Endpoints
+### Core Production Layer
+- `payments-worker`
+- `admin-worker`
+- `events-worker`
+- `telegram-worker`
 
-POST /v1/pay/create
-{
-  "session_id": "sess_xxx",
-  "memberstack_id": "memstk_xxx",
-  "package_code": "guest7",
-  "amount_thb": 2000,
-  "payment_type": "full"
-}
-POST /v1/pay/verify
-{
-  "session_id": "sess_xxx",
-  "payment_ref": "pay_xxx",
-  "payment_status": "paid",
-  "verification_status": "verified",
-  "provider": "promptpay"
-}
+### Real-time Layer
+- `realtime-worker`
 
-Writes → Payments
+### Migration Layer
+- `immigrate-worker`
 
-payment_ref
-payment_date
-amount_thb
-payment_status
-payment_type
-verification_status
-session_id
-package_code
-🔥 Payment Rule (LOCK)
+### Operator Layer
+- `Admin Console V1`
 
-Only count toward Guest7 qualification if:
+## Worker roles
 
-payment_status = paid
-payment_type IN (deposit, final, full)
-❌ NOT tips
-3. admin-worker (Access Control)
+### `chat-worker`
+Public-facing AI concierge and TMIB character interface.  
+This is the layer users experience directly.
 
-Role
+### `payments-worker`
+Payment truth and payment lifecycle control.  
+Handles verification, payment state, and session-payment coupling.
 
-apply membership
-create package lifecycle
-update member state
-POST /v1/admin/membership/apply
-{
-  "memberstack_id": "memstk_xxx",
-  "member_email": "user@example.com",
-  "package_code": "guest7",
-  "payment_ref": "pay_xxx",
-  "paid_at": "ISO"
-}
+### `admin-worker`
+Administrative authority and orchestration layer.  
+Handles membership lifecycle, access control, internal actions, and system operations.
 
-Writes → member_packages
+### `events-worker`
+Session and job automation engine.  
+Controls timeline-driven state transitions across the platform.
 
-package_code
-status = active
-start_at
-expires_at
-payment_ref
+### `telegram-worker`
+Internal system messaging gateway only.  
+Not a public chatbot surface.
 
-Updates → Members
+### `realtime-worker`
+Live interaction layer.  
+Supports real-time session coordination such as room opening, chat/location signaling, and live session support.
 
-current_package_code
-member_status
-membership_expiry
-4. events-worker (Automation)
+### `immigrate-worker`
+Migration bridge layer.  
+Used to move data and workflows into the core production system without polluting core contracts.
 
-Role
+## Core truths
 
-lifecycle automation
-guest qualification
-expiry handling
-Daily Job
+- `session_id` is the primary session and idempotency reference
+- token parameter must be `t`
+- Airtable is the back-office source of truth
+- Native MMD auth-worker is the frontend auth gate; protected frontend pages must call `/v1/auth/me`
+- Webflow protected pages must set `window.MMD_AUTH_WORKER_BASE_URL = "https://mmdbkk.com"` before loading `webflow/mmd-gate.js`, so `mmdprive.webflow.io` checks auth through the canonical `mmdbkk.com` route
+- Airtable entitlements and `member_packages` are the access truth
+- `memberstack_id` remains legacy compatibility only
+- worker boundaries are production contracts
+- migration must remain separate from the core
 
-Step 1 — Expiry
+## Documentation
 
-IF now > expires_at
-→ status = expired
+Architecture docs live in:
 
-Step 2 — Qualification
+- `docs/architecture/README.md`
+- `docs/architecture/SYSTEM_OVERVIEW.md`
+- `docs/architecture/WORKERS.md`
+- `docs/architecture/REALTIME.md`
+- `docs/architecture/STATE_MACHINE.md`
+- `docs/architecture/CHARACTERS.md`
+- `docs/architecture/LAYERS.md`
+- `docs/architecture/PRINCIPLES.md`
+- `docs/architecture/INTERNAL_DOCTRINE.md`
 
-sum(payments within 30 days)
+## Final definition
 
-IF total >= 2000
-→ qualified
-
-ELSE IF now > eval_ends_at
-→ closed
-
-Writes
-
-member_packages (status)
-Members (summary update)
-Activity Logs (audit)
-5. telegram-worker (Internal Only)
-
-Role
-
-send internal notifications
-NOT user-facing
-
-Triggers
-
-payment verified
-guest7 activated
-guest7 expired
-guest7 qualified
-upgrade events
-🔁 End-to-End Flow
-Guest7 Entry
-User → /trust/inme
-→ chat-worker
-→ payments-worker
-→ verify payment
-→ admin-worker
-→ member_packages created
-→ events-worker handles lifecycle
-Upgrade Flow
-qualified guest
-→ new payment
-→ admin-worker apply standard/premium
-→ Members updated
-🧬 Package Model
-Package	Meaning
-guest7	temporary access (7 days + 30-day evaluation)
-standard	base access
-premium	higher access
-blackcard	elite
-🔥 IMPORTANT
-Standard / Premium = pricing + access level only
-NOT separate systems
-All flows go through same backend
-🧪 Guest7 Logic
-Rule	Value
-Access duration	7 days
-Evaluation window	30 days
-Spend requirement	2,000 THB
-Outcome
-Condition	Result
-spend ≥ 2000	qualified
-spend < 2000 after 30d	closed
-🔐 Locked Fields (DO NOT CHANGE)
-session_id
-payment_ref
-memberstack_id
-package_code
-payment_type
-payment_status
-verification_status
-amount_thb
-⚠️ Critical Rules
-Do NOT rename Airtable fields after production
-Do NOT expose Airtable to frontend
-session_id must flow across all workers
-payment_ref must be unique
-member_packages = lifecycle truth
-Payments = financial truth
-Members = summary only
-🚀 Phase 1 Scope
-MUST HAVE
-chat-worker session creation
-payments-worker create + verify
-admin-worker apply guest7
-Airtable integration working
-SHOULD HAVE
-telegram internal notify
-NEXT
-events-worker lifecycle automation
-💎 Final Note
-
-This system is not a typical CRUD app.
-
-It is:
-
-Access Control Engine + Experience Engine
-
-Build it as a controlled system, not a marketplace.
+MMD is a channel-agnostic operating system with personality — expressed through TMIB characters, powered by core production workers, extended by a real-time layer, supported by a migration layer, and operated through Admin Console V1.

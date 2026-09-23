@@ -1,0 +1,5 @@
+Customer Data production redeploy marker — 2026-09-15
+
+Purpose: force the canonical Deploy immigrate-worker workflow to upload/deploy a fresh version after AIRTABLE_API_KEY was added in Cloudflare, while reapplying the existing Customer Data internal page/API bridge patch and exact route sync.
+
+No business-rule changes. Remove this marker in a later cleanup PR if desired.

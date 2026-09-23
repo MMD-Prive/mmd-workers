@@ -1,0 +1,202 @@
+name: Phase 1 Route Owner Production Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/phase1-route-owner-production-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  route-owner-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN || secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+
+    steps:
+      - name: Verify Cloudflare route ownership inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const token = String(process.env.CLOUDFLARE_API_TOKEN || "").trim();
+          const zone = String(process.env.CLOUDFLARE_ZONE_ID || "").trim();
+          if (!token || !zone) throw new Error("Cloudflare route audit credential missing");
+          const response = await fetch(`https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`, {
+            headers: { authorization: `Bearer ${token}` },
+          });
+          const payload = await response.json().catch(() => null);
+          if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable");
+          const routes = payload.result || [];
+          const expected = new Map([
+            ["mmdbkk.com/member/login*", null],
+            ["www.mmdbkk.com/member/login*", null],
+            ["mmdbkk.com/member/dashboard*", null],
+            ["www.mmdbkk.com/member/dashboard*", null],
+            ["mmdbkk.com/api/member/dashboard*", "member-dashboard-chat-worker"],
+            ["www.mmdbkk.com/api/member/dashboard*", "member-dashboard-chat-worker"],
+            ["mmdbkk.com/pay/renewal*", "member-dashboard-chat-worker"],
+            ["www.mmdbkk.com/pay/renewal*", "member-dashboard-chat-worker"],
+            ["mmdbkk.com/sigil/pay/renewal*", "member-dashboard-chat-worker"],
+            ["www.mmdbkk.com/sigil/pay/renewal*", "member-dashboard-chat-worker"],
+            ["sigil.mmdbkk.com/sigil/api/client/resolve*", "sigil-booking-worker"],
+            ["sigil.mmdbkk.com/sigil/api/models/search*", "sigil-booking-worker"],
+            ["sigil.mmdbkk.com/sigil/api/booking/intake*", "sigil-booking-worker"],
+            ["mmdbkk.com/v1/partner/*", "partners-worker"],
+            ["www.mmdbkk.com/v1/partner/*", "partners-worker"],
+            ["mmdbkk.com/v1/rt/*", "realtime-worker"],
+            ["www.mmdbkk.com/v1/rt/*", "realtime-worker"],
+            ["mmdbkk.com/sigil/apply*", "sigil-worker"],
+            ["www.mmdbkk.com/sigil/apply*", "sigil-worker"],
+            ["sigil.mmdbkk.com/sigil/apply*", "sigil-worker"],
+            ["mmdbkk.com/sigil/api/private-model/*", "sigil-worker"],
+            ["www.mmdbkk.com/sigil/api/private-model/*", "sigil-worker"],
+            ["sigil.mmdbkk.com/sigil/api/private-model/*", "sigil-worker"],
+          ]);
+          const missing = [];
+          const wrong = [];
+          for (const [pattern, owner] of expected) {
+            const hit = routes.find((route) => route.pattern === pattern);
+            if (!hit) missing.push(pattern);
+            else if ((hit.script || null) !== owner) wrong.push({ pattern, expected: owner, actual: hit.script || null });
+          }
+
+          const legacyRoutes = routes.filter((route) => route.script === "mmd-redirect-worker");
+          if (legacyRoutes.length) {
+            throw new Error(`retired mmd-redirect-worker regained production routes: ${legacyRoutes.map(x => x.pattern).join(", ")}`);
+          }
+          if (missing.length || wrong.length) {
+            throw new Error(`route ownership mismatch missing=${JSON.stringify(missing)} wrong=${JSON.stringify(wrong)}`);
+          }
+          console.log(JSON.stringify({
+            ok: true,
+            verified: expected.size,
+            mmd_redirect_worker_routes: 0,
+            phase1_route_ownership: "closed",
+          }, null, 2));
+          NODE
+
+      - name: Verify Webflow member entry and dashboard pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /member/login /member/dashboard; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -L -D "$headers" -o "$body" -w '%{http_code}' "https://www.mmdbkk.com${path}")"
+            echo "${path} -> HTTP ${code}"
+            test "$code" = "200"
+            grep -qi 'MY MMD' "$body"
+          done
+
+      - name: Verify Member Dashboard API owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o "$body" -w '%{http_code}'             -H 'Origin: https://www.mmdbkk.com'             https://www.mmdbkk.com/api/member/dashboard || true)"
+          echo "dashboard API -> HTTP ${code}"
+          case "$code" in 200|401|403) ;; *) cat "$body" >&2; exit 1 ;; esac
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$headers"
+
+      - name: Verify Renewal owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /pay/renewal /sigil/pay/renewal; do
+            headers="$(mktemp)"
+            code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o /dev/null -w '%{http_code}' "https://www.mmdbkk.com${path}")"
+            echo "${path} -> HTTP ${code}"
+            test "$code" = "307"
+            grep -qi '^x-mmd-worker: member-dashboard-chat-worker' "$headers"
+            grep -qi '^location: https://mmdbkk.com/sigil/member/membership?intent=renew' "$headers"
+          done
+
+      - name: Verify SIGIL Booking API owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /sigil/api/client/resolve /sigil/api/models/search /sigil/api/booking/intake; do
+            passed=0
+            for attempt in $(seq 1 30); do
+              headers="$(mktemp)"
+              code="$(curl -sS -D "$headers" -o /dev/null -w '%{http_code}'                 -X OPTIONS                 -H 'Origin: https://www.mmdbkk.com'                 -H 'Access-Control-Request-Method: POST'                 "https://sigil.mmdbkk.com${path}" || true)"
+              if [ "$code" = "204" ] && grep -qi '^x-mmd-route-owner: sigil-booking-worker' "$headers"; then passed=1; break; fi
+              sleep 4
+            done
+            test "$passed" = "1"
+          done
+
+      - name: Verify Partner owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -D "$headers" -o /dev/null -w '%{http_code}'             https://www.mmdbkk.com/v1/partner/line/login)"
+          test "$code" = "302"
+          grep -qi '^location: https://mmdbkk.com/sigil/model/dashboard/partner-login' "$headers"
+
+      - name: Verify Realtime owner and fail-closed boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          passed=0
+          for attempt in $(seq 1 40); do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}'               -H 'Origin: https://www.mmdbkk.com'               https://www.mmdbkk.com/v1/rt/health || true)"
+            if [ "$code" = "200" ] && grep -qi '^x-mmd-route-owner: realtime-worker' "$headers" && grep -q '"route_owner":"realtime-worker"' "$body"; then
+              passed=1; break
+            fi
+            sleep 4
+          done
+          test "$passed" = "1"
+
+          unauth="$(curl -sS -o /dev/null -w '%{http_code}'             -X POST             -H 'Origin: https://www.mmdbkk.com'             -H 'Content-Type: application/json'             --data '{"job_id":"phase1-owner-smoke"}'             https://www.mmdbkk.com/v1/rt/room/open || true)"
+          test "$unauth" = "401"
+
+      - name: Verify Private Model owner
+        shell: bash
+        run: |
+          set -euo pipefail
+          passed=0
+          for attempt in $(seq 1 40); do
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl -sS -D "$headers" -o "$body" -w '%{http_code}'               'https://www.mmdbkk.com/sigil/apply?phase1=owner-smoke' || true)"
+            if [ "$code" = "200" ] && grep -qi '^x-mmd-route-owner: sigil-worker' "$headers" && grep -q 'Private Model Application' "$body"; then
+              passed=1; break
+            fi
+            sleep 4
+          done
+          test "$passed" = "1"
+
+          options_headers="$(mktemp)"
+          options="$(curl -sS -D "$options_headers" -o /dev/null -w '%{http_code}'             -X OPTIONS             -H 'Origin: https://www.mmdbkk.com'             -H 'Access-Control-Request-Method: POST'             https://www.mmdbkk.com/sigil/api/private-model/apply || true)"
+          test "$options" = "204"
+
+      - name: Route owner receipt
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Phase 1 route-owner acceptance
+          - Webflow member login: verified entry page
+          - Webflow member dashboard: verified presentation page
+          - Member Dashboard API: member-dashboard-chat-worker -> member-pages-worker
+          - Renewal aliases: member-dashboard-chat-worker
+          - SIGIL Booking API: sigil-booking-worker
+          - Partner API: partners-worker
+          - Realtime /v1/rt/*: realtime-worker
+          - Private Model: sigil-worker
+          - mmd-redirect-worker production routes: 0
+          - Phase 1 route ownership: CLOSED
+          - Customer/business mutations: 0
+          EOF

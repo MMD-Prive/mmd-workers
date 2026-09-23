@@ -1,0 +1,8 @@
+{
+  "name": "mmd-cal-sync-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test cal-sync-worker.test.mjs"
+  }
+}

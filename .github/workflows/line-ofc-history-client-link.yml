@@ -1,0 +1,62 @@
+name: LINE OFC historical evidence link
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/line-ofc-history-evidence-link.js
+      - .github/workflows/line-ofc-history-client-link.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: line-ofc-history-client-link-production
+  cancel-in-progress: false
+
+jobs:
+  link-and-recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate
+        run: |
+          node --check scripts/line-ofc-history-evidence-link.js
+          node scripts/line-ofc-history-evidence-link.js --self-test
+          node --check scripts/line-ofc-email-coverage-reconcile.js
+          node scripts/line-ofc-email-coverage-reconcile.js --self-test
+      - name: Dry-run historical links
+        run: node scripts/line-ofc-history-evidence-link.js --dry-run --report /tmp/history-link-dry-run.json
+      - name: Apply historical links
+        run: node scripts/line-ofc-history-evidence-link.js --apply --report /tmp/history-link-apply.json
+      - name: Verify historical-link idempotency
+        run: node scripts/line-ofc-history-evidence-link.js --dry-run --assert-idempotent --report /tmp/history-link-idempotency.json
+      - name: Dry-run email recovery after lineage
+        run: node scripts/line-ofc-email-coverage-reconcile.js --dry-run --report /tmp/email-after-link-dry-run.json
+      - name: Apply email recovery after lineage
+        run: node scripts/line-ofc-email-coverage-reconcile.js --apply --report /tmp/email-after-link-apply.json
+      - name: Verify email-recovery idempotency
+        run: node scripts/line-ofc-email-coverage-reconcile.js --dry-run --assert-idempotent --report /tmp/email-after-link-idempotency.json
+      - name: Upload redacted count reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: line-ofc-history-link-email-recovery-report
+          path: |
+            /tmp/history-link-dry-run.json
+            /tmp/history-link-apply.json
+            /tmp/history-link-idempotency.json
+            /tmp/email-after-link-dry-run.json
+            /tmp/email-after-link-apply.json
+            /tmp/email-after-link-idempotency.json
+          if-no-files-found: warn
+          retention-days: 30

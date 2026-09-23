@@ -1,0 +1,39 @@
+name: Calendar Live Write Smoke
+# Contract probe 2026-09-20: attendeeDefined location is required by event type 7057823.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/calendar-live-write-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendar-live-write-production-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY || secrets.AIRTABLE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify live Cal hold create, link and cleanup
+        run: node tools/calendar-live-write-smoke.mjs
+      - name: Upload live-write receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: calendar-live-write-receipt
+          path: ${{ runner.temp }}/calendar-live-write-receipt.json
+          retention-days: 14
+          if-no-files-found: error

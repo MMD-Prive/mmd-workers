@@ -1,0 +1,306 @@
+/*
+  MMD SIGIL Access - v10 Polish Override
+  Load after sigil-access-os-v2.css
+  Goals:
+  - Fit first viewport better
+  - Enlarge and energize authorization core
+  - Add subtle system signals
+  - Darken Kenji intelligence module presence
+*/
+
+.sigil-os {
+  min-height: 100svh !important;
+  background:
+    radial-gradient(circle at 50% 37%, rgba(244, 211, 123, 0.13), transparent 33%),
+    radial-gradient(circle at 82% 22%, rgba(201, 155, 67, 0.07), transparent 22%),
+    radial-gradient(circle at 14% 12%, rgba(201, 155, 67, 0.06), transparent 24%),
+    linear-gradient(180deg, #050403 0%, #000 100%) !important;
+}
+
+.sigil-os-shell {
+  min-height: 100svh !important;
+  padding-top: 20px !important;
+  padding-bottom: 18px !important;
+}
+
+.sigil-os-top {
+  padding-top: 8px !important;
+  padding-bottom: 20px !important;
+}
+
+.sigil-os-brand img {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  max-width: 42px !important;
+}
+
+.sigil-os-title {
+  font-size: clamp(28px, 2.35vw, 44px) !important;
+  letter-spacing: 0.105em !important;
+}
+
+.sigil-os-mode strong,
+.sigil-os-status strong,
+.sigil-panel-head h3,
+.sigil-operations-head span,
+.sigil-log-head span {
+  letter-spacing: 0.34em !important;
+}
+
+.sigil-os-main {
+  min-height: 548px !important;
+  padding-top: 24px !important;
+  padding-bottom: 8px !important;
+  grid-template-columns: 32.5% 1fr 34% !important;
+}
+
+.sigil-sequence {
+  gap: 42px !important;
+}
+
+.sigil-step-node {
+  width: 50px !important;
+  height: 50px !important;
+}
+
+.sigil-step h3 {
+  font-size: clamp(14px, 1.05vw, 17px) !important;
+  letter-spacing: 0.24em !important;
+}
+
+.sigil-step p {
+  margin-top: 8px !important;
+  font-size: 11px !important;
+}
+
+.sigil-core {
+  min-height: 540px !important;
+  transform: scale(1.08) !important;
+  transform-origin: center center !important;
+}
+
+.ring-1 {
+  width: 515px !important;
+  height: 515px !important;
+  border-top-color: rgba(244,211,123,0.9) !important;
+  border-right-color: rgba(244,211,123,0.42) !important;
+  box-shadow:
+    inset 0 0 46px rgba(201,155,67,0.055),
+    0 0 42px rgba(244,211,123,0.045) !important;
+}
+
+.ring-2 {
+  width: 405px !important;
+  height: 405px !important;
+  border-bottom-color: rgba(244,211,123,0.74) !important;
+}
+
+.ring-3 {
+  width: 306px !important;
+  height: 306px !important;
+}
+
+.ring-4 {
+  width: 184px !important;
+  height: 184px !important;
+  box-shadow:
+    0 0 48px rgba(244,211,123,0.11),
+    inset 0 0 20px rgba(244,211,123,0.06) !important;
+}
+
+.sigil-ring-ticks {
+  width: 462px !important;
+  height: 462px !important;
+  opacity: 0.84 !important;
+}
+
+.sigil-core-emblem {
+  width: 124px !important;
+  height: 124px !important;
+  box-shadow:
+    0 0 60px rgba(244,211,123,0.23),
+    0 0 120px rgba(201,155,67,0.08),
+    inset 0 0 34px rgba(201,155,67,0.18) !important;
+}
+
+.sigil-core-emblem::before {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(244,211,123,0.18), transparent 62%);
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.sigil-core-emblem img {
+  position: relative !important;
+  z-index: 1 !important;
+  width: 72px !important;
+  height: 72px !important;
+}
+
+.sigil-decrypt {
+  bottom: 28px !important;
+  width: min(450px, 82%) !important;
+}
+
+.sigil-panel {
+  padding: 24px !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.012)),
+    radial-gradient(circle at 90% 10%, rgba(244,211,123,0.08), transparent 28%),
+    rgba(5, 5, 4, 0.78) !important;
+}
+
+.access-overview::after {
+  content: "PRIVATE LAYER: STABLE   /   VISIBILITY: PARTIAL";
+  position: relative;
+  z-index: 2;
+  display: block;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(244,211,123,0.13);
+  color: rgba(244,211,123,0.56);
+  font: 700 10px/1.4 var(--mmd-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.sigil-access-list {
+  gap: 13px !important;
+}
+
+.sigil-access-list dt,
+.sigil-access-list dd {
+  font-size: 15px !important;
+}
+
+.sigil-kenji-module {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.042), rgba(255,255,255,0.01)),
+    radial-gradient(circle at 82% 40%, rgba(244,211,123,0.07), transparent 26%),
+    rgba(3, 3, 3, 0.86) !important;
+}
+
+.sigil-kenji-module::after {
+  content: "ENGINE SIGNAL: ACTIVE   /   ROUTE: PREPARED";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 16px;
+  color: rgba(244,211,123,0.42);
+  font: 700 9px/1 var(--mmd-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.sigil-kenji-grid {
+  grid-template-columns: 140px 1fr !important;
+  gap: 22px !important;
+  padding-top: 18px !important;
+  padding-bottom: 28px !important;
+}
+
+.sigil-kenji-portrait {
+  height: 188px !important;
+  background: #020202 !important;
+  border-color: rgba(201,155,67,0.45) !important;
+  box-shadow:
+    inset 0 0 34px rgba(0,0,0,0.85),
+    0 0 28px rgba(0,0,0,0.55) !important;
+}
+
+.sigil-kenji-portrait img {
+  object-position: center 16% !important;
+  filter: contrast(1.16) saturate(0.72) brightness(0.64) sepia(0.08) !important;
+  transform: scale(1.09) !important;
+}
+
+.sigil-kenji-portrait::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.28), transparent 45%, rgba(0,0,0,0.22)),
+    linear-gradient(180deg, rgba(244,211,123,0.06), transparent 30%, rgba(0,0,0,0.5));
+  pointer-events: none;
+}
+
+.sigil-kenji-portrait::after {
+  z-index: 3;
+  background:
+    linear-gradient(180deg, rgba(244,211,123,0.08), transparent 26%),
+    linear-gradient(0deg, rgba(0,0,0,0.62), transparent 52%) !important;
+}
+
+.sigil-kenji-copy h4 {
+  margin-bottom: 20px !important;
+  letter-spacing: 0.21em !important;
+}
+
+.sigil-kenji-copy p {
+  color: rgba(239,232,220,0.68) !important;
+}
+
+.sigil-operations {
+  margin-top: -2px !important;
+  padding-top: 44px !important;
+  padding-bottom: 18px !important;
+}
+
+.sigil-operation {
+  min-height: 96px !important;
+}
+
+.sigil-operation-core {
+  width: 54px !important;
+  height: 54px !important;
+}
+
+.sigil-log-panel {
+  margin-top: 10px !important;
+  padding-top: 13px !important;
+  padding-bottom: 13px !important;
+}
+
+.sigil-log {
+  max-height: 76px !important;
+}
+
+.sigil-os-footer {
+  padding-top: 18px !important;
+  padding-bottom: 0 !important;
+}
+
+@media (min-width: 1321px) and (max-height: 860px) {
+  .sigil-os-shell { padding-top: 16px !important; padding-bottom: 12px !important; }
+  .sigil-os-top { padding-bottom: 16px !important; }
+  .sigil-os-main { min-height: 500px !important; padding-top: 18px !important; }
+  .sigil-sequence { gap: 34px !important; }
+  .sigil-core { min-height: 500px !important; transform: scale(1.02) !important; }
+  .ring-1 { width: 480px !important; height: 480px !important; }
+  .ring-2 { width: 380px !important; height: 380px !important; }
+  .ring-3 { width: 286px !important; height: 286px !important; }
+  .sigil-ring-ticks { width: 432px !important; height: 432px !important; }
+  .sigil-panel { padding: 22px !important; }
+  .sigil-kenji-portrait { height: 168px !important; }
+  .sigil-operations { padding-top: 40px !important; padding-bottom: 14px !important; }
+  .sigil-operation { min-height: 88px !important; }
+  .sigil-log-panel { display: none !important; }
+  .sigil-os-footer { padding-top: 14px !important; }
+}
+
+@media (max-width: 1320px) {
+  .sigil-core { transform: none !important; }
+  .access-overview::after,
+  .sigil-kenji-module::after { position: relative; left: auto; right: auto; bottom: auto; margin-top: 14px; display: block; }
+}
+
+@media (max-width: 900px) {
+  .sigil-core { min-height: 440px !important; }
+  .sigil-kenji-portrait { height: 165px !important; }
+}

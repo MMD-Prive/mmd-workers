@@ -1,0 +1,59 @@
+{
+  "version": "mmd-social-appearance-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "social_appearance",
+  "public_packages": [
+    {
+      "key": "dinner_guest",
+      "name": "DINNER GUEST",
+      "price_thb": 5500,
+      "included_minutes": 180,
+      "worker_payout_thb": 3300
+    },
+    {
+      "key": "event_partner",
+      "name": "EVENT PARTNER",
+      "price_thb": 6900,
+      "included_minutes": 240,
+      "worker_payout_thb": 4200
+    },
+    {
+      "key": "formal_evening",
+      "name": "FORMAL EVENING",
+      "price_thb": 9500,
+      "included_minutes": 360,
+      "worker_payout_thb": 5800
+    }
+  ],
+  "custom_quote": {
+    "key": "brand_corporate",
+    "name": "BRAND / CORPORATE",
+    "commercial_usage_rights_included": false,
+    "media_usage_requires_separate_consent": true,
+    "quote_required": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 1290,
+    "overtime_before_midnight_worker_thb_per_hour": 850,
+    "prebook_after_midnight_client_thb_per_hour": 500,
+    "prebook_after_midnight_worker_thb_per_hour": 350,
+    "overtime_after_midnight_client_thb_per_hour": 1790,
+    "overtime_after_midnight_worker_thb_per_hour": 1200,
+    "overtime_after_0300_client_thb_per_hour": 2090,
+    "overtime_after_0300_worker_thb_per_hour": 1400,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": [
+      "MY_MMD_request",
+      "MMD_MODEL_approve",
+      "payment_verified",
+      "MMD_confirmed"
+    ]
+  },
+  "scope_change": {
+    "nightlife_change": "reclassify_and_requote",
+    "commercial_change": "reclassify_and_requote"
+  },
+  "private_money_separation": "These Public rates never apply automatically to private_model jobs."
+}

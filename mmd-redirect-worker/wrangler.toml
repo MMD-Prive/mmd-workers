@@ -1,0 +1,13 @@
+name = "mmd-redirect-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+# HARD DISABLED by owner directive on 2026-08-21 (Asia/Bangkok).
+# No routes, no service bindings, no routing ownership.
+# Do not add routes, bindings, redirects, rewrites, proxies, shells, or handlers
+# until a new explicit owner directive is issued.
+
+[observability]
+enabled = true
+head_sampling_rate = 1

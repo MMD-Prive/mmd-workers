@@ -1,0 +1,24 @@
+name = "sigil-booking-proxy-worker"
+main = "src/index.js"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Canonical page owner. This must win over the generic sigil.mmdbkk.com/* owner.
+# Use wildcard route patterns so query strings, trailing slashes, and future safe params
+# cannot fall through to the old/default SIGIL booking page.
+[[routes]]
+pattern = "sigil.mmdbkk.com/sigil/booking*"
+zone_name = "mmdbkk.com"
+
+# Front-gate redirects. These routes must win over the generic mmd-redirect-worker mmdbkk.com/* route.
+[[routes]]
+pattern = "mmdbkk.com/sigil/booking*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/sigil/booking*"
+zone_name = "mmdbkk.com"

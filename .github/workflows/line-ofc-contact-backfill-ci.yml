@@ -1,0 +1,37 @@
+name: LINE OFC contact backfill CI
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/line-ofc-console-backfill.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/line-ofc-console-backfill.test.mjs"
+      - ".github/workflows/line-ofc-contact-backfill-ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "admin-worker/src/line-ofc-console-backfill.js"
+      - "admin-worker/src/admin-login-hero-worker.js"
+      - "admin-worker/line-ofc-console-backfill.test.mjs"
+      - ".github/workflows/line-ofc-contact-backfill-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Validate source and tests
+        working-directory: admin-worker
+        run: |
+          set -euo pipefail
+          node --check src/line-ofc-console-backfill.js
+          node --check src/admin-login-hero-worker.js
+          node --test line-ofc-console-backfill.test.mjs
