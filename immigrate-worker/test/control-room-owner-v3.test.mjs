@@ -124,6 +124,9 @@ try {
   assert.match(body, /unavailable\.length\?'PARTIAL':'CLEAR'/);
   assert.match(body, /detailSeq=0/);
   assert.match(body, /seq!==detailSeq/);
+  assert.match(body, /data-oaq-coverage/);
+  assert.match(body, /renderCoverage/);
+  assert.match(body, /source_coverage/);
   assert.match(body, /ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth/);
 
   assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);

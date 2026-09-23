@@ -4,9 +4,14 @@
 const PRIORITY = Object.freeze({
   payment_review: 100,
   historical_recovery: 90,
+  finance_reconciliation: 85,
   job_reconfirm_overdue: 80,
+  finance_payout_hold: 75,
   job_reconfirm_pending: 70,
+  mms_prebooking_coordination: 65,
+  mms_application_review: 60,
   membership_review: 50,
+  hype_operational_watch: 45,
   owner_exception: 40,
 });
 
@@ -15,9 +20,14 @@ export function buildOwnerActionsQueue(input = {}) {
   const actions = [
     paymentReviewAction(input.money),
     historicalRecoveryAction(input.historical_recovery),
+    financeReconciliationAction(input.finance_audit),
     reconfirmAction(input.reconfirm, "overdue"),
+    financePayoutHoldAction(input.finance_audit),
     reconfirmAction(input.reconfirm, "pending"),
+    mmsPrebookingCoordinationAction(input.mms),
+    mmsApplicationReviewAction(input.mms),
     membershipReviewAction(input.members),
+    hypeOperationalWatchAction(input.hype),
     ownerExceptionAction(input.boss),
   ].filter(Boolean).sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
 
@@ -36,6 +46,7 @@ export function buildOwnerActionsQueue(input = {}) {
       attention: actions.filter((item) => item.urgency === "attention").length,
     },
     unavailable_sources: unavailable,
+    source_coverage: normalizeCoverage(input.source_coverage, unavailable),
     guardrails: {
       payment_truth: "payments-worker",
       job_truth: "canonical_sessions_and_reconfirm",
@@ -78,6 +89,34 @@ function historicalRecoveryAction(items) {
   }) : null;
 }
 
+function financeReconciliationAction(source) {
+  const count = nonNegative(source?.reconciliation_count);
+  return count ? action({
+    key: "finance_reconciliation",
+    priority: PRIORITY.finance_reconciliation,
+    urgency: "attention",
+    title: "ตรวจความสอดคล้องทางการเงิน",
+    summary: `มี ${count} รายการที่ Finance Audit ระบุว่าต้องตรวจ`,
+    count,
+    href: "/internal/admin/partners",
+    authority: "canonical_finance_timeline",
+  }) : null;
+}
+
+function financePayoutHoldAction(source) {
+  const count = nonNegative(source?.payout_hold_count);
+  return count ? action({
+    key: "finance_payout_hold",
+    priority: PRIORITY.finance_payout_hold,
+    urgency: "attention",
+    title: "ตรวจรายการพักจ่าย",
+    summary: `มี ${count} รายการที่ Finance Audit ระบุว่าอยู่ระหว่างพักจ่าย`,
+    count,
+    href: "/internal/admin/partners",
+    authority: "canonical_finance_timeline",
+  }) : null;
+}
+
 function reconfirmAction(reconfirm, status) {
   if (!reconfirm || reconfirm.available !== true) return null;
   const count = uniqueCount(asArray(reconfirm.items).filter((item) => clean(item?.status) === status), (item) => clean(item?.session_id) || clean(item?.job_id) || signature(item));
@@ -106,6 +145,48 @@ function membershipReviewAction(items) {
     count,
     href: "/internal/admin/member-intelligence",
     authority: "my_mmd_entitlement_resolver_v1",
+  }) : null;
+}
+
+function mmsPrebookingCoordinationAction(source) {
+  const count = nonNegative(source?.prebooking_coordination_count);
+  return count ? action({
+    key: "mms_prebooking_coordination",
+    priority: PRIORITY.mms_prebooking_coordination,
+    urgency: "attention",
+    title: "ประสาน MMS prebooking",
+    summary: `มี ${count} prebooking ที่ MMS ยังอยู่ระหว่างประสานงาน`,
+    count,
+    href: "/internal/admin/mms",
+    authority: "mms-worker",
+  }) : null;
+}
+
+function mmsApplicationReviewAction(source) {
+  const count = nonNegative(source?.application_review_count);
+  return count ? action({
+    key: "mms_application_review",
+    priority: PRIORITY.mms_application_review,
+    urgency: "attention",
+    title: "ตรวจใบสมัคร MMS",
+    summary: `มี ${count} ใบสมัครที่ MMS รอการตรวจ`,
+    count,
+    href: "/internal/admin/mms",
+    authority: "mms-worker",
+  }) : null;
+}
+
+function hypeOperationalWatchAction(source) {
+  const count = nonNegative(source?.counts?.total);
+  return count ? action({
+    key: "hype_operational_watch",
+    priority: PRIORITY.hype_operational_watch,
+    urgency: source?.counts?.overdue > 0 ? "urgent" : "attention",
+    title: "ตรวจ HYPE operational watch",
+    summary: `มี ${count} จุดที่ HYPE พบว่าต้องดูจาก authority ต้นทาง`,
+    count,
+    href: "/internal/admin/control-room",
+    authority: "hype_coordinator_read_only",
   }) : null;
 }
 
@@ -143,6 +224,31 @@ function action(input) {
 function normalizeUnavailable(value) {
   const allowed = new Set(["finance_audit", "mms", "hype"]);
   return asArray(value).map(clean).filter((item) => allowed.has(item));
+}
+
+function normalizeCoverage(value, unavailable) {
+  const allowed = new Set(["finance_audit", "mms", "hype"]);
+  const seen = new Set();
+  return asArray(value).map((item) => {
+    const source = clean(item?.source);
+    if (!allowed.has(source) || seen.has(source)) return null;
+    seen.add(source);
+    const state = ["connected", "partial", "unavailable"].includes(clean(item?.state)) ? clean(item.state) : "unavailable";
+    return {
+      source,
+      label: clean(item?.label) || source,
+      state: unavailable.includes(source) && state === "connected" ? "partial" : state,
+      authority: clean(item?.authority) || "read_only_authority",
+      href: clean(item?.href).startsWith("/internal/") ? clean(item.href) : "/internal/admin/control-room",
+      action_count: nonNegative(item?.action_count),
+      read_only: true,
+    };
+  }).filter(Boolean);
+}
+
+function nonNegative(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
 function uniqueCount(items, keyFor) {

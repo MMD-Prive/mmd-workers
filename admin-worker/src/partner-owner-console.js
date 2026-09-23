@@ -17,6 +17,19 @@ const ROUTES={
 };
 export function isPartnerOwnerConsoleRequest(request){const path=new URL(request.url).pathname.replace(/\/+$/,'');return path===PAGE||path.startsWith(ROOT);}
 const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store','referrer-policy':'no-referrer'}});
+// Phase 4D: aggregate-only handoff for Owner Actions. Finance rows, payout
+// references and notes stay in the finance authority.
+export async function readPartnerFinanceAuditCoverage(env,actor){
+  if(!actor||String(actor.role||'').trim().toLowerCase()!=='owner')return {available:false,reason:'owner_required'};
+  try{
+    const response=await handlePartnerFinanceAudit(env,actor);
+    const payload=await response.json().catch(()=>null);
+    if(!response.ok||payload?.ok!==true)return {available:false,reason:String(payload?.error||'finance_audit_unavailable').slice(0,80)};
+    const summary=payload.summary||{};
+    return {available:true,authority:'canonical_finance_timeline',reconciliation_count:nonNegative(summary.sessions_reconciliation_required)+nonNegative(summary.orphan_commissions),payout_hold_count:nonNegative(summary.payout_holds)};
+  }catch{return {available:false,reason:'finance_audit_unavailable'};}
+}
+function nonNegative(value){const n=Number(value);return Number.isFinite(n)&&n>0?Math.floor(n):0;}
 export async function handlePartnerOwnerConsole(request,env,ctx){
   const url=new URL(request.url);if(!['https://mmdbkk.com','https://www.mmdbkk.com'].includes(url.origin))return json({ok:false,error:'forbidden_origin'},403);
   const actor=await readCredentialBoundAdminActor(request,env);

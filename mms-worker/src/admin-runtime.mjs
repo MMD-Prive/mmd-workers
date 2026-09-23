@@ -82,7 +82,7 @@ export async function handleMmsAdminRuntime(request, env = {}) {
 }
 
 async function snapshot(env) {
-  const [applications, therapists, prebookings] = await Promise.all([
+  const [applicationsResult, therapistsResult, prebookingsResult] = await Promise.all([
     airtableListAll(env, tableId(env, "APPLICATIONS"), { maxPages: 5 }),
     airtableListAll(env, tableId(env, "THERAPISTS"), { maxPages: 5 }),
     airtableListAll(env, tableId(env, "PREBOOKINGS"), { maxPages: 5 }),
@@ -91,14 +91,15 @@ async function snapshot(env) {
   return {
     ok: true,
     generated_at: new Date().toISOString(),
+    complete: applicationsResult.complete && therapistsResult.complete && prebookingsResult.complete,
     counts: {
-      applications: applications.length,
-      therapists: therapists.length,
-      prebookings: prebookings.length,
+      applications: applicationsResult.records.length,
+      therapists: therapistsResult.records.length,
+      prebookings: prebookingsResult.records.length,
     },
-    applications: applications.map(publicApplicationRecord),
-    therapists: therapists.map(publicTherapistRecord),
-    prebookings: prebookings.map(publicPrebookingRecord),
+    applications: applicationsResult.records.map(publicApplicationRecord),
+    therapists: therapistsResult.records.map(publicTherapistRecord),
+    prebookings: prebookingsResult.records.map(publicPrebookingRecord),
   };
 }
 
@@ -372,7 +373,7 @@ async function airtableListAll(env, table, { maxPages = 5 } = {}) {
     offset = String(data.offset || "");
     if (!offset) break;
   }
-  return records;
+  return { records, complete: !offset };
 }
 
 async function airtableFetch(env, path, init = {}) {

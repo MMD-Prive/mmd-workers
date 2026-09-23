@@ -19,6 +19,10 @@ import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
 import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
 import { buildOwnerActionDetail } from "./owner-action-detail.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { readPartnerFinanceAuditCoverage } from "./partner-owner-console.js";
+import { readMmsOwnerActionCoverage } from "./mms-admin-runtime.js";
+import { readCrossSystemStuckSlaWatch } from "./hype-cross-system-stuck-sla.js";
+import { readRecoveryQueueIntelligence } from "./recovery-control.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
@@ -63,7 +67,7 @@ export default {
         if (String(actor.role || "").trim().toLowerCase() !== "owner") {
           return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
         }
-        const dashboard = await buildAdminDashboard(env);
+        const dashboard = await buildAdminDashboard(env, { ownerActor: actor });
         const actionKey = url.searchParams.get("action_key");
         if (actionKey !== null) {
           const detail = buildOwnerActionDetail(dashboard.owner_actions_source, actionKey);
@@ -80,18 +84,22 @@ export default {
   },
 };
 
-export async function buildAdminDashboard(env) {
+export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
   const now = new Date();
   const tomorrow = bangkokDateOffset(now, 1);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
 
-  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult] = await Promise.allSettled([
+  const ownerRecoveryQueue = ownerActionRecoveryQueue(env, ownerActor, now);
+  const [paymentQueueResult, historicalQueueResult, sessionsResult, membersResult, reconfirmSessionsResult, telegramRouterResult, financeAuditResult, mmsResult, hypeResult] = await Promise.allSettled([
     loadCanonicalPaymentReviewQueue(env),
     loadCanonicalHistoricalQueue(env),
     airtableList(env, sessionsTable, 100),
     airtableList(env, env.AIRTABLE_TABLE_MEMBERS_ID || DEFAULT_MEMBERS_TABLE_ID, 30),
     airtableListSessionsForDate(env, sessionsTable, tomorrow),
     readHypeTelegramRouterHealth(env),
+    ownerActionCoverage(env, ownerActor),
+    ownerActionMmsCoverage(env, ownerActor),
+    ownerActionHypeCoverage(env, ownerActor, now, ownerRecoveryQueue),
   ]);
 
   const paymentQueue = settledRecords(paymentQueueResult);
@@ -149,6 +157,14 @@ export async function buildAdminDashboard(env) {
   const telegramRouterHealth = telegramRouterResult.status === "fulfilled"
     ? telegramRouterResult.value
     : { available: false, status: "unknown", summary: "Telegram Router health source unavailable" };
+  const financeAudit = coverageResult(financeAuditResult, "finance_audit_unavailable");
+  const mms = coverageResult(mmsResult, "mms_snapshot_unavailable");
+  const hype = coverageResult(hypeResult, "hype_watch_unavailable");
+  const sourceCoverage = [
+    sourceCoverageEntry("finance_audit", "Finance Audit", financeAudit, "/internal/admin/partners", "canonical_finance_timeline"),
+    sourceCoverageEntry("mms", "MMS", mms, "/internal/admin/mms", "mms-worker"),
+    sourceCoverageEntry("hype", "HYPE operational watch", hype, "/internal/admin/control-room", "hype_coordinator_read_only"),
+  ];
   const telegramStatus = telegramRouterHealth?.status === "configured"
     ? "พร้อม"
     : telegramRouterHealth?.status === "partial"
@@ -211,11 +227,67 @@ export async function buildAdminDashboard(env) {
       reconfirm,
       members: memberRecords,
       boss,
-      unavailable_sources: ["finance_audit", "mms", "hype"],
+      finance_audit: financeAudit,
+      mms,
+      hype,
+      source_coverage: sourceCoverage,
+      unavailable_sources: sourceCoverage.filter((source) => source.state !== "connected").map((source) => source.source),
     },
     enumerable: false,
   });
   return payload;
+}
+
+function coverageResult(result, fallbackReason) {
+  if (result?.status === "fulfilled" && result.value?.available === true) return result.value;
+  return {
+    available: false,
+    reason: cleanDebugStatus(result?.status === "rejected" ? resultReason(result) : result?.value?.reason || fallbackReason),
+  };
+}
+
+function ownerActionCoverage(env, actor) {
+  return actor ? readPartnerFinanceAuditCoverage(env, actor) : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function ownerActionMmsCoverage(env, actor) {
+  return actor ? readMmsOwnerActionCoverage(env) : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function ownerActionRecoveryQueue(env, actor, now) {
+  return actor
+    ? readRecoveryQueueIntelligence(env, { limit: 12, domain: "all", state: "open" }, now).catch(() => ({ ok: false, error: "recovery_queue_unavailable" }))
+    : Promise.resolve({ ok: false, error: "owner_scope_required" });
+}
+
+function ownerActionHypeCoverage(env, actor, now, recoveryQueue) {
+  return actor
+    ? Promise.resolve(recoveryQueue).then((value) => readCrossSystemStuckSlaWatch(env, { now, recoveryQueue: value }))
+    : Promise.resolve({ available: false, reason: "owner_scope_required" });
+}
+
+function sourceCoverageEntry(source, label, value, href, fallbackAuthority) {
+  const partial = value?.complete === false || value?.status === "partial";
+  return {
+    source,
+    label,
+    state: value?.available === true ? (partial ? "partial" : "connected") : "unavailable",
+    authority: cleanDebugStatus(value?.authority || fallbackAuthority),
+    href,
+    action_count: ownerCoverageActionCount(source, value),
+    read_only: true,
+  };
+}
+
+function ownerCoverageActionCount(source, value) {
+  if (source === "finance_audit") return nonNegativeInteger(value?.reconciliation_count) + nonNegativeInteger(value?.payout_hold_count);
+  if (source === "mms") return nonNegativeInteger(value?.application_review_count) + nonNegativeInteger(value?.prebooking_coordination_count);
+  return nonNegativeInteger(value?.counts?.total);
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
 async function loadCanonicalPaymentReviewQueue(env) {

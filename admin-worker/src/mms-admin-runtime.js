@@ -35,6 +35,32 @@ export function isMmsAdminRequest(pathname = "") {
   return path === PAGE_PATH || path === API_PREFIX || path.startsWith(`${API_PREFIX}/`);
 }
 
+// Phase 4D: owner-action coverage consumes only aggregate, read-only state.
+// Snapshot records never leave this adapter.
+export async function readMmsOwnerActionCoverage(env = {}) {
+  const snapshot = await readMmsSnapshot(env);
+  if (!snapshot.ok) {
+    return { available: false, reason: "mms_snapshot_unavailable" };
+  }
+
+  const applications = uniqueMmsIds(
+    snapshot.applications.filter((item) => ["submitted", "under review"].includes(normalizeMmsStatus(item?.status))),
+    "application_id",
+  );
+  const prebookings = uniqueMmsIds(
+    snapshot.prebookings.filter((item) => ["submitted", "matching", "options ready", "pending coordination"].includes(normalizeMmsStatus(item?.status))),
+    "prebooking_id",
+  );
+
+  return {
+    available: true,
+    authority: "mms-worker",
+    complete: snapshot.complete,
+    application_review_count: applications,
+    prebooking_coordination_count: prebookings,
+  };
+}
+
 export async function handleMmsAdminRequest(request, env = {}) {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
@@ -210,6 +236,7 @@ async function readMmsSnapshot(env) {
     if (!response.ok || !data?.ok) return { ok: false };
     return {
       ok: true,
+      complete: data.complete !== false,
       applications: Array.isArray(data.applications) ? data.applications : [],
       therapists: Array.isArray(data.therapists) ? data.therapists : [],
       prebookings: Array.isArray(data.prebookings) ? data.prebookings : [],
@@ -217,6 +244,19 @@ async function readMmsSnapshot(env) {
   } catch {
     return { ok: false };
   }
+}
+
+function uniqueMmsIds(items, key) {
+  const ids = new Set();
+  for (const item of Array.isArray(items) ? items : []) {
+    const id = clean(item?.[key], 120);
+    if (id) ids.add(id);
+  }
+  return ids.size;
+}
+
+function normalizeMmsStatus(value) {
+  return clean(value, 80).toLowerCase().replace(/\s+/g, " ");
 }
 
 async function persistMmsJobReceipt(env, prebooking, receipt) {
