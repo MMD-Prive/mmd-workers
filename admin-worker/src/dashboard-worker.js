@@ -63,10 +63,7 @@ export default {
           return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
         }
         const dashboard = await buildAdminDashboard(env);
-        return withCors(json(buildOwnerActionsQueue({
-          ...dashboard,
-          unavailable_sources: ["finance_audit", "mms", "hype"],
-        })), cors);
+        return withCors(json(buildOwnerActionsQueue(dashboard.owner_actions_source)), cors);
       }
 
       return withCors(json(await buildAdminDashboard(env)), cors);
@@ -166,7 +163,7 @@ export async function buildAdminDashboard(env) {
     telegramRouterHealth,
   });
 
-  return {
+  const payload = {
     ok: true,
     layer: "core",
     source: "admin-worker",
@@ -199,6 +196,19 @@ export async function buildAdminDashboard(env) {
       telegram_router_source: telegramRouterResult.status === "fulfilled" ? cleanDebugStatus(telegramRouterHealth?.status) : resultReason(telegramRouterResult),
     },
   };
+  Object.defineProperty(payload, "owner_actions_source", {
+    value: {
+      now,
+      money: paymentQueue,
+      historical_recovery: historicalPending,
+      reconfirm,
+      members: memberRecords,
+      boss,
+      unavailable_sources: ["finance_audit", "mms", "hype"],
+    },
+    enumerable: false,
+  });
+  return payload;
 }
 
 async function loadCanonicalPaymentReviewQueue(env) {
