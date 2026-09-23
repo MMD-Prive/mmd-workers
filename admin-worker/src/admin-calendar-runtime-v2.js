@@ -668,6 +668,9 @@ function availabilityOnboardingCohort(rows = [], sessions = [], cohortReceipt = 
     completion_percent: 0,
     cohort_complete: false,
     start_required: currentBatch.length > 0,
+    action_sequence_mode: "one_at_a_time",
+    next_owner_action: null,
+    pending_owner_actions: currentBatch.length,
     auto_advance: false,
     cohort_source_status: cohortReadStatus,
   };
@@ -715,6 +718,8 @@ function availabilityOnboardingCohort(rows = [], sessions = [], cohortReceipt = 
     });
     const completed = nonNegativeInteger(outcomeCounts.completed);
     const total = currentBatch.length;
+    const nextOwnerItem = currentBatch.find(item => ["action_required", "follow_up_due"].includes(clean(item?.outcome_state, 80))) || null;
+    const pendingOwnerActions = currentBatch.filter(item => ["action_required", "follow_up_due"].includes(clean(item?.outcome_state, 80))).length;
     tracking = {
       schema: "mmd.availability.onboarding-outcomes.v1",
       state: total > 0 && completed === total ? "completed" : "active",
@@ -727,6 +732,17 @@ function availabilityOnboardingCohort(rows = [], sessions = [], cohortReceipt = 
       completion_percent: total ? Math.round((completed / total) * 100) : 0,
       cohort_complete: total > 0 && completed === total,
       start_required: false,
+      action_sequence_mode: "one_at_a_time",
+      next_owner_action: nextOwnerItem ? {
+        position: currentBatch.indexOf(nextOwnerItem) + 1,
+        name: clean(nextOwnerItem.name, 160) || null,
+        model_id: clean(nextOwnerItem.model_id, 120) || null,
+        recovery_stage: clean(nextOwnerItem.recovery_stage, 80) || null,
+        next_action: clean(nextOwnerItem.next_action, 80) || null,
+        priority_bucket: clean(nextOwnerItem.priority_bucket, 60) || null,
+        upcoming_job_at: clean(nextOwnerItem.upcoming_job_at, 100) || null,
+      } : null,
+      pending_owner_actions: pendingOwnerActions,
       auto_advance: false,
       cohort_source_status: cohortReadStatus,
     };
