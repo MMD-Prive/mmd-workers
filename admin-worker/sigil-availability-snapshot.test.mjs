@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   handleSigilAvailabilityInternalRequest,
   isSigilAvailabilityInternalRequest,
+  preflightAvailabilityAdoptionReminder,
   readAvailabilityAdoptionCohort,
   startAvailabilityAdoptionCohort,
   writeSigilAvailabilitySnapshot,
@@ -316,6 +317,72 @@ test("availability adoption reminder sends one bounded LINE push and writes a 24
     assert.equal(second.status, 429);
     assert.equal((await second.json()).error, "availability_reminder_cooldown");
     assert.equal(calls.filter(call => new URL(call.url).hostname === "api.line.me").length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("availability reminder preflight resolves canonical Model and performs no send", async () => {
+  const store = kv();
+  const originalFetch = globalThis.fetch;
+  let eventsCalls = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.hostname === "api.airtable.com") {
+      return Response.json({
+        records: [{
+          id: "recModel1234567890",
+          fields: {
+            unique_key: "mdl_pri_str_master",
+            working_name: "EMs16",
+            line_user_id: "U0123456789abcdef0123456789abcdef",
+            status: "active",
+          },
+        }],
+      });
+    }
+    throw new Error("unexpected network call " + url.hostname);
+  };
+
+  const eventsBinding = {
+    async fetch(request) {
+      eventsCalls += 1;
+      assert.equal(new URL(request.url).pathname, "/__internal/model/availability-reminder/preflight");
+      assert.equal(request.method, "POST");
+      assert.equal(request.headers.get("x-internal-token"), "admin-events-secret");
+      const body = await request.clone().json();
+      assert.equal(body.line_user_id, "U0123456789abcdef0123456789abcdef");
+      return Response.json({
+        ok: true,
+        ready: true,
+        state: "ready",
+        token_mode: "model",
+        transport: "events-worker-model-line",
+        recipient_reachable: true,
+        provider_status: 200,
+        message_sent: false,
+      });
+    },
+  };
+
+  try {
+    const result = await preflightAvailabilityAdoptionReminder({
+      AIRTABLE_API_KEY: "airtable-secret",
+      AIRTABLE_BASE_ID: "app_test",
+      AUTH_SERVICE_ADMIN_TO_EVENTS: "admin-events-secret",
+      EVENTS_WORKER: eventsBinding,
+      SIGIL_AVAILABILITY_SNAPSHOTS: store,
+    }, "mdl_pri_str_master");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.ready, true);
+    assert.equal(result.state, "ready");
+    assert.equal(result.transport, "events-worker-model-line");
+    assert.equal(result.recipient_reachable, true);
+    assert.equal(result.message_sent, false);
+    assert.equal(eventsCalls, 1);
+    assert.equal(store.writes.length, 0);
+    assert.doesNotMatch(JSON.stringify(result), /U0123456789abcdef|airtable-secret|admin-events-secret/);
   } finally {
     globalThis.fetch = originalFetch;
   }
