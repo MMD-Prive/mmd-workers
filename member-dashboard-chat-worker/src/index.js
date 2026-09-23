@@ -911,7 +911,11 @@ export async function buildKenjiKnowledgeLineReply(event = {}, profile = {}, env
 
 export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, options = {}) {
   const eventText = getLineEventText(event);
-  const intent = inferLineIntent(eventText, event);
+  const inferredIntent = inferLineIntent(eventText, event);
+  const postbackIntent = event?.type === "postback"
+    ? canonicalRichMenuIntent({ data: event?.postback?.data })
+    : "";
+  const intent = postbackIntent || inferredIntent;
   const lineUserId = getLineUserId({ event });
   const liveMemberContext = await resolveKenjiLiveMemberContext(env, lineUserId, intent);
   const replyOptions = liveMemberContext ? { ...options, verifiedMemberContext: liveMemberContext } : options;

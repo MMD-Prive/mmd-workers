@@ -85,3 +85,12 @@ test("human handoff remains silent after canonical member resolution", async () 
   }, {}, truthEnv("vip", "active"));
   assert.equal(reply.text, "");
 });
+
+test("Private Rich Menu Kenji postback opens Kenji rather than the Per fallback", async () => {
+  const reply = await resolveKenjiLineReply({
+    type: "postback", source: { type: "user", userId },
+    postback: { data: "mmd_action=kenji_ai&audience=private&source=private_rich_menu" },
+  }, {}, truthEnv("private_premium", "active"));
+  assert.match(reply.text, /Kenji อยู่ตรงนี้/);
+  assert.doesNotMatch(reply.text, /วันนี้ให้เปอร์ช่วย/);
+});
