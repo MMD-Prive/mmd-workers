@@ -150,6 +150,7 @@ const ADMIN_GATE_ALLOWED_BASE_URLS = new Set([
 const SIGIL_BOARD_CARDS_KV_KEY = "sigil:board:v1:cards";
 const SIGIL_BOARD_META_KV_KEY = "sigil:board:v1:meta";
 const MEMBER_DASHBOARD_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/__internal/line/rich-menu";
+const MEMBER_DASHBOARD_CURRENT_RICH_MENU_BASE_URL = "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu";
 const MODEL_SESSION_MODEL_BLOCKED_ACTIONS = new Set([
   "confirm_final_payment",
   "mark_final_payment_confirmed",
@@ -1647,6 +1648,8 @@ function isAdminRichMenuRoute(path, method) {
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) ||
+    (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/list`)
   );
@@ -1662,6 +1665,8 @@ function adminRichMenuServicePath(path) {
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/public-world/publish`) return "/public-world/publish";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) return "/private-member/draft";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) return "/private-member/validate";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) return "/three-level/prepare";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) return "/three-level/audit";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) return "/default";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/list`) return "/list";
   return "";
@@ -1691,12 +1696,20 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   const servicePath = adminRichMenuServicePath(path);
   if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
 
+  const currentThreeLevel = path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare` ||
+    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`;
+  const internalToken = currentThreeLevel ? str(env.INTERNAL_TOKEN) : "";
+  if (currentThreeLevel && !internalToken) {
+    return json({ ok: false, error: "internal_token_unavailable" }, 502);
+  }
+
   const init = {
     method,
     headers: {
       "content-type": "application/json",
       "x-mmd-service-binding": "admin-worker",
       "x-mmd-internal-call": "true",
+      ...(currentThreeLevel ? { authorization: `Bearer ${internalToken}` } : {}),
     },
   };
 
@@ -1705,7 +1718,8 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   }
 
   const url = new URL(req.url);
-  const serviceUrl = new URL(`${MEMBER_DASHBOARD_RICH_MENU_BASE_URL}${servicePath}`);
+  const serviceBase = currentThreeLevel ? MEMBER_DASHBOARD_CURRENT_RICH_MENU_BASE_URL : MEMBER_DASHBOARD_RICH_MENU_BASE_URL;
+  const serviceUrl = new URL(`${serviceBase}${servicePath}`);
   if (url.searchParams.get("debug") === "1") serviceUrl.searchParams.set("debug", "1");
   const upstream = await binding.fetch(new Request(serviceUrl, init));
   const payload = await upstream.json().catch(() => ({ ok: false, error: "member_dashboard_response_invalid" }));
