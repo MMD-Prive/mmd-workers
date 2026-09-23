@@ -10,6 +10,7 @@ import {
   collapseDescendantsOfUniqueExactModelMatch,
   driveSearchToken,
   findExactModelImage,
+  handleModelDriveDirectoryRequest,
   isModelDriveDirectoryRequest,
   modelNameScore,
   resolveApprovedModelFolder,
@@ -39,6 +40,54 @@ test("model Drive directory only recognizes internal model-directory paths", () 
   );
   assert.equal(
     isModelDriveDirectoryRequest(new Request("https://mmdbkk.com/__internal/model-drive/search?q=Book")),
+    false,
+  );
+});
+
+test("canonical owner-approved Drive file lane can read a legacy folder without relaxing public root discovery", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const folderId = "1LegacyOwnerApproved12345";
+  const fileId = "1LegacyApprovedFile12345";
+  globalThis.fetch = async (input) => {
+    const request = input instanceof Request ? input : new Request(input);
+    const url = new URL(request.url);
+    if (url.origin === "https://oauth2.googleapis.com") return Response.json({ access_token:"drive-token" });
+    if (url.pathname === `/drive/v3/files/${folderId}`) {
+      return Response.json({ id:folderId, name:"Legacy Model", parents:[], mimeType:"application/vnd.google-apps.folder", trashed:false });
+    }
+    if (url.pathname === "/drive/v3/files" && (url.searchParams.get("q") || "").includes(folderId)) {
+      return Response.json({ files:[{ id:fileId, name:"owner-approved.jpg", mimeType:"image/jpeg", parents:[folderId], trashed:false }] });
+    }
+    if (url.pathname === `/drive/v3/files/${fileId}` && url.searchParams.get("alt") === "media") {
+      return new Response(new Uint8Array([255,216,255,1]), { headers:{ "content-type":"image/jpeg" } });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  const env = {
+    GOOGLE_DRIVE_CLIENT_ID:"client",
+    GOOGLE_DRIVE_CLIENT_SECRET:"secret",
+    GOOGLE_DRIVE_REFRESH_TOKEN:"refresh",
+  };
+  const response = await handleModelDriveDirectoryRequest(new Request(
+    `https://${MODEL_DRIVE_DIRECTORY_HOST}${MODEL_DRIVE_CANONICAL_FILE_PATH}`,
+    {
+      method:"POST",
+      headers:{ "content-type":"application/json" },
+      body:JSON.stringify({ drive_folder_id:folderId, file_name:"owner-approved.jpg" }),
+    },
+  ), env);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-photo-source"), "google-drive-canonical-owner-approved");
+  assert.equal((await response.arrayBuffer()).byteLength, 4);
+
+  assert.equal(
+    isModelDriveDirectoryRequest(new Request(
+      `https://mmdbkk.com${MODEL_DRIVE_CANONICAL_FILE_PATH}`,
+      { method:"POST" },
+    )),
     false,
   );
 });
