@@ -65,6 +65,42 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
   assert.doesNotMatch(html, /\/member\/my-mmd/);
 });
 
+test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable presentation", async () => {
+  const calls = [];
+  globalThis.fetch = async (request) => {
+    calls.push(request.url);
+    return new Response("unexpected");
+  };
+
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview?model=Example%20Model"), {});
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, []);
+  assert.equal(response.headers.get("x-mmd-ui-source"), "my-mmd-private-teaser-viewer-v1");
+  assert.match(response.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
+  assert.match(html, /MMD PRIVÉ · PRIVATE PREVIEW/);
+  assert.match(html, /\/api\/member\/app\/private-teaser\/availability/);
+  assert.match(html, /\/api\/member\/app\/private-teaser\/grant/);
+  assert.match(html, /model_slug:modelSlug/);
+  assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
+});
+
+test("MY MMD Private Teaser media player stays on MY MMD and accepts read-only access only", async () => {
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview/view#t=secret"), {});
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /\/api\/member\/app\/private-preview\/status/);
+  assert.match(html, /\/api\/member\/app\/private-preview\/consume/);
+  assert.match(html, /URL\.revokeObjectURL/);
+  assert.match(html, /setTimeout\(conceal,3000\)/);
+  assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|localStorage|sessionStorage|indexedDB/);
+
+  const post = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview", { method:"POST" }), {});
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get("allow"), "GET, HEAD");
+});
+
 test("Lovable upstream failure returns a visible fail-closed recovery page with HYPE", async () => {
   globalThis.fetch = async () => {
     throw new Error("origin unavailable");

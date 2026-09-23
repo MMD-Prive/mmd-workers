@@ -1,5 +1,6 @@
 import currentWorker from "./line-group-ingress-front-gate.js";
 import { isMyMmdOrdersPage, proxyMyMmdOrdersPage } from "./my-mmd-orders-webflow-page.js";
+import { isMyMmdPrivateTeaserViewerPath, myMmdPrivateTeaserViewerPage } from "./my-mmd-private-teaser-viewer.js";
 export { KenjiModelIdempotency } from "./line-group-ingress-front-gate.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -501,6 +502,7 @@ export default {
 
     if (isLegacyMyMmdUiPath(path)) return redirectLegacyMyMmd(request);
     if (isMyMmdOrdersPage(request)) return proxyMyMmdOrdersPage(request);
+    if (isMyMmdPrivateTeaserViewerPath(request)) return myMmdPrivateTeaserViewerPage(request);
     if (isMyMmdAssetPath(path)) return proxyLovableAsset(request);
     if (isMyMmdUiPath(path)) return proxyLovablePage(request);
 

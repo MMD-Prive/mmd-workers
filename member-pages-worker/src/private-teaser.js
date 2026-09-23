@@ -9,6 +9,8 @@ const DEFAULT_CLIENTS = "tblVv58TCbwh5j1fS";
 const DEFAULT_MEDIA = "MMD — Model Media Assets";
 const DEFAULT_RULES = "MMD — Model Offer Rules";
 const DEFAULT_GRANTS = "MMD — Private Flash Preview Grants";
+const DEFAULT_MODELS_TABLE = "tblI4B0bI446vp9GX";
+const MODELS_WORKING_NAME_FIELD = "fldShiT60bmCxFxRu";
 const TEASER_GRANT_TTL_MS = 15 * 60 * 1000;
 const MAX_TEASER_ASSETS_PER_KIND = 5;
 
@@ -34,11 +36,15 @@ export async function handlePrivateTeaser(request, env = {}) {
   const input = expected === "GET"
     ? Object.fromEntries(new URL(request.url).searchParams)
     : await request.json().catch(() => null);
-  const modelId = recordId(input?.model_id || input?.model_record_id);
-  const workLane = clean(input?.work_lane || input?.service_lane || input?.service_type, 80).toLowerCase();
-  if (!modelId || !workLane) return json({ ok:false, error:{ code:"MODEL_AND_SERVICE_REQUIRED" } }, 400);
+  const suppliedModelId = recordId(input?.model_id || input?.model_record_id);
+  const modelSlug = publicSlug(input?.model_slug || input?.model);
+  const workLane = publicWorkLane(input?.work_lane || input?.service_lane || input?.service_type);
+  if (!suppliedModelId && !modelSlug) return json({ ok:false, error:{ code:"MODEL_REQUIRED" } }, 400);
 
   try {
+    // A customer-facing page has a safe display slug, never an Airtable record id.
+    const modelId = suppliedModelId || await resolvePublicModelSlug(env, modelSlug);
+    if (!modelId) return json({ ok:true, availability:{ eligible:false, reason:"MODEL_UNAVAILABLE" } });
     const context = await resolveTeaserContext(env, identity.lineUserId, modelId, workLane);
     if (!context.ok) return json({ ok:true, availability:{ eligible:false, reason:context.reason } });
     const kind = previewKind(input?.preview_kind || input?.kind);
@@ -165,7 +171,7 @@ async function createTeaserGrant(env, input) {
     duration_sec:input.asset.kind === "private_pic" ? 3 : null,
     view_limit:1,
     consume_on:input.asset.kind === "private_pic" ? "open" : "play_start",
-    viewer_url:`https://www.mmdbkk.com/api/member/app/private-preview/view#t=${encodeURIComponent(token)}`,
+    viewer_url:`https://www.mmdbkk.com/my-mmd/private-preview/view#t=${encodeURIComponent(token)}`,
   };
 }
 
@@ -188,6 +194,27 @@ async function resolveClient(env, lineUserId) {
   const f = records[0]?.fields || {};
   if (records.length !== 1 || f.blocked === true || [f.status,f.client_status,f.member_status].some((value) => /^(blocked|suspended|revoked)$/i.test(String(value || "")))) return "";
   return records[0].id;
+}
+async function resolvePublicModelSlug(env, slug) {
+  if (!slug) return "";
+  const table = env.AIRTABLE_TABLE_MODELS || DEFAULT_MODELS_TABLE;
+  let offset = "", seen = 0, match = "";
+  do {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100"); url.searchParams.set("returnFieldsByFieldId", "true"); url.searchParams.append("fields[]", MODELS_WORKING_NAME_FIELD);
+    if (offset) url.searchParams.set("offset", offset);
+    const response = await airtable(env, table, "", { url });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(payload?.records)) throw failure("TEASER_REGISTRY_UNAVAILABLE", 503);
+    seen += payload.records.length;
+    for (const record of payload.records) {
+      if (publicSlug(record?.fields?.[MODELS_WORKING_NAME_FIELD]) !== slug) continue;
+      if (match && match !== record.id) return ""; // display name ambiguity fails closed
+      match = record.id;
+    }
+    offset = clean(payload.offset, 160);
+  } while (offset && seen < 500);
+  return recordId(match);
 }
 async function list(env, table, filterByFormula, maxRecords) {
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
@@ -212,6 +239,8 @@ async function airtable(env, table, id = "", init = {}) {
 }
 function isFirstParty(request) { const origin = request.headers.get("origin"); return origin === new URL(request.url).origin && ["https://mmdbkk.com", "https://www.mmdbkk.com"].includes(origin); }
 function recordId(value) { const id = clean(value, 100); return /^rec[a-zA-Z0-9]+$/.test(id) ? id : ""; }
+function publicSlug(value) { return clean(value, 120).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100); }
+function publicWorkLane(value) { return clean(value, 80).toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "companion"; }
 function previewKind(value) { const token = clean(value, 40).toLowerCase().replace(/[\s-]+/g, "_"); return ["private_pic", "image"].includes(token) ? "private_pic" : ["private_clip", "video", "clip"].includes(token) ? "private_clip" : ""; }
 function countByKind(items) { return { private_pic:items.filter((item) => item.kind === "private_pic").length, private_clip:items.filter((item) => item.kind === "private_clip").length }; }
 function links(value) { return Array.isArray(value) ? value.map(String) : value ? [String(value)] : []; }
