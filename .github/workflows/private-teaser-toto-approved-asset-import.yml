@@ -1,0 +1,47 @@
+name: Private Teaser TOTO approved asset import
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/private-teaser-toto-approved-asset-import.yml"
+      - "scripts/private-teaser-toto-approved-asset-import.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: private-teaser-toto-approved-asset-import
+  cancel-in-progress: false
+
+jobs:
+  import-and-approve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      ORIGIN: https://mmdbkk.com
+      ADMIN_LOGIN_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      MODELS_TABLE: tblI4B0bI446vp9GX
+      MEDIA_TABLE: tblrpQXhHnbTU9RhW
+      TARGET_MODEL_KEY: toto
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate production operation syntax
+        run: node --check scripts/private-teaser-toto-approved-asset-import.mjs
+
+      - name: Import and approve exact owner-consented TOTO asset
+        run: node scripts/private-teaser-toto-approved-asset-import.mjs
