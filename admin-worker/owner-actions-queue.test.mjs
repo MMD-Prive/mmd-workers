@@ -56,14 +56,23 @@ test("owner actions queue does not expose source names, payment refs, or raw not
   assert.equal(queue.mutation_allowed, false);
 });
 
-test("owner actions queue projects connected Finance, MMS and HYPE coverage without source records", () => {
+test("owner actions queue keeps MMS routine backlog in source coverage and surfaces exceptions only", () => {
   const queue = buildOwnerActionsQueue({
     finance_audit: { available: true, reconciliation_count: 2, payout_hold_count: 1 },
-    mms: { available: true, application_review_count: 3, prebooking_coordination_count: 4 },
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      application_review_count: 3,
+      prebooking_coordination_count: 4,
+      routine_application_count: 3,
+      routine_prebooking_count: 3,
+      exception_prebooking_count: 1,
+      exception_count: 1,
+    },
     hype: { available: true, counts: { total: 2, overdue: 1, owner_actionable_overdue: 1, owner_actionable_by_kind: { entitlement_notification_incomplete: 1 } } },
     source_coverage: [
       { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 3 },
-      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 7 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 1, routine_count: 6, operating_model: "bau_exception_only_v1" },
       { source: "hype", label: "HYPE operational watch", state: "partial", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 1 },
     ],
     unavailable_sources: ["hype"],
@@ -72,20 +81,49 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
   assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
     ["finance_reconciliation", 2],
     ["finance_payout_hold", 1],
-    ["mms_prebooking_coordination", 4],
-    ["mms_application_review", 3],
+    ["mms_prebooking_coordination", 1],
     ["hype_entitlement_notification_overdue", 1],
   ]);
+  assert.equal(queue.actions.some((item) => item.action_key === "mms_application_review"), false);
   assert.deepEqual(queue.unavailable_sources, ["hype"]);
-  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.read_only]), [
-    ["finance_audit", "connected", true],
-    ["mms", "connected", true],
-    ["hype", "partial", true],
+  assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.action_count, item.routine_count, item.read_only]), [
+    ["finance_audit", "connected", 3, 0, true],
+    ["mms", "connected", 1, 6, true],
+    ["hype", "partial", 1, 0, true],
   ]);
+  assert.equal(queue.queue_health.operating_model, "bau_exception_only_v1");
+  assert.equal(queue.queue_health.routine_source_records, 6);
+  assert.equal(queue.queue_health.phase_6_bau_ready, false);
   assert.equal(JSON.stringify(queue).includes("bank-secret"), false);
 });
 
 
+
+test("phase 6 BAU readiness is true when MMS is exception-only and all sources are connected", () => {
+  const queue = buildOwnerActionsQueue({
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      routine_application_count: 18,
+      routine_prebooking_count: 2,
+      exception_prebooking_count: 0,
+      exception_count: 0,
+    },
+    hype: { available: true, counts: { owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 0 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 0, routine_count: 20, operating_model: "bau_exception_only_v1" },
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0 },
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0 },
+    ],
+  });
+
+  assert.equal(queue.actions.some((item) => item.action_key.startsWith("mms_")), false);
+  assert.equal(queue.queue_health.routine_source_records, 20);
+  assert.equal(queue.queue_health.classification_complete, true);
+  assert.equal(queue.queue_health.source_coverage_complete, true);
+  assert.equal(queue.queue_health.phase_6_bau_ready, true);
+});
 
 test("availability operations surface only SLA follow-up or source exceptions", () => {
   const queue = buildOwnerActionsQueue({

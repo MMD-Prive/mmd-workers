@@ -316,13 +316,15 @@ function sourceCoverageEntry(source, label, value, href, fallbackAuthority) {
     authority: cleanDebugStatus(value?.authority || fallbackAuthority),
     href,
     action_count: ownerCoverageActionCount(source, value),
+    routine_count: ownerCoverageRoutineCount(source, value),
+    operating_model: cleanDebugStatus(value?.operating_model || ""),
     read_only: true,
   };
 }
 
 function ownerCoverageActionCount(source, value) {
   if (source === "finance_audit") return nonNegativeInteger(value?.reconciliation_count) + nonNegativeInteger(value?.payout_hold_count);
-  if (source === "mms") return nonNegativeInteger(value?.application_review_count) + nonNegativeInteger(value?.prebooking_coordination_count);
+  if (source === "mms") return nonNegativeInteger(value?.exception_count);
   if (source === "availability") {
     const health = value?.coverage_health || {};
     if (health.review_status === "source_attention") return Math.max(1, nonNegativeInteger(health.source_unavailable_models));
@@ -330,6 +332,13 @@ function ownerCoverageActionCount(source, value) {
   }
   if (source === "hype") return nonNegativeInteger(value?.counts?.owner_actionable_overdue);
   return nonNegativeInteger(value?.counts?.total);
+}
+
+function ownerCoverageRoutineCount(source, value) {
+  if (source === "mms") {
+    return nonNegativeInteger(value?.routine_application_count) + nonNegativeInteger(value?.routine_prebooking_count);
+  }
+  return 0;
 }
 
 function nonNegativeInteger(value) {

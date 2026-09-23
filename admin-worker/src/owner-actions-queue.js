@@ -31,14 +31,14 @@ export function buildOwnerActionsQueue(input = {}) {
     financePayoutHoldAction(input.finance_audit),
     reconfirmAction(input.reconfirm, "pending"),
     mmsPrebookingCoordinationAction(input.mms),
-    mmsApplicationReviewAction(input.mms),
     membershipReviewAction(input.members),
     ...hypeOverdueCohortActions(input.hype),
     ownerExceptionAction(input.boss),
   ].filter(Boolean).sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
 
   const unavailable = normalizeUnavailable(input.unavailable_sources);
-  const queueHealth = buildQueueHealth({ actions, hype: input.hype, unavailable });
+  const coverage = normalizeCoverage(input.source_coverage, unavailable);
+  const queueHealth = buildQueueHealth({ actions, hype: input.hype, unavailable, sourceCoverage: coverage });
   return {
     ok: true,
     contract: "mmd_owner_actions_queue_v1",
@@ -53,7 +53,7 @@ export function buildOwnerActionsQueue(input = {}) {
       attention: actions.filter((item) => item.urgency === "attention").length,
     },
     unavailable_sources: unavailable,
-    source_coverage: normalizeCoverage(input.source_coverage, unavailable),
+    source_coverage: coverage,
     queue_health: queueHealth,
     guardrails: {
       payment_truth: "payments-worker",
@@ -186,27 +186,13 @@ function membershipReviewAction(items) {
 }
 
 function mmsPrebookingCoordinationAction(source) {
-  const count = nonNegative(source?.prebooking_coordination_count);
+  const count = nonNegative(source?.exception_prebooking_count);
   return count ? action({
     key: "mms_prebooking_coordination",
     priority: PRIORITY.mms_prebooking_coordination,
     urgency: "attention",
-    title: "ประสาน MMS prebooking",
-    summary: `มี ${count} prebooking ที่ MMS ยังอยู่ระหว่างประสานงาน`,
-    count,
-    href: "/internal/admin/mms",
-    authority: "mms-worker",
-  }) : null;
-}
-
-function mmsApplicationReviewAction(source) {
-  const count = nonNegative(source?.application_review_count);
-  return count ? action({
-    key: "mms_application_review",
-    priority: PRIORITY.mms_application_review,
-    urgency: "attention",
-    title: "ตรวจใบสมัคร MMS",
-    summary: `มี ${count} ใบสมัครที่ MMS รอการตรวจ`,
+    title: "ประสาน MMS ที่ติดค้าง",
+    summary: `มี ${count} prebooking อยู่สถานะ Pending Coordination ที่ต้องแทรกแซง`,
     count,
     href: "/internal/admin/mms",
     authority: "mms-worker",
@@ -284,7 +270,7 @@ function hypeOverdueCohortActions(source) {
   return actions;
 }
 
-function buildQueueHealth({ actions, hype, unavailable }) {
+function buildQueueHealth({ actions, hype, unavailable, sourceCoverage }) {
   const byKind = hype?.counts?.owner_actionable_by_kind;
   const ownerActionableByKind = byKind && typeof byKind === "object" && !Array.isArray(byKind) ? byKind : {};
   const knownHypeOverdue = HYPE_OVERDUE_COHORTS.reduce(
@@ -295,11 +281,16 @@ function buildQueueHealth({ actions, hype, unavailable }) {
   const unknownHypeOverdue = Math.max(0, totalHypeOverdue - knownHypeOverdue);
   const staleTerminalRecords = nonNegative(hype?.counts?.stale_terminal_records);
   const nonActionableRecords = nonNegative(hype?.counts?.non_actionable_records);
+  const coverage = asArray(sourceCoverage);
+  const routineSourceRecords = coverage.reduce((sum, item) => sum + nonNegative(item?.routine_count), 0);
+  const mmsBauReady = coverage.some((item) => clean(item?.source) === "mms" && clean(item?.operating_model) === "bau_exception_only_v1");
 
   return {
     schema: "mmd_owner_actions_queue_health_v1",
+    operating_model: "bau_exception_only_v1",
     action_classes: asArray(actions).length,
     active_owner_decisions: asArray(actions).reduce((sum, item) => sum + nonNegative(item?.count), 0),
+    routine_source_records: routineSourceRecords,
     unknown_hype_overdue: unknownHypeOverdue,
     stale_terminal_records: staleTerminalRecords,
     stale_terminal_by_kind: normalizeDiagnosticCounts(hype?.stale_terminal_by_kind, [
@@ -315,6 +306,7 @@ function buildQueueHealth({ actions, hype, unavailable }) {
     classification_complete: unknownHypeOverdue === 0,
     source_coverage_complete: asArray(unavailable).length === 0,
     phase_5_closure_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0,
+    phase_6_bau_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0 && mmsBauReady,
     business_truth_mutated: false,
   };
 }
@@ -381,6 +373,8 @@ function normalizeCoverage(value, unavailable) {
       authority: clean(item?.authority) || "read_only_authority",
       href: clean(item?.href).startsWith("/internal/") ? clean(item.href) : "/internal/admin/control-room",
       action_count: nonNegative(item?.action_count),
+      routine_count: nonNegative(item?.routine_count),
+      operating_model: clean(item?.operating_model),
       read_only: true,
     };
   }).filter(Boolean);
