@@ -1,11 +1,13 @@
 const DEFAULT_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT";
 const SUPPLIER_SNAPSHOT_PATH = "/shop/api/supplier/liff-portal";
+const SUPPLIER_BIND_PATH = "/shop/api/supplier/liff-bind";
 
 export function renderSupplierLiffPage(env = {}) {
   const liffId = cleanInline(env.HIMAI_SUPPLIER_LIFF_ID || DEFAULT_SUPPLIER_LIFF_ID);
   const html = HTML
     .replaceAll("__LIFF_ID__", liffId)
-    .replaceAll("__SNAPSHOT_PATH__", SUPPLIER_SNAPSHOT_PATH);
+    .replaceAll("__SNAPSHOT_PATH__", SUPPLIER_SNAPSHOT_PATH)
+    .replaceAll("__BIND_PATH__", SUPPLIER_BIND_PATH);
 
   return new Response(html, {
     status: 200,
@@ -175,6 +177,7 @@ summary:after{content:"+";color:var(--muted);font-size:20px;font-weight:400}deta
   "use strict";
   var LIFF_ID="__LIFF_ID__";
   var API="__SNAPSHOT_PATH__";
+  var BIND_API="__BIND_PATH__";
   var $=function(id){return document.getElementById(id)};
   var state=$("state"),loading=$("loading"),denied=$("denied"),app=$("app");
 
@@ -243,6 +246,22 @@ summary:after{content:"+";color:var(--muted);font-size:20px;font-weight:400}deta
       }
       var token=window.liff.getAccessToken();
       if(!token)throw new Error("line_access_token_required");
+      var invite=new URLSearchParams(location.search).get("invite")||"";
+      if(invite){
+        setState("กำลังยืนยัน");
+        var bind=await fetch(BIND_API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({access_token:token,invite_token:invite})});
+        var bindData=await bind.json().catch(function(){return {}});
+        if(!bind.ok||bindData.ok!==true){
+          if(bind.status===409){showDenied("บัญชี Supplier นี้ผูกกับ LINE อื่นอยู่แล้ว");return}
+          if(bind.status===403){showDenied("ลิงก์เชิญนี้หมดอายุหรือถูกใช้ไปแล้ว");return}
+          throw new Error(bindData.error||"supplier_bind_failed");
+        }
+        try{
+          var clean=new URL(location.href);
+          clean.searchParams.delete("invite");
+          history.replaceState(null,"",clean.pathname+clean.search+clean.hash);
+        }catch(_){}
+      }
       setState("กำลังโหลด");
       var r=await fetch(API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({access_token:token})});
       var data=await r.json().catch(function(){return {}});
