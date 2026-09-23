@@ -210,10 +210,12 @@ jobs:
             2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log"
 
           version_id="$(sed -n -E 's/.*(Current|Worker) Version ID:[[:space:]]*([0-9a-fA-F-]+).*/\2/p' "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" | tail -n 1)"
-          if [ -n "$version_id" ]; then
-            echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
-            echo "Resolved direct-deploy version $version_id"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from direct migration deploy output" >&2
+            exit 2
           fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          echo "Resolved direct-deploy version $version_id"
       - name: Resolve uploaded version ID
         id: resolve_version
         if: steps.upload.outcome == 'success'
