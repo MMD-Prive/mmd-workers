@@ -3,6 +3,7 @@ import { mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaBy
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
 import { readOwnerApprovedDriveMedia } from './google-drive-owner-media.js';
+import { handlePrivateMediaIngestOnce, isPrivateMediaIngestOnceRequest } from './private-media-ingest-once.js';
 
 export const REVIEW_PAGE = '/internal/admin/mmd-review';
 export const REVIEW_API = '/v1/admin/private-media';
@@ -22,6 +23,8 @@ export function isPrivateMediaReviewRequest(request) {
 export async function handlePrivateMediaReview(request, env, ctx) {
   const url = new URL(request.url), path = url.pathname.replace(/\/$/, '');
   if (!ORIGINS.has(url.origin)) return json({ ok: false, error: 'forbidden_origin' }, 403);
+  // One-time ingest is server-to-server capability auth, intentionally handled before browser admin-session enforcement.
+  if (isPrivateMediaIngestOnceRequest(request)) return handlePrivateMediaIngestOnce(request, env);
   // This browser surface never accepts service credentials or Model authority.
   if (request.headers.has('authorization') || request.headers.has('x-confirm-key')) return json({ ok: false, error: 'browser_admin_session_required' }, 403);
   const actor = await readCredentialBoundAdminActor(request, env);
