@@ -115,6 +115,14 @@ try {
   assert.equal(response.headers.get('x-mmd-control-room-v2'), 'system-health-v1');
   assert.equal(response.headers.get('x-mmd-owner-analytics'), 'intent-truth-v1');
   assert.equal(response.headers.get('x-mmd-control-room-phase1'), 'closed');
+  assert.equal(response.headers.get('x-mmd-owner-actions'), 'queue-detail-read-only-v1');
+  assert.match(body, /data-mmd-owner-actions="v1"/);
+  assert.match(body, /OWNER ACTIONS · READ ONLY/);
+  assert.match(body, /วันนี้ควรเคลียร์อะไร/);
+  assert.match(body, /fetch\('\/v1\/admin\/dashboard\/owner-actions'/);
+  assert.match(body, /detail_href/);
+  assert.match(body, /ไม่มีการส่งข้อความ · ไม่มีการอนุมัติหรือเปลี่ยน Business Truth/);
+
   assert.match(body, /data-mmd-control-room-v2="system-health-v1"/);
   assert.match(body, /SYSTEM HEALTH · V2/);
   assert.match(body, /Production truth at a glance/);
