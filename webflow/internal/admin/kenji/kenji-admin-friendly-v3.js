@@ -173,7 +173,7 @@
       title: title, category: category, language: "th", customer_answer: answer, internal_instruction: instruction,
       allowed_channels: ["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"], allowed_audience: audience,
       response_mode: sensitive || state.teachMode === "guard" ? "handoff_required" : "auto_reply_allowed",
-      risk_level: sensitive ? "critical" : "medium", source_path: "/internal/admin/kenji", source_ref: entryTrigger ? "single-owner-friendly-v4:ad-entry" : "single-owner-friendly-v4", owner: "Boss Per",
+      risk_level: sensitive ? "critical" : "medium", source_path: "/internal/admin/kenji", source_ref: "single-owner-friendly-v4" + (entryTrigger ? ":ad-entry" : ""), owner: "Boss Per",
       review_note: "Single-owner draft. Pre-publish summary and Worker checks required before Production use.",
       payload_json: { single_owner: { mode: state.teachMode, sample_question: question || title, entry_trigger: entryTrigger || null, entry_source: entryTrigger ? "line_ad_or_rich_menu" : null, operator: "Per", workflow: "teach_summary_publish" } }
     };
