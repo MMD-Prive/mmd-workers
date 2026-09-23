@@ -201,6 +201,7 @@
     article.dataset.roles = item.approved_roles.join(",");
     article.dataset.customerScope = item.customer_scope || "all_genders";
     article.dataset.r2Public = "true";
+    if (item.private_teaser_available === true && item.slug) article.dataset.privateTeaserAvailable = "true";
 
     var figure = document.createElement("figure");
     figure.className = "mp8-card__media";
@@ -243,6 +244,17 @@
     link.href = femaleFlow ? femaleHref : bookingHref;
     link.append(text("span", femaleFlow ? words.ctaFemale : words.cta), text("b", "↗"));
     body.append(link);
+
+    // The public page receives only the boolean discovery marker. The link is
+    // an identity-verification handoff, not a viewer or a grant; MY MMD and
+    // the backend decide eligibility and deliver any protected media.
+    if (item.private_teaser_available === true && item.slug) {
+      var teaser = document.createElement("a");
+      teaser.className = "mp8-card__cta mp8-card__cta--teaser";
+      teaser.href = "/my-mmd/?from=profiles&intent=private_teaser&model=" + encodeURIComponent(item.slug);
+      teaser.append(text("span", "PRIVATE PREVIEW · ยืนยันตัวตนเพื่อดูสิทธิ์"), text("b", "↗"));
+      body.append(teaser);
+    }
 
     article.append(figure, body);
     return article;
