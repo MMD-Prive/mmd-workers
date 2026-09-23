@@ -31,6 +31,8 @@ jobs:
     - if: matrix.node-version != '18.x'
       run: npm test
     - if: matrix.node-version != '18.x'
+      run: node --check scripts/private-teaser-real-member-readiness.mjs && node --check scripts/private-teaser-real-member-e2e.mjs
+    - if: matrix.node-version != '18.x'
       run: node --experimental-global-webcrypto --test member-pages-worker/private-teaser.test.mjs member-dashboard-chat-worker/test/my-mmd-lovable-app-front-gate.test.mjs webflow/profiles/private-teaser-handoff.test.mjs
     - if: matrix.node-version == '18.x'
       run: node --check member-dashboard-chat-worker/src/my-mmd-lovable-app-front-gate.js && node --check member-dashboard-chat-worker/test/my-mmd-lovable-app-front-gate.test.mjs
