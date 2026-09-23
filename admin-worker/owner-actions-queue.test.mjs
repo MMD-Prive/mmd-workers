@@ -60,7 +60,7 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
   const queue = buildOwnerActionsQueue({
     finance_audit: { available: true, reconciliation_count: 2, payout_hold_count: 1 },
     mms: { available: true, application_review_count: 3, prebooking_coordination_count: 4 },
-    hype: { available: true, counts: { total: 2, overdue: 1, owner_actionable_overdue: 1 } },
+    hype: { available: true, counts: { total: 2, overdue: 1, owner_actionable_overdue: 1, owner_actionable_by_kind: { entitlement_notification_incomplete: 1 } } },
     source_coverage: [
       { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 3 },
       { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 7 },
@@ -74,7 +74,7 @@ test("owner actions queue projects connected Finance, MMS and HYPE coverage with
     ["finance_payout_hold", 1],
     ["mms_prebooking_coordination", 4],
     ["mms_application_review", 3],
-    ["hype_operational_watch", 1],
+    ["hype_entitlement_notification_overdue", 1],
   ]);
   assert.deepEqual(queue.unavailable_sources, ["hype"]);
   assert.deepEqual(queue.source_coverage.map((item) => [item.source, item.state, item.read_only]), [
@@ -177,27 +177,82 @@ test("availability source attention is fail-closed and routes to Calendar", () =
 
 
 
-test("HYPE watch-only backlog stays out of Owner Actions until a non-dedicated item is overdue", () => {
+test("HYPE watch-only backlog stays out while overdue items split into source cohorts", () => {
   const watchOnly = buildOwnerActionsQueue({
-    hype: { available: true, counts: { total: 53, overdue: 0, watch: 53, owner_actionable_overdue: 0 } },
+    hype: { available: true, counts: { total: 53, overdue: 0, watch: 53, owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
     source_coverage: [
       { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0 },
     ],
   });
-  assert.equal(watchOnly.actions.some((item) => item.action_key === "hype_operational_watch"), false);
+  assert.equal(watchOnly.actions.some((item) => item.action_key.startsWith("hype_")), false);
 
   const overdue = buildOwnerActionsQueue({
-    hype: { available: true, counts: { total: 53, overdue: 9, watch: 44, owner_actionable_overdue: 3 } },
+    hype: {
+      available: true,
+      counts: {
+        total: 53,
+        overdue: 12,
+        watch: 41,
+        owner_actionable_overdue: 4,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 1,
+          recovery_unassigned: 1,
+          coupon_manual_review: 1,
+          telegram_bind_unconsumed: 1,
+        },
+      },
+    },
     source_coverage: [
-      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 3 },
+      { source: "hype", label: "HYPE operational watch", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 4 },
     ],
   });
-  const action = overdue.actions.find((item) => item.action_key === "hype_operational_watch");
-  assert.equal(action.count, 3);
-  assert.equal(action.urgency, "urgent");
-  assert.match(action.summary, /dedicated Owner Action lane/);
+  assert.deepEqual(overdue.actions.map((item) => [item.action_key, item.count, item.href, item.authority]), [
+    ["hype_entitlement_notification_overdue", 1, "/internal/admin/member-intelligence", "my_mmd_entitlement_resolver_v1"],
+    ["hype_recovery_unassigned_overdue", 1, "/internal/admin/recovery?assignment=unassigned", "recovery_queue_operational_metadata"],
+    ["hype_coupon_manual_review_overdue", 1, "/internal/admin/member-intelligence", "care_back_claim_policy"],
+    ["hype_telegram_bind_overdue", 1, "/internal/admin/control-room", "telegram_identity_bind_authority"],
+  ]);
 });
 
+test("unknown HYPE overdue kind remains visible through generic fail-closed fallback", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 3,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 2,
+          future_unknown_kind: 1,
+        },
+      },
+    },
+  });
+  assert.deepEqual(queue.actions.map((item) => [item.action_key, item.count]), [
+    ["hype_entitlement_notification_overdue", 2],
+    ["hype_operational_watch", 1],
+  ]);
+});
+
+
+
+test("HYPE cohort detail routes to the owning source and remains read-only", () => {
+  const input = {
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 1,
+        owner_actionable_by_kind: { recovery_unassigned: 1 },
+      },
+    },
+  };
+  const detail = buildOwnerActionDetail(input, "hype_recovery_unassigned_overdue");
+  assert.equal(detail.drilldown.source_surface, "/internal/admin/recovery?assignment=unassigned");
+  assert.equal(detail.drilldown.authority, "recovery_queue_operational_metadata");
+  assert.equal(detail.drilldown.records_exposed, false);
+  assert.equal(detail.drilldown.send_allowed, false);
+  assert.equal(detail.drilldown.mutation_allowed, false);
+  assert.match(detail.drilldown.decision_boundary, /business truth/);
+});
 
 test("owner action detail is a source-safe owner-only read projection", () => {
   const detail = buildOwnerActionDetail({
