@@ -5,7 +5,7 @@ import { requireMyMmsApprovedTherapist } from "./my-mms-access-runtime.mjs";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const INTERNAL_HOST = "mms.internal";
 const APP_API = "/male-massage/therapists/api/app";
-const SUPPORT_URL = "https://line.me/R/ti/p/%40malemassage";
+const SUPPORT_URL = "https://lin.ee/NkfXMu7";
 const DEFAULT_TTL_SECONDS = 300;
 const DEFAULT_MAX_OFFERS = 5;
 const APP_PATHS = Object.freeze({
