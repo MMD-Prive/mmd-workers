@@ -45,7 +45,7 @@ test('signed Model and partner roles, service credentials and foreign hosts are 
 test('queue exposes only review metadata, paginates and rejects formula injection',async()=>{
  const {env,request,calls}=await setup();
  const res=await handlePrivateMediaReview(request(REVIEW_API+'?cursor=offset-value'),env),data=await res.json();
- assert.equal(data.items[0].model_name,'Test Model');assert.equal(data.next_cursor,'next-page');assert.equal(data.items[0].reviewable,true);
+ assert.equal(data.items[0].model_name,'Test Model');assert.equal(data.next_cursor,'next-page');assert.equal(data.items[0].reviewable,true);assert.equal(data.items[0].teaser_safe,false);
  assert(!JSON.stringify(data).match(/private_original_key|r2_bucket|must-not-leak|sha256/));
  assert.equal(calls[0].url.searchParams.get('offset'),'offset-value');assert.match(res.headers.get('cache-control'),/no-store/);
  assert.equal((await handlePrivateMediaReview(request(REVIEW_API+'?status=bad'),env)).status,400);
@@ -83,8 +83,8 @@ test('approve, reject and revoke use signed actor, audit before flags, and read 
   const {env,request,http,f}=await setup();if(decision==='revoke'){f.asset.fields.review_status='approved';f.asset.fields.private_safe=true;}
   const original=globalThis.fetch;globalThis.fetch=http;
   try{
-   const res=await handlePrivateMediaReview(request(REVIEW_API+'/decision',{...action,decision,expected_status:f.asset.fields.review_status,note:'Reviewed synthetic media',requested_by:'forged'}),env);
-   assert.equal(res.status,200,await res.clone().text());assert.equal(f.audits[0].records[0].fields.requested_by,'reviewer-test');assert.equal(f.writes.length,1);assert.equal(f.asset.fields.private_safe,decision==='approve');assert.equal(f.asset.fields.public_safe,false);
+   const res=await handlePrivateMediaReview(request(REVIEW_API+'/decision',{...action,decision,expected_status:f.asset.fields.review_status,teaser_safe:decision==='approve',note:'Reviewed synthetic media',requested_by:'forged'}),env);
+   assert.equal(res.status,200,await res.clone().text());assert.equal(f.audits[0].records[0].fields.requested_by,'reviewer-test');assert.equal(f.writes.length,1);assert.equal(f.asset.fields.private_safe,decision==='approve');assert.equal(f.asset.fields.teaser_safe,decision==='approve');assert.equal(f.asset.fields.public_safe,false);
   }finally{globalThis.fetch=original;}
  }
 });
@@ -97,7 +97,7 @@ test('failed audit cannot approve; failed readback never reports success',async(
 test('rendered page matches split source and does not persist browser media or drafts',async()=>{
  const {renderPrivateMediaReview}=await import('./src/private-media-review-page.js');const page=renderPrivateMediaReview('test');
  for(const name of ['html','css','js']){const text=await readFile(new URL('../webflow/internal/admin/mmd-review/review.'+name,import.meta.url),'utf8');assert(page.includes(text));}
- assert(!/localStorage|sessionStorage|indexedDB|caches\./.test(page));assert.match(page,/URL.revokeObjectURL/);
+ assert(!/localStorage|sessionStorage|indexedDB|caches\./.test(page));assert.match(page,/URL.revokeObjectURL/);assert.match(page,/id="mr-teaser"/);assert.match(page,/teaser_safe: teaserSafe/);
 });
 test('active production entrypoint handles review before generic wrappers',async()=>{
  const {default:worker}=await import('./src/admin-login-hero-worker.js');

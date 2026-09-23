@@ -38,7 +38,7 @@
     q('approve').disabled = !allowed;
     q('reject').disabled = !allowed || !q('note').value.trim();
     q('revoke').disabled = !allowed || !q('note').value.trim();
-    q('close').disabled = busy; q('note').disabled = busy; q('confirm').disabled = busy;
+    q('close').disabled = busy; q('note').disabled = busy; q('confirm').disabled = busy; q('teaser').disabled = busy || !selected || selected.status !== 'pending_review';
   }
   function clearMedia() {
     generation++; sha = ''; selected = null;
@@ -46,7 +46,7 @@
     if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
     q('media').replaceChildren();
     if (objectUrl) URL.revokeObjectURL(objectUrl);
-    objectUrl = ''; q('note').value = ''; q('confirm').checked = false; controls();
+    objectUrl = ''; q('note').value = ''; q('confirm').checked = false; q('teaser').checked = false; controls();
   }
   function closeReview() { if (busy) return; clearMedia(); if (dialog.open) dialog.close(); }
   async function openReview(item) {
@@ -54,6 +54,7 @@
     message('title', item.name); message('detail', (item.model_name || item.model_id) + ' · ' + labels[item.status]);
     message('review-status', 'กำลังตรวจไฟล์และโหลดสื่อ…');
     q('approve').hidden = item.status !== 'pending_review'; q('reject').hidden = item.status !== 'pending_review'; q('revoke').hidden = item.status !== 'approved';
+    q('teaser-row').hidden = item.status !== 'pending_review'; q('teaser-help').hidden = item.status !== 'pending_review'; q('teaser').checked = item.status === 'pending_review' && item.teaser_safe === true;
     dialog.showModal(); controls();
     try {
       var result = await api('/file', { model_id: item.model_id, media_asset_id: item.id });
@@ -70,7 +71,7 @@
     var article = element('article', 'mr-card'), info = element('div', 'mr-card-info');
     info.append(element('p', 'mr-kind', item.kind === 'private_clip' ? 'PRIVATE CLIP' : 'PRIVATE PIC'), element('h2', '', item.name));
     var date = new Date(item.uploaded_at), when = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' });
-    info.append(element('p', 'mr-muted', (item.model_name || item.model_id || 'ไม่พบ Model') + (when ? ' · ' + when : '')), element('p', 'mr-muted', labels[item.status] + ' · ' + (Number(item.size) / 1024 / 1024).toFixed(1) + ' MB'));
+    info.append(element('p', 'mr-muted', (item.model_name || item.model_id || 'ไม่พบ Model') + (when ? ' · ' + when : '')), element('p', 'mr-muted', labels[item.status] + (item.teaser_safe ? ' · PRIVATE TEASER' : '') + ' · ' + (Number(item.size) / 1024 / 1024).toFixed(1) + ' MB'));
     article.append(info);
     if (item.reviewable && item.status !== 'rejected') { var button = element('button', '', item.status === 'approved' ? 'ตรวจ / เพิกถอน' : 'เปิดตรวจ'); button.type = 'button'; button.addEventListener('click', function () { openReview(item); }); article.append(button); }
     else if (!item.reviewable) info.append(element('p', 'mr-muted', 'ล็อกไว้: ต้องอัปโหลดผ่าน Private Media ใหม่'));
@@ -97,16 +98,16 @@
   async function decide(decision) {
     if (busy || !selected || !sha || !q('confirm').checked) return;
     if (decision !== 'approve' && !q('note').value.trim()) return;
-    var item = selected; busy = true; controls(); message('review-status', 'กำลังบันทึกผลการตรวจ…');
+    var item = selected, teaserSafe = decision === 'approve' && q('teaser').checked; busy = true; controls(); message('review-status', 'กำลังบันทึกผลการตรวจ…');
     try {
-      await api('/decision', { model_id: item.model_id, media_asset_id: item.id, expected_status: item.status, media_sha256: sha, decision: decision, note: q('note').value.trim() });
+      await api('/decision', { model_id: item.model_id, media_asset_id: item.id, expected_status: item.status, media_sha256: sha, decision: decision, teaser_safe: teaserSafe, note: q('note').value.trim() });
       busy = false; closeReview(); await load(false);
-      message('status', decision === 'approve' ? 'อนุมัติสื่อส่วนตัวแล้ว · ยังไม่ได้เปิดสิทธิ์ให้ลูกค้า' : decision === 'revoke' ? 'เพิกถอนการอนุมัติแล้ว' : 'ปฏิเสธสื่อแล้ว');
+      message('status', decision === 'approve' ? (teaserSafe ? 'อนุมัติเป็น Private Teaser แล้ว · ลูกค้ายังต้องผ่านสิทธิ์ก่อนดู' : 'อนุมัติเป็นสื่อส่วนตัวแล้ว · ยังไม่ได้เปิดสิทธิ์ให้ลูกค้า') : decision === 'revoke' ? 'เพิกถอนการอนุมัติแล้ว' : 'ปฏิเสธสื่อแล้ว');
     } catch (error) { busy = false; sha = ''; message('review-status', errorText(error)); controls(); }
   }
   q('refresh').addEventListener('click', function () { load(false); }); q('filter').addEventListener('change', function () { load(false); }); q('more').addEventListener('click', function () { load(true); });
   q('close').addEventListener('click', closeReview); dialog.addEventListener('cancel', function (event) { event.preventDefault(); closeReview(); });
-  q('confirm').addEventListener('change', controls); q('note').addEventListener('input', controls); q('form').addEventListener('submit', function (event) { event.preventDefault(); });
+  q('confirm').addEventListener('change', controls); q('teaser').addEventListener('change', controls); q('note').addEventListener('input', controls); q('form').addEventListener('submit', function (event) { event.preventDefault(); });
   ['approve', 'reject', 'revoke'].forEach(function (decision) { q(decision).addEventListener('click', function () { decide(decision); }); });
   function conceal() { controllers.forEach(function (controller) { controller.abort(); }); clearMedia(); if (dialog.open) dialog.close(); }
   document.addEventListener('visibilitychange', function () { if (document.hidden) conceal(); });
