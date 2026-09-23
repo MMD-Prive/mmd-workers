@@ -95,6 +95,7 @@ const SUPPLIER_FIELDS = Object.freeze({
   status: "fld0BL7nG45ueEMKQ",
   inviteToken: "fld1RFwNRfArWb3cS",
   inviteExpiresAt: "flddW10scozb72r2T",
+  internalNote: "fldViZfj7hExC1svq",
 });
 
 export async function handleSupplierPortal(request, env) {
@@ -230,7 +231,7 @@ async function resolveSupplierAccessByLineBinding(env, lineUserId) {
   const records = await airtableListByFieldIds(
     env,
     env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x",
-    [SUPPLIER_FIELDS.name, SUPPLIER_FIELDS.lineUserId, SUPPLIER_FIELDS.lineStatus, SUPPLIER_FIELDS.status],
+    [SUPPLIER_FIELDS.name, SUPPLIER_FIELDS.lineUserId, SUPPLIER_FIELDS.lineStatus, SUPPLIER_FIELDS.status, SUPPLIER_FIELDS.internalNote],
   );
   const matches = records.filter((record) => {
     const fields = record.fields || {};
@@ -245,6 +246,7 @@ async function resolveSupplierAccessByLineBinding(env, lineUserId) {
     supplier_ids: [record.id],
     role: "Supplier",
     token_label: "line-binding",
+    supplier_mode: supplierModeFromNote(record.fields?.[SUPPLIER_FIELDS.internalNote]),
   });
 }
 
@@ -268,11 +270,12 @@ async function buildSupplierPortalPayload(env, supplierAccess) {
     loadActiveSupplierReservations(env, visibleProductIds, visibleSupplierIds),
   ]);
 
+  const supplierMode = supplierAccess.supplier_mode || "stocked";
   const visibleProducts = visibleCatalog.map((product) => {
     const stock = stockByProduct.get(product.id) || { available: null, low: false };
     const productMovements = movements.filter((movement) => movementMatchesProduct(movement, product));
     const totals = summarizeMovements(productMovements);
-    const available = stock.available;
+    const available = supplierMode === "on_demand" ? null : stock.available;
     const reservedTotal = reservedByProduct.get(product.id) || 0;
     const lowStockThreshold = numberOrNull(supplierAccess.low_stock_threshold) ?? 10;
 
@@ -288,10 +291,10 @@ async function buildSupplierPortalPayload(env, supplierAccess) {
       price_status: product.price_status,
       description: product.description,
       available,
-      low_stock: stock.low || (available !== null && available <= lowStockThreshold),
+      low_stock: supplierMode === "on_demand" ? false : (stock.low || (available !== null && available <= lowStockThreshold)),
       sold_total: totals.out,
       reserved_total: reservedTotal,
-      refill_signal: buildRefillSignal(available, stock.low, lowStockThreshold),
+      refill_signal: supplierMode === "on_demand" ? "on_demand" : buildRefillSignal(available, stock.low, lowStockThreshold),
       movements: productMovements.slice(0, 12).map(toSafeMovement)
     };
   });
@@ -318,12 +321,14 @@ async function buildSupplierPortalPayload(env, supplierAccess) {
     distributor: {
       name: supplierAccess.supplier_name || supplierAccess.name || "Supplier",
       role: supplierAccess.role || "Supplier",
-      token_label: supplierAccess.token_label || supplierAccess.label || "supplier-token"
+      token_label: supplierAccess.token_label || supplierAccess.label || "supplier-token",
+      mode: supplierMode
     },
     supplier: {
       name: supplierAccess.supplier_name || supplierAccess.name || "Supplier",
       role: supplierAccess.role || "Supplier",
-      token_label: supplierAccess.token_label || supplierAccess.label || "supplier-token"
+      token_label: supplierAccess.token_label || supplierAccess.label || "supplier-token",
+      mode: supplierMode
     },
     privacy: {
       customer_data: false,
@@ -788,6 +793,11 @@ function summarizeMovements(movements) {
     if (type.includes("release") || type.includes("คืน")) totals.reserve -= qty;
     return totals;
   }, { out: 0, reserve: 0 });
+}
+
+function supplierModeFromNote(note) {
+  const text = cleanText(note, 1000).toLowerCase();
+  return text.includes("on-demand") || text.includes("on demand") ? "on_demand" : "stocked";
 }
 
 function buildRefillSignal(available, lowFlag, threshold) {
