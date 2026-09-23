@@ -21,6 +21,9 @@ import {
 } from "./mmd-shop-stock-coordinator.js";
 import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 
+const DEFAULT_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT";
+const SUPPLIER_LIFF_PATHS = new Set(["/shop/supplier/liff", "/shop/supplier/liff/"]);
+
 export { MmdShopStockCoordinator };
 
 export default {
@@ -61,7 +64,7 @@ export default {
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && ["/shop/distributor", "/shop/supplier"].includes(path)) return renderDistributorPortalPage();
-    if (request.method.toUpperCase() === "GET" && ["/shop/supplier/liff", "/shop/supplier/liff/"].includes(path)) return renderSupplierLiffPage(env);
+    if (request.method.toUpperCase() === "GET" && SUPPLIER_LIFF_PATHS.has(url.pathname)) return handleSupplierLiffEntry(request, env);
 
     try {
       const checkoutResponse = await handleReplaySafeShopCheckout(request, env, ctx);
@@ -127,6 +130,74 @@ export default {
     );
   },
 };
+
+function handleSupplierLiffEntry(request, env) {
+  const url = new URL(request.url);
+  const liffId = cleanLiffValue(env.HIMAI_SUPPLIER_LIFF_ID || DEFAULT_SUPPLIER_LIFF_ID, 200);
+  const stateParams = readLiffStateParams(url.searchParams.get("liff.state"));
+  const invite = cleanLiffValue(
+    url.searchParams.get("invite") || stateParams.get("invite"),
+    512,
+  );
+  const enteredThroughLiff = url.searchParams.get("_liff") === "1"
+    || stateParams.get("_liff") === "1";
+
+  if (url.searchParams.has("liff.state")) {
+    const target = new URL("/shop/supplier/liff", url.origin);
+    if (invite) target.searchParams.set("invite", invite);
+    target.searchParams.set("_liff", "1");
+    return redirect(target.toString());
+  }
+
+  if (!enteredThroughLiff) {
+    const target = new URL(`https://liff.line.me/${encodeURIComponent(liffId)}`);
+    if (invite) target.searchParams.set("invite", invite);
+    target.searchParams.set("_liff", "1");
+    return redirect(target.toString());
+  }
+
+  return renderSupplierLiffPage(env);
+}
+
+function readLiffStateParams(rawValue) {
+  let value = String(rawValue || "").trim();
+  if (!value) return new URLSearchParams();
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const decoded = decodeURIComponent(value);
+      if (decoded === value) break;
+      value = decoded;
+    } catch (_) {
+      break;
+    }
+  }
+
+  try {
+    const stateUrl = new URL(value, "https://liff.local/");
+    return stateUrl.searchParams;
+  } catch (_) {
+    return new URLSearchParams(value.replace(/^\?/, ""));
+  }
+}
+
+function cleanLiffValue(value, max) {
+  return String(value == null ? "" : value)
+    .trim()
+    .slice(0, max)
+    .replace(/[\u0000-\u001F\u007F]/g, "");
+}
+
+function redirect(location) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location,
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
 
 async function handleInternalReservationMutation(request, env, action) {
   const expected = String(env.INTERNAL_TOKEN || "").trim();
