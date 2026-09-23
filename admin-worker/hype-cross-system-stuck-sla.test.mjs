@@ -114,6 +114,7 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
   assert.equal(watch.counts.total, 6);
   assert.equal(watch.counts.overdue, 4);
   assert.equal(watch.counts.watch, 2);
+  assert.equal(watch.counts.owner_actionable_overdue, 2);
   assert.deepEqual(watch.counts.by_kind, {
     payment_proof_pending: 1,
     entitlement_notification_incomplete: 1,

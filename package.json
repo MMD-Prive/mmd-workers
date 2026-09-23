@@ -64,7 +64,7 @@
     "test:posthog-phase0": "node --experimental-global-webcrypto --test shared/posthog-authority-events.test.mjs shared/posthog-authority-wiring.test.mjs shared/posthog-phase0-runtime-wiring.test.mjs",
     "test:phase1-route-owner": "node --test shared/phase1-route-owner-lock.test.mjs",
     "test:phase1-machine-canon": "node --test shared/phase1-machine-canon-closure.test.mjs",
-    "test:control-room-v2": "node --experimental-global-webcrypto --test shared/control-room-v2-system-health.test.mjs admin-worker/control-room-dashboard-facade.test.mjs",
+    "test:control-room-v2": "node --experimental-global-webcrypto --test shared/control-room-v2-system-health.test.mjs admin-worker/control-room-dashboard-facade.test.mjs admin-worker/owner-actions-queue.test.mjs admin-worker/owner-actions-triage.test.mjs",
     "test:member-intelligence-observation": "node --test scripts/member-intelligence-authenticated-observation.test.mjs"
   }
 }
