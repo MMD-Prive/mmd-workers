@@ -93,6 +93,19 @@
           <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">ACTIVE DAY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">ใช้วันหยุดแบบ active ตั้งแต่กิจกรรมเช้า ไปจนถึงจุดพักหรือมื้ออาหารที่วางไว้ด้วยกัน</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full day plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=sport_activity&package=active_day">จองแพ็กเกจนี้ ↗</a></article>
         </div>
         <p class="mp8-driver-packages__rules">Sport Activity คือ Companion สำหรับทำกิจกรรมร่วมกัน ไม่ใช่ Personal Trainer, Therapist หรือผู้ให้คำแนะนำทางการแพทย์ · MMD จะยืนยันความเหมาะสมของ Model กับกิจกรรมก่อนทุกครั้ง · ค่า venue/court/class/equipment/ticket/เดินทาง/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿990/ชม. · OT หลัง 00:00 ฿1,490/ชม. · หลัง 03:00 ฿1,790/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
+      <section class="mp8-driver-packages" data-wellness-packages hidden aria-labelledby="mp8-wellness-packages-title">
+        <div class="mp8-driver-packages__head">
+          <p class="mp8-driver-packages__kicker">MMD COMPANION · WELLNESS</p>
+          <h3 id="mp8-wellness-packages-title">ให้วันของคุณค่อย ๆ กลับมาอยู่ในจังหวะที่ดี</h3>
+          <p>Wellness day, healthy lifestyle หรือวันพักที่อยากมีคนไปด้วย — MMD จะดู lifestyle fit และ availability ก่อนทุกงาน เพื่อให้แผนวันนั้นสบายและเป็นของคุณจริง ๆ</p>
+        </div>
+        <div class="mp8-driver-package-grid">
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">RESET WITH ME</h4><strong class="mp8-driver-package__price">฿5,000</strong></div><p class="mp8-driver-package__line">ช่วงเวลาสบาย ๆ สำหรับ healthy brunch, เดินเล่น, wellness venue หรือกิจกรรมเบา ๆ ในโซนเดียวกัน</p><div class="mp8-driver-package__meta"><span>3 ชั่วโมง</span><span>One gentle plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=wellness_companion&package=reset_with_me">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">WELLNESS DAY</h4><strong class="mp8-driver-package__price">฿8,500</strong></div><p class="mp8-driver-package__line">ครึ่งวันที่มี healthy meal, easy activity และจุดพักที่เลือกตาม mood ของคุณโดยไม่รีบ</p><div class="mp8-driver-package__meta"><span>5 ชั่วโมง</span><span>2–3 gentle moments</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=wellness_companion&package=wellness_day">จองแพ็กเกจนี้ ↗</a></article>
+          <article class="mp8-driver-package"><div class="mp8-driver-package__top"><h4 class="mp8-driver-package__name">SLOW RESET</h4><strong class="mp8-driver-package__price">฿13,500</strong></div><p class="mp8-driver-package__line">หนึ่งวันเต็มที่เว้นจังหวะให้คุณได้พัก กินดี เดินทางสบาย และใช้เวลากับสิ่งที่ทำให้รู้สึกดีขึ้น</p><div class="mp8-driver-package__meta"><span>8 ชั่วโมง</span><span>Full-day wellness plan</span></div><a class="mp8-driver-package__cta" href="/booking?from=profiles&role=wellness_companion&package=slow_reset">จองแพ็กเกจนี้ ↗</a></article>
+        </div>
+        <p class="mp8-driver-packages__rules">Wellness Companion คือเพื่อนร่วมวันสำหรับ lifestyle และกิจกรรมที่ตกลงกัน ไม่ใช่ Personal Trainer, Therapist, massage, recovery treatment หรือผู้ให้คำแนะนำทางการแพทย์ · หากต้องการ massage หรือ recovery service ให้ใช้ MMS Wellness route แยก · MMD จะยืนยันความเหมาะสมของ Model กับแผนและ availability ก่อนทุกครั้ง · ค่า venue/class/ticket/เดินทาง/Parking/อาหารและเครื่องดื่มคิดตามจริง · OT ก่อน 00:00 ฿1,690/ชม. · OT หลัง 00:00 ฿2,190/ชม. · หลัง 03:00 ฿2,690/ชม. · หลัง 06:00 ต้อง MMD review · ต่อเวลาต้อง Request ใน MY MMD → Model Approve ใน MMD MODEL → MMD ยืนยัน</p>
+      </section>
       </section>
     `);
   }
@@ -104,6 +117,7 @@
   var socialPackages = root.querySelector("[data-social-packages]");
   var bangkokPackages = root.querySelector("[data-bangkok-packages]");
   var sportPackages = root.querySelector("[data-sport-packages]");
+  var wellnessPackages = root.querySelector("[data-wellness-packages]");
   var resultCount = root.querySelector("[data-result-count]");
   var empty = root.querySelector("[data-empty]");
   if (!track) return;
@@ -301,6 +315,7 @@
       if (socialPackages) socialPackages.hidden = activeRole !== "social_appearance";
       if (bangkokPackages) bangkokPackages.hidden = activeRole !== "bangkok_companion";
       if (sportPackages) sportPackages.hidden = activeRole !== "sport_activity";
+      if (wellnessPackages) wellnessPackages.hidden = activeRole !== "wellness_companion";
       if (stage2) stage2.hidden = false;
       render();
       var focusTarget = activeRole === "driver_companion" && driverPackages
@@ -317,6 +332,8 @@
                   ? bangkokPackages
                   : activeRole === "sport_activity" && sportPackages
                     ? sportPackages
+                    : activeRole === "wellness_companion" && wellnessPackages
+                      ? wellnessPackages
                   : stage2;
       if (focusTarget && typeof focusTarget.scrollIntoView === "function") {
         focusTarget.scrollIntoView({ behavior: "smooth", block: "nearest" });
