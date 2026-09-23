@@ -214,6 +214,28 @@ test("HYPE watch-only backlog stays out while overdue items split into source co
   ]);
 });
 
+test("stale terminal CARE BACK diagnostics never create an Owner Action", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        total: 0,
+        overdue: 0,
+        watch: 0,
+        owner_actionable_overdue: 0,
+        owner_actionable_by_kind: {},
+        stale_terminal_records: 8,
+      },
+      stale_terminal_by_kind: {
+        coupon_manual_review_terminal: 8,
+      },
+    },
+  });
+
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_coupon_manual_review_overdue"), false);
+  assert.equal(queue.actions.some((item) => item.action_key === "hype_operational_watch"), false);
+});
+
 test("unknown HYPE overdue kind remains visible through generic fail-closed fallback", () => {
   const queue = buildOwnerActionsQueue({
     hype: {
