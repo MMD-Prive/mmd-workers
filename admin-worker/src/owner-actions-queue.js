@@ -38,6 +38,7 @@ export function buildOwnerActionsQueue(input = {}) {
   ].filter(Boolean).sort((a, b) => b.priority - a.priority || a.action_key.localeCompare(b.action_key));
 
   const unavailable = normalizeUnavailable(input.unavailable_sources);
+  const queueHealth = buildQueueHealth({ actions, hype: input.hype, unavailable });
   return {
     ok: true,
     contract: "mmd_owner_actions_queue_v1",
@@ -53,6 +54,7 @@ export function buildOwnerActionsQueue(input = {}) {
     },
     unavailable_sources: unavailable,
     source_coverage: normalizeCoverage(input.source_coverage, unavailable),
+    queue_health: queueHealth,
     guardrails: {
       payment_truth: "payments-worker",
       job_truth: "canonical_sessions_and_reconfirm",
@@ -280,6 +282,43 @@ function hypeOverdueCohortActions(source) {
   }
 
   return actions;
+}
+
+function buildQueueHealth({ actions, hype, unavailable }) {
+  const byKind = hype?.counts?.owner_actionable_by_kind;
+  const ownerActionableByKind = byKind && typeof byKind === "object" && !Array.isArray(byKind) ? byKind : {};
+  const knownHypeOverdue = HYPE_OVERDUE_COHORTS.reduce(
+    (sum, cohort) => sum + nonNegative(ownerActionableByKind[cohort.kind]),
+    0,
+  );
+  const totalHypeOverdue = nonNegative(hype?.counts?.owner_actionable_overdue);
+  const unknownHypeOverdue = Math.max(0, totalHypeOverdue - knownHypeOverdue);
+  const staleTerminalRecords = nonNegative(hype?.counts?.stale_terminal_records);
+
+  return {
+    schema: "mmd_owner_actions_queue_health_v1",
+    action_classes: asArray(actions).length,
+    active_owner_decisions: asArray(actions).reduce((sum, item) => sum + nonNegative(item?.count), 0),
+    unknown_hype_overdue: unknownHypeOverdue,
+    stale_terminal_records: staleTerminalRecords,
+    stale_terminal_by_kind: normalizeDiagnosticCounts(hype?.stale_terminal_by_kind),
+    unavailable_sources: asArray(unavailable).length,
+    classification_complete: unknownHypeOverdue === 0,
+    source_coverage_complete: asArray(unavailable).length === 0,
+    phase_5_closure_ready: unknownHypeOverdue === 0 && asArray(unavailable).length === 0,
+    business_truth_mutated: false,
+  };
+}
+
+function normalizeDiagnosticCounts(value) {
+  const allowed = new Set(["coupon_manual_review_terminal"]);
+  const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(
+    Object.entries(input)
+      .filter(([key]) => allowed.has(clean(key)))
+      .map(([key, count]) => [clean(key), nonNegative(count)])
+      .filter(([, count]) => count > 0),
+  );
 }
 
 function ownerExceptionAction(items) {

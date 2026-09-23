@@ -234,6 +234,13 @@ test("stale terminal CARE BACK diagnostics never create an Owner Action", () => 
 
   assert.equal(queue.actions.some((item) => item.action_key === "hype_coupon_manual_review_overdue"), false);
   assert.equal(queue.actions.some((item) => item.action_key === "hype_operational_watch"), false);
+  assert.equal(queue.queue_health.schema, "mmd_owner_actions_queue_health_v1");
+  assert.equal(queue.queue_health.active_owner_decisions, 0);
+  assert.equal(queue.queue_health.unknown_hype_overdue, 0);
+  assert.equal(queue.queue_health.stale_terminal_records, 8);
+  assert.deepEqual(queue.queue_health.stale_terminal_by_kind, { coupon_manual_review_terminal: 8 });
+  assert.equal(queue.queue_health.classification_complete, true);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
 });
 
 test("unknown HYPE overdue kind remains visible through generic fail-closed fallback", () => {
@@ -256,6 +263,27 @@ test("unknown HYPE overdue kind remains visible through generic fail-closed fall
 });
 
 
+
+test("queue health fails phase closure safely on unknown HYPE overdue or unavailable source", () => {
+  const queue = buildOwnerActionsQueue({
+    hype: {
+      available: true,
+      counts: {
+        owner_actionable_overdue: 2,
+        owner_actionable_by_kind: {
+          entitlement_notification_incomplete: 1,
+          future_unknown_kind: 1,
+        },
+      },
+    },
+    unavailable_sources: ["hype"],
+  });
+
+  assert.equal(queue.queue_health.unknown_hype_overdue, 1);
+  assert.equal(queue.queue_health.classification_complete, false);
+  assert.equal(queue.queue_health.source_coverage_complete, false);
+  assert.equal(queue.queue_health.phase_5_closure_ready, false);
+});
 
 test("HYPE cohort detail routes to the owning source and remains read-only", () => {
   const input = {
