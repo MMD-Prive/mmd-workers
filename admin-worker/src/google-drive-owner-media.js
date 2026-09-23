@@ -112,7 +112,7 @@ async function listChildren(accessToken, folderId, http) {
     url.searchParams.set("includeItemsFromAllDrives", "true");
     url.searchParams.set("supportsAllDrives", "true");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const response = await transport(url, { headers: { authorization: `Bearer ${accessToken}` } });
+    const response = await http(url, { headers: { authorization: `Bearer ${accessToken}` } });
     const body = await response.json().catch(() => null);
     if (!response.ok || !body || !Array.isArray(body.files)) {
       throw ownerDriveError("owner_drive_file_list_failed", 503);
@@ -162,7 +162,7 @@ export async function readOwnerApprovedDriveMedia(env, { folderId, fileName }, h
   const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`);
   url.searchParams.set("alt", "media");
   url.searchParams.set("supportsAllDrives", "true");
-  const response = await http(url, { headers: { authorization: `Bearer ${accessToken}` } });
+  const response = await transport(url, { headers: { authorization: `Bearer ${accessToken}` } });
   if (!response.ok) throw ownerDriveError("owner_drive_media_read_failed", response.status === 404 ? 404 : 503);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (!bytes.length || bytes.length > limit) throw ownerDriveError("owner_drive_media_size_invalid", 413);
