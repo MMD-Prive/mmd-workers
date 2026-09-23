@@ -429,6 +429,18 @@ function injectCalendarRecoveryQueueV1(html) {
   return html + block;
 }
 
+function injectCalendarCoverageHealthV1(html) {
+  if (!clean(html) || html.includes('calendar-coverage-health-v1-20260923')) return html;
+  const block = `<style id="calendar-coverage-health-v1-20260923">
+.calv5__coverageHealth{margin-top:9px}.calv5__coverageGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;padding:9px}.calv5__coverageMetric{padding:9px 10px;border:1px solid #302e34;border-radius:10px;background:#0d0c10}.calv5__coverageMetric span{display:block;color:#89837b;font-size:8px}.calv5__coverageMetric b{display:block;margin-top:4px;color:#f2ece3;font-size:17px}.calv5__coverageNote{padding:0 10px 11px;color:#817b74;font-size:9px;line-height:1.45}@media(max-width:767px){.calv5__coverageGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+<script id="calendar-coverage-health-v1-20260923-runtime">
+(()=>{const boot=()=>{const root=document.querySelector('.mcal'),host=root&&root.querySelector('.calv5');if(!root||!host||host.querySelector('[data-cal-coverage-health]'))return;const panel=document.createElement('section');panel.className='calv5__panel calv5__coverageHealth';panel.setAttribute('data-cal-coverage-health','');panel.innerHTML='<header class="calv5__panelhead"><div><small>DAILY COVERAGE REVIEW</small><h2>สถานะทีมวันนี้</h2></div><span data-cal-coverage-status>—</span></header><div class="calv5__coverageGrid" data-cal-coverage-grid></div><div class="calv5__coverageNote" data-cal-coverage-note></div>';const availability=host.querySelector('.calv5__availability');if(availability)availability.insertAdjacentElement('beforebegin',panel);else host.appendChild(panel);const grid=panel.querySelector('[data-cal-coverage-grid]'),status=panel.querySelector('[data-cal-coverage-status]'),note=panel.querySelector('[data-cal-coverage-note]'),date=()=>new URL(location.href).searchParams.get('date')||'';const label={coverage_current:'ยืนยันล่าสุดครบ',owner_action_required:'มีรายการให้จัดการ',waiting_for_model:'รอ Model ยืนยัน',confirmation_pending:'รอยืนยันสถานะ',source_attention:'ตรวจ source ก่อน',no_canonical_models:'ยังไม่มี Model ที่ผูกแล้ว'};const render=health=>{if(!health||typeof health!=='object'){status.textContent='อ่านสถานะไม่ได้';grid.textContent='—';note.textContent='';return}status.textContent=label[health.review_status]||'รอตรวจสอบ';const rate=Number.isFinite(Number(health.fresh_coverage_percent))?String(health.fresh_coverage_percent)+'%':'—';const metrics=[['ยืนยันล่าสุด',String(health.fresh_models||0)+' / '+String(health.canonical_models||0)],['Coverage',rate],['ต้องทำต่อ',String(health.owner_action_required||0)],['รอตอบ',String(health.waiting_for_model||0)]];grid.innerHTML=metrics.map(item=>'<article class="calv5__coverageMetric"><span>'+item[0]+'</span><b>'+item[1]+'</b></article>').join('');const source=Number(health.source_unavailable_models||0),identity=Number(health.identity_missing||0),due=Number(health.follow_up_due||0);note.textContent=(source?'มี '+source+' รายการที่ source อ่านไม่ครบ · ':'')+(identity?'มี '+identity+' รายการที่ยังไม่ผูก Model Key · ':'')+(due?'มี '+due+' รายการถึงเวลาตามผล · ':'')+'สรุปนี้อ่านจาก SIGIL snapshot และ recovery evidence เท่านั้น'};const load=async()=>{try{const response=await fetch('/v1/admin/calendar?date='+encodeURIComponent(date()),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}}),body=await response.json();if(!response.ok||!body||!body.ok)throw Error('calendar_unavailable');render(body.availability&&body.availability.coverage_health)}catch(_){render(null)}};host.querySelectorAll('[data-cal-reload],[data-cal-prev],[data-cal-next],[data-cal-today]').forEach(button=>button.addEventListener('click',()=>setTimeout(load,300)));load()};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot()})();
+</script>`;
+  if (html.includes('</body>')) return html.replace('</body>', block + '</body>');
+  return html + block;
+}
+
 function injectCalendarConnectionState(html, connection) {
   const state = `<script type="application/json" id="calendar-connection-state">${JSON.stringify(connection).replace(/</g,'\\u003c')}</script>`;
   if (html.includes('id="calendar-connection-state"')) {
@@ -479,6 +491,7 @@ export async function calendarPageResponse(request, env = {}, selectedDate = '')
   html = injectCalendarOwnerUi(html);
   html = injectCalendarOwnerUiV5(html);
   html = injectCalendarRecoveryQueueV1(html);
+  html = injectCalendarCoverageHealthV1(html);
   html = injectCalendarConnectionState(html, connection);
   for (const name of ['content-length','set-cookie','content-encoding','etag','last-modified','report-to','nel']) headers.delete(name);
   headers.set('content-type','text/html; charset=utf-8');
