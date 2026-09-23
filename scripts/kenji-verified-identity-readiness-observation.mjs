@@ -5,6 +5,7 @@ export const VERIFIED_IDENTITY_OBSERVATION_SCHEMA = "mmd.kenji_verified_identity
 export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_readiness.v1";
 export const IDENTITY_EVIDENCE_RECOVERY_SCHEMA = "mmd.kenji_identity_evidence_recovery.v1";
 export const IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA = "mmd.kenji_identity_evidence_owner_review_protocol.v1";
+export const IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA = "mmd.kenji_identity_evidence_owner_review_adoption.v1";
 
 const DEFAULT_ORIGIN = "https://mmdbkk.com";
 const MAX_SCAN_LIMIT = 24;
@@ -418,6 +419,54 @@ function classify({ counts, endpointErrors, contractViolations, degradedProjecti
   return { status: "no_current_candidates", healthy: true };
 }
 
+export function deriveOwnerEvidenceReviewAdoption({
+  status,
+  healthy,
+  scan,
+  owner_review_protocol: ownerReviewProtocol,
+}) {
+  const counts = ownerReviewProtocol?.counts || {};
+  const number = (value) => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  const ownerReviewDue = number(counts.owner_review_required);
+  const evidenceWorkPending = number(counts.evidence_review_required) + number(counts.evidence_capture_required);
+  const locked = number(counts.conflict_locked) + number(counts.unavailable_locked);
+  const complete = number(counts.complete);
+  const candidates = number(scan?.candidate_count);
+  const checked = number(scan?.checked_count);
+
+  let adoptionStatus = "no_current_candidates";
+  if (healthy !== true) adoptionStatus = status === "identity_conflict_detected" ? "blocked_conflict" : "observation_degraded";
+  else if (ownerReviewDue > 0) adoptionStatus = "owner_review_due";
+  else if (evidenceWorkPending > 0) adoptionStatus = "evidence_work_pending";
+  else if (complete > 0) adoptionStatus = "no_owner_action";
+
+  return {
+    schema: IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA,
+    mode: "aggregate_read_only",
+    status: adoptionStatus,
+    cadence: "weekly",
+    observation_source: "kenji_verified_identity_readiness",
+    queue: {
+      candidates_checked: checked,
+      owner_review_due: ownerReviewDue,
+      evidence_work_pending: evidenceWorkPending,
+      locked,
+      complete,
+      client_scope_required: true,
+      handoff_path: "/internal/admin/member-intelligence",
+    },
+    guardrails: {
+      evidence_written: false,
+      automatic_verification_allowed: false,
+      verification_status_mutated: false,
+      identity_mutated: false,
+      customer_send_allowed: false,
+      customer_identifiers_emitted: false,
+      human_decision_required: true,
+    },
+  };
+}
+
 export async function runVerifiedIdentityReadinessObservation({
   origin = DEFAULT_ORIGIN,
   credential,
@@ -551,7 +600,7 @@ export async function runVerifiedIdentityReadinessObservation({
     degradedProjections: degradedProjectionCount,
   });
 
-  return {
+  const observation = {
     schema: VERIFIED_IDENTITY_OBSERVATION_SCHEMA,
     mode: "authenticated_read_only",
     status: result.status,
@@ -595,6 +644,8 @@ export async function runVerifiedIdentityReadinessObservation({
       human_decision_required: true,
     },
   };
+  observation.owner_review_adoption = deriveOwnerEvidenceReviewAdoption(observation);
+  return observation;
 }
 
 function safeErrorCode(error) {
@@ -617,6 +668,7 @@ function githubSummary(result) {
     `- LINE OFC evidence actions: \`${result.recovery.action_counts.review_line_ofc_evidence || 0}\``,
     `- LIFF evidence actions: \`${result.recovery.action_counts.review_liff_identity_evidence || 0}\``,
     `- Owner review protocol: \`${result.owner_review_protocol.counts.owner_review_required || 0}\` ready · \`${result.owner_review_protocol.counts.evidence_capture_required || 0}\` capture required`,
+    `- Weekly owner adoption: \`${result.owner_review_adoption.status}\` · \`${result.owner_review_adoption.queue.owner_review_due}\` review due · \`${result.owner_review_adoption.queue.evidence_work_pending}\` evidence work pending`,
     "- Authority: Clients.Verification Status; readiness never verifies or merges identity",
     "- Privacy: aggregate counts only; no names, record IDs, LINE tails, credentials, or session values emitted",
     "",

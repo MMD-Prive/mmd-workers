@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA,
   IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
   IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA,
   VERIFIED_IDENTITY_OBSERVATION_SCHEMA,
@@ -350,6 +352,28 @@ test("reports aggregate owner-review readiness without private output or mutatio
     owner_review_verification_status: 1,
     reread_identity_evidence: 1,
   });
+  assert.equal(result.owner_review_adoption.schema, IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA);
+  assert.equal(result.owner_review_adoption.mode, "aggregate_read_only");
+  assert.equal(result.owner_review_adoption.status, "owner_review_due");
+  assert.equal(result.owner_review_adoption.cadence, "weekly");
+  assert.deepEqual(result.owner_review_adoption.queue, {
+    candidates_checked: 2,
+    owner_review_due: 1,
+    evidence_work_pending: 0,
+    locked: 0,
+    complete: 1,
+    client_scope_required: true,
+    handoff_path: "/internal/admin/member-intelligence",
+  });
+  assert.deepEqual(result.owner_review_adoption.guardrails, {
+    evidence_written: false,
+    automatic_verification_allowed: false,
+    verification_status_mutated: false,
+    identity_mutated: false,
+    customer_send_allowed: false,
+    customer_identifiers_emitted: false,
+    human_decision_required: true,
+  });
   assert.equal(result.guardrails.automatic_recovery_possible, false);
   assert.equal(result.guardrails.evidence_written, false);
   assert.equal(result.guardrails.owner_review_protocol_mutated, false);
@@ -390,6 +414,8 @@ test("fails closed when any sampled identity evidence conflicts", async () => {
   assert.equal(result.recovery.counts.conflict_locked, 1);
   assert.equal(result.recovery.action_counts.resolve_identity_conflict, 1);
   assert.equal(result.owner_review_protocol.counts.conflict_locked, 1);
+  assert.equal(result.owner_review_adoption.status, "blocked_conflict");
+  assert.equal(result.owner_review_adoption.queue.locked, 1);
   assert.deepEqual(result.readiness.blocker_counts, {
     identity_alignment_mismatch: 1,
     owner_verification_status_required: 1,
@@ -411,7 +437,16 @@ test("marks unavailable evidence and endpoint failures as degraded", async () =>
   assert.equal(result.scan.endpoint_error_count, 1);
   assert.deepEqual(result.scan.endpoint_error_buckets, { server_error: 1 });
   assert.equal(result.readiness.counts.unavailable, 1);
+  assert.equal(result.owner_review_adoption.status, "observation_degraded");
   assert.equal(JSON.stringify(result).includes("Never emit"), false);
+});
+
+test("schedules the weekly aggregate observation on main without introducing a write path", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/kenji-verified-identity-readiness.yml", import.meta.url), "utf8");
+  assert.match(workflow, /schedule:[\s\S]*?- cron: "15 2 \* \* 1"/);
+  assert.match(workflow, /github\.event_name == 'schedule'/);
+  assert.match(workflow, /OBSERVATION_SCAN_LIMIT: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.scan_limit \|\| '24' \}\}/);
+  assert.doesNotMatch(workflow, /(?:curl|fetch).*(?:POST|PUT|PATCH|DELETE)/i);
 });
 
 test("rejects inconsistent readiness as a contract violation", async () => {
