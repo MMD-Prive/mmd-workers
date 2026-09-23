@@ -16,10 +16,13 @@ import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
 import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
+import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
+import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
+const OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
 const RECONFIRM_LIFECYCLE_STATES = new Set(["confirmed", "accepted"]);
@@ -36,7 +39,7 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH) {
+    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH || path === OWNER_ACTIONS_PATH) {
       if (!isAllowedOrigin(req, env)) {
         return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
       }
@@ -52,6 +55,20 @@ export default {
       if (path === OWNER_ANALYTICS_PATH) {
         return withCors(json(await buildOwnerAnalyticsDashboard(env)), cors);
       }
+
+      if (path === OWNER_ACTIONS_PATH) {
+        const actor = await readCredentialBoundAdminActor(req, env);
+        if (!actor) return withCors(json({ ok: false, error: "unauthorized" }, 401), cors);
+        if (String(actor.role || "").trim().toLowerCase() !== "owner") {
+          return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
+        }
+        const dashboard = await buildAdminDashboard(env);
+        return withCors(json(buildOwnerActionsQueue({
+          ...dashboard,
+          unavailable_sources: ["finance_audit", "mms", "hype"],
+        })), cors);
+      }
+
       return withCors(json(await buildAdminDashboard(env)), cors);
     }
 
