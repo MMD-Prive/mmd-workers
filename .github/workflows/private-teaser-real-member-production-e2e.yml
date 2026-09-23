@@ -21,6 +21,11 @@ on:
         required: true
         default: "companion"
         type: string
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/private-teaser-real-member-production-e2e.yml"
 
 permissions:
   contents: read
@@ -31,8 +36,148 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  e2e:
+  readiness:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    env:
+      REAL_MEMBER_LIFF_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+      AIRTABLE_API_KEY: ${{ secrets.MMS_AIRTABLE_API_TOKEN || secrets.AIRTABLE_API_KEY }}
+      AIRTABLE_BASE_ID: appsV1ILPRfIjkaYg
+      MODELS_TABLE: tblI4B0bI446vp9GX
+      MEDIA_TABLE: tblrpQXhHnbTU9RhW
+      RULES_TABLE: tblSbxUGTFqd2CgPy
+
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Inspect non-mutating production readiness
+        id: readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${REAL_MEMBER_LIFF_ID_TOKEN:-}" ]; then
+            echo "::add-mask::$REAL_MEMBER_LIFF_ID_TOKEN"
+          fi
+          if [ -n "${AIRTABLE_API_KEY:-}" ]; then
+            echo "::add-mask::$AIRTABLE_API_KEY"
+          fi
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          const apiKey = String(process.env.AIRTABLE_API_KEY || "").trim();
+          const tokenPresent = Boolean(String(process.env.REAL_MEMBER_LIFF_ID_TOKEN || "").trim());
+          const baseId = process.env.AIRTABLE_BASE_ID;
+          const result = {
+            token_present: tokenPresent,
+            airtable_present: Boolean(apiKey),
+            model_state: "unchecked",
+            active_offer_rule_count: null,
+            approved_teaser_asset_count: null,
+            ready: false,
+          };
+
+          const publicSlug = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100);
+          const selectName = (value) => value && typeof value === "object" ? String(value.name || "") : String(value || "");
+          const allRecords = async (table, fields = []) => {
+            const records = [];
+            let offset = "";
+            for (let page = 0; page < 20; page += 1) {
+              const url = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+              url.searchParams.set("pageSize", "100");
+              for (const field of fields) url.searchParams.append("fields[]", field);
+              if (offset) url.searchParams.set("offset", offset);
+              const response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
+              const body = await response.json().catch(() => ({}));
+              if (!response.ok) throw new Error(`Airtable readiness read failed HTTP ${response.status}`);
+              records.push(...(body.records || []));
+              offset = String(body.offset || "");
+              if (!offset) break;
+            }
+            return records;
+          };
+
+          if (apiKey) {
+            try {
+              const models = await allRecords(process.env.MODELS_TABLE, ["working_name"]);
+              const matches = models.filter((record) => publicSlug(record.fields?.working_name) === "toto");
+              result.model_state = matches.length === 1 ? "found" : matches.length === 0 ? "missing" : "ambiguous";
+
+              if (matches.length === 1) {
+                const modelId = matches[0].id;
+                const media = await allRecords(process.env.MEDIA_TABLE, ["Model", "media_type", "review_status", "teaser_safe", "file_type"]);
+                result.approved_teaser_asset_count = media.filter((record) => {
+                  const f = record.fields || {};
+                  return Array.isArray(f.Model) &&
+                    f.Model.includes(modelId) &&
+                    f.review_status === "approved" &&
+                    f.teaser_safe === true &&
+                    ["flash_preview", "private_gallery"].includes(String(f.media_type || "")) &&
+                    ["image/jpeg", "image/png", "image/webp", "video/mp4"].includes(String(f.file_type || ""));
+                }).length;
+
+                const rules = await allRecords(process.env.RULES_TABLE, ["Model", "status", "sales_visibility"]);
+                result.active_offer_rule_count = rules.filter((record) => {
+                  const f = record.fields || {};
+                  return Array.isArray(f.Model) &&
+                    f.Model.includes(modelId) &&
+                    ["active", "approved", "live", "published"].includes(selectName(f.status).toLowerCase()) &&
+                    selectName(f.sales_visibility).toLowerCase() !== "off";
+                }).length;
+              }
+            } catch (error) {
+              result.model_state = "source_unavailable";
+              result.read_error = String(error?.message || error).slice(0, 160);
+            }
+          }
+
+          result.ready = result.token_present &&
+            result.airtable_present &&
+            result.model_state === "found" &&
+            Number(result.active_offer_rule_count || 0) > 0 &&
+            Number(result.approved_teaser_asset_count || 0) > 0;
+
+          for (const [key, value] of Object.entries(result)) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${String(value).replace(/\n/g, " ")}\n`);
+          }
+          console.log(`Private Teaser real-member readiness: ${result.ready ? "READY" : "BLOCKED"}`);
+          console.log(`TOTO model=${result.model_state}; active_rules=${result.active_offer_rule_count}; approved_teaser_assets=${result.approved_teaser_asset_count}`);
+          NODE
+
+      - name: Record readiness receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOKEN_PRESENT: ${{ steps.readiness.outputs.token_present }}
+          AIRTABLE_PRESENT: ${{ steps.readiness.outputs.airtable_present }}
+          MODEL_STATE: ${{ steps.readiness.outputs.model_state }}
+          ACTIVE_RULES: ${{ steps.readiness.outputs.active_offer_rule_count }}
+          APPROVED_ASSETS: ${{ steps.readiness.outputs.approved_teaser_asset_count }}
+          READY: ${{ steps.readiness.outputs.ready }}
+        run: |
+          set -euo pipefail
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "## Private Teaser Viewer V1 — REAL MEMBER E2E READINESS
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - checked_at: \`${checked_at}\`
+          - production environment real-member token: \`${TOKEN_PRESENT}\`
+          - Airtable audit credential: \`${AIRTABLE_PRESENT}\`
+          - TOTO canonical model: \`${MODEL_STATE}\`
+          - active sellable offer rules: \`${ACTIVE_RULES}\`
+          - approved teaser-safe assets: \`${APPROVED_ASSETS}\`
+          - **ready_for_real_grant_consume: \`${READY}\`**
+          - mutation performed: \`false\`"
+
+  e2e:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
     timeout-minutes: 10
     env:
       ORIGIN: https://www.mmdbkk.com
