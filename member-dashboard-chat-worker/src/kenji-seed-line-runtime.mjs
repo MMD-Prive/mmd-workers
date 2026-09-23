@@ -17,6 +17,7 @@ import {
 import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
+import { decideKenjiLineFirstContact } from "./kenji-line-first-contact.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -548,6 +549,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const runtimeAllKill = runtime.ok !== true || controls.all_kenji_mutations === true;
   const runtimeLineKill = runtimeAllKill || controls.line_oa_auto_reply === true;
   const autoReplyEnabled = enabled(env.LINE_AUTO_REPLY_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
+  const firstContactEnabled = !autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
   const continuityEnabled = enabled(env.KENJI_LINE_CONTINUITY_ENABLED);
   const events = Array.isArray(body.events) ? body.events : [];
   const saved = [];
@@ -582,6 +584,8 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           continuity,
           liveTruth,
         })
+      : firstContactEnabled && eventMode !== "standby" && !redelivered && replyToken
+        ? withDecisionMetadata({}, decideKenjiLineFirstContact(event, currentIntent))
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
         intent: effectiveIntent,
@@ -590,11 +594,15 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
         guard_reason: redelivered ? "line_redelivery" : runtimeLineKill ? "runtime_line_kill" : "reply_not_eligible",
       });
 
-    const decision = support || baseDecision.reply_pack_version ? baseDecision : applyKenjiNextAction(baseDecision, {
+    const decision = firstContactEnabled && !autoReplyEnabled
+      ? baseDecision
+      : support || baseDecision.reply_pack_version ? baseDecision : applyKenjiNextAction(baseDecision, {
       intent: text(baseDecision.intent || effectiveIntent),
       continuity,
     });
-    const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && !redelivered && replyToken && decision.text);
+    // OA Manager sends the add-friend greeting. A follow event must not get a
+    // second Worker greeting, even if the broader reply flag is enabled later.
+    const shouldReply = Boolean((autoReplyEnabled || firstContactEnabled) && event.type !== "follow" && eventMode !== "standby" && !redelivered && replyToken && decision.text);
     const replyResult = shouldReply ? await sendReply(env, replyToken, decision.text) : null;
     const delivered = replyResult?.ok === true;
 
@@ -650,6 +658,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       reply_sent: delivered,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
+      first_contact_enabled: firstContactEnabled,
       continuity_enabled: continuityEnabled,
       continuity_storage_status: text(continuity.storage_status),
     }));
@@ -678,6 +687,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
       live_truth_used: decision.live_truth_used === true,
       runtime_control_ok: runtime.ok === true,
       runtime_line_kill: runtimeLineKill,
+      first_contact_enabled: firstContactEnabled,
       continuity_enabled: continuityEnabled,
       continuity_storage_status: text(continuity.storage_status),
       message_id: eventIdOf(event),

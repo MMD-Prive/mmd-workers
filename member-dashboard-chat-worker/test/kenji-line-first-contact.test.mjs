@@ -1,0 +1,81 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { createLineSignature } from "../src/index.js";
+import { decideKenjiLineFirstContact } from "../src/kenji-line-first-contact.mjs";
+import { handleKenjiSeedLineRequest } from "../src/kenji-seed-line-runtime.mjs";
+
+const env = {
+  LINE_CHANNEL_SECRET: "synthetic-secret",
+  LINE_CHANNEL_ACCESS_TOKEN: "synthetic-access-token",
+  LINE_AUTO_REPLY_ENABLED: "false",
+  LINE_FIRST_CONTACT_ENABLED: "true",
+  LINE_KENJI_AI_ENABLED: "true",
+  KENJI_LINE_CONTINUITY_ENABLED: "false",
+  INTERNAL_TOKEN: "synthetic-internal",
+  ADMIN_WORKER: { fetch: async () => Response.json({ ok: true, controls: {
+    line_oa_auto_reply: false, all_kenji_mutations: false, model_keyword_auto_reply: false,
+  } }) },
+};
+
+function message(value, overrides = {}) {
+  return {
+    type: "message", mode: "active", replyToken: "synthetic-reply-token",
+    source: { type: "user", userId: "U-synthetic" },
+    message: { id: "synthetic-message-id", type: "text", text: value },
+    ...overrides,
+  };
+}
+
+test("First Contact answers a natural opening but sends protected matters for review", () => {
+  const opening = decideKenjiLineFirstContact(message("แนะนำหน่อย"), "note_only");
+  assert.match(opening.text, /อยากให้ช่วยเรื่อง/);
+  assert.equal(opening.handoff_required, false);
+
+  const booking = decideKenjiLineFirstContact(message("อยากจองไปดินเนอร์"), "mmd_companion");
+  assert.match(booking.text, /วันไหน/);
+  assert.doesNotMatch(booking.text, /ยืนยันคิว|ราคา.*บาท/);
+
+  const slip = decideKenjiLineFirstContact(message("สวัสดี โอนแล้ว ส่งสลิป"), "greeting");
+  assert.equal(slip.text, "");
+  assert.equal(slip.handoff_required, true);
+
+  const unrelated = decideKenjiLineFirstContact(message("ขอเลขบัญชี"), "note_only");
+  assert.equal(unrelated.text, "");
+  assert.equal(unrelated.guard_blocked, true);
+
+  const group = decideKenjiLineFirstContact(message("แนะนำหน่อย", { source: { type: "group", groupId: "G-synthetic" } }), "note_only");
+  assert.equal(group.text, "");
+});
+
+test("signed LINE opening replies once while follow and protected events stay silent", async () => {
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.match(String(url), /api\.line\.me\/v2\/bot\/message\/reply/);
+    sent.push(JSON.parse(init.body));
+    return Response.json({});
+  };
+
+  try {
+    const events = [
+      { type: "follow", mode: "active", replyToken: "follow-token", source: { type: "user", userId: "U-synthetic" }, webhookEventId: "follow-1" },
+      message("แนะนำหน่อย"),
+      message("โอนแล้วครับ", { replyToken: "payment-token", message: { id: "payment-1", type: "text", text: "โอนแล้วครับ" } }),
+      message("แนะนำหน่อย", { replyToken: "standby-token", mode: "standby", message: { id: "standby-1", type: "text", text: "แนะนำหน่อย" } }),
+    ];
+    const raw = JSON.stringify({ events });
+    const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
+    const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: raw,
+    }), env, null, { fetch: async () => Response.json({ ok: true }) });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].replyToken, "synthetic-reply-token");
+    assert.deepEqual(body.saved.map((row) => row.replied), [false, true, false, false]);
+    assert.equal(body.saved[2].handoff_required, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

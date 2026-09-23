@@ -359,11 +359,13 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
-# Kenji Conversation V1 Phase 1 is shadow-only. Keep the transport mute in
-# versioned production config as well as the runtime kill switch: inbound
-# messages may be observed, but this deployment cannot emit customer replies.
+# Keep the older conversation/knowledge response lane paused while the bounded
+# First Contact V1 lane can answer safe opening messages under the kill switch.
 LINE_AUTO_REPLY_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
+# First Contact V1 answers only safe customer text openings. LINE OA owns the
+# add-friend greeting; all other legacy/autonomous replies remain paused.
+LINE_FIRST_CONTACT_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
 LINE_KENJI_KNOWLEDGE_ENABLED = "true"
