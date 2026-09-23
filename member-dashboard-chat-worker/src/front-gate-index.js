@@ -1,5 +1,6 @@
 import worker from "./index.js";
 import { observeKenjiLineWebhook } from "./kenji-ai-worker-line-bridge.mjs";
+import { recordKenjiConversationShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
 export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -442,12 +443,15 @@ export default {
     // changes customer replies, payment truth, membership, points, or access.
     if (observerRequest && response.ok) {
       const observation = observeKenjiLineWebhook({ request: observerRequest, env })
-        .then((result) => {
+        .then(async (result) => {
           recordBridgeTelemetry(result);
+          await recordKenjiConversationShadowReceipt(env, result);
           return result;
         })
-        .catch(() => {
-          recordBridgeTelemetry({ ok: false, enabled: true, events: 0, observed: 0, succeeded: 0, evidence_incomplete: 0 });
+        .catch(async () => {
+          const failed = { ok: false, enabled: true, events: 0, observed: 0, succeeded: 0, evidence_incomplete: 0 };
+          recordBridgeTelemetry(failed);
+          await recordKenjiConversationShadowReceipt(env, failed);
         });
       if (typeof ctx?.waitUntil === "function") ctx.waitUntil(observation);
       else await observation;

@@ -9,6 +9,7 @@ import {
 } from "./my-mms-customer-app-front-gate.js";
 
 export * from "./mms-line-front-gate.js";
+export { KenjiShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
 
 export default {
   ...currentWorker,

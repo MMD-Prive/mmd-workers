@@ -3,6 +3,10 @@ import {
   renderRenewalResponse,
 } from "./renderers/single-renewal-renderer.js";
 import { KenjiModelIdempotency } from "./kenji-model-idempotency.js";
+import {
+  handleKenjiConversationShadowReceipt,
+  KenjiShadowReceipt,
+} from "./kenji-line-shadow-receipt.mjs";
 import { generateKenjiModelReply, KENJI_TOTAL_DEADLINE_MS } from "./kenji-model-policy.js";
 import { runKenjiFolderHistoryAssessment } from "./kenji-folder-history-adapter.mjs";
 import { buildProtectedCapabilityReply, decideKenjiCapability, KENJI_CAPABILITIES } from "./kenji-capability-policy.js";
@@ -21,7 +25,7 @@ import {
   runEligibleKenjiRecommendationShadowSmoke,
   runRealKenjiRecommendationShadowSmoke,
 } from "./internal-kenji-recommendation-shadow-smoke.mjs";
-export { KenjiModelIdempotency };
+export { KenjiModelIdempotency, KenjiShadowReceipt };
 
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
@@ -52,6 +56,7 @@ const SERVICE_LINE_RICH_MENU_DEFAULT_PATH = "/__internal/line/rich-menu/default"
 const SERVICE_LINE_RICH_MENU_LIST_PATH = "/__internal/line/rich-menu/list";
 const SERVICE_LINE_SHOP_SHIPPING_PATH = "/__internal/line/shop-shipping-notify";
 const SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH = "/__internal/line/shop-shipping-notify/smoke";
+const SERVICE_KENJI_CONVERSATION_SHADOW_RECEIPT_PATH = "/__internal/kenji/conversation-shadow-receipt";
 const DEFAULT_SYNC_TABLE = "MMD — Console Inbox";
 const KENJI_MODEL_DEDUPE_TIMEOUT_MS = 300;
 const KENJI_MODEL_QUOTA_DEFAULT_LIMIT = 3;
@@ -2153,6 +2158,10 @@ export default {
 
     if (request.method === "POST" && LINE_WEBHOOK_PATHS.has(url.pathname)) {
       return handleLineWebhook(request, env, ctx);
+    }
+
+    if (url.pathname === SERVICE_KENJI_CONVERSATION_SHADOW_RECEIPT_PATH) {
+      return handleKenjiConversationShadowReceipt(request, env);
     }
 
     if (url.pathname === SERVICE_LINE_SHOP_SHIPPING_SMOKE_PATH) {
