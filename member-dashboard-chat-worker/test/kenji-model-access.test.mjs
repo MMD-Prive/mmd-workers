@@ -106,8 +106,11 @@ test("model lookup intent accepts neutral exact codes and explicit working-name 
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("ชื่อนายแบบ น้องซิน"), "น้องซิน");
+  assert.equal(extractKenjiModelLookupQuery("JASPAL"), "JASPAL");
+  assert.equal(extractKenjiModelLookupQuery("HELLO"), "");
   assert.equal(extractKenjiModelLookupQuery("สวัสดีครับ"), "");
   assert.equal(inferLineIntent("MX17", lineEvent("MX17")), "model_lookup");
+  assert.equal(inferLineIntent("JASPAL", lineEvent("JASPAL")), "model_lookup");
   assert.equal(extractKenjiModelVerificationEmail("Customer.Name@gmail.com"), "customer.name@gmail.com");
   assert.equal(inferLineIntent("customer.name@gmail.com", lineEvent("customer.name@gmail.com")), "model_access_verification");
 });
@@ -338,4 +341,17 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("all-caps Ad entry text is sent unchanged to the authoritative model access RPC", async () => {
+  const calls = [];
+  const decision = await resolveKenjiLineReply(lineEvent("JASPAL"), {}, {
+    ...BASE_ENV,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว" } }, 200, calls),
+  });
+  assert.equal(calls.length, 1);
+  assert.deepEqual(await calls[0].json(), { line_user_id: LINE_USER_ID, query: "JASPAL" });
+  assert.match(decision.text, /Jaspal OP/);
+  assert.equal(decision.reply_source, "model_access");
 });
