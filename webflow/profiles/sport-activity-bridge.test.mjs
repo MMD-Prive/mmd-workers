@@ -17,9 +17,9 @@ test("Sport Activity packages are visible from Profiles and lock to booking", ()
 
 test("Sport Activity booking handoff stays in the Sport Activity service lane", () => {
   assert.match(booking, /data-service="Sport Activity"/);
-  assert.match(booking, /if\(role==='sport_activity'\)\{service='Sport Activity'/);
+  assert.match(booking, /if \(role === "sport_activity"\) \{[\s\S]*service = "Sport Activity"/);
   assert.match(booking, /not Personal Training or therapy/);
-  for (const key of packageKeys) assert.match(booking, new RegExp(`${key}:\\{role:'sport_activity'`));
+  for (const key of packageKeys) assert.match(booking, new RegExp(`${key}: \\{[\\s\\S]*role: "sport_activity"`));
 });
 
 test("admin payout projection recognizes every Sport Activity package key", () => {
