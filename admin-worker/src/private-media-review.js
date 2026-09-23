@@ -89,10 +89,14 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       }
       if (!env.MODEL_DRIVE_DIRECTORY?.fetch) return json({ ok: false, error: 'model_drive_directory_unavailable' }, 503);
 
-      const sourceUrl = new URL('https://model-drive-directory.internal/__internal/model-drive/photo');
-      sourceUrl.searchParams.set('drive_folder_id', folderId);
-      sourceUrl.searchParams.set('file_name', fileName);
-      const source = await env.MODEL_DRIVE_DIRECTORY.fetch(new Request(sourceUrl));
+      const source = await env.MODEL_DRIVE_DIRECTORY.fetch(new Request(
+        'https://model-drive-directory.internal/__internal/model-drive/canonical-file',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ drive_folder_id: folderId, file_name: fileName }),
+        },
+      ));
       if (!source.ok || !source.body) return json({ ok: false, error: 'approved_drive_media_unavailable' }, source.status === 404 ? 404 : 503);
       const contentType = String(source.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
       if (!['image/jpeg', 'image/png', 'image/webp'].includes(contentType)) return json({ ok: false, error: 'approved_drive_media_type_invalid' }, 415);
