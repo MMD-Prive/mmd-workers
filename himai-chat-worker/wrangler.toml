@@ -4,6 +4,15 @@ compatibility_date = "2026-04-11"
 
 
 # Shared Himai/MMD Shop catalog + checkout routes. Keep /shop and /mmd-shop Webflow-owned.
+
+[[routes]]
+pattern = "mmdbkk.com/shop/supplier/liff*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop/supplier/liff*"
+zone_name = "mmdbkk.com"
+
 [[routes]]
 pattern = "mmdbkk.com/shop/api/*"
 zone_name = "mmdbkk.com"
@@ -51,6 +60,7 @@ service = "telegram-worker"
 [vars]
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
+HIMAI_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT"
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_SUPPLIERS_TABLE = "Shared — Suppliers"
