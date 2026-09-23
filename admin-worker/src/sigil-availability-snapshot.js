@@ -388,6 +388,44 @@ function adoptionReminderCopy(displayName = "") {
 }
 
 async function pushAvailabilityReminderLine(env = {}, model = {}) {
+  const eventsBinding = env.EVENTS_WORKER;
+  const eventsAuth = text(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+  if (eventsBinding && typeof eventsBinding.fetch === "function" && eventsAuth) {
+    try {
+      const response = await eventsBinding.fetch(new Request(
+        "https://events-worker.internal/__internal/model/availability-reminder",
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-internal-token": eventsAuth,
+          },
+          body: JSON.stringify({
+            line_user_id: model.line_user_id,
+            display_name: model.display_name,
+          }),
+        },
+      ));
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.ok === true) {
+        return {
+          ok: true,
+          status: 200,
+          transport: text(payload.transport) || "events-worker-model-line",
+        };
+      }
+      if (text(payload?.error) !== "model_line_transport_not_ready") {
+        return {
+          ok: false,
+          status: response.status || 502,
+          error: text(payload?.error) || "model_line_transport_failed",
+        };
+      }
+    } catch {
+      return { ok: false, status: 503, error: "model_line_transport_unavailable" };
+    }
+  }
+
   const binding = env.MEMBER_DASHBOARD_CHAT_WORKER;
   if (binding && typeof binding.fetch === "function") {
     try {
