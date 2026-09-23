@@ -335,6 +335,7 @@ function ownerCoverageActionCount(source, value) {
 }
 
 function ownerCoverageRoutineCount(source, value) {
+  if (source === "finance_audit") return nonNegativeInteger(value?.diagnostic_count);
   if (source === "mms") {
     return nonNegativeInteger(value?.routine_application_count) + nonNegativeInteger(value?.routine_prebooking_count);
   }
