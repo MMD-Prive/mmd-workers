@@ -21,6 +21,9 @@ import {
 } from "./mmd-shop-stock-coordinator.js";
 import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.mjs";
 
+const DEFAULT_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT";
+const SUPPLIER_LIFF_PATHS = new Set(["/shop/supplier/liff", "/shop/supplier/liff/"]);
+
 export { MmdShopStockCoordinator };
 
 export default {
@@ -61,7 +64,7 @@ export default {
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && ["/shop/distributor", "/shop/supplier"].includes(path)) return renderDistributorPortalPage();
-    if (request.method.toUpperCase() === "GET" && ["/shop/supplier/liff", "/shop/supplier/liff/"].includes(path)) return renderSupplierLiffPage(env);
+    if (request.method.toUpperCase() === "GET" && SUPPLIER_LIFF_PATHS.has(url.pathname)) return handleSupplierLiffEntry(request, env);
 
     try {
       const checkoutResponse = await handleReplaySafeShopCheckout(request, env, ctx);
@@ -127,6 +130,41 @@ export default {
     );
   },
 };
+
+function handleSupplierLiffEntry(request, env) {
+  const url = new URL(request.url);
+  const liffId = cleanLiffValue(env.HIMAI_SUPPLIER_LIFF_ID || DEFAULT_SUPPLIER_LIFF_ID, 200);
+  const invite = cleanLiffValue(url.searchParams.get("invite"), 512);
+  const enteredThroughLiff = url.searchParams.get("_liff") === "1"
+    || url.searchParams.has("liff.state");
+
+  if (!enteredThroughLiff) {
+    const target = new URL(`https://liff.line.me/${encodeURIComponent(liffId)}`);
+    if (invite) target.searchParams.set("invite", invite);
+    target.searchParams.set("_liff", "1");
+    return redirect(target.toString());
+  }
+
+  return renderSupplierLiffPage(env);
+}
+
+function cleanLiffValue(value, max) {
+  return String(value == null ? "" : value)
+    .trim()
+    .slice(0, max)
+    .replace(/[\u0000-\u001F\u007F]/g, "");
+}
+
+function redirect(location) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location,
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex, nofollow",
+    },
+  });
+}
 
 async function handleInternalReservationMutation(request, env, action) {
   const expected = String(env.INTERNAL_TOKEN || "").trim();
