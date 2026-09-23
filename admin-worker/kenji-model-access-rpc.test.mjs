@@ -19,6 +19,7 @@ const ENV = {
   AIRTABLE_TABLE_MEMBER_ENTITLEMENTS: "entitlements",
   AIRTABLE_ENTITLEMENT_LINE_USER_ID_FIELD: "line_user_id",
   AIRTABLE_TABLE_MODELS: "models",
+  AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES: "profiles",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
   AIRTABLE_TABLE_MODEL_OFFER_RULES: "rules",
 };
@@ -71,14 +72,26 @@ function approval(cohort, folders, overrides = {}) {
   });
 }
 
-function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = []) {
-  return { entitlements, models, approvals, rules };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = [], profiles = []) {
+  return { entitlements, models, approvals, rules, profiles };
+}
+
+function keywordProfile(alias, model = privateModel(), overrides = {}) {
+  return record("rec-profile-" + alias, {
+    Model: [model.id],
+    model_key: model.fields.model_code,
+    working_name: model.fields.working_name,
+    search_aliases: alias,
+    status: "Active",
+    ...overrides,
+  });
 }
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
   models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name"]),
   approvals: new Set(["line_user_id"]),
+  profiles: new Set([]),
 };
 
 function airtableFetch(data, { failTables = [] } = {}) {
@@ -87,8 +100,8 @@ function airtableFetch(data, { failTables = [] } = {}) {
     const table = decodeURIComponent(url.pathname.split("/").pop());
     if (failTables.includes(table)) return new Response("source private error", { status: 503 });
     const formula = url.searchParams.get("filterByFormula") || "";
-    if (table === "rules" && !formula) {
-      return new Response(JSON.stringify({ records: data.rules || [] }), { status: 200, headers: { "content-type": "application/json" } });
+    if ((table === "rules" || table === "profiles" || table === "models") && !formula) {
+      return new Response(JSON.stringify({ records: data[table] || [] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     const match = formula.match(/^LOWER\(\{(.+)}&""\)="(.*)"$/);
     if (!match || !SCHEMAS[table]?.has(match[1])) return new Response(JSON.stringify({ error: "unknown field" }), { status: 422 });
@@ -135,6 +148,19 @@ test("active canonical Standard entitlement sees Standard private model", async 
   const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, { fetchImpl: airtableFetch(baseData()) });
   assert.equal(result.status, "match");
   assert.equal(result.model.model_code, "MX17");
+});
+
+test("published exact Keyword Profile alias resolves an Ad / Rich Menu trigger without widening access", async () => {
+  const model = privateModel("MX17", "standard", { working_name: "Jaspal OP" });
+  const data = baseData([entitlement("private_standard")], [model], [], [], [keywordProfile("JASPAL", model)]);
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, { fetchImpl: airtableFetch(data) });
+  assert.equal(result.status, "match");
+  assert.equal(result.model.model_code, "MX17");
+  assert.equal(result.model.working_name, "Jaspal OP");
+
+  const guestData = baseData([entitlement("guest_pass")], [model], [], [], [keywordProfile("JASPAL", model)]);
+  const guest = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, { fetchImpl: airtableFetch(guestData) });
+  assert.equal(guest.status, "silent");
 });
 
 test("Premium canonical envelope includes Standard and Premium while Standard cannot see Premium", async () => {
