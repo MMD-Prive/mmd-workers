@@ -1,5 +1,5 @@
 name = "himai-chat-worker"
-main = "src/entry.js"
+main = "src/entry-owner-preflight.js"
 compatibility_date = "2026-04-11"
 
 
@@ -61,6 +61,8 @@ service = "telegram-worker"
 POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 MMD_SHOP_RESERVATION_TTL_MINUTES = "45"
 HIMAI_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT"
+HIMAI_SUPPLIER_LIFF_ENDPOINT = "https://mmdbkk.com/shop/supplier/liff"
+HIMAI_SUPPLIER_PREFLIGHT_TABLE_ID = "tblN60x93vqn5BYhB"
 APP_NAME = "Himai Shop"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_SUPPLIERS_TABLE = "Shared — Suppliers"
@@ -94,7 +96,8 @@ TG_THREAD_MMD_SHOP_ALERTS = "162"
 # ---- Secrets (set via: wrangler secret put <NAME>) ----
 # AIRTABLE_TOKEN                      - Airtable API authentication
 # LINE_CHANNEL_SECRET                 - LINE webhook signature verification
-# LINE_CHANNEL_ACCESS_TOKEN           - LINE Bot API token
+# LINE_CHANNEL_ACCESS_TOKEN           - LINE Bot API token; fallback only for LIFF endpoint audit
+# LINE_LIFF_CHANNEL_ACCESS_TOKEN      - LINE Login channel token for LIFF settings audit/repair
 # INTERNAL_TOKEN                      - Internal endpoint authorization
 # AUTH_SERVICE_HIMAI_TO_TELEGRAM      - Service auth for canonical telegram-worker routing
 # HIMAI_DISTRIBUTOR_PORTAL_TOKENS     - Distributor portal access map (JSON)
