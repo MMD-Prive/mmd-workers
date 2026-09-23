@@ -227,6 +227,20 @@ jobs:
               if (!Number.isInteger(Number(action?.count)) || Number(action.count) <= 0) {
                 throw new Error(`${key} has invalid aggregate count`);
               }
+              const slo = action?.slo && typeof action.slo === "object" ? action.slo : null;
+              if (!slo || slo.schema !== "mmd_owner_action_slo_v1") {
+                throw new Error(`${key} workload SLO contract missing`);
+              }
+              if (!["due_now", "due_today", "breached"].includes(String(slo.state || ""))) {
+                throw new Error(`${key} workload SLO state invalid`);
+              }
+              const expectedTarget = action.urgency === "urgent" ? 240 : 1440;
+              if (Number(slo.target_minutes) !== expectedTarget) {
+                throw new Error(`${key} workload SLO target drifted`);
+              }
+              if (slo.state === "breached" && slo.source_breached !== true) {
+                throw new Error(`${key} breached SLO must be source-backed`);
+              }
 
               const detailPath = `/v1/admin/dashboard/owner-actions?action_key=${encodeURIComponent(key)}`;
               const { response: detailResponse, payload: detail } = await readJson(detailPath, cookie);
@@ -308,6 +322,23 @@ jobs:
             if (queueHealth?.business_truth_mutated !== false) {
               throw new Error("Owner Actions queue health must remain read-only");
             }
+            const workloadSlo = queueHealth?.workload_slo && typeof queueHealth.workload_slo === "object"
+              ? queueHealth.workload_slo
+              : null;
+            if (!workloadSlo || workloadSlo.schema !== "mmd_owner_workload_slo_v1") {
+              throw new Error("Owner workload SLO contract missing");
+            }
+            if (!["clear", "due_now", "due_today", "breached", "source_attention"].includes(String(workloadSlo.state || ""))) {
+              throw new Error("Owner workload SLO state invalid");
+            }
+            if (workloadSlo.projection_only !== true) {
+              throw new Error("Owner workload SLO must remain projection-only");
+            }
+            if (Number(workloadSlo.urgent_review_target_minutes) !== 240 ||
+                Number(workloadSlo.attention_review_target_minutes) !== 1440 ||
+                Number(workloadSlo.breached_carry_over_target) !== 0) {
+              throw new Error("Owner workload SLO policy drifted");
+            }
             if (Number(queueHealth?.unknown_hype_overdue || 0) > 0 && !actions.some((item) => item?.action_key === "hype_operational_watch")) {
               throw new Error("Unknown HYPE overdue must remain visible through fail-closed fallback");
             }
@@ -316,9 +347,11 @@ jobs:
               ? "PARTIAL"
               : Number(queueHealth?.unknown_hype_overdue || 0) > 0
                 ? "CLASSIFICATION_REVIEW"
-                : actions.length
-                  ? "REVIEW_REQUIRED"
-                  : "CLEAR";
+                : workloadSlo.state === "breached"
+                  ? "SLO_BREACHED"
+                  : actions.length
+                    ? "REVIEW_REQUIRED"
+                    : "CLEAR";
 
             const receipt = {
               schema: "mmd.owner_actions_adoption_receipt.v1",
@@ -333,6 +366,9 @@ jobs:
                 action_key: item.action_key,
                 count: Number(item.count),
                 urgency: item.urgency,
+                slo_state: item.slo?.state || "",
+                slo_target_minutes: Number(item.slo?.target_minutes || 0),
+                source_breached: item.slo?.source_breached === true,
                 authority: item.authority,
                 href: item.href,
               })),
@@ -361,6 +397,26 @@ jobs:
                 source_coverage_complete: queueHealth.source_coverage_complete === true,
                 phase_5_closure_ready: queueHealth.phase_5_closure_ready === true,
                 phase_6_bau_ready: queueHealth.phase_6_bau_ready === true,
+                phase_6b_slo_ready: queueHealth.phase_6b_slo_ready === true,
+                workload_slo: {
+                  schema: workloadSlo.schema,
+                  timezone: workloadSlo.timezone,
+                  state: workloadSlo.state,
+                  active_decisions: Number(workloadSlo.active_decisions || 0),
+                  breached_decisions: Number(workloadSlo.breached_decisions || 0),
+                  breached_classes: Number(workloadSlo.breached_classes || 0),
+                  due_now_decisions: Number(workloadSlo.due_now_decisions || 0),
+                  due_now_classes: Number(workloadSlo.due_now_classes || 0),
+                  due_today_decisions: Number(workloadSlo.due_today_decisions || 0),
+                  due_today_classes: Number(workloadSlo.due_today_classes || 0),
+                  urgent_review_target_minutes: Number(workloadSlo.urgent_review_target_minutes || 0),
+                  attention_review_target_minutes: Number(workloadSlo.attention_review_target_minutes || 0),
+                  breached_carry_over_target: Number(workloadSlo.breached_carry_over_target || 0),
+                  burn_down_remaining: Number(workloadSlo.burn_down_remaining || 0),
+                  burn_down_target: Number(workloadSlo.burn_down_target || 0),
+                  slo_met: workloadSlo.slo_met === true,
+                  projection_only: workloadSlo.projection_only === true,
+                },
                 business_truth_mutated: queueHealth.business_truth_mutated,
                 business_truth_unchanged: queueHealth.business_truth_mutated === false,
               },
@@ -372,6 +428,7 @@ jobs:
                 unauthenticated_fail_closed: true,
                 business_truth_mutated: false,
                 routine_bau_stays_in_source: !actionKeys.includes("mms_application_review"),
+                workload_slo_projection_only: workloadSlo.projection_only === true,
               },
             };
 
@@ -379,31 +436,37 @@ jobs:
             fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
 
             const actionRows = receipt.actions.length
-              ? receipt.actions.map((item) => `| ${item.action_key} | ${item.count} | ${item.urgency} | ${item.authority} | ${item.href} |`).join("\n")
-              : "| — | 0 | — | — | Queue clear |";
+              ? receipt.actions.map((item) => `| ${item.action_key} | ${item.count} | ${item.urgency} | ${item.slo_state} | ${item.authority} | ${item.href} |`).join("\n")
+              : "| — | 0 | — | clear | — | Queue clear |";
             const coverageRows = receipt.source_coverage.length
               ? receipt.source_coverage.map((item) => `| ${item.source} | ${item.state} | ${item.action_count} | ${item.authority} |`).join("\n")
               : "| — | — | 0 | — |";
 
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
-              "## Phase 6A — Owner Actions BAU & Exception-Only Receipt",
+              "## Phase 6B — Exception Burn-Down & Daily Owner Workload SLO",
               "",
               `- State: **${receipt.adoption_state}**`,
               `- Checked at: \`${receipt.checked_at}\``,
               `- Live exception classes: **${receipt.action_count}**`,
               `- Active owner decisions: **${receipt.queue_health.active_owner_decisions}**`,
+              `- Workload SLO: **${receipt.queue_health.workload_slo.state.toUpperCase()}**`,
+              `- SLO breached decisions: **${receipt.queue_health.workload_slo.breached_decisions}**`,
+              `- Due now (≤4h): **${receipt.queue_health.workload_slo.due_now_decisions}**`,
+              `- Due today (≤24h): **${receipt.queue_health.workload_slo.due_today_decisions}**`,
+              `- Burn-down remaining: **${receipt.queue_health.workload_slo.burn_down_remaining} → ${receipt.queue_health.workload_slo.burn_down_target}**`,
               `- Routine records kept in source: **${receipt.queue_health.routine_source_records}**`,
               `- Unavailable sources: **${receipt.unavailable_sources.length}**`,
               `- Unknown HYPE overdue: **${receipt.queue_health.unknown_hype_overdue}**`,
               `- Stale terminal diagnostics: **${receipt.queue_health.stale_terminal_records}**`,
               `- Phase 5 closure ready: **${receipt.queue_health.phase_5_closure_ready ? "YES" : "NO"}**`,
               `- Phase 6 BAU ready: **${receipt.queue_health.phase_6_bau_ready ? "YES" : "NO"}**`,
+              `- Phase 6B SLO ready: **${receipt.queue_health.phase_6b_slo_ready ? "YES" : "NO"}**`,
               "- Session: dedicated Per Owner credential",
               "- Authority: read-only queue/detail; decisions remain on source pages",
               "- Mutation: none",
               "",
-              "| Action | Count | Urgency | Authority | Source |",
-              "| --- | ---: | --- | --- | --- |",
+              "| Action | Count | Urgency | SLO | Authority | Source |",
+              "| --- | ---: | --- | --- | --- | --- |",
               actionRows,
               "",
               "| Coverage source | State | Actions | Authority |",
