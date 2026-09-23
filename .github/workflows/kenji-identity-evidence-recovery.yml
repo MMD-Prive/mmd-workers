@@ -1,0 +1,79 @@
+name: Kenji Identity Evidence Recovery Queue
+
+on:
+  pull_request:
+    paths:
+      - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
+      - "immigrate-worker/src/customer-identity-alignment.ts"
+      - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
+      - "immigrate-worker/test/customer-identity-alignment.test.mjs"
+      - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.test.mjs"
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - ".github/workflows/kenji-identity-evidence-recovery.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "immigrate-worker/public/a/member-intelligence.js"
+      - "immigrate-worker/src/customer-360-live-ingress-wrapper.ts"
+      - "immigrate-worker/src/customer-identity-alignment.ts"
+      - "immigrate-worker/test/customer-360-live-ingress.test.mjs"
+      - "immigrate-worker/test/customer-identity-alignment.test.mjs"
+      - "immigrate-worker/test/member-intelligence-runtime.test.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.mjs"
+      - "scripts/kenji-verified-identity-readiness-observation.test.mjs"
+      - "scripts/member-intelligence-authenticated-observation.mjs"
+      - "scripts/member-intelligence-authenticated-observation.test.mjs"
+      - "docs/operations/KENJI_PHASE4F_IDENTITY_EVIDENCE_RECOVERY_QUEUE.md"
+      - ".github/workflows/kenji-identity-evidence-recovery.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kenji-identity-evidence-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Immigrate Worker dependencies
+        run: npm ci --prefix immigrate-worker
+
+      - name: Typecheck recovery projection
+        working-directory: immigrate-worker
+        run: >-
+          ./node_modules/.bin/tsc --noEmit
+          --target es2022
+          --module esnext
+          --moduleResolution bundler
+          --lib es2022,dom
+          --types @cloudflare/workers-types
+          --skipLibCheck
+          src/customer-identity-alignment.ts
+
+      - name: Check owner runtime and observation syntax
+        run: |
+          node --check immigrate-worker/public/a/member-intelligence.js
+          node --check scripts/kenji-verified-identity-readiness-observation.mjs
+          node --check scripts/member-intelligence-authenticated-observation.mjs
+
+      - name: Test recovery queue and authority boundaries
+        run: |
+          node immigrate-worker/test/customer-identity-alignment.test.mjs
+          node immigrate-worker/test/customer-360-live-ingress.test.mjs
+          node --test immigrate-worker/test/member-intelligence-runtime.test.mjs
+          node --test scripts/kenji-verified-identity-readiness-observation.test.mjs
+          node --test scripts/member-intelligence-authenticated-observation.test.mjs

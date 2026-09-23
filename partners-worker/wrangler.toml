@@ -1,33 +1,58 @@
 name = "partners-worker"
-main = "src/index.ts"
+main = "src/public-index.ts"
 compatibility_date = "2026-04-27"
 compatibility_flags = [ "nodejs_compat" ]
 workers_dev = true
 
+# Route ownership is intentionally narrow.
+# Do not claim shared terms/legal routes here; those are currently owned outside
+# partners-worker and will conflict during `wrangler deploy`.
 routes = [
-  { pattern = "www.mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "www.mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/terms*", zone_name = "mmdbkk.com" },
-  { pattern = "mmdbkk.com/legal/terms*", zone_name = "mmdbkk.com" }
+  { pattern = "mmdbkk.com/sigil/model/dashboard/partner-login*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/sigil/model/dashboard/partner-login*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/apply/public-model*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/v1/partner/*", zone_name = "mmdbkk.com" },
+  { pattern = "mmdbkk.com/partner/dashboard*", zone_name = "mmdbkk.com" },
+  { pattern = "www.mmdbkk.com/partner/dashboard*", zone_name = "mmdbkk.com" }
 ]
+
+[[services]]
+binding = "TELEGRAM_WORKER"
+service = "telegram-worker"
+
+[[r2_buckets]]
+binding = "PARTNER_ASSETS"
+bucket_name = "mmd-sigil-partner-assets"
 
 [observability]
 enabled = true
 head_sampling_rate = 1
 
 [vars]
+POSTHOG_PROJECT_TOKEN = "phc_vi3BckZetrC6yfCoopFGwuBKiKTxaujz7B4jadBYkuYK"
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
 AIRTABLE_TABLE_MODEL_PARTNERS = "tbl1ksDlsTiiGEHWe"
 AIRTABLE_TABLE_MODEL_REFERRALS = "tblrmSsCZxJSCQR9n"
 AIRTABLE_TABLE_PARTNER_COMMISSIONS = "tblbq4M1bhpwU2BGW"
 AIRTABLE_TABLE_MODELS = "tblI4B0bI446vp9GX"
 AIRTABLE_TABLE_MODEL_APPLICATIONS = "tblwUa8ySWln8OfaJ"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
 AIRTABLE_TABLE_PARTNER_ASSETS = "tblJs0KDI7RYp4ZrT"
+AIRTABLE_TABLE_MODEL_OFFER_RULES = "tblSbxUGTFqd2CgPy"
+AIRTABLE_TABLE_PARTNER_MODEL_CHANGES = "tbl8kxhjKzGU0xx4L"
 PARTNER_ASSETS_BUCKET_NAME = "mmd-sigil-partner-assets"
-ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io"
+ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://mmdprive.com,https://www.mmdprive.com,https://sigil-partner.lovable.app,https://id-preview--bc1401f7-c385-48ab-bf5f-41aafc03fa19.lovable.app"
 REVIEW_URL = "/partner/review"
 TERMS_URL = "/partner/terms"
 DASHBOARD_URL = "/partner/dashboard"
 RECOGNIZED_URL = "/partner/recognized"
 TELEGRAM_CHAT_ID = "-1003546439681"
 TG_THREAD_CONFIRM = "61"
+
+
+# Secure one-time Partner Telegram identity binding authority.
+[[services]]
+binding = "TELEGRAM_BIND_AUTHORITY"
+service = "admin-worker"

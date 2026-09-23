@@ -1,0 +1,128 @@
+name: HYPE production receipts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ops/hype-shop-production-smoke/PRODUCTION_REVERIFY_20260920.md"
+      - "telegram-worker/PRODUCTION_REVERIFY_20260920.md"
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  record-final-pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Wait for both production acceptance workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          names=("Deploy telegram-worker" "HYPE closed-loop production smoke")
+          : > "$RUNNER_TEMP/hype-final-runs.jsonl"
+
+          comment_failure() {
+            local workflow_name="$1"
+            local state="$2"
+            local run_id="${3:-unknown}"
+            local run_url="${4:-}"
+            local body_file="$RUNNER_TEMP/hype-final-failure.md"
+            {
+              echo "## ❌ FINAL HYPE production receipt blocked"
+              echo
+              echo "- source_sha: $SOURCE_SHA"
+              echo "- workflow: **$workflow_name**"
+              echo "- state: **$state**"
+              echo "- run_id: $run_id"
+              if [ -n "$run_url" ]; then echo "- run: $run_url"; fi
+              echo
+              echo "FINAL VERIFIED was not emitted. Resolve this production workflow and rerun the paired acceptance."
+            } > "$body_file"
+            cat "$body_file"
+            gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file" || true
+          }
+
+          for workflow_name in "${names[@]}"; do
+            completed=0
+            for attempt in $(seq 1 180); do
+              if ! rows="$(gh run list --repo "$GITHUB_REPOSITORY" --commit "$SOURCE_SHA" --limit 100 --json name,status,conclusion,databaseId,url,headSha)"; then
+                comment_failure "$workflow_name" "receipt_query_failed"
+                exit 1
+              fi
+
+              found="$(node -e 'const wanted=process.argv[1]; const rows=JSON.parse(process.argv[2]||"[]"); const row=rows.find((x)=>x.headSha===process.env.SOURCE_SHA && x.name===wanted); if(row) process.stdout.write(JSON.stringify(row));' "$workflow_name" "$rows")"
+
+              if [ -z "$found" ]; then
+                sleep 5
+                continue
+              fi
+
+              status="$(node -e 'const x=JSON.parse(process.argv[1]); process.stdout.write(String(x.status||""))' "$found")"
+              conclusion="$(node -e 'const x=JSON.parse(process.argv[1]); process.stdout.write(String(x.conclusion||""))' "$found")"
+              run_id="$(node -e 'const x=JSON.parse(process.argv[1]); process.stdout.write(String(x.databaseId||""))' "$found")"
+              run_url="$(node -e 'const x=JSON.parse(process.argv[1]); process.stdout.write(String(x.url||""))' "$found")"
+              echo "$workflow_name run=$run_id status=$status conclusion=$conclusion"
+
+              if [ "$status" = "completed" ]; then
+                if [ "$conclusion" != "success" ]; then
+                  comment_failure "$workflow_name" "$conclusion" "$run_id" "$run_url"
+                  exit 1
+                fi
+                printf '%s\n' "$found" >> "$RUNNER_TEMP/hype-final-runs.jsonl"
+                completed=1
+                break
+              fi
+              sleep 5
+            done
+
+            if [ "$completed" -ne 1 ]; then
+              comment_failure "$workflow_name" "timeout_waiting_for_success"
+              exit 1
+            fi
+          done
+
+      - name: Write FINAL closed-loop production receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$RUNNER_TEMP/hype-final-runs.jsonl" "$RUNNER_TEMP/hype-final-receipt.md" <<'NODE'
+          const fs = require("node:fs");
+          const [input, output] = process.argv.slice(2);
+          const rows = fs.readFileSync(input, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+          const by = new Map(rows.map((row) => [row.name, row]));
+          const telegram = by.get("Deploy telegram-worker");
+          const smoke = by.get("HYPE closed-loop production smoke");
+          if (!telegram || !smoke) throw new Error("both production receipts are required");
+          if (telegram.conclusion !== "success" || smoke.conclusion !== "success") throw new Error("production acceptance requires success");
+
+          const body = [
+            "## ✅ FINAL HYPE closed-loop production receipt",
+            "",
+            `- source_sha: \`${process.env.SOURCE_SHA}\``,
+            `- Deploy telegram-worker: **success** · run ${telegram.databaseId} · ${telegram.url}`,
+            `- HYPE closed-loop production smoke: **success** · run ${smoke.databaseId} · ${smoke.url}`,
+            "- Recovery domains: **Shop + Booking + MMS accepted**",
+            "- LINE slip live intake: **production owner path accepted**",
+            "- Customer/Model Telegram Auto-DM: **verified contract accepted**",
+            "- Telegram core route owner: **telegram-worker locked**",
+            "- business truth mutation by smoke: **NONE**",
+            "",
+            "**closed-loop production complete: VERIFIED**",
+            "",
+            "This final receipt is emitted only after both production workflows for the same source SHA complete successfully."
+          ].join("\n");
+          fs.writeFileSync(output, body + "\n");
+          NODE
+
+          cat "$RUNNER_TEMP/hype-final-receipt.md"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/hype-final-receipt.md"

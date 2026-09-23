@@ -1,0 +1,308 @@
+name: Admin login production state
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/mms-admin-production-state.yml"
+      - "immigrate-worker/**"
+  workflow_run:
+    workflows:
+      - Deploy admin-worker
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  browser-state:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ADMIN_SMOKE_CREDENTIAL: ${{ secrets.ADMIN_LOGIN_CREDENTIAL || secrets.ADMIN_BEARER }}
+      ORIGIN: https://mmdbkk.com
+      NEXT_PATH: /internal/admin/dashboard
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Normalize smoke credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('node:fs');
+          const clean = (value) => (value || '').replace(/[\u2028\u2029\r\n]/g, '').trim();
+          const credential = clean(process.env.ADMIN_SMOKE_CREDENTIAL);
+          if (!credential) throw new Error('ADMIN_LOGIN_CREDENTIAL or ADMIN_BEARER is required');
+          fs.appendFileSync(process.env.GITHUB_ENV, `ADMIN_SMOKE_CREDENTIAL=${credential}\n`);
+          NODE
+          echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
+
+      - name: Verify production session contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const allowedHosts = new Set(['mmdbkk.com', 'www.mmdbkk.com']);
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const body = new URLSearchParams({ credential, next });
+            const response = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: body.toString(),
+              redirect: 'manual',
+            });
+            const payload = await response.clone().json().catch(() => null);
+            if (response.status !== 200) throw new Error(`login expected 200, got ${response.status}`);
+            if (!payload || payload.ok !== true || payload.next !== next) {
+              throw new Error(`unexpected login payload: ${JSON.stringify(payload)}`);
+            }
+            const setCookie = response.headers.get('set-cookie') || '';
+            if (!/^mmd_admin_gate_v1=/.test(setCookie)) throw new Error('login did not issue mmd_admin_gate_v1');
+            if (!/\bdomain=mmdbkk\.com\b/i.test(setCookie)) {
+              throw new Error('admin cookie must share Domain=mmdbkk.com across apex and www');
+            }
+            const cookiePair = setCookie.split(';', 1)[0];
+            let dashboardUrl = new URL(next, origin);
+            let dashboard = await fetch(dashboardUrl, {
+              headers: { Cookie: cookiePair },
+              redirect: 'manual',
+            });
+            if ([301, 302, 307, 308].includes(dashboard.status)) {
+              const location = dashboard.headers.get('location') || '';
+              if (!location) throw new Error(`owner dashboard redirect ${dashboard.status} missing location`);
+              const redirected = new URL(location, dashboardUrl);
+              if (!allowedHosts.has(redirected.hostname) || redirected.pathname !== next) {
+                throw new Error(`unexpected owner dashboard redirect: ${redirected.href}`);
+              }
+              dashboardUrl = redirected;
+              dashboard = await fetch(dashboardUrl, {
+                headers: { Cookie: cookiePair },
+                redirect: 'manual',
+              });
+            }
+            const dashboardBody = await dashboard.text();
+            if (dashboard.status !== 200) throw new Error(`owner dashboard expected 200, got ${dashboard.status}`);
+            if (/\/internal\/admin\/login/.test(dashboard.headers.get('location') || '')) {
+              throw new Error('owner dashboard bounced back to login');
+            }
+            if (!/Control Room|CONTROL ROOM|Owner Control|Operating System|COMMAND CENTER|OWNER MODE/i.test(dashboardBody)) {
+              throw new Error('owner dashboard marker not found after authenticated login');
+            }
+            console.log(`HTTP login session -> Owner Dashboard passed at ${dashboardUrl.hostname}.`);
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Install browser driver only
+        shell: bash
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund puppeteer-core@24.16.0
+
+      - name: Verify real browser login flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const puppeteer = require('puppeteer-core');
+
+          (async () => {
+            function findChrome() {
+              for (const bin of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser']) {
+                try { return execFileSync('which', [bin], { encoding: 'utf8' }).trim(); } catch {}
+              }
+              throw new Error('Chrome/Chromium executable not found on runner');
+            }
+
+            const origin = process.env.ORIGIN;
+            const next = process.env.NEXT_PATH;
+            const allowedHosts = new Set(['mmdbkk.com', 'www.mmdbkk.com']);
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const browser = await puppeteer.launch({
+              executablePath: findChrome(),
+              headless: true,
+              args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu'],
+            });
+
+            try {
+              const context = await browser.createBrowserContext();
+              const page = await context.newPage();
+              const pageErrors = [];
+              const authResponses = [];
+              page.on('pageerror', (error) => pageErrors.push(error?.message || String(error)));
+              page.on('response', (response) => {
+                try {
+                  const url = new URL(response.url());
+                  if (allowedHosts.has(url.hostname) && url.pathname === '/v1/admin/auth/me') {
+                    authResponses.push({ status: response.status(), url: response.url() });
+                  }
+                } catch {}
+              });
+
+              await page.goto(`${origin}/internal/admin/login?next=${encodeURIComponent(next)}`, {
+                waitUntil: 'domcontentloaded',
+                timeout: 30000,
+              });
+              await page.waitForFunction(() => {
+                const input = document.querySelector('#adminCredential');
+                return input && input.readOnly === false;
+              }, { timeout: 10000 });
+              await page.type('#adminCredential', credential, { delay: 5 });
+              await Promise.all([
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+                page.click('#ownerLoginForm .go'),
+              ]);
+
+              const landed = new URL(page.url());
+              if (!allowedHosts.has(landed.hostname) || landed.pathname !== next) {
+                throw new Error(`browser login landed at ${page.url()}`);
+              }
+
+              let waitError = null;
+              try {
+                await page.waitForFunction(() => {
+                  const bodyText = document.body?.innerText || '';
+                  const legacyControlRoom = Boolean(document.querySelector('[data-control-room]')) ||
+                    /Control Room|CONTROL ROOM|Owner Control/i.test(bodyText);
+                  const ownerOperatingSystem = /MMD PRIVÉ\s+PER\s*[·•-]?\s*COMMAND CENTER/i.test(bodyText) &&
+                    /OWNER MODE/i.test(bodyText);
+                  const currentOperationsDashboard =
+                    /Operations Dashboard \| MMD Privé Internal/i.test(document.title || '') ||
+                    (/MMD PRIVÉ/i.test(bodyText) && /หน้าหลัก วันนี้ของ MMD/i.test(bodyText));
+                  const loginStillPresent = Boolean(document.querySelector('#adminLoginForm, #ownerLoginForm'));
+                  return (legacyControlRoom || ownerOperatingSystem || currentOperationsDashboard) && !loginStillPresent;
+                }, { timeout: 15000 });
+              } catch (error) {
+                waitError = error;
+              }
+
+              if (waitError) {
+                const cookies = await page.cookies();
+                const safeCookies = cookies.map(({ name, domain, path, secure, httpOnly, sameSite, expires }) => ({
+                  name, domain, path, secure, httpOnly, sameSite, expires,
+                }));
+                const state = await page.evaluate(() => ({
+                  href: location.href,
+                  title: document.title,
+                  hasControlRoom: Boolean(document.querySelector('[data-control-room]')),
+                  hasAdminLoginForm: Boolean(document.querySelector('#adminLoginForm')),
+                  hasOwnerLoginForm: Boolean(document.querySelector('#ownerLoginForm')),
+                  bodyText: (document.body?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+                }));
+                let authProbe = null;
+                try {
+                  authProbe = await page.evaluate(async () => {
+                    const response = await fetch('/v1/admin/auth/me', { credentials: 'include', cache: 'no-store' });
+                    const text = await response.text();
+                    return { status: response.status, body: text.slice(0, 240) };
+                  });
+                } catch (error) {
+                  authProbe = { error: error?.message || String(error) };
+                }
+                console.error('BROWSER_DIAGNOSTIC_STATE', JSON.stringify({ state, authResponses, authProbe, cookies: safeCookies, pageErrors }));
+                throw waitError;
+              }
+
+              if (pageErrors.length) throw new Error(`page errors: ${pageErrors.join(' | ')}`);
+              console.log(`Browser login passed: ${page.url()}`);
+              await context.close();
+            } finally {
+              await browser.close();
+            }
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE
+
+      - name: Issue Whisp signed confirmation links once
+        if: >-
+          github.event_name == 'workflow_run' &&
+          contains(github.event.workflow_run.head_commit.message, '[issue-whisp-confirm-links]')
+        shell: bash
+        env:
+          TARGET_SESSION_ID: sess_20260917_ems22_whisp_1630
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          (async () => {
+            const origin = process.env.ORIGIN;
+            const credential = String(process.env.ADMIN_SMOKE_CREDENTIAL || '').trim();
+            const sessionId = process.env.TARGET_SESSION_ID;
+            const loginBody = new URLSearchParams({
+              action: 'owner_login',
+              credential,
+              next: '/internal/admin/control-room',
+            });
+            const login = await fetch(`${origin}/internal/admin/login/session`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-MMD-Login-Fetch': '1',
+              },
+              body: loginBody.toString(),
+              redirect: 'manual',
+            });
+            if (login.status !== 200) throw new Error(`owner login failed: ${login.status}`);
+            const setCookie = login.headers.get('set-cookie') || '';
+            const cookiePair = setCookie.split(';', 1)[0];
+            if (!/^mmd_admin_gate_v1=/.test(cookiePair)) throw new Error('owner session cookie missing');
+
+            const response = await fetch(`${origin}/v1/admin/payment-issuer-diagnostic`, {
+              method: 'POST',
+              headers: {
+                Origin: origin,
+                Cookie: cookiePair,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                mode: 'issue_existing_session',
+                session_id: sessionId,
+                payment_type: 'deposit',
+                deposit_percent: 30,
+              }),
+              redirect: 'manual',
+            });
+            const payload = await response.json().catch(() => null);
+            if (response.status !== 200 || payload?.ok !== true || !['issued', 'existing_links'].includes(payload?.stage)) {
+              throw new Error(`issuer failed: ${JSON.stringify({ status: response.status, stage: payload?.stage || null, error: payload?.error || null })}`);
+            }
+            if (!payload.customer_confirmation_url_present || !payload.model_confirmation_url_present) {
+              throw new Error('issuer did not confirm both URL writes');
+            }
+            console.log(JSON.stringify({
+              ok: true,
+              stage: payload.stage,
+              session_id: payload.session_id,
+              payment_ref: payload.payment_ref || null,
+              customer_confirmation_url_present: true,
+              model_confirmation_url_present: true,
+            }));
+          })().catch((error) => {
+            console.error(error && error.stack ? error.stack : error);
+            process.exit(1);
+          });
+          NODE

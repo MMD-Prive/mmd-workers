@@ -1,0 +1,40 @@
+/* MMD PRIVÉ — MEMBER APPLICATION OS ADD-ON */
+.mmd-member-application__health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.mmd-member-application__health span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 10px transparent;
+}
+
+.mmd-member-application__health b {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+
+.mmd-member-application__health[data-health="online"] span {
+  background: var(--success);
+  box-shadow: 0 0 12px var(--success);
+}
+
+.mmd-member-application__health[data-health="online"] b { color: var(--success); }
+.mmd-member-application__health[data-health="degraded"] span { background: var(--danger); }
+.mmd-member-application__health[data-health="degraded"] b { color: var(--danger); }
+.mmd-member-application__health[data-health="offline"] span { background: #d9a45f; }
+.mmd-member-application__health[data-health="offline"] b { color: #d9a45f; }
+
+@media (max-width: 599px) {
+  .mmd-member-application__health b { display: none; }
+  .mmd-member-application__health { margin-left: 4px; padding-left: 7px; }
+}

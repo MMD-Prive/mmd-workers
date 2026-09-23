@@ -1,0 +1,71 @@
+{
+  "version": "mmd-sport-activity-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "sport_activity",
+  "positioning": "activity_companion_not_personal_trainer_or_therapist",
+  "public_packages": [
+    {
+      "key": "move_with_me",
+      "name": "MOVE WITH ME",
+      "price_thb": 3500,
+      "included_minutes": 180,
+      "worker_payout_thb": 2100,
+      "activity_scope": "one_primary_activity"
+    },
+    {
+      "key": "game_day",
+      "name": "GAME DAY",
+      "price_thb": 5500,
+      "included_minutes": 300,
+      "worker_payout_thb": 3300,
+      "activity_scope": "one_or_two_activity_blocks"
+    },
+    {
+      "key": "active_day",
+      "name": "ACTIVE DAY",
+      "price_thb": 8500,
+      "included_minutes": 480,
+      "worker_payout_thb": 5100,
+      "activity_scope": "full_day_activity_plan"
+    }
+  ],
+  "safety_scope": {
+    "personal_training_included": false,
+    "therapy_or_recovery_treatment_included": false,
+    "medical_or_injury_advice_included": false,
+    "customer_health_and_activity_readiness_remains_customer_responsibility": true,
+    "mmd_must_confirm_model_activity_fit_and_availability": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 990,
+    "overtime_before_midnight_worker_thb_per_hour": 650,
+    "overtime_after_midnight_client_thb_per_hour": 1490,
+    "overtime_after_midnight_worker_thb_per_hour": 1000,
+    "overtime_after_0300_client_thb_per_hour": 1790,
+    "overtime_after_0300_worker_thb_per_hour": 1200,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": [
+      "MY_MMD_request",
+      "MMD_MODEL_approve",
+      "payment_verified",
+      "MMD_confirmed"
+    ]
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": [
+    "venue_or_court_fee",
+    "class_or_activity_fee",
+    "equipment_rental",
+    "ticket",
+    "transport",
+    "parking",
+    "food_and_drinks"
+  ],
+  "scope_change": {
+    "professional_training_or_medical_support": "separate_qualified_provider_required",
+    "overnight_or_after_0600": "re_quote_required"
+  },
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

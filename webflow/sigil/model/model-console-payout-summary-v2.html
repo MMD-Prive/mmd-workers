@@ -1,0 +1,142 @@
+<style id="smcv3-payout-only-css">
+#sigil-model-console-v3 .smcv3-payout-only{margin-top:12px;border-color:rgba(240,205,122,.45);background:linear-gradient(145deg,rgba(240,205,122,.08),rgba(255,255,255,.018))}
+#sigil-model-console-v3 .smcv3-payout-only__row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+#sigil-model-console-v3 .smcv3-payout-only__label{display:block;color:var(--gold,#f0cd7a);font-size:11px;font-weight:900;letter-spacing:.08em}
+#sigil-model-console-v3 .smcv3-payout-only__amount{display:block;margin-top:6px;font-size:clamp(28px,7vw,44px);line-height:1;font-weight:950;letter-spacing:-.035em}
+#sigil-model-console-v3 .smcv3-payout-only__status{color:var(--muted,#aaa);font-size:11px;font-weight:800;text-align:right}
+#sigil-model-console-v3 .smcv3-payout-only__note{margin:10px 0 0;color:var(--muted,#aaa);font-size:11px;line-height:1.55}
+#sigil-model-console-v3 .smcv3-payout-terms{margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,.09)}
+#sigil-model-console-v3 .smcv3-payout-terms__title{display:block;color:var(--gold,#f0cd7a);font-size:10px;font-weight:900;letter-spacing:.07em}
+#sigil-model-console-v3 .smcv3-payout-terms__grid{display:grid;gap:6px;margin-top:8px}
+#sigil-model-console-v3 .smcv3-payout-terms__row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px}
+#sigil-model-console-v3 .smcv3-payout-terms__row span{color:var(--muted,#aaa)}
+#sigil-model-console-v3 .smcv3-payout-terms__row strong{color:var(--ink,#fff)}
+#sigil-model-console-v3 .smcv3-payout-terms__foot{margin:9px 0 0;color:var(--muted,#aaa);font-size:10px;line-height:1.5}
+#sigil-model-console-v3 .smcv3-payout-terms__lock{margin-top:8px;padding:8px 10px;border-radius:10px;background:rgba(240,205,122,.07);color:var(--soft,#ddd);font-size:10px;line-height:1.45}
+#sigil-model-console-v3 .smcv3-payment-alert{margin-top:12px;padding:15px 16px;border:1px solid rgba(240,205,122,.45);border-radius:18px;background:linear-gradient(145deg,rgba(240,205,122,.11),rgba(255,255,255,.025))}
+#sigil-model-console-v3 .smcv3-payment-alert[data-state="verified"]{border-color:rgba(189,229,199,.42);background:rgba(189,229,199,.07)}
+#sigil-model-console-v3 .smcv3-payment-alert__label{display:block;color:var(--gold,#f0cd7a);font-size:10px;font-weight:900;letter-spacing:.09em}
+#sigil-model-console-v3 .smcv3-payment-alert strong{display:block;margin-top:5px;color:var(--ink,#fff);font-size:15px}
+#sigil-model-console-v3 .smcv3-payment-alert p{margin:6px 0 0;color:var(--soft,#ddd);font-size:12px;line-height:1.55}
+#sigil-model-console-v3 .smcv3-extension-request{margin-top:12px;padding:16px;border:1px solid rgba(240,205,122,.5);border-radius:18px;background:linear-gradient(145deg,rgba(240,205,122,.13),rgba(255,255,255,.025))}
+#sigil-model-console-v3 .smcv3-extension-request__label{display:block;color:var(--gold,#f0cd7a);font-size:10px;font-weight:900;letter-spacing:.1em}
+#sigil-model-console-v3 .smcv3-extension-request h3{margin:6px 0 4px;color:var(--ink,#fff);font-size:18px}
+#sigil-model-console-v3 .smcv3-extension-request p{margin:5px 0;color:var(--soft,#ddd);font-size:11px;line-height:1.55}
+#sigil-model-console-v3 .smcv3-extension-request__amount{display:block;margin:10px 0;color:#fff;font-size:24px;font-weight:950}
+#sigil-model-console-v3 .smcv3-extension-request__actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+#sigil-model-console-v3 .smcv3-extension-request__actions button{min-height:44px;border-radius:12px;border:1px solid rgba(240,205,122,.35);background:#f0cd7a;color:#17120a;font-weight:900}
+#sigil-model-console-v3 .smcv3-extension-request__actions button:last-child{background:transparent;color:#ddd}
+#sigil-model-console-v3 .smcv3-extension-request__actions button:disabled{opacity:.5}
+</style>
+<script id="smcv3-payout-only-js">
+(()=>{'use strict';
+const root=document.getElementById('sigil-model-console-v3');
+if(!root||root.dataset.payoutOnlyReady==='1')return;
+root.dataset.payoutOnlyReady='1';
+const endpoint=root.dataset.currentEndpoint||'/v1/model/session/current';
+const actionEndpoint=root.dataset.actionEndpoint||'/v1/model/session/action';
+const sessionToken=new URLSearchParams(location.search).get('t')||'';
+const money=n=>new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(n)+' THB';
+const statusText=s=>({expected:'ยอดที่ตกลง',pending:'รอดำเนินการ',pending_review:'กำลังตรวจสอบ',verified:'ยืนยันแล้ว',paid:'ชำระแล้ว',hold:'พักรายการ',checking:'กำลังตรวจสอบ'})[String(s||'').toLowerCase()]||'กำลังตรวจสอบ';
+function remove(){root.querySelector('[data-model-payout-card]')?.remove()}
+function moneyShort(n){return new Intl.NumberFormat('th-TH',{maximumFractionDigits:0}).format(Number(n)||0)+' THB'}
+function officialEnd(session){const x=session&&session.end_time;if(!x)return'';const d=new Date(x);if(Number.isNaN(d.getTime()))return String(x);return new Intl.DateTimeFormat('th-TH',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Bangkok'}).format(d)}
+function renderTerms(session,card){
+ const t=session&&session.payout_terms;if(!t||typeof t!=='object'||!card)return;
+ const lane=String(t.money_lane||session.model_work_lane||'').toLowerCase();
+ const isPrivate=lane==='private_model';
+ const rows=[];
+ const push=(label,v,suffix=' / ชม.')=>{const n=Number(v);if(Number.isFinite(n)&&n>0)rows.push('<div class="smcv3-payout-terms__row"><span>'+label+'</span><strong>'+moneyShort(n)+suffix+'</strong></div>')};
+ if(!isPrivate){
+  push('OT / ชั่วโมง',t.overtime_payout_thb_per_hour);
+  push('OT ก่อน 00:00',t.overtime_before_midnight_payout_thb_per_hour);
+  push('จองล่วงหน้าหลัง 00:00',t.after_midnight_prebook_premium_payout_thb_per_hour);
+  push('OT หลัง 00:00',t.overtime_after_midnight_payout_thb_per_hour);
+  push('OT หลัง 03:00',t.overtime_after_0300_payout_thb_per_hour);
+  push('รอบดึกเพิ่มถึงตัว',t.late_night_payout_thb,'');
+  push('ระยะเกิน / km',t.extra_km_payout_thb,' / km');
+  push('เพิ่มแขก / คน',t.extra_guest_payout_thb,' / คน');
+ }
+ const exp=!isPrivate&&Array.isArray(t.reimbursable_expenses)&&t.reimbursable_expenses.length?'เบิกตามจริง: '+t.reimbursable_expenses.join(' · '):'';
+ const end=officialEnd(session);
+ const terms=document.createElement('div');terms.className='smcv3-payout-terms';terms.setAttribute('data-model-payout-terms','');
+ const title=isPrivate?'PRIVATE MONEY · CASE LOCKED':'PUBLIC MONEY · PACKAGE / SESSION';
+ const laneNote=isPrivate
+  ?'<p class="smcv3-payout-terms__foot"><strong>งาน Private ใช้เรทที่ MMD lock เฉพาะงานนี้</strong><br>ไม่ใช้ราคา Package, OT หรือ After Midnight Matrix ของ Public โดยอัตโนมัติ</p>'
+  :'<p class="smcv3-payout-terms__foot">งาน Public ใช้เงื่อนไข Package/Session ที่ MMD อนุมัติสำหรับงานนี้</p>';
+ const extension=isPrivate
+  ?'หากต่อเวลา เปลี่ยนกิจกรรม หรือเพิ่มขอบเขต: ลูกค้า Request → คุณ Approve → MMD ออกเรท Private ของเคสใหม่และยืนยันก่อน จึงถือเป็นข้อตกลงของ MMD'
+  :'การต่อเวลา/เปลี่ยนแผน ต้อง Request ใน MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยันก่อน จึงอยู่ภายใต้ Booking เดิมต่อ';
+ terms.innerHTML='<span class="smcv3-payout-terms__title">'+title+'</span><div class="smcv3-payout-terms__grid">'+(end?'<div class="smcv3-payout-terms__row"><span>เวลาจบที่ MMD ยืนยัน</span><strong>'+end+'</strong></div>':'')+rows.join('')+'</div>'+laneNote+(exp?'<p class="smcv3-payout-terms__foot">'+exp+'</p>':'')+(t.extension_requires_mmd_confirmation?'<div class="smcv3-payout-terms__lock">'+extension+'</div>':'');
+ card.append(terms);
+}
+function removeAlert(){root.querySelector('[data-model-payment-alert]')?.remove()}
+function renderAlert(session){
+ const alerts=Array.isArray(session&&session.model_console_alerts)?session.model_console_alerts:[];
+ const a=alerts.find(x=>x&&x.kind==='payment');
+ if(!a){removeAlert();return}
+ const summary=root.querySelector('.smcv3-summary');
+ if(!summary)return;
+ let card=root.querySelector('[data-model-payment-alert]');
+ if(!card){card=document.createElement('section');card.className='smcv3-payment-alert';card.setAttribute('data-model-payment-alert','');summary.insertAdjacentElement('afterend',card)}
+ card.dataset.state=String(a.status||'pending_verification');
+ const label=a.status==='verified'?'PAYMENT VERIFIED':'PAYMENT UPDATE';
+ card.innerHTML='<span class="smcv3-payment-alert__label">'+label+'</span><strong>'+String(a.title||'อัปเดตการชำระเงิน')+'</strong><p>'+String(a.message||'')+'</p>';
+}
+function render(session){
+ const raw=session&&(session.expected_payout_thb??session.pay_model_thb);
+ const amount=typeof raw==='number'?raw:Number(raw);
+ const valid=Number.isInteger(amount)&&amount>=0&&amount<=100000000;
+ if(!valid){remove();return}
+ const summary=root.querySelector('.smcv3-summary');
+ if(!summary){return}
+ let card=root.querySelector('[data-model-payout-card]');
+ if(!card){card=document.createElement('section');card.className='smcv3-card smcv3-payout-only';card.setAttribute('data-model-payout-card','');summary.insertAdjacentElement('afterend',card)}
+ card.innerHTML='<div class="smcv3-payout-only__row"><div><span class="smcv3-payout-only__label">ยอดเงินถึงตัวคุณ</span><strong class="smcv3-payout-only__amount">'+money(amount)+'</strong></div><span class="smcv3-payout-only__status">'+statusText(session&&session.payout_status)+'</span></div><p class="smcv3-payout-only__note">ยอดนี้คือค่าตัวที่คุณได้รับตามงานนี้ ไม่ใช่ราคาที่ลูกค้าจ่าย</p>';renderTerms(session,card);
+}
+function removeExtension(){root.querySelector('[data-model-extension-request]')?.remove()}
+function extensionEnd(value){const d=new Date(String(value||''));return Number.isNaN(d.getTime())?String(value||'—'):new Intl.DateTimeFormat('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bangkok'}).format(d)}
+async function decideExtension(action,requestId,card){
+ const buttons=[...card.querySelectorAll('button')];buttons.forEach(x=>x.disabled=true);
+ try{
+  const res=await fetch(new URL(actionEndpoint,location.origin),{
+   method:'POST',credentials:'include',cache:'no-store',
+   headers:{'content-type':'application/json',accept:'application/json'},
+   body:JSON.stringify({t:sessionToken,action,extension_request_id:requestId})
+  });
+  const data=await res.json().catch(()=>null);
+  if(!res.ok||!data||data.ok!==true)throw new Error(String(data&&data.error||'extension_decision_failed'));
+  await load();
+ }catch(e){
+  card.querySelector('p:last-of-type').textContent='ตอนนี้ยังบันทึกคำตอบไม่ได้ กรุณาลองอีกครั้ง';
+  buttons.forEach(x=>x.disabled=false);
+ }
+}
+function renderExtension(extension){
+ removeExtension();
+ if(!extension||extension.status!=='requested'||!extension.request_id)return;
+ const summary=root.querySelector('.smcv3-summary');if(!summary)return;
+ const card=document.createElement('section');card.className='smcv3-extension-request';card.setAttribute('data-model-extension-request','');
+ const minutes=Number(extension.requested_minutes)||0;
+ card.innerHTML='<span class="smcv3-extension-request__label">CUSTOMER EXTENSION REQUEST</span><h3>ลูกค้าขอต่อเวลา '+minutes+' นาที</h3><p>'+extensionEnd(extension.original_end_at)+' → <strong>'+extensionEnd(extension.requested_end_at)+'</strong></p><span class="smcv3-extension-request__amount">คุณได้รับเพิ่ม '+moneyShort(extension.model_payout_thb)+'</span><p>กดรับเฉพาะเมื่อคุณสะดวก เวลาจะยังไม่เปลี่ยนจนกว่าลูกค้าชำระและ MMD ยืนยัน</p><div class="smcv3-extension-request__actions"><button type="button" data-ext-approve>APPROVE EXTENSION</button><button type="button" data-ext-decline>DECLINE</button></div><p></p>';
+ card.querySelector('[data-ext-approve]').addEventListener('click',()=>decideExtension('approve_extension',extension.request_id,card));
+ card.querySelector('[data-ext-decline]').addEventListener('click',()=>decideExtension('decline_extension',extension.request_id,card));
+ const payout=root.querySelector('[data-model-payout-card]');
+ (payout||summary).insertAdjacentElement('afterend',card);
+}
+async function load(){
+ try{
+  const res=await fetch(new URL(endpoint,location.origin),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}});
+  const data=await res.json();
+  if(!res.ok||data.ok===false)throw new Error('not_available');
+  const session=data.session||(data.data&&data.data.session);
+  if(!session){remove();removeExtension();return}
+  render(session);
+  renderAlert(session);
+  renderExtension(data.extension_request||(data.data&&data.data.extension_request));
+ }catch(e){remove();removeAlert();removeExtension()}
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',load,{once:true});else load();
+root.querySelectorAll('[data-refresh]').forEach(x=>x.addEventListener('click',()=>setTimeout(load,250)));
+})();
+</script>

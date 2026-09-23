@@ -1,0 +1,32 @@
+name: Partner Control Room CI
+on:
+  pull_request:
+    paths:
+      - 'partners-worker/**'
+      - "shared/model-sales-control-v1.mjs"
+      - "shared/model-sales-control-v1.d.mts"
+      - 'admin-worker/src/partner-owner-console.js'
+      - 'admin-worker/partner-owner-console.test.mjs'
+      - 'admin-worker/src/model-payout-adjustments.js'
+      - 'admin-worker/model-payout-adjustments.test.mjs'
+      - 'admin-worker/src/create-session-canonical-link-runtime.js'
+      - 'admin-worker/create-session-canonical-link.test.mjs'
+      - '.github/workflows/partner-control-room-ci.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: partners-worker/package-lock.json
+      - run: npm ci
+        working-directory: partners-worker
+      - run: npm run typecheck && npm test
+        working-directory: partners-worker
+      - run: node --test admin-worker/partner-owner-console.test.mjs admin-worker/model-payout-adjustments.test.mjs admin-worker/create-session-canonical-link.test.mjs admin-worker/job-create-contract-partner-settlement.test.mjs admin-worker/sigil-jobs-partner-snapshot.test.mjs
