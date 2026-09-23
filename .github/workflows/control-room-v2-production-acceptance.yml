@@ -169,6 +169,33 @@ jobs:
               "reminder_follow_up_due",
             ]);
             const availabilityHealth = calendar?.availability?.coverage_health || null;
+            const onboarding = calendar?.availability?.onboarding || null;
+            if (onboarding?.schema !== "mmd.availability.onboarding-cohorts.v1") {
+              throw new Error("Availability onboarding cohort contract missing");
+            }
+            if (onboarding?.batch_size !== 5 || !Array.isArray(onboarding?.current_batch) || onboarding.current_batch.length > 5) {
+              throw new Error("Availability onboarding batch boundary failed");
+            }
+            if (onboarding?.automatic_send !== false || onboarding?.owner_click_required !== true || onboarding?.no_guess !== true) {
+              throw new Error("Availability onboarding safety boundary failed");
+            }
+            if (Number(onboarding?.unique_backlog_models || 0) > Number(onboarding?.raw_backlog_rows || 0)) {
+              throw new Error("Availability onboarding dedupe count is invalid");
+            }
+            const currentCohortKeys = onboarding.current_batch.map((item) => String(item?.model_key || item?.record_id || ""));
+            if (new Set(currentCohortKeys).size !== currentCohortKeys.length) {
+              throw new Error("Availability onboarding current batch contains duplicate canonical Models");
+            }
+            const onboardingCurrent = onboarding.current_batch.map((item) => ({
+              name: String(item?.name || "—").slice(0, 120),
+              model_id: String(item?.model_id || "—").slice(0, 80),
+              recovery_stage: String(item?.recovery_stage || "unknown"),
+              priority_bucket: String(item?.priority_bucket || "unknown"),
+              upcoming_job_at: item?.upcoming_job_at || null,
+              partner_job: item?.partner_job === true,
+              line_connected: item?.line_connected === true,
+              duplicate_records_collapsed: Number(item?.duplicate_records_collapsed || 0),
+            }));
             const availabilityExceptions = (calendar?.availability?.models || [])
               .filter((item) => actionableStages.has(String(item?.recovery_stage || "")))
               .map((item) => ({
@@ -255,6 +282,15 @@ jobs:
               owner_actions_contract: ownerActions.contract,
               availability_source_state: availabilitySource.state,
               availability_exception_present: Boolean(availabilityAction),
+              availability_onboarding: {
+                raw_backlog_rows: onboarding.raw_backlog_rows,
+                unique_backlog_models: onboarding.unique_backlog_models,
+                duplicate_rows_collapsed: onboarding.duplicate_rows_collapsed,
+                batch_size: onboarding.batch_size,
+                remaining_after_current: onboarding.remaining_after_current,
+                cohort_counts: onboarding.cohort_counts,
+                current_batch: onboardingCurrent,
+              },
               availability_health: availabilityHealth ? {
                 review_status: availabilityHealth.review_status,
                 canonical_models: availabilityHealth.canonical_models,
@@ -289,6 +325,7 @@ jobs:
           - Owner Actions: Availability source projected from canonical coverage health
           - Availability exception: Calendar-only, read-only, no auto-send or mutation
           - Availability diagnostic: actionable rows logged with safe fields only (name/model_id/stage/state/LINE-connected)
+          - Availability onboarding: canonical-key dedupe + 5-Model Owner-click cohort verified
           - Cross-layer person conversion: forbidden
           - Unobserved terminal event: null / —, never fabricated zero
           - Unauthenticated page/API/analytics: fail-closed
