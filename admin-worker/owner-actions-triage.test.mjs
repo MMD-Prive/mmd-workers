@@ -13,6 +13,7 @@ test("Owner Actions payment triage keeps only proofs ready for owner review", ()
     { proof_id: "enrich", reviewable: true, review_lane: "needs_enrichment", can_approve: false, context_issues: ["customer_or_job_not_linked"] },
     { proof_id: "blocked", reviewable: true, review_lane: "owner_review", can_approve: false, context_issues: [] },
     { proof_id: "closed", reviewable: false, review_lane: "owner_review", can_approve: true, context_issues: [] },
+    { proof_id: "settled", reviewable: true, review_lane: "owner_review", can_approve: true, settlement_recovery: true, context_issues: [] },
   ]);
 
   assert.deepEqual(items.map((item) => item.proof_id), ["ready"]);
