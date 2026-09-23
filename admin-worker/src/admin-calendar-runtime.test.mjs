@@ -9,7 +9,7 @@ const f = {
   sid:'fldLTq2kZbyRv22IA', jid:'fldHw5HdDDdkHXMhG', client:'fld6P6if0vDZCeV0C', model:'fldrXQAyOMPCvbOaY', start:'fldBeG0FkWwa8kgnp', end:'fldiDSz0wW9Ct9I3P', duration:'fldP7Xx99uf5BvJpF', ack:'fldFgkHXivIAThfDz', modelState:'fld57fhdWqIcOy4Jp', total:'fldeBf4gl5iTBj7eX', paymentRef:'fldojgjSQLaO0uQLX',
   jobId:'fldwreJwlz8sWd6GM', jobModel:'fldscPK15ejBw0BAH', jobClient:'fldlPdR0pmynCY6fW', jobBudget:'fldSspHLxJPQOg7wA',
   paySid:'fld2wdhBvc8xrV6y5', payRef:'fldOO6SY49iDw8VBZ', payAmount:'fldvCSwrUW8OMAooS', payVerify:'fldJ7a0Ube9F0bmRy', payStage:'fldrr9g8ZZjqAbdKQ', payStatus:'fldEJ1hmm7KwWuI6q',
-  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelLine:'fld2ywTFI6MZhX6PV',
+  clientName:'fldrHqkGQzvBLRxlP', modelName:'fldShiT60bmCxFxRu', modelId:'fldVWbT0gsSe0hn7Q', modelKey:'fldYvAbkENGQ4NaaI', modelAvailability:'fld6RuUDmGcGDc34i', modelStatus:'fldRcAE3bL8dKmURH', modelLine:'fld2ywTFI6MZhX6PV',
   calUid:'fld42rRY3ufGeXCcf', calSid:'fldd0STLRxOGIKXPn', calJid:'fldzvGB5u7t55kwUQ', calStatus:'fld449t1h6s7jbcnf', calTrigger:'fldNhk22zLTvR9Y4C', calEvent:'fldfC6D0RXyogXcMG'
 };
 
@@ -207,6 +207,61 @@ test('daily coverage health only reports fresh canonical snapshot coverage', asy
     assert.equal(health.owner_action_required,0);
     assert.equal(health.automatic_send,false);
     assert.equal(health.no_guess,true);
+  } finally { restore(); }
+});
+
+
+test('daily coverage health excludes inactive inventory before computing canonical coverage', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  data[IDS.models][0].fields[f.modelStatus]='Inactive';
+  data[IDS.models].push({id:'recActiveModel',fields:{
+    [f.modelName]:'Model B',[f.modelId]:'GWs18',[f.modelKey]:'mdl_pub_model_b',
+    [f.modelStatus]:'Active',[f.modelLine]:'Ufedcba9876543210fedcba987654321',
+  }});
+  const restore=installFetch(data);
+  try{
+    const confirmed=availabilitySnapshot('available_today','model_confirmed');
+    const second={...availabilitySnapshot('available_today','model_confirmed'),model_key:'mdl_pub_model_b'};
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_pub_model_a':confirmed,
+        'availability:v1:mdl_pub_model_b':second,
+      }),
+    },'2026-09-19');
+    const excluded=out.availability.models.find(row=>row.model_key==='mdl_pub_model_a');
+    const health=out.availability.coverage_health;
+    assert.equal(excluded.snapshot_state,'excluded');
+    assert.equal(excluded.availability_status,'unconfirmed');
+    assert.equal(excluded.availability_fresh,false);
+    assert.equal(excluded.recovery_stage,'excluded');
+    assert.equal(health.excluded_models,1);
+    assert.equal(health.canonical_models,1);
+    assert.equal(health.fresh_models,1);
+    assert.equal(health.fresh_coverage_percent,100);
+    assert.equal(health.review_status,'coverage_current');
+  } finally { restore(); }
+});
+
+test('calendar coverage classifies failed snapshot reads as source unavailable', async()=>{
+  const data=fixture();
+  data[IDS.sessions]=[];
+  const restore=installFetch(data);
+  try{
+    const out=await readAdminCalendar({
+      AIRTABLE_API_KEY:'test',
+      SIGIL_AVAILABILITY_SNAPSHOTS:availabilityKv({
+        'availability:v1:mdl_pub_model_a':availabilitySnapshot('available_today','model_confirmed'),
+      },{throwOnGet:['availability:v1:mdl_pub_model_a']}),
+    },'2026-09-19');
+    const row=out.availability.models[0];
+    assert.equal(out.availability.model_source_status,'partial');
+    assert.equal(row.snapshot_state,'source_unavailable');
+    assert.equal(row.availability_status,'unconfirmed');
+    assert.equal(row.recovery_stage,'source_unavailable');
+    assert.equal(out.availability.coverage_health.source_unavailable_models,1);
+    assert.equal(out.availability.coverage_health.review_status,'source_attention');
   } finally { restore(); }
 });
 
