@@ -97,8 +97,112 @@ test("supplier LIFF page uses the production LINE app and canonical snapshot end
   const html = await response.text();
   assert.match(html, /2011701290-xBE3CirT/);
   assert.match(html, /\/shop\/api\/supplier\/liff-portal/);
+  assert.match(html, /\/shop\/api\/supplier\/liff-bind/);
+  assert.match(html, /URLSearchParams\(location\.search\)\.get\("invite"\)/);
   assert.match(html, /https:\/\/static\.line-scdn\.net\/liff\/edge\/2\/sdk\.js/);
   assert.match(html, /กำลังจอง/);
   assert.match(html, /ยอดค้างจ่าย/);
   assert.doesNotMatch(html, /mock/i);
+});
+
+
+test("LIFF invite bind writes exact LINE identity and consumes the invite", async () => {
+  const originalFetch = globalThis.fetch;
+  const patches = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href === "https://api.line.me/v2/profile") {
+      return new Response(JSON.stringify({ userId: "U-nin-real", displayName: "Nin" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "recpJsLK2TdFky44K",
+          fields: {
+            fld1RFwNRfArWb3cS: "invite-nin-1",
+            flddW10scozb72r2T: "2099-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+            fldePq8Fmqq50CkPj: "SUP — Water GG Plus",
+            fld1dqO4nWB3Pf6uT: "",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (href.endsWith("/tbl81bnFyASeXCj9x/recpJsLK2TdFky44K") && options.method === "PATCH") {
+      patches.push(JSON.parse(options.body));
+      return new Response(JSON.stringify({ id: "recpJsLK2TdFky44K" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+
+  try {
+    const response = await handleSupplierPortal(
+      new Request("https://example.com/shop/api/supplier/liff-bind", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ access_token: "line-token", invite_token: "invite-nin-1" }),
+      }),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.bound, true);
+    assert.equal(body.supplier.name, "SUP — Water GG Plus");
+    assert.equal(patches.length, 1);
+    assert.equal(patches[0].fields.fld1dqO4nWB3Pf6uT, "U-nin-real");
+    assert.equal(patches[0].fields.fldZgOx3v1FJ4k9WM, "Nin");
+    assert.equal(patches[0].fields.fldZyHoik9SAUcbY6, "Connected");
+    assert.equal(patches[0].fields.fld1RFwNRfArWb3cS, "");
+    assert.equal(patches[0].fields.flddW10scozb72r2T, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("LIFF invite bind fails closed for an expired invite", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href === "https://api.line.me/v2/profile") {
+      return new Response(JSON.stringify({ userId: "U-nin-real", displayName: "Nin" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "recpJsLK2TdFky44K",
+          fields: {
+            fld1RFwNRfArWb3cS: "expired-nin",
+            flddW10scozb72r2T: "2020-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+  try {
+    const response = await handleSupplierPortal(
+      new Request("https://example.com/shop/api/supplier/liff-bind", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ access_token: "line-token", invite_token: "expired-nin" }),
+      }),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 403);
+    const body = await response.json();
+    assert.equal(body.error, "supplier_invite_invalid_or_expired");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
