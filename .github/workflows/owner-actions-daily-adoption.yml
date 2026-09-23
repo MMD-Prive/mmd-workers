@@ -71,10 +71,6 @@ jobs:
               href: "/internal/admin/mms",
               authority: "mms-worker",
             },
-            mms_application_review: {
-              href: "/internal/admin/mms",
-              authority: "mms-worker",
-            },
             membership_review: {
               href: "/internal/admin/member-intelligence",
               authority: "my_mmd_entitlement_resolver_v1",
@@ -211,6 +207,9 @@ jobs:
             if (new Set(actionKeys).size !== actionKeys.length) {
               throw new Error("Duplicate action_key found in live Owner Actions queue");
             }
+            if (actionKeys.includes("mms_application_review")) {
+              throw new Error("Routine MMS application review must stay on the MMS source surface");
+            }
 
             const sourceChecks = [];
             for (const action of actions) {
@@ -274,6 +273,12 @@ jobs:
                 throw new Error(`Invalid source coverage state for ${item?.source || "unknown"}`);
               }
               if (item?.read_only !== true) throw new Error(`Source coverage must remain read-only: ${item?.source || "unknown"}`);
+              if (!Number.isInteger(Number(item?.routine_count || 0)) || Number(item?.routine_count || 0) < 0) {
+                throw new Error(`Invalid routine source count: ${item?.source || "unknown"}`);
+              }
+              if (item?.source === "mms" && item?.state === "connected" && item?.operating_model !== "bau_exception_only_v1") {
+                throw new Error("Connected MMS coverage must use BAU exception-only mode");
+              }
               if (!String(item?.href || "").startsWith("/internal/admin/")) {
                 throw new Error(`Unsafe source coverage href: ${item?.source || "unknown"}`);
               }
@@ -296,6 +301,9 @@ jobs:
               : null;
             if (!queueHealth || queueHealth?.schema !== "mmd_owner_actions_queue_health_v1") {
               throw new Error("Owner Actions queue health contract missing");
+            }
+            if (queueHealth?.operating_model !== "bau_exception_only_v1") {
+              throw new Error("Owner Actions BAU operating model missing");
             }
             if (queueHealth?.business_truth_mutated !== false) {
               throw new Error("Owner Actions queue health must remain read-only");
@@ -335,19 +343,24 @@ jobs:
                 authority: item.authority,
                 href: item.href,
                 action_count: Number(item.action_count || 0),
+                routine_count: Number(item.routine_count || 0),
+                operating_model: item.operating_model || "",
                 read_only: item.read_only === true,
               })),
               unavailable_sources: unavailableSources,
               queue_health: {
                 schema: queueHealth.schema,
+                operating_model: queueHealth.operating_model,
                 action_classes: Number(queueHealth.action_classes || 0),
                 active_owner_decisions: Number(queueHealth.active_owner_decisions || 0),
+                routine_source_records: Number(queueHealth.routine_source_records || 0),
                 unknown_hype_overdue: Number(queueHealth.unknown_hype_overdue || 0),
                 stale_terminal_records: Number(queueHealth.stale_terminal_records || 0),
                 stale_terminal_by_kind: queueHealth.stale_terminal_by_kind || {},
                 classification_complete: queueHealth.classification_complete === true,
                 source_coverage_complete: queueHealth.source_coverage_complete === true,
                 phase_5_closure_ready: queueHealth.phase_5_closure_ready === true,
+                phase_6_bau_ready: queueHealth.phase_6_bau_ready === true,
                 business_truth_mutated: queueHealth.business_truth_mutated,
                 business_truth_unchanged: queueHealth.business_truth_mutated === false,
               },
@@ -358,6 +371,7 @@ jobs:
                 no_duplicate_action_key: true,
                 unauthenticated_fail_closed: true,
                 business_truth_mutated: false,
+                routine_bau_stays_in_source: !actionKeys.includes("mms_application_review"),
               },
             };
 
@@ -372,15 +386,18 @@ jobs:
               : "| — | — | 0 | — |";
 
             fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, [
-              "## Phase 5F — Owner Actions Queue Health Receipt",
+              "## Phase 6A — Owner Actions BAU & Exception-Only Receipt",
               "",
               `- State: **${receipt.adoption_state}**`,
               `- Checked at: \`${receipt.checked_at}\``,
-              `- Live actions: **${receipt.action_count}**`,
+              `- Live exception classes: **${receipt.action_count}**`,
+              `- Active owner decisions: **${receipt.queue_health.active_owner_decisions}**`,
+              `- Routine records kept in source: **${receipt.queue_health.routine_source_records}**`,
               `- Unavailable sources: **${receipt.unavailable_sources.length}**`,
               `- Unknown HYPE overdue: **${receipt.queue_health.unknown_hype_overdue}**`,
               `- Stale terminal diagnostics: **${receipt.queue_health.stale_terminal_records}**`,
               `- Phase 5 closure ready: **${receipt.queue_health.phase_5_closure_ready ? "YES" : "NO"}**`,
+              `- Phase 6 BAU ready: **${receipt.queue_health.phase_6_bau_ready ? "YES" : "NO"}**`,
               "- Session: dedicated Per Owner credential",
               "- Authority: read-only queue/detail; decisions remain on source pages",
               "- Mutation: none",
