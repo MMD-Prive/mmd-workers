@@ -132,11 +132,18 @@ export function buildPublicCatalog(objects, { prefixes = [DEFAULT_CATALOG_PREFIX
     const acceptedCustomerGenders = normalizeCustomerGenders(eligibility.genders);
     const approvedRoles = normalizeRoleKeys(eligibility.roles);
     const promoRoles = normalizeRoleKeys(eligibility.promo_roles);
-    const publicRoles = approvedRoles.filter((role) => promoRoles.includes(role));
-    if (!acceptedCustomerGenders.length || !publicRoles.length) return null;
-    if (publicRoles.includes("medical_professional") && clean(eligibility.credential_status).toLowerCase() !== "verified") {
-      return null;
+    let publicRoles = approvedRoles.filter((role) => promoRoles.includes(role));
+    // Medical Professional is a regulated request-only lane.  Do not publish
+    // its role hint unless the credential is verified and the operational
+    // booking mode is explicitly brief_only.  A mixed-role profile may still
+    // appear for its separately approved non-medical roles.
+    if (publicRoles.includes("medical_professional") && (
+      clean(eligibility.credential_status).toLowerCase() !== "verified" ||
+      clean(eligibility.booking_mode).toLowerCase() !== "brief_only"
+    )) {
+      publicRoles = publicRoles.filter((role) => role !== "medical_professional");
     }
+    if (!acceptedCustomerGenders.length || !publicRoles.length) return null;
     return {
       slug: group.slug,
       display_name: group.display_name,
