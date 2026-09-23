@@ -6,6 +6,7 @@ export const VERIFIED_IDENTITY_READINESS_SCHEMA = "mmd.kenji_verified_identity_r
 export const IDENTITY_EVIDENCE_RECOVERY_SCHEMA = "mmd.kenji_identity_evidence_recovery.v1";
 export const IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA = "mmd.kenji_identity_evidence_owner_review_protocol.v1";
 export const IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA = "mmd.kenji_identity_evidence_owner_review_adoption.v1";
+export const IDENTITY_EVIDENCE_BACKLOG_TRIAGE_SCHEMA = "mmd.kenji_identity_evidence_backlog_triage.v1";
 
 const DEFAULT_ORIGIN = "https://mmdbkk.com";
 const MAX_SCAN_LIMIT = 24;
@@ -431,7 +432,6 @@ export function deriveOwnerEvidenceReviewAdoption({
   const evidenceWorkPending = number(counts.evidence_review_required) + number(counts.evidence_capture_required);
   const locked = number(counts.conflict_locked) + number(counts.unavailable_locked);
   const complete = number(counts.complete);
-  const candidates = number(scan?.candidate_count);
   const checked = number(scan?.checked_count);
 
   let adoptionStatus = "no_current_candidates";
@@ -462,6 +462,93 @@ export function deriveOwnerEvidenceReviewAdoption({
       identity_mutated: false,
       customer_send_allowed: false,
       customer_identifiers_emitted: false,
+      human_decision_required: true,
+    },
+  };
+}
+
+export function deriveEvidenceCaptureBacklogTriage({
+  status,
+  healthy,
+  scan,
+  recovery,
+  owner_review_protocol: ownerReviewProtocol,
+}) {
+  const number = (value) => Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  const recoveryCounts = recovery?.counts || {};
+  const protocolCounts = ownerReviewProtocol?.counts || {};
+  const stepCounts = ownerReviewProtocol?.step_counts || {};
+  const conflictLocked = number(recoveryCounts.conflict_locked);
+  const unavailableLocked = number(recoveryCounts.unavailable_locked);
+  const evidenceReviewRequired = number(protocolCounts.evidence_review_required);
+  const evidenceCaptureRequired = number(protocolCounts.evidence_capture_required);
+  const ownerReviewDue = number(protocolCounts.owner_review_required);
+  const complete = number(protocolCounts.complete);
+  const candidates = number(scan?.candidate_count);
+  const checked = number(scan?.checked_count);
+  const activeWorkItems = evidenceReviewRequired + evidenceCaptureRequired + ownerReviewDue;
+
+  let triageStatus = "no_backlog";
+  let priority = "complete";
+  let primaryLane = "none";
+  if (healthy !== true) {
+    triageStatus = status === "identity_conflict_detected" ? "blocked_conflict" : "observation_degraded";
+    priority = "p0_stop";
+    primaryLane = triageStatus === "blocked_conflict" ? "resolve_conflict" : "restore_safe_read";
+  } else if (evidenceReviewRequired > 0) {
+    triageStatus = "evidence_review_first";
+    priority = "p1_evidence_review";
+    primaryLane = "review_source_evidence";
+  } else if (evidenceCaptureRequired > 0) {
+    triageStatus = "evidence_capture_backlog";
+    priority = "p2_evidence_capture";
+    primaryLane = "capture_source_evidence";
+  } else if (ownerReviewDue > 0) {
+    triageStatus = "owner_review_due";
+    priority = "p3_owner_decision";
+    primaryLane = "owner_verification_decision";
+  }
+
+  return {
+    schema: IDENTITY_EVIDENCE_BACKLOG_TRIAGE_SCHEMA,
+    mode: "aggregate_read_only",
+    status: triageStatus,
+    priority,
+    primary_lane: primaryLane,
+    queue: {
+      candidates_checked: checked,
+      active_work_items: activeWorkItems,
+      conflict_locked: conflictLocked,
+      unavailable_locked: unavailableLocked,
+      evidence_review_required: evidenceReviewRequired,
+      evidence_capture_required: evidenceCaptureRequired,
+      owner_review_due: ownerReviewDue,
+      complete,
+    },
+    source_steps: {
+      canonical_identity_capture_required: number(stepCounts.capture_canonical_line_identity),
+      line_ofc_review_required: number(stepCounts.review_line_ofc_evidence),
+      liff_session_capture_required: number(stepCounts.capture_verified_liff_session),
+      fresh_reread_required: number(stepCounts.reread_identity_evidence),
+      owner_verification_decision_required: number(stepCounts.owner_review_verification_status),
+    },
+    handoff: {
+      surface: "member_intelligence",
+      path: "/internal/admin/member-intelligence",
+      client_scope_required: true,
+      one_client_at_a_time: true,
+      mutation_control: false,
+    },
+    guardrails: {
+      evidence_written: false,
+      automatic_evidence_capture_allowed: false,
+      automatic_verification_allowed: false,
+      verification_status_mutated: false,
+      identity_mutated: false,
+      membership_or_access_mutated: false,
+      customer_send_allowed: false,
+      customer_identifiers_emitted: false,
+      bulk_owner_action_allowed: false,
       human_decision_required: true,
     },
   };
@@ -645,6 +732,7 @@ export async function runVerifiedIdentityReadinessObservation({
     },
   };
   observation.owner_review_adoption = deriveOwnerEvidenceReviewAdoption(observation);
+  observation.evidence_backlog_triage = deriveEvidenceCaptureBacklogTriage(observation);
   return observation;
 }
 
@@ -669,6 +757,8 @@ function githubSummary(result) {
     `- LIFF evidence actions: \`${result.recovery.action_counts.review_liff_identity_evidence || 0}\``,
     `- Owner review protocol: \`${result.owner_review_protocol.counts.owner_review_required || 0}\` ready · \`${result.owner_review_protocol.counts.evidence_capture_required || 0}\` capture required`,
     `- Weekly owner adoption: \`${result.owner_review_adoption.status}\` · \`${result.owner_review_adoption.queue.owner_review_due}\` review due · \`${result.owner_review_adoption.queue.evidence_work_pending}\` evidence work pending`,
+    `- Evidence backlog triage: \`${result.evidence_backlog_triage.status}\` · \`${result.evidence_backlog_triage.priority}\` · \`${result.evidence_backlog_triage.queue.active_work_items}\` active work items`,
+    `- Source steps: canonical \`${result.evidence_backlog_triage.source_steps.canonical_identity_capture_required}\` · LINE OFC \`${result.evidence_backlog_triage.source_steps.line_ofc_review_required}\` · LIFF \`${result.evidence_backlog_triage.source_steps.liff_session_capture_required}\` · re-read \`${result.evidence_backlog_triage.source_steps.fresh_reread_required}\``,
     "- Authority: Clients.Verification Status; readiness never verifies or merges identity",
     "- Privacy: aggregate counts only; no names, record IDs, LINE tails, credentials, or session values emitted",
     "",

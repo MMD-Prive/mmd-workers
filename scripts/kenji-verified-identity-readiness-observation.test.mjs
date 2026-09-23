@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  IDENTITY_EVIDENCE_BACKLOG_TRIAGE_SCHEMA,
   IDENTITY_EVIDENCE_OWNER_REVIEW_ADOPTION_SCHEMA,
   IDENTITY_EVIDENCE_RECOVERY_SCHEMA,
   IDENTITY_EVIDENCE_OWNER_REVIEW_PROTOCOL_SCHEMA,
@@ -374,6 +375,47 @@ test("reports aggregate owner-review readiness without private output or mutatio
     customer_identifiers_emitted: false,
     human_decision_required: true,
   });
+  assert.equal(result.evidence_backlog_triage.schema, IDENTITY_EVIDENCE_BACKLOG_TRIAGE_SCHEMA);
+  assert.equal(result.evidence_backlog_triage.mode, "aggregate_read_only");
+  assert.equal(result.evidence_backlog_triage.status, "owner_review_due");
+  assert.equal(result.evidence_backlog_triage.priority, "p3_owner_decision");
+  assert.equal(result.evidence_backlog_triage.primary_lane, "owner_verification_decision");
+  assert.deepEqual(result.evidence_backlog_triage.queue, {
+    candidates_checked: 2,
+    active_work_items: 1,
+    conflict_locked: 0,
+    unavailable_locked: 0,
+    evidence_review_required: 0,
+    evidence_capture_required: 0,
+    owner_review_due: 1,
+    complete: 1,
+  });
+  assert.deepEqual(result.evidence_backlog_triage.source_steps, {
+    canonical_identity_capture_required: 0,
+    line_ofc_review_required: 0,
+    liff_session_capture_required: 0,
+    fresh_reread_required: 1,
+    owner_verification_decision_required: 1,
+  });
+  assert.deepEqual(result.evidence_backlog_triage.handoff, {
+    surface: "member_intelligence",
+    path: "/internal/admin/member-intelligence",
+    client_scope_required: true,
+    one_client_at_a_time: true,
+    mutation_control: false,
+  });
+  assert.deepEqual(result.evidence_backlog_triage.guardrails, {
+    evidence_written: false,
+    automatic_evidence_capture_allowed: false,
+    automatic_verification_allowed: false,
+    verification_status_mutated: false,
+    identity_mutated: false,
+    membership_or_access_mutated: false,
+    customer_send_allowed: false,
+    customer_identifiers_emitted: false,
+    bulk_owner_action_allowed: false,
+    human_decision_required: true,
+  });
   assert.equal(result.guardrails.automatic_recovery_possible, false);
   assert.equal(result.guardrails.evidence_written, false);
   assert.equal(result.guardrails.owner_review_protocol_mutated, false);
@@ -416,6 +458,10 @@ test("fails closed when any sampled identity evidence conflicts", async () => {
   assert.equal(result.owner_review_protocol.counts.conflict_locked, 1);
   assert.equal(result.owner_review_adoption.status, "blocked_conflict");
   assert.equal(result.owner_review_adoption.queue.locked, 1);
+  assert.equal(result.evidence_backlog_triage.status, "blocked_conflict");
+  assert.equal(result.evidence_backlog_triage.priority, "p0_stop");
+  assert.equal(result.evidence_backlog_triage.primary_lane, "resolve_conflict");
+  assert.equal(result.evidence_backlog_triage.queue.conflict_locked, 1);
   assert.deepEqual(result.readiness.blocker_counts, {
     identity_alignment_mismatch: 1,
     owner_verification_status_required: 1,
@@ -438,7 +484,49 @@ test("marks unavailable evidence and endpoint failures as degraded", async () =>
   assert.deepEqual(result.scan.endpoint_error_buckets, { server_error: 1 });
   assert.equal(result.readiness.counts.unavailable, 1);
   assert.equal(result.owner_review_adoption.status, "observation_degraded");
+  assert.equal(result.evidence_backlog_triage.status, "observation_degraded");
+  assert.equal(result.evidence_backlog_triage.priority, "p0_stop");
+  assert.equal(result.evidence_backlog_triage.primary_lane, "restore_safe_read");
   assert.equal(JSON.stringify(result).includes("Never emit"), false);
+});
+
+test("triages review before capture and keeps every source task aggregate-only", async () => {
+  const fetchImpl = mockProduction({
+    records: [{ client_id: CLIENT_A }, { client_id: CLIENT_B }],
+    projections: new Map([
+      [CLIENT_A, projection(CLIENT_A, "review_required")],
+      [CLIENT_B, projection(CLIENT_B, "insufficient_evidence")],
+    ]),
+  });
+
+  const result = await runVerifiedIdentityReadinessObservation({ credential: CREDENTIAL, fetchImpl });
+  const serialized = JSON.stringify(result);
+
+  assert.equal(result.status, "identity_evidence_pending");
+  assert.equal(result.healthy, true);
+  assert.equal(result.evidence_backlog_triage.status, "evidence_review_first");
+  assert.equal(result.evidence_backlog_triage.priority, "p1_evidence_review");
+  assert.equal(result.evidence_backlog_triage.primary_lane, "review_source_evidence");
+  assert.deepEqual(result.evidence_backlog_triage.queue, {
+    candidates_checked: 2,
+    active_work_items: 2,
+    conflict_locked: 0,
+    unavailable_locked: 0,
+    evidence_review_required: 1,
+    evidence_capture_required: 1,
+    owner_review_due: 0,
+    complete: 0,
+  });
+  assert.deepEqual(result.evidence_backlog_triage.source_steps, {
+    canonical_identity_capture_required: 1,
+    line_ofc_review_required: 2,
+    liff_session_capture_required: 1,
+    fresh_reread_required: 2,
+    owner_verification_decision_required: 0,
+  });
+  for (const privateValue of [CLIENT_A, CLIENT_B, "Private Customer Name", "654321"]) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
 });
 
 test("schedules the weekly aggregate observation on main without introducing a write path", async () => {
@@ -538,4 +626,14 @@ test("bounds scans and never emits rejected login details", async () => {
   assert.equal(result.owner_review_protocol.counts.evidence_capture_required, 24);
   assert.equal(result.owner_review_protocol.step_counts.capture_canonical_line_identity, 24);
   assert.equal(result.owner_review_protocol.step_counts.capture_verified_liff_session, 24);
+  assert.equal(result.evidence_backlog_triage.status, "evidence_capture_backlog");
+  assert.equal(result.evidence_backlog_triage.priority, "p2_evidence_capture");
+  assert.equal(result.evidence_backlog_triage.queue.active_work_items, 24);
+  assert.deepEqual(result.evidence_backlog_triage.source_steps, {
+    canonical_identity_capture_required: 24,
+    line_ofc_review_required: 24,
+    liff_session_capture_required: 24,
+    fresh_reread_required: 24,
+    owner_verification_decision_required: 0,
+  });
 });
