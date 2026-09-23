@@ -11,6 +11,7 @@ import { calendarApiResponse, calendarJsonResponse, calendarPageResponse, calend
 import { readAdminCalendar } from "./admin-calendar-runtime-v2.js";
 import {
   handleSigilAvailabilityInternalRequest,
+  preflightAvailabilityAdoptionReminder,
   readAvailabilityAdoptionCohort,
   startAvailabilityAdoptionCohort,
 } from "./sigil-availability-snapshot.js";
@@ -22,6 +23,7 @@ const CALENDAR_RECONCILE_API_PATH = "/v1/admin/calendar/reconcile";
 const CALENDAR_MODEL_PHOTO_API_PATH = "/v1/admin/calendar/model-photo";
 const CALENDAR_THERAPIST_PHOTO_API_PATH = "/v1/admin/calendar/therapist-photo";
 const CALENDAR_AVAILABILITY_REMINDER_API_PATH = "/v1/admin/calendar/availability-reminder";
+const CALENDAR_AVAILABILITY_REMINDER_PREFLIGHT_API_PATH = "/v1/admin/calendar/availability-reminder/preflight";
 const CALENDAR_AVAILABILITY_ACTIVATION_API_PATH = "/v1/admin/calendar/availability-activation";
 const CALENDAR_AVAILABILITY_COHORT_START_API_PATH = "/v1/admin/calendar/availability-cohort/start";
 const CALENDAR_PAGE_PATH = "/internal/admin/calendar";
@@ -230,6 +232,35 @@ async function requireAvailabilityCohortMember(env, modelKey = "") {
   return { ok: true, receipt: current.receipt, member };
 }
 
+async function calendarAvailabilityReminderPreflightResponse(request, env) {
+  if (request.method.toUpperCase() !== "POST") {
+    return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
+  }
+  const body = await request.clone().json().catch(() => null);
+  const modelKey = clean(body?.model_key, 120);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{1,119}$/.test(modelKey)) {
+    return calendarJsonResponse({ ok: false, error: "model_key_invalid" }, 400);
+  }
+  const cohort = await requireAvailabilityCohortMember(env, modelKey);
+  if (!cohort.ok) return calendarJsonResponse({ ok: false, error: cohort.error }, cohort.status || 409);
+
+  const result = await preflightAvailabilityAdoptionReminder(env, modelKey);
+  if (!result.ok) {
+    return calendarJsonResponse({ ok: false, error: result.error || "availability_reminder_preflight_failed" }, result.status || 503);
+  }
+  return calendarJsonResponse({
+    ok: true,
+    schema: "mmd.availability_reminder_preflight.v1",
+    ready: result.ready === true,
+    state: clean(result.state, 120) || "unknown",
+    token_mode: clean(result.token_mode, 40) || "unknown",
+    transport: clean(result.transport, 120) || "none",
+    recipient_reachable: result.recipient_reachable === true,
+    provider_status: Number.isInteger(result.provider_status) ? result.provider_status : null,
+    message_sent: false,
+  }, 200);
+}
+
 async function calendarAvailabilityReminderResponse(request, env, actor) {
   if (request.method.toUpperCase() !== "POST") {
     return calendarJsonResponse({ ok: false, error: "method_not_allowed" }, 405);
@@ -328,6 +359,9 @@ async function handleCalendar(request, env, ctx, url, method) {
   if (url.pathname === CALENDAR_AVAILABILITY_COHORT_START_API_PATH) {
     return calendarAvailabilityCohortStartResponse(request, env);
   }
+  if (url.pathname === CALENDAR_AVAILABILITY_REMINDER_PREFLIGHT_API_PATH) {
+    return calendarAvailabilityReminderPreflightResponse(request, env);
+  }
   if (url.pathname === CALENDAR_AVAILABILITY_REMINDER_API_PATH) {
     return calendarAvailabilityReminderResponse(request, env, actor);
   }
@@ -356,7 +390,7 @@ export default {
     const url = new URL(request.url);
     const method = String(request.method || "GET").toUpperCase();
     const calendarPath = url.pathname.replace(/\/$/, "");
-    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_ACTIVATION_API_PATH].includes(calendarPath)) {
+    if ([CALENDAR_PAGE_PATH, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_MODEL_PHOTO_API_PATH, CALENDAR_THERAPIST_PHOTO_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_REMINDER_PREFLIGHT_API_PATH, CALENDAR_AVAILABILITY_ACTIVATION_API_PATH].includes(calendarPath)) {
       url.pathname = calendarPath;
       return handleCalendar(request, env, ctx, url, method);
     }
@@ -380,4 +414,4 @@ export default {
   },
 };
 
-export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_PAGE_PATH };
+export { OWNER_JOB_ACTIONS_PATH, lifecycleEnv, CALENDAR_API_PATH, CALENDAR_RECONCILE_API_PATH, CALENDAR_AVAILABILITY_COHORT_START_API_PATH, CALENDAR_AVAILABILITY_REMINDER_API_PATH, CALENDAR_AVAILABILITY_REMINDER_PREFLIGHT_API_PATH, CALENDAR_PAGE_PATH };
