@@ -82,6 +82,10 @@ test('real production entrypoint renders authenticated Webflow Calendar presenta
       assert.match(html,/calendar-connection-state/);
       assert.match(html,/__MMD_CALENDAR_WEBFLOW_V2__/);
       assert.match(html,/calendar-owner-ui-v3-20260922/);
+      assert.match(html,/calendar-onboarding-cohort-v1-20260923/);
+      assert.match(html,/data-cal-onboarding-cohort/);
+      assert.match(html,/\/v1\/admin\/calendar\/availability-reminder/);
+      assert.match(html,/\/v1\/admin\/calendar\/availability-activation/);
       assert.match(html,/data-mmd-calendar-legacy-banner/);
       assert.match(html,/\/v1\/admin\/calendar/);
       assert.doesNotMatch(html,/test-only-owner-credential|test-only-signing-key|test-only-airtable/);
