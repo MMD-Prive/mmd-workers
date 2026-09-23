@@ -133,8 +133,9 @@ export async function readCrossSystemStuckSlaWatch(env = {}, {
     sources.recovery_queue = recoveryQueue;
     sourceStatus.recovery_queue = {
       available: true,
+      complete: recoveryQueue.complete !== false,
       record_count: nonNegative(recoveryQueue.queue.open_count),
-      reason: null,
+      reason: recoveryQueue.complete === false ? "candidate_window_truncated" : null,
     };
   } else {
     sources.recovery_queue = null;

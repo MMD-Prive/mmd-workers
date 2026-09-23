@@ -48,7 +48,7 @@ export async function readMmsOwnerActionCoverage(env = {}) {
     "application_id",
   );
   const prebookings = uniqueMmsIds(
-    snapshot.prebookings.filter((item) => ["submitted", "matching", "options ready", "pending coordination"].includes(normalizeMmsStatus(item?.status))),
+    snapshot.prebookings.filter((item) => ["draft", "submitted", "matching", "options ready", "pending coordination"].includes(normalizeMmsStatus(item?.status))),
     "prebooking_id",
   );
 
