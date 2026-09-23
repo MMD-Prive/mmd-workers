@@ -339,6 +339,81 @@ test("queue health fails phase closure safely on unknown HYPE overdue or unavail
   assert.equal(queue.queue_health.business_truth_mutated, false);
 });
 
+test("Phase 6B workload SLO classifies due-now, due-today and source-breached decisions", () => {
+  const queue = buildOwnerActionsQueue({
+    money: [{ proof_id: "proof-new" }],
+    historical_recovery: [{ proof_id: "historical-1" }],
+    reconfirm: {
+      available: true,
+      items: [{ session_id: "job-overdue", status: "overdue" }],
+    },
+  });
+
+  const byKey = Object.fromEntries(queue.actions.map((item) => [item.action_key, item]));
+  assert.equal(byKey.payment_review.slo.state, "due_now");
+  assert.equal(byKey.payment_review.slo.target_minutes, 240);
+  assert.equal(byKey.payment_review.slo.source_breached, false);
+
+  assert.equal(byKey.historical_recovery.slo.state, "due_today");
+  assert.equal(byKey.historical_recovery.slo.target_minutes, 1440);
+  assert.equal(byKey.historical_recovery.slo.source_breached, false);
+
+  assert.equal(byKey.job_reconfirm_overdue.slo.state, "breached");
+  assert.equal(byKey.job_reconfirm_overdue.slo.target_minutes, 240);
+  assert.equal(byKey.job_reconfirm_overdue.slo.source_breached, true);
+
+  assert.equal(queue.queue_health.workload_slo.schema, "mmd_owner_workload_slo_v1");
+  assert.equal(queue.queue_health.workload_slo.state, "breached");
+  assert.equal(queue.queue_health.workload_slo.active_decisions, 3);
+  assert.equal(queue.queue_health.workload_slo.breached_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.due_now_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.due_today_decisions, 1);
+  assert.equal(queue.queue_health.workload_slo.burn_down_remaining, 3);
+  assert.equal(queue.queue_health.workload_slo.burn_down_target, 0);
+  assert.equal(queue.queue_health.workload_slo.slo_met, false);
+  assert.equal(queue.guardrails.workload_slo_projection_only, true);
+});
+
+test("Phase 6B workload SLO is CLEAR at zero exceptions and stays read-only", () => {
+  const queue = buildOwnerActionsQueue({
+    mms: {
+      available: true,
+      operating_model: "bau_exception_only_v1",
+      routine_application_count: 18,
+      routine_prebooking_count: 4,
+      exception_prebooking_count: 0,
+      exception_count: 0,
+    },
+    hype: { available: true, counts: { owner_actionable_overdue: 0, owner_actionable_by_kind: {} } },
+    source_coverage: [
+      { source: "finance_audit", label: "Finance Audit", state: "connected", authority: "canonical_finance_timeline", href: "/internal/admin/partners", action_count: 0, routine_count: 0 },
+      { source: "mms", label: "MMS", state: "connected", authority: "mms-worker", href: "/internal/admin/mms", action_count: 0, routine_count: 22, operating_model: "bau_exception_only_v1" },
+      { source: "hype", label: "HYPE", state: "connected", authority: "hype_coordinator_read_only", href: "/internal/admin/control-room", action_count: 0, routine_count: 0 },
+      { source: "availability", label: "Availability", state: "connected", authority: "sigil_availability_snapshot_v1", href: "/internal/admin/calendar", action_count: 0, routine_count: 0 },
+    ],
+  });
+
+  assert.equal(queue.actions.length, 0);
+  assert.equal(queue.queue_health.workload_slo.state, "clear");
+  assert.equal(queue.queue_health.workload_slo.active_decisions, 0);
+  assert.equal(queue.queue_health.workload_slo.breached_decisions, 0);
+  assert.equal(queue.queue_health.workload_slo.burn_down_remaining, 0);
+  assert.equal(queue.queue_health.workload_slo.slo_met, true);
+  assert.equal(queue.queue_health.phase_6b_slo_ready, true);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
+test("Phase 6B workload SLO fails safely to SOURCE_ATTENTION when a source is unavailable", () => {
+  const queue = buildOwnerActionsQueue({
+    unavailable_sources: ["finance_audit"],
+  });
+
+  assert.equal(queue.queue_health.workload_slo.state, "source_attention");
+  assert.equal(queue.queue_health.workload_slo.slo_met, false);
+  assert.equal(queue.queue_health.phase_6b_slo_ready, false);
+  assert.equal(queue.queue_health.business_truth_mutated, false);
+});
+
 test("HYPE cohort detail routes to the owning source and remains read-only", () => {
   const input = {
     hype: {
