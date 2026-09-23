@@ -791,6 +791,7 @@ export async function handleStatus(request, env = {}) {
   if (!gatewayStore) return unavailable("LIFF_GATEWAY_STORAGE_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  await refreshStaleMemberSession(env, auth.session);
   auth.session.next_screen_key = "status_result";
   auth.session.route_after_liff = null;
   try {
@@ -810,6 +811,9 @@ export async function handleMemberProfile(request, env = {}) {
   if (!hasFoundationBindings(env)) return unavailable("LIFF_IDENTITY_FOUNDATION_NOT_CONFIGURED");
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return auth.response;
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+    await refreshStaleMemberSession(env, auth.session);
+  }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
     return saveRotatedError(env, auth, "MEMBER_PROFILE_NOT_FOUND", "No verified member profile is available for this LINE account.", 404);
   }
@@ -898,6 +902,9 @@ export async function handleMemberDashboard(request, env = {}) {
 
   const auth = await authenticateAndRotate(request, env);
   if (!auth.ok) return dashboardError("checking", 401);
+  if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
+    await refreshStaleMemberSession(env, auth.session);
+  }
   if (!auth.session.member_exists || !auth.session.member_id || !auth.session.member_profile) {
     try {
       await commitRotatedSession(env, auth);
@@ -1475,6 +1482,33 @@ async function resolveMemberIdentity(env, lineUserId) {
     clearTimeout(timeout);
   }
 }
+async function refreshStaleMemberSession(env, session) {
+  if (!session || session.member_exists === true && session.member_id && session.member_profile) {
+    return { refreshed: false, reason: "session_already_resolved" };
+  }
+  const lineUserId = String(session?.line_user_id || "").trim();
+  if (!lineUserId) return { refreshed: false, reason: "line_identity_missing" };
+
+  const resolved = await resolveMemberIdentity(env, lineUserId);
+  if (!resolved?.ok) return { refreshed: false, reason: "member_resolver_unavailable" };
+  if (resolved.exists !== true || !resolved.member_id || !resolved.profile) {
+    return { refreshed: false, reason: "member_not_found" };
+  }
+
+  session.member_exists = true;
+  session.member_id = resolved.member_id;
+  session.member_profile = resolved.profile;
+  session.pending_identity_id = null;
+  session.renewal_flow_status = "identity_linked";
+  console.info({
+    event: "liff_stale_member_session_recovered",
+    component: "member-pages-worker",
+    source: "member_profile_resolver",
+    access_mutated: false,
+  });
+  return { refreshed: true, reason: "member_recovered" };
+}
+
 async function resolveExistingMember(env, lineUserId) {
   const resolver = env.MEMBER_STATUS_RESOLVER;
   const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");

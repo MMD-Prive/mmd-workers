@@ -419,6 +419,79 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(memberResolver.calls.length, 1);
     assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
   });
+  it("self-heals a stale pending LIFF session on profile read after canonical member evidence appears", async () => {
+    const initialResolver = resolver({ member_exists: false });
+    const runtime = env({ MEMBER_STATUS_RESOLVER: initialResolver });
+    const started = await start(runtime, { id_token: "stale-pending-token", liff_intent: "status" });
+    const staleCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+
+    assert.equal(started.payload.data.member_resolved, false);
+    assert.equal(started.payload.data.pending_identity, true);
+
+    const recoveredResolver = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-PROTECTED-RECOVERED",
+      profile: {
+        display_name: "มาดามใจ",
+        tier: "SVIP",
+        membership_status: "active",
+        membership_expires_at: "2028-09-23",
+        points: null,
+        history_window: { from: "2025-09-23", to: "2026-09-23", timezone: "Asia/Bangkok" },
+        history: [],
+      },
+    });
+    runtime.MEMBER_STATUS_RESOLVER = recoveredResolver;
+
+    const profile = await request("/member/api/liff/profile", {
+      method: "GET",
+      cookie: staleCookie,
+    }, runtime);
+
+    assert.equal(profile.response.status, 200);
+    assert.equal(profile.payload.ok, true);
+    assert.equal(profile.payload.data.display_name, "มาดามใจ");
+    // The foundation serializer deliberately masks protected labels; the
+    // runtime Fast Trust overlay restores the customer-visible SVIP tier.
+    assert.equal(profile.payload.data.tier, "Member");
+    assert.equal(profile.payload.data.membership_status, "active");
+    assert.equal(recoveredResolver.calls.length, 1);
+    assert.equal(recoveredResolver.calls[0]._path, "/__internal/member-profile/read");
+    assertHostCookie(findCookie(profile.response, "__Host-mmd_liff_session"), "__Host-mmd_liff_session", 900);
+  });
+
+  it("self-heals a stale pending LIFF session on dashboard read without asking the member to restart LINE", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: false }) });
+    const started = await start(runtime, { id_token: "stale-dashboard-token", liff_intent: "status" });
+    const staleCookie = cookiePair(findCookie(started.response, "__Host-mmd_liff_session"));
+
+    runtime.MEMBER_STATUS_RESOLVER = resolver({
+      member_exists: true,
+      mmd_member_id: "MMD-PROTECTED-DASHBOARD",
+      profile: {
+        display_name: "Protected Member",
+        tier: "SVIP",
+        membership_status: "active",
+        membership_expires_at: "2028-09-23",
+        points: 0,
+        history_window: { from: "2025-09-23", to: "2026-09-23", timezone: "Asia/Bangkok" },
+        history: [],
+      },
+    });
+
+    const dashboard = await request("/api/member/dashboard", {
+      method: "GET",
+      cookie: staleCookie,
+    }, runtime);
+
+    assert.equal(dashboard.response.status, 200);
+    assert.equal(dashboard.payload.ok, true);
+    // The raw foundation keeps the protected tier field in checking state.
+    // runtime-index overlays the exact-UID Fast Trust tier after this 200 response.
+    assert.equal(dashboard.payload.data.member.tier.status, "checking");
+    assert.equal(dashboard.payload.data.member.membership_status.value, "active");
+  });
+
   it("valid LINE token succeeds, sets secure session cookie, and returns no raw token", async () => {
     const { response, payload, runtime } = await start();
     const cookie = findCookie(response, "__Host-mmd_liff_session");
