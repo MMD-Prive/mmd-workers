@@ -670,6 +670,7 @@ jobs:
             done
           done
 
+      # Issue comments are best-effort telemetry; production acceptance is enforced by the verified-live gate below.
       - name: Report deploy stage diagnosis
         if: always()
         shell: bash
