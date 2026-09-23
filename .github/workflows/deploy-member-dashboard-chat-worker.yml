@@ -1,0 +1,707 @@
+name: Deploy member-dashboard-chat-worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "member-dashboard-chat-worker/**"
+      - "shared/verified-member-concierge.mjs"
+      - ".github/workflows/deploy-member-dashboard-chat-worker.yml"
+      - "shared/payment-intelligence.mjs"
+      - "shared/canonical-payment-evidence*"
+      - "shared/test/payment-memory-r2.mjs"
+
+concurrency:
+  group: deploy-member-dashboard-chat-worker-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: "b176eda1172b741fd2e58904cc9d77c5"
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+      WORKER_NAME: "member-dashboard-chat-worker"
+      NO_COLOR: "1"
+      AI_SERVICE_SMOKE_TOKEN: ${{ secrets.AI_SERVICE_SMOKE_TOKEN }}
+      MY_MMD_E2E_ID_TOKEN: ${{ secrets.MY_MMD_E2E_ID_TOKEN }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Normalize Cloudflare tokens
+        id: credentials
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const clean = (value) => (value || "").replace(/[\u2028\u2029\r\n]/g, "").trim();
+          const deployToken = clean(process.env.CLOUDFLARE_API_TOKEN);
+          const routesToken = clean(process.env.CLOUDFLARE_ROUTES_API_TOKEN);
+          const accountId = clean(process.env.CLOUDFLARE_ACCOUNT_ID);
+          const zoneId = clean(process.env.CLOUDFLARE_ZONE_ID);
+          if (!deployToken || !routesToken || !accountId || !zoneId) {
+            throw new Error("Cloudflare deploy/routes credentials are missing after normalization");
+          }
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_API_TOKEN=${deployToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ROUTES_API_TOKEN=${routesToken}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ACCOUNT_ID=${accountId}\n`);
+          fs.appendFileSync(process.env.GITHUB_ENV, `CLOUDFLARE_ZONE_ID=${zoneId}\n`);
+          NODE
+
+      - name: Verify Cloudflare API token status
+        id: token_verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          user_body="$RUNNER_TEMP/cloudflare-token-user-verify.json"
+          account_body="$RUNNER_TEMP/cloudflare-token-account-verify.json"
+
+          user_http="$(curl --silent --show-error -o "$user_body" -w "%{http_code}" \
+            https://api.cloudflare.com/client/v4/user/tokens/verify \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" || true)"
+          account_http="$(curl --silent --show-error -o "$account_body" -w "%{http_code}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/tokens/verify" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" || true)"
+
+          node <<'NODE'
+          const fs = require("node:fs");
+          const parse = (path) => {
+            try { return JSON.parse(fs.readFileSync(path, "utf8")); }
+            catch { return {}; }
+          };
+          const user = parse(process.env.RUNNER_TEMP + "/cloudflare-token-user-verify.json");
+          const account = parse(process.env.RUNNER_TEMP + "/cloudflare-token-account-verify.json");
+          const userActive = user?.success === true && user?.result?.status === "active";
+          const accountActive = account?.success === true && account?.result?.status === "active";
+          const safe = (body) => ({
+            success: body?.success,
+            status: body?.result?.status,
+            errors: Array.isArray(body?.errors) ? body.errors.map(({ code, message }) => ({ code, message })) : []
+          });
+          console.log("Cloudflare user token verify:", JSON.stringify(safe(user)));
+          console.log("Cloudflare account token verify:", JSON.stringify(safe(account)));
+          if (!userActive && !accountActive) {
+            throw new Error("Cloudflare token did not verify active on user or target-account endpoint");
+          }
+          NODE
+          echo "Cloudflare user verify HTTP: ${user_http}"
+          echo "Cloudflare account verify HTTP: ${account_http}"
+
+      - name: Inspect Wrangler account context
+        id: whoami
+        continue-on-error: true
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 whoami 2>&1 | tee "$RUNNER_TEMP/cloudflare-whoami.log"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate LINE, LIFF, CARE BACK, MMS Therapist, and MMS AI front gate
+        id: tests
+        run: |
+          npm run test:payment-delivery
+          node --check member-dashboard-chat-worker/src/index.js
+          node --check member-dashboard-chat-worker/src/my-mmd-orders-webflow-page.js
+          node --check member-dashboard-chat-worker/src/front-gate-index.js
+          node --check member-dashboard-chat-worker/src/mms-ai-knowledge-v4.js
+          node --check member-dashboard-chat-worker/src/mms-ai-line-front-gate.js
+          node --check member-dashboard-chat-worker/src/internal-kenji-recommendation-shadow-smoke.mjs
+          node --check member-dashboard-chat-worker/src/eligible-recommendation-smoke-policy.mjs
+          npm run test:member-dashboard-liff
+          npm run test:member-dashboard-line
+          node --experimental-global-webcrypto --test member-dashboard-chat-worker/test/kenji-live-concierge-runtime.test.mjs shared/verified-member-concierge.test.mjs
+          node --test member-dashboard-chat-worker/test/line-membership-fallback.test.mjs
+          node --test member-dashboard-chat-worker/test/mms-therapist-auth-front-gate.test.mjs
+          node --test member-dashboard-chat-worker/test/internal-ai-service-binding-smoke.test.mjs
+          node --test member-dashboard-chat-worker/test/eligible-recommendation-smoke-policy.test.mjs
+
+      - name: Validate Cloudflare version upload
+        id: wrangler_dry_run
+        working-directory: member-dashboard-chat-worker
+        run: npx --yes wrangler@4 versions upload --dry-run --keep-vars
+
+      - name: Upload member-dashboard-chat-worker version
+        id: upload
+        continue-on-error: true
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          tag="gha-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 versions upload \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
+
+      - name: Apply pending Durable Object migration with direct deploy
+        id: migration_deploy
+        if: steps.upload.outcome == 'failure'
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -euo pipefail
+          upload_log="$RUNNER_TEMP/member-dashboard-chat-worker-upload.log"
+          if ! grep -Fq "pending Durable Object migration" "$upload_log"; then
+            echo "versions upload failed for a non-migration reason; refusing direct deploy" >&2
+            exit 1
+          fi
+
+          tmp_config="wrangler.migration-deploy.toml"
+          trap 'rm -f "$tmp_config"' EXIT
+          node <<'NODE'
+          const fs = require("node:fs");
+          const source = fs.readFileSync("wrangler.toml", "utf8").split(/\r?\n/);
+          const output = [];
+          let skip = false;
+          for (const line of source) {
+            const trimmed = line.trim();
+            if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+              skip = true;
+              continue;
+            }
+            if (skip && /^\[/.test(trimmed)) {
+              skip = false;
+              if (trimmed === "[triggers]" || trimmed === "[[routes]]") {
+                skip = true;
+                continue;
+              }
+            }
+            if (!skip) output.push(line);
+          }
+          fs.writeFileSync("wrangler.migration-deploy.toml", output.join("\n"));
+          NODE
+
+          if grep -Eq '^\[\[routes\]\]|^\[triggers\]' "$tmp_config"; then
+            echo "temporary migration config still contains production route/trigger blocks" >&2
+            exit 1
+          fi
+          grep -q '^main = "src/my-mms-customer-front-gate-entry.js"$' "$tmp_config"
+          grep -q '^\[\[durable_objects.bindings\]\]$' "$tmp_config"
+          grep -q '^\[\[migrations\]\]$' "$tmp_config"
+          grep -q '^\[\[services\]\]$' "$tmp_config"
+
+          tag="gha-migration-${GITHUB_SHA:0:12}"
+          npx --yes wrangler@4 deploy \
+            --config "$tmp_config" \
+            --keep-vars \
+            --tag "$tag" \
+            --message "GitHub Actions Durable Object migration ${GITHUB_SHA}" \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log"
+
+          version_id="$(sed -n -E 's/.*(Current|Worker) Version ID:[[:space:]]*([0-9a-fA-F-]+).*/\2/p' "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from direct migration deploy output" >&2
+            exit 2
+          fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=$version_id" >> "$GITHUB_ENV"
+          echo "Resolved direct-deploy version $version_id"
+      - name: Resolve uploaded version ID
+        id: resolve_version
+        if: steps.upload.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_id="$(sed -n 's/.*Worker Version ID:[[:space:]]*\([0-9a-fA-F-][0-9a-fA-F-]*\).*/\1/p' "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" | tail -n 1)"
+          if [ -z "$version_id" ]; then
+            echo "Unable to parse Worker Version ID from upload output" >&2
+            cat "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" >&2
+            exit 2
+          fi
+          echo "MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID=${version_id}" >> "$GITHUB_ENV"
+          echo "Resolved version ${version_id}"
+
+      - name: Deploy uploaded member-dashboard-chat-worker version
+        id: deploy
+        if: steps.resolve_version.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        working-directory: member-dashboard-chat-worker
+        run: |
+          set -o pipefail
+          npx --yes wrangler@4 versions deploy "${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}@100%" -y \
+            2>&1 | tee "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log"
+
+      - name: Sync MMS Therapist auth and AI smoke routes
+        id: route_sync
+        if: steps.deploy.outcome == 'success' || steps.migration_deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const token = process.env.CLOUDFLARE_ROUTES_API_TOKEN;
+          const zoneId = process.env.CLOUDFLARE_ZONE_ID;
+          const worker = process.env.WORKER_NAME;
+          const desired = [
+            "mmdbkk.com/male-massage/therapists/api/auth/*",
+            "www.mmdbkk.com/male-massage/therapists/api/auth/*",
+            "mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
+            "mmdbkk.com/v1/member/payments*",
+            "www.mmdbkk.com/v1/member/payments*",
+          ];
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          async function cf(path, options = {}) {
+            let lastError;
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
+              try {
+                const response = await fetch(`https://api.cloudflare.com/client/v4${path}`, {
+                  ...options,
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                    ...(options.headers || {}),
+                  },
+                });
+                const text = await response.text();
+                let body = null;
+                try { body = JSON.parse(text); } catch {}
+                if (response.ok && body?.success === true) return body.result;
+                const retryable = response.status === 429 || response.status >= 500 || !body;
+                lastError = new Error(body ? JSON.stringify(body.errors || body) : `cloudflare_non_json_${response.status}:${text.slice(0, 160)}`);
+                if (!retryable) throw lastError;
+              } catch (error) {
+                lastError = error;
+              }
+              if (attempt < 5) await sleep(attempt * 1000);
+            }
+            throw lastError || new Error("cloudflare_route_api_failed");
+          }
+          const routePath = `/zones/${zoneId}/workers/routes`;
+          const existing = await cf(routePath);
+          for (const pattern of desired) {
+            const conflict = existing.find((route) => route.pattern === pattern && route.script !== worker);
+            if (conflict) throw new Error(`route conflict ${pattern} -> ${conflict.script || "none"}`);
+          }
+          for (const pattern of desired) {
+            if (existing.some((route) => route.pattern === pattern && route.script === worker)) continue;
+            await cf(routePath, { method: "POST", body: JSON.stringify({ pattern, script: worker }) });
+            console.log(`created ${pattern} -> ${worker}`);
+          }
+          const verified = await cf(routePath);
+          const missing = desired.filter((pattern) => !verified.some((route) => route.pattern === pattern && route.script === worker));
+          if (missing.length) throw new Error(`missing routes: ${missing.join(", ")}`);
+          console.log(`verified ${desired.length}/${desired.length} required worker routes`);
+          NODE
+
+      - name: Smoke production LINE and MMS route ownership
+        id: smoke
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "line_webhook") {
+              throw new Error(`Unexpected production smoke response: ${process.argv[1]}`);
+            }
+          ' "$response"
+
+          mms_ai="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error https://www.mmdbkk.com/webhooks/line/mms)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.worker !== "member-dashboard-chat-worker" || body.route !== "mms_line_webhook") {
+              throw new Error(`Unexpected MMS LINE smoke response: ${process.argv[1]}`);
+            }
+            if (body.configured !== true || body.ai_enabled !== true || body.rich_menu_mode !== "24/7" || body.rich_menu_publisher !== "raw-or-url-v2") {
+              throw new Error(`Unexpected canonical MMS LINE runtime contract: ${process.argv[1]}`);
+            }
+          ' "$mms_ai"
+
+          catalog="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/member/api/liff/mms/catalog)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.data?.skills?.length !== 8) {
+              throw new Error(`Unexpected MMS member catalog response: ${process.argv[1]}`);
+            }
+          ' "$catalog"
+
+          payments_headers="$RUNNER_TEMP/member-payments.headers"
+          payments_body="$RUNNER_TEMP/member-payments.json"
+          payments_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$payments_headers" -o "$payments_body" -w "%{http_code}" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/v1/member/payments || true)"
+          test "$payments_code" = "401"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payments_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$payments_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$payments_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$payments_headers"
+          node -e '
+            const fs = require("node:fs");
+            const body = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+            if (body?.error?.code !== "MEMBER_SESSION_REQUIRED" || body?.auth_required !== true) {
+              throw new Error(`Unexpected member payments unauthenticated contract: ${JSON.stringify(body)}`);
+            }
+          ' "$payments_body"
+
+          payment_center_headers="$RUNNER_TEMP/my-mmd-payment-center.headers"
+          payment_center_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$payment_center_headers" -o /dev/null -w "%{http_code}"             https://www.mmdbkk.com/my-mmd/payments || true)"
+          test "$payment_center_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$payment_center_headers"
+          grep -qi '^x-mmd-presentation-owner: lovable' "$payment_center_headers"
+
+          continue_headers="$RUNNER_TEMP/liff-continue-payment.headers"
+          continue_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$continue_headers" -o /dev/null -w "%{http_code}"             'https://www.mmdbkk.com/member/liff?intent=continue_payment' || true)"
+          test "$continue_code" = "200"
+          grep -qi '^x-mmd-liff-return-target: /my-mmd/payments' "$continue_headers"
+          grep -qi '^x-mmd-liff-ui-mode: auth-bridge-only' "$continue_headers"
+
+          auth_headers="$RUNNER_TEMP/mms-therapist-auth.headers"
+          auth_body="$RUNNER_TEMP/mms-therapist-auth.json"
+          curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$auth_headers" -o "$auth_body" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/male-massage/therapists/api/auth/me || true
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
+          grep -qi '^x-mmd-upstream-service: mms-worker' "$auth_headers"
+          grep -qi '^cache-control: .*no-store' "$auth_headers"
+
+      - name: Authenticated My MMD Payment Center acceptance
+        id: member_payments_authenticated
+        if: steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${MY_MMD_E2E_ID_TOKEN:-}" ]; then
+            echo "MY_MMD_E2E_ID_TOKEN is not configured. Refusing synthetic production acceptance." >&2
+            exit 1
+          fi
+          echo "::add-mask::$MY_MMD_E2E_ID_TOKEN"
+
+          jar="$RUNNER_TEMP/member-payments-live.cookies"
+          start_headers="$RUNNER_TEMP/member-payments-live-start.headers"
+          start_body="$RUNNER_TEMP/member-payments-live-start.json"
+          start_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$start_headers" -c "$jar" -o "$start_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/start             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary "$(jq -nc --arg id_token "$MY_MMD_E2E_ID_TOKEN" '{id_token:$id_token,intent:"continue_payment",liff_intent:"continue_payment"}')")"
+          test "$start_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$start_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$start_headers"
+          grep -q '__Host-mmd_liff_session' "$jar"
+          jq -e '.ok == true and (.data | type == "object")' "$start_body" >/dev/null
+
+          # Create/reuse a real backend-owned pending public Membership intent on the
+          # dedicated E2E account. This proves the signed handoff without fabricating
+          # payment truth or granting entitlement.
+          purchase_body="$RUNNER_TEMP/member-payments-live-purchase.json"
+          purchase_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -b "$jar" -c "$jar" -o "$purchase_body" -w "%{http_code}"             -X POST https://www.mmdbkk.com/member/api/liff/public-membership/purchase             -H 'Origin: https://www.mmdbkk.com'             -H 'Accept: application/json'             -H 'Content-Type: application/json'             --data-binary '{"package_code":"mmd_member"}')"
+          test "$purchase_code" = "200"
+          jq -e '.ok == true and .official_verification_required == true and .entitlement_granted == false and (.customer_payment_url | startswith("https://mmdbkk.com/pay/checkout?t="))' "$purchase_body" >/dev/null
+
+          auth_headers="$RUNNER_TEMP/member-payments-live.headers"
+          auth_body="$RUNNER_TEMP/member-payments-live.json"
+          auth_code="$(curl --retry 4 --retry-delay 2 --retry-all-errors -sS             -D "$auth_headers" -b "$jar" -c "$jar" -o "$auth_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             https://www.mmdbkk.com/v1/member/payments)"
+          test "$auth_code" = "200"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$auth_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$auth_headers"
+          grep -qi '^x-mmd-member-payments-bff: v1' "$auth_headers"
+          grep -qi '^x-mmd-payment-authority: payments-worker' "$auth_headers"
+
+          node - "$auth_body" <<'NODE'
+          const fs = require("node:fs");
+          const body = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (body?.ok !== true || body?.schema !== "mmd_member_payments_v1") throw new Error("unexpected Payment Center BFF schema");
+          if (body?.authority !== "member-pages-worker" || body?.money_authority !== "payments-worker") throw new Error("payment authority boundary mismatch");
+          if (body?.surface_role !== "status_history_navigation") throw new Error("unexpected Payment Center surface role");
+          if (!Array.isArray(body?.records)) throw new Error("payment records are not an array");
+          const forbidden = new Set(["line_user_id","lineUserId","airtable_record_id","record_id","admin_note","internal_note","bank_account","promptpay_destination","qr_payload","verification_actor"]);
+          const walk = (value, path = "$") => {
+            if (!value || typeof value !== "object") return;
+            if (Array.isArray(value)) return value.forEach((v, i) => walk(v, path + "[" + i + "]"));
+            for (const [key, child] of Object.entries(value)) {
+              if (forbidden.has(key)) throw new Error("customer-unsafe field leaked at " + path + "." + key);
+              walk(child, path + "." + key);
+            }
+          };
+          walk(body);
+          const current = body.records.find((record) => record && record.payment_ref);
+          if (!current) throw new Error("real pending payment intent missing from Payment Center");
+          if (current.official_status === "pending_review" && current.customer_payment_url) throw new Error("pending_review leaked a payment CTA");
+          const signed = new URL(current.customer_payment_url);
+          if (signed.origin !== "https://mmdbkk.com" || signed.pathname !== "/pay/checkout" || [...signed.searchParams.keys()].join(",") !== "t" || !signed.searchParams.get("t")) {
+            throw new Error("Payment Center did not preserve the exact canonical signed handoff");
+          }
+          console.log("PASS real-member Payment Center acceptance; records=" + body.records.length);
+          NODE
+
+          reject_body="$RUNNER_TEMP/member-payments-live-reject.json"
+          reject_code="$(curl -sS -b "$jar" -o "$reject_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             'https://www.mmdbkk.com/v1/member/payments?payment_ref=browser-selected')"
+          test "$reject_code" = "400"
+          jq -e '.error.code == "BROWSER_PAYMENT_CONTEXT_REJECTED"' "$reject_body" >/dev/null
+
+      - name: Smoke internal AI service binding
+        id: ai_binding_smoke
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        shell: bash
+        run: |
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error -X POST -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            if (body.ok !== true || body.read_only !== true || body.service !== "ai-worker" || body.contract !== "kenji_conversation_matrix_shadow_v1" || body.customer_side_effects !== false) {
+              throw new Error(`Unexpected AI service-binding smoke response: ${process.argv[1]}`);
+            }
+          ' "$response"
+
+      - name: Smoke Kenji Phase 2 contextual understanding shadow
+        id: kenji_contextual_shadow_smoke
+        if: always() && steps.route_sync.outcome == 'success' && env.AI_SERVICE_SMOKE_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/kenji-contextual-shadow-smoke.json"
+          response_code="$(curl --retry 2 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$response_file" -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"contextual_understanding_shadow"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          response="$(cat "$response_file")"
+          echo "Kenji contextual shadow smoke HTTP: ${response_code}"
+          echo "Kenji contextual shadow smoke body: ${response}"
+          node -e '
+            const httpStatus = Number(process.argv[2]);
+            const body = JSON.parse(process.argv[1]);
+            if (httpStatus !== 200) {
+              throw new Error(`Kenji contextual shadow smoke HTTP ${httpStatus}: ${process.argv[1]}`);
+            }
+            if (
+              body.ok !== true ||
+              body.mode !== "contextual_understanding_shadow" ||
+              body.schema !== "mmd.kenji_line_contextual_understanding.v1" ||
+              body.shadow_only !== true ||
+              body.customer_side_effects !== false ||
+              body.auto_send_allowed !== false ||
+              body.model_attempted !== true ||
+              body.model_success !== true ||
+              body.analysis_source !== "model" ||
+              !["comparison", "referential_followup"].includes(body.relation) ||
+              body.topic_relation !== "same_topic" ||
+              body.wants_similar !== true ||
+              body.price_direction !== "lower"
+            ) {
+              throw new Error(`Unexpected Kenji contextual shadow smoke response: ${process.argv[1]}`);
+            }
+            if ("answer" in body || "reply" in body || "customer_copy" in body) {
+              throw new Error("Contextual shadow smoke exposed customer-facing copy");
+            }
+          ' "$response" "$response_code"
+
+      - name: Smoke real canonical Kenji recommendation service binding
+        id: kenji_recommendation_shadow_smoke
+        if: always() && steps.route_sync.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AI_SERVICE_SMOKE_TOKEN}"
+          response="$(curl --retry 6 --retry-delay 2 --retry-all-errors --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"real_kenji_recommendation"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          node -e '
+            const body = JSON.parse(process.argv[1]);
+            const receipt = body.recommendation_receipt || {};
+            const context = body.context_receipt || {};
+            const guard = body.guardrails || {};
+            if (
+              body.ok !== true ||
+              body.mode !== "real_kenji_recommendation" ||
+              body.read_only !== true ||
+              body.shadow_only !== true ||
+              body.caller !== "member-dashboard-chat-worker" ||
+              body.canonical_context_real !== true ||
+              body.customer_side_effects !== false ||
+              context.identity_state !== "known" ||
+              receipt.upstream_ok !== true ||
+              receipt.deployment_mode !== "shadow" ||
+              guard.auto_send_allowed !== false ||
+              guard.booking_confirmed !== false ||
+              guard.payment_confirmed !== false ||
+              guard.entitlement_mutated !== false ||
+              guard.source_rate_exposed !== false ||
+              guard.raw_notes_exposed !== false
+            ) {
+              throw new Error(`Unexpected real Kenji recommendation shadow smoke response: ${process.argv[1]}`);
+            }
+            console.log(JSON.stringify({
+              ok: body.ok,
+              mode: body.mode,
+              caller: body.caller,
+              context_receipt: context,
+              recommendation_receipt: receipt,
+              guardrails: guard,
+              customer_side_effects: body.customer_side_effects,
+            }, null, 2));
+          ' "$response"
+
+      - name: Smoke eligible-client Kenji recommendations
+        id: kenji_eligible_recommendation_shadow_smoke
+        if: always() && steps.kenji_recommendation_shadow_smoke.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${AI_SERVICE_SMOKE_TOKEN}"
+          response_file="$RUNNER_TEMP/kenji-eligible-shadow-smoke.json"
+          response_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -o "$response_file" -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${AI_SERVICE_SMOKE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{"mode":"eligible_kenji_recommendation"}' \
+            https://www.mmdbkk.com/v1/internal/ai/service-binding-smoke)"
+          response="$(cat "$response_file")"
+          echo "Eligible Kenji smoke HTTP: ${response_code}"
+          echo "Eligible Kenji smoke body: ${response}"
+          node --input-type=module -e '
+            import { assertEligibleRecommendationSmoke } from "./member-dashboard-chat-worker/src/eligible-recommendation-smoke-policy.mjs";
+            const body = JSON.parse(process.argv[1]);
+            const httpStatus = Number(process.argv[2]);
+            const result = assertEligibleRecommendationSmoke(body, httpStatus);
+            if (result.classification === "review_only") {
+              console.warn("::warning::Eligible recommendation pipeline is healthy but current live data is review-only (for example missing/stale availability or another safe offer gate).");
+            }
+            console.log(JSON.stringify({
+              ...result,
+              mode: body.mode,
+              attempted_eligible_clients: body.attempted_eligible_clients,
+              diagnostics: body.diagnostics || null,
+              recommendation_receipt: body.recommendation_receipt || null,
+              customer_side_effects: body.customer_side_effects,
+            }, null, 2));
+          ' "$response" "$response_code"
+
+      - name: Report deploy stage diagnosis
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          TOKEN_VERIFY_OUTCOME: ${{ steps.token_verify.outcome }}
+          WHOAMI_OUTCOME: ${{ steps.whoami.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          DRY_RUN_OUTCOME: ${{ steps.wrangler_dry_run.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          MIGRATION_DEPLOY_OUTCOME: ${{ steps.migration_deploy.outcome }}
+          RESOLVE_OUTCOME: ${{ steps.resolve_version.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
+          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
+          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
+        run: |
+          set -euo pipefail
+          checked_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          if [ "$CREDENTIALS_OUTCOME" != "success" ]; then
+            stopped="cloudflare token normalization"
+          elif [ "$TOKEN_VERIFY_OUTCOME" != "success" ]; then
+            stopped="cloudflare token verification"
+          elif [ "$TESTS_OUTCOME" != "success" ]; then
+            stopped="tests"
+          elif [ "$DRY_RUN_OUTCOME" != "success" ]; then
+            stopped="versions dry-run"
+          elif [ "$UPLOAD_OUTCOME" != "success" ] && [ "$MIGRATION_DEPLOY_OUTCOME" != "success" ]; then
+            stopped="versions upload / Durable Object migration deploy"
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$RESOLVE_OUTCOME" != "success" ]; then
+            stopped="resolve uploaded version"
+          elif [ "$UPLOAD_OUTCOME" = "success" ] && [ "$DEPLOY_OUTCOME" != "success" ]; then
+            stopped="versions deploy"
+          elif [ "$ROUTE_SYNC_OUTCOME" != "success" ]; then
+            stopped="MMS route sync"
+          elif [ "$SMOKE_OUTCOME" != "success" ]; then
+            stopped="production smoke"
+          elif [ "$KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="Kenji Phase 2 contextual understanding shadow smoke"
+          elif [ "$KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="real Kenji recommendation shadow smoke"
+          elif [ "$KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME" != "success" ]; then
+            stopped="eligible-client Kenji recommendation shadow smoke"
+          else
+            stopped="none — live verified"
+          fi
+
+          detail=""
+          for log in \
+            "$RUNNER_TEMP/cloudflare-token-user-verify.json" \
+            "$RUNNER_TEMP/cloudflare-token-account-verify.json" \
+            "$RUNNER_TEMP/cloudflare-whoami.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-upload.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-deploy.log" \
+            "$RUNNER_TEMP/member-dashboard-chat-worker-migration-deploy.log" \
+            "$RUNNER_TEMP/mms-therapist-auth.headers" \
+            "$RUNNER_TEMP/mms-therapist-auth.json"; do
+            if [ -f "$log" ]; then
+              detail="${detail}$(grep -Ei 'active|disabled|expired|error|failed|permission|account|binding|service|route|conflict|workers.dev|code:|code |version|secret|var|therapist|mms' "$log" | tail -n 50 || true)\n"
+            fi
+          done
+          if [ -z "${detail//\\n/}" ]; then
+            detail="No focused Cloudflare/Wrangler diagnostic lines captured."
+          fi
+
+          body_file="$(mktemp)"
+          cat > "$body_file" <<EOF
+          ### member-dashboard-chat-worker deploy diagnosis
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - checked_at: \`${checked_at}\`
+          - token normalization: \`${CREDENTIALS_OUTCOME}\`
+          - token verification: \`${TOKEN_VERIFY_OUTCOME}\`
+          - wrangler whoami (diagnostic only): \`${WHOAMI_OUTCOME}\`
+          - tests: \`${TESTS_OUTCOME}\`
+          - versions dry-run: \`${DRY_RUN_OUTCOME}\`
+          - versions upload: \`${UPLOAD_OUTCOME}\`
+          - Durable Object migration deploy: \`${MIGRATION_DEPLOY_OUTCOME}\`
+          - resolve version: \`${RESOLVE_OUTCOME}\`
+          - versions deploy: \`${DEPLOY_OUTCOME}\`
+          - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
+          - production smoke: \`${SMOKE_OUTCOME}\`
+          - **stopped_at: \`${stopped}\`**
+
+          Cloudflare/Wrangler detail:
+          \`\`\`text
+          ${detail}
+          \`\`\`
+          EOF
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
+
+      - name: Enforce production deploy success
+        if: always()
+        shell: bash
+        env:
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          if [ "$SMOKE_OUTCOME" != "success" ]; then
+            echo "member-dashboard-chat-worker production smoke did not pass" >&2
+            exit 1
+          fi
+      - name: Record verified live receipt
+        if: steps.smoke.outcome == 'success'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + canonical MMS LINE runtime + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"

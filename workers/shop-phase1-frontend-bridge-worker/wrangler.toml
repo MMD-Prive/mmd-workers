@@ -1,0 +1,43 @@
+name = "shop-phase1-frontend-bridge-worker"
+main = "src/index.js"
+compatibility_date = "2026-09-22"
+workers_dev = false
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# Temporary page-only bridge while Webflow Single Page Publishing is unavailable.
+# Exact paths only: existing /shop/api/*, /mmd-shop/api/*, /mmd-shop/product/* and
+# /mmd-shop/order* remain owned by himai-chat-worker through their more specific routes.
+[[routes]]
+pattern = "mmdbkk.com/shop"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/shop/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/mmd-shop/"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/mmd-shop/"
+zone_name = "mmdbkk.com"

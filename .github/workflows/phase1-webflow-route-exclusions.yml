@@ -1,0 +1,148 @@
+name: Phase 1 Webflow Route Exclusions
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/phase1-webflow-route-exclusions.yml"
+
+concurrency:
+  group: phase1-webflow-route-exclusions-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    env:
+      CLOUDFLARE_ROUTES_API_TOKEN: ${{ secrets.CLOUDFLARE_ROUTES_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: "2d62396174fa2ddadbbcd0e8cf0f3367"
+
+    steps:
+      - name: Move Member presentation pages out of legacy catch-all
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const zone = String(process.env.CLOUDFLARE_ZONE_ID || "").trim();
+          const token = String(process.env.CLOUDFLARE_ROUTES_API_TOKEN || "").trim();
+          if (!zone || !token) throw new Error("Cloudflare route migration credential missing");
+
+          const base = `https://api.cloudflare.com/client/v4/zones/${zone}/workers/routes`;
+          const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+          const bypassPatterns = [
+            "mmdbkk.com/member/login*",
+            "www.mmdbkk.com/member/login*",
+            "mmdbkk.com/member/dashboard*",
+            "www.mmdbkk.com/member/dashboard*",
+          ];
+          const legacyExactPatterns = new Set([
+            "mmdbkk.com/member/login",
+            "mmdbkk.com/member/login/",
+            "www.mmdbkk.com/member/login",
+            "www.mmdbkk.com/member/login/",
+            "mmdbkk.com/member/dashboard",
+            "mmdbkk.com/member/dashboard/",
+            "www.mmdbkk.com/member/dashboard",
+            "www.mmdbkk.com/member/dashboard/",
+          ]);
+
+          async function list() {
+            const response = await fetch(base, { headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) throw new Error("Cloudflare route inventory unavailable");
+            return payload.result || [];
+          }
+          async function remove(route) {
+            const response = await fetch(`${base}/${route.id}`, { method: "DELETE", headers });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`failed to delete route ${route.pattern}: ${JSON.stringify(payload)}`);
+            }
+          }
+
+          let routes = await list();
+
+          for (const route of routes) {
+            if (!legacyExactPatterns.has(route.pattern)) continue;
+            if (route.script && route.script !== "mmd-redirect-worker") {
+              throw new Error(`refusing presentation-route takeover: ${route.pattern} is owned by ${route.script}`);
+            }
+            if (route.script === "mmd-redirect-worker") await remove(route);
+          }
+
+          routes = await list();
+          for (const pattern of bypassPatterns) {
+            const current = routes.find((route) => route.pattern === pattern);
+            if (current?.script && current.script !== "mmd-redirect-worker") {
+              throw new Error(`refusing Webflow bypass takeover: ${pattern} is owned by ${current.script}`);
+            }
+            if (current?.script === "mmd-redirect-worker") {
+              await remove(current);
+              routes = await list();
+            }
+            if (routes.some((route) => route.pattern === pattern && !route.script)) continue;
+
+            const response = await fetch(base, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ pattern }),
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.success !== true) {
+              throw new Error(`failed to create no-script Webflow exclusion ${pattern}: ${JSON.stringify(payload)}`);
+            }
+            routes = await list();
+          }
+
+          routes = await list();
+          const missing = bypassPatterns.filter((pattern) =>
+            !routes.some((route) => route.pattern === pattern && !route.script)
+          );
+          const residual = routes.filter((route) =>
+            route.script === "mmd-redirect-worker" && legacyExactPatterns.has(route.pattern)
+          );
+          if (missing.length) throw new Error(`missing Webflow exclusions: ${missing.join(", ")}`);
+          if (residual.length) throw new Error(`legacy exact member routes remain: ${residual.map(x => x.pattern).join(", ")}`);
+          console.log(JSON.stringify({ ok: true, webflow_exclusions: bypassPatterns, retired_legacy_exact: true }, null, 2));
+          NODE
+
+      - name: Verify Webflow origin pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          login_body="$(mktemp)"
+          login_headers="$(mktemp)"
+          login_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -L -D "$login_headers" -o "$login_body" -w '%{http_code}'             'https://www.mmdbkk.com/member/login?phase1=route-owner')"
+          test "$login_code" = "200"
+          grep -qi 'MY MMD' "$login_body"
+          if grep -qi '^x-mmd-worker: mmd-redirect-worker' "$login_headers"; then
+            echo "member/login still intercepted by mmd-redirect-worker" >&2
+            exit 1
+          fi
+
+          dashboard_body="$(mktemp)"
+          dashboard_headers="$(mktemp)"
+          dashboard_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS -L -D "$dashboard_headers" -o "$dashboard_body" -w '%{http_code}'             'https://www.mmdbkk.com/member/dashboard?phase1=route-owner')"
+          test "$dashboard_code" = "200"
+          grep -qi 'MY MMD' "$dashboard_body"
+          if grep -qi '^x-mmd-worker: mmd-redirect-worker' "$dashboard_headers"; then
+            echo "member/dashboard still intercepted by mmd-redirect-worker" >&2
+            exit 1
+          fi
+
+      - name: Migration receipt
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Phase 1 Webflow presentation ownership
+          - /member/login*: Webflow origin, Worker exclusion locked
+          - /member/dashboard*: Webflow origin, Worker exclusion locked
+          - legacy exact mmd-redirect routes on those surfaces: retired
+          - legacy global catch-all: retired; no-script exclusions remain guardrails
+          EOF

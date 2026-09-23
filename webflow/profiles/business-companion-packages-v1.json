@@ -1,0 +1,38 @@
+{
+  "version": "mmd-business-companion-packages-v1",
+  "currency": "THB",
+  "money_lane": "public_model",
+  "product": "business_companion",
+  "positioning": "smart_casual_business_presence_not_employee_agent_or_professional_representative",
+  "public_packages": [
+    { "key": "business_lunch", "name": "BUSINESS LUNCH", "price_thb": 6500, "included_minutes": 180, "worker_payout_thb": 3000, "activity_scope": "one_business_context" },
+    { "key": "smart_presence", "name": "SMART PRESENCE", "price_thb": 10500, "included_minutes": 300, "worker_payout_thb": 5000, "activity_scope": "networking_or_meeting_day" },
+    { "key": "context_day", "name": "CONTEXT DAY", "price_thb": 16500, "included_minutes": 480, "worker_payout_thb": 8000, "activity_scope": "full_business_context" }
+  ],
+  "safety_scope": {
+    "employee_or_staff_service_included": false,
+    "agency_or_negotiation_representation_included": false,
+    "authority_to_commit_or_sign_on_customer_behalf": false,
+    "professional_advice_or_service_included": false,
+    "mmd_must_confirm_model_context_dress_code_fit_and_availability": true
+  },
+  "public_extension_rules": {
+    "overtime_before_midnight_client_thb_per_hour": 1990,
+    "overtime_before_midnight_worker_thb_per_hour": 1200,
+    "overtime_after_midnight_client_thb_per_hour": 2490,
+    "overtime_after_midnight_worker_thb_per_hour": 1550,
+    "overtime_after_0300_client_thb_per_hour": 2990,
+    "overtime_after_0300_worker_thb_per_hour": 1900,
+    "after_0600": "manual_review_required",
+    "no_double_charge_same_minute": true,
+    "extension_flow": ["MY_MMD_request", "MMD_MODEL_approve", "payment_verified", "MMD_confirmed"]
+  },
+  "customer_expenses": "actual_cost",
+  "customer_expense_examples": ["food_and_drinks", "venue", "ticket", "transport", "parking", "approved_special_wardrobe"],
+  "scope_change": {
+    "commercial_spokesperson_or_brand_representation": "mmd_requote_required",
+    "negotiation_or_authorized_representation": "not_available_in_public_package",
+    "overnight_or_after_0600": "re_quote_required"
+  },
+  "private_money_separation": "These Public package and OT matrices never apply automatically to private_model jobs."
+}

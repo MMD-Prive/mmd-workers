@@ -1,0 +1,51 @@
+name: Smoke Slip Staging Public Boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/smoke-slip-staging-public-boundary.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  unauthenticated-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      INTAKE_URL: "https://mmd-line-slip-intake-staging.malemodel-bkk.workers.dev"
+    steps:
+      - name: Probe unauthenticated staging intake
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '\211PNG\r\n\032\nMMD-SYNTHETIC-PROBE' > "$RUNNER_TEMP/probe.png"
+          code="$(curl --silent --show-error --output "$RUNNER_TEMP/body.json" --write-out '%{http_code}' \
+            -X POST -H 'Content-Type: image/png' --data-binary "@$RUNNER_TEMP/probe.png" \
+            "$INTAKE_URL/v1/staging/intake")"
+          body="$(cat "$RUNNER_TEMP/body.json")"
+          echo "HTTP ${code}"
+          printf '%s\n' "$body"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" != "401" ]; then
+            echo "Expected fail-closed HTTP 401, observed ${code}" >&2
+            exit 1
+          fi
+          node -e 'const b=JSON.parse(process.argv[1]); if (b.error!=="unauthorized") process.exit(1)' "$body"
+
+      - name: Record boundary result in issue 317
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ steps.probe.outputs.code }}" = "401" ]; then
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "✅ Staging public auth boundary probe: unauthenticated \`POST /v1/staging/intake\` returned HTTP 401 / unauthorized. Real LINE production was not touched."
+          else
+            gh issue comment 317 --repo "$GITHUB_REPOSITORY" --body "⚠️ Staging public auth boundary probe did not return HTTP 401. Observed: \`${{ steps.probe.outputs.code || 'unknown' }}\`. Keep production integration blocked. Real LINE production was not touched."
+          fi
