@@ -7,6 +7,10 @@ import {
   getMmdRichMenuActionMap,
   getMmdRichMenuTapFrames,
   getMmdRichMenuImageSources,
+  getMmdRichMenuVersion,
+  getMmdRichMenuFiveStateMatrix,
+  isMmdRichMenuScheduledRequest,
+  handleMmdRichMenuScheduledRequest,
 } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
 test("MMD Rich Menu hides from 16:00 until 23:00 Bangkok", () => {
@@ -93,4 +97,47 @@ test("unverified known customer maps to Guest", () => {
   const clients = [{ fields: { line_user_id: "U-guest", "Verification Status": "pending" } }];
   const result = classifyMmdUsers(clients, [], new Date("2026-09-08T00:00:00Z"));
   assert.deepEqual(result, { guest: ["U-guest"], public: [], private: [] });
+});
+
+test("current production object version preserves the approved LV1 v4.1 artwork", () => {
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260923-v4.2");
+  assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
+});
+
+test("five-state resolver matrix never grants Private to expired or blocked users", () => {
+  assert.deepEqual(getMmdRichMenuFiveStateMatrix(new Date("2026-09-23T09:35:00Z")), {
+    guest: "guest",
+    public: "public",
+    private: "private",
+    expired: "public",
+    blocked: "public",
+  });
+});
+
+test("verified blocked customer maps to Public and never Private", () => {
+  const clients = [{ fields: { line_user_id: "U-blocked", "Verification Status": "verified" } }];
+  const entitlements = [{
+    fields: {
+      line_user_id: "U-blocked",
+      capability: "private_premium",
+      member_lifecycle_status: "blocked",
+      expire_at: "2099-12-31T00:00:00Z",
+    },
+  }];
+  const result = classifyMmdUsers(clients, entitlements, new Date("2026-09-23T09:35:00Z"));
+  assert.deepEqual(result, { guest: [], public: ["U-blocked"], private: [] });
+});
+
+test("three-level prepare and audit routes are recognized but remain internal-token protected", async () => {
+  const prepare = new Request("https://worker/v1/internal/line/rich-menu/three-level/prepare", { method: "POST" });
+  const audit = new Request("https://worker/v1/internal/line/rich-menu/three-level/audit", { method: "GET" });
+  assert.equal(isMmdRichMenuScheduledRequest(prepare), true);
+  assert.equal(isMmdRichMenuScheduledRequest(audit), true);
+
+  const prepareResponse = await handleMmdRichMenuScheduledRequest(prepare, { INTERNAL_TOKEN: "secret" });
+  const auditResponse = await handleMmdRichMenuScheduledRequest(audit, { INTERNAL_TOKEN: "secret" });
+  assert.equal(prepareResponse.status, 401);
+  assert.equal(auditResponse.status, 401);
+  assert.deepEqual(await prepareResponse.json(), { ok: false, error: "internal_auth_required" });
+  assert.deepEqual(await auditResponse.json(), { ok: false, error: "internal_auth_required" });
 });
