@@ -32,6 +32,10 @@ import {
   isSigilAvailabilityInternalRequest,
 } from "./sigil-availability-snapshot.js";
 import { augmentOwnerJobGrantCreateError } from "./owner-private-job-grant-diagnostic.js";
+import {
+  handleOwnerPrivateJobGrantCreate,
+  isOwnerPrivateJobGrantCreateRequest,
+} from "./owner-private-job-grant-create.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
 import {
   handleKenjiConversationShadowReceiptAdmin,
@@ -249,6 +253,11 @@ export default {
     if (isKenjiConversationShadowReceiptAdminRequest(normalizedPath, method)) {
       const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
       return handleKenjiConversationShadowReceiptAdmin(runtimeEnv, actor);
+    }
+
+    if (isOwnerPrivateJobGrantCreateRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleOwnerPrivateJobGrantCreate(request, runtimeEnv, actor);
     }
 
     if (normalizedPath === JOB_CREATE_PATH && method === "POST") {
