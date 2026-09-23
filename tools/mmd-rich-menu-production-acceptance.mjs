@@ -29,7 +29,28 @@ assert.equal(login.status, 303, "Canonical owner login failed");
 assert.ok(safeAdminHandoff(location), "Unsafe or missing admin handoff");
 assert.match(cookies, /(?:^|;\s*)mmd_admin_gate_v1=[^;\s]+/, "Canonical admin session cookie missing");
 
-async function call(path, method = "GET") {
+function safeAuditSummary(body = {}) {
+  const menu = (key) => ({
+    present: body?.menus?.[key]?.present === true,
+    object_match: body?.menus?.[key]?.object_match === true,
+    image_match: body?.menus?.[key]?.image_match === true,
+  });
+  return {
+    ok: body?.ok === true,
+    version: String(body?.version || "").slice(0, 80),
+    guest: menu("guest"),
+    public: menu("public"),
+    private: menu("private"),
+    hidden_by_schedule: body?.hidden_by_schedule === true,
+    default_state: String(body?.default_state || "").slice(0, 40),
+    schedule_policy_match: body?.schedule_policy_match === true,
+    five_state_matrix: body?.five_state_matrix || null,
+    five_state_matrix_match: body?.five_state_matrix_match === true,
+    physical_tap_verified: body?.physical_tap_verified === true,
+  };
+}
+
+async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
   let last = null;
   for (let attempt = 1; attempt <= 30; attempt += 1) {
     const response = await fetch(ORIGIN + path, {
@@ -46,8 +67,8 @@ async function call(path, method = "GET") {
     }).catch(() => null);
     const body = response ? await response.json().catch(() => ({})) : {};
     last = { status: response?.status || 0, body };
-    if (response?.ok && body?.ok === true) return body;
-    const retryable = !response || [404, 409, 429, 502, 503, 504].includes(response.status);
+    if ((response?.ok && body?.ok === true) || acceptStatuses.includes(response?.status || 0)) return body;
+    const retryable = !response || [404, 429, 502, 503, 504].includes(response.status);
     if (!retryable || attempt === 30) break;
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
@@ -59,7 +80,31 @@ assert.equal(prepare.version, VERSION);
 assert.equal(prepare.customer_assignments_changed, false);
 assert.equal(prepare.default_menu_changed, false);
 
-const audit = await call("/v1/admin/line/rich-menu/three-level/audit");
+const audit = await call("/v1/admin/line/rich-menu/three-level/audit", "GET", { acceptStatuses: [409] });
+const auditSummary = safeAuditSummary(audit);
+console.log(`MMD_RICH_MENU_AUDIT_SAFE ${JSON.stringify(auditSummary)}`);
+
+const output = `${process.env.RUNNER_TEMP || "/tmp"}/mmd-rich-menu-production-acceptance.json`;
+await writeFile(output, JSON.stringify({
+  ok: audit.ok === true,
+  version: auditSummary.version,
+  prepared_without_customer_assignment: prepare.customer_assignments_changed === false,
+  prepared_without_default_change: prepare.default_menu_changed === false,
+  menu_checks: {
+    guest: auditSummary.guest,
+    public: auditSummary.public,
+    private: auditSummary.private,
+  },
+  hidden_by_schedule: auditSummary.hidden_by_schedule,
+  default_state: auditSummary.default_state,
+  schedule_policy_match: auditSummary.schedule_policy_match,
+  five_state_matrix: auditSummary.five_state_matrix,
+  five_state_matrix_match: auditSummary.five_state_matrix_match,
+  physical_tap_verified: false,
+  physical_tap_status: "requires_real_line_client",
+  checked_at: new Date().toISOString(),
+}, null, 2));
+
 assert.equal(audit.version, VERSION);
 assert.equal(audit.schedule_policy_match, true);
 assert.equal(audit.five_state_matrix_match, true);
@@ -84,29 +129,12 @@ assert.equal(audit.menus.public.action_types[5], "postback");
 assert.equal(audit.menus.private.action_labels[0], "KENJI AI");
 assert.equal(audit.menus.private.action_types[0], "postback");
 
-const receipt = {
+console.log(JSON.stringify({
   ok: true,
   version: audit.version,
-  prepared_without_customer_assignment: prepare.customer_assignments_changed === false,
-  prepared_without_default_change: prepare.default_menu_changed === false,
-  menu_checks: audit.menus,
-  hidden_by_schedule: audit.hidden_by_schedule,
-  default_state: audit.default_state,
   schedule_policy_match: audit.schedule_policy_match,
   five_state_matrix: audit.five_state_matrix,
-  five_state_matrix_match: audit.five_state_matrix_match,
-  physical_tap_verified: false,
-  physical_tap_status: "requires_real_line_client",
-  checked_at: new Date().toISOString(),
-};
-const output = `${process.env.RUNNER_TEMP || "/tmp"}/mmd-rich-menu-production-acceptance.json`;
-await writeFile(output, JSON.stringify(receipt, null, 2));
-console.log(JSON.stringify({
-  ok: receipt.ok,
-  version: receipt.version,
-  schedule_policy_match: receipt.schedule_policy_match,
-  five_state_matrix: receipt.five_state_matrix,
-  object_image_checks: Object.fromEntries(Object.entries(receipt.menu_checks).map(([key, value]) => [key, {
+  object_image_checks: Object.fromEntries(Object.entries(audit.menus).map(([key, value]) => [key, {
     present: value.present,
     object_match: value.object_match,
     image_match: value.image_match,
