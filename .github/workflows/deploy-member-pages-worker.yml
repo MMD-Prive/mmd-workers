@@ -16,6 +16,8 @@ on:
       - "scripts/ensure-private-media-bucket.mjs"
       - ".github/workflows/deploy-member-pages-worker.yml"
       - "shared/payment-intelligence.mjs"
+      # member-pages-worker imports this pricing policy at bundle time.
+      - "shared/public-session-extension-v1.mjs"
 
 concurrency:
   group: deploy-member-pages-worker-production
