@@ -41,11 +41,12 @@ function jsonResponse(body, status = 200) {
   });
 }
 
-function makeEnv({ binding = true, upstreamBody = { ok: true, rich_menu_type: "public_world" }, upstreamStatus = 200 } = {}) {
+function makeEnv({ binding = true, upstreamBody = { ok: true, rich_menu_type: "public_world" }, upstreamStatus = 200, internalToken = "" } = {}) {
   const calls = [];
   const env = {
     ADMIN_BEARER,
     CONFIRM_KEY,
+    ...(internalToken ? { INTERNAL_TOKEN: internalToken } : {}),
   };
 
   if (binding) {
@@ -245,4 +246,42 @@ test("admin rich menu response is sanitized", async () => {
   assert.equal(response.status, 502);
   assert.equal(body.nested.rich_menu_id, "richmenu-public");
   assert.doesNotMatch(rendered, /should-not-leak|hidden|authorization|secret|token/i);
+});
+
+test("current three-level prepare and audit require admin auth plus internal service token", async () => {
+  const missing = makeEnv({ internalToken: "" });
+  const missingResult = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, missing.env);
+  assert.equal(missingResult.response.status, 502);
+  assert.deepEqual(missingResult.body, { ok: false, error: "internal_token_unavailable" });
+  assert.equal(missing.calls.length, 0);
+
+  const { env, calls } = makeEnv({
+    internalToken: "member-internal-secret",
+    upstreamBody: {
+      ok: true,
+      version: "mmd-rm3-20260923-v4.2",
+      five_state_matrix_match: true,
+      physical_tap_verified: false,
+    },
+  });
+
+  const prepare = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, env);
+  const audit = await adminFetch("/v1/admin/line/rich-menu/three-level/audit", {
+    method: "GET",
+    headers: { "x-confirm-key": CONFIRM_KEY },
+  }, env);
+
+  assert.equal(prepare.response.status, 200);
+  assert.equal(audit.response.status, 200);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/prepare");
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].headers.authorization, "Bearer member-internal-secret");
+  assert.equal(calls[1].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/audit");
+  assert.equal(calls[1].method, "GET");
+  assert.equal(calls[1].headers.authorization, "Bearer member-internal-secret");
 });
