@@ -8,6 +8,8 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
+const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
+const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
 const VERSION = "mmd-rm3-20260923-v4.2";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
@@ -94,6 +96,56 @@ export function getMmdRichMenuTapFrames() {
     { ...spec.frame },
   ]));
 }
+export function getMmdRichMenuVersion() {
+  return VERSION;
+}
+
+function targetForClassification(result, lineUserId) {
+  if (result.private.includes(lineUserId)) return "private";
+  if (result.public.includes(lineUserId)) return "public";
+  return "guest";
+}
+
+export function getMmdRichMenuFiveStateMatrix(now = new Date()) {
+  const at = now instanceof Date ? now : new Date(now);
+  const cases = [
+    {
+      state: "guest",
+      id: "U-state-guest",
+      client: { fields: { line_user_id: "U-state-guest", "Verification Status": "pending" } },
+      entitlements: [],
+    },
+    {
+      state: "public",
+      id: "U-state-public",
+      client: { fields: { line_user_id: "U-state-public", "Verification Status": "verified" } },
+      entitlements: [],
+    },
+    {
+      state: "private",
+      id: "U-state-private",
+      client: { fields: { line_user_id: "U-state-private", "Verification Status": "verified" } },
+      entitlements: [{ fields: { line_user_id: "U-state-private", capability: "private_premium", member_lifecycle_status: "active", expire_at: "2099-12-31T00:00:00Z" } }],
+    },
+    {
+      state: "expired",
+      id: "U-state-expired",
+      client: { fields: { line_user_id: "U-state-expired", "Verification Status": "verified" } },
+      entitlements: [{ fields: { line_user_id: "U-state-expired", capability: "private_standard", member_lifecycle_status: "expired", expire_at: "2020-01-01T00:00:00Z" } }],
+    },
+    {
+      state: "blocked",
+      id: "U-state-blocked",
+      client: { fields: { line_user_id: "U-state-blocked", "Verification Status": "verified" } },
+      entitlements: [{ fields: { line_user_id: "U-state-blocked", capability: "private_premium", member_lifecycle_status: "blocked", expire_at: "2099-12-31T00:00:00Z" } }],
+    },
+  ];
+
+  return Object.fromEntries(cases.map((entry) => {
+    const classified = classifyMmdUsers([entry.client], entry.entitlements, at);
+    return [entry.state, targetForClassification(classified, entry.id)];
+  }));
+}
 
 export function bangkokHour(now = new Date()) { return new Date(now.getTime() + 7 * 3600_000).getUTCHours(); }
 export function isMmdRichMenuHidden(now = new Date()) { const h = bangkokHour(now); return h >= 16 && h < 23; }
@@ -133,6 +185,110 @@ async function imageFor(spec) {
   throw new Error(why);
 }
 
+function normalizedAction(action = {}) {
+  const out = { type: clean(action.type), label: clean(action.label) };
+  if (out.type === "uri") out.uri = clean(action.uri);
+  if (out.type === "message") out.text = clean(action.text);
+  if (out.type === "postback") {
+    out.data = clean(action.data);
+    if (action.displayText != null) out.displayText = clean(action.displayText);
+  }
+  return out;
+}
+
+function menuObjectMatches(row, spec) {
+  const width = Number(row?.size?.width || 0);
+  const height = Number(row?.size?.height || 0);
+  if (!width || !height || clean(row?.name) !== spec.name) return false;
+  const expected = draft(spec, width, height);
+  const areas = Array.isArray(row?.areas) ? row.areas : [];
+  if (areas.length !== expected.areas.length) return false;
+  if (clean(row?.chatBarText) !== expected.chatBarText) return false;
+  return areas.every((item, index) => {
+    const want = expected.areas[index];
+    const bounds = item?.bounds || {};
+    return Number(bounds.x) === want.bounds.x &&
+      Number(bounds.y) === want.bounds.y &&
+      Number(bounds.width) === want.bounds.width &&
+      Number(bounds.height) === want.bounds.height &&
+      JSON.stringify(normalizedAction(item?.action)) === JSON.stringify(normalizedAction(want.action));
+  });
+}
+
+async function sha256Hex(buffer) {
+  const digest = await crypto.subtle.digest("SHA-256", buffer);
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function menuImageMatches(env, richMenuId, spec) {
+  if (!clean(richMenuId)) return false;
+  const expected = await imageFor(spec);
+  const response = await fetch(`${LINE_DATA_API}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
+    headers: lineHeaders(env),
+  }).catch(() => null);
+  if (!response?.ok) return false;
+  const actual = await response.arrayBuffer();
+  if (actual.byteLength !== expected.buffer.byteLength) return false;
+  const [actualHash, expectedHash] = await Promise.all([sha256Hex(actual), sha256Hex(expected.buffer)]);
+  return actualHash === expectedHash;
+}
+
+export async function prepareMmdRichMenus(env) {
+  await ensureMenus(env);
+  return {
+    ok: true,
+    prepared: true,
+    version: VERSION,
+    menu_names: Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [key, spec.name])),
+    customer_assignments_changed: false,
+    default_menu_changed: false,
+  };
+}
+
+export async function auditMmdRichMenus(env, now = new Date()) {
+  const listed = await line(env, `${LINE_API}/richmenu/list`, { method: "GET" });
+  const rows = Array.isArray(listed.body?.richmenus) ? listed.body.richmenus : [];
+  const checks = {};
+  const ids = {};
+
+  for (const [key, spec] of Object.entries(MENUS)) {
+    const row = rows.find((item) => clean(item?.name) === spec.name);
+    ids[key] = clean(row?.richMenuId);
+    checks[key] = {
+      present: Boolean(ids[key]),
+      object_match: Boolean(row && menuObjectMatches(row, spec)),
+      image_match: row ? await menuImageMatches(env, ids[key], spec).catch(() => false) : false,
+      action_labels: spec.actions.map((action) => action.label),
+      action_types: spec.actions.map((action) => action.type),
+    };
+  }
+
+  const defaultResult = await line(env, `${LINE_API}/user/all/richmenu`, { method: "GET" }, [404]);
+  const defaultId = defaultResult.r.status === 404 ? "" : clean(defaultResult.body?.richMenuId);
+  const hidden = isMmdRichMenuHidden(now);
+  const defaultState = !defaultId ? "none" : defaultId === ids.guest ? "guest" : "unexpected";
+  const schedulePolicyMatch = hidden ? defaultState === "none" : defaultState === "guest";
+  const fiveState = getMmdRichMenuFiveStateMatrix(now);
+  const matrixMatch =
+    fiveState.guest === "guest" &&
+    fiveState.public === "public" &&
+    fiveState.private === "private" &&
+    fiveState.expired === "public" &&
+    fiveState.blocked === "public";
+  const menusOk = Object.values(checks).every((item) => item.present && item.object_match && item.image_match);
+
+  return {
+    ok: menusOk && schedulePolicyMatch && matrixMatch,
+    version: VERSION,
+    menus: checks,
+    hidden_by_schedule: hidden,
+    default_state: defaultState,
+    schedule_policy_match: schedulePolicyMatch,
+    five_state_matrix: fiveState,
+    five_state_matrix_match: matrixMatch,
+    physical_tap_verified: false,
+  };
+}
 async function ensureMenus(env) {
   const listed = await line(env, `${LINE_API}/richmenu/list`, { method: "GET" });
   const rows = Array.isArray(listed.body?.richmenus) ? listed.body.richmenus : [];
@@ -203,13 +359,48 @@ export async function hideMmdRichMenus(env) {
 export async function reconcileMmdRichMenus(env, now = new Date()) { return isMmdRichMenuHidden(now) ? hideMmdRichMenus(env) : showMmdRichMenus(env, now); }
 
 function internal(request, env) { const a = clean(request.headers.get("authorization")); return Boolean(clean(env.INTERNAL_TOKEN) && a === `Bearer ${clean(env.INTERNAL_TOKEN)}`); }
-export function isMmdRichMenuScheduledRequest(request) { try { return request.method === "POST" && new URL(request.url).pathname === SYNC_PATH; } catch { return false; } }
+export function isMmdRichMenuScheduledRequest(request) {
+  try {
+    const path = new URL(request.url).pathname;
+    return (request.method === "POST" && (path === SYNC_PATH || path === THREE_LEVEL_PREPARE_PATH)) ||
+      (request.method === "GET" && path === THREE_LEVEL_AUDIT_PATH);
+  } catch {
+    return false;
+  }
+}
 export async function handleMmdRichMenuScheduledRequest(request, env) {
   if (!internal(request, env)) return json({ ok: false, error: "internal_auth_required" }, 401);
-  const body = await request.json().catch(() => ({})); const id = clean(body.line_user_id || body.lineUserId); if (!id) return json({ ok: false, error: "line_user_id_missing" }, 400);
-  if (isMmdRichMenuHidden()) { await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]); return json({ ok: true, target: "hidden" }); }
-  const menus = await ensureMenus(env); const group = await users(env, new Date()); const target = group.private.includes(id) ? "private" : group.public.includes(id) ? "public" : "guest";
-  if (target === "guest") await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]); else await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu/${encodeURIComponent(menus[target])}`, { method: "POST" });
+  const path = new URL(request.url).pathname;
+
+  if (request.method === "POST" && path === THREE_LEVEL_PREPARE_PATH) {
+    try {
+      return json(await prepareMmdRichMenus(env));
+    } catch (error) {
+      return json({ ok: false, error: "rich_menu_prepare_failed", reason: clean(error?.message || error).slice(0, 120) }, 502);
+    }
+  }
+
+  if (request.method === "GET" && path === THREE_LEVEL_AUDIT_PATH) {
+    try {
+      const result = await auditMmdRichMenus(env, new Date());
+      return json(result, result.ok ? 200 : 409);
+    } catch (error) {
+      return json({ ok: false, error: "rich_menu_audit_failed", reason: clean(error?.message || error).slice(0, 120) }, 502);
+    }
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const id = clean(body.line_user_id || body.lineUserId);
+  if (!id) return json({ ok: false, error: "line_user_id_missing" }, 400);
+  if (isMmdRichMenuHidden()) {
+    await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]);
+    return json({ ok: true, target: "hidden" });
+  }
+  const menus = await ensureMenus(env);
+  const group = await users(env, new Date());
+  const target = group.private.includes(id) ? "private" : group.public.includes(id) ? "public" : "guest";
+  if (target === "guest") await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]);
+  else await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu/${encodeURIComponent(menus[target])}`, { method: "POST" });
   return json({ ok: true, target });
 }
 
