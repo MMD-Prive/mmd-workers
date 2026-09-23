@@ -43,10 +43,11 @@ export async function handleModelDriveDirectoryRequest(request, env = {}) {
     const accessToken = await googleDriveAccessToken(env);
     if (request.method === "GET" && url.pathname === PHOTO_PATH) {
       const folderId = clean(url.searchParams.get("drive_folder_id"), 160);
+      const fileName = clean(url.searchParams.get("file_name"), 240);
       if (!isDriveId(folderId)) return json({ ok: false, error: "drive_folder_id_invalid" }, 400);
       const resolved = await resolveApprovedModelFolder(accessToken, folderId, env);
       if (!resolved) return json({ ok: false, error: "drive_folder_not_approved" }, 404);
-      return streamApprovedModelPhoto(accessToken, resolved.drive_folder_id);
+      return streamApprovedModelPhoto(accessToken, resolved.drive_folder_id, fileName);
     }
     if (request.method === "GET") {
       const q = clean(url.searchParams.get("q"), 120);
@@ -223,9 +224,11 @@ function approvedRoots(env) {
   };
 }
 
-async function streamApprovedModelPhoto(accessToken, folderId) {
-  const file = await findFirstModelImage(accessToken, folderId);
-  if (!file) return json({ ok: false, error: "model_photo_not_found" }, 404);
+async function streamApprovedModelPhoto(accessToken, folderId, exactFileName = "") {
+  const file = exactFileName
+    ? await findExactModelImage(accessToken, folderId, exactFileName)
+    : await findFirstModelImage(accessToken, folderId);
+  if (!file) return json({ ok: false, error: exactFileName ? "model_photo_exact_not_found" : "model_photo_not_found" }, 404);
   const url = new URL(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`);
   url.searchParams.set("alt", "media");
   url.searchParams.set("supportsAllDrives", "true");
@@ -260,6 +263,32 @@ async function findFirstModelImage(accessToken, rootFolderId) {
     if (images.length) break;
   }
   return images.sort((a, b) => modelPhotoRank(a.name) - modelPhotoRank(b.name) || a.name.localeCompare(b.name))[0] || null;
+}
+
+export async function findExactModelImage(accessToken, rootFolderId, exactFileName) {
+  const wanted = clean(exactFileName, 240);
+  if (!wanted) return null;
+  const queue = [{ id: rootFolderId, depth: 0 }];
+  const visited = new Set();
+  const matches = [];
+  while (queue.length && visited.size < 30) {
+    const current = queue.shift();
+    if (!current || visited.has(current.id)) continue;
+    visited.add(current.id);
+    const children = await driveListChildren(accessToken, current.id);
+    for (const item of children) {
+      if (item.mimeType === FOLDER_MIME && current.depth < 2) {
+        queue.push({ id: item.id, depth: current.depth + 1 });
+        continue;
+      }
+      if (
+        item.name === wanted &&
+        /^image\/(?:jpeg|png|webp)$/i.test(item.mimeType || "")
+      ) matches.push(item);
+    }
+  }
+  if (matches.length > 1) throw new Error("drive_model_photo_exact_ambiguous");
+  return matches[0] || null;
 }
 
 async function driveListChildren(accessToken, folderId) {
