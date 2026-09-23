@@ -215,8 +215,7 @@
       });
     });
     byId("miRecoveryRefresh")?.addEventListener("click",()=>{
-      state.intelligenceCache.clear();
-      loadRecoveryQueue(state.records);
+      void refreshRecoveryQueue();
     });
     return queue;
   }
@@ -924,6 +923,28 @@
     });
     state.intelligenceCache.set(id,request);
     return request;
+  }
+
+  function lockSelectedDetailForRecoveryRefresh(){
+    const record=state.selected;
+    const clientId=clean(record?.client_id);
+    if(!record||!clientId)return "";
+
+    state.selectionSeq+=1;
+    state.memory=null;
+    state.intelligence=null;
+    paintLineage(record);
+    resetDraftUi("กำลังรีเฟรชหลักฐานตัวตน · Copy ถูกล็อกจนกว่าจะตรวจสถานะล่าสุดเสร็จ");
+    setStatus("กำลังรีเฟรชหลักฐานตัวตนล่าสุด · Kenji และ customer copy ถูกล็อกชั่วคราว","warn");
+    return clientId;
+  }
+
+  async function refreshRecoveryQueue(){
+    const selectedClientId=lockSelectedDetailForRecoveryRefresh();
+    state.intelligenceCache.clear();
+    await loadRecoveryQueue(state.records);
+    if(!selectedClientId||clean(state.selected?.client_id)!==selectedClientId)return;
+    await selectRecord(state.selected);
   }
 
   async function loadRecoveryQueue(records){

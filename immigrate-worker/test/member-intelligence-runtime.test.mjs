@@ -67,6 +67,10 @@ test("Member Intelligence builds a bounded read-only identity evidence recovery 
   assert.match(source, /Math\.min\(3,ids\.length\)/);
   assert.match(source, /identityRecoveryContract\(payload\)/);
   assert.match(source, /state\.intelligenceCache/);
+  assert.match(source, /function lockSelectedDetailForRecoveryRefresh\(\)/);
+  assert.match(source, /state\.selectionSeq\+=1/);
+  assert.match(source, /Copy ถูกล็อกจนกว่าจะตรวจสถานะล่าสุดเสร็จ/);
+  assert.match(source, /await selectRecord\(state\.selected\)/);
   assert.match(source, /เปิด Customer 360 เพื่อตรวจ/);
   assert.match(source, /automatic_recovery_allowed===false/);
   assert.match(source, /verification_status_mutated===false/);
