@@ -23,7 +23,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "PUBLIC MODELS", uri: "https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_guest_models" },
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking" },
     { type: "uri", label: "PUBLIC SERVICES", uri: "https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services" },
-    { type: "uri", label: "ABOUT MMD", uri: "https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_about" },
+    { type: "uri", label: "MMD STORIES", uri: "https://mmdbkk.com/tmib?source=line&entry_route=rich_menu_guest_stories" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=guest&intent=ใช้บริการยังไง" },
   ]);
 

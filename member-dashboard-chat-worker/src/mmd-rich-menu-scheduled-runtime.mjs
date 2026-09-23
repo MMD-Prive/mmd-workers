@@ -8,7 +8,7 @@ const ENTITLEMENTS_TABLE = "tblNImdF9PKAxhXGi";
 const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
-const VERSION = "mmd-rm3-20260908-v4";
+const VERSION = "mmd-rm3-20260923-v4.1";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -33,7 +33,7 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_guest_models")),
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
-      uri("ABOUT MMD", site("/tmib", "rich_menu_guest_about")),
+      uri("MMD STORIES", site("/tmib", "rich_menu_guest_stories")),
       postback("SUPPORT", "mmd_action=support&audience=guest&intent=ใช้บริการยังไง"),
     ],
   },
