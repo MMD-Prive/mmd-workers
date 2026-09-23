@@ -7,6 +7,8 @@ import {
 
 const ETA_PATH = "/__internal/model/session/eta";
 const MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/model/availability-reminder";
+const MODEL_AVAILABILITY_REMINDER_PREFLIGHT_PATH = "/__internal/model/availability-reminder/preflight";
+const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 
@@ -18,6 +20,10 @@ export default {
 
     if (isCustomerAftercareRequest(path, method)) {
       return handleCustomerAftercare(request, env);
+    }
+
+    if (path === MODEL_AVAILABILITY_REMINDER_PREFLIGHT_PATH) {
+      return handleModelAvailabilityReminderPreflight(request, env);
     }
 
     if (path === MODEL_AVAILABILITY_REMINDER_PATH) {
@@ -120,6 +126,91 @@ function modelAvailabilityReminderText(displayName = "") {
   ].join("\n");
 }
 
+function modelLineTransport(env = {}) {
+  const modelToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN);
+  const fallbackToken = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
+  if (modelToken) return { token: modelToken, transport: "events-worker-model-line", token_mode: "model" };
+  if (fallbackToken) return { token: fallbackToken, transport: "events-worker-line-fallback", token_mode: "fallback" };
+  return { token: "", transport: "none", token_mode: "missing" };
+}
+
+async function handleModelAvailabilityReminderPreflight(request, env = {}) {
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const auth = requireAdminServiceAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const to = modelLineUserId(body.line_user_id);
+  if (!to) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_identity_invalid",
+      token_mode: "unknown",
+      recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+
+  const transport = modelLineTransport(env);
+  if (!transport.token) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_transport_not_ready",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+
+  let response;
+  try {
+    response = await fetch(`${LINE_PROFILE_BASE_URL}/${encodeURIComponent(to)}`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${transport.token}` },
+    });
+  } catch {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_transport_unavailable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+
+  if (!response.ok) {
+    const tokenRejected = response.status === 401 || response.status === 403;
+    return json({
+      ok: true,
+      ready: false,
+      state: tokenRejected ? "model_line_token_rejected" : "model_line_recipient_unreachable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      recipient_reachable: false,
+      provider_status: response.status,
+      message_sent: false,
+    }, 200);
+  }
+
+  return json({
+    ok: true,
+    ready: true,
+    state: "ready",
+    token_mode: transport.token_mode,
+    transport: transport.transport,
+    recipient_reachable: true,
+    provider_status: response.status,
+    message_sent: false,
+  }, 200);
+}
+
 async function handleModelAvailabilityReminder(request, env = {}) {
   if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
   const auth = requireAdminServiceAuth(request, env);
@@ -131,9 +222,8 @@ async function handleModelAvailabilityReminder(request, env = {}) {
   const to = modelLineUserId(body.line_user_id);
   if (!to) return json({ ok: false, error: "model_line_user_id_invalid" }, 400);
 
-  const modelToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN);
-  const fallbackToken = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
-  const token = modelToken || fallbackToken;
+  const lineTransport = modelLineTransport(env);
+  const token = lineTransport.token;
   if (!token) return json({ ok: false, error: "model_line_transport_not_ready" }, 503);
 
   let response;
@@ -164,7 +254,7 @@ async function handleModelAvailabilityReminder(request, env = {}) {
   return json({
     ok: true,
     channel: "line",
-    transport: modelToken ? "events-worker-model-line" : "events-worker-line-fallback",
+    transport: lineTransport.transport,
   }, 200);
 }
 
