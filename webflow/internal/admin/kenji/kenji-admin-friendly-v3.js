@@ -94,6 +94,7 @@
       '<article class="kso-card" id="ksoTeach"><span class="kso-kicker">Teach Kenji</span><h3>วันนี้อยากสอนอะไร?</h3><p>พิมพ์เหมือนกำลังบอกผู้ช่วยตัวเอง ระบบจะเก็บไว้ก่อน แล้วเปิดหน้าสรุปให้เปอร์เช็กหนึ่งรอบ</p>'
       + '<div class="kso-mode"><button class="is-on" type="button" data-kso-mode="answer">สอนคำตอบ</button><button type="button" data-kso-mode="guard">ข้อห้าม / Guard</button><button type="button" data-kso-mode="route">แนะนำทางไปต่อ</button></div>'
       + '<label class="kso-field">เรื่องนี้เกี่ยวกับอะไร?<select id="ksoCategory"><option value="general">ทั่วไป</option><option value="membership">Membership</option><option value="booking">Booking</option><option value="payment">Payment</option><option value="model">Model</option><option value="promotion">Promotion</option><option value="admin_policy">Policy / ข้อห้าม</option></select></label>'
+      + '<label class="kso-field">ข้อความจาก Ad / Rich Menu <small>ถ้าโฆษณาหรือการ์ดส่ง Text เข้า LINE ให้ใส่ข้อความนั้นตรง ๆ เช่น JASPAL · เว้นว่างได้</small><input id="ksoEntryTrigger" maxlength="48" autocomplete="off" placeholder="เช่น JASPAL"></label>'
       + '<label class="kso-field">ลูกค้ามักถามประมาณไหน?<small>ใช้เป็นตัวอย่างเพื่อช่วย QA ไม่ต้องเขียนให้เป๊ะ</small><input id="ksoQuestion" placeholder="เช่น ต่อสมาชิกยังไง"></label>'
       + '<label class="kso-field"><span id="ksoTeachLabel">อยากให้ Kenji ตอบว่า...</span><small id="ksoTeachHint">พิมพ์คำตอบที่อยากให้ใช้</small><textarea id="ksoTeachText" placeholder="พิมพ์ตรงนี้ได้เลย..."></textarea></label>'
       + '<label class="kso-field">ใช้กับใคร?<select id="ksoAudience"><option value="all">ทุกคน</option><option value="members">สมาชิกที่ Active</option><option value="private">VIP / SVIP / Black Card</option><option value="internal">ภายใน / ให้ MMD พิจารณา</option></select></label>'
@@ -161,24 +162,26 @@
 
   function saveKnowledgeDraft() {
     if (state.busy) return;
-    var textValue = value("ksoTeachText"), question = value("ksoQuestion"), category = value("ksoCategory") || "general";
+    var textValue = value("ksoTeachText"), question = value("ksoQuestion"), category = value("ksoCategory") || "general", entryTrigger = normalizeEntryTrigger(value("ksoEntryTrigger"));
     if (!textValue) return setStatus("ksoTeachStatus", "ยังไม่ได้พิมพ์สิ่งที่อยากสอน Kenji", true);
-    var sensitive = isSensitiveKnowledge(category, state.teachMode), audience = audienceValues(value("ksoAudience")), title = question || titleForMode(state.teachMode, category);
+    if (entryTrigger && !isValidEntryTrigger(entryTrigger)) return setStatus("ksoTeachStatus", "Trigger จาก Ad / Rich Menu ใช้ข้อความสั้น 2–48 ตัวอักษร และไม่ใส่ลิงก์ครับ", true);
+    var sensitive = isSensitiveKnowledge(category, state.teachMode), audience = audienceValues(value("ksoAudience")), title = question || (entryTrigger ? "Ad Entry · " + entryTrigger : titleForMode(state.teachMode, category));
     var answer = state.teachMode === "guard" ? safeGuardAnswer(category) : textValue;
     var instruction = state.teachMode === "guard" ? textValue : (state.teachMode === "route" ? "Follow this routing guidance when the customer intent matches: " + textValue : "");
+    if (entryTrigger) instruction = (instruction ? instruction + "\n" : "") + "Campaign entry trigger: " + entryTrigger + ". Use only as conversation-entry context. Never widen entitlement, Model visibility, payment truth, or booking authority.";
     var payload = {
       title: title, category: category, language: "th", customer_answer: answer, internal_instruction: instruction,
       allowed_channels: ["LINE_OFC", "Webflow", "SIGIL Board", "Admin Console"], allowed_audience: audience,
       response_mode: sensitive || state.teachMode === "guard" ? "handoff_required" : "auto_reply_allowed",
-      risk_level: sensitive ? "critical" : "medium", source_path: "/internal/admin/kenji", source_ref: "single-owner-friendly-v4", owner: "Boss Per",
+      risk_level: sensitive ? "critical" : "medium", source_path: "/internal/admin/kenji", source_ref: entryTrigger ? "single-owner-friendly-v4:ad-entry" : "single-owner-friendly-v4", owner: "Boss Per",
       review_note: "Single-owner draft. Pre-publish summary and Worker checks required before Production use.",
-      payload_json: { single_owner: { mode: state.teachMode, sample_question: question || title, operator: "Per", workflow: "teach_summary_publish" } }
+      payload_json: { single_owner: { mode: state.teachMode, sample_question: question || title, entry_trigger: entryTrigger || null, entry_source: entryTrigger ? "line_ad_or_rich_menu" : null, operator: "Per", workflow: "teach_summary_publish" } }
     };
     state.busy = true; disable("[data-kso-save]", true); setStatus("ksoTeachStatus", "กำลังเก็บไว้ก่อน…");
     request(API + "/draft", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) })
       .then(function (data) {
         state.pendingKnowledge = data.card || payload;
-        state.pendingKnowledgeMeta = { question: question || title, mode: state.teachMode, sensitive: sensitive, audience: audience };
+        state.pendingKnowledgeMeta = { question: question || title, mode: state.teachMode, sensitive: sensitive, audience: audience, entryTrigger: entryTrigger };
         renderKnowledgeSummary(state.pendingKnowledge, payload);
         setStatus("ksoTeachStatus", "เก็บแล้ว ✓ · เช็กสรุปด้านล่างก่อนกดใช้จริง");
         return loadKnowledge();
@@ -192,7 +195,7 @@
     var riskyCopy = unsafeCopyHints(answer), links = extractLinks(answer + " " + instruction), sensitive = state.pendingKnowledgeMeta && state.pendingKnowledgeMeta.sensitive;
     node.hidden = false;
     node.innerHTML = '<div class="kso-summary-head"><div><span class="kso-kicker">สรุปก่อนใช้จริง</span><h3>นี่คือสิ่งที่ Kenji จะได้เรียนรู้</h3><p>เปอร์ตรวจหน้านี้รอบเดียว ระบบจะทำ Review/QA เดิมให้เองตอนกดใช้จริง</p></div><span class="kso-badge">ยังไม่ Live</span></div>'
-      + '<div class="kso-summary-grid">'+box("เรื่อง", card.title || payload.title || id)+box("หมวด", card.category || payload.category || "general")+box("Kenji จะตอบลูกค้า", answer, true)+(instruction ? box("คำสั่งภายใน / Guard", instruction, true) : "")+box("ใช้กับ", (state.pendingKnowledgeMeta && state.pendingKnowledgeMeta.audience || payload.allowed_audience || []).join(" · "), true)+(links.length ? box("ลิงก์ / Route ที่พบ", links.join("\n"), true) : "")+'</div>'
+      + '<div class="kso-summary-grid">'+box("เรื่อง", card.title || payload.title || id)+box("หมวด", card.category || payload.category || "general")+(state.pendingKnowledgeMeta && state.pendingKnowledgeMeta.entryTrigger ? box("Ad / LINE Trigger", state.pendingKnowledgeMeta.entryTrigger) : "")+box("Kenji จะตอบลูกค้า", answer, true)+(instruction ? box("คำสั่งภายใน / Guard", instruction, true) : "")+box("ใช้กับ", (state.pendingKnowledgeMeta && state.pendingKnowledgeMeta.audience || payload.allowed_audience || []).join(" · "), true)+(links.length ? box("ลิงก์ / Route ที่พบ", links.join("\n"), true) : "")+'</div>'
       + '<div class="kso-checks">'+check(true, "มีคำตอบและขอบเขตผู้ใช้ครบ")+check(!riskyCopy.length, riskyCopy.length ? "พบคำที่ Worker จะตรวจเพิ่ม: " + riskyCopy.join(", ") : "ไม่พบคำยืนยันเงิน/สิทธิ์แบบชัดเจนใน preview", riskyCopy.length ? "warn" : "")+check(true, "Worker จะตรวจ policy path, privacy, version conflict และ audit อีกครั้งตอนใช้จริง")+(sensitive ? check(false, "เนื้อหานี้แตะ Payment / Membership / Model / Policy จึงต้องติ๊กยืนยันเพิ่มในสรุปเดียว", "warn") : "")+'</div>'
       + '<div class="kso-confirm"><label><input type="checkbox" id="ksoOwnerConfirm"> ฉันอ่านสรุปนี้แล้ว และต้องการให้ Kenji ใช้ความรู้นี้จริง</label>'+(sensitive ? '<label><input type="checkbox" id="ksoSensitiveConfirm"> ฉันตรวจแล้วว่าเรื่องเงิน / สิทธิ์ / access / Model ยังให้ backend authority เป็นผู้ยืนยัน และข้อความนี้ไม่ได้ข้าม gate</label>' : "")+'</div>'
       + '<div class="kso-actions"><button class="is-primary" type="button" data-kso-publish-knowledge data-id="'+attr(id)+'">ใช้จริง</button><button type="button" data-kso-edit>กลับไปแก้ข้อความด้านบน</button></div><div class="kso-status" id="ksoPublishStatus"></div>';
@@ -290,7 +293,7 @@
   function loadKnowledge() { return request(API + "/list?limit=100").then(function (data) { state.cards = data.cards || data.items || []; renderCounts(); var input = root.querySelector("#ksoPreviewInput"); if (input && input.value.trim()) renderPreview(input.value); }).catch(function () { state.cards = []; renderCounts(); }); }
   function renderCounts() { var draft = 0, live = 0; state.cards.forEach(function (card) { if (knowledgeStage(card) === "published") live += 1; else draft += 1; }); setText("ksoDraftCount", String(draft)); setText("ksoLiveCount", String(live)); }
   function renderPreview(query) { var node = root.querySelector("#ksoPreviewResults"); if (!node) return; var q = String(query || "").trim().toLowerCase(); if (!q) { node.innerHTML = '<div class="ka__empty">พิมพ์คำถามเพื่อค้น Knowledge</div>'; return; } var items = state.cards.map(function (card) { return { card: card, score: score(card, q) }; }).filter(function (item) { return item.score > 0; }).sort(function (a,b) { return b.score-a.score; }).slice(0,6); node.innerHTML = items.length ? items.map(function (item) { var card=item.card,id=card.knowledge_id||card.id||""; return '<article class="kso-result"><b>'+esc(card.title||id)+'</b><span>'+esc(card.category||"knowledge")+' · '+esc(knowledgeStage(card))+'</span><p>'+esc(card.customer_answer||card.answer||"ยังไม่มี customer answer")+'</p><button type="button" data-kso-open-knowledge="'+attr(id)+'">เปิดดูรายละเอียด</button></article>'; }).join("") : '<div class="ka__empty">ยังไม่พบ Knowledge ที่ใกล้เคียง · สอนได้เลย</div>'; }
-  function score(card,q) { var hay=[card.title,card.knowledge_id,card.id,card.customer_answer,card.answer,card.internal_instruction,card.category].join(" ").toLowerCase(),tokens=q.split(/\s+/).filter(Boolean),result=hay.includes(q)?8:0; tokens.forEach(function (token) { if (hay.includes(token)) result += token.length>3?3:1; }); return result; }
+  function score(card,q) { var hay=[card.title,card.knowledge_id,card.id,card.customer_answer,card.answer,card.internal_instruction,card.category,JSON.stringify(card.payload_json||{})].join(" ").toLowerCase(),tokens=q.split(/\s+/).filter(Boolean),result=hay.includes(q)?8:0; tokens.forEach(function (token) { if (hay.includes(token)) result += token.length>3?3:1; }); return result; }
   function openKnowledge(id) { showTab("knowledge"); setTimeout(function () { var button=root.querySelector('[data-id="'+cssEscape(id)+'"]'); if(button)button.click(); },80); }
 
   function softenExistingUi() {
@@ -305,7 +308,9 @@
   function toggleAdvanced() { var nav=root.querySelector(".ka__nav"),note=root.querySelector(".kso-advanced-note"); if(!nav)return; var on=!nav.classList.contains("kso-show-advanced"); nav.classList.toggle("kso-show-advanced",on); if(note)note.classList.toggle("is-on",on); }
   function showTab(name) { var button=root.querySelector('.ka__nav [data-tab="'+cssEscape(name)+'"]'); if(button)button.click(); setTimeout(softenExistingUi,20); }
   function scrollToId(id) { setTimeout(function () { var node=document.getElementById(id); if(node)node.scrollIntoView({behavior:"smooth",block:"start"}); },40); }
-  function clearTeach() { ["ksoQuestion","ksoTeachText"].forEach(function(id){var node=document.getElementById(id);if(node)node.value="";}); var summary=root.querySelector("#ksoKnowledgeSummary"); if(summary){summary.hidden=true;summary.innerHTML="";} state.pendingKnowledge=null;state.pendingKnowledgeMeta=null;setStatus("ksoTeachStatus",""); }
+  function clearTeach() { ["ksoEntryTrigger","ksoQuestion","ksoTeachText"].forEach(function(id){var node=document.getElementById(id);if(node)node.value="";}); var summary=root.querySelector("#ksoKnowledgeSummary"); if(summary){summary.hidden=true;summary.innerHTML="";} state.pendingKnowledge=null;state.pendingKnowledgeMeta=null;setStatus("ksoTeachStatus",""); }
+  function normalizeEntryTrigger(valueText) { return String(valueText||"").normalize("NFKC").replace(/\s+/g," ").trim().slice(0,48); }
+  function isValidEntryTrigger(valueText) { var v=normalizeEntryTrigger(valueText); return !v || (v.length>=2 && v.length<=48 && !/[<>]/.test(v) && !/^https?:\/\//i.test(v)); }
   function titleForMode(mode,category) { var prefix=mode==="guard"?"Guard":mode==="route"?"Routing":"Knowledge"; return prefix+" · "+category+" · "+new Date().toLocaleDateString("th-TH"); }
   function safeGuardAnswer(category) { if(category==="payment")return "เรื่องการชำระเงิน ผมพาไปให้ MMD ตรวจจากข้อมูลจริงก่อนนะครับ"; if(category==="membership")return "เรื่องสิทธิ์สมาชิก ผมช่วยพาไปดูขั้นตอนที่ถูกต้องได้ครับ และให้ MMD ตรวจสถานะจริงก่อนยืนยัน"; if(category==="model")return "เรื่อง Model ผมช่วยรับ brief และพาไปขั้นตอนที่เหมาะสมก่อนครับ รายละเอียดที่เปิดเผยได้ขึ้นกับสิทธิ์และการตรวจจาก MMD"; return "เรื่องนี้ผมขอพาไปให้ MMD ตรวจตามข้อมูลจริงก่อนนะครับ"; }
   function isSensitiveKnowledge(category,mode) { return mode==="guard"||["payment","membership","model","admin_policy"].includes(category); }
