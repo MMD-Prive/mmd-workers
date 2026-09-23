@@ -65,7 +65,7 @@ export default {
         }
         const dashboard = await buildAdminDashboard(env);
         const actionKey = url.searchParams.get("action_key");
-        if (actionKey) {
+        if (actionKey !== null) {
           const detail = buildOwnerActionDetail(dashboard.owner_actions_source, actionKey);
           if (!detail) return withCors(json({ ok: false, error: "owner_action_not_found" }, 404), cors);
           return withCors(json(detail), cors);
