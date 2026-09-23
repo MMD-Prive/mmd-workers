@@ -1,9 +1,7 @@
 # This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
 
-
 name: Node.js CI
-
 
 on:
   push:
@@ -11,19 +9,16 @@ on:
   pull_request:
     branches: [ "main" ]
 
-
 jobs:
   build:
 
-
     runs-on: ubuntu-latest
-
 
     strategy:
       matrix:
+        # Node 18 is EOL and cannot run the repository's Node 20+ module checks.
         node-version: [20.x, 22.x]
         # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
-
 
     steps:
     - uses: actions/checkout@v4
@@ -40,3 +35,15 @@ jobs:
     - if: matrix.node-version == '22.x'
       run: npm run test:member-pages-runtime
     - if: matrix.node-version == '22.x'
+      run: npm run check:member-pages-wrangler
+    - if: matrix.node-version == '22.x'
+      run: npm ci --prefix sigil-worker --ignore-scripts
+    - if: matrix.node-version == '22.x'
+      run: npm test --prefix sigil-worker
+    - if: matrix.node-version == '22.x'
+      working-directory: sigil-worker
+      run: npx wrangler deploy --dry-run
+    - if: matrix.node-version != '18.x'
+      run: npm ci --prefix services/mmd-slip-extractor
+    - if: matrix.node-version != '18.x'
+      run: npm test --prefix services/mmd-slip-extractor
