@@ -62,3 +62,86 @@ test("model availability reminder uses the Model LINE token on the events owner 
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("model availability preflight proves Model LINE recipient reachability without sending", async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    calls.push({ url: url.toString(), init });
+    if (url.hostname === "api.line.me" && url.pathname.startsWith("/v2/bot/profile/")) {
+      return Response.json({ displayName: "redacted-by-contract" }, { status: 200 });
+    }
+    throw new Error("unexpected request");
+  };
+  try {
+    const response = await worker.fetch(new Request(
+      "https://events-worker.internal/__internal/model/availability-reminder/preflight",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-token": "admin-events-secret",
+        },
+        body: JSON.stringify({
+          line_user_id: "U0123456789abcdef0123456789abcdef",
+        }),
+      },
+    ), {
+      AUTH_SERVICE_ADMIN_TO_EVENTS: "admin-events-secret",
+      MODEL_LINE_CHANNEL_ACCESS_TOKEN: "model-line-secret",
+    }, {});
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      ok: true,
+      ready: true,
+      state: "ready",
+      token_mode: "model",
+      transport: "events-worker-model-line",
+      recipient_reachable: true,
+      provider_status: 200,
+      message_sent: false,
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.method, "GET");
+    assert.match(calls[0].url, /\/v2\/bot\/profile\/U0123456789abcdef0123456789abcdef$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("model availability preflight reports missing transport without any LINE call", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; throw new Error("LINE must not be called"); };
+  try {
+    const response = await worker.fetch(new Request(
+      "https://events-worker.internal/__internal/model/availability-reminder/preflight",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-token": "admin-events-secret",
+        },
+        body: JSON.stringify({
+          line_user_id: "U0123456789abcdef0123456789abcdef",
+        }),
+      },
+    ), {
+      AUTH_SERVICE_ADMIN_TO_EVENTS: "admin-events-secret",
+    }, {});
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ok, true);
+    assert.equal(payload.ready, false);
+    assert.equal(payload.state, "model_line_transport_not_ready");
+    assert.equal(payload.message_sent, false);
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
