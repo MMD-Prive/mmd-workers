@@ -8,6 +8,7 @@ import {
   MODEL_DRIVE_PHOTO_PATH,
   collapseDescendantsOfUniqueExactModelMatch,
   driveSearchToken,
+  findExactModelImage,
   isModelDriveDirectoryRequest,
   modelNameScore,
   resolveApprovedModelFolder,
@@ -34,6 +35,45 @@ test("model Drive directory only recognizes internal model-directory paths", () 
   assert.equal(
     isModelDriveDirectoryRequest(new Request("https://mmdbkk.com/__internal/model-drive/search?q=Book")),
     false,
+  );
+});
+
+test("exact approved Drive photo lookup selects only the requested filename and fails closed on duplicates", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const rootId = "1ApprovedModelRoot12345";
+  const childId = "1ApprovedChildFolder123";
+  let duplicate = false;
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname !== "/drive/v3/files") throw new Error("unexpected fetch");
+    const query = url.searchParams.get("q") || "";
+    if (query.includes(rootId)) {
+      return Response.json({ files: [
+        { id:"file-near", name:"approved-photo-copy.jpg", mimeType:"image/jpeg", parents:[rootId], trashed:false },
+        { id:childId, name:"Media", mimeType:"application/vnd.google-apps.folder", parents:[rootId], trashed:false },
+      ] });
+    }
+    if (query.includes(childId)) {
+      const files = [
+        { id:"file-exact", name:"approved-photo.jpg", mimeType:"image/jpeg", parents:[childId], trashed:false },
+      ];
+      if (duplicate) files.push({ id:"file-exact-2", name:"approved-photo.jpg", mimeType:"image/jpeg", parents:[childId], trashed:false });
+      return Response.json({ files });
+    }
+    return Response.json({ files: [] });
+  };
+
+  const exact = await findExactModelImage("token", rootId, "approved-photo.jpg");
+  assert.equal(exact?.id, "file-exact");
+  assert.equal(await findExactModelImage("token", rootId, "missing.jpg"), null);
+
+  duplicate = true;
+  await assert.rejects(
+    findExactModelImage("token", rootId, "approved-photo.jpg"),
+    /drive_model_photo_exact_ambiguous/,
   );
 });
 
