@@ -45,8 +45,24 @@ const DETAIL_COPY = Object.freeze({
     reason: "MMS มีใบสมัครที่รอการตรวจ",
     decision_boundary: "เปิด MMS เพื่อตรวจใบสมัครใน authority ของ MMS เท่านั้น",
   },
+  hype_entitlement_notification_overdue: {
+    reason: "Entitlement ถูก materialize แล้ว แต่ notification ยังไม่จบและเลย SLA",
+    decision_boundary: "เปิด Member Intelligence เพื่อตรวจ entitlement/notification state จาก resolver เท่านั้น; HYPE ไม่เปลี่ยนสิทธิ์หรือส่งแทน",
+  },
+  hype_recovery_unassigned_overdue: {
+    reason: "Recovery case เลย SLA และยังไม่มี operator รับดู",
+    decision_boundary: "เปิด Recovery queue เพื่อรับหรือจัดการเคสตาม workflow metadata เท่านั้น; การ assign ไม่ได้เปลี่ยน business truth",
+  },
+  hype_coupon_manual_review_overdue: {
+    reason: "Coupon claim อยู่ manual_review และเลย SLA",
+    decision_boundary: "เปิด Member Intelligence เพื่อตรวจ CARE BACK claim ตาม care_back_claim_policy เท่านั้น",
+  },
+  hype_telegram_bind_overdue: {
+    reason: "Telegram identity bind ยังไม่ consume และหมดเวลาตาม SLA",
+    decision_boundary: "เปิด Control Room เพื่อดู identity bind authority; ห้ามเดาตัวตนหรือสร้าง binding ใหม่อัตโนมัติ",
+  },
   hype_operational_watch: {
-    reason: "HYPE พบ operational watch ที่ต้องย้อนดู authority ต้นทาง",
+    reason: "HYPE พบ overdue exception ชนิดใหม่ที่ยังไม่มี cohort contract เฉพาะ",
     decision_boundary: "HYPE เป็น coordinator เท่านั้น; เปิด Control Room เพื่อหา authority ต้นทางก่อนตัดสินใจ",
   },
   owner_exception: {
