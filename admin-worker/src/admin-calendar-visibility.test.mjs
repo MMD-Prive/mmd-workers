@@ -66,7 +66,7 @@ test('wrong event type and unavailable webhook remain unverified',async()=>{
   const result=await inspectCalendarConnection({CAL_API_KEY:'test-cal'},async(url)=>url.includes('api.cal.com')?dataResponse({status:'success',data:{id:123}}):new Response('{}',{status:503}));
   assert.equal(result.outbound.api_verified,false);assert.equal(result.inbound.reachable,false);assert.equal(result.inbound.mapping_ledger_configured,false);
 });
-for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-cohort/start','/v1/admin/calendar/availability-reminder','/v1/admin/calendar/availability-activation'])test('production entrypoint rejects unauthenticated '+path,async()=>{
+for(const path of ['/internal/admin/calendar','/internal/admin/calendar/','/v1/admin/calendar?date=2026-09-17','/v1/admin/calendar/?date=2026-09-17','/v1/admin/calendar/reconcile','/v1/admin/calendar/model-photo?model_id=recModel000000001','/v1/admin/calendar/therapist-photo?therapist_id=mmst_test_1234','/v1/admin/calendar/availability-cohort/start','/v1/admin/calendar/availability-reminder','/v1/admin/calendar/availability-reminder/preflight','/v1/admin/calendar/availability-activation'])test('production entrypoint rejects unauthenticated '+path,async()=>{
   await withFetch(()=>{throw Error('unauthenticated network read');},async()=>{
     const r=await entry.fetch(new Request(origin+path),env,{});
     assert.equal(r.status,path.startsWith('/internal')?302:401);
