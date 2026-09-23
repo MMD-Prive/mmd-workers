@@ -85,6 +85,17 @@ const PAYOUT_FIELDS = Object.freeze({
 });
 
 const LIFF_PORTAL_PATH = "/shop/api/supplier/liff-portal";
+const LIFF_BIND_PATH = "/shop/api/supplier/liff-bind";
+const SUPPLIER_FIELDS = Object.freeze({
+  name: "fldePq8Fmqq50CkPj",
+  lineUserId: "fld1dqO4nWB3Pf6uT",
+  lineName: "fldZgOx3v1FJ4k9WM",
+  lineStatus: "fldZyHoik9SAUcbY6",
+  lastLinkedAt: "fldD3yQmWorCKKz4H",
+  status: "fld0BL7nG45ueEMKQ",
+  inviteToken: "fld1RFwNRfArWb3cS",
+  inviteExpiresAt: "flddW10scozb72r2T",
+});
 
 export async function handleSupplierPortal(request, env) {
   const url = new URL(request.url);
@@ -92,7 +103,7 @@ export async function handleSupplierPortal(request, env) {
   const pathname = url.pathname;
   const supplierPortalPath = pathname === "/shop/api/supplier/portal" || pathname === "/shop/api/distributor/portal";
 
-  if (method === "OPTIONS" && (supplierPortalPath || pathname === LIFF_PORTAL_PATH)) {
+  if (method === "OPTIONS" && (supplierPortalPath || pathname === LIFF_PORTAL_PATH || pathname === LIFF_BIND_PATH)) {
     return new Response(null, { status: 204, headers: corsHeaders() });
   }
 
@@ -102,6 +113,10 @@ export async function handleSupplierPortal(request, env) {
 
   if (method === "POST" && pathname === LIFF_PORTAL_PATH) {
     return getSupplierLiffPortal(request, env);
+  }
+
+  if (method === "POST" && pathname === LIFF_BIND_PATH) {
+    return bindSupplierLiff(request, env);
   }
 
   return null;
@@ -135,7 +150,8 @@ async function getSupplierLiffPortal(request, env) {
     return json({ ok: false, error: "line_profile_failed" }, 401);
   }
 
-  const supplierAccess = resolveSupplierAccessByLineUserId(env, lineProfile.userId);
+  const supplierAccess = await resolveSupplierAccessByLineBinding(env, lineProfile.userId)
+    || resolveSupplierAccessByLineUserId(env, lineProfile.userId);
   if (!supplierAccess) {
     return json({ ok: false, error: "supplier_line_not_authorized" }, 403);
   }
@@ -150,7 +166,86 @@ async function loadLineProfile(accessToken) {
   const data = await response.json().catch(() => ({}));
   const userId = cleanText(data?.userId, 255);
   if (!response.ok || !userId) throw new Error("line_profile_failed");
-  return { userId };
+  return { userId, displayName: cleanText(data?.displayName, 255) };
+}
+
+async function bindSupplierLiff(request, env) {
+  const body = await request.json().catch(() => null);
+  const accessToken = cleanText(body?.access_token || body?.accessToken, 4096);
+  const inviteToken = cleanText(body?.invite_token || body?.inviteToken, 512);
+  if (!accessToken) return json({ ok: false, error: "line_access_token_required" }, 401);
+  if (!inviteToken) return json({ ok: false, error: "supplier_invite_required" }, 400);
+
+  let lineProfile;
+  try {
+    lineProfile = await loadLineProfile(accessToken);
+  } catch (_) {
+    return json({ ok: false, error: "line_profile_failed" }, 401);
+  }
+
+  const records = await airtableListByFieldIds(
+    env,
+    env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x",
+    Object.values(SUPPLIER_FIELDS),
+  );
+  const now = Date.now();
+  const matches = records.filter((record) => {
+    const fields = record.fields || {};
+    if (cleanText(fields[SUPPLIER_FIELDS.inviteToken], 512) !== inviteToken) return false;
+    if (selectName(fields[SUPPLIER_FIELDS.status]).toLowerCase() !== "active") return false;
+    const expiresAt = Date.parse(cleanText(fields[SUPPLIER_FIELDS.inviteExpiresAt], 120));
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  });
+
+  if (matches.length !== 1) return json({ ok: false, error: "supplier_invite_invalid_or_expired" }, 403);
+
+  const record = matches[0];
+  const existingLineUserId = cleanText(record.fields?.[SUPPLIER_FIELDS.lineUserId], 255);
+  if (existingLineUserId && existingLineUserId !== lineProfile.userId) {
+    return json({ ok: false, error: "supplier_already_bound" }, 409);
+  }
+
+  await airtablePatchRecordByFieldIds(env, env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x", record.id, {
+    [SUPPLIER_FIELDS.lineUserId]: lineProfile.userId,
+    [SUPPLIER_FIELDS.lineName]: lineProfile.displayName || "",
+    [SUPPLIER_FIELDS.lineStatus]: "Connected",
+    [SUPPLIER_FIELDS.lastLinkedAt]: new Date().toISOString(),
+    [SUPPLIER_FIELDS.inviteToken]: "",
+    [SUPPLIER_FIELDS.inviteExpiresAt]: null,
+  });
+
+  return json({
+    ok: true,
+    bound: true,
+    supplier: {
+      id: record.id,
+      name: cleanText(record.fields?.[SUPPLIER_FIELDS.name], 255) || "Supplier",
+    },
+  });
+}
+
+async function resolveSupplierAccessByLineBinding(env, lineUserId) {
+  const target = cleanText(lineUserId, 255);
+  if (!target) return null;
+  const records = await airtableListByFieldIds(
+    env,
+    env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x",
+    [SUPPLIER_FIELDS.name, SUPPLIER_FIELDS.lineUserId, SUPPLIER_FIELDS.lineStatus, SUPPLIER_FIELDS.status],
+  );
+  const matches = records.filter((record) => {
+    const fields = record.fields || {};
+    return cleanText(fields[SUPPLIER_FIELDS.lineUserId], 255) === target
+      && selectName(fields[SUPPLIER_FIELDS.lineStatus]).toLowerCase() === "connected"
+      && selectName(fields[SUPPLIER_FIELDS.status]).toLowerCase() === "active";
+  });
+  if (matches.length !== 1) return null;
+  const record = matches[0];
+  return normalizeAccessItem("line-binding", {
+    supplier_name: cleanText(record.fields?.[SUPPLIER_FIELDS.name], 255) || "Supplier",
+    supplier_ids: [record.id],
+    role: "Supplier",
+    token_label: "line-binding",
+  });
 }
 
 async function buildSupplierPortalPayload(env, supplierAccess) {
@@ -376,6 +471,22 @@ async function loadSupplierFinance(env, visibleSupplierIds) {
     ledger,
     payouts
   };
+}
+
+async function airtablePatchRecordByFieldIds(env, tableId, recordId, fields) {
+  const token = env.AIRTABLE_TOKEN || env.AIRTABLE_API_KEY;
+  if (!token) throw new Error("Airtable token is not configured");
+  const response = await fetch(`https://api.airtable.com/v0/${env.AIRTABLE_BASE_ID}/${tableId}/${recordId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({ fields, typecast: true }),
+  });
+  if (!response.ok) throw new Error(`Airtable error: ${response.status}`);
+  return response.json();
 }
 
 async function airtableListByFieldIds(env, tableId, fieldIds) {
