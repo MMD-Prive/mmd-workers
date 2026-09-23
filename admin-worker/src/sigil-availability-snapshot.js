@@ -8,10 +8,13 @@ import { safeModelKey } from "../../shared/kenji-recommendation-contract-v1.mjs"
 export const SIGIL_AVAILABILITY_INTERNAL_PATH = "/v1/internal/sigil/availability-snapshot";
 export const SIGIL_AVAILABILITY_ADOPTION_REMIND_PATH = "/v1/internal/sigil/availability-adoption/remind";
 export const SIGIL_AVAILABILITY_ADOPTION_ACTIVATION_ISSUED_PATH = "/v1/internal/sigil/availability-adoption/activation-issued";
+export const SIGIL_AVAILABILITY_ADOPTION_COHORT_CURRENT_KEY = "availability-adoption:v1:cohort:current";
+const SIGIL_AVAILABILITY_ADOPTION_COHORT_RECEIPT_PREFIX = "availability-adoption:v1:cohort:receipt:";
 const SIGIL_AVAILABILITY_ADOPTION_REMINDER_PREFIX = "availability-adoption:v1:reminder:";
 const SIGIL_AVAILABILITY_ADOPTION_RECOVERY_PREFIX = "availability-adoption:v1:recovery:";
 const SIGIL_AVAILABILITY_ADOPTION_REMINDER_TTL_SECONDS = 24 * 60 * 60;
 const SIGIL_AVAILABILITY_ADOPTION_RECOVERY_TTL_SECONDS = 90 * 24 * 60 * 60;
+const SIGIL_AVAILABILITY_ADOPTION_COHORT_TTL_SECONDS = 180 * 24 * 60 * 60;
 const MODELS_TABLE_ID = "tblI4B0bI446vp9GX";
 const MODEL_BLOCKED_STATES = new Set(["inactive", "blocked", "suspended", "paused", "archived", "retired"]);
 const LINE_USER_ID_RE = /^U[0-9a-f]{32}$/i;
@@ -273,6 +276,100 @@ async function writeAdoptionRecoveryEvidence(env = {}, modelKeyInput = "", patch
     return { ok: true, evidence: next };
   } catch {
     return { ok: false, status: 503, error: "availability_recovery_write_failed" };
+  }
+}
+
+function safeCohortMember(value = {}, index = 0) {
+  if (!value || typeof value !== "object") return null;
+  const modelKey = safeModelKey(value.model_key);
+  if (!modelKey) return null;
+  const recordId = text(value.record_id, 40);
+  const modelId = text(value.model_id, 120);
+  const displayName = text(value.display_name || value.name, 160);
+  const priorityBucket = text(value.priority_bucket, 60);
+  const priorityReason = text(value.priority_reason, 120);
+  const upcomingJobAt = text(value.upcoming_job_at, 100);
+  return {
+    position: Math.max(1, Math.min(5, Number(value.position) || index + 1)),
+    model_key: modelKey,
+    ...(recordId && /^rec[A-Za-z0-9]{14,24}$/.test(recordId) ? { record_id: recordId } : {}),
+    ...(modelId ? { model_id: modelId } : {}),
+    ...(displayName ? { display_name: displayName } : {}),
+    ...(priorityBucket ? { priority_bucket: priorityBucket } : {}),
+    ...(priorityReason ? { priority_reason: priorityReason } : {}),
+    ...(upcomingJobAt ? { upcoming_job_at: upcomingJobAt } : {}),
+    partner_job: value.partner_job === true,
+    duplicate_records_collapsed: Math.max(0, Math.trunc(Number(value.duplicate_records_collapsed) || 0)),
+  };
+}
+
+export function safeAvailabilityAdoptionCohortReceipt(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  const startedAt = text(value.started_at, 100);
+  const cohortId = text(value.cohort_id, 120);
+  const cohortNumber = Math.max(1, Math.trunc(Number(value.cohort_number) || 1));
+  const members = (Array.isArray(value.members) ? value.members : [])
+    .map((member, index) => safeCohortMember(member, index))
+    .filter(Boolean)
+    .slice(0, 5);
+  if (!cohortId || !startedAt || !members.length) return null;
+  if (new Set(members.map(member => member.model_key)).size !== members.length) return null;
+  return {
+    schema: "mmd.availability_adoption_cohort.v1",
+    cohort_id: cohortId,
+    cohort_number: cohortNumber,
+    started_at: startedAt,
+    started_by_role: "owner",
+    source: "calendar_owner",
+    members,
+  };
+}
+
+export async function readAvailabilityAdoptionCohort(env = {}) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  if (!binding || typeof binding.get !== "function") {
+    return { ok: false, status: 503, error: "availability_snapshot_storage_unavailable", receipt: null };
+  }
+  try {
+    const raw = await binding.get(SIGIL_AVAILABILITY_ADOPTION_COHORT_CURRENT_KEY, "json");
+    return { ok: true, status: 200, receipt: safeAvailabilityAdoptionCohortReceipt(raw) };
+  } catch {
+    return { ok: false, status: 503, error: "availability_cohort_read_failed", receipt: null };
+  }
+}
+
+export async function startAvailabilityAdoptionCohort(env = {}, input = {}) {
+  const binding = env.SIGIL_AVAILABILITY_SNAPSHOTS;
+  if (!binding || typeof binding.get !== "function" || typeof binding.put !== "function") {
+    return { ok: false, status: 503, error: "availability_snapshot_storage_unavailable" };
+  }
+  const current = await readAvailabilityAdoptionCohort(env);
+  if (!current.ok) return current;
+  if (current.receipt) return { ok: true, status: 200, already_started: true, receipt: current.receipt };
+
+  const members = (Array.isArray(input.members) ? input.members : [])
+    .map((member, index) => safeCohortMember(member, index))
+    .filter(Boolean)
+    .slice(0, 5);
+  if (!members.length || new Set(members.map(member => member.model_key)).size !== members.length) {
+    return { ok: false, status: 400, error: "availability_cohort_members_invalid" };
+  }
+  const cohortNumber = Math.max(1, Math.trunc(Number(input.cohort_number) || 1));
+  const startedAt = new Date().toISOString();
+  const compact = startedAt.replace(/[-:.TZ]/g, "").slice(0, 14);
+  const receipt = safeAvailabilityAdoptionCohortReceipt({
+    cohort_id: `availability_cohort_${cohortNumber}_${compact}`,
+    cohort_number: cohortNumber,
+    started_at: startedAt,
+    members,
+  });
+  if (!receipt) return { ok: false, status: 400, error: "availability_cohort_receipt_invalid" };
+  try {
+    await binding.put(SIGIL_AVAILABILITY_ADOPTION_COHORT_CURRENT_KEY, JSON.stringify(receipt), { expirationTtl: SIGIL_AVAILABILITY_ADOPTION_COHORT_TTL_SECONDS });
+    await binding.put(SIGIL_AVAILABILITY_ADOPTION_COHORT_RECEIPT_PREFIX + receipt.cohort_id, JSON.stringify(receipt), { expirationTtl: SIGIL_AVAILABILITY_ADOPTION_COHORT_TTL_SECONDS });
+    return { ok: true, status: 200, already_started: false, receipt };
+  } catch {
+    return { ok: false, status: 503, error: "availability_cohort_write_failed" };
   }
 }
 
