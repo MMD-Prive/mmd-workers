@@ -163,6 +163,7 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
   const thresholds = normalizeThresholds(options.thresholds);
   const unaged = {};
   const stale = {};
+  const nonActionable = {};
   const items = [];
 
   for (const proof of array(sources.payment_proofs)) {
@@ -194,11 +195,28 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
     const paymentRefPresent = Boolean(firstField(fields, ["payment_ref", "Payment Reference"]));
     const looksMaterialized = !["blocked", "revoked", "suspended", "rejected"].includes(accessState)
       && (accessState === "active" || source === "renewal" || paymentRefPresent);
-    if (!looksMaterialized || !INCOMPLETE_NOTIFICATION_STATES.has(notificationState)) continue;
+    if (!looksMaterialized) continue;
+
     const observedAt = firstText(
       firstField(fields, ["materialized_at", "created_at", "updated_at", "start_at"]),
       record?.createdTime,
     );
+    const ageMinutes = ageMinutesSince(observedAt, nowMs);
+
+    if (notificationState === "pending_invite") {
+      if (withinMaxAge(ageMinutes, thresholds.entitlement_notification.maxAge)) {
+        increment(nonActionable, "entitlement_pending_invite_expected");
+      }
+      continue;
+    }
+    if (notificationState === "removal_due") {
+      if (withinMaxAge(ageMinutes, thresholds.entitlement_notification.maxAge)) {
+        increment(nonActionable, "entitlement_removal_due_expected");
+      }
+      continue;
+    }
+    if (!INCOMPLETE_NOTIFICATION_STATES.has(notificationState) && notificationState !== "removal_failed") continue;
+
     const item = timedItem({
       kind: "entitlement_notification_incomplete",
       observedAt,
@@ -206,7 +224,9 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
       policy: thresholds.entitlement_notification,
       reference: firstText(firstField(fields, ["entitlement_id"]), record?.id),
       label: firstText(firstField(fields, ["target_package_label", "package_code"]), "Membership entitlement"),
-      detail: `Entitlement materialized · notification ${notificationState || "pending"}`,
+      detail: notificationState === "removal_failed"
+        ? "Entitlement Telegram access sync failed"
+        : `Entitlement materialized · notification ${notificationState || "pending"}`,
       href: "/internal/admin/member-intelligence",
       authority: "my_mmd_entitlement_resolver_v1",
     });
@@ -288,15 +308,23 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
     if (normalize(firstField(fields, ["status"])) !== "pending") continue;
     const observedAt = firstText(firstField(fields, ["created_at"]), record?.createdTime);
     const expiresAt = firstText(firstField(fields, ["expires_at"]));
+    const ageMinutes = ageMinutesSince(observedAt, nowMs);
+
+    if (isPast(expiresAt, nowMs)) {
+      if (withinMaxAge(ageMinutes, thresholds.telegram_bind.maxAge)) {
+        increment(stale, "telegram_bind_expired_pending");
+      }
+      continue;
+    }
+
     const item = timedItem({
       kind: "telegram_bind_unconsumed",
       observedAt,
       nowMs,
       policy: thresholds.telegram_bind,
-      explicitOverdue: isPast(expiresAt, nowMs),
       reference: firstText(firstField(fields, ["bind_id"]), record?.id),
       label: `${firstText(firstField(fields, ["role"]), "identity")} Telegram bind`,
-      detail: isPast(expiresAt, nowMs) ? "Bind issued แต่หมดอายุก่อน consume" : "Bind issued และยังไม่ consume",
+      detail: "Bind issued และยังไม่ consume",
       href: "/internal/admin/control-room",
       authority: "telegram_identity_bind_authority",
     });
@@ -341,11 +369,13 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
       unavailable_sources: unavailableSources.length,
       unaged_records: Object.values(unaged).reduce((sum, value) => sum + nonNegative(value), 0),
       stale_terminal_records: Object.values(stale).reduce((sum, value) => sum + nonNegative(value), 0),
+      non_actionable_records: Object.values(nonActionable).reduce((sum, value) => sum + nonNegative(value), 0),
     },
     unavailable_sources: unavailableSources,
     sources: sourceStatus,
     unaged_by_kind: unaged,
     stale_terminal_by_kind: stale,
+    non_actionable_by_kind: nonActionable,
     items: deduped.slice(0, 20),
     summary: summaryText(status, counts, unavailableSources.length),
     operational_only: true,
@@ -383,6 +413,15 @@ function recoveryItems(result) {
     if (!existing || compareItems(item, existing) < 0) byCase.set(caseRef, item);
   }
   return [...byCase.values()];
+}
+
+function ageMinutesSince(value, nowMs) {
+  const observed = validDate(value);
+  return observed ? Math.max(0, Math.floor((nowMs - observed.getTime()) / 60000)) : null;
+}
+
+function withinMaxAge(ageMinutes, maxAge) {
+  return ageMinutes !== null && (!Number.isFinite(maxAge) || ageMinutes <= maxAge);
 }
 
 function timedItem({ kind, observedAt, nowMs, policy, explicitOverdue = false, reference, label, detail, href, authority }) {
