@@ -537,7 +537,7 @@ async function findPointLedgerByPaymentRef(env, paymentRef) {
 /* -------------------------------------------------- */
 const CANONICAL_MEMBERSHIP_PACKAGES = new Set(["mmd_member", "elite", "red_card", "standard", "premium"]);
 
-function reviewedMembershipSchemaTypecast(payload = {}, options = {}) {
+export function reviewedMembershipSchemaTypecast(payload = {}, options = {}) {
   if (options.allow_membership_schema_typecast !== true) return false;
   if (toStr(payload.payment_stage).toLowerCase() !== "membership") return false;
   return CANONICAL_MEMBERSHIP_PACKAGES.has(toStr(payload.package_code).toLowerCase());
