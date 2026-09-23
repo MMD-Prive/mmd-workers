@@ -779,3 +779,8 @@ function json(data, status = 200) {
     }
   });
 }
+
+export const SUPPLIER_PORTAL_INTERNALS = Object.freeze({
+  parseSupplierTokenConfig,
+  resolveSupplierAccessByLineUserId,
+});
