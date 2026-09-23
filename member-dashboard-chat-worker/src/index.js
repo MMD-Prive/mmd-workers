@@ -295,12 +295,16 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
+
 export function extractKenjiModelLookupQuery(text = "") {
   const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!raw || raw.length > 100) return "";
   const withoutPolite = raw.replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "").trim();
   const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
   if (exactCode) return exactCode[1];
+  const campaignEntry = withoutPolite.match(/^([A-Z][A-Z0-9_-]{3,31})$/);
+  if (campaignEntry && !RESERVED_MODEL_ENTRY_TRIGGERS.has(campaignEntry[1])) return campaignEntry[1];
   const explicit = withoutPolite.match(/^(?:model|นายแบบ|รหัส(?:\s*model)?|model\s*code|code|ชื่อ(?:\s*model|\s*นายแบบ)?)\s*[:#-]?\s*(.{2,48})$/i);
   if (!explicit) return "";
   const query = asString(explicit[1]).replace(/^["'“”‘’]+|["'“”‘’?.!]+$/g, "").trim();

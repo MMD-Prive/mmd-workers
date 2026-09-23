@@ -9,6 +9,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const ENTITLEMENT_TABLE_FALLBACK = "MMD — Member Entitlements";
 const ENTITLEMENT_LINE_FIELD_FALLBACK = "line_user_id";
 const MODEL_OFFER_RULES_TABLE_FALLBACK = "MMD — Model Offer Rules";
+const MODEL_KEYWORD_PROFILES_TABLE_FALLBACK = "MMD — Model Keyword Profiles";
 const CANONICAL_PRIVATE_FOLDERS = new Set(["standard", "premium", "vip", "exclusive"]);
 const PRIVATE_CAPABILITIES = new Set(["private_standard", "private_premium", "vip", "svip", "black_card"]);
 const PROTECTED_ENVELOPES = new Set(["vip", "svip", "black_card"]);
@@ -49,6 +50,16 @@ function fieldValue(fields = {}, names = []) {
     if (value) return value;
   }
   return "";
+}
+
+function fieldList(fields = {}, names = [], maxItems = 40) {
+  for (const name of names) {
+    const value = fields?.[name];
+    if (value === undefined || value === null || value === "") continue;
+    const raw = Array.isArray(value) ? value : String(value).split(/[\n,]/);
+    return [...new Set(raw.map((item) => clean(item?.id || item?.name || item, 120)).filter(Boolean))].slice(0, maxItems);
+  }
+  return [];
 }
 
 function formulaString(value) {
@@ -127,6 +138,10 @@ function modelAccessClass(record = {}) {
 
 function canonicalEntitlementTable(env = {}) {
   return clean(env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS || env.AIRTABLE_TABLE_MEMBER_ENTITLEMENTS_ID || ENTITLEMENT_TABLE_FALLBACK);
+}
+
+function keywordProfilesTable(env = {}) {
+  return clean(env.AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES_ID || env.AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES || MODEL_KEYWORD_PROFILES_TABLE_FALLBACK);
 }
 
 function canonicalEntitlementLineField(env = {}) {
@@ -270,7 +285,29 @@ async function resolveExactModel(env, query, fetchImpl) {
   const codeMatches = await queryAcrossFields(env, table, MODEL_CODE_FIELDS, query, fetchImpl, 5);
   if (codeMatches.length) return { status: "resolved", records: codeMatches };
   const nameMatches = await queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5);
-  return { status: nameMatches.length ? "resolved" : "not_found", records: nameMatches };
+  if (nameMatches.length) return { status: "resolved", records: nameMatches };
+
+  // Ad / Rich Menu entries reuse the published Keyword Profile aliases.
+  // Alias matching is exact and only Active profiles participate. The alias
+  // selects a canonical Model record; entitlement/visibility checks still run below.
+  const profiles = await airtableListRecords(env, keywordProfilesTable(env), fetchImpl, 500);
+  const wanted = clean(query, 80).toLowerCase();
+  const matchedProfiles = profiles.filter((record) => {
+    const fields = record?.fields || {};
+    if (token(fieldValue(fields, ["status"])) !== "active") return false;
+    return fieldList(fields, ["search_aliases"], 40).some((alias) => clean(alias, 80).toLowerCase() === wanted);
+  });
+  if (!matchedProfiles.length) return { status: "not_found", records: [] };
+
+  const linkedIds = new Set(matchedProfiles.flatMap((record) => fieldList(record?.fields || {}, ["Model"], 8)));
+  const linkedKeys = new Set(matchedProfiles.map((record) => fieldValue(record?.fields || {}, ["model_key"]).toLowerCase()).filter(Boolean));
+  const canonical = await airtableListRecords(env, table, fetchImpl, 500);
+  const aliasMatches = canonical.filter((record) => {
+    if (linkedIds.has(clean(record?.id, 80))) return true;
+    const key = fieldValue(record?.fields || {}, MODEL_CODE_FIELDS).toLowerCase();
+    return Boolean(key && linkedKeys.has(key));
+  });
+  return { status: aliasMatches.length ? "resolved" : "not_found", records: uniqueRecords(aliasMatches) };
 }
 
 export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}) {
