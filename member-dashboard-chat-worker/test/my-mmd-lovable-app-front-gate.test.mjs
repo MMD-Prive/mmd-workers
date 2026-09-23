@@ -16,24 +16,6 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
     calls.push({
       url: request.url,
       cookie: request.headers.get("cookie"),
-import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { afterEach, test } from "node:test";
-
-import worker from "../src/my-mmd-lovable-app-front-gate.js";
-
-const realFetch = globalThis.fetch;
-
-afterEach(() => {
-  globalThis.fetch = realFetch;
-});
-
-test("canonical /my-mmd proxies the full Lovable app without forwarding member credentials", async () => {
-  const calls = [];
-  globalThis.fetch = async (request) => {
-    calls.push({
-      url: request.url,
-      cookie: request.headers.get("cookie"),
       authorization: request.headers.get("authorization"),
     });
     return new Response(`<!doctype html>
