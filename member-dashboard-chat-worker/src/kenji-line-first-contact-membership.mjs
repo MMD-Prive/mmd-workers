@@ -54,6 +54,8 @@ export async function decideKenjiFirstContactMembership(event = {}, intent = "",
   const readTruth = options.readTruth || resolveKenjiLineLiveTruth;
   const truth = await readTruth({ env, event, intent: "membership_status" }).catch(() => null);
   if (truth?.ok !== true || truth?.identity_status !== "resolved" || truth?.authority !== KENJI_LIVE_TRUTH_AUTHORITY) {
+    const knownClient = Boolean(continuity?.client_record_id || continuity?.matrix?.client_record_id);
+    if (!statusQuestion && !knownClient && ["membership", "membership_signup", "private_membership_signup"].includes(intent)) return base;
     return ownerReview(base, "membership:current_truth_unavailable");
   }
   const member = truth.membership || {};
