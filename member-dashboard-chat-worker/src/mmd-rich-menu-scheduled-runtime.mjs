@@ -234,6 +234,7 @@ async function menuImageCheck(env, richMenuId, spec) {
   let expectedBytes = 0;
   let validSources = 0;
   let sameSize = false;
+  const sourceFingerprints = [];
   // Upload may use the CDN fallback if the primary image host is temporarily unavailable.
   // Accept only a byte-exact match against one of the approved artwork sources.
   for (const url of spec.images) {
@@ -243,16 +244,26 @@ async function menuImageCheck(env, richMenuId, spec) {
     const size = pngSize(expected);
     if (expected.byteLength > MAX_IMAGE_BYTES || !size || size.width < 800 || size.width > 2500 || size.height < 250 || size.width / size.height < 1.45) continue;
     validSources += 1;
+    const expectedHash = await sha256Hex(expected);
+    sourceFingerprints.push({ bytes: expected.byteLength, sha256: expectedHash });
     if (!expectedBytes) expectedBytes = expected.byteLength;
     if (actual.byteLength !== expected.byteLength) continue;
     sameSize = true;
-    if (actualHash === await sha256Hex(expected)) return { match: true, reason: "" };
+    if (actualHash === expectedHash) return {
+      match: true,
+      reason: "",
+      actual_bytes: actual.byteLength,
+      actual_sha256: actualHash,
+      source_fingerprints: sourceFingerprints,
+    };
   }
   return {
     match: false,
     reason: !validSources ? "source_unavailable" : sameSize ? "content_mismatch" : "byte_length_mismatch",
     actual_bytes: actual.byteLength,
+    actual_sha256: actualHash,
     expected_bytes: expectedBytes,
+    source_fingerprints: sourceFingerprints,
   };
 }
 
@@ -285,6 +296,8 @@ export async function auditMmdRichMenus(env, now = new Date()) {
       image_issue: image.reason,
       image_actual_bytes: image.actual_bytes || 0,
       image_expected_bytes: image.expected_bytes || 0,
+      image_actual_sha256: image.actual_sha256 || "",
+      image_source_fingerprints: image.source_fingerprints || [],
       action_labels: spec.actions.map((action) => action.label),
       action_types: spec.actions.map((action) => action.type),
     };
