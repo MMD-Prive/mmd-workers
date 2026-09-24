@@ -7,6 +7,9 @@ import {
   isModelPwaAssetPath,
   isWishStatusAssetPath,
   isTelegramConnectAssetPath,
+  isModelHistoryAssetPath,
+  isModelPwaManifestPath,
+  modelPwaManifest,
   presentationUrlForPage,
   presentationUrlForAsset,
   rewritePresentationHtml,
@@ -19,6 +22,9 @@ import {
   hasLiffPrimaryBootstrapCookie,
   shouldServeLiffPrimaryBootstrap,
   liffPrimaryBootstrapHtml,
+  isPwaLaunchRequest,
+  shouldServePwaLiffBootstrap,
+  liffPwaBootstrapHtml,
 } from "./src/index.js";
 
 test("matches only Model Dashboard presentation namespace plus explicit runtime aliases", () => {
@@ -41,6 +47,47 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/telegram-connect-v1.js"), true);
   assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/telegram-connect-v1.css"), true);
   assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
+  assert.equal(isModelHistoryAssetPath("/sigil/model/dashboard-assets/model-history-v1.js"), true);
+  assert.equal(isModelHistoryAssetPath("/sigil/model/dashboard-assets/model-history-v1.css"), true);
+  assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/manifest.webmanifest"), true);
+  assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/profile"), false);
+});
+
+test("exposes an installable MMD MODEL standalone PWA manifest", async () => {
+  assert.deepEqual(modelPwaManifest(), {
+    id: "/sigil/model/dashboard",
+    name: "MMD MODEL",
+    short_name: "MMD MODEL",
+    description: "MMD Privé Model Circle",
+    lang: "th",
+    start_url: "/sigil/model/dashboard?launch=pwa",
+    scope: "/sigil/model/dashboard",
+    display: "standalone",
+    background_color: "#090909",
+    theme_color: "#090909",
+    icons: [
+      {
+        src: "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp",
+        sizes: "512x512",
+        type: "image/webp",
+        purpose: "any",
+      },
+    ],
+  });
+
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(
+    new Request("https://mmdbkk.com/sigil/model/dashboard/manifest.webmanifest"),
+  );
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") || "", /application\/manifest\+json/);
+  assert.equal(response.headers.get("x-mmd-dashboard-addon"), "pwa-manifest-v1");
+  assert.deepEqual(await response.json(), modelPwaManifest());
+
+  const blocked = await worker.fetch(
+    new Request("https://mmdbkk.com/sigil/model/dashboard/manifest.webmanifest", { method: "POST" }),
+  );
+  assert.equal(blocked.status, 405);
 });
 
 test("bare MMD MODEL entry keeps the exact published Mini App base URL", () => {
@@ -119,6 +166,35 @@ test("primary bootstrap is bypassed after the short-lived bootstrap cookie", () 
   );
   assert.equal(hasLiffPrimaryBootstrapCookie(request), true);
   assert.equal(shouldServeLiffPrimaryBootstrap(request), false);
+});
+
+test("installed PWA uses external-browser LIFF bootstrap instead of sending its own window to a raw URL", async () => {
+  const request = new Request("https://mmdbkk.com/sigil/model/dashboard?launch=pwa&lang=th");
+  assert.equal(isPwaLaunchRequest(request), true);
+  assert.equal(shouldServePwaLiffBootstrap(request), true);
+  assert.equal(shouldHandoffToMiniApp(request), false);
+
+  const html = liffPwaBootstrapHtml(request);
+  assert.match(html, /withLoginOnExternalBrowser:true/);
+  assert.match(html, /2010864854-N34SgCqq/);
+  assert.doesNotMatch(html, /liff\.login/);
+  assert.doesNotMatch(html, /redirectUri/);
+  assert.doesNotMatch(html, /location\.(?:reload|replace)\s*\(/);
+
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(request);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("x-mmd-model-entry"), "pwa-liff-bootstrap-v1");
+  assert.match(response.headers.get("content-type") || "", /text\/html/);
+});
+
+test("PWA launch becomes the normal dashboard only after the LINE primary bootstrap", () => {
+  const request = new Request(
+    "https://mmdbkk.com/sigil/model/dashboard?launch=pwa",
+    { headers: { cookie: "mmd_liff_boot=1" } },
+  );
+  assert.equal(shouldServePwaLiffBootstrap(request), false);
+  assert.equal(shouldHandoffToMiniApp(request), false);
 });
 
 test("post-primary bootstrap cookie prevents a Mini App redirect loop", () => {
@@ -211,6 +287,9 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   </body></html>`;
   const out = rewritePresentationHtml(html);
   assert.match(out, /data-mmd-ui-source="lovable-model-dashboard"/);
+  assert.match(out, /rel="manifest" href="\/sigil\/model\/dashboard\/manifest\.webmanifest"/);
+  assert.match(out, /apple-mobile-web-app-capable/);
+  assert.match(out, /apple-mobile-web-app-title" content="MMD MODEL"/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/_build\/app\.js/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/favicon\.ico/);
   assert.match(out, /href="\/sigil\/model\/dashboard\/manifest\.webmanifest"/);
@@ -225,6 +304,9 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /telegram-connect-v1\.css/);
   assert.match(out, /telegram-connect-v1\.js/);
   assert.match(out, /data-mmd-telegram-connect-assets="v1"/);
+  assert.match(out, /model-history-v1\.css/);
+  assert.match(out, /model-history-v1\.js/);
+  assert.match(out, /data-mmd-model-history-assets="v1"/);
   assert.doesNotMatch(out, /lovable-badge/);
   assert.doesNotMatch(out, /~flock\.js/);
 });
@@ -272,4 +354,18 @@ test("serves the Model Telegram readiness add-on locally and keeps LINE as autho
   assert.equal(css.status, 200);
   assert.match(css.headers.get("content-type"), /text\/css/);
   assert.match(await css.text(), /#mmd-model-telegram-connect-v1/);
+});
+
+test("serves the MMD MODEL history add-on with no customer-facing or raw-chat content", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const js = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-history-v1.js"));
+  assert.equal(js.status, 200);
+  const source = await js.text();
+  assert.match(source, /\/v1\/model\/history/);
+  assert.match(source, /รายได้จากงานที่ยืนยัน/);
+  assert.match(source, /ไม่มีสลิปแนบ/);
+  assert.doesNotMatch(source, /client_name|location_name|raw_text|customer_reference/);
+  const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-history-v1.css"));
+  assert.equal(css.status, 200);
+  assert.match(await css.text(), /#mmd-model-history-v1/);
 });
