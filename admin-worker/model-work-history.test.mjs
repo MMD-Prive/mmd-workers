@@ -90,6 +90,8 @@ test("canonical job projection does not treat absent payment evidence as unpaid"
 
 test("production routes send both canonical hosts to the work history endpoint", () => {
   const wrangler = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
+  const deployWorkflow = readFileSync(new URL("../.github/workflows/deploy-admin-worker.yml", import.meta.url), "utf8");
   assert.match(wrangler, /pattern = "mmdbkk\.com\/v1\/model\/history"/);
   assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/model\/history"/);
+  assert.match(deployWorkflow, /"\/v1\/model\/history"/);
 });
