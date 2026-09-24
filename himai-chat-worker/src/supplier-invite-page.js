@@ -171,7 +171,7 @@ function escapeAttr(value) {
   return escapeHtml(value);
 }
 
-const STYLES = \`
+const STYLES = `
 :root{--bg:#f7f2e8;--paper:#fffdf8;--ink:#30281f;--muted:#766b60;--line:#ded4c4;--taupe:#9d8d7d;--espresso:#493a30;--shadow:0 16px 40px rgba(61,47,34,.10)}
 *{box-sizing:border-box}
 html{background:var(--bg);-webkit-text-size-adjust:100%}
@@ -194,4 +194,4 @@ h1{margin:0;font:500 clamp(34px,9vw,48px)/1.05 Georgia,Times New Roman,serif;let
 footer{padding:26px 0 4px;color:#9e9081;font-size:10px;letter-spacing:.11em;text-align:center;text-transform:uppercase}
 @media(min-width:700px){.shell{padding-left:24px;padding-right:24px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
-\`;
+`;
