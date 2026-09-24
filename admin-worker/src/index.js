@@ -1654,6 +1654,7 @@ function isAdminRichMenuRoute(path, method) {
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) ||
     (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) ||
+    (method === "POST" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) ||
     (method === "GET" && path === `${ADMIN_RICH_MENU_BASE_PATH}/list`)
@@ -1671,6 +1672,7 @@ function adminRichMenuServicePath(path) {
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/draft`) return "/private-member/draft";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/private-member/validate`) return "/private-member/validate";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare`) return "/three-level/prepare";
+  if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate`) return "/three-level/activate";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`) return "/three-level/audit";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/default`) return "/default";
   if (path === `${ADMIN_RICH_MENU_BASE_PATH}/list`) return "/list";
@@ -1702,6 +1704,7 @@ async function handleAdminRichMenuRoute(req, env, path, method) {
   if (!servicePath) return json({ ok: false, error: "not_found" }, 404);
 
   const currentThreeLevel = path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/prepare` ||
+    path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/activate` ||
     path === `${ADMIN_RICH_MENU_BASE_PATH}/three-level/audit`;
   const internalToken = currentThreeLevel ? str(env.INTERNAL_TOKEN) : "";
   if (currentThreeLevel && !internalToken) {
