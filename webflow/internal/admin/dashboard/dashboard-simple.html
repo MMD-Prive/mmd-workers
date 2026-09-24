@@ -6,7 +6,7 @@
       <div>
         <p class="adm27-route">MMD PRIVÉ · หน้าหลัก</p>
         <h1>วันนี้ของ MMD</h1>
-        <p class="adm27-sub">ดูสิ่งที่ต้องทำ แล้วเปิดงานต่อได้เลย</p>
+        <p class="adm27-sub">เริ่มจากเรื่องที่ต้องตัดสินใจ แล้วตามงานวันนี้</p>
       </div>
       <div class="adm27-topright">
         <span class="adm27-state" data-api-state="">กำลังโหลด</span>
@@ -30,20 +30,13 @@
         
       </section>
 
-      <nav class="adm27-daily" aria-label="งานที่ใช้บ่อย"><a href="/internal/admin/customer-data">ค้นลูกค้า</a><a href="/internal/ceo/payment-slip-inbox">รับสลิป</a><a href="/internal/admin/payments">ตรวจรับเงิน</a><a href="/internal/admin/calendar">ปฏิทิน</a></nav><section class="adm27-summary" aria-label="Operational summary">
-        <article><span>ต้องดูตอนนี้</span><strong data-count="urgent">—</strong><small>priority items</small></article>
-        <article><span>รอตรวจเงิน</span><strong data-count="payments">—</strong><small>payment review</small></article>
-        <article><span>งานวันนี้</span><strong data-count="jobs">—</strong><small>active jobs</small></article>
-        <article><span>ลูกค้า / สมาชิก</span><strong data-count="members">—</strong><small>review needed</small></article>
-      </section>
-
       <section class="adm27-workgrid">
         <article class="adm27-card">
-          <div class="adm27-cardtop"><div><span class="adm27-kicker">PRIORITY QUEUE</span><h2>ต้องทำต่อ</h2></div><span class="adm27-chip is-wait" data-todo-state="">กำลังโหลด</span></div>
+          <div class="adm27-cardtop"><div><span class="adm27-kicker">PRIORITY QUEUE</span><h2>ต้องให้เปอร์จัดการ</h2></div><span class="adm27-chip is-wait" data-todo-state="">กำลังโหลด</span></div>
           <div class="adm27-list" data-todo-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
         </article>
         <article class="adm27-card">
-          <div class="adm27-cardtop"><div><span class="adm27-kicker">TODAY</span><h2>งานวันนี้</h2></div><a class="adm27-link" href="/internal/admin/jobs/all">ดูงานทั้งหมด →</a></div>
+          <div class="adm27-cardtop"><div><span class="adm27-kicker">TODAY</span><h2>งานวันนี้และงานถัดไป</h2></div><a class="adm27-link" href="/internal/admin/jobs/all">ดูงานทั้งหมด →</a></div>
           <div class="adm27-list" data-job-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
         </article>
       </section>
@@ -57,6 +50,13 @@
       
 
       
+      <nav class="adm27-daily" aria-label="งานที่ใช้บ่อย"><a href="/internal/admin/customer-data">ค้นลูกค้า</a><a href="/internal/ceo/payment-slip-inbox">รับสลิป</a><a href="/internal/admin/payments">ตรวจรับเงิน</a><a href="/internal/admin/calendar">ปฏิทิน</a></nav><section class="adm27-summary" aria-label="Operational summary">
+        <article><span>ต้องดูตอนนี้</span><strong data-count="urgent">—</strong><small>รายการรอดำเนินการ</small></article>
+        <article><span>รอตรวจเงิน</span><strong data-count="payments">—</strong><small>รายการรอตรวจ</small></article>
+        <article><span>งานวันนี้</span><strong data-count="jobs">—</strong><small>งานที่ต้องติดตาม</small></article>
+        <article><span>ลูกค้า / สมาชิก</span><strong data-count="members">—</strong><small>รายการต้องตรวจ</small></article>
+      </section>
+
     <details class="adm27-disclosure adm27-watch-more"><summary>ตรวจเงิน ลูกค้า และเรื่องที่รอตัดสินใจ</summary><section class="adm27-workgrid">
         <article class="adm27-card">
           <div class="adm27-cardtop"><div><span class="adm27-kicker">MONEY WATCH</span><h2>รอตรวจเงิน</h2></div><a class="adm27-link" href="/internal/admin/payments">Payments ↗</a></div>
