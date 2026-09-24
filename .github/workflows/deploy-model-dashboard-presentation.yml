@@ -187,6 +187,18 @@ jobs:
         run: |
           set -euo pipefail
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            pwa_headers="$(mktemp)"
+            pwa_body="$(mktemp)"
+            pwa_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$pwa_headers" -o "$pwa_body" -w "%{http_code}" \
+              "$origin/sigil/model/dashboard?launch=pwa&mmd_smoke=1")"
+            cat "$pwa_headers"
+            test "$pwa_code" = "200"
+            tr -d '\r' < "$pwa_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$pwa_headers" | grep -i -q '^x-mmd-model-entry:[[:space:]]*pwa-liff-bootstrap-v1$'
+            grep -q 'withLoginOnExternalBrowser:true' "$pwa_body"
+            grep -q '2010864854-N34SgCqq' "$pwa_body"
+
             anon_headers="$(mktemp)"
             anon_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
               -D "$anon_headers" -o /dev/null -w "%{http_code}" \
@@ -251,6 +263,19 @@ jobs:
             grep -q 'telegram_connected' "$tg_js_body"
             tg_css_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$tg_css")"
             test "$tg_css_code" = "200"
+
+            manifest="$origin/sigil/model/dashboard/manifest.webmanifest"
+            manifest_body="$(mktemp)"
+            manifest_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$manifest_body" -w "%{http_code}" "$manifest")"
+            test "$manifest_code" = "200"
+            node --input-type=module - "$manifest_body" <<'NODE'
+            import fs from "node:fs";
+            const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            if (manifest?.display !== "standalone") throw new Error("MMD MODEL PWA must remain standalone");
+            if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD MODEL PWA start URL changed");
+            if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD MODEL PWA scope changed");
+            if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD MODEL PWA icon is required");
+            NODE
 
             asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
             if [ -n "$asset" ]; then

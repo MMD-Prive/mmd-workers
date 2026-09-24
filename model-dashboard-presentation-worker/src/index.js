@@ -20,6 +20,31 @@ const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
 const TELEGRAM_CONNECT_JS_PATH = `${ASSET_PREFIX}telegram-connect-v1.js`;
 const TELEGRAM_CONNECT_CSS_PATH = `${ASSET_PREFIX}telegram-connect-v1.css`;
+const MODEL_PWA_MANIFEST_PATH = `${UI_PREFIX}/manifest.webmanifest`;
+const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp";
+
+export function modelPwaManifest() {
+  return {
+    id: UI_PREFIX,
+    name: "MMD MODEL",
+    short_name: "MMD MODEL",
+    description: "MMD Privé Model Circle",
+    lang: "th",
+    start_url: `${UI_PREFIX}?launch=pwa`,
+    scope: UI_PREFIX,
+    display: "standalone",
+    background_color: "#090909",
+    theme_color: "#090909",
+    icons: [
+      {
+        src: MODEL_PWA_ICON_URL,
+        sizes: "512x512",
+        type: "image/webp",
+        purpose: "any",
+      },
+    ],
+  };
+}
 
 function miniAppPermanentLink(liffId, params = new URLSearchParams()) {
   const base = `https://miniapp.line.me/${liffId}`;
@@ -325,6 +350,10 @@ export function isTelegramConnectAssetPath(pathname = "") {
   return path === TELEGRAM_CONNECT_JS_PATH || path === TELEGRAM_CONNECT_CSS_PATH;
 }
 
+export function isModelPwaManifestPath(pathname = "") {
+  return normalizePath(pathname) === MODEL_PWA_MANIFEST_PATH;
+}
+
 function hasCookie(request, name) {
   const raw = String(request.headers.get("cookie") || "");
   return raw.split(";").some((part) => {
@@ -378,6 +407,21 @@ export function shouldServeLiffPrimaryBootstrap(request) {
   const url = new URL(request.url);
   if (!isPresentationUiPath(url.pathname)) return false;
   if (!hasLineRedirectContext(request)) return false;
+  if (hasLiffPrimaryBootstrapCookie(request)) return false;
+  return true;
+}
+
+export function isPwaLaunchRequest(request) {
+  const url = new URL(request.url);
+  return isPresentationUiPath(url.pathname) && url.searchParams.get("launch") === "pwa";
+}
+
+export function shouldServePwaLiffBootstrap(request) {
+  const method = String(request.method || "GET").toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) return false;
+  if (!isPwaLaunchRequest(request)) return false;
+  if (hasModelSessionCookie(request)) return false;
+  if (hasLineRedirectContext(request)) return false;
   if (hasLiffPrimaryBootstrapCookie(request)) return false;
   return true;
 }
@@ -441,6 +485,50 @@ a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:
 </html>`;
 }
 
+export function liffPwaBootstrapHtml(request) {
+  const environment = resolveLiffEnvironmentFromRequest(request);
+  const liffId = MODEL_LIFF_IDS[environment];
+  const fallback = safeMiniAppUrlForBootstrap(request);
+  const safeId = JSON.stringify(liffId);
+  const safeFallback = JSON.stringify(fallback);
+  const safeSdk = JSON.stringify(LIFF_SDK_URL);
+  return `<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#090909">
+<title>MMD MODEL</title>
+<style>
+html,body{margin:0;min-height:100%;background:#090909;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
+main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}section{max-width:420px;text-align:center}
+b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:block;margin-top:12px;opacity:.5;word-break:break-word}
+</style>
+<script src=${safeSdk}></script>
+</head>
+<body>
+<main><section><b>กำลังเปิด MMD MODEL</b><p id="status">กำลังยืนยัน LINE อย่างปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิดผ่าน LINE</a><small id="detail"></small></section></main>
+<script>
+(async function(){
+  var status=document.getElementById("status");
+  var fallback=document.getElementById("fallback");
+  var detail=document.getElementById("detail");
+  try{
+    if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
+    await window.liff.init({liffId:${safeId},withLoginOnExternalBrowser:true});
+    status.textContent="ยืนยัน LINE แล้ว · กำลังเปิด Dashboard…";
+  }catch(error){
+    status.textContent="ยังเปิด MMD MODEL ไม่สำเร็จ";
+    fallback.style.display="inline-block";
+    detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
 function liffPrimaryBootstrapResponse(request) {
   const headers = new Headers({
     "content-type": "text/html; charset=utf-8",
@@ -452,6 +540,21 @@ function liffPrimaryBootstrapResponse(request) {
     "x-robots-tag": "noindex, nofollow",
   });
   return new Response(request.method.toUpperCase() === "HEAD" ? null : liffPrimaryBootstrapHtml(request), {
+    status: 200,
+    headers,
+  });
+}
+
+function liffPwaBootstrapResponse(request) {
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    "x-mmd-worker": WORKER_NAME,
+    "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "pwa-liff-bootstrap-v1",
+    "x-robots-tag": "noindex, nofollow",
+  });
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : liffPwaBootstrapHtml(request), {
     status: 200,
     headers,
   });
@@ -482,6 +585,7 @@ export function shouldHandoffToMiniApp(request) {
   const method = String(request.method || "GET").toUpperCase();
   if (!new Set(["GET", "HEAD"]).has(method)) return false;
   if (!isPresentationUiPath(new URL(request.url).pathname)) return false;
+  if (isPwaLaunchRequest(request)) return false;
   if (hasModelSessionCookie(request)) return false;
   if (hasLiffPrimaryBootstrapCookie(request)) return false;
   if (hasLineRedirectContext(request)) return false;
@@ -559,8 +663,21 @@ function rewriteRuntimePaths(source) {
     .replaceAll("/favicon.ico", `${ASSET_PREFIX}favicon.ico`);
 }
 
+function injectModelPwaShell(html) {
+  const output = String(html || "");
+  if (output.includes('data-mmd-model-pwa="v1"')) return output;
+  const pwa = `<link rel="manifest" href="${MODEL_PWA_MANIFEST_PATH}" data-mmd-model-pwa="v1">` +
+    `<meta name="theme-color" content="#090909" data-mmd-model-pwa="v1">` +
+    `<meta name="mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
+    `<meta name="apple-mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
+    `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" data-mmd-model-pwa="v1">` +
+    `<meta name="apple-mobile-web-app-title" content="MMD MODEL" data-mmd-model-pwa="v1">` +
+    `<link rel="apple-touch-icon" href="${MODEL_PWA_ICON_URL}" data-mmd-model-pwa="v1">`;
+  return output.replace(/<\/head\s*>/i, `${pwa}</head>`);
+}
+
 export function rewritePresentationHtml(html) {
-  let output = rewriteRuntimePaths(stripLovableChrome(html));
+  let output = injectModelPwaShell(rewriteRuntimePaths(stripLovableChrome(html)));
 
   // Lovable SSR renders root-based app links. Keep the first paint and
   // no-JS fallback on the canonical MMD path before the client router hydrates.
@@ -744,6 +861,26 @@ function telegramConnectAssetResponse(pathname, method = "GET") {
   return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
 }
 
+function modelPwaManifestResponse(method = "GET") {
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  if (!["GET", "HEAD"].includes(normalizedMethod)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: { allow: "GET, HEAD", "cache-control": "no-store" },
+    });
+  }
+
+  return new Response(normalizedMethod === "HEAD" ? null : JSON.stringify(modelPwaManifest()), {
+    status: 200,
+    headers: {
+      "content-type": "application/manifest+json; charset=utf-8",
+      "cache-control": "public, max-age=300",
+      "x-mmd-dashboard-addon": "pwa-manifest-v1",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
 function unavailable() {
   return new Response("MMD Model Dashboard is temporarily unavailable.", {
     status: 502,
@@ -760,11 +897,13 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isModelPwaManifestPath(path)) return modelPwaManifestResponse(request.method);
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isTelegramConnectAssetPath(path)) return telegramConnectAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
+      if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
       return proxyPage(request);
     }
