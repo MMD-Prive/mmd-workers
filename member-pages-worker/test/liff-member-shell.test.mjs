@@ -63,6 +63,8 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"intent":"signup"/);
     assert.match(html, /"view":"signup"/);
     assert.match(html, /id="signup-packages"/);
+    assert.match(html, /href="https:\/\/miniapp\.line\.me\/2000000000-AbCdEfGh\/\?intent=signup&amp;view=signup"/);
+    assert.match(html, /CONFIG\.intent === "signup" && !window\.liff\.isInClient\(\)/);
     assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
@@ -85,7 +87,7 @@ describe("same-site /member/liff shell", () => {
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
-    assert.match(html, /if \(existingProfile\) \{ await readSignupCatalog\(\); return; \}/);
+    assert.match(html, /if \(existingProfile\) \{ signupLineEntry\?\.classList\.add\("hidden"\); await readSignupCatalog\(\); return; \}/);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {

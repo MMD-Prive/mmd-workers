@@ -72,7 +72,7 @@ function renderShell(config, nonce) {
     .signup-hero-copy{position:relative;z-index:1}.signup-hero-copy span{color:#d2b894;font-size:10px;letter-spacing:.17em}.signup-hero-copy strong{display:block;margin-top:8px;color:#fff6e7;font-size:18px;line-height:1.35}.signup-hero-copy p{margin:6px 0 0;color:#bdb4ad;font-size:12px}
     .signup-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:0;list-style:none}.signup-steps li{display:grid;gap:4px;padding:11px 8px;border:1px solid #e6c29224;border-radius:10px;background:#ffffff06;color:#c8c0b9;font-size:11px;text-align:center}.signup-steps b{color:#edc895;font-size:11px;letter-spacing:.12em}
     .signup-section-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-top:5px}.signup-section-heading h2{font-size:19px;color:#fff1dc}.signup-section-heading span{color:#a9a09a;font-size:11px}
-    .signup-loading{margin:0;padding:22px;border:1px dashed #e6c29240;border-radius:14px;color:#d0c6bb;font-size:13px;text-align:center}
+    .signup-loading{margin:0;padding:22px;border:1px dashed #e6c29240;border-radius:14px;color:#d0c6bb;font-size:13px;text-align:center}.signup-line-entry{display:block;margin-top:12px;padding:14px;border:1px solid #eec79288;border-radius:12px;background:#e8c38e;color:#20170f;font-size:14px;font-weight:750;text-align:center;text-decoration:none}
     body.signup-mode .signup-package{position:relative;gap:10px;padding:18px;border-radius:16px;border-color:#f1d0a438;background:linear-gradient(140deg,#24201d,#141315 72%)}.signup-package::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;border-radius:16px 0 0 16px;background:#c9ac82}
     .signup-package-elite{background:linear-gradient(135deg,#352023,#171315 72%)!important}.signup-package-elite::before{background:#d28086}.signup-package-red_card{background:linear-gradient(135deg,#411b24,#191316 72%)!important}.signup-package-red_card::before{background:#d55d72}
     .signup-package-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.signup-package-top strong{color:#fff6ec}.signup-package-top span{padding:4px 8px;border:1px solid #e9c8a133;border-radius:100px;color:#d7b58a;font-size:10px;letter-spacing:.11em}
@@ -100,6 +100,7 @@ function renderShell(config, nonce) {
     <ol class="signup-steps" aria-label="ขั้นตอนสมัคร"><li><b>01</b>ยืนยัน LINE</li><li><b>02</b>เลือกแพ็กเกจ</li><li><b>03</b>ชำระและรอตรวจ</li></ol>
     <div class="signup-section-heading"><h2 id="signup-heading">Public Membership</h2><span>เลือกสิทธิ์ของคุณ</span></div>
     <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
+    ${config.liffId ? `<a id="signup-line-entry" class="signup-line-entry" href="https://miniapp.line.me/${config.liffId}/?intent=signup&amp;view=signup">เปิดใน LINE เพื่อสมัคร</a>` : ""}
     <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
     <div class="card signup-private"><strong>Private Access / Black Card</strong><p class="signup-note">สนใจเส้นทาง Private? ดูรายละเอียดและส่งคำขอผ่านระบบสมาชิก</p><a class="private-link" href="/sigil/member/membership?source=line&amp;intent=signup">ดู Private Membership</a></div>
     <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
@@ -176,6 +177,7 @@ function renderShell(config, nonce) {
   const CONFIG = ${safeConfig};
   const message = document.getElementById("message");
   const actions = document.getElementById("actions");
+  const signupLineEntry = document.getElementById("signup-line-entry");
   const profile = document.getElementById("profile");
   const signup = document.getElementById("signup");
   const signupPackages = document.getElementById("signup-packages");
@@ -676,7 +678,7 @@ function renderShell(config, nonce) {
     }
     try {
       const existingProfile = await readProfile();
-      if (existingProfile) { await readSignupCatalog(); return; }
+      if (existingProfile) { signupLineEntry?.classList.add("hidden"); await readSignupCatalog(); return; }
     } catch {
       // No valid same-site session yet. Fall through to the one-time LIFF handshake.
     }
@@ -686,10 +688,16 @@ function renderShell(config, nonce) {
     }
     try {
       await window.liff.init({ liffId: CONFIG.liffId });
+      if (window.liff.isInClient()) signupLineEntry?.classList.add("hidden");
       if (!window.liff.isLoggedIn()) {
+        if (CONFIG.intent === "signup" && !window.liff.isInClient()) {
+          show("เปิดใน LINE ด้วยปุ่มด้านล่างเพื่อยืนยันตัวตนและสมัครสมาชิกครับ");
+          return;
+        }
         window.liff.login({ redirectUri: window.location.href });
         return;
       }
+      signupLineEntry?.classList.add("hidden");
       const idToken = window.liff.getIDToken();
       if (!idToken) {
         show("ไม่สามารถยืนยัน LINE ได้ในตอนนี้ครับ กรุณาเปิดใหม่ผ่าน LINE ของ MMD");

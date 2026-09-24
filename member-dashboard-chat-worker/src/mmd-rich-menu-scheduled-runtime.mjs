@@ -10,7 +10,7 @@ const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260924-v4.3";
+const VERSION = "mmd-rm3-20260924-v4.4";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -21,7 +21,7 @@ function msg(label, value) { return { type: "message", label, text: value }; }
 function postback(label, data) { return { type: "postback", label, data }; }
 function site(path, entry) { const u = new URL(path, "https://mmdbkk.com"); u.searchParams.set("source", "line"); u.searchParams.set("entry_route", entry); return u.toString(); }
 function liff() { return `https://liff.line.me/${LIFF_ID}?intent=status&view=profile`; }
-function signupLiff() { return `https://liff.line.me/${LIFF_ID}?intent=signup&view=signup`; }
+function signupLiff() { return `https://miniapp.line.me/${LIFF_ID}/?intent=signup&view=signup`; }
 
 const MENUS = Object.freeze({
   guest: {
