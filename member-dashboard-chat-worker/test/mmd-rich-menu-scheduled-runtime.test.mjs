@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  bangkokHour,
   isMmdRichMenuHidden,
   classifyMmdUsers,
   getMmdRichMenuActionMap,
@@ -13,12 +12,10 @@ import {
   handleMmdRichMenuScheduledRequest,
 } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
-test("MMD Rich Menu hides from 16:00 until 23:00 Bangkok", () => {
-  assert.equal(bangkokHour(new Date("2026-09-08T08:59:00Z")), 15);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T08:59:00Z")), false);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T09:00:00Z")), true);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T15:59:59Z")), true);
-  assert.equal(isMmdRichMenuHidden(new Date("2026-09-08T16:00:00Z")), false);
+test("MMD Rich Menu remains available at every Bangkok hour", () => {
+  for (let hour = 0; hour < 24; hour += 1) {
+    assert.equal(isMmdRichMenuHidden(new Date(Date.UTC(2026, 8, 8, hour))), false);
+  }
 });
 
 test("MMD 3-level Rich Menu actions match the canonical customer labels", () => {
@@ -100,7 +97,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.4");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.5");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
 });
 
@@ -130,14 +127,19 @@ test("verified blocked customer maps to Public and never Private", () => {
 
 test("three-level prepare and audit routes are recognized but remain internal-token protected", async () => {
   const prepare = new Request("https://worker/v1/internal/line/rich-menu/three-level/prepare", { method: "POST" });
+  const activate = new Request("https://worker/v1/internal/line/rich-menu/three-level/activate", { method: "POST" });
   const audit = new Request("https://worker/v1/internal/line/rich-menu/three-level/audit", { method: "GET" });
   assert.equal(isMmdRichMenuScheduledRequest(prepare), true);
+  assert.equal(isMmdRichMenuScheduledRequest(activate), true);
   assert.equal(isMmdRichMenuScheduledRequest(audit), true);
 
   const prepareResponse = await handleMmdRichMenuScheduledRequest(prepare, { INTERNAL_TOKEN: "secret" });
+  const activateResponse = await handleMmdRichMenuScheduledRequest(activate, { INTERNAL_TOKEN: "secret" });
   const auditResponse = await handleMmdRichMenuScheduledRequest(audit, { INTERNAL_TOKEN: "secret" });
   assert.equal(prepareResponse.status, 401);
+  assert.equal(activateResponse.status, 401);
   assert.equal(auditResponse.status, 401);
   assert.deepEqual(await prepareResponse.json(), { ok: false, error: "internal_auth_required" });
+  assert.deepEqual(await activateResponse.json(), { ok: false, error: "internal_auth_required" });
   assert.deepEqual(await auditResponse.json(), { ok: false, error: "internal_auth_required" });
 });
