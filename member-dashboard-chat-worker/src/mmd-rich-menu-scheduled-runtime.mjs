@@ -221,17 +221,20 @@ async function sha256Hex(buffer) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-async function menuImageMatches(env, richMenuId, spec) {
-  if (!clean(richMenuId)) return false;
-  const expected = await imageFor(spec);
+async function menuImageCheck(env, richMenuId, spec) {
+  if (!clean(richMenuId)) return { match: false, reason: "missing_menu" };
+  const expected = await imageFor(spec).catch(() => null);
+  if (!expected) return { match: false, reason: "source_unavailable" };
   const response = await fetch(`${LINE_DATA_API}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
     headers: lineHeaders(env),
   }).catch(() => null);
-  if (!response?.ok) return false;
+  if (!response?.ok) return { match: false, reason: `line_http_${response?.status || 0}` };
   const actual = await response.arrayBuffer();
-  if (actual.byteLength !== expected.buffer.byteLength) return false;
+  if (actual.byteLength !== expected.buffer.byteLength) {
+    return { match: false, reason: "byte_length_mismatch", actual_bytes: actual.byteLength, expected_bytes: expected.buffer.byteLength };
+  }
   const [actualHash, expectedHash] = await Promise.all([sha256Hex(actual), sha256Hex(expected.buffer)]);
-  return actualHash === expectedHash;
+  return { match: actualHash === expectedHash, reason: actualHash === expectedHash ? "" : "content_mismatch" };
 }
 
 export async function prepareMmdRichMenus(env) {
@@ -255,10 +258,14 @@ export async function auditMmdRichMenus(env, now = new Date()) {
   for (const [key, spec] of Object.entries(MENUS)) {
     const row = rows.find((item) => clean(item?.name) === spec.name);
     ids[key] = clean(row?.richMenuId);
+    const image = row ? await menuImageCheck(env, ids[key], spec).catch(() => ({ match: false, reason: "check_error" })) : { match: false, reason: "missing_menu" };
     checks[key] = {
       present: Boolean(ids[key]),
       object_match: Boolean(row && menuObjectMatches(row, spec)),
-      image_match: row ? await menuImageMatches(env, ids[key], spec).catch(() => false) : false,
+      image_match: image.match,
+      image_issue: image.reason,
+      image_actual_bytes: image.actual_bytes || 0,
+      image_expected_bytes: image.expected_bytes || 0,
       action_labels: spec.actions.map((action) => action.label),
       action_types: spec.actions.map((action) => action.type),
     };
