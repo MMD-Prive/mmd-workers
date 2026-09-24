@@ -268,14 +268,14 @@ jobs:
             manifest_body="$(mktemp)"
             manifest_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o "$manifest_body" -w "%{http_code}" "$manifest")"
             test "$manifest_code" = "200"
-            node --input-type=module - "$manifest_body" <<'NODE'
-            import fs from "node:fs";
-            const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-            if (manifest?.display !== "standalone") throw new Error("MMD MODEL PWA must remain standalone");
-            if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD MODEL PWA start URL changed");
-            if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD MODEL PWA scope changed");
-            if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD MODEL PWA icon is required");
-            NODE
+          node --input-type=module - "$manifest_body" <<'NODE'
+          import fs from "node:fs";
+          const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          if (manifest?.display !== "standalone") throw new Error("MMD MODEL PWA must remain standalone");
+          if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD MODEL PWA start URL changed");
+          if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD MODEL PWA scope changed");
+          if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD MODEL PWA icon is required");
+          NODE
 
             asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
             if [ -n "$asset" ]; then
