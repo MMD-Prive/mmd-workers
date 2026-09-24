@@ -29,7 +29,7 @@ function message(value, overrides = {}) {
 
 test("First Contact answers a natural opening but sends protected matters for review", () => {
   const opening = decideKenjiLineFirstContact(message("แนะนำหน่อย"), "note_only");
-  assert.match(opening.text, /อยากให้ช่วยเรื่อง/);
+  assert.match(opening.text, /งานหรือกิจกรรม/);
   assert.equal(opening.handoff_required, false);
 
   const booking = decideKenjiLineFirstContact(message("อยากจองไปดินเนอร์"), "mmd_companion");
