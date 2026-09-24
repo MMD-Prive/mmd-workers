@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import studioWorker, { handleStudioRequest } from "./src/studio-real-worker.js";
+import studioWorker, { handleStudioRequest, normalizeStudioReview } from "./src/studio-real-worker.js";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -87,6 +87,67 @@ function installR2Mock({ putResult = undefined, headResult = undefined, malforme
     },
   };
 }
+
+
+test("Studio review preserves the My Card request id while Studio controls grade and RUN NUMBER", () => {
+  const normalized = normalizeStudioReview({
+    compcard_request_id: "recMyCardRequest123",
+    model_name: "Mek",
+    field: "GWs",
+    run_number: "GWs001",
+    layer: "Public / MMD Privé",
+    decision: "Approved Direction",
+  });
+  assert.equal(normalized.compcard_request_id, "recMyCardRequest123");
+  assert.equal(normalized.field, "GWs");
+  assert.equal(normalized.run_number, "GWs001");
+  assert.throws(() => normalizeStudioReview({
+    compcard_request_id: "recMyCardRequest123",
+    model_name: "Mek",
+    field: "GWs",
+    run_number: "GWs12",
+    layer: "Public / MMD Privé",
+    decision: "Approved Direction",
+  }), /invalid_run_number/);
+});
+
+test("My Card inbox never returns the stored object key to the Studio browser", async () => {
+  globalThis.fetch = async (url, init = {}) => {
+    if (!init.method || init.method === "GET") {
+      return Response.json({
+        records: [{
+          id: "recMyCardRequest123",
+          fields: {
+            source: "mmd_model_my_card",
+            status: "model_request_pending",
+            created_at: "2026-09-24T00:00:00.000Z",
+            model_name: "Mek",
+            payload_json: JSON.stringify({
+              model_record_id: "rec12345678901234",
+              model: { working_name: "Mek", height_cm: 178, weight_kg: 68 },
+              selected_media: {
+                media_id: "media_12345678",
+                media_type: "public_gallery",
+                object_key: "models/rec12345678901234/public_gallery/media_12345678.jpg",
+              },
+            }),
+          },
+        }],
+      });
+    }
+    return Response.json({});
+  };
+
+  const res = await handleStudioRequest(await req("/studio/api/compcard-requests/list"), {
+    ...BASE_ENV,
+    AIRTABLE_TABLE_STUDIO_INTAKE: "Studio_Intake",
+  });
+  assert.equal(res.status, 200);
+  const data = await json(res);
+  assert.equal(data.requests[0].request_id, "recMyCardRequest123");
+  assert.equal(data.requests[0].media_id, "media_12345678");
+  assert.equal(JSON.stringify(data.requests[0]).includes("object_key"), false);
+});
 
 test("upload requires signed admin session", async () => {
   const r2 = installR2Mock();
