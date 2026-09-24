@@ -269,7 +269,8 @@ jobs:
           set -euo pipefail
           invite_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-supplier-invite.html -w "%{http_code}" https://mmdbkk.com/shop/supplier/invite)"
           test "$invite_status" = "403"
-          grep -Fq "ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้" /tmp/himai-supplier-invite.html
+          grep -Fq "<title>Himai Shop Supplier</title>" /tmp/himai-supplier-invite.html
+          grep -Fq "Himai Shop's Suppliers" /tmp/himai-supplier-invite.html
           if grep -Fq '"error":"not_found"' /tmp/himai-supplier-invite.html; then
             echo "Supplier invite route was not dispatched to himai-chat-worker" >&2
             exit 1
