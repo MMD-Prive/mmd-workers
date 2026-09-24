@@ -68,6 +68,7 @@
           <a href="/internal/ceo/audience#aud-demographic"><strong>Demographic</strong><span>เพศ · อายุ · พื้นที่ · วันที่ของข้อมูล</span></a>
           <a href="/internal/ceo/audience"><strong>Audience</strong><span>การตอบสนอง · การจอง · ลูกค้ากลับมา</span></a>
           <a href="/internal/ceo/dashboard"><strong>การตัดสินใจ</strong><span>รายงาน CEO · Marketing · งานต่อ</span></a>
+          <a href="#annual-finance"><strong>รายรับประจำปี</strong><span>MMD · MMS · ยอดที่ยังจัดประเภทไม่ได้</span></a>
         </div>
       </section>
       <style>
@@ -86,6 +87,26 @@
           <div class="adm27-cardtop"><div><span class="adm27-kicker">ESCALATE</span><h2>เรื่องที่เปอร์ต้องตัดสินใจ</h2></div><a class="adm27-link" href="/internal/ceo/dashboard">ดูรายละเอียด ↗</a></div>
           <div class="adm27-list" data-boss-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
         </article>
+      <details class="adm27-disclosure adm27-annual" id="annual-finance">
+        <summary>รายรับประจำปี · MMD และ MMS</summary>
+        <div class="adm27-annualbar"><label>ปีปฏิทิน <select data-annual-year></select></label><span data-annual-state role="status">เปิดเพื่อโหลดข้อมูล</span></div>
+        <div class="adm27-annualgrid">
+          <article><span>ยอดรับที่ยืนยัน · MMD</span><strong data-annual-mmd>—</strong><small>รายการที่ผูกกับงาน MMD</small></article>
+          <article><span>ยอดรับที่ยืนยัน · MMS</span><strong data-annual-mms>—</strong><small>รายการที่ผูกกับงาน MMS</small></article>
+          <article><span>ยังจัดประเภทไม่ได้</span><strong data-annual-unknown>—</strong><small>ตรวจความเชื่อมโยงกับงานก่อนรวมรายได้</small></article>
+          <article><span>กำไรสุทธิ</span><strong>—</strong><small>รอต้นทุนที่จ่ายจริงและรายการคืนเงินครบถ้วน</small></article>
+        </div>
+        <p class="adm27-annualnote">สรุปนี้นับยอดรับจริงที่ตรวจยืนยันแล้วตามวันที่ชำระและประเภทงานที่ผูกได้ เป็นยอดรับก่อนหักค่าใช้จ่ายและคืนเงิน ยังใช้แทนงบกำไรขาดทุนไม่ได้</p>
+      </details>
+      <style>
+        #adm27 .adm27-annualbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 14px;color:#c6bfb2;font-size:14px}
+        #adm27 .adm27-annualbar select{margin-left:8px;min-height:42px;padding:8px;border:1px solid #6c5732;border-radius:8px;background:#191713;color:#f4efe6;font:inherit}
+        #adm27 .adm27-annualgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+        #adm27 .adm27-annualgrid article{padding:14px;border:1px solid #3b352b;border-radius:12px;background:#191713;display:flex;flex-direction:column;gap:4px}
+        #adm27 .adm27-annualgrid strong{font-size:22px}#adm27 .adm27-annualgrid span{font-size:14px}#adm27 .adm27-annualgrid small,#adm27 .adm27-annualnote{font-size:14px;color:#c6bfb2}
+        @media(max-width:560px){#adm27 .adm27-annualgrid{grid-template-columns:1fr}}
+      </style>
+      <script>(function(){'use strict';var root=document.getElementById('adm27'),box=document.getElementById('annual-finance');if(!root||!box)return;var year=box.querySelector('[data-annual-year]'),state=box.querySelector('[data-annual-state]');var current=Number(new Intl.DateTimeFormat('en',{timeZone:'Asia/Bangkok',year:'numeric'}).format(new Date()));for(var y=current;y>=2020;y--){var option=document.createElement('option');option.value=String(y);option.textContent=String(y);year.appendChild(option)}var formatter=new Intl.NumberFormat('th-TH',{maximumFractionDigits:2});function show(name,value){box.querySelector('[data-annual-'+name+']').textContent=Number.isFinite(value)?formatter.format(value)+' บาท':'—'}async function load(){state.textContent='กำลังอ่านยอดที่ยืนยัน';show('mmd',NaN);show('mms',NaN);show('unknown',NaN);try{var response=await fetch('/v1/admin/dashboard/annual-finance?year='+encodeURIComponent(year.value),{credentials:'include',cache:'no-store',headers:{accept:'application/json'}});if(response.status===401){location.href='/internal/admin/login?next='+encodeURIComponent(location.pathname+location.search+location.hash);return}var data=await response.json();if(!response.ok||data.ok!==true)throw Error(data.error||'source_unavailable');show('mmd',Number(data.totals?.mmd?.received_thb));show('mms',Number(data.totals?.mms?.received_thb));show('unknown',Number(data.totals?.unclassified?.received_thb));state.textContent='ข้อมูลปี '+year.value+' · ยืนยันจากระบบ'}catch(e){state.textContent='ยังอ่านยอดไม่ได้ · ลองเลือกปีอีกครั้ง'}}box.addEventListener('toggle',function(){if(box.open)load()});year.addEventListener('change',load);if(location.hash==='#annual-finance'){box.open=true;load()}})();</script>
       <nav class="adm27-daily" aria-label="ทางลัดที่ใช้บ่อย"><a href="/internal/admin/customer-data">ค้นลูกค้า</a><a href="/internal/ceo/payment-slip-inbox">รับสลิป</a><a href="/internal/admin/payments">ตรวจรับเงิน</a><a href="/internal/admin/calendar">ปฏิทิน</a></nav><section class="adm27-summary" aria-label="Operational summary">
         <article><span>ต้องดูตอนนี้</span><strong data-count="urgent">—</strong><small>รายการรอดำเนินการ</small></article>
         <article><span>รอตรวจเงิน</span><strong data-count="payments">—</strong><small>รายการรอตรวจ</small></article>
