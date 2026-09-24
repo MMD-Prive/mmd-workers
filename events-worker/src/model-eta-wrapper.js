@@ -354,6 +354,23 @@ async function handleModelLineIdentityRecoveryPreflight(request, env = {}) {
       message_sent: false,
     }, 200);
   }
+  // LINE's profile endpoint uses 404 for a user that this OA cannot reach.
+  // Rate limits and provider failures are inconclusive and must never permit
+  // a canonical identity replacement.
+  if (previousResponse.status !== 404) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_recovery_previous_identity_unverified",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: true,
+      previous_provider_status: previousResponse.status,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
 
   return json({
     ok: true,

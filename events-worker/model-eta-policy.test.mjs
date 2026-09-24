@@ -275,3 +275,43 @@ test("model LINE identity recovery refuses to replace a reachable current bindin
     globalThis.fetch = originalFetch;
   }
 });
+
+test("model LINE identity recovery fails closed on a transient previous-profile response", async () => {
+  const originalFetch = globalThis.fetch;
+  const previousLineUserId = "Uaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const candidateLineUserId = "Ubbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  globalThis.fetch = async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname.endsWith(`/${candidateLineUserId}`)) return Response.json({}, { status: 200 });
+    if (url.pathname.endsWith(`/${previousLineUserId}`)) return Response.json({}, { status: 429 });
+    throw new Error("unexpected LINE profile lookup");
+  };
+  try {
+    const response = await worker.fetch(new Request(
+      "https://events-worker.internal/__internal/model/line-identity/recovery-preflight",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-internal-token": "admin-events-secret",
+        },
+        body: JSON.stringify({
+          previous_line_user_id: previousLineUserId,
+          candidate_line_user_id: candidateLineUserId,
+        }),
+      },
+    ), {
+      AUTH_SERVICE_ADMIN_TO_EVENTS: "admin-events-secret",
+      MODEL_LINE_CHANNEL_ACCESS_TOKEN: "model-line-secret",
+    }, {});
+
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.ready, false);
+    assert.equal(payload.state, "model_line_recovery_previous_identity_unverified");
+    assert.equal(payload.previous_provider_status, 429);
+    assert.equal(payload.message_sent, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
