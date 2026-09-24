@@ -215,3 +215,34 @@ test("write-back PATCH contains bounded state and no raw customer message", asyn
   assert.equal(serialized.includes("ได้ยังครับ"), false);
   assert.equal(serialized.includes("Utest123"), false);
 });
+
+
+test("opening profile is stored in chat context only after LINE delivery", async () => {
+  const prior = buildConversationMatrixV1({
+    matrix_id: "kcm1_line_opening", conversation_id_hash: "opening-hash", channel: "line_ofc",
+    conversation_scope: "line:opening", topic: "greeting", version: 1,
+  });
+  const continuity = {
+    storage_status: "ready", conversation_hash: "opening-hash", matrix_record_id: "recOpening",
+    decision: "continuation", effective_intent: "note_only",
+    matrix: { ...prior, payload_json: { first_contact_v2: { awaiting: "service", preferred_style: "สุภาพ" } } },
+  };
+  const writes = [];
+  await withFetch(async (_url, init = {}) => {
+    const fields = JSON.parse(init.body).records[0].fields;
+    writes.push(JSON.parse(fields.payload_json));
+    return Response.json({ records: [{ id: "recOpening", fields }] });
+  }, async () => {
+    for (const delivered of [false, true]) {
+      await writeKenjiLineMatrixTurn({ env: ENV, continuity, decision: {
+        intent: "note_only", reply_source: "first_contact_v2",
+        first_contact_state: { awaiting: "service", self_reported_gender: "woman" },
+      }, delivered, attempted: true, now: NOW });
+    }
+  });
+  assert.equal(writes.length, 2);
+  assert.equal(writes[0].first_contact_v2.self_reported_gender, undefined);
+  assert.equal(writes[1].first_contact_v2.self_reported_gender, "woman");
+  assert.equal(writes[1].first_contact_v2.preferred_style, "สุภาพ");
+  assert.equal(writes[1].first_contact_v2.updated_at, NOW);
+});

@@ -371,10 +371,10 @@ zone_name = "mmdbkk.com"
 # still be made by changing this config and redeploying.
 [vars]
 # Keep the older conversation/knowledge response lane paused while the bounded
-# First Contact V1 lane can answer safe opening messages under the kill switch.
+# First Contact V2 lane can answer safe opening messages under the kill switch.
 LINE_AUTO_REPLY_ENABLED = "false"
 LINE_KENJI_AI_ENABLED = "true"
-# First Contact V1 answers only safe customer text openings. LINE OA owns the
+# First Contact V2 answers safe openings and explicit greeting follow-ups. LINE OA owns the
 # add-friend greeting; all other legacy/autonomous replies remain paused.
 LINE_FIRST_CONTACT_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.

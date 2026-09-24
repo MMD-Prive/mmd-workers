@@ -585,7 +585,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           liveTruth,
         })
       : firstContactEnabled && eventMode !== "standby" && !redelivered && replyToken
-        ? withDecisionMetadata({}, decideKenjiLineFirstContact(event, currentIntent))
+        ? withDecisionMetadata({}, decideKenjiLineFirstContact(event, currentIntent, continuity))
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
         intent: effectiveIntent,
