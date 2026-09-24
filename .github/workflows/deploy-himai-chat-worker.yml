@@ -66,6 +66,8 @@ jobs:
           node --check ../shared/mmd-shop-stock-reconciliation.mjs
           grep -Fq 'name = "MMD_SHOP_STOCK_COORDINATOR"' wrangler.toml
           grep -Fq 'binding = "PAYMENTS_WORKER"' wrangler.toml
+          grep -Fq 'pattern = "mmdbkk.com/shop/supplier/invite*"' wrangler.toml
+          grep -Fq 'pattern = "www.mmdbkk.com/shop/supplier/invite*"' wrangler.toml
           grep -Fq 'crons = ["*/5 * * * *"]' wrangler.toml
           node --check src/shop-movements.js
           if ls test/*.test.mjs >/dev/null 2>&1; then node --test test/*.test.mjs; fi
@@ -190,6 +192,8 @@ jobs:
             "www.mmdbkk.com/shop/api/*",
             "mmdbkk.com/shop/supplier/liff*",
             "www.mmdbkk.com/shop/supplier/liff*",
+            "mmdbkk.com/shop/supplier/invite*",
+            "www.mmdbkk.com/shop/supplier/invite*",
             "mmdbkk.com/mmd-shop/api/*",
             "www.mmdbkk.com/mmd-shop/api/*",
             "mmdbkk.com/mmd-shop/order*",
@@ -258,6 +262,18 @@ jobs:
           on_demand="$(curl --retry 6 --retry-delay 2 --retry-all-errors -fsS https://www.mmdbkk.com/mmd-shop/api/product/glen-pop15-blk)"
           echo "$on_demand"
           node -e 'const b=JSON.parse(process.argv[1]); const p=b.product||{}; if (b.ok !== true || p.sku !== "GLEN-POP15-BLK") process.exit(1); if (p.stock_status !== "on_demand" || p.online_checkout_status !== "on_demand" || p.checkout_eligible !== true) throw new Error("glenburgies_on_demand_contract_failed"); if (p.variant_group !== "GLEN" || p.variant_type !== "bottle" || !Array.isArray(b.variants) || b.variants.length < 2) throw new Error("glenburgies_variant_family_contract_failed");' "$on_demand"
+
+      - name: Verify production Supplier invite entry route
+        if: steps.route_sync.outcome == 'success'
+        run: |
+          set -euo pipefail
+          invite_status="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /tmp/himai-supplier-invite.html -w "%{http_code}" https://mmdbkk.com/shop/supplier/invite)"
+          test "$invite_status" = "403"
+          grep -Fq "ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้" /tmp/himai-supplier-invite.html
+          if grep -Fq '"error":"not_found"' /tmp/himai-supplier-invite.html; then
+            echo "Supplier invite route was not dispatched to himai-chat-worker" >&2
+            exit 1
+          fi
 
       - name: Verify production Himai storefront and API routes
         if: steps.route_sync.outcome == 'success'
