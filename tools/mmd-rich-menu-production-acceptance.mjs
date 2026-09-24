@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 
 const ORIGIN = "https://www.mmdbkk.com";
-const VERSION = "mmd-rm3-20260924-v4.5";
+const VERSION = "mmd-rm3-20260924-v4.6";
 const credential = String(process.env.ADMIN_LOGIN_CREDENTIAL || "").trim();
 assert.ok(credential, "Canonical admin credential is missing");
 
