@@ -145,3 +145,17 @@ test("model availability preflight reports missing transport without any LINE ca
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("new-job notification internal route rejects calls without admin service authentication", async () => {
+  const response = await worker.fetch(new Request(
+    "https://events-worker.internal/__internal/model/session/new-job-notification",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ session_id: "session_1" }),
+    },
+  ), {}, {});
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { ok: false, error: "eta_service_auth_not_ready" });
+});

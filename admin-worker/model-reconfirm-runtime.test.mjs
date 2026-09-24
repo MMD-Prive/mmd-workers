@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   ACK_RECONFIRM_ACTION,
   buildReconfirmSchedule,
+  handleModelReconfirmRequest,
   deriveReconfirmStatus,
   isModelReconfirmRequest,
   runModelReconfirmSweep,
@@ -66,4 +67,60 @@ test("scheduled sweep is disabled by default and performs no storage/network wor
     reminded: 0,
     escalated: 0,
   });
+});
+
+
+test("successful job creation queues the notification without coupling it to booking state", async () => {
+  const calls = [];
+  const queued = [];
+  const request = new Request("https://admin-worker.internal/v1/admin/job/create", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const downstream = {
+    async fetch() {
+      return Response.json({ ok: true, session_id: "session-new-1" });
+    },
+  };
+  const env = {
+    CONFIRM_KEY: "service-token",
+    EVENTS_WORKER: {
+      async fetch(input, init = {}) {
+        const request = input instanceof Request ? input : new Request(input, init);
+        calls.push(request);
+        return Response.json({ ok: true, channel: "line" });
+      },
+    },
+  };
+
+  const response = await handleModelReconfirmRequest(request, env, {
+    waitUntil(promise) { queued.push(promise); },
+  }, downstream);
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://events-worker.internal/__internal/model/session/new-job-notification");
+  assert.equal(calls[0].headers.get("x-internal-token"), "service-token");
+  assert.deepEqual(await calls[0].json(), { session_id: "session-new-1" });
+  assert.equal(queued.length, 1);
+  await Promise.all(queued);
+});
+
+test("pending client-link outcomes never notify a Model", async () => {
+  let sent = false;
+  const request = new Request("https://admin-worker.internal/v1/admin/job/create", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const response = await handleModelReconfirmRequest(request, {
+    CONFIRM_KEY: "service-token",
+    EVENTS_WORKER: { async fetch() { sent = true; return Response.json({ ok: true }); } },
+  }, { waitUntil() {} }, {
+    async fetch() {
+      return Response.json({ ok: true, operational_status: "pending_client_link", session_id: "session-pending" });
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(sent, false);
 });

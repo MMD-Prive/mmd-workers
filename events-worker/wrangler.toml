@@ -15,6 +15,7 @@ RT_BASE_URL = "https://realtime-worker.malemodel-bkk.workers.dev"
 
 # Pre-job reconfirm reuses this Worker's existing 15-minute cron.
 MODEL_RECONFIRM_ENABLED = "true"
+MODEL_LIFF_PUBLISHED_ID = "2010864854-N34SgCqq"
 
 # Secrets: AUTH_SERVICE_EVENTS_TO_PAYMENTS, AUTH_SERVICE_EVENTS_TO_REALTIME,
 # AUTH_SERVICE_EVENTS_TO_TELEGRAM, AUTH_SERVICE_ADMIN_TO_EVENTS

@@ -1,5 +1,5 @@
 import baseWorker from "./index.js";
-import { runModelReconfirmSweep } from "../../admin-worker/src/model-reconfirm-runtime.js";
+import { runModelReconfirmSweep, sendModelNewJobNotification } from "../../admin-worker/src/model-reconfirm-runtime.js";
 import {
   handleCustomerAftercare,
   isCustomerAftercareRequest,
@@ -8,6 +8,7 @@ import {
 const ETA_PATH = "/__internal/model/session/eta";
 const MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/model/availability-reminder";
 const MODEL_AVAILABILITY_REMINDER_PREFLIGHT_PATH = "/__internal/model/availability-reminder/preflight";
+const MODEL_NEW_JOB_NOTIFICATION_PATH = "/__internal/model/session/new-job-notification";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -28,6 +29,10 @@ export default {
 
     if (path === MODEL_AVAILABILITY_REMINDER_PATH) {
       return handleModelAvailabilityReminder(request, env);
+    }
+
+    if (path === MODEL_NEW_JOB_NOTIFICATION_PATH) {
+      return handleModelNewJobNotification(request, env);
     }
 
     if (path !== ETA_PATH) return baseWorker.fetch(request, env, ctx);
@@ -87,6 +92,18 @@ export default {
     else await job;
   },
 };
+
+async function handleModelNewJobNotification(request, env = {}) {
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const auth = requireAdminServiceAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+  const sessionId = clean(body.session_id);
+  if (!sessionId) return json({ ok: false, error: "session_id_required" }, 400);
+  const result = await sendModelNewJobNotification(env, sessionId);
+  return json(result, result.ok || result.skipped ? 200 : 502);
+}
 
 export function normalizeEtaMinutes(value) {
   const number = Number(value);
