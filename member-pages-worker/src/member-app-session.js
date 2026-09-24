@@ -1,7 +1,11 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DEFAULT_SESSIONS_TABLE = "Sessions";
+const DEFAULT_JOBS_TABLE = "Jobs";
 const SESSION_PATH = "/api/member/app/session/";
 const TERMINAL = new Set(["completed", "cancelled", "canceled"]);
+const ETA_EVENT = "eta_update";
+const ETA_MAX_MINUTES = 240;
+const MAX_EVENTS_JSON_LENGTH = 64_000;
 const DISPLAYABLE = new Set([
   "pending_confirmation", "confirmed", "preparing", "en_route", "nearby",
   "arrived", "met_customer", "in_progress", "completed", "cancelled",
@@ -25,7 +29,7 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
 
   if (path === `${SESSION_PATH}current`) {
     const record = await findCurrentOwnedSession(env, identity);
-    return record ? json(projectSession(record)) : new Response(null, { status: 204, headers: noStoreHeaders() });
+    return record ? json(await projectSession(record, env)) : new Response(null, { status: 204, headers: noStoreHeaders() });
   }
 
   if (path === `${SESSION_PATH}context`) {
@@ -35,7 +39,7 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
     const sessionId = contextSessionId(context);
     if (!sessionId) return json({ valid: false, session: null });
     const record = await findOwnedSessionById(env, identity, sessionId);
-    return record ? json({ valid: true, session: projectSession(record) }) : json({ valid: false, session: null });
+    return record ? json({ valid: true, session: await projectSession(record, env) }) : json({ valid: false, session: null });
   }
 
   const body = await request.json().catch(() => null);
@@ -50,7 +54,7 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
 
   const record = await findOwnedSessionById(env, identity, requestedId);
   if (!record) return jsonError(404, "SESSION_NOT_FOUND", "Session is unavailable.");
-  const projected = projectSession(record);
+  const projected = await projectSession(record, env);
   if (!projected.acknowledgement.customerAckAllowed) {
     return jsonError(409, "CUSTOMER_ACK_NOT_ALLOWED", "Customer acknowledgement is not available.");
   }
@@ -58,7 +62,7 @@ export async function handleMemberAppSessionApi(request, env = {}, readSession) 
   await patchSession(env, record.id, { customer_ack_at: new Date().toISOString() });
   const refreshed = await findOwnedSessionById(env, identity, requestedId);
   if (!refreshed) return jsonError(502, "SESSION_REFRESH_FAILED", "Session could not be refreshed.");
-  return json(projectSession(refreshed));
+  return json(await projectSession(refreshed, env));
 }
 
 async function findCurrentOwnedSession(env, identity) {
@@ -105,16 +109,19 @@ function owns(record, identity) {
   return line === identity.lineUserId || Boolean(member && identity.memberId && member === identity.memberId);
 }
 
-function projectSession(record) {
+async function projectSession(record, env) {
   const fields = record?.fields || {};
+  const sessionId = clean(fields.session_id, 160) || null;
   const lifecycle = lifecycleOf(fields);
   const customerAckAt = isoOrNull(fields.customer_ack_at);
   const modelAckAt = isoOrNull(fields.model_ack_at);
   const modelName = clean(fields.model_name || fields["Assigned Model"], 120) || null;
   const start = clock(fields.start_time || fields["Start Time"]);
   const end = clock(fields.end_time || fields["End Time"]);
+  const eventEta = await resolveCustomerEtaEvent(env, sessionId);
+  const legacyEtaLabel = clean(fields.customer_eta_label, 120) || null;
   return {
-    sessionId: clean(fields.session_id, 160) || null,
+    sessionId,
     lifecycle,
     jobDate: dateOnly(fields.job_date || fields["Session Date"]) || null,
     jobTimeLabel: start && end ? `${start} – ${end}` : start || end || null,
@@ -126,9 +133,70 @@ function projectSession(record) {
       modelAckAt,
       customerAckAllowed: !customerAckAt && ["pending_confirmation", "confirmed"].includes(lifecycle),
     },
-    etaLabel: clean(fields.customer_eta_label, 120) || null,
+    // ETA events are the live source of truth. The old Session label remains
+    // only as a backwards-compatible fallback before an ETA event exists.
+    etaLabel: eventEta.hasEvent ? eventEta.label : legacyEtaLabel,
     nextMessage: clean(fields.customer_next_message, 500) || null,
   };
+}
+
+async function resolveCustomerEtaEvent(env, sessionId) {
+  if (!sessionId) return { hasEvent: false, label: null };
+  try {
+    // This read happens only after canonical customer ownership of the Session
+    // has been established. Raw Job/event data is never returned to MY MMD.
+    const records = await airtableList(env, {
+      table: String(env.AIRTABLE_TABLE_JOBS || DEFAULT_JOBS_TABLE),
+      filterByFormula: `{session_id}=${formulaString(sessionId)}`,
+      maxRecords: 2,
+    });
+    if (records.length !== 1) return { hasEvent: false, label: null };
+    return customerEtaFromEvents(records[0]?.fields?.events_json);
+  } catch {
+    // Do not make the customer Session unavailable because the derived Jobs
+    // read is temporarily unavailable. The legacy label remains the fallback.
+    return { hasEvent: false, label: null };
+  }
+}
+
+export function customerEtaFromEvents(value, now = Date.now()) {
+  const events = parseEvents(value);
+  const nowMs = Number(now);
+  const currentMs = Number.isFinite(nowMs) ? nowMs : Date.now();
+  let latest = null;
+
+  for (const entry of events) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const event = clean(entry.event, 80).toLowerCase().replace(/[\s-]+/g, "_");
+    const etaMinutes = validEtaMinutes(entry.eta_minutes);
+    const updatedAt = Date.parse(clean(entry.ts, 80));
+    if (event !== ETA_EVENT || !etaMinutes || !Number.isFinite(updatedAt)) continue;
+    if (!latest || updatedAt >= latest.updatedAt) latest = { etaMinutes, updatedAt };
+  }
+
+  if (!latest) return { hasEvent: false, label: null };
+  const remainingMs = (latest.updatedAt + latest.etaMinutes * 60_000) - currentMs;
+  if (remainingMs <= 0) return { hasEvent: true, label: null };
+  const remainingMinutes = Math.max(1, Math.ceil(remainingMs / 60_000));
+  return { hasEvent: true, label: `ถึงโดยประมาณในอีก ${remainingMinutes} นาที` };
+}
+
+function parseEvents(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  const serialized = value.trim();
+  if (!serialized || serialized.length > MAX_EVENTS_JSON_LENGTH) return [];
+  try {
+    const parsed = JSON.parse(serialized);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function validEtaMinutes(value) {
+  const number = (typeof value === "number" || typeof value === "string") ? Number(value) : 0;
+  return Number.isInteger(number) && number >= 1 && number <= ETA_MAX_MINUTES ? number : 0;
 }
 
 function lifecycleOf(fields = {}) {
@@ -164,9 +232,9 @@ function contextSessionId(payload) {
   return clean(session.session_id || session.sessionId, 160);
 }
 
-async function airtableList(env, { filterByFormula, maxRecords }) {
+async function airtableList(env, { filterByFormula, maxRecords, table: selectedTable = "" }) {
   requireAirtable(env);
-  const table = String(env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE);
+  const table = String(selectedTable || env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE);
   const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
   url.searchParams.set("filterByFormula", filterByFormula);
   url.searchParams.set("maxRecords", String(maxRecords));
