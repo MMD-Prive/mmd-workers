@@ -225,18 +225,35 @@ async function sha256Hex(buffer) {
 
 async function menuImageCheck(env, richMenuId, spec) {
   if (!clean(richMenuId)) return { match: false, reason: "missing_menu" };
-  const expected = await imageFor(spec).catch(() => null);
-  if (!expected) return { match: false, reason: "source_unavailable" };
   const response = await fetch(`${LINE_DATA_API}/richmenu/${encodeURIComponent(richMenuId)}/content`, {
     headers: lineHeaders(env),
   }).catch(() => null);
   if (!response?.ok) return { match: false, reason: `line_http_${response?.status || 0}` };
   const actual = await response.arrayBuffer();
-  if (actual.byteLength !== expected.buffer.byteLength) {
-    return { match: false, reason: "byte_length_mismatch", actual_bytes: actual.byteLength, expected_bytes: expected.buffer.byteLength };
+  const actualHash = await sha256Hex(actual);
+  let expectedBytes = 0;
+  let validSources = 0;
+  let sameSize = false;
+  // Upload may use the CDN fallback if the primary image host is temporarily unavailable.
+  // Accept only a byte-exact match against one of the approved artwork sources.
+  for (const url of spec.images) {
+    const source = await fetch(url).catch(() => null);
+    if (!source?.ok) continue;
+    const expected = await source.arrayBuffer();
+    const size = pngSize(expected);
+    if (expected.byteLength > MAX_IMAGE_BYTES || !size || size.width < 800 || size.width > 2500 || size.height < 250 || size.width / size.height < 1.45) continue;
+    validSources += 1;
+    if (!expectedBytes) expectedBytes = expected.byteLength;
+    if (actual.byteLength !== expected.byteLength) continue;
+    sameSize = true;
+    if (actualHash === await sha256Hex(expected)) return { match: true, reason: "" };
   }
-  const [actualHash, expectedHash] = await Promise.all([sha256Hex(actual), sha256Hex(expected.buffer)]);
-  return { match: actualHash === expectedHash, reason: actualHash === expectedHash ? "" : "content_mismatch" };
+  return {
+    match: false,
+    reason: !validSources ? "source_unavailable" : sameSize ? "content_mismatch" : "byte_length_mismatch",
+    actual_bytes: actual.byteLength,
+    expected_bytes: expectedBytes,
+  };
 }
 
 export async function prepareMmdRichMenus(env) {
