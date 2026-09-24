@@ -699,7 +699,9 @@ export async function handlePackage(request, env = {}) {
       invalidatePackageSelection(auth.session);
     }
   }
-  if (auth.session.hype_decision_status === "manual_review" || (requiresAudience(auth.session.liff_intent) && auth.session.hall_audience_context === "unknown")) {
+  // Private Standard/Premium signups do not require a Hall audience choice.
+  // Preserve the audience gate for all other signup packages and Hall routes.
+  if (auth.session.hype_decision_status === "manual_review" || (requiresAudience(auth.session.liff_intent) && auth.session.hall_audience_context === "unknown" && !isPrivateSignupPackage(auth.session, requestedPackage))) {
     return saveRotatedError(env, auth, "PACKAGE_NOT_READY", "Choose the appropriate route first.", 409);
   }
   let packageRule;
@@ -716,10 +718,10 @@ export async function handlePackage(request, env = {}) {
     applyManualReview(auth.session);
   } else {
     auth.session.pricing_lane = packageRule.pricing_lane;
+    auth.session.hype_decision_status = "decided";
     auth.session.selected_package = selectedPackageForSession(packageRule, auth.session);
     auth.session.payment_intent_session_id = null;
     auth.session.payment_binding_status = null;
-    auth.session.hype_decision_status = "decided";
     auth.session.route_after_liff = "/member/payments";
     auth.session.next_screen_key = "payment_start";
   }
@@ -1968,9 +1970,20 @@ function isPackageAllowedForSession(packageRule, session) {
   if (!packageRule || typeof packageRule !== "object") return false;
   if (requiresMemberLookupForProtectedFlow(session) || isStatusOnlyFlow(session)) return false;
   if (packageRule.requires_manual_review) return true;
+  if (isPrivateSignupPackage(session, packageRule.package_code)) {
+    return (packageRule.package_code === "standard" && packageRule.pricing_lane === "standard_1199")
+      || (packageRule.package_code === "premium" && packageRule.pricing_lane === "premium_2999");
+  }
   if (session.hall_audience_context === "female_view") return packageRule.pricing_lane === "believe_member_2999";
   if (session.hall_audience_context === "lgbt_view") return packageRule.pricing_lane === "gay_extreme_900";
   return ["standard_1199", "premium_2999"].includes(packageRule.pricing_lane) && ["renew", "continue_payment"].includes(session.liff_intent);
+}
+
+function isPrivateSignupPackage(session, packageCode) {
+  return session.liff_intent === "signup"
+    && session.member_exists === false
+    && session.hall_audience_context === "unknown"
+    && ["standard", "premium"].includes(packageCode);
 }
 
 function safePaymentSummary(packageRule) {

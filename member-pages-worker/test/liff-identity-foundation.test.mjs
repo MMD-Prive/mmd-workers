@@ -1287,6 +1287,45 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.deepEqual(result.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
   });
 
+  it("lets a new private Premium signup select the canonical 2,999 package without a Hall audience", async () => {
+    const runtime = env();
+    runtime.LIFF_GATEWAY_STORE.packages.set("premium", {
+      package_code: "premium", pricing_lane: "premium_2999", amount_thb: 2999,
+      duration_days: 730, points_after_verification: 0, requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "new-private-member", liff_intent: "signup" });
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "premium" },
+    }, runtime);
+    assert.equal(selected.response.status, 200);
+    assert.equal(selected.payload.data.payment_summary.amount_thb, 2999);
+    assert.equal(selected.payload.data.next_screen_key, "payment_start");
+    assert.deepEqual(selected.payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+
+    const payment = await request("/member/api/liff/payment-intent", {
+      cookie: cookiePair(findCookie(selected.response, "__Host-mmd_liff_session")),
+      body: { package_code: "premium", payment_stage: "membership" },
+    }, runtime);
+    assert.equal(payment.response.status, 503);
+    assert.equal(payment.payload.error.code, "PAYMENT_TOKEN_CONTRACT_UNAVAILABLE");
+  });
+
+  it("does not offer the new signup rate to an existing member", async () => {
+    const runtime = env({ MEMBER_STATUS_RESOLVER: resolver({ member_exists: true }) });
+    runtime.LIFF_GATEWAY_STORE.packages.set("premium", {
+      package_code: "premium", pricing_lane: "premium_2999", amount_thb: 2999,
+      duration_days: 730, points_after_verification: 0, requires_manual_review: false,
+    });
+    const started = await start(runtime, { id_token: "existing-private-member", liff_intent: "signup" });
+    const selected = await request("/member/api/liff/package", {
+      cookie: cookiePair(findCookie(started.response, "__Host-mmd_liff_session")),
+      body: { requested_package_code: "premium" },
+    }, runtime);
+    assert.equal(selected.response.status, 409);
+    assert.equal(selected.payload.error.code, "PACKAGE_NOT_READY");
+  });
+
   it("stores a bounded Hall audience decision without exposing its internal labels to the customer", async () => {
     const runtime = env();
     runtime.LIFF_GATEWAY_STORE.inventory.add("female_view");

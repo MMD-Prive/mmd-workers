@@ -48,7 +48,7 @@ async function keyedDigest(secret, value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_token_123" } = {}) {
+async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_token_123", signup = false } = {}) {
   const secret = "test-only-liff-session-secret-1234567890";
   const token = "rotated_token_1234567890";
   const kv = new MemoryKv();
@@ -65,13 +65,13 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
     session_id: "liff-session-123",
     expires_at: Date.now() + 10 * 60 * 1000,
     gateway_record_id: "rec_liff_1",
-    liff_intent: "renew",
-    member_exists: true,
+    liff_intent: signup ? "signup" : "renew",
+    member_exists: !signup,
     line_user_id: "U1234567890abcdef1234567890abcdef",
     member_profile: { tier: "Premium" },
     selected_package: {
       package_code: "premium",
-      amount_thb: 2500,
+      amount_thb: signup ? 2999 : 2500,
       requires_manual_review: false,
     },
     payment_binding_status: "contract_unavailable",
@@ -102,7 +102,7 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
   const request = new Request("https://mmdbkk.com/member/api/liff/payment-intent", {
     method: "POST",
     headers: { origin: "https://mmdbkk.com", "content-type": "application/json" },
-    body: JSON.stringify({ package_code: "premium", payment_stage: "renewal" }),
+    body: JSON.stringify({ package_code: "premium", payment_stage: signup ? "membership" : "renewal" }),
   });
   const guardedResponse = new Response(JSON.stringify({
     ok: false,
@@ -124,6 +124,21 @@ async function fixture({ upstreamUrl = "https://mmdbkk.com/sigil/pay?t=signed_to
 }
 
 describe("LIFF payments-worker binding", () => {
+  it("creates a pending 2,999 private signup payment without granting membership or points", async () => {
+    const fx = await fixture({ signup: true });
+    const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.data.redirect_to, "https://mmdbkk.com/sigil/pay?t=signed_token_123");
+    assert.equal(payload.data.payment_summary.payment_status, "pending");
+    assert.equal(payload.data.payment_summary.verification_status, "pending");
+    assert.deepEqual(payload.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
+    assert.equal(fx.payment.calls.length, 1);
+    assert.equal(fx.payment.calls[0].body.amount, 2999);
+    assert.equal(fx.payment.calls[0].body.notes, "source=line_liff;intent=signup;requested_stage=membership");
+    assert.equal(JSON.parse(fx.kv.map.get(fx.key)).renewal_offer, undefined);
+  });
+
   it("derives the renewal amount server-side and returns one signed /sigil/pay handoff", async () => {
     const fx = await fixture();
     const response = await completeValidatedLiffPaymentIntent(fx.request, fx.guardedResponse, fx.env);
