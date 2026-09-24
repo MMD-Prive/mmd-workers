@@ -195,11 +195,6 @@ function renderShell(config, nonce) {
     en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet.",pointsLabel:"Lifetime points",pointsNoExpiry:"Lifetime Points · no 365-day expiry",serviceSpendLabel:"Verified service spend",lifetimeSpendLabel:"Lifetime",spend365Label:"Last 365 days"},
     zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",pointsLabel:"累计积分",pointsNoExpiry:"累计积分 · 暂不按 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
   })[locale] || {});
-  if (CONFIG.intent === "signup") {
-    document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
-    document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
-    document.querySelector(".sub").textContent = locale === "en" ? "Choose your membership inside LINE." : locale === "zh" ? "在 LINE 中选择您的会员方案。" : "เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE";
-  }
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
 
@@ -207,6 +202,11 @@ function renderShell(config, nonce) {
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
+  }
+  if (CONFIG.intent === "signup") {
+    document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
+    document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
+    document.querySelector(".sub").textContent = locale === "en" ? "Choose your membership inside LINE." : locale === "zh" ? "在 LINE 中选择您的会员方案。" : "เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE";
   }
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
   document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
