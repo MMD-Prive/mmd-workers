@@ -2,12 +2,17 @@ import bookingWorker from "./index.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const MODEL_SEARCH_PATH = "/sigil/api/models/search";
+const MODEL_MEDIA_PREFIX = "/sigil/api/models/media/";
+const PUBLIC_MEDIA_TYPES = new Set(["profile_photo", "public_gallery", "intro_video"]);
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const method = request.method.toUpperCase();
     const path = normalizePath(url.pathname);
+    if (method === "GET" && path.startsWith(MODEL_MEDIA_PREFIX)) {
+      return servePublicModelMedia(request, env, decodeURIComponent(path.slice(MODEL_MEDIA_PREFIX.length)));
+    }
     const response = await bookingWorker.fetch(request, env, ctx);
 
     if (!shouldHydrateModelAssets(method, path, response)) return response;
@@ -37,6 +42,7 @@ async function hydrateModelAssetPolicy(env, payload) {
   if (!models.length) return payload;
 
   const table = env.AIRTABLE_TABLE_MODELS_ID || env.AIRTABLE_TABLE_MODELS || "Models";
+  const mediaByModel = await fetchPublicModelMedia(env, models).catch(() => new Map());
   const cache = new Map();
   const hydratedModels = [];
 
@@ -48,7 +54,21 @@ async function hydrateModelAssetPolicy(env, payload) {
     }
     if (!cache.has(modelId)) cache.set(modelId, fetchModelRecord(env, table, modelId));
     const record = await cache.get(modelId).catch(() => null);
-    hydratedModels.push(record ? applyImagePolicy(model, record.fields || {}, env) : model);
+    const media = mediaByModel.get(modelId) || { primary: null, photos: [], clips: [] };
+    const projected = record ? applyImagePolicy(model, record.fields || {}, env) : model;
+    const primary = media.primary;
+    hydratedModels.push({
+      ...projected,
+      ...(primary ? {
+        public_image_url: primary.url,
+        cover_url: primary.url,
+        primary_image_url: primary.url,
+        primary_media_id: primary.media_id,
+      } : {}),
+      additional_images: media.photos,
+      clips: media.clips,
+      media_source: "mmd_model_media_assets",
+    });
   }
 
   let cursor = 0;
@@ -61,6 +81,135 @@ async function hydrateModelAssetPolicy(env, payload) {
   }
   next.asset_policy = "standard_premium_real_photo__gws_ems_ai_image";
   return next;
+}
+
+export async function fetchPublicModelMedia(env, models) {
+  const modelIds = [...new Set(models.map((model) => clean(model?.model_id || model?.model_record_id)).filter(Boolean))];
+  if (!modelIds.length) return new Map();
+  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
+  const clauses = modelIds.map((id) => `FIND(${formulaText(id)},ARRAYJOIN({Model}))`);
+  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
+  const result = new Map(modelIds.map((id) => [id, { primary: null, photos: [], clips: [] }]));
+  for (const row of rows) {
+    const fields = row.fields || {};
+    if (!isPublicMedia(fields)) continue;
+    const modelLinks = Array.isArray(fields.Model) ? fields.Model : [];
+    const media = {
+      media_id: clean(fields.media_id),
+      media_type: clean(fields.media_type),
+      asset_role: clean(fields.asset_role),
+      file_type: clean(fields.file_type),
+      url: mediaUrl(env, fields.media_id),
+    };
+    if (!media.media_id || !media.url) continue;
+    for (const link of modelLinks) {
+      const modelId = clean(typeof link === "string" ? link : link?.id);
+      const group = result.get(modelId);
+      if (!group) continue;
+      if (media.asset_role === "profile_main" && media.media_type !== "intro_video") group.primary = media;
+      else if (media.media_type === "intro_video") group.clips.push(media);
+      else group.photos.push(media);
+    }
+  }
+  for (const group of result.values()) {
+    group.photos.sort((a, b) => Number(b.asset_role === "profile_main") - Number(a.asset_role === "profile_main"));
+    group.photos = group.photos.slice(0, 12);
+    group.clips = group.clips.slice(0, 5);
+  }
+  return result;
+}
+
+export function isPublicMedia(fields) {
+  const type = clean(fields.media_type).toLowerCase();
+  const role = clean(fields.asset_role).toLowerCase();
+  const visibility = clean(fields.media_visibility).toLowerCase();
+  const status = clean(fields.review_status).toLowerCase();
+  return PUBLIC_MEDIA_TYPES.has(type)
+    && fields.public_safe === true
+    && ["active", "approved", "public"].includes(status)
+    && ["public", "public_candidate"].includes(visibility)
+    && !/private|flash|sensitive/.test(role)
+    && clean(fields.private_original_key).length > 0;
+}
+
+async function servePublicModelMedia(request, env, mediaId) {
+  if (!/^media_[a-f0-9]{32}$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") return json({ ok: false, error: "media_storage_unavailable" }, 503);
+  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
+  const escaped = mediaId.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+  const rows = await airtableList(env, table, `{media_id}="${escaped}"`, 2).catch(() => []);
+  const fields = rows[0]?.fields || {};
+  if (!rows.length || !isPublicMedia(fields)) return json({ ok: false, error: "media_not_found" }, 404);
+  const rangeHeader = request.headers.get("range") || "";
+  const rangeMatch = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+  let range = undefined;
+  if (rangeMatch && objectSizeHint(fields) > 0) {
+    const size = objectSizeHint(fields);
+    const start = rangeMatch[1] ? Number(rangeMatch[1]) : Math.max(0, size - Number(rangeMatch[2] || 0));
+    const end = rangeMatch[2] && rangeMatch[1] ? Number(rangeMatch[2]) : size - 1;
+    if (start >= size || end < start) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+    range = { offset: start, length: Math.min(end, size - 1) - start + 1 };
+  }
+  const object = await env.MMD_MODEL_ASSETS.get(clean(fields.private_original_key), range ? { range } : undefined).catch(() => null);
+  if (!object) return json({ ok: false, error: "media_not_found" }, 404);
+  const size = object.size || objectSizeHint(fields);
+  const headers = new Headers({
+    "content-type": clean(fields.file_type || object.httpMetadata?.contentType) || "application/octet-stream",
+    "cache-control": "public, max-age=300, s-maxage=3600",
+    "x-content-type-options": "nosniff",
+    "content-disposition": "inline",
+    "accept-ranges": "bytes",
+  });
+  if (range && size > 0) {
+    headers.set("content-range", `bytes ${range.offset}-${range.offset + range.length - 1}/${size}`);
+    headers.set("content-length", String(range.length));
+  }
+  const origin = request.headers.get("origin");
+  if (origin && allowedOrigin(origin, env)) {
+    headers.set("access-control-allow-origin", origin);
+    headers.set("vary", "origin");
+  }
+  return new Response(object.body, { status: range ? 206 : 200, headers });
+}
+
+function objectSizeHint(fields) {
+  const size = Number(fields.file_size_bytes);
+  return Number.isFinite(size) && size > 0 ? size : 0;
+}
+
+async function airtableList(env, table, formula, limit) {
+  const records = [];
+  let offset = "";
+  do {
+    const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(table)}`);
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("filterByFormula", formula);
+    if (offset) url.searchParams.set("offset", offset);
+    const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+    if (!response.ok) throw new Error("media_registry_unavailable");
+    const payload = await response.json();
+    records.push(...(Array.isArray(payload.records) ? payload.records : []));
+    offset = payload.offset || "";
+  } while (offset && records.length < limit);
+  return records.slice(0, limit);
+}
+
+function mediaUrl(env, mediaId) {
+  const base = clean(env.SIGIL_MODEL_MEDIA_BASE_URL || "https://sigil.mmdbkk.com").replace(/\/+$/, "");
+  return `${base}${MODEL_MEDIA_PREFIX}${encodeURIComponent(clean(mediaId))}`;
+}
+
+function formulaText(value) {
+  return `"${clean(value).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+}
+
+function allowedOrigin(origin, env) {
+  const allowed = clean(env.ALLOWED_ORIGINS).split(",").map((item) => item.trim());
+  return allowed.includes(origin);
+}
+
+function json(payload, status = 200) {
+  return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" } });
 }
 
 function collectModels(payload) {
