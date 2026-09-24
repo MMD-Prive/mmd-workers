@@ -16,6 +16,7 @@ import { handleHistoricalSlipBackfillRequest } from "./historical-slip-backfill-
 import { readHypeTelegramRouterHealth } from "./hype-telegram-router-health-read.js";
 import { buildControlRoomV2SystemHealth } from "../../shared/control-room-v2-system-health.mjs";
 import { buildOwnerAnalyticsDashboard } from "./owner-analytics-dashboard.js";
+import { buildOwnerAnnualFinance } from "./owner-annual-finance.js";
 import { buildOwnerActionsQueue } from "./owner-actions-queue.js";
 import { buildOwnerActionDetail } from "./owner-action-detail.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
@@ -28,6 +29,7 @@ import { readAdminCalendar } from "./admin-calendar-runtime-v2.js";
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const DASHBOARD_PATH = "/v1/admin/dashboard";
 const OWNER_ANALYTICS_PATH = "/v1/admin/dashboard/analytics";
+const OWNER_ANNUAL_FINANCE_PATH = "/v1/admin/dashboard/annual-finance";
 const OWNER_ACTIONS_PATH = "/v1/admin/dashboard/owner-actions";
 const DEFAULT_MEMBERS_TABLE_ID = "tblgWc5VRon5o8Mhk";
 const DEFAULT_SESSIONS_TABLE_ID = "tblC98mKWbzmPuNzX";
@@ -45,7 +47,7 @@ export default {
       return new Response(null, { status: 204, headers: cors });
     }
 
-    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH || path === OWNER_ACTIONS_PATH) {
+    if (path === DASHBOARD_PATH || path === OWNER_ANALYTICS_PATH || path === OWNER_ACTIONS_PATH || path === OWNER_ANNUAL_FINANCE_PATH) {
       if (!isAllowedOrigin(req, env)) {
         return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
       }
@@ -56,6 +58,16 @@ export default {
 
       if (method !== "GET") {
         return withCors(json({ ok: false, error: "method_not_allowed" }, 405), cors);
+      }
+
+      if (path === OWNER_ANNUAL_FINANCE_PATH) {
+        const actor = await readCredentialBoundAdminActor(req, env);
+        if (!actor || String(actor.role || "").trim().toLowerCase() !== "owner") {
+          return withCors(json({ ok: false, error: "owner_required" }, 403), cors);
+        }
+        const year = Number(url.searchParams.get("year"));
+        const summary = await buildOwnerAnnualFinance(env, year);
+        return withCors(json(summary, summary.ok ? 200 : summary.error === "invalid_year" ? 400 : 503), cors);
       }
 
       if (path === OWNER_ANALYTICS_PATH) {
