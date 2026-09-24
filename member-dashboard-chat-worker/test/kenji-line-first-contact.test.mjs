@@ -102,7 +102,9 @@ test("First Contact follows voluntary greeting answers without inferring identit
   assert.equal(combined.first_contact_state.self_reported_gender, "woman");
   assert.equal(combined.first_contact_state.preferred_style, "สุภาพ");
   assert.match(profile.text, /งานหรือกิจกรรม/);
-  assert.equal(decideKenjiLineFirstContact(message("ชอบผู้ชาย"), "note_only").first_contact_state, undefined);
+  const preferredModel = decideKenjiLineFirstContact(message("ชอบผู้ชาย"), "note_only");
+  assert.equal(preferredModel.first_contact_state.self_reported_gender, undefined);
+  assert.equal(preferredModel.first_contact_state.preferred_model_gender, "man");
 
   const style = decideKenjiLineFirstContact(message("ชอบลุคสุภาพ"), "note_only");
   assert.equal(style.first_contact_state.preferred_style, "สุภาพ");
