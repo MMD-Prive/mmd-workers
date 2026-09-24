@@ -7,7 +7,7 @@ const MEMBERSHIP_INTENTS = new Set([
 ]);
 const ACTIVE = new Set(["active", "expiring_soon"]);
 const RENEWAL = new Set(["expired", "grace"]);
-const MEMBERSHIP_URL = "https://mmdbkk.com/member/membership";
+const MEMBERSHIP_URL = "https://mmdbkk.com/sigil/member/membership";
 
 function dateLabel(value) {
   const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
