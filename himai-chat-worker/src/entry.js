@@ -6,6 +6,7 @@ import { handleShopAlert } from "./shop-alerts.js";
 import { handleSupplierPortal } from "./supplier-portal.js";
 import { renderDistributorPortalPage } from "./distributor-portal-page.js";
 import { renderSupplierLiffPage } from "./supplier-liff-page.js";
+import { renderSupplierInvitePage } from "./supplier-invite-page.js";
 import { runSupplierSourceLowStockSweep } from "./supplier-low-stock-alert.js";
 import { handleReplaySafeShopCheckout } from "./shop-checkout-idempotency.js";
 import { handleMmdShopOrderPage, isMmdShopOrderPageRequest } from "./mmd-shop-order-page.js";
@@ -24,6 +25,7 @@ import { readMmdShopReservation } from "../../shared/mmd-shop-stock-reservation.
 
 const DEFAULT_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT";
 const SUPPLIER_LIFF_PATHS = new Set(["/shop/supplier/liff", "/shop/supplier/liff/"]);
+const SUPPLIER_INVITE_PATHS = new Set(["/shop/supplier/invite"]);
 
 export { MmdShopStockCoordinator };
 
@@ -65,6 +67,7 @@ export default {
     if (isMmdShopProductPageRequest(request)) return handleMmdShopProductPage(request);
     if (isMmdShopOrderPageRequest(request)) return handleMmdShopOrderPage(request);
     if (request.method.toUpperCase() === "GET" && ["/shop/distributor", "/shop/supplier"].includes(path)) return renderDistributorPortalPage();
+    if (request.method.toUpperCase() === "GET" && SUPPLIER_INVITE_PATHS.has(path)) return renderSupplierInvitePage(request, env);
     if (request.method.toUpperCase() === "GET" && SUPPLIER_LIFF_PATHS.has(url.pathname)) return handleSupplierLiffEntry(request, env);
 
     try {
