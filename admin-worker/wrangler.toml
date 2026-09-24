@@ -73,6 +73,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/telegram/bind"
 zone_name = "mmdbkk.com"
 
+# Model-visible completed work, confirmed earnings, and verified payout history.
+# Keep ownership exact so adjacent /v1/model routes remain independently governed.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/history"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/history"
+zone_name = "mmdbkk.com"
+
 # Model Dashboard media self-service. This includes list/upload/file/set-main/delete
 # while private-gallery/flash authorization remains on the explicit review routes below.
 [[routes]]

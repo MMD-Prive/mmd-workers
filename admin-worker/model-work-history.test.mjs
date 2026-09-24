@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { handleModelWorkHistoryRequest, isModelVisibleApprovedImport, isVerifiedPaidPayout, projectSession } from "./src/model-work-history.js";
 
 const MODEL_ID = "recModelABC123456789";
@@ -85,4 +86,10 @@ test("canonical job projection does not treat absent payment evidence as unpaid"
   assert.equal(item.earned_amount_thb, 4500);
   assert.equal(item.paid_amount_thb, null);
   assert.equal(item.payment_evidence, "not_recorded");
+});
+
+test("production routes send both canonical hosts to the work history endpoint", () => {
+  const wrangler = readFileSync(new URL("./wrangler.toml", import.meta.url), "utf8");
+  assert.match(wrangler, /pattern = "mmdbkk\.com\/v1\/model\/history"/);
+  assert.match(wrangler, /pattern = "www\.mmdbkk\.com\/v1\/model\/history"/);
 });
