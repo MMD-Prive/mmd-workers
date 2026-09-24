@@ -44,3 +44,11 @@ GitHub remains source truth; Workers remain runtime authority; Webflow remains p
 - `studio-launchpad.html` — source mirror of the canonical three-step Webflow launchpad.
 - `studio-final-lock.js` — scoped runtime final lock for typography, query continuity, and Review bypass removal.
 - `studio-upload-theme-lock.css` — scoped Upload theme/token lock matching the Studio launchpad visual system.
+
+## SIGIL Comp Card Template Pack
+
+- `studio-compcard-template-selector.js` is the source mirror for the local-draft template selector and read-only Final Preview renderer.
+- Template IDs: `straight`, `gay`, `foreigner`, `gws`, `ems`, `travel`, and `extreme`.
+- GWs and EMs retain RUN NUMBER, height/weight, and a required 1–2 line Title Bar. All other private cards show model name and metrics without run code.
+- Travel and Extreme render as public `MMD PRIVÉ` collection cards; they suppress individual-model and metric fields.
+- This pack preserves the Upload → Review → Final Preview flow and does not add production publication authority.
