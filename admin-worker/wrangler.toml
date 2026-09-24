@@ -277,6 +277,14 @@ pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/prepare"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/activate"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/line/rich-menu/three-level/activate"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/v1/admin/line/rich-menu/three-level/audit"
 zone_name = "mmdbkk.com"
 
