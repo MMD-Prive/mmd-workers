@@ -111,7 +111,7 @@ export function decideKenjiLineFirstContact(event = {}, intent = "", continuity 
   }
   if (previous.awaiting === "area_time" && kind === "note_only" && raw.length <= 100 &&
       /(?:ย่าน|แถว|โซน|เวลา|โมง|ช่วง|สุขุมวิท|สีลม|สาทร|ทองหล่อ|เอกมัย|อโศก|กรุงเทพ|พัทยา|เชียงใหม่)/.test(raw)) {
-    return { ...base, text: "รับรายละเอียดเบื้องต้นแล้วครับ เปอร์จะตรวจเรื่องคิวและราคาให้ตรงกับบรีฟก่อนแจ้งกลับครับ", handoff_required: true, handoff_reason: "service_brief:owner_review", first_contact_state: { awaiting: "review" } };
+    return { ...base, text: "รับรายละเอียดเบื้องต้นแล้วครับ เรื่องคิวและราคาต้องให้เปอร์ตรวจจากบรีฟก่อนยืนยันครับ", handoff_required: true, handoff_reason: "service_brief:owner_review", first_contact_state: { awaiting: "review" } };
   }
   if (kind === "mms_wellness") {
     return { ...base, text: `งานนวดชายดูแลผ่าน LINE Official ของ MMS โดยเฉพาะครับ ติดต่อได้ที่ ${ROUTES.mmsLine}`, reply_source: "mms_line_redirect" };
