@@ -371,6 +371,7 @@ jobs:
             "/v1/admin/mms/*",
             "/v1/admin/auth/me",
             "/v1/admin/payment-issuer-diagnostic",
+            "/v1/admin/cancellation-credit-recovery",
             "/v1/admin/model-media/e2e-smoke",
             "/v1/admin/models/review-queue*",
             "/v1/admin/membership/payment-entitlement/approve",
@@ -553,6 +554,18 @@ jobs:
               "$origin/v1/admin/payment-issuer-diagnostic")"
             test "$diagnostic_code" = "401"
             grep -q '"error":"unauthorized"' "$diagnostic_body"
+
+            # Cancellation-to-credit recovery is an owner-only POST API. An
+            # unauthenticated request must reach admin-worker (401), never
+            # fall through to the Webflow origin (405).
+            cancellation_headers="$(mktemp)"
+            cancellation_body="$(mktemp)"
+            cancellation_code="$(curl -sS --max-time 20 -D "$cancellation_headers" -o "$cancellation_body" -w "%{http_code}" \
+              -X POST -H "Origin: $origin" -H "Content-Type: application/json" --data '{"action":"prepare"}' \
+              "$origin/v1/admin/cancellation-credit-recovery")"
+            cat "$cancellation_body"
+            test "$cancellation_code" = "401"
+            grep -Eq '"code":"ADMIN_SESSION_REQUIRED"' "$cancellation_body"
 
             # Unified Model owner review queue must reach admin-worker and stay behind the owner browser session.
             model_review_queue_body="$(mktemp)"
