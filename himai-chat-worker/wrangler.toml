@@ -14,6 +14,14 @@ pattern = "www.mmdbkk.com/shop/supplier/liff*"
 zone_name = "mmdbkk.com"
 
 [[routes]]
+pattern = "mmdbkk.com/shop/supplier/invite*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/shop/supplier/invite*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
 pattern = "mmdbkk.com/shop/api/*"
 zone_name = "mmdbkk.com"
 
