@@ -226,7 +226,7 @@ function safeWish(record) {
   };
 }
 
-async function requireModelSession(request, env) {
+export async function requireModelSession(request, env) {
   const token = readCookie(request.headers.get("cookie"), COOKIE_NAME);
   if (!token) return { ok: false, status: 401, error: "model_session_required" };
   const verified = await verifySessionToken(token, env);
