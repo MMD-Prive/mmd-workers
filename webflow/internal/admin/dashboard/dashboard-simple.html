@@ -50,7 +50,43 @@
       
 
       
-      <nav class="adm27-daily" aria-label="งานที่ใช้บ่อย"><a href="/internal/admin/customer-data">ค้นลูกค้า</a><a href="/internal/ceo/payment-slip-inbox">รับสลิป</a><a href="/internal/admin/payments">ตรวจรับเงิน</a><a href="/internal/admin/calendar">ปฏิทิน</a></nav><section class="adm27-summary" aria-label="Operational summary">
+
+      <section class="adm27-owner" aria-label="งานของเปอร์">
+        <div class="adm27-ownerhead"><div><span>OWNER DESK</span><h2>ทำงานต่อ</h2></div><p>เลือกเรื่องที่ต้องจัดการ ระบบแต่ละส่วนเปิดที่หน้าทำงานจริง</p></div>
+        <div class="adm27-ownergrid">
+          <a href="/internal/admin/customer-data"><strong>ลูกค้า</strong><span>ค้นคน · ประวัติ · ยืนยันตัวตน</span></a>
+          <a href="/internal/admin/jobs/all"><strong>งาน</strong><span>คิวงาน · สถานะ · ปฏิทิน</span></a>
+          <a href="/internal/admin/payments"><strong>การเงิน</strong><span>สลิป · ตรวจยอด · เคสค้าง</span></a>
+          <a href="/internal/ceo/models"><strong>โมเดล &amp; สตูดิโอ</strong><span>โมเดล · รูป · เทมเพลต</span></a>
+          <a href="/internal/admin/kenji"><strong>เคนจิ AI</strong><span>ความรู้ · คำตอบ · ส่งต่อ</span></a>
+          <a href="/internal/admin/mms"><strong>นวดชาย</strong><span>เทอราปิสต์ · คิว · งานบริการ</span></a>
+        </div>
+      </section>
+      <section class="adm27-owner adm27-business" aria-label="ภาพธุรกิจและลูกค้า">
+        <div class="adm27-ownerhead"><div><span>OWNER VIEW</span><h2>ภาพธุรกิจและลูกค้า</h2></div><a href="/internal/ceo/dashboard">เปิดมุมมองธุรกิจทั้งหมด →</a></div>
+        <div class="adm27-ownergrid">
+          <a href="/internal/ceo/audience#aud-demographic"><strong>Demographic</strong><span>เพศ · อายุ · พื้นที่ · วันที่ของข้อมูล</span></a>
+          <a href="/internal/ceo/audience"><strong>Audience</strong><span>การตอบสนอง · การจอง · ลูกค้ากลับมา</span></a>
+          <a href="/internal/ceo/dashboard"><strong>การตัดสินใจ</strong><span>รายงาน CEO · Marketing · งานต่อ</span></a>
+        </div>
+      </section>
+      <style>
+        #adm27 .adm27-owner{border:1px solid #343027;border-radius:14px;background:#121210;padding:20px;color:#f4efe6}
+        #adm27 .adm27-ownerhead{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:14px}
+        #adm27 .adm27-ownerhead span{font-size:12px;letter-spacing:.08em;color:#c8ab73}#adm27 .adm27-ownerhead h2{margin:2px 0 0;font-size:20px}
+        #adm27 .adm27-ownerhead p{margin:0;color:#bdb3a4;font-size:14px}#adm27 .adm27-ownerhead>a{font-size:14px}
+        #adm27 .adm27-ownergrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+        #adm27 .adm27-ownergrid>a{display:flex;flex-direction:column;gap:4px;min-height:86px;padding:14px;border:1px solid #3b352b;border-radius:12px;background:#191713;text-decoration:none;color:#f4efe6}
+        #adm27 .adm27-ownergrid>a strong{font-size:17px}#adm27 .adm27-ownergrid>a span{font-size:14px;color:#c6bfb2;line-height:1.5}
+        #adm27 .adm27-ownergrid>a:hover{border-color:#927342;background:#211c13}#adm27 .adm27-ownergrid>a:focus-visible{outline:2px solid #e4c487;outline-offset:2px}
+        @media(max-width:700px){#adm27 .adm27-owner{padding:16px}#adm27 .adm27-ownerhead{display:block}#adm27 .adm27-ownerhead p{margin-top:6px}#adm27 .adm27-ownergrid{grid-template-columns:1fr 1fr}#adm27 .adm27-ownergrid>a{min-height:96px}}
+        @media(max-width:390px){#adm27 .adm27-ownergrid{grid-template-columns:1fr}#adm27 .adm27-ownergrid>a{min-height:70px}}
+      </style>
+      <article class="adm27-card">
+          <div class="adm27-cardtop"><div><span class="adm27-kicker">ESCALATE</span><h2>เรื่องที่เปอร์ต้องตัดสินใจ</h2></div><a class="adm27-link" href="/internal/ceo/dashboard">ดูรายละเอียด ↗</a></div>
+          <div class="adm27-list" data-boss-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
+        </article>
+      <nav class="adm27-daily" aria-label="ทางลัดที่ใช้บ่อย"><a href="/internal/admin/customer-data">ค้นลูกค้า</a><a href="/internal/ceo/payment-slip-inbox">รับสลิป</a><a href="/internal/admin/payments">ตรวจรับเงิน</a><a href="/internal/admin/calendar">ปฏิทิน</a></nav><section class="adm27-summary" aria-label="Operational summary">
         <article><span>ต้องดูตอนนี้</span><strong data-count="urgent">—</strong><small>รายการรอดำเนินการ</small></article>
         <article><span>รอตรวจเงิน</span><strong data-count="payments">—</strong><small>รายการรอตรวจ</small></article>
         <article><span>งานวันนี้</span><strong data-count="jobs">—</strong><small>งานที่ต้องติดตาม</small></article>
@@ -66,10 +102,7 @@
           <div class="adm27-cardtop"><div><span class="adm27-kicker">CUSTOMER / MEMBER WATCH</span><h2>ควรดูวันนี้</h2></div><a class="adm27-link" href="/internal/admin/customer-data">Customer Data ↗</a></div>
           <div class="adm27-list" data-member-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
         </article>
-      </section><article class="adm27-card">
-          <div class="adm27-cardtop"><div><span class="adm27-kicker">ESCALATE</span><h2>เรื่องที่ควรส่งให้ Boss Per ดู</h2></div><a class="adm27-link" href="/internal/ceo/dashboard">CEO Control ↗</a></div>
-          <div class="adm27-list" data-boss-list=""><div class="adm27-empty">กำลังโหลดข้อมูล…</div></div>
-        </article></details><details class="adm27-disclosure adm27-more"><summary>เพิ่มเติม · โมเดล สมาชิก และเครื่องมือ</summary><section class="adm27-hub">
+      </section></details><details class="adm27-disclosure adm27-more"><summary>เครื่องมือเพิ่มเติม</summary><section class="adm27-hub">
         <div class="adm27-sectionhead"><div><span class="adm27-kicker">CUSTOMER &amp; EVIDENCE</span><h2>งานลูกค้าและหลักฐาน รวมทางเข้าไว้ตรงนี้</h2></div><p>รวม interface ได้ แต่ authority หลังบ้านยังแยกกัน</p></div>
         <div class="adm27-routegrid">
           <a class="adm27-routecard is-primary" href="/internal/admin/customer-data"><span>LINE / CLIENT CONTEXT</span><h3>MMD Memory · ลูกค้า</h3><p>นำเข้าจาก LINE, จับคู่ลูกค้า, candidate และ private context review.</p><b>Open Customer Data ↗</b></a>
