@@ -17,7 +17,7 @@ import {
 import { refineKenjiSalesIntent, salesCardKey } from "./kenji-sales-reply-v2-policy.mjs";
 import { resolveKenjiSalesReply, inspectKenjiSalesPublication } from "./kenji-sales-reply-v2-runtime.mjs";
 import { recordDeliveredKenjiLineReply } from "./kenji-line-conversation-history.mjs";
-import { decideKenjiLineFirstContact } from "./kenji-line-first-contact.mjs";
+import { decideKenjiFirstContactMembership } from "./kenji-line-first-contact-membership.mjs";
 
 const LINE_REPLY_URL = "https://api.line.me/v2/bot/message/reply";
 const KENJI_KNOWLEDGE_TABLE_FALLBACK = "tblsLd1uVOtG2kHoU";
@@ -585,7 +585,7 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
           liveTruth,
         })
       : firstContactEnabled && eventMode !== "standby" && !redelivered && replyToken
-        ? withDecisionMetadata({}, decideKenjiLineFirstContact(event, currentIntent, continuity))
+        ? withDecisionMetadata({}, await decideKenjiFirstContactMembership(event, currentIntent, continuity, env))
       : withDecisionMetadata({}, {
         ...continuityMetadata({ continuity }, currentIntent),
         intent: effectiveIntent,
