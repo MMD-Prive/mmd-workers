@@ -56,7 +56,7 @@ LINE_KENJI_KNOWLEDGE_ENABLED=true
 AIRTABLE_KENJI_KNOWLEDGE_TABLE_ID=tblsLd1uVOtG2kHoU
 \`\`\`
 
-First Contact V1 uses only deterministic, bounded opening replies. The broader Knowledge Board reply path remains paused until a separate review and rollout. See `docs/line/KENJI_LINE_FIRST_CONTACT_V1.md`.
+First Contact V2 uses deterministic, bounded replies after the OA greeting. It accepts explicit voluntary gender/style answers, asks for a service brief, and holds protected matters for review. The broader Knowledge Board reply path remains paused. See `docs/line/KENJI_LINE_FIRST_CONTACT_V2.md`.
 
 ## Test Phrases
 
