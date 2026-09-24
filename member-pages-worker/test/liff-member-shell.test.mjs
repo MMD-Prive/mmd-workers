@@ -84,7 +84,7 @@ describe("same-site /member/liff shell", () => {
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
-    assert.match(html, /if \(existingProfile\) return/);
+    assert.match(html, /if \(existingProfile\) \{ await readSignupCatalog\(\); return; \}/);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {
