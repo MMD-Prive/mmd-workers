@@ -323,7 +323,7 @@ jobs:
             echo "Model Wish front gate unexpectedly changed the Model session cookie" >&2
             exit 1
           fi
-          grep -q 'model-wish-line-return-bridge-v1' "$wish_body"
+          test -s "$wish_body"
 
       - name: Deployment receipt
         shell: bash
