@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isPresentationUiPath,
+  isModelWishPath,
   isPresentationAssetPath,
   isPresentationRootRuntimePath,
   isWishStatusAssetPath,
@@ -10,6 +11,7 @@ import {
   isModelPwaManifestPath,
   modelPwaManifest,
   presentationUrlForPage,
+  modelWishPresentationUrl,
   presentationUrlForAsset,
   rewritePresentationHtml,
   rewritePresentationText,
@@ -30,6 +32,9 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isPresentationUiPath("/sigil/model/dashboard"), true);
   assert.equal(isPresentationUiPath("/sigil/model/dashboard/photos"), true);
   assert.equal(isPresentationUiPath("/sigil/model/console"), false);
+  assert.equal(isModelWishPath("/sigil/model/wish"), true);
+  assert.equal(isModelWishPath("/sigil/model/wish/"), true);
+  assert.equal(isModelWishPath("/sigil/model/wish-extra"), false);
   assert.equal(isPresentationAssetPath("/sigil/model/dashboard-assets/_build/app.js"), true);
   assert.equal(isPresentationRootRuntimePath("/_build/app.js"), true);
   assert.equal(isPresentationRootRuntimePath("/_serverFn/abc"), true);
@@ -46,6 +51,72 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isModelHistoryAssetPath("/sigil/model/dashboard-assets/model-history-v1.css"), true);
   assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/manifest.webmanifest"), true);
   assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/profile"), false);
+});
+
+test("keeps Model Wish on apex while fetching only presentation HTML from Webflow", async () => {
+  const originalFetch = globalThis.fetch;
+  const upstreamRequests = [];
+  globalThis.fetch = async (request) => {
+    upstreamRequests.push(request);
+    return new Response(
+      '<!doctype html><html><head></head><body><main id="mmd-wish">MMD MODEL</main></body></html>',
+      {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "set-cookie": "_cfuvid=upstream-only; Domain=webflow.io; Secure",
+        },
+      },
+    );
+  };
+
+  try {
+    const request = new Request(
+      "https://mmdbkk.com/sigil/model/wish?line_return=1&lang=th",
+      {
+        headers: {
+          cookie: "mmd_model_session_v1=opaque-session",
+          authorization: "Bearer must-not-leak",
+          accept: "text/html",
+        },
+      },
+    );
+    assert.equal(
+      modelWishPresentationUrl(request).toString(),
+      "https://mmdprive.webflow.io/sigil/model/wish?line_return=1&lang=th",
+    );
+
+    const worker = (await import("./src/index.js")).default;
+    const response = await worker.fetch(request);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("location"), null);
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(response.headers.get("x-mmd-route-owner"), "model-dashboard-presentation-worker");
+    assert.equal(response.headers.get("x-mmd-ui-source"), "webflow-apex-proxy");
+    assert.equal(response.headers.get("x-mmd-page"), "model-wish");
+    assert.match(await response.text(), /id="mmd-wish"/);
+
+    assert.equal(upstreamRequests.length, 1);
+    assert.equal(
+      upstreamRequests[0].url,
+      "https://mmdprive.webflow.io/sigil/model/wish?line_return=1&lang=th",
+    );
+    assert.equal(upstreamRequests[0].headers.get("cookie"), null);
+    assert.equal(upstreamRequests[0].headers.get("authorization"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Model Wish front gate allows only GET and HEAD", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const response = await worker.fetch(new Request(
+    "https://mmdbkk.com/sigil/model/wish",
+    { method: "POST" },
+  ));
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get("allow"), "GET, HEAD");
+  assert.equal(response.headers.get("x-mmd-page"), "model-wish");
 });
 
 test("exposes an installable MMD MODEL standalone PWA manifest", async () => {

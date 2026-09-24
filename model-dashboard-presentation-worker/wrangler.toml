@@ -13,6 +13,12 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/sigil/model/dashboard*"
 zone_name = "mmdbkk.com"
 
+# Preserve the host-only Model session by serving the Webflow Wish page on the
+# apex host. Do not add a www route and do not widen the session cookie domain.
+[[routes]]
+pattern = "mmdbkk.com/sigil/model/wish*"
+zone_name = "mmdbkk.com"
+
 # Compatibility aliases for TanStack/Lovable lazy runtime chunks that may
 # resolve to root-absolute paths after hydration. These paths are presentation
 # runtime only; /v1/model/* remains outside this worker.

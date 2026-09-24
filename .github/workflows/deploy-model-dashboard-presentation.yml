@@ -127,6 +127,7 @@ jobs:
           const desired = [
             "mmdbkk.com/sigil/model/dashboard*",
             "www.mmdbkk.com/sigil/model/dashboard*",
+            "mmdbkk.com/sigil/model/wish*",
             "mmdbkk.com/assets/*",
             "www.mmdbkk.com/assets/*",
             "mmdbkk.com/_build/*",
@@ -302,6 +303,27 @@ jobs:
             test "$api_code" = "401"
             grep -q '"error":"model_session_required"' "$api_body"
           done
+
+          wish_headers="$(mktemp)"
+          wish_body="$(mktemp)"
+          wish_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -D "$wish_headers" -o "$wish_body" -w "%{http_code}" \
+            -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
+            'https://mmdbkk.com/sigil/model/wish?line_return=1&mmd_smoke=1')"
+          cat "$wish_headers"
+          test "$wish_code" = "200"
+          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy$'
+          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish$'
+          if tr -d '\r' < "$wish_headers" | grep -i -q '^location:'; then
+            echo "Model Wish apex route redirected and would drop the host-only session" >&2
+            exit 1
+          fi
+          if tr -d '\r' < "$wish_headers" | grep -i -q '^set-cookie:.*mmd_model_session_v1'; then
+            echo "Model Wish front gate unexpectedly changed the Model session cookie" >&2
+            exit 1
+          fi
+          grep -q 'model-wish-line-return-bridge-v1' "$wish_body"
 
       - name: Deployment receipt
         shell: bash

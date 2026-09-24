@@ -2,9 +2,11 @@ import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentatio
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
+const WISH_PATH = "/sigil/model/wish";
 const ASSET_PREFIX = "/sigil/model/dashboard-assets/";
 const ROOT_RUNTIME_PREFIXES = ["/_build/", "/_serverFn/", "/assets/"];
 const PRESENTATION_ORIGIN = "https://mmdmodel.lovable.app";
+const WISH_PRESENTATION_ORIGIN = "https://mmdprive.webflow.io";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
@@ -335,6 +337,11 @@ export function isPresentationUiPath(pathname = "") {
   return path === UI_PREFIX || path === `${UI_PREFIX}/` || path.startsWith(`${UI_PREFIX}/`);
 }
 
+export function isModelWishPath(pathname = "") {
+  const path = normalizePath(pathname);
+  return path === WISH_PATH || path === `${WISH_PATH}/`;
+}
+
 export function isPresentationAssetPath(pathname = "") {
   return normalizePath(pathname).startsWith(ASSET_PREFIX);
 }
@@ -627,6 +634,14 @@ function presentationRequestHeaders(request, { runtime = false } = {}) {
   return headers;
 }
 
+export function modelWishPresentationUrl(request) {
+  const source = new URL(request.url);
+  const upstream = new URL(WISH_PRESENTATION_ORIGIN);
+  upstream.pathname = WISH_PATH;
+  upstream.search = source.search;
+  return upstream;
+}
+
 export function presentationUrlForPage(request) {
   const source = new URL(request.url);
   const path = normalizePath(source.pathname);
@@ -751,6 +766,27 @@ function responseHeaders(upstreamHeaders, { html = false, rewritten = false } = 
   return headers;
 }
 
+function modelWishResponseHeaders(upstreamHeaders) {
+  const headers = new Headers(upstreamHeaders);
+  for (const name of [
+    "content-length",
+    "set-cookie",
+    "reporting-endpoints",
+    "report-to",
+    "nel",
+  ]) {
+    headers.delete(name);
+  }
+  headers.set("cache-control", "no-store, no-cache, must-revalidate, max-age=0");
+  headers.set("x-mmd-worker", WORKER_NAME);
+  headers.set("x-mmd-route-owner", WORKER_NAME);
+  headers.set("x-mmd-ui-source", "webflow-apex-proxy");
+  headers.set("x-mmd-page", "model-wish");
+  headers.set("x-mmd-page-source", `${WISH_PRESENTATION_ORIGIN}${WISH_PATH}`);
+  headers.set("x-robots-tag", "noindex, nofollow");
+  return headers;
+}
+
 async function fetchUpstream(request, upstreamUrl, { runtime = false } = {}) {
   const method = request.method.toUpperCase();
   const init = {
@@ -787,6 +823,45 @@ async function proxyPage(request) {
 
   const html = rewritePresentationHtml(await upstream.text());
   return new Response(html, { status: upstream.status, statusText: upstream.statusText, headers });
+}
+
+async function proxyModelWishPage(request) {
+  const method = request.method.toUpperCase();
+  if (!new Set(["GET", "HEAD"]).has(method)) {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: {
+        allow: "GET, HEAD",
+        "cache-control": "no-store",
+        "x-mmd-worker": WORKER_NAME,
+        "x-mmd-route-owner": WORKER_NAME,
+        "x-mmd-page": "model-wish",
+      },
+    });
+  }
+
+  let upstream;
+  try {
+    upstream = await fetchUpstream(request, modelWishPresentationUrl(request));
+  } catch (_) {
+    return new Response("MMD Model Wish is temporarily unavailable.", {
+      status: 502,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+        "x-mmd-worker": WORKER_NAME,
+        "x-mmd-route-owner": WORKER_NAME,
+        "x-mmd-page": "model-wish",
+      },
+    });
+  }
+
+  const headers = modelWishResponseHeaders(upstream.headers);
+  return new Response(method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers,
+  });
 }
 
 async function proxyRuntime(request) {
@@ -927,6 +1002,7 @@ function unavailable() {
 export default {
   async fetch(request) {
     const path = normalizePath(new URL(request.url).pathname);
+    if (isModelWishPath(path)) return proxyModelWishPage(request);
     if (isModelPwaManifestPath(path)) return modelPwaManifestResponse(request.method);
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isTelegramConnectAssetPath(path)) return telegramConnectAssetResponse(path, request.method);
