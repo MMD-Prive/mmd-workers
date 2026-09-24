@@ -34,6 +34,7 @@ function safeEnvelope(value) {
 function boundedTruth(payload = {}) {
   if (payload?.ok !== true || payload?.authority !== AUTHORITY || payload?.identity_status !== "resolved") return null;
   const membership = payload?.membership && typeof payload.membership === "object" ? payload.membership : {};
+  const former = payload?.former_private_membership && typeof payload.former_private_membership === "object" ? payload.former_private_membership : null;
   const points = payload?.points && typeof payload.points === "object" ? payload.points : {};
   const activePoints = Number(points.active_points);
   return {
@@ -50,6 +51,14 @@ function boundedTruth(payload = {}) {
       private_visibility_envelope: safeEnvelope(membership.private_visibility_envelope),
       member_blocked: membership.member_blocked === true,
     },
+    former_private_membership: former && ["expired", "grace"].includes(safeLifecycle(former.lifecycle)) &&
+      ["black_card", "svip", "vip", "private_premium", "private_standard"].includes(safeLevel(former.level))
+      ? {
+        level: safeLevel(former.level),
+        label: text(former.label).slice(0, 40),
+        lifecycle: safeLifecycle(former.lifecycle),
+        expire_at: /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(text(former.expire_at)) ? text(former.expire_at) : "",
+      } : null,
     points: {
       status: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? "verified" : "unavailable",
       active_points: text(points.status) === "verified" && Number.isFinite(activePoints) && activePoints >= 0 ? Math.floor(activePoints) : null,
