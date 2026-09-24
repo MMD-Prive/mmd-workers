@@ -33,6 +33,13 @@ function explicitStyle(raw) {
   return match?.[1] || "";
 }
 
+function explicitModelPreference(raw) {
+  const value = raw.replace(/\s+/g, "").replace(/(?:ครับ|ค่ะ|คะ|นะ)$/, "");
+  if (/^(?:ชอบ|อยากได้)(?:ผู้ชาย|นายแบบ)$/.test(value)) return "man";
+  if (/^(?:ชอบ|อยากได้)ผู้หญิง$/.test(value)) return "woman";
+  return "";
+}
+
 function previousOpening(continuity = {}) {
   if (!continuity.available || continuity.decision === "stale_refresh") return {};
   const state = continuity.matrix?.payload_json?.first_contact_v2;
@@ -73,9 +80,10 @@ export function decideKenjiLineFirstContact(event = {}, intent = "", continuity 
   const pair = /^(.{2,25}?)(?:\s+|[,，/|]\s*)(.{2,35})$/.exec(raw);
   const gender = explicitGender(raw) || (pair ? explicitGender(pair[1]) : "");
   const style = explicitStyle(raw) || (pair && gender ? explicitStyle(pair[2]) : "");
+  const preferredModelGender = explicitModelPreference(raw);
   // Only an explicit answer is captured. "ชอบผู้ชาย" describes a preference,
   // not the customer's gender, and is never promoted to a profile field.
-  if (gender || style) {
+  if (gender || style || preferredModelGender) {
     return {
       ...base,
       text: "รับทราบครับ สนใจให้น้องช่วยในงานหรือกิจกรรมแบบไหนครับ? บอกคร่าว ๆ ได้เลยครับ",
@@ -83,6 +91,7 @@ export function decideKenjiLineFirstContact(event = {}, intent = "", continuity 
         awaiting: "service",
         ...(gender ? { self_reported_gender: gender === "prefer_not_to_say" ? "" : gender } : {}),
         ...(style ? { preferred_style: style } : {}),
+        ...(preferredModelGender ? { preferred_model_gender: preferredModelGender } : {}),
       },
     };
   }
