@@ -558,16 +558,20 @@ async function createOrUpdatePaymentIntent(env, payload, options = {}) {
     paymentMethodRaw.includes("credit") ? "Credit Card" :
     paymentMethodRaw.includes("cash") ? "Cash" : "Other";
   const paymentDate = toStr(payload.paid_at || nowIso()).slice(0, 10);
+  const alreadyVerified = toStr(existing?.fields?.[toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]).toLowerCase() === "paid"
+    && toStr(existing?.fields?.[toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]).toLowerCase() === "verified";
+  const verified = alreadyVerified || (toStr(payload.payment_status).toLowerCase() === "paid"
+    && toStr(payload.verification_status).toLowerCase() === "verified");
 
   const fields = compact({
     [toStr(env.AT_PAYMENTS__PAYMENT_REF || "Payment Reference")]: payload.payment_ref,
     [toStr(env.AT_PAYMENTS__PAYMENT_DATE || "Payment Date")]: paymentDate,
     [toStr(env.AT_PAYMENTS__AMOUNT || "Amount")]: payload.amount,
-    [toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]: "Paid",
+    [toStr(env.AT_PAYMENTS__PAYMENT_STATUS || "Payment Status")]: verified ? "Paid" : "Pending",
     [toStr(env.AT_PAYMENTS__PAYMENT_METHOD || "Payment Method")]: paymentMethod,
     [toStr(env.AT_PAYMENTS__NOTES || "Notes")]: toStr(payload.notes) || undefined,
-    [toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]: "verified",
-    [toStr(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS || "Payment Intent Status")]: "Confirmed",
+    [toStr(env.AT_PAYMENTS__VERIFICATION_STATUS || "Verification Status")]: verified ? "verified" : "pending_review",
+    [toStr(env.AT_PAYMENTS__PAYMENT_INTENT_STATUS || "Payment Intent Status")]: verified ? "Confirmed" : "Pending Confirmation",
     [toStr(env.AT_PAYMENTS__PACKAGE_CODE || "Package Code")]: toStr(payload.package_code) || undefined,
     [toStr(env.AT_PAYMENTS__SESSION_ID || "session_id")]: toStr(payload.session_id) || undefined,
     [toStr(env.AT_PAYMENTS__PAYMENT_STAGE || "payment_stage")]: toStr(payload.payment_stage) || undefined,
