@@ -82,6 +82,24 @@ jobs:
           console.log("LIFF gateway Airtable read preflight passed");
           NODE
 
+      - name: Verify MY MMD ETA event store access
+        shell: bash
+        run: |
+          node <<'NODE'
+          const token = String(process.env.AIRTABLE_API_KEY || "").trim();
+          const base = String(process.env.AIRTABLE_BASE_ID || "").trim();
+          const table = "tbl0jxIjN8QYwGABX";
+          const response = await fetch(`https://api.airtable.com/v0/${base}/${table}?maxRecords=1`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            const type = String(payload?.error?.type || `HTTP_${response.status}`).slice(0, 120);
+            throw new Error(`MY MMD ETA event Airtable preflight failed: ${type}`);
+          }
+          console.log("MY MMD ETA event Airtable read preflight passed");
+          NODE
+
       - name: Verify My MMD Fast Trust Airtable schema
         run: node scripts/validate-my-mmd-fast-trust-airtable-schema.mjs
 
@@ -140,7 +158,7 @@ jobs:
           npm ci
           npm ci --prefix member-pages-worker/test-runtime
 
-      - name: Run focused LIFF, CARE BACK, and model Drive tests
+      - name: Run focused LIFF, Session, CARE BACK, and model Drive tests
         run: |
           npm run test:member-pages-liff
           node --test member-pages-worker/test/model-drive-directory.test.mjs
