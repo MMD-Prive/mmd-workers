@@ -57,7 +57,7 @@ jobs:
         if: success()
         run: |
           echo '### MMD Rich Menu production acceptance' >> "$GITHUB_STEP_SUMMARY"
-          echo '- Current runtime: mmd-rm3-20260924-v4.4' >> "$GITHUB_STEP_SUMMARY"
+          echo '- Current runtime: mmd-rm3-20260924-v4.5' >> "$GITHUB_STEP_SUMMARY"
           echo '- LV1 artwork: approved v4.1 MMD STORIES / Discover TMIB asset' >> "$GITHUB_STEP_SUMMARY"
           echo '- Menu objects/actions/images: verified against LINE production' >> "$GITHUB_STEP_SUMMARY"
           echo '- Five-state resolver policy: Guest/Public/Private/Expired/Blocked verified' >> "$GITHUB_STEP_SUMMARY"
