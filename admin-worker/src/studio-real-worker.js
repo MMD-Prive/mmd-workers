@@ -11,6 +11,12 @@ const REVIEW_COMMIT_PATH = `${STUDIO_API_PREFIX}/review/commit`;
 const PREVIEW_PLAN_PATH = `${STUDIO_API_PREFIX}/model-preview/publish-plan`;
 const PREVIEW_COMMIT_PATH = `${STUDIO_API_PREFIX}/model-preview/commit`;
 const UPLOAD_PATH = `${STUDIO_API_PREFIX}/upload`;
+const MY_CARD_REQUEST_LIST_PATH = `${STUDIO_API_PREFIX}/compcard-requests/list`;
+const MY_CARD_REQUEST_IMPORT_PATH = `${STUDIO_API_PREFIX}/compcard-requests/import`;
+const MY_CARD_REQUEST_MEDIA_PATH = `${STUDIO_API_PREFIX}/compcard-requests/media`;
+const MY_CARD_SOURCE = "mmd_model_my_card";
+const MY_CARD_INTAKE_TABLE_DEFAULT = "Studio_Intake";
+const MODEL_MEDIA_TABLE_DEFAULT = "tblrpQXhHnbTU9RhW";
 const LEDGER_COMMIT_CONFIRMATION = "COMMIT_LEDGER_ONLY";
 const STUDIO_ASSET_PREFIX = "studio-staging/assets/";
 const STUDIO_UPLOAD_SOURCE = "mmd_studio_upload";
@@ -65,6 +71,10 @@ export async function handleStudioRequest(request, env, path = normalizePathname
     const forbidden = findForbiddenStudioInput(body);
     if (forbidden) return json({ ok: false, error: "raw_storage_field_not_allowed", field: forbidden }, 400);
 
+    if (path === MY_CARD_REQUEST_LIST_PATH) return await handleMyCardRequestList(env);
+    if (path === MY_CARD_REQUEST_IMPORT_PATH) return await handleMyCardRequestImport(env, body);
+    if (path === MY_CARD_REQUEST_MEDIA_PATH) return await handleMyCardRequestMedia(env, body);
+
     if (path === INTAKE_VALIDATE_PATH) {
       const normalized = normalizeStudioIntake(body);
       return json({ ok: true, safe_preview_only: true, normalized, warnings: buildIntakeWarnings(normalized) });
@@ -110,7 +120,214 @@ export async function handleStudioRequest(request, env, path = normalizePathname
   return json({ ok: false, error: "not_found" }, 404);
 }
 
+async function handleMyCardRequestList(env) {
+  const result = await airtableList(env, resolveMyCardIntakeTable(env), {
+    filterByFormula: `{source}="${MY_CARD_SOURCE}"`,
+    maxRecords: 50,
+  });
+  if (!result.ok) throw serverError("my_card_request_lookup_unavailable");
+  const requests = result.records
+    .map((record) => safeStudioMyCardRequest(record))
+    .filter(Boolean)
+    .sort((left, right) => Date.parse(right.submitted_at) - Date.parse(left.submitted_at));
+  return json({ ok: true, requests });
+}
+
+async function handleMyCardRequestImport(env, body) {
+  const requestId = clean(body.compcard_request_id || body.request_id || body.my_card_request_id);
+  assertRecordId(requestId, "invalid_compcard_request_id");
+  const lookup = await lookupMyCardRequest(env, requestId);
+  if (!lookup.ok) return json({ ok: false, error: lookup.error || "my_card_request_not_found" }, lookup.status || 404);
+  const status = clean(lookup.record.fields?.status) || "model_request_pending";
+  if (["studio_approved", "studio_preview_ready", "studio_rejected"].includes(status)) {
+    return json({ ok: false, error: "my_card_request_closed" }, 409);
+  }
+
+  const payload = lookup.payload;
+  payload.studio = {
+    ...(payload.studio && typeof payload.studio === "object" ? payload.studio : {}),
+    imported_at: new Date().toISOString(),
+  };
+  const updated = await airtableUpdate(env, resolveMyCardIntakeTable(env), requestId, {
+    status: "studio_in_progress",
+    payload_json: JSON.stringify(payload),
+  });
+  if (!updated.ok) throw serverError("my_card_request_import_failed");
+
+  const request = safeStudioMyCardRequest(updated.record);
+  return json({
+    ok: true,
+    request,
+    draft: {
+      compcard_request_id: request.request_id,
+      model_name: request.model_name,
+      source_owner: `model:${payload.model_record_id}`,
+      category_path: "MMD MODEL / My Card",
+      direction: "Source selected and submitted by the model. Studio owns field, RUN NUMBER, template, and final design.",
+      source_media_id: request.media_id,
+      source_media_type: request.media_type,
+      height_cm: request.height_cm,
+      weight_kg: request.weight_kg,
+    },
+  });
+}
+
+async function handleMyCardRequestMedia(env, body) {
+  const requestId = clean(body.compcard_request_id || body.request_id || body.my_card_request_id);
+  assertRecordId(requestId, "invalid_compcard_request_id");
+  const lookup = await lookupMyCardRequest(env, requestId);
+  if (!lookup.ok) return json({ ok: false, error: lookup.error || "my_card_request_not_found" }, lookup.status || 404);
+
+  const media = await lookupStudioMyCardMedia(env, lookup.payload);
+  if (!media.ok) return json({ ok: false, error: media.error || "my_card_media_unavailable" }, media.status || 409);
+  if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") {
+    return json({ ok: false, error: "my_card_media_storage_unavailable" }, 503);
+  }
+
+  const object = await env.MMD_MODEL_ASSETS.get(media.object_key).catch(() => null);
+  if (!object?.body) return json({ ok: false, error: "my_card_media_not_found" }, 404);
+  return new Response(object.body, {
+    status: 200,
+    headers: {
+      "content-type": media.file_type || "application/octet-stream",
+      "cache-control": "private, no-store",
+      "content-disposition": "inline",
+      "x-content-type-options": "nosniff",
+    },
+  });
+}
+
+function resolveMyCardIntakeTable(env) {
+  return clean(env.AIRTABLE_TABLE_STUDIO_INTAKE || env.AIRTABLE_TABLE_STUDIO_INTAKE_ID || MY_CARD_INTAKE_TABLE_DEFAULT);
+}
+
+async function lookupMyCardRequest(env, requestId) {
+  const result = await airtableGet(env, resolveMyCardIntakeTable(env), requestId);
+  if (!result.ok) return { ok: false, status: result.status || 503, error: result.status === 404 ? "my_card_request_not_found" : "my_card_request_lookup_unavailable" };
+  if (clean(result.record?.fields?.source) !== MY_CARD_SOURCE) {
+    return { ok: false, status: 404, error: "my_card_request_not_found" };
+  }
+  const payload = parseMyCardPayload(result.record.fields?.payload_json);
+  if (!clean(payload.model_record_id) || !clean(payload.selected_media?.media_id) || !clean(payload.selected_media?.object_key)) {
+    return { ok: false, status: 409, error: "my_card_request_payload_invalid" };
+  }
+  return { ok: true, record: result.record, payload };
+}
+
+function safeStudioMyCardRequest(record) {
+  if (clean(record?.fields?.source) !== MY_CARD_SOURCE) return null;
+  const fields = record?.fields || {};
+  const payload = parseMyCardPayload(fields.payload_json);
+  const model = payload.model || {};
+  const media = payload.selected_media || {};
+  const requestId = clean(record?.id);
+  if (!requestId || !clean(payload.model_record_id) || !clean(media.media_id)) return null;
+  return {
+    request_id: requestId,
+    status: clean(fields.status) || "model_request_pending",
+    submitted_at: clean(fields.created_at) || clean(payload.requested_at),
+    model_name: clean(model.working_name) || clean(fields.model_name),
+    height_cm: finiteNumberOrNull(model.height_cm),
+    weight_kg: finiteNumberOrNull(model.weight_kg),
+    media_id: clean(media.media_id),
+    media_type: clean(media.media_type),
+  };
+}
+
+function parseMyCardPayload(value) {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function lookupStudioMyCardMedia(env, payload) {
+  const modelRecordId = clean(payload.model_record_id);
+  const selected = payload.selected_media && typeof payload.selected_media === "object" ? payload.selected_media : {};
+  const mediaId = clean(selected.media_id);
+  const mediaType = clean(selected.media_type).toLowerCase();
+  const objectKey = clean(selected.object_key);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId) || !/^media_[A-Za-z0-9-]{8,160}$/.test(mediaId)) {
+    return { ok: false, status: 409, error: "my_card_media_invalid" };
+  }
+  if (!["profile_photo", "public_gallery"].includes(mediaType)) {
+    return { ok: false, status: 409, error: "my_card_media_not_public" };
+  }
+
+  const result = await airtableList(env, resolveModelMediaTable(env), {
+    filterByFormula: `{media_id}="${escapeFormula(mediaId)}"`,
+    maxRecords: 2,
+  });
+  if (!result.ok) return { ok: false, status: 503, error: "my_card_media_lookup_unavailable" };
+  if (result.records.length !== 1) return { ok: false, status: result.records.length ? 409 : 404, error: "my_card_media_not_found" };
+
+  const fields = result.records[0].fields || {};
+  const linkedModels = Array.isArray(fields.Model) ? fields.Model.map((value) => clean(typeof value === "string" ? value : value?.id)).filter(Boolean) : [];
+  const currentStatus = clean(fields.review_status || "active").toLowerCase();
+  const currentType = clean(fields.media_type).toLowerCase();
+  const currentObjectKey = clean(fields.private_original_key);
+  const allowedPrefix = `models/${modelRecordId}/${mediaType}/${mediaId}.`;
+  if (
+    linkedModels.length !== 1 ||
+    linkedModels[0] !== modelRecordId ||
+    fields.public_safe !== true ||
+    !["active", "approved", "published"].includes(currentStatus) ||
+    currentType !== mediaType ||
+    currentObjectKey !== objectKey ||
+    !objectKey.startsWith(allowedPrefix)
+  ) {
+    return { ok: false, status: 409, error: "my_card_media_not_public" };
+  }
+  const mime = clean(fields.file_type).toLowerCase();
+  if (!["image/jpeg", "image/png", "image/webp"].includes(mime)) {
+    return { ok: false, status: 409, error: "my_card_media_type_invalid" };
+  }
+  return { ok: true, object_key: objectKey, file_type: mime };
+}
+
+async function syncMyCardReviewDecision(env, requestId, review) {
+  const lookup = await lookupMyCardRequest(env, requestId);
+  if (!lookup.ok) return { ok: false, error: lookup.error || "my_card_request_not_found" };
+  const payload = lookup.payload;
+  const statusByDecision = {
+    "Approved Direction": "studio_approved",
+    "Revise Source": "studio_revision_requested",
+    Reject: "studio_rejected",
+    "Needs Review": "studio_in_progress",
+  };
+  const nextStatus = statusByDecision[review.decision] || "studio_in_progress";
+  payload.studio = {
+    ...(payload.studio && typeof payload.studio === "object" ? payload.studio : {}),
+    review: {
+      studio_review_id: clean(review.studio_review_id),
+      decision: clean(review.decision),
+      field: clean(review.field),
+      run_number: clean(review.run_number),
+      layer: clean(review.layer),
+      reviewed_at: clean(review.reviewed_at) || new Date().toISOString(),
+    },
+  };
+  const updated = await airtableUpdate(env, resolveMyCardIntakeTable(env), requestId, {
+    status: nextStatus,
+    payload_json: JSON.stringify(payload),
+  });
+  if (!updated.ok) return { ok: false, error: "my_card_request_status_sync_failed" };
+  return { ok: true, status: nextStatus, request: safeStudioMyCardRequest(updated.record) };
+}
+
+function resolveModelMediaTable(env) {
+  return clean(env.AIRTABLE_TABLE_MODEL_MEDIA || MODEL_MEDIA_TABLE_DEFAULT);
+}
+
+function finiteNumberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function normalizeStudioIntake(body = {}) {
+  const compcardRequestId = clean(body.compcard_request_id || body.my_card_request_id);
   const field = normalizeField(body.field || body.field_code);
   const layer = normalizeLayer(body.layer);
   const runNumber = clean(body.run_number || body.runNumber);
@@ -119,6 +336,7 @@ export function normalizeStudioIntake(body = {}) {
   const sourceOwner = clean(body.source_owner || body.sourceOwner);
   const categoryPath = clean(body.category_path || body.categoryPath);
 
+  if (compcardRequestId) assertRecordId(compcardRequestId, "invalid_compcard_request_id");
   if (!modelName) throw badRequest("model_name_required");
   if (!field) throw badRequest("invalid_field");
   if (!layer) throw badRequest("invalid_layer");
@@ -129,6 +347,7 @@ export function normalizeStudioIntake(body = {}) {
 
   return {
     studio_intake_id: clean(body.studio_intake_id || body.intake_id),
+    compcard_request_id: compcardRequestId,
     idempotency_key: clean(body.idempotency_key || body.idempotencyKey),
     model_name: modelName,
     internal_code: clean(body.internal_code || body.internalCode || body.code),
@@ -147,6 +366,7 @@ export function normalizeStudioIntake(body = {}) {
 
 export function normalizeStudioReview(body = {}) {
   const seed = body.seed && typeof body.seed === "object" ? body.seed : {};
+  const compcardRequestId = clean(body.compcard_request_id || body.my_card_request_id || seed.compcard_request_id || seed.my_card_request_id);
   const field = normalizeField(body.field || seed.field);
   const layer = normalizeLayer(body.layer || seed.layer);
   const runNumber = clean(body.run_number || body.runNumber || seed.run_number);
@@ -154,6 +374,7 @@ export function normalizeStudioReview(body = {}) {
   const decision = clean(body.decision || body.status || "Needs Review");
 
   if (body.studio_intake_id) assertRecordId(body.studio_intake_id, "invalid_studio_intake_id");
+  if (compcardRequestId) assertRecordId(compcardRequestId, "invalid_compcard_request_id");
   if (!modelName) throw badRequest("model_name_required");
   if (!field) throw badRequest("invalid_field");
   if (!layer) throw badRequest("invalid_layer");
@@ -163,6 +384,7 @@ export function normalizeStudioReview(body = {}) {
   return {
     studio_review_id: clean(body.studio_review_id || body.review_id),
     studio_intake_id: clean(body.studio_intake_id || seed.studio_intake_id),
+    compcard_request_id: compcardRequestId,
     model_name: modelName,
     field,
     run_number: runNumber,
@@ -328,7 +550,13 @@ async function commitStudioIntake(env, normalized, rawBody) {
     idempotency_key: idempotencyKey,
   });
   const rec = await airtableCreate(env, table.name, fields);
-  return { studio_intake_id: rec?.id || null, record_id: rec?.id || null, idempotency_key: idempotencyKey, table_mode: table.mode };
+  return {
+    studio_intake_id: rec?.id || null,
+    record_id: rec?.id || null,
+    compcard_request_id: normalized.compcard_request_id || null,
+    idempotency_key: idempotencyKey,
+    table_mode: table.mode,
+  };
 }
 
 async function commitStudioReview(env, normalized, rawBody) {
@@ -356,7 +584,25 @@ async function commitStudioReview(env, normalized, rawBody) {
     idempotency_key: idempotencyKey,
   });
   const rec = await airtableCreate(env, table.name, fields);
-  return { studio_review_id: rec?.id || null, record_id: rec?.id || null, idempotency_key: idempotencyKey, table_mode: table.mode };
+  let myCardRequestSync = null;
+  if (normalized.compcard_request_id) {
+    myCardRequestSync = await syncMyCardReviewDecision(env, normalized.compcard_request_id, {
+      studio_review_id: rec?.id || null,
+      decision: normalized.decision,
+      field: normalized.field,
+      run_number: normalized.run_number,
+      layer: normalized.layer,
+      reviewed_at: normalized.created_at,
+    });
+  }
+  return {
+    studio_review_id: rec?.id || null,
+    record_id: rec?.id || null,
+    compcard_request_id: normalized.compcard_request_id || null,
+    my_card_request_sync: myCardRequestSync,
+    idempotency_key: idempotencyKey,
+    table_mode: table.mode,
+  };
 }
 
 async function commitStudioPublish(env, normalized, rawBody, plan) {
@@ -451,6 +697,35 @@ async function airtableCreate(env, tableName, fields) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw serverError(`airtable_create_${response.status}:${compactError(data)}`);
   return data;
+}
+
+async function airtableGet(env, tableName, recordId) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !tableName) {
+    return { ok: false, status: 503, record: null, error: "missing_airtable_env" };
+  }
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`, {
+    headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}` },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false, status: response.status, record: null, error: compactError(data) };
+  return { ok: true, status: 200, record: data };
+}
+
+async function airtableUpdate(env, tableName, recordId, fields) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID || !tableName) {
+    return { ok: false, status: 503, record: null, error: "missing_airtable_env" };
+  }
+  const response = await fetch(`${AIRTABLE_API}/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(tableName)}/${encodeURIComponent(recordId)}`, {
+    method: "PATCH",
+    headers: {
+      authorization: `Bearer ${env.AIRTABLE_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ fields }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) return { ok: false, status: response.status, record: null, error: compactError(data) };
+  return { ok: true, status: 200, record: data };
 }
 
 async function airtableList(env, tableName, { filterByFormula = "", maxRecords = 1 } = {}) {
