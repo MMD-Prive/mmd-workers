@@ -633,7 +633,7 @@ export function isMyCardSelectableMedia(fields = {}) {
     policy.self_managed === true &&
     policy.requires_per_approval === false &&
     MY_CARD_SELECTABLE_MEDIA_TYPES.has(mediaType) &&
-    !["rejected", "archived", "deleted"].includes(status) &&
+    ["active", "approved", "published"].includes(status) &&
     fields.public_safe === true &&
     hasSource
   );
