@@ -9,6 +9,7 @@ const ETA_PATH = "/__internal/model/session/eta";
 const MODEL_AVAILABILITY_REMINDER_PATH = "/__internal/model/availability-reminder";
 const MODEL_AVAILABILITY_REMINDER_PREFLIGHT_PATH = "/__internal/model/availability-reminder/preflight";
 const MODEL_NEW_JOB_NOTIFICATION_PATH = "/__internal/model/session/new-job-notification";
+const MODEL_LINE_IDENTITY_RECOVERY_PREFLIGHT_PATH = "/__internal/model/line-identity/recovery-preflight";
 const LINE_PROFILE_BASE_URL = "https://api.line.me/v2/bot/profile";
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -25,6 +26,10 @@ export default {
 
     if (path === MODEL_AVAILABILITY_REMINDER_PREFLIGHT_PATH) {
       return handleModelAvailabilityReminderPreflight(request, env);
+    }
+
+    if (path === MODEL_LINE_IDENTITY_RECOVERY_PREFLIGHT_PATH) {
+      return handleModelLineIdentityRecoveryPreflight(request, env);
     }
 
     if (path === MODEL_AVAILABILITY_REMINDER_PATH) {
@@ -145,9 +150,7 @@ function modelAvailabilityReminderText(displayName = "") {
 
 function modelLineTransport(env = {}) {
   const modelToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN);
-  const fallbackToken = clean(env.LINE_CHANNEL_ACCESS_TOKEN);
   if (modelToken) return { token: modelToken, transport: "events-worker-model-line", token_mode: "model" };
-  if (fallbackToken) return { token: fallbackToken, transport: "events-worker-line-fallback", token_mode: "fallback" };
   return { token: "", transport: "none", token_mode: "missing" };
 }
 
@@ -224,6 +227,161 @@ async function handleModelAvailabilityReminderPreflight(request, env = {}) {
     transport: transport.transport,
     recipient_reachable: true,
     provider_status: response.status,
+    message_sent: false,
+  }, 200);
+}
+
+// This endpoint is intentionally non-sending. It is the only proof accepted
+// before an owner-reviewed verified claim can replace a stale Model LINE ID:
+// the old ID must be unreachable while the claim's canonical LINE ID is
+// reachable through the exact same MMD MODEL transport.
+async function handleModelLineIdentityRecoveryPreflight(request, env = {}) {
+  if (request.method.toUpperCase() !== "POST") return json({ ok: false, error: "method_not_allowed" }, 405);
+  const auth = requireAdminServiceAuth(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status);
+
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, error: "invalid_json" }, 400);
+
+  const previous = modelLineUserId(body.previous_line_user_id);
+  const candidate = modelLineUserId(body.candidate_line_user_id);
+  if (!previous || !candidate || previous === candidate) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_identity_recovery_invalid",
+      token_mode: "unknown",
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+
+  const transport = modelLineTransport(env);
+  if (!transport.token) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_transport_not_ready",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+
+  const lookup = async (lineUserId) => {
+    try {
+      return await fetch(`${LINE_PROFILE_BASE_URL}/${encodeURIComponent(lineUserId)}`, {
+        method: "GET",
+        headers: { authorization: `Bearer ${transport.token}` },
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  // Validate the candidate first. A positive result proves that this token is
+  // for the intended MMD MODEL LINE world before the old binding is examined.
+  const candidateResponse = await lookup(candidate);
+  if (!candidateResponse) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_transport_unavailable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: false,
+      message_sent: false,
+    }, 200);
+  }
+  if (!candidateResponse.ok) {
+    const tokenRejected = candidateResponse.status === 401 || candidateResponse.status === 403;
+    return json({
+      ok: true,
+      ready: false,
+      state: tokenRejected ? "model_line_token_rejected" : "model_line_recovery_candidate_unreachable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: false,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
+
+  const previousResponse = await lookup(previous);
+  if (!previousResponse) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_transport_unavailable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: true,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
+  if (previousResponse.ok) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_recovery_current_identity_reachable",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: true,
+      candidate_recipient_reachable: true,
+      previous_provider_status: previousResponse.status,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
+  if (previousResponse.status === 401 || previousResponse.status === 403) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_token_rejected",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: true,
+      previous_provider_status: previousResponse.status,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
+  // LINE's profile endpoint uses 404 for a user that this OA cannot reach.
+  // Rate limits and provider failures are inconclusive and must never permit
+  // a canonical identity replacement.
+  if (previousResponse.status !== 404) {
+    return json({
+      ok: true,
+      ready: false,
+      state: "model_line_recovery_previous_identity_unverified",
+      token_mode: transport.token_mode,
+      transport: transport.transport,
+      previous_recipient_reachable: false,
+      candidate_recipient_reachable: true,
+      previous_provider_status: previousResponse.status,
+      candidate_provider_status: candidateResponse.status,
+      message_sent: false,
+    }, 200);
+  }
+
+  return json({
+    ok: true,
+    ready: true,
+    state: "model_line_identity_recovery_ready",
+    token_mode: transport.token_mode,
+    transport: transport.transport,
+    previous_recipient_reachable: false,
+    candidate_recipient_reachable: true,
+    previous_provider_status: previousResponse.status,
+    candidate_provider_status: candidateResponse.status,
     message_sent: false,
   }, 200);
 }
