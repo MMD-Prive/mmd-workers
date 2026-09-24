@@ -395,6 +395,7 @@ jobs:
             "/v1/model/visibility/update",
             "/v1/model/rate/request",
             "/v1/model/telegram/bind",
+            "/v1/model/history",
             "/v1/model/media/upload-init",
             "/v1/model/media/upload-complete",
             "/v1/model/media/review-request",
