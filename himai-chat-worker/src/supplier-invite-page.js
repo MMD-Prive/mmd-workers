@@ -90,7 +90,7 @@ function renderSupplierInvite(preview, portalUrl) {
   return renderShell([
     "<section class='hero'>",
       "<p class='eyebrow'>Himai Shop's Suppliers</p>",
-      "<h1>สวัสดี " + escapeHtml(contact) + "</h1>",
+      "<h1>" + (contact ? "สวัสดี " + escapeHtml(contact) : "สวัสดีครับ") + "</h1>",
       "<p class='lead'>ผมจาก MMD ส่งพื้นที่ Supplier ส่วนตัวสำหรับ <strong>" + escapeHtml(scope) + "</strong> ให้คุณ</p>",
       "<div class='scope'>" + (onDemand ? "สั่งตามออเดอร์" : "Supplier Stock Summary") + "</div>",
     "</section>",
@@ -156,7 +156,8 @@ function formatExpiry(value) {
 
 function formatContactName(value) {
   const name = cleanInline(value, 120).replace(/^(?:คุณ\s*)+/u, "").trim();
-  return name ? "คุณ" + name : "คุณ";
+  if (!name || /^supplier$/i.test(name)) return "";
+  return "คุณ" + name;
 }
 
 function cleanInline(value, max) {
