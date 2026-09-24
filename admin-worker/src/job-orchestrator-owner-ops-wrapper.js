@@ -1,4 +1,4 @@
-import delegatedWorker from "./payment-proof-client-provenance-wrapper.js";
+import delegatedWorker from "./cancellation-credit-recovery.js";
 import {
   OWNER_JOB_ACTIONS_PATH,
   applyOwnerJobAction,

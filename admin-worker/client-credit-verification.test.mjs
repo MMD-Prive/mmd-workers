@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const source = readFileSync(new URL("./src/client-credit-admin-wrapper.js", import.meta.url), "utf8");
+const refSource = readFileSync(new URL("./src/client-credit-ref-wrapper.js", import.meta.url), "utf8");
 
 test("verified client credit schema fields are wired by stable Airtable field ids", () => {
   for (const fieldId of [
@@ -37,4 +38,10 @@ test("verified amount is minted from authoritative received funds, not browser a
 
 test("admin available balance excludes unverified credits", () => {
   assert.match(source, /item\.verified === true && \["available", "partially_used"\]\.includes\(item\.status\)/);
+});
+
+test("historical proofs can be attached as provenance only after their reviewed handoff", () => {
+  assert.match(refSource, /status === "verified" \|\| status === "reviewed"/);
+  assert.match(refSource, /findOfficialSourceProofByRef/);
+  assert.match(refSource, /carry-forward endpoint still independently/);
 });

@@ -54,6 +54,7 @@ jobs:
           node --check payments-worker/index.review-wrapper.js
           node --check payments-worker/shop-payment-v1.js
           node --check payments-worker/index.phase1.js
+          node --check payments-worker/historical-cancellation-credit-recovery.test.mjs
           node --check payments-worker/confirmation-ack.js
           node --check payments-worker/confirmation-details.js
           node --check payments-worker/customer-change-request.js
@@ -78,6 +79,7 @@ jobs:
           node --test payments-worker/double-moment-purchase-v1.test.mjs
           node --experimental-global-webcrypto --experimental-default-type=module --test payments-worker/reviewed-membership-write-through.test.mjs
           node --test payments-worker/reviewed-proof-line-recovery.test.mjs shared/membership-promotion-policy.test.mjs
+          node --experimental-global-webcrypto --test payments-worker/historical-cancellation-credit-recovery.test.mjs
           node payments-worker/payment-confirmation-token.test.mjs
           npx --yes wrangler@4 deploy --dry-run --keep-vars --config payments-worker/wrangler.merged.toml
 

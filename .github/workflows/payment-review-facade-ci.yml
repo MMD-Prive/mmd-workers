@@ -20,6 +20,9 @@ on:
       - "admin-worker/payment-review-flow-ui.test.cjs"
       - "admin-worker/src/payment-proof-client-provenance-wrapper.js"
       - "admin-worker/payment-proof-client-provenance-wrapper.test.mjs"
+      - "admin-worker/src/cancellation-credit-recovery.js"
+      - "admin-worker/cancellation-credit-recovery.test.mjs"
+      - "admin-worker/src/client-credit-ref-wrapper.js"
       - "admin-worker/payment-review-simple.test.mjs"
       - "admin-worker/src/payment-review-line-recovery.js"
       - "admin-worker/src/membership-payment-pending-recovery.js"
@@ -35,6 +38,8 @@ on:
       - "admin-worker/payment-review-auto-context.test.mjs"
       - "admin-worker/wrangler.toml"
       - "payments-worker/index.review-wrapper.js"
+      - "payments-worker/index.phase1.js"
+      - "payments-worker/historical-cancellation-credit-recovery.test.mjs"
       - "payments-worker/reviewed-proof.js"
       - "payments-worker/reviewed-proof-line-recovery.test.mjs"
       - "payments-worker/reviewed-proof-canonical-money-truth.js"
@@ -72,10 +77,12 @@ jobs:
           node --check admin-worker/src/membership-genuine-liff-acceptance-observer.js
           node --check admin-worker/src/payment-review-owner-context.js
           node --check admin-worker/src/payment-review-auto-context.js
+          node --check admin-worker/src/cancellation-credit-recovery.js
           node --check webflow/internal/admin/payments/payment-owner-match-v1.js
           node --check webflow/internal/admin/payments/payment-owner-match-v2.js
           node --check webflow/internal/admin/payments/historical-payment-context-v3.js
           node --check payments-worker/index.review-wrapper.js
+          node --check payments-worker/index.phase1.js
           node --check payments-worker/reviewed-proof.js
           node --check payments-worker/reviewed-proof-canonical-money-truth.js
           node --experimental-default-type=module --check payments-worker/reviewed-membership-write-through.js
@@ -87,7 +94,8 @@ jobs:
           node --test admin-worker/line-slip-intake-review-queue.contract.test.mjs
           node --test admin-worker/payment-review-queue-v3-normalization.test.mjs
           node --test admin-worker/payment-review-simple.test.mjs admin-worker/payment-confirmation-followthrough.test.mjs admin-worker/job-readiness-followthrough.test.mjs
-          node --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs
+          node --experimental-global-webcrypto --test admin-worker/payment-review-discovery.test.mjs admin-worker/payment-proof-client-provenance-wrapper.test.mjs admin-worker/cancellation-credit-recovery.test.mjs
+          node --experimental-global-webcrypto --test payments-worker/historical-cancellation-credit-recovery.test.mjs
 
       - name: Customer change resolution and acknowledgement revision
         run: node --test admin-worker/customer-change-resolution.test.mjs shared/confirmation-revision.test.mjs payments-worker/confirmation-ack-revision.test.mjs payments-worker/confirmation-details.test.mjs
