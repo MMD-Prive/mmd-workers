@@ -241,6 +241,9 @@ test("supplier invite cover explains the stocked Supplier workspace before LINE 
     const html = await response.text();
     assert.match(html, /สวัสดี คุณอาร์ท/);
     assert.match(html, /ผมจาก MMD ส่งพื้นที่ Supplier ส่วนตัว/);
+    assert.match(html, /himai-master-fullcolour\.png/);
+    assert.match(html, /himai-symbol-fullcolour\.png/);
+    assert.match(html, /alt='Himai Shop'/);
     assert.doesNotMatch(html, /คุณคุณอาร์ท/);
     assert.match(html, /Pod Premium Plus/);
     assert.match(html, /สถานะสินค้าและสต๊อก/);
