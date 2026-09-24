@@ -4,6 +4,7 @@ import {
   isPresentationUiPath,
   isPresentationAssetPath,
   isPresentationRootRuntimePath,
+  isModelPwaAssetPath,
   isWishStatusAssetPath,
   isTelegramConnectAssetPath,
   presentationUrlForPage,
@@ -30,6 +31,10 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isPresentationRootRuntimePath("/assets/routes-123.js"), true);
   assert.equal(isPresentationRootRuntimePath("/v1/model/profile"), false);
   assert.equal(isPresentationRootRuntimePath("/favicon.ico"), false);
+  assert.equal(isModelPwaAssetPath("/sigil/model/dashboard/manifest.webmanifest"), true);
+  assert.equal(isModelPwaAssetPath("/sigil/model/dashboard/mmd-app-icon.svg"), true);
+  assert.equal(isModelPwaAssetPath("/sigil/model/dashboard/sw.js"), true);
+  assert.equal(isModelPwaAssetPath("/sigil/model/dashboard/photos"), false);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.js"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/wish-status-v1.css"), true);
   assert.equal(isWishStatusAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
@@ -134,9 +139,12 @@ test("primary bootstrap never intercepts assets, APIs, or non-navigation methods
     "https://mmdbkk.com/sigil/model/dashboard?access_token=opaque",
     { method: "POST" },
   );
+  const pwaWorker = new Request("https://mmdbkk.com/sigil/model/dashboard/sw.js?access_token=opaque");
   assert.equal(shouldServeLiffPrimaryBootstrap(asset), false);
   assert.equal(shouldServeLiffPrimaryBootstrap(api), false);
   assert.equal(shouldServeLiffPrimaryBootstrap(post), false);
+  assert.equal(shouldServeLiffPrimaryBootstrap(pwaWorker), false);
+  assert.equal(shouldHandoffToMiniApp(pwaWorker), false);
 });
 
 test("dashboard stays on presentation when a Model session or real LINE redirect context is present", () => {
@@ -186,11 +194,16 @@ test("maps nested dashboard pages and runtime assets to current Model Hub", () =
     presentationUrlForAsset(new Request("https://www.mmdbkk.com/_build/app.js?v=3")).toString(),
     "https://mmdmodel.lovable.app/_build/app.js?v=3",
   );
+  assert.equal(
+    presentationUrlForPage(new Request("https://mmdbkk.com/sigil/model/dashboard/manifest.webmanifest")).toString(),
+    "https://mmdmodel.lovable.app/manifest.webmanifest",
+  );
 });
 
 test("rewrites Lovable runtime paths and bounded app links to canonical same-origin paths", () => {
   const html = `<!doctype html><html data-mmd-ui-source="lovable-model-dashboard"><head>
-    <link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/_build/styles.css">
+    <link rel="icon" href="/favicon.ico"><link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/mmd-app-icon.svg"><link rel="stylesheet" href="/_build/styles.css">
     <script type="module" src="/_build/app.js"></script></head><body>
     <a href="/">Home</a><a href="/profile">Profile</a><a href="/photos/">Photos</a>
     <script>fetch('/v1/model/profile')</script>
@@ -200,6 +213,8 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /data-mmd-ui-source="lovable-model-dashboard"/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/_build\/app\.js/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/favicon\.ico/);
+  assert.match(out, /href="\/sigil\/model\/dashboard\/manifest\.webmanifest"/);
+  assert.match(out, /href="\/sigil\/model\/dashboard\/mmd-app-icon\.svg"/);
   assert.match(out, /href="\/sigil\/model\/dashboard"/);
   assert.match(out, /href="\/sigil\/model\/dashboard\/profile"/);
   assert.match(out, /href="\/sigil\/model\/dashboard\/photos"/);
