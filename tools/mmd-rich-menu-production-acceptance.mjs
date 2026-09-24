@@ -37,6 +37,13 @@ function safeAuditSummary(body = {}) {
     image_issue: String(body?.menus?.[key]?.image_issue || "").slice(0, 40),
     image_actual_bytes: Number(body?.menus?.[key]?.image_actual_bytes || 0),
     image_expected_bytes: Number(body?.menus?.[key]?.image_expected_bytes || 0),
+    image_actual_sha256: String(body?.menus?.[key]?.image_actual_sha256 || "").slice(0, 64),
+    image_source_fingerprints: Array.isArray(body?.menus?.[key]?.image_source_fingerprints)
+      ? body.menus[key].image_source_fingerprints.slice(0, 2).map((item) => ({
+          bytes: Number(item?.bytes || 0),
+          sha256: String(item?.sha256 || "").slice(0, 64),
+        }))
+      : [],
   });
   return {
     ok: body?.ok === true,
