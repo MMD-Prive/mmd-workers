@@ -261,6 +261,8 @@ jobs:
             "www.mmdbkk.com/v1/internal/ai/service-binding-smoke",
             "mmdbkk.com/v1/member/payments*",
             "www.mmdbkk.com/v1/member/payments*",
+            "mmdbkk.com/api/member/medical-request*",
+            "www.mmdbkk.com/api/member/medical-request*",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {
@@ -358,6 +360,15 @@ jobs:
               throw new Error(`Unexpected member payments unauthenticated contract: ${JSON.stringify(body)}`);
             }
           ' "$payments_body"
+
+          medical_headers="$RUNNER_TEMP/member-medical-request.headers"
+          medical_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error \
+            -D "$medical_headers" -o /dev/null -w "%{http_code}" \
+            -H 'Origin: https://www.mmdbkk.com' \
+            https://www.mmdbkk.com/api/member/medical-request || true)"
+          test "$medical_code" = "401"
+          grep -qi '^x-mmd-route-owner: member-dashboard-chat-worker' "$medical_headers"
+          grep -qi '^x-mmd-upstream-service: member-pages-worker' "$medical_headers"
 
           payment_center_headers="$RUNNER_TEMP/my-mmd-payment-center.headers"
           payment_center_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors --silent --show-error             -D "$payment_center_headers" -o /dev/null -w "%{http_code}"             https://www.mmdbkk.com/my-mmd/payments || true)"
