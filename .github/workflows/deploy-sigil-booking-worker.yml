@@ -100,6 +100,7 @@ jobs:
           const desired = [
             "sigil.mmdbkk.com/sigil/api/client/resolve*",
             "sigil.mmdbkk.com/sigil/api/models/search*",
+            "sigil.mmdbkk.com/sigil/api/models/media/*",
             "sigil.mmdbkk.com/sigil/api/booking/intake*",
             "sigil.mmdbkk.com/__internal/booking/confirm*",
           ];
