@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import worker from "../src/my-mms-customer-front-gate-entry.js";
@@ -19,4 +20,10 @@ test("verified Medical request stays same-origin and delegates only to member-pa
   assert.equal((await response.json()).status, "pending_mmd_scope_review");
   assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
   assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+});
+
+test("production deploy route sync includes both Medical request hosts", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/deploy-member-dashboard-chat-worker.yml", import.meta.url), "utf8");
+  assert.match(workflow, /"mmdbkk\\.com\\/api\\/member\\/medical-request\\*"/);
+  assert.match(workflow, /"www\\.mmdbkk\\.com\\/api\\/member\\/medical-request\\*"/);
 });
