@@ -4,6 +4,7 @@ import {
   buildFaqReply,
   choosePricingReplyStrategy,
   getLineEventTextForIntent,
+  handler,
   inferFaqIntent,
   inferIntent,
   shouldAutoReplyForIntent,
@@ -78,6 +79,18 @@ const thaiHiPerReply = await buildAutoReplyMessage(textEvent("สวัสดี
 assert.match(thaiHiPerReply, /Kenji/);
 assert.match(thaiHiPerReply, /ผู้ช่วยสมาชิก/);
 
+const perAiReply = await buildAutoReplyMessage(textEvent("Per AI"), profile, { lineKenjiAiEnabled: true });
+assert.match(perAiReply, /Kenji/);
+assert.match(perAiReply, /ผู้ช่วยสมาชิก/);
+
+const kenjiAiReply = await buildAutoReplyMessage(textEvent("Kenji AI"), profile, { lineKenjiAiEnabled: true });
+assert.match(kenjiAiReply, /Kenji/);
+assert.match(kenjiAiReply, /ผู้ช่วยสมาชิก/);
+
+const thaiPerAiReply = await buildAutoReplyMessage(textEvent("เปอร์ ai"), profile, { lineKenjiAiEnabled: true });
+assert.match(thaiPerAiReply, /Kenji/);
+assert.match(thaiPerAiReply, /ผู้ช่วยสมาชิก/);
+
 const plainGreetingReply = await buildAutoReplyMessage(textEvent("สวัสดีครับ"), profile, { lineKenjiAiEnabled: true });
 assert.match(plainGreetingReply, /สวัสดีครับ/);
 assert.match(plainGreetingReply, /วันนี้ให้ผมช่วย/);
@@ -104,5 +117,16 @@ assert.match(blackCardReply, /automatic approval/);
 const bookingReply = await buildAutoReplyMessage(textEvent("จอง"), profile, { lineKenjiAiEnabled: true });
 assert.match(bookingReply, /ผมช่วยพาไปขั้นตอนการจองได้ครับ/);
 assert.match(bookingReply, /ขอเช็กสถานะสมาชิก/);
+
+const health = await handler({
+  httpMethod: "GET",
+  queryStringParameters: { health: "1" },
+});
+assert.equal(health.statusCode, 200);
+const healthBody = JSON.parse(health.body);
+assert.equal(healthBody.owner, "line-webhook-netlify");
+assert.equal(healthBody.canonical_assistant_id, "kenji_ai");
+assert.equal(healthBody.kenji_ai_trigger_supported, true);
+assert.equal(healthBody.rich_menu_checked, false);
 
 console.log("webhook FAQ/pricing intent tests passed");
