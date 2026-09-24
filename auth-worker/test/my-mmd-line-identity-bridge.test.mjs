@@ -61,6 +61,48 @@ test("links only the Members LINE field from one exact canonical client email", 
   }]);
 });
 
+test("uses an exact canonical staging Client link before asking a customer for recovery details", async () => {
+  const writes = [];
+  let canonicalFormula = "";
+  const env = baseEnv(async (request) => {
+    const url = new URL(request.url);
+    const table = tableName(url);
+    if (request.method === "PATCH") {
+      const body = await request.json();
+      writes.push({ table, record: decodeURIComponent(url.pathname.split("/").pop()), body });
+      return Response.json({ id: "recMemberCanonical", fields: body.fields });
+    }
+    if (table === "MMD — LINE OFC Client Import Staging") {
+      canonicalFormula = url.searchParams.get("filterByFormula") || "";
+      return response([{ id: "recCanonicalStage01", fields: {
+        "LINE User ID": LINE_ID,
+        "Canonical Client": ["recClientCanonical01"],
+      } }]);
+    }
+    if (table === "Clients") {
+      if (url.searchParams.get("filterByFormula")?.startsWith("RECORD_ID()")) {
+        return response([{ id: "recClientCanonical01", fields: { "Contact Email": "canonical@example.com" } }]);
+      }
+      return response([]);
+    }
+    if (table === "MMD — Member Entitlements" || table === "LINE OFC Client Import Staging") return response([]);
+    if (table === "Members") {
+      return response([{ id: "recMemberCanonical", fields: { "Contact Email": "canonical@example.com", line_id: "" } }]);
+    }
+    return response([]);
+  });
+
+  const result = await recoverCanonicalMemberLineLink(env, LINE_ID);
+  assert.equal(result.linked, true);
+  assert.equal(result.reason, "linked");
+  assert.equal(canonicalFormula, `{LINE User ID}='${LINE_ID}'`);
+  assert.deepEqual(writes, [{
+    table: "Members",
+    record: "recMemberCanonical",
+    body: { fields: { line_id: LINE_ID }, typecast: false },
+  }]);
+});
+
 test("fails closed when canonical evidence points at different emails", async () => {
   let writes = 0;
   const env = baseEnv(async (request) => {

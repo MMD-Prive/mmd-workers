@@ -77,7 +77,7 @@ describe("LIFF identity API production entrypoint", () => {
     assert.doesNotMatch(JSON.stringify(body), /Uspoof|MMD-1/);
   });
 
-  it("routes a verified start through the real entrypoint and stores no raw LINE subject", async () => {
+  it("routes a verified start through the real entrypoint and keeps the LINE subject server-side only", async () => {
     const runtime = env();
     mockLineVerify();
     const response = await worker.fetch(new Request("https://mmdbkk.com/member/api/liff/start?t=opaque-entry", {
@@ -90,7 +90,12 @@ describe("LIFF identity API production entrypoint", () => {
     assert.equal(response.status, 200);
     assert.equal(body.data.next_screen_key, "audience_select");
     assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
-    assert.doesNotMatch(JSON.stringify(runtime.LIFF_GATEWAY_STORE.records[0]), /Userver-verified-only|opaque-id-token|opaque-entry/i);
+    // The bounded server-side renewal-session record needs the verified LINE
+    // subject for later member-review lookup. Tokens and entry parameters must
+    // never be retained or echoed to the browser.
+    assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].line_user_id, "Userver-verified-only");
+    assert.doesNotMatch(JSON.stringify(runtime.LIFF_GATEWAY_STORE.records[0]), /opaque-id-token|opaque-entry/i);
+    assert.doesNotMatch(JSON.stringify(body), /Userver-verified-only|opaque-id-token|opaque-entry/i);
     assert.deepEqual(body.data.grants, { membership: false, points: false, payment_status: false, private_access: false });
   });
 
