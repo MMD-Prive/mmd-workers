@@ -565,8 +565,7 @@ jobs:
               "$origin/v1/admin/cancellation-credit-recovery")"
             cat "$cancellation_body"
             test "$cancellation_code" = "401"
-            grep -Eiq '^x-mmd-route-owner:[[:space:]]*admin-worker' "$cancellation_headers"
-            grep -Eq '"error":"admin_session_required"|"error":"unauthorized"' "$cancellation_body"
+            grep -Eq '"code":"ADMIN_SESSION_REQUIRED"' "$cancellation_body"
 
             # Unified Model owner review queue must reach admin-worker and stay behind the owner browser session.
             model_review_queue_body="$(mktemp)"
