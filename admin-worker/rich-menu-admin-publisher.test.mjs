@@ -248,7 +248,7 @@ test("admin rich menu response is sanitized", async () => {
   assert.doesNotMatch(rendered, /should-not-leak|hidden|authorization|secret|token/i);
 });
 
-test("current three-level prepare and audit require admin auth plus internal service token", async () => {
+test("current three-level prepare, activate and audit require admin auth plus internal service token", async () => {
   const missing = makeEnv({ internalToken: "" });
   const missingResult = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
     headers: { authorization: `Bearer ${ADMIN_BEARER}` },
@@ -270,18 +270,26 @@ test("current three-level prepare and audit require admin auth plus internal ser
   const prepare = await adminFetch("/v1/admin/line/rich-menu/three-level/prepare", {
     headers: { authorization: `Bearer ${ADMIN_BEARER}` },
   }, env);
+  const activate = await adminFetch("/v1/admin/line/rich-menu/three-level/activate", {
+    method: "POST",
+    headers: { authorization: `Bearer ${ADMIN_BEARER}` },
+  }, env);
   const audit = await adminFetch("/v1/admin/line/rich-menu/three-level/audit", {
     method: "GET",
     headers: { "x-confirm-key": CONFIRM_KEY },
   }, env);
 
   assert.equal(prepare.response.status, 200);
+  assert.equal(activate.response.status, 200);
   assert.equal(audit.response.status, 200);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   assert.equal(calls[0].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/prepare");
   assert.equal(calls[0].method, "POST");
   assert.equal(calls[0].headers.authorization, "Bearer member-internal-secret");
-  assert.equal(calls[1].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/audit");
-  assert.equal(calls[1].method, "GET");
+  assert.equal(calls[1].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/activate");
+  assert.equal(calls[1].method, "POST");
   assert.equal(calls[1].headers.authorization, "Bearer member-internal-secret");
+  assert.equal(calls[2].url, "https://member-dashboard-chat-worker.local/v1/internal/line/rich-menu/three-level/audit");
+  assert.equal(calls[2].method, "GET");
+  assert.equal(calls[2].headers.authorization, "Bearer member-internal-secret");
 });

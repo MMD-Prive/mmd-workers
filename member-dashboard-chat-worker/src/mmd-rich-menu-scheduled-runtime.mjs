@@ -9,8 +9,9 @@ const LIFF_ID = "2010862595-yT4DCEMc";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
+const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activate";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260924-v4.4";
+const VERSION = "mmd-rm3-20260924-v4.5";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -149,7 +150,7 @@ export function getMmdRichMenuFiveStateMatrix(now = new Date()) {
 }
 
 export function bangkokHour(now = new Date()) { return new Date(now.getTime() + 7 * 3600_000).getUTCHours(); }
-export function isMmdRichMenuHidden(now = new Date()) { const h = bangkokHour(now); return h >= 16 && h < 23; }
+export function isMmdRichMenuHidden() { return false; }
 
 function pngSize(buffer) {
   if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 24) return null;
@@ -168,7 +169,7 @@ function area(width, height, frame, index) {
 }
 
 function draft(spec, width, height) {
-  return { size: { width, height }, selected: true, name: spec.name, chatBarText: "MMD", areas: spec.actions.map((action, i) => ({ bounds: area(width, height, spec.frame, i), action })) };
+  return { size: { width, height }, selected: false, name: spec.name, chatBarText: "MMD", areas: spec.actions.map((action, i) => ({ bounds: area(width, height, spec.frame, i), action })) };
 }
 
 function lineHeaders(env, extra = {}) { const t = clean(env.LINE_CHANNEL_ACCESS_TOKEN); if (!t) throw new Error("line_channel_access_token_missing"); return { authorization: `Bearer ${t}`, ...extra }; }
@@ -202,6 +203,7 @@ function menuObjectMatches(row, spec) {
   const height = Number(row?.size?.height || 0);
   if (!width || !height || clean(row?.name) !== spec.name) return false;
   const expected = draft(spec, width, height);
+  if (row?.selected !== expected.selected) return false;
   const areas = Array.isArray(row?.areas) ? row.areas : [];
   if (areas.length !== expected.areas.length) return false;
   if (clean(row?.chatBarText) !== expected.chatBarText) return false;
@@ -275,7 +277,7 @@ export async function auditMmdRichMenus(env, now = new Date()) {
   const defaultId = defaultResult.r.status === 404 ? "" : clean(defaultResult.body?.richMenuId);
   const hidden = isMmdRichMenuHidden(now);
   const defaultState = !defaultId ? "none" : defaultId === ids.guest ? "guest" : "unexpected";
-  const schedulePolicyMatch = hidden ? defaultState === "none" : defaultState === "guest";
+  const schedulePolicyMatch = !hidden && defaultState === "guest";
   const fiveState = getMmdRichMenuFiveStateMatrix(now);
   const matrixMatch =
     fiveState.guest === "guest" &&
@@ -358,19 +360,13 @@ export async function showMmdRichMenus(env, now = new Date()) {
   return { visible: true, counts: { guest_known: group.guest.length, public: group.public.length, private: group.private.length } };
 }
 
-export async function hideMmdRichMenus(env) {
-  await line(env, `${LINE_API}/user/all/richmenu`, { method: "DELETE" }, [404]);
-  await line(env, `${LINE_API}/richmenu/batch`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ operations: [{ type: "unlinkAll" }] }) }, [409]);
-  return { visible: false };
-}
-
-export async function reconcileMmdRichMenus(env, now = new Date()) { return isMmdRichMenuHidden(now) ? hideMmdRichMenus(env) : showMmdRichMenus(env, now); }
+export async function reconcileMmdRichMenus(env, now = new Date()) { return showMmdRichMenus(env, now); }
 
 function internal(request, env) { const a = clean(request.headers.get("authorization")); return Boolean(clean(env.INTERNAL_TOKEN) && a === `Bearer ${clean(env.INTERNAL_TOKEN)}`); }
 export function isMmdRichMenuScheduledRequest(request) {
   try {
     const path = new URL(request.url).pathname;
-    return (request.method === "POST" && (path === SYNC_PATH || path === THREE_LEVEL_PREPARE_PATH)) ||
+    return (request.method === "POST" && (path === SYNC_PATH || path === THREE_LEVEL_PREPARE_PATH || path === THREE_LEVEL_ACTIVATE_PATH)) ||
       (request.method === "GET" && path === THREE_LEVEL_AUDIT_PATH);
   } catch {
     return false;
@@ -388,6 +384,15 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
     }
   }
 
+  if (request.method === "POST" && path === THREE_LEVEL_ACTIVATE_PATH) {
+    try {
+      const result = await showMmdRichMenus(env, new Date());
+      return json({ ok: true, version: VERSION, active: result.visible, selected_default: false, counts: result.counts });
+    } catch (error) {
+      return json({ ok: false, error: "rich_menu_activate_failed", reason: clean(error?.message || error).slice(0, 120) }, 502);
+    }
+  }
+
   if (request.method === "GET" && path === THREE_LEVEL_AUDIT_PATH) {
     try {
       const result = await auditMmdRichMenus(env, new Date());
@@ -400,10 +405,6 @@ export async function handleMmdRichMenuScheduledRequest(request, env) {
   const body = await request.json().catch(() => ({}));
   const id = clean(body.line_user_id || body.lineUserId);
   if (!id) return json({ ok: false, error: "line_user_id_missing" }, 400);
-  if (isMmdRichMenuHidden()) {
-    await line(env, `${LINE_API}/user/${encodeURIComponent(id)}/richmenu`, { method: "DELETE" }, [404]);
-    return json({ ok: true, target: "hidden" });
-  }
   const menus = await ensureMenus(env);
   const group = await users(env, new Date());
   const target = group.private.includes(id) ? "private" : group.public.includes(id) ? "public" : "guest";
