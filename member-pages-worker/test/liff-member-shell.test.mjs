@@ -63,6 +63,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /"intent":"signup"/);
     assert.match(html, /"view":"signup"/);
     assert.match(html, /id="signup-packages"/);
+    assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
     assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
     assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
