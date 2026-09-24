@@ -60,22 +60,49 @@ function renderShell(config, nonce) {
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .signup{display:grid;gap:12px;margin-top:24px}.signup h2{margin:0;color:#f0d892;font-size:22px}.signup .card{display:grid;gap:8px}.signup .card strong{font-size:18px}.signup .card button{margin-top:4px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.signup .card button:disabled{opacity:.5}.signup .private-link{display:block;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;color:#f0d892;text-align:center;text-decoration:none}.signup-note{color:#b7afa4;font-size:13px;line-height:1.6}.profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+
+    body.signup-mode{padding:0 0 max(24px,env(safe-area-inset-bottom));background:radial-gradient(circle at 50% -8%,#473026 0,transparent 38%),#080809}
+    body.signup-mode main{width:min(100%,560px);min-height:100vh;padding:26px 18px 34px;border:0;border-radius:0;background:linear-gradient(160deg,#241d1c,#101012 55%,#09090b);box-shadow:none}
+    body.signup-mode .mark{font-size:10px;letter-spacing:.25em}body.signup-mode .title{margin:12px 0 6px;color:#fff7ed;font-size:32px}body.signup-mode .sub{color:#c6bdb3}
+    body.signup-mode #message{margin:16px 0 0;padding:11px 13px;border-left:2px solid #d9ae77;border-radius:0 8px 8px 0;background:#dfb58014;color:#e5d0b2;font-size:13px;line-height:1.55}
+    body.signup-mode .member-nav,body.signup-mode #profile{display:none!important}body.signup-mode .signup{margin-top:18px;gap:15px}
+    .signup-hero{position:relative;display:flex;align-items:center;min-height:150px;overflow:hidden;padding:22px;border:1px solid #e7bb8159;border-radius:18px;background:radial-gradient(circle at 85% 12%,#b6824f55,transparent 42%),linear-gradient(130deg,#292321,#131315 70%);box-shadow:0 18px 44px #0004}
+    .signup-hero::before,.signup-hero::after{content:"";position:absolute;right:-43px;top:-78px;width:230px;height:230px;border:1px solid #f1cd9c45;border-radius:50%;pointer-events:none}.signup-hero::after{right:-14px;top:-49px;width:172px;height:172px;border-color:#f1cd9c30}
+    .signup-crest{position:relative;z-index:1;display:grid;place-content:center;flex:0 0 94px;height:94px;margin-right:18px;border:1px solid #ffdeae94;border-radius:50%;box-shadow:inset 0 0 0 6px #e7b97c14,0 0 24px #e0a36120;color:#f9e4c1;font:26px Georgia,serif;letter-spacing:.09em;text-align:center}.signup-crest small{font:9px Georgia,serif;letter-spacing:.3em}
+    .signup-hero-copy{position:relative;z-index:1}.signup-hero-copy span{color:#d2b894;font-size:10px;letter-spacing:.17em}.signup-hero-copy strong{display:block;margin-top:8px;color:#fff6e7;font-size:18px;line-height:1.35}.signup-hero-copy p{margin:6px 0 0;color:#bdb4ad;font-size:12px}
+    .signup-steps{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0;padding:0;list-style:none}.signup-steps li{display:grid;gap:4px;padding:11px 8px;border:1px solid #e6c29224;border-radius:10px;background:#ffffff06;color:#c8c0b9;font-size:11px;text-align:center}.signup-steps b{color:#edc895;font-size:11px;letter-spacing:.12em}
+    .signup-section-heading{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-top:5px}.signup-section-heading h2{font-size:19px;color:#fff1dc}.signup-section-heading span{color:#a9a09a;font-size:11px}
+    .signup-loading{margin:0;padding:22px;border:1px dashed #e6c29240;border-radius:14px;color:#d0c6bb;font-size:13px;text-align:center}
+    body.signup-mode .signup-package{position:relative;gap:10px;padding:18px;border-radius:16px;border-color:#f1d0a438;background:linear-gradient(140deg,#24201d,#141315 72%)}.signup-package::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;border-radius:16px 0 0 16px;background:#c9ac82}
+    .signup-package-elite{background:linear-gradient(135deg,#352023,#171315 72%)!important}.signup-package-elite::before{background:#d28086}.signup-package-red_card{background:linear-gradient(135deg,#411b24,#191316 72%)!important}.signup-package-red_card::before{background:#d55d72}
+    .signup-package-top{display:flex;align-items:center;justify-content:space-between;gap:10px}.signup-package-top strong{color:#fff6ec}.signup-package-top span{padding:4px 8px;border:1px solid #e9c8a133;border-radius:100px;color:#d7b58a;font-size:10px;letter-spacing:.11em}
+    .signup-price{display:flex;align-items:baseline;gap:6px}.signup-price .value{margin:0;color:#fff7ea;font-size:30px;font-weight:700;letter-spacing:-.04em}.signup-price small{color:#b9a894;font-size:12px}.signup-period{margin:0;color:#c4b5a9;font-size:12px}
+    body.signup-mode .signup-package button{margin-top:6px;border:0;border-radius:11px;background:linear-gradient(100deg,#f1d8aa,#dfb879);box-shadow:0 8px 22px #dca56021;color:#1e160f;font-size:14px;text-align:center}
+    body.signup-mode .signup-private{padding:18px;border-color:#d6be953d;border-radius:16px;background:linear-gradient(125deg,#171718,#101011)}.signup-private strong{color:#f2d7a9}.signup-private .signup-note{margin:0}
+    .signup-footer{margin:1px 0 0;padding:13px 2px 0;border-top:1px solid #ecc69129;color:#a99f94;font-size:11px;line-height:1.6}body.signup-mode .status{margin-top:18px;text-align:center}
+    @media(max-width:370px){.signup-hero{padding:16px;min-height:136px}.signup-crest{flex-basis:74px;height:74px;margin-right:12px;font-size:21px}.signup-hero-copy strong{font-size:16px}.signup-steps li{font-size:10px}}
+    @media(min-width:600px){body.signup-mode{padding:24px}body.signup-mode main{min-height:calc(100vh - 48px);border:1px solid #d8bd8938;border-radius:20px;padding:32px}}
     .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
   </style>
 </head>
-<body>
+<body class="${config.intent === "signup" ? "signup-mode" : ""}">
 <main>
   <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
   <h1 class="title" data-copy="title">My MMD</h1>
   <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
   <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
-  <section id="signup" class="signup hidden" aria-label="สมัครสมาชิกใน LINE">
-    <h2 id="signup-heading">สมัคร Public Membership</h2>
-    <p id="signup-note" class="signup-note">เลือกระดับสมาชิกที่เหมาะกับคุณ ราคาจะแสดงจากระบบ MMD ก่อนยืนยันการชำระเงินครับ</p>
-    <div id="signup-packages" class="stack" aria-live="polite"></div>
-    <div class="card"><strong>Private Access / Black Card</strong><p class="signup-note">สนใจสมัคร Private Membership เลือกเส้นทางนี้เพื่อดูรายละเอียดและส่งคำขอครับ</p><a class="private-link" href="/sigil/member/membership?source=line&amp;intent=signup">ดู Private Membership</a></div>
-    <p class="signup-note">สิทธิสมาชิกจะเริ่มหลังระบบยืนยันการชำระเงินอย่างเป็นทางการ ดูสถานะได้ที่ MY MMD ครับ</p>
+  <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
+    <div class="signup-hero">
+      <div class="signup-crest" aria-hidden="true">MMD<small>PRIVÉ</small></div>
+      <div class="signup-hero-copy"><span>MEMBER ACCESS · LINE</span><strong>โลกของ MMD<br>เริ่มจากตรงนี้</strong><p>เลือกเส้นทางสมาชิกที่เป็นคุณ</p></div>
+    </div>
+    <ol class="signup-steps" aria-label="ขั้นตอนสมัคร"><li><b>01</b>ยืนยัน LINE</li><li><b>02</b>เลือกแพ็กเกจ</li><li><b>03</b>ชำระและรอตรวจ</li></ol>
+    <div class="signup-section-heading"><h2 id="signup-heading">Public Membership</h2><span>เลือกสิทธิ์ของคุณ</span></div>
+    <p id="signup-note" class="signup-note">ราคาจากระบบ MMD เลือกแพ็กเกจเพื่อไปหน้าชำระเงิน</p>
+    <div id="signup-packages" class="stack" aria-live="polite"><p class="signup-loading">ยืนยัน LINE เพื่อดูแพ็กเกจที่สมัครได้</p></div>
+    <div class="card signup-private"><strong>Private Access / Black Card</strong><p class="signup-note">สนใจเส้นทาง Private? ดูรายละเอียดและส่งคำขอผ่านระบบสมาชิก</p><a class="private-link" href="/sigil/member/membership?source=line&amp;intent=signup">ดู Private Membership</a></div>
+    <p class="signup-footer">สิทธิสมาชิกเริ่มหลังระบบตรวจสอบการชำระเงินอย่างเป็นทางการ · ติดตามสถานะได้ที่ MY MMD</p>
   </section>
   <nav class="member-nav" aria-label="Member sections">
     <button type="button" data-view="home" aria-current="true" data-copy="navHome">👤 HOME</button>
@@ -168,6 +195,11 @@ function renderShell(config, nonce) {
     en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet.",pointsLabel:"Lifetime points",pointsNoExpiry:"Lifetime Points · no 365-day expiry",serviceSpendLabel:"Verified service spend",lifetimeSpendLabel:"Lifetime",spend365Label:"Last 365 days"},
     zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",pointsLabel:"累计积分",pointsNoExpiry:"累计积分 · 暂不按 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
   })[locale] || {});
+  if (CONFIG.intent === "signup") {
+    document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
+    document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
+    document.querySelector(".sub").textContent = locale === "en" ? "Choose your membership inside LINE." : locale === "zh" ? "在 LINE 中选择您的会员方案。" : "เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE";
+  }
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
 
@@ -248,13 +280,20 @@ function renderShell(config, nonce) {
       );
       if (packages.length !== 3) throw new Error("catalog_incomplete");
       for (const item of packages) {
-        const card = document.createElement("div"); card.className = "card";
+        const card = document.createElement("div"); card.className = "card signup-package signup-package-" + item.package_code;
+        const top = document.createElement("div"); top.className = "signup-package-top";
         const title = document.createElement("strong"); title.textContent = String(item.label || item.package_code);
-        const price = document.createElement("span"); price.className = "value"; price.textContent = new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US").format(item.amount_thb) + " THB";
-        const period = document.createElement("span"); period.className = "sub"; period.textContent = locale === "th" ? "ระยะเวลา " + item.duration_days + " วัน" : item.duration_days + " days";
-        const button = document.createElement("button"); button.type = "button"; button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้" : "Choose this package";
+        const tag = document.createElement("span"); tag.textContent = item.package_code === "mmd_member" ? "MEMBER" : item.package_code === "elite" ? "ELITE" : "RED CARD";
+        top.append(title, tag);
+        const price = document.createElement("div"); price.className = "signup-price";
+        const amount = document.createElement("span"); amount.className = "value"; amount.textContent = new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US").format(item.amount_thb);
+        const currency = document.createElement("small"); currency.textContent = "THB"; price.append(amount, currency);
+        const period = document.createElement("p"); period.className = "signup-period";
+        const term = item.duration_days === 365 ? 1 : item.duration_days === 730 ? 2 : null;
+        period.textContent = term ? (locale === "th" ? "ระยะสมาชิก " + term + " ปี" : term + (term === 1 ? " year" : " years")) : (locale === "th" ? "ระยะเวลา " + item.duration_days + " วัน" : item.duration_days + " days");
+        const button = document.createElement("button"); button.type = "button"; button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้  →" : "Choose this package  →";
         button.addEventListener("click", () => purchasePublicMembership(item.package_code));
-        card.append(title, price, period, button); signupPackages.append(card);
+        card.append(top, price, period, button); signupPackages.append(card);
       }
       show(locale === "th" ? "เลือกแพ็กเกจและสมัครสมาชิกด้วยบัญชี LINE นี้ได้เลยครับ" : "Choose a package to continue with this LINE account.");
     } catch { show("ตอนนี้ยังแสดงแพ็กเกจไม่ได้ครับ กรุณาลองเปิดใหม่อีกครั้ง"); }
