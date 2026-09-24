@@ -56,6 +56,14 @@ test("unavailable, restricted, and unresolved truth never claim a tier", async (
   assert.doesNotMatch(blocked.text, /Premium|ต่ออายุและยอด/);
 });
 
+test("a new signup keeps safe navigation when no member record is found", async () => {
+  const decision = await decideKenjiFirstContactMembership(event("อยากสมัครสมาชิก"), "membership_signup", {}, {});
+  assert.match(decision.text, /sigil\/member\/membership/);
+  assert.equal(decision.live_truth_used, undefined);
+  const known = await decideKenjiFirstContactMembership(event("อยากสมัครสมาชิก"), "membership_signup", { client_record_id: "recKnown" }, {});
+  assert.equal(known.handoff_required, true);
+});
+
 test("payment context and human takeover cannot be overridden by a membership lookup", async () => {
   const requests = [];
   const env = envFor({ level: "private_standard", label: "Standard", lifecycle: "active" }, requests);
