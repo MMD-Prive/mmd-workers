@@ -239,7 +239,9 @@ test("supplier invite cover explains the stocked Supplier workspace before LINE 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     const html = await response.text();
-    assert.match(html, /สวัสดี อาร์ท/);
+    assert.match(html, /สวัสดี คุณอาร์ท/);
+    assert.match(html, /ผมจาก MMD ส่งพื้นที่ Supplier ส่วนตัว/);
+    assert.doesNotMatch(html, /คุณคุณอาร์ท/);
     assert.match(html, /Pod Premium Plus/);
     assert.match(html, /สถานะสินค้าและสต๊อก/);
     assert.match(html, /เปิดพื้นที่ Supplier ใน LINE/);
@@ -279,7 +281,9 @@ test("supplier invite cover explains the on-demand lane without a low-stock mess
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /สวัสดี มิว/);
+    assert.match(html, /สวัสดี คุณมิว/);
+    assert.match(html, /ผมส่งลิงก์นี้เพื่อให้คุณดูข้อมูล/);
+    assert.doesNotMatch(html, /คุณคุณมิว/);
     assert.match(html, /Glenburgies Pop Plus/);
     assert.match(html, /สั่งตามออเดอร์/);
     assert.match(html, /เมื่อมีออเดอร์/);
@@ -296,6 +300,6 @@ test("supplier invite cover fails closed without a valid invite", async () => {
   );
   assert.equal(response.status, 403);
   const html = await response.text();
-  assert.match(html, /ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้/);
+  assert.match(html, /ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ผมส่งให้คุณ/);
   assert.doesNotMatch(html, /เปิดพื้นที่ Supplier ใน LINE/);
 });
