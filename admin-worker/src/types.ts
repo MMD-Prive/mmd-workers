@@ -4,6 +4,8 @@ export interface Env {
   AIRTABLE_BASE_ID: string;
   AIRTABLE_TABLE_MODELS: string;
   AIRTABLE_TABLE_DEALS: string;
+  AIRTABLE_TABLE_MMD_SHOP_INVENTORY_BATCHES: string;
+  AIRTABLE_TABLE_MMD_SHOP_PRODUCTS: string;
 }
 
 export type ModelTier = "standard" | "premium" | "vip" | "gws" | "ems";
@@ -121,4 +123,43 @@ export interface UpsertAiResponse {
   updated: boolean;
   created?: boolean;
   airtable_record_id?: string;
+}
+
+export interface StockItemLite {
+  id: string;
+  batch_id: string;
+  batch_name: string;
+  batch_code?: string;
+  product_id?: string;
+  product_name: string;
+  supplier_name?: string;
+  category?: string;
+  cost_price: number;
+  retail_price: number;
+  stock_qty: number;
+  quantity_in?: number;
+  stock_status: string;
+  approval_status?: string;
+  mmd_shop_product_url?: string;
+  internal_notes?: string;
+}
+
+export interface StockListResponse {
+  ok: true;
+  count: number;
+  items: StockItemLite[];
+}
+
+export interface StockUpdateRequest {
+  id: string;
+  stock_qty?: number;
+  stock_status?: string;
+  internal_notes?: string;
+  cost_price?: number | null;
+  product_name?: string;
+}
+
+export interface StockUpdateResponse {
+  ok: true;
+  record: unknown;
 }

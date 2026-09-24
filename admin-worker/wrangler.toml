@@ -909,6 +909,7 @@ MODEL_LIFF_SESSION_TTL_SECONDS = "3600"
 # Base URLs (LOCK)
 PAYMENTS_BASE_URL = "https://sigil.mmdbkk.com"
 TELEGRAM_INTERNAL_SEND_URL = "https://telegram-worker.malemodel-bkk.workers.dev/telegram/internal/send"
+IMMIGRATE_WORKER_BASE_URL = "https://immigrate-worker.malemodel-bkk.workers.dev"
 
 # Studio Telegram alerts. Reuse the canonical Telegram forum values from telegram-worker/admin smoke config.
 TELEGRAM_STUDIO_NOTIFY_ENABLED = "true"
@@ -925,6 +926,28 @@ TG_THREAD_CONFIRM = "22"
 
 # Airtable
 AIRTABLE_BASE_ID = "appsV1ILPRfIjkaYg"
+AIRTABLE_TABLE_MEMBERSHIP_APPLICATIONS = "tbl8z2MQpIqcdylim"
+AIRTABLE_TABLE_MEMBERS = "tblgWc5VRon5o8Mhk"
+AIRTABLE_TABLE_PAYMENTS = "tblWGGJJOx5eBvBZJ"
+AIRTABLE_TABLE_SESSIONS = "tblC98mKWbzmPuNzX"
+AIRTABLE_TABLE_ACTIVITY_LOGS = "tblbUWRoFL6OI6QMJ"
+AIRTABLE_TABLE_MEMBER_ENTITLEMENTS = "tblNImdF9PKAxhXGi"
+AIRTABLE_TABLE_POINTS_LEDGER = "points_ledger"
+AT_SESSIONS__SESSION_ID = "fldLTq2kZbyRv22IA"
+AT_SESSIONS__STATUS = "fldHAlxnRfpKucnNV"
+AT_SESSIONS__PACKAGE_CODE = "fldp6xNSvxDh5pjR9"
+AT_SESSIONS__AMOUNT_THB = "fldhwC79ndbnEXSZz"
+AT_SESSIONS__PAYMENT_STATUS = "fldTY5lE6m0kQf72n"
+AT_SESSIONS__PAYMENT_REF = "fldojgjSQLaO0uQLX"
+AT_SESSIONS__MEMBERSTACK_ID = "fldjelgJTzCHSCWZ0"
+AT_PAYMENTS__PAYMENT_REF = "fldOO6SY49iDw8VBZ"
+AT_PAYMENTS__PAYMENT_DATE = "fld3yAwxIu2dkw7fO"
+AT_PAYMENTS__AMOUNT = "fldvCSwrUW8OMAooS"
+AT_PAYMENTS__PAYMENT_STATUS = "fldEJ1hmm7KwWuI6q"
+AT_PAYMENTS__PAYMENT_METHOD = "fldsblzIn0wzan3c9"
+AT_PAYMENTS__VERIFICATION_STATUS = "fldJ7a0Ube9F0bmRy"
+AT_PAYMENTS__PACKAGE_CODE = "fldfyHYVrzbGPvMJR"
+AT_PAYMENTS__CREATED_AT = "flduxcPpowBxEZSLu"
 
 # Writer table IDs (LOCK)
 AIRTABLE_TABLE_CONSOLE_INBOX_ID = "tblFHmfpB2TTrzO2e"
@@ -965,13 +988,16 @@ MODEL_LOCATION_CUSTOMER_READ_ENABLED = "false"
 MODEL_LOCATION_RETENTION_SECONDS = "180"
 MODEL_SOURCE_OWNER_DEFAULT = "lonelysomething"
 MODEL_R2_LOOKUP_ENABLED = "true"
-MODEL_R2_USE_SOURCE_OWNER_AS_PREFIX = "false"
 MODEL_R2_ROOT_PREFIX = ""
 MODEL_R2_CATEGORY_PATHS = "MMD Public Models/MMD Travel Compcard,MMD Public Models/MMD Travel Models,MMD Public Models/MMD Travel Models/Straight,MMD Public Models/MMD Travel Models/Gay,MMD Public Models/MMD Travel Models/Both,MMD Public Models/MMD Extreme Models,MMD Public Models/MMD Extreme Models/Straight,MMD Public Models/MMD Extreme Models/Gay,MMD Public Models/MMD Extreme Models/Both,MMD Private Models/Standard Package,MMD Private Models/Premium Package,MMD Exclusive/MMD Exclusive Models,Public Models/Extreme Models/Straight"
+
+# Pricing review flow
 PRICING_TIMEOUT_MINUTES = "10"
 PRICING_TIMEOUT_SEND_TO_CUSTOMER = "false"
 LINE_WEBHOOK_DEBUG = "false"
-PRICING_REVIEW_TELEGRAM_PER_ID = ""
+# Optional: set these to direct Telegram chat IDs if Per/Ewvon should receive DMs.
+# Otherwise pricing reviews use TELEGRAM_CHAT_ID + TG_THREAD_PRICING_REVIEW/TG_THREAD_CONFIRM.
+PRICING_REVIEW_TELEGRAM_PER_ID = "7027379851"
 PRICING_REVIEW_TELEGRAM_EWVON_ID = ""
 TG_THREAD_PRICING_REVIEW = "61"
 
