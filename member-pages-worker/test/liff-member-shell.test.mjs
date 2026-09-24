@@ -56,6 +56,23 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
   });
 
+  it("offers server-priced Public Membership signup after LINE verification and guards checkout", async () => {
+    const response = await shell("/member/liff?intent=signup&view=signup");
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /"intent":"signup"/);
+    assert.match(html, /"view":"signup"/);
+    assert.match(html, /id="signup-packages"/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
+    assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
+    assert.match(html, /payload\?\.official_verification_required === true/);
+    assert.match(html, /payload\?\.entitlement_granted === false/);
+    assert.match(html, /url\.hostname === "mmdbkk\.com"/);
+    assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("await readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
+    assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
+  });
+
   it("checks the existing same-site member session before any LIFF init or login", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
     const html = await response.text();
