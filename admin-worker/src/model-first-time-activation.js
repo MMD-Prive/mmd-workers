@@ -245,23 +245,31 @@ export class ModelActivationCoordinator {
       }, 201);
     }
 
-    if (url.pathname !== "/bind" || request.method.toUpperCase() !== "POST") {
+    const recovery = url.pathname === "/recover";
+    if ((!recovery && url.pathname !== "/bind") || request.method.toUpperCase() !== "POST") {
       return internalJson({ ok: false, error: "not_found" }, 404);
     }
 
     const input = await request.json().catch(() => null);
     const modelRecordId = clean(input?.model_record_id, 40);
     const lineUserId = clean(input?.line_user_id, 80);
+    const previousLineUserId = clean(input?.previous_line_user_id, 80);
     const jti = clean(input?.jti, 120);
     const exp = Number(input?.exp);
-    if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId) || !isCanonicalLineUserId(lineUserId) || !jti || !Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000)) {
+    const commonInvalid = !/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)
+      || !isCanonicalLineUserId(lineUserId)
+      || !jti
+      || !Number.isFinite(exp)
+      || exp <= Math.floor(Date.now() / 1000);
+    const recoveryInvalid = recovery && (!isCanonicalLineUserId(previousLineUserId) || previousLineUserId === lineUserId || !jti.startsWith("owner_recovery_model_line_"));
+    if (commonInvalid || recoveryInvalid) {
       return internalJson({ ok: false, error: "activation_binding_invalid" }, 400);
     }
 
     const prior = await this.state.storage.get("binding");
     if (prior?.jti === jti) {
-      if (prior.model_record_id === modelRecordId && prior.line_user_id === lineUserId) {
-        return internalJson({ ok: true, idempotent: true, model_record_id: modelRecordId }, 200);
+      if (prior.model_record_id === modelRecordId && prior.line_user_id === lineUserId && (!recovery || (prior.recovered === true && prior.previous_line_user_id === previousLineUserId))) {
+        return internalJson({ ok: true, idempotent: true, recovered: recovery, model_record_id: modelRecordId }, 200);
       }
       return internalJson({ ok: false, error: "activation_token_already_used" }, 409);
     }
@@ -271,7 +279,11 @@ export class ModelActivationCoordinator {
 
     const field = lineUserIdField(this.env);
     const existing = clean(model.record?.fields?.[field], 80);
-    if (existing) {
+    if (recovery) {
+      if (existing !== previousLineUserId) {
+        return internalJson({ ok: false, error: existing === lineUserId ? "model_line_recovery_already_applied" : "model_line_recovery_current_identity_changed" }, 409);
+      }
+    } else if (existing) {
       if (existing === lineUserId) {
         await this.state.storage.put("binding", { jti, model_record_id: modelRecordId, line_user_id: lineUserId, bound_at: new Date().toISOString() });
         return internalJson({ ok: true, idempotent: true, model_record_id: modelRecordId }, 200);
@@ -292,9 +304,10 @@ export class ModelActivationCoordinator {
       jti,
       model_record_id: modelRecordId,
       line_user_id: lineUserId,
+      ...(recovery ? { recovered: true, previous_line_user_id: previousLineUserId } : {}),
       bound_at: new Date().toISOString(),
     });
-    return internalJson({ ok: true, idempotent: false, model_record_id: modelRecordId }, 200);
+    return internalJson({ ok: true, idempotent: false, recovered: recovery, model_record_id: modelRecordId }, 200);
   }
 }
 
