@@ -10,7 +10,7 @@ const MAX_IMAGE_BYTES = 1024 * 1024;
 const SYNC_PATH = "/v1/internal/line/rich-menu/sync";
 const THREE_LEVEL_PREPARE_PATH = "/v1/internal/line/rich-menu/three-level/prepare";
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
-const VERSION = "mmd-rm3-20260923-v4.2";
+const VERSION = "mmd-rm3-20260924-v4.3";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -21,6 +21,7 @@ function msg(label, value) { return { type: "message", label, text: value }; }
 function postback(label, data) { return { type: "postback", label, data }; }
 function site(path, entry) { const u = new URL(path, "https://mmdbkk.com"); u.searchParams.set("source", "line"); u.searchParams.set("entry_route", entry); return u.toString(); }
 function liff() { return `https://liff.line.me/${LIFF_ID}?intent=status&view=profile`; }
+function signupLiff() { return `https://liff.line.me/${LIFF_ID}?intent=signup&view=signup`; }
 
 const MENUS = Object.freeze({
   guest: {
@@ -31,7 +32,7 @@ const MENUS = Object.freeze({
       `https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
     ],
     actions: [
-      uri("START HERE", site("/public/access", "rich_menu_guest_start")),
+      uri("START HERE", signupLiff()),
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_guest_models")),
       uri("BOOKING", site("/booking", "rich_menu_guest_booking")),
       uri("PUBLIC SERVICES", site("/services/companion", "rich_menu_guest_services")),
@@ -51,7 +52,7 @@ const MENUS = Object.freeze({
       uri("PUBLIC MODELS", site("/profiles", "rich_menu_public_models")),
       uri("BOOKING", site("/booking", "rich_menu_public_booking")),
       uri("MY MMD", liff()),
-      uri("PRIVE ACCESS", site("/membership", "rich_menu_prive_access")),
+      uri("PRIVE ACCESS", signupLiff()),
       postback("SUPPORT", "mmd_action=support&audience=public&intent=ใช้บริการยังไง"),
     ],
   },
