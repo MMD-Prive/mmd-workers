@@ -47,6 +47,7 @@ test("My Card accepts only active public profile and gallery media", () => {
   assert.equal(isMyCardSelectableMedia(eligible), true);
   assert.equal(isMyCardSelectableMedia({ ...eligible, media_type: "intro_video" }), false);
   assert.equal(isMyCardSelectableMedia({ ...eligible, public_safe: false }), false);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, review_status: "pending_review" }), false);
   assert.equal(isMyCardSelectableMedia({ ...eligible, review_status: "rejected" }), false);
   assert.equal(isMyCardSelectableMedia({ ...eligible, media_visibility: "private" }), false);
 });
