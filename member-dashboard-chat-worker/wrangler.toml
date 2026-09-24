@@ -119,6 +119,17 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/api/member/dashboard*"
 zone_name = "mmdbkk.com"
 
+# Verified Medical Professional requests are a same-origin, session-bound
+# front-gate handoff. member-pages-worker performs the verification and writes
+# the pending scope-review record; this public route has no pricing or booking.
+[[routes]]
+pattern = "mmdbkk.com/api/member/medical-request*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/api/member/medical-request*"
+zone_name = "mmdbkk.com"
+
 # Member-facing payment status/history BFF. The browser reaches only this
 # same-origin route; the front gate delegates to member-pages-worker and never
 # exposes admin payment review or takes over payments-worker money authority.
