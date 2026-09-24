@@ -25,7 +25,7 @@
         var digest = response.headers.get('x-mmd-media-sha256') || '';
         if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('unverified_media');
         var blob = await response.blob();
-        if (!['image/jpeg', 'image/png', 'image/webp', 'video/mp4'].includes(blob.type) || !blob.size || blob.size > 25 * 1024 * 1024) throw new Error('invalid_media');
+        if (!['image/jpeg', 'image/png', 'image/webp', 'video/mp4'].includes(blob.type) || !blob.size || blob.size > 50 * 1024 * 1024) throw new Error('invalid_media');
         return { blob: blob, sha: digest };
       }
       var data = await response.json();
