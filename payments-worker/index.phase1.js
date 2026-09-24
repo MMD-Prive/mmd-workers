@@ -19,6 +19,25 @@ const HISTORICAL_REVIEW_PATH = "/v1/internal/payments/historical-slip/reviewed";
 const HISTORICAL_SCHEMA = "mmd_historical_slip_backfill_v1";
 const PAYMENT_STAGES = new Set(["deposit", "final", "tips", "full", "extension", "membership"]);
 const AIRTABLE_API = "https://api.airtable.com/v0";
+const CANCELLATION_CREDIT_RECOVERY = Object.freeze({
+  paymentsTable: "tblWGGJJOx5eBvBZJ",
+  sessionsTable: "tblC98mKWbzmPuNzX",
+  paymentRef: "fldOO6SY49iDw8VBZ",
+  paymentClient: "fldcrLuJijj7xr0y8",
+  paymentAmountReceived: "fld5rTIVEF1DXwfe2",
+  paymentVerification: "fldJ7a0Ube9F0bmRy",
+  paymentSessionId: "fld2wdhBvc8xrV6y5",
+  paymentDepositStatus: "fldD0mQWTfdmyBAeT",
+  paymentOfficialAt: "fldPNK6qgxCSdaJRM",
+  paymentOfficialRef: "flddkMKy5H8RbFwt9",
+  paymentOfficialBy: "fld208LCmQZB5llNo",
+  sessionId: "fldLTq2kZbyRv22IA",
+  sessionClient: "fld6P6if0vDZCeV0C",
+  sessionStatus: "fldmwuvOaiCFdzzRa",
+});
+const CANCELLED_SESSION_STATES = new Set([
+  "cancelled", "canceled", "cancelled_by_client", "canceled_by_client", "client_cancelled", "client_canceled",
+]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -81,6 +100,8 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
     const reviewReason = text(body.review_reason, 600);
     const overrideReason = text(body.override_reason, 600);
     const reviewActor = text(body.review_actor || "internal_admin_owner", 120);
+    const cancellationCreditRecovery = body.cancellation_credit_recovery === true;
+    const recoveryClientRecordId = recordId(body.recovery_client_record_id || body.client_record_id);
 
     if (source !== "historical_slip_backfill") throw httpError(400, "invalid_historical_review_source");
     if (decision !== "approved") throw httpError(400, "explicit_approved_decision_required");
@@ -91,6 +112,8 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
     if (reviewReason.length < 5) throw httpError(400, "review_reason_required");
     if (["deposit", "final", "tips", "full", "extension"].includes(paymentStage) && !sessionId) throw httpError(400, "session_id_required_for_service_payment");
     if (paymentStage === "membership" && !memberEmail) throw httpError(400, "member_email_required_for_membership_payment");
+    if (cancellationCreditRecovery && paymentStage !== "deposit") throw httpError(409, "cancellation_credit_recovery_requires_deposit");
+    if (cancellationCreditRecovery && !recoveryClientRecordId) throw httpError(400, "recovery_client_record_id_required");
 
     const proof = await loadHistoricalProof(env, proofId);
     if (!proof) throw httpError(404, "historical_proof_not_found");
@@ -123,6 +146,15 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
     );
     if (conflict && overrideReason.length < 5) throw httpError(409, "override_reason_required_for_proof_conflict");
 
+    let recoverySession = null;
+    if (cancellationCreditRecovery) {
+      recoverySession = await validateCancellationCreditRecoverySubject(env, {
+        sessionId,
+        clientRecordId: recoveryClientRecordId,
+        paymentRef,
+      });
+    }
+
     if (!clean(env.INTERNAL_TOKEN)) throw httpError(503, "payments_internal_token_not_ready");
 
     const notifyBody = {
@@ -135,7 +167,7 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
       package_code: packageCode || undefined,
       paid_at: paidAt || undefined,
       payment_method: "promptpay",
-      notes: `historical_slip_backfill proof_id=${proofId}; evidence_sha256=${evidenceSha256}; reviewed_by=${reviewActor}`,
+      notes: `historical_slip_backfill proof_id=${proofId}; evidence_sha256=${evidenceSha256}; reviewed_by=${reviewActor}${cancellationCreditRecovery ? "; cancellation_credit_recovery=true" : ""}`,
     };
 
     const notifyRequest = new Request(new URL(NOTIFY_PATH, request.url), {
@@ -143,9 +175,24 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(notifyBody),
     });
-    const response = await runTrustedNotify(notifyRequest, env, ctx, notifyBody, { injectInternalToken: true });
+    const response = await runTrustedNotify(notifyRequest, env, ctx, notifyBody, {
+      injectInternalToken: true,
+      skipPointsAndPartner: cancellationCreditRecovery,
+    });
     const payload = await response.clone().json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return response;
+
+    const recoveryPayment = cancellationCreditRecovery
+      ? await finalizeCancellationCreditRecoveryPayment(env, {
+          paymentWrite: payload.payment_write,
+          paymentRef,
+          amountThb,
+          sessionId,
+          clientRecordId: recoveryClientRecordId,
+          sessionRecordId: recoverySession?.id || null,
+          proofId,
+        })
+      : null;
 
     const processedAt = new Date().toISOString();
     const nextNote = {
@@ -162,6 +209,10 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
         payment_record_id: text(payload.payment_write?.record_id || payload.payment_write?.id, 120) || null,
         points_awarded: payload.points_ledger?.awarded === true,
         duplicate: payload.duplicated === true || payload.duplicate === true,
+        cancellation_credit_recovery: cancellationCreditRecovery,
+        recovery_client_record_id: cancellationCreditRecovery ? recoveryClientRecordId : null,
+        recovery_session_record_id: cancellationCreditRecovery ? recoverySession?.id || null : null,
+        recovery_payment_record_id: recoveryPayment?.record_id || null,
       },
     };
 
@@ -181,6 +232,8 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
       historical_slip_backfill: true,
       proof_id: proofId,
       proof_audit_write: proofAuditWrite,
+      cancellation_credit_recovery: cancellationCreditRecovery,
+      recovery_payment: recoveryPayment,
     }), { status: response.status, headers });
   } catch (error) {
     return json({
@@ -191,7 +244,7 @@ async function handleHistoricalReviewedSlip(request, env, ctx) {
   }
 }
 
-async function runTrustedNotify(request, env, ctx, body, { injectInternalToken }) {
+async function runTrustedNotify(request, env, ctx, body, { injectInternalToken, skipPointsAndPartner = false }) {
   // Keep existing payment/session validation and persistence, but suppress the
   // legacy per-payment points calculation. Phase 1 is the only base-points
   // writer after a trusted notify succeeds.
@@ -210,29 +263,33 @@ async function runTrustedNotify(request, env, ctx, body, { injectInternalToken }
   const payload = await response.clone().json().catch(() => null);
   if (!payload?.ok) return response;
 
-  const pointsLedger = await awardBasePointsPhase1(env, {
-    payment_ref: body.payment_ref || body.transaction_ref,
-    stage: body.stage || body.payment_stage || body.payment_type || "deposit",
-    session_id: body.session_id,
-    amount_thb: body.amount_thb || body.amount,
-    member_id: body.member_id,
-    member_email: body.member_email || body.email,
-  }).catch((error) => ({
-    ok: false,
-    awarded: false,
-    error: String(error?.message || error || "points_phase1_failed"),
-  }));
+  const pointsLedger = skipPointsAndPartner
+    ? { ok: true, awarded: false, skipped: true, reason: "cancellation_credit_recovery" }
+    : await awardBasePointsPhase1(env, {
+        payment_ref: body.payment_ref || body.transaction_ref,
+        stage: body.stage || body.payment_stage || body.payment_type || "deposit",
+        session_id: body.session_id,
+        amount_thb: body.amount_thb || body.amount,
+        member_id: body.member_id,
+        member_email: body.member_email || body.email,
+      }).catch((error) => ({
+        ok: false,
+        awarded: false,
+        error: String(error?.message || error || "points_phase1_failed"),
+      }));
 
-  const partnerConfirmation = await notifyPartnerJobAfterOfficialVerify(env, {
-    payment_ref: body.payment_ref || body.transaction_ref,
-    stage: body.stage || body.payment_stage || body.payment_type || "deposit",
-    session_id: body.session_id,
-  }).catch((error) => ({
-    ok:false,
-    sent:false,
-    reason:"partner_confirmation_hook_failed",
-    error:String(error?.message || error || "unknown"),
-  }));
+  const partnerConfirmation = skipPointsAndPartner
+    ? { ok: true, sent: false, skipped: true, reason: "cancellation_credit_recovery" }
+    : await notifyPartnerJobAfterOfficialVerify(env, {
+        payment_ref: body.payment_ref || body.transaction_ref,
+        stage: body.stage || body.payment_stage || body.payment_type || "deposit",
+        session_id: body.session_id,
+      }).catch((error) => ({
+        ok:false,
+        sent:false,
+        reason:"partner_confirmation_hook_failed",
+        error:String(error?.message || error || "unknown"),
+      }));
 
   const headers = new Headers(response.headers);
   headers.set("content-type", "application/json; charset=utf-8");
@@ -269,6 +326,149 @@ async function patchHistoricalProof(env, recordId, fields) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`airtable_${response.status}`);
   return payload;
+}
+
+function recordId(value) {
+  const valueText = text(value, 40);
+  return /^rec[A-Za-z0-9]{14}$/.test(valueText) ? valueText : "";
+}
+
+function recordLinks(value) {
+  return Array.isArray(value)
+    ? [...new Set(value.map((item) => recordId(item)).filter(Boolean))]
+    : [];
+}
+
+function recoveryField(fields, fieldId, ...aliases) {
+  if (fields?.[fieldId] !== undefined) return fields[fieldId];
+  for (const alias of aliases) if (fields?.[alias] !== undefined) return fields[alias];
+  return undefined;
+}
+
+function recoveryPaymentsTable(env) {
+  return clean(env.AIRTABLE_TABLE_PAYMENTS || env.AIRTABLE_TABLE_PAYMENTS_ID) || CANCELLATION_CREDIT_RECOVERY.paymentsTable;
+}
+
+function recoverySessionsTable(env) {
+  return clean(env.AIRTABLE_TABLE_SESSIONS || env.AIRTABLE_TABLE_SESSIONS_ID) || CANCELLATION_CREDIT_RECOVERY.sessionsTable;
+}
+
+async function recoveryAirtableRequest(env, table, path = "", init = {}) {
+  requireAirtable(env);
+  const url = new URL(`${AIRTABLE_API}/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID))}/${encodeURIComponent(table)}${path}`);
+  url.searchParams.set("returnFieldsByFieldId", "true");
+  for (const [key, value] of Object.entries(init.query || {})) {
+    if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, String(value));
+  }
+  const response = await fetch(url.toString(), {
+    method: init.method || "GET",
+    headers: {
+      Authorization: `Bearer ${clean(env.AIRTABLE_API_KEY)}`,
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+    },
+    body: init.body ? JSON.stringify(init.body) : undefined,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw httpError(response.status, `airtable_${response.status}`);
+  return payload;
+}
+
+async function recoveryFindOne(env, table, formula) {
+  const payload = await recoveryAirtableRequest(env, table, "", { query: { maxRecords: 2, filterByFormula: formula } });
+  const rows = Array.isArray(payload?.records) ? payload.records : [];
+  if (rows.length > 1) throw httpError(409, "recovery_subject_ambiguous");
+  return rows[0] || null;
+}
+
+async function recoveryGetRecord(env, table, id) {
+  const normalizedId = recordId(id);
+  if (!normalizedId) return null;
+  return recoveryAirtableRequest(env, table, `/${encodeURIComponent(normalizedId)}`).catch((error) => {
+    if (Number(error?.status) === 404) return null;
+    throw error;
+  });
+}
+
+async function validateCancellationCreditRecoverySubject(env, { sessionId, clientRecordId, paymentRef }) {
+  const session = await recoveryFindOne(
+    env,
+    recoverySessionsTable(env),
+    `{session_id}='${formulaValue(sessionId)}'`,
+  );
+  if (!session?.id) throw httpError(404, "recovery_session_not_found");
+
+  const sessionClientIds = recordLinks(recoveryField(session.fields, CANCELLATION_CREDIT_RECOVERY.sessionClient, "Client"));
+  if (sessionClientIds.length !== 1 || sessionClientIds[0] !== clientRecordId) {
+    throw httpError(409, "recovery_session_client_mismatch");
+  }
+  const sessionStatus = code(recoveryField(session.fields, CANCELLATION_CREDIT_RECOVERY.sessionStatus, "Session Status", "session_status"));
+  if (!CANCELLED_SESSION_STATES.has(sessionStatus)) throw httpError(409, "recovery_session_not_cancelled");
+
+  const existingPayment = await recoveryFindOne(
+    env,
+    recoveryPaymentsTable(env),
+    `{Payment Reference}='${formulaValue(paymentRef)}'`,
+  );
+  if (existingPayment?.id) {
+    const existingSessionId = text(recoveryField(existingPayment.fields, CANCELLATION_CREDIT_RECOVERY.paymentSessionId, "session_id", "Session ID"), 180);
+    const existingClientIds = recordLinks(recoveryField(existingPayment.fields, CANCELLATION_CREDIT_RECOVERY.paymentClient, "Client"));
+    if (existingSessionId && existingSessionId !== sessionId) throw httpError(409, "recovery_payment_session_mismatch");
+    if (existingClientIds.length && (existingClientIds.length !== 1 || existingClientIds[0] !== clientRecordId)) {
+      throw httpError(409, "recovery_payment_client_mismatch");
+    }
+  }
+  return session;
+}
+
+async function finalizeCancellationCreditRecoveryPayment(env, {
+  paymentWrite,
+  paymentRef,
+  amountThb,
+  sessionId,
+  clientRecordId,
+  sessionRecordId,
+  proofId,
+}) {
+  const paymentId = recordId(paymentWrite?.record_id || paymentWrite?.id);
+  const payment = paymentId
+    ? await recoveryGetRecord(env, recoveryPaymentsTable(env), paymentId)
+    : await recoveryFindOne(env, recoveryPaymentsTable(env), `{Payment Reference}='${formulaValue(paymentRef)}'`);
+  if (!payment?.id) throw httpError(502, "recovery_payment_write_unresolved");
+
+  const writtenRef = text(recoveryField(payment.fields, CANCELLATION_CREDIT_RECOVERY.paymentRef, "Payment Reference", "payment_ref"), 180);
+  const writtenSessionId = text(recoveryField(payment.fields, CANCELLATION_CREDIT_RECOVERY.paymentSessionId, "session_id", "Session ID"), 180);
+  const writtenClientIds = recordLinks(recoveryField(payment.fields, CANCELLATION_CREDIT_RECOVERY.paymentClient, "Client"));
+  if (writtenRef !== paymentRef || writtenSessionId !== sessionId) throw httpError(409, "recovery_payment_write_subject_mismatch");
+  if (writtenClientIds.length && (writtenClientIds.length !== 1 || writtenClientIds[0] !== clientRecordId)) {
+    throw httpError(409, "recovery_payment_write_client_mismatch");
+  }
+
+  const verifiedAt = new Date().toISOString();
+  await recoveryAirtableRequest(env, recoveryPaymentsTable(env), `/${encodeURIComponent(payment.id)}`, {
+    method: "PATCH",
+    body: {
+      fields: {
+        [CANCELLATION_CREDIT_RECOVERY.paymentClient]: [clientRecordId],
+        [CANCELLATION_CREDIT_RECOVERY.paymentAmountReceived]: amountThb,
+        [CANCELLATION_CREDIT_RECOVERY.paymentVerification]: "official_verified",
+        [CANCELLATION_CREDIT_RECOVERY.paymentDepositStatus]: "official_verified",
+        [CANCELLATION_CREDIT_RECOVERY.paymentOfficialAt]: verifiedAt,
+        [CANCELLATION_CREDIT_RECOVERY.paymentOfficialRef]: paymentRef,
+        [CANCELLATION_CREDIT_RECOVERY.paymentOfficialBy]: "payments-worker",
+      },
+      typecast: false,
+    },
+  });
+  return {
+    record_id: payment.id,
+    payment_ref: paymentRef,
+    received_thb: amountThb,
+    client_record_id: clientRecordId,
+    session_record_id: recordId(sessionRecordId) || null,
+    proof_id: proofId,
+    official_verified_at: verifiedAt,
+  };
 }
 
 function requireAirtable(env) {

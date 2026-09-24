@@ -441,6 +441,8 @@ async function reviewHistoricalProof(request, env, ctx) {
   const memberEmail = normalizeEmail(body.member_email || note.explicit_context?.member_email);
   const packageCode = safeText(body.package_code, 120);
   const overrideReason = safeText(body.override_reason, 600);
+  const cancellationCreditRecovery = body.cancellation_credit_recovery === true;
+  const recoveryClientRecordId = safeText(body.recovery_client_record_id || body.client_record_id, 40);
 
   if (!paymentRef) throw httpError(400, "payment_ref_required");
   if (amountThb == null) throw httpError(400, "amount_thb_required");
@@ -474,6 +476,8 @@ async function reviewHistoricalProof(request, env, ctx) {
     review_reason: reviewReason,
     override_reason: overrideReason || null,
     review_actor: "internal_admin_owner",
+    cancellation_credit_recovery: cancellationCreditRecovery,
+    recovery_client_record_id: cancellationCreditRecovery ? recoveryClientRecordId || null : null,
   };
 
   const handoffInit = {
@@ -509,6 +513,8 @@ async function reviewHistoricalProof(request, env, ctx) {
       payment_record_id: safeText(payload.payment_write?.record_id || payload.payment_write?.id, 120),
       points_awarded: payload.points_ledger?.awarded === true,
       duplicate: payload.duplicate === true,
+      cancellation_credit_recovery: payload.cancellation_credit_recovery === true,
+      recovery_payment_record_id: safeText(payload.recovery_payment?.record_id, 120) || null,
     }),
   };
   await airtableUpdate(env, paymentProofTable(env), proof.id, { status: "reviewed", note: JSON.stringify(nextNote) });

@@ -419,6 +419,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/payments/historical-backfill*"
 zone_name = "mmdbkk.com"
 
+# Owner-only cancellation-to-credit recovery. This stays a narrow API route;
+# the Historical Backfill page remains the browser presentation surface.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/cancellation-credit-recovery"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/cancellation-credit-recovery"
+zone_name = "mmdbkk.com"
+
 # Model Dashboard first-time invite issuer. Browser access is protected by the
 # existing credential-bound internal admin gate; the invite itself carries no admin credential.
 [[routes]]
