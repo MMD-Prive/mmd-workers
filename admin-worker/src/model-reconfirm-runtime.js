@@ -42,6 +42,21 @@ export async function handleModelReconfirmRequest(request, env, ctx, downstream)
   return downstream.fetch(request, env, ctx);
 }
 
+async function dispatchModelNewJobNotification(env, sessionId) {
+  const service = env.EVENTS_WORKER;
+  const token = clean(env.AUTH_SERVICE_ADMIN_TO_EVENTS || env.CONFIRM_KEY);
+  if (!service || typeof service.fetch !== "function" || !token) return;
+  try {
+    await service.fetch(new Request("https://events-worker.internal/__internal/model/session/new-job-notification", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-internal-token": token },
+      body: JSON.stringify({ session_id: sessionId }),
+    }));
+  } catch {
+    // Notification delivery is best-effort and never rolls back canonical Job creation.
+  }
+}
+
 async function handleCreateSessionWithReconfirm(request, env, ctx, downstream) {
   const body = await request.clone().json().catch(() => ({}));
   const response = await downstream.fetch(request, env, ctx);
@@ -52,8 +67,14 @@ async function handleCreateSessionWithReconfirm(request, env, ctx, downstream) {
   if (payload.operational_status === "pending_client_link") return response;
 
   const sessionId = clean(payload.session_id || payload.session_ref || payload?.raw?.session_id);
+  if (!sessionId) return response;
+
+  const notificationTask = dispatchModelNewJobNotification(env, sessionId);
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(notificationTask);
+  else await notificationTask;
+
   const jobDate = clean(body.job_date || body?.job_details?.job_date);
-  if (!sessionId || !jobDate) {
+  if (!jobDate) {
     return mergeJsonResponse(response, payload, {
       reconfirm: null,
       warnings: unique([...(Array.isArray(payload.warnings) ? payload.warnings : []), "reconfirm_schedule_input_missing"]),
@@ -449,6 +470,102 @@ async function patchSessionById(env, recordId, fields) {
   });
   if (!result.ok) return result;
   return { ok: true, status: 200, record: { id: result.data?.id || recordId, fields: result.data?.fields || {} } };
+}
+
+export async function sendModelNewJobNotification(env, sessionIdValue) {
+  const sessionId = clean(sessionIdValue);
+  if (!sessionId) return { ok: false, error: "session_id_required" };
+
+  const found = await findSessionBySessionId(env, sessionId);
+  if (!found.ok || !found.record) return { ok: false, error: found.error || "session_not_found" };
+  const fields = found.record.fields || {};
+  const state = sessionLifecycleState(env, fields);
+  if (!["confirmed", "assigned"].includes(state)) {
+    return { ok: true, skipped: true, reason: "session_not_assigned" };
+  }
+
+  const names = sessionFields(env);
+  const assigned = fields[names.modelRecordId];
+  const modelRecordId = Array.isArray(assigned)
+    ? clean(typeof assigned[0] === "object" ? assigned[0]?.id : assigned[0])
+    : clean(typeof assigned === "object" ? assigned?.id : assigned);
+  if (!/^rec[A-Za-z0-9]{14,24}$/.test(modelRecordId)) {
+    return { ok: false, error: "assigned_model_unavailable" };
+  }
+
+  const model = await airtable(env, modelTable(env), `/${encodeURIComponent(modelRecordId)}`);
+  if (!model.ok) return { ok: false, error: "assigned_model_unavailable" };
+  const modelFields = model.data?.fields || {};
+  const lineUserId = clean(modelFields[clean(env.AT_MODELS__LINE_USER_ID || "line_user_id")]);
+  const lineToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN || env.LINE_CHANNEL_ACCESS_TOKEN);
+  const telegramUserId = clean(modelFields[clean(env.AT_MODELS__TELEGRAM_USER_ID || "telegram_user_id")]);
+  const telegramVerified = normalizeWord(modelFields[clean(env.AT_MODELS__TELEGRAM_VERIFICATION_STATUS || "telegram_verification_status")]) === "verified";
+  const message = "MMD MODEL · มีงานใหม่\nเปิด MMD MODEL เพื่อตรวจรายละเอียดและดำเนินการ";
+  let lineFailure = "model_line_identity_or_transport_missing";
+
+  if (/^U[0-9a-f]{32}$/i.test(lineUserId) && lineToken) {
+    try {
+      const liffId = clean(env.MODEL_LIFF_PUBLISHED_ID);
+      const messages = liffId
+        ? [{
+            type: "template",
+            altText: "MMD MODEL · มีงานใหม่",
+            template: {
+              type: "buttons",
+              text: "มีงานใหม่รอให้ตรวจในแอป",
+              actions: [{
+                type: "uri",
+                label: "เปิด MMD MODEL",
+                uri: "https://liff.line.me/" + encodeURIComponent(liffId),
+              }],
+            },
+          }]
+        : [{ type: "text", text: message }];
+      const response = await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: { authorization: `Bearer ${lineToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ to: lineUserId, messages }),
+      });
+      if (response.ok) return { ok: true, channel: "line" };
+      lineFailure = `line_push_http_${response.status}`;
+    } catch {
+      lineFailure = "line_push_unavailable";
+    }
+  }
+
+  if (telegramVerified && /^[0-9]{5,20}$/.test(telegramUserId)) {
+    const configuredEndpoint = clean(env.TELEGRAM_INTERNAL_SEND_URL);
+    const telegramBase = clean(env.TELEGRAM_WORKER_BASE || env.TELEGRAM_WORKER_BASE_URL).replace(/\/+$/, "");
+    const endpoint = configuredEndpoint || (telegramBase ? `${telegramBase}/telegram/internal/send` : "");
+    const token = clean(env.AUTH_SERVICE_EVENTS_TO_TELEGRAM || env.AUTH_SERVICE_STUDIO_TO_TELEGRAM);
+    if (endpoint && token) {
+      const liffId = clean(env.MODEL_LIFF_PUBLISHED_ID);
+      const telegramText = liffId
+        ? `MMD MODEL · มีงานใหม่\nเปิด <a href="https://liff.line.me/${encodeURIComponent(liffId)}">MMD MODEL</a> เพื่อตรวจรายละเอียดและดำเนินการ`
+        : message;
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-internal-token": token },
+          body: JSON.stringify({
+            chat_id: telegramUserId,
+            text: telegramText,
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+            source: "events-worker",
+            intent: "model_new_job_fallback",
+            session_id: sessionId,
+          }),
+        });
+        if (response.ok) return { ok: true, channel: "telegram", fallback_reason: lineFailure };
+        return { ok: false, error: "model_notification_delivery_failed", line_reason: lineFailure, telegram_status: response.status };
+      } catch {
+        return { ok: false, error: "model_notification_delivery_failed", line_reason: lineFailure, telegram_reason: "telegram_transport_unavailable" };
+      }
+    }
+  }
+
+  return { ok: false, error: "model_notification_delivery_failed", line_reason: lineFailure, telegram_reason: "verified_telegram_unavailable" };
 }
 
 async function pushModelReconfirm(env, sessionRecord, reminder) {
