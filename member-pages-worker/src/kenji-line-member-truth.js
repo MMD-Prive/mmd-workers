@@ -249,6 +249,26 @@ function projectMembership(snapshot = {}) {
   };
 }
 
+function projectFormerPrivateMembership(snapshot = {}) {
+  if (snapshot?.member_blocked === true) return null;
+  const priority = ["black_card", "svip", "vip", "private_premium", "private_standard"];
+  const rows = Array.isArray(snapshot?.entitlements) ? snapshot.entitlements : [];
+  const current = rows.filter((row) => ["active", "expiring_soon"].includes(text(row?.lifecycle).toLowerCase()));
+  const former = rows.filter((row) => ["expired", "grace"].includes(text(row?.lifecycle).toLowerCase()));
+  const capability = priority.find((name) => former.some((row) => text(row?.capability).toLowerCase() === name));
+  if (!capability) return null;
+  const currentPriority = priority.find((name) => current.some((row) => text(row?.capability).toLowerCase() === name));
+  if (currentPriority && priority.indexOf(currentPriority) <= priority.indexOf(capability)) return null;
+  const lifecycle = former.some((row) => text(row?.capability).toLowerCase() === capability && text(row?.lifecycle).toLowerCase() === "grace")
+    ? "grace" : "expired";
+  return {
+    level: capability,
+    label: LABELS[capability],
+    lifecycle,
+    expire_at: uniqueExpiry(snapshot, capability, lifecycle),
+  };
+}
+
 function projectPoints(profile = {}) {
   const points = isPlainObject(profile?.customer_360?.points) ? profile.customer_360.points : null;
   if (points?.status !== "verified") return { status: "unavailable", active_points: null };
@@ -302,6 +322,7 @@ export function projectKenjiLineMemberTruth(resolved = {}) {
     identity_status: "resolved",
     display_name: safeDisplayName(profile.display_name),
     membership,
+    former_private_membership: projectFormerPrivateMembership(snapshot),
     points: projectPoints(profile),
     resolver_snapshot: resolverSnapshot,
   };
