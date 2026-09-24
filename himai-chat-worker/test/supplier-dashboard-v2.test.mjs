@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { handleSupplierPortal, SUPPLIER_PORTAL_INTERNALS as supplierPortal } from "../src/supplier-portal.js";
 import { renderDistributorPortalPage } from "../src/distributor-portal-page.js";
 import { renderSupplierLiffPage } from "../src/supplier-liff-page.js";
+import { renderSupplierInvitePage } from "../src/supplier-invite-page.js";
 import { handleSupplierAssistant } from "../../himai-shop-worker/src/supplier-assistant.js";
 
 test("supplier dashboard page exposes scoped operational lanes", async () => {
@@ -205,4 +206,96 @@ test("LIFF invite bind fails closed for an expired invite", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("supplier invite cover explains the stocked Supplier workspace before LINE binding", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-art",
+          fields: {
+            fld1RFwNRfArWb3cS: "invite-art-cover",
+            flddW10scozb72r2T: "2099-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+            fldePq8Fmqq50CkPj: "SUP — Pod Premium Plus",
+            fldpIGevwbD2xx3sK: "อาร์ท",
+            fldViZfj7hExC1svq: "stocked supplier",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+
+  try {
+    const response = await renderSupplierInvitePage(
+      new Request("https://example.com/shop/supplier/invite?invite=invite-art-cover"),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    const html = await response.text();
+    assert.match(html, /สวัสดี อาร์ท/);
+    assert.match(html, /Pod Premium Plus/);
+    assert.match(html, /สถานะสินค้าและสต๊อก/);
+    assert.match(html, /เปิดพื้นที่ Supplier ใน LINE/);
+    assert.match(html, /https:\/\/liff\.line\.me\/2011701290-xBE3CirT\?invite=invite-art-cover/);
+    assert.doesNotMatch(html, /ข้อมูลลูกค้า/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("supplier invite cover explains the on-demand lane without a low-stock message", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-mew",
+          fields: {
+            fld1RFwNRfArWb3cS: "invite-mew-cover",
+            flddW10scozb72r2T: "2099-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+            fldePq8Fmqq50CkPj: "SUP — Glenburgies Pop Plus",
+            fldpIGevwbD2xx3sK: "มิว",
+            fldViZfj7hExC1svq: "on-demand supplier, no stock",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+
+  try {
+    const response = await renderSupplierInvitePage(
+      new Request("https://example.com/shop/supplier/invite?invite=invite-mew-cover"),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /สวัสดี มิว/);
+    assert.match(html, /Glenburgies Pop Plus/);
+    assert.match(html, /สั่งตามออเดอร์/);
+    assert.match(html, /เมื่อมีออเดอร์/);
+    assert.doesNotMatch(html, /ใกล้หมด/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("supplier invite cover fails closed without a valid invite", async () => {
+  const response = await renderSupplierInvitePage(
+    new Request("https://example.com/shop/supplier/invite"),
+    {},
+  );
+  assert.equal(response.status, 403);
+  const html = await response.text();
+  assert.match(html, /ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้/);
+  assert.doesNotMatch(html, /เปิดพื้นที่ Supplier ใน LINE/);
 });

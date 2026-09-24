@@ -88,6 +88,7 @@ const LIFF_PORTAL_PATH = "/shop/api/supplier/liff-portal";
 const LIFF_BIND_PATH = "/shop/api/supplier/liff-bind";
 const SUPPLIER_FIELDS = Object.freeze({
   name: "fldePq8Fmqq50CkPj",
+  contactName: "fldpIGevwbD2xx3sK",
   lineUserId: "fld1dqO4nWB3Pf6uT",
   lineName: "fldZgOx3v1FJ4k9WM",
   lineStatus: "fldZyHoik9SAUcbY6",
@@ -184,23 +185,8 @@ async function bindSupplierLiff(request, env) {
     return json({ ok: false, error: "line_profile_failed" }, 401);
   }
 
-  const records = await airtableListByFieldIds(
-    env,
-    env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x",
-    Object.values(SUPPLIER_FIELDS),
-  );
-  const now = Date.now();
-  const matches = records.filter((record) => {
-    const fields = record.fields || {};
-    if (cleanText(fields[SUPPLIER_FIELDS.inviteToken], 512) !== inviteToken) return false;
-    if (selectName(fields[SUPPLIER_FIELDS.status]).toLowerCase() !== "active") return false;
-    const expiresAt = Date.parse(cleanText(fields[SUPPLIER_FIELDS.inviteExpiresAt], 120));
-    return Number.isFinite(expiresAt) && expiresAt > now;
-  });
-
-  if (matches.length !== 1) return json({ ok: false, error: "supplier_invite_invalid_or_expired" }, 403);
-
-  const record = matches[0];
+  const record = await findActiveSupplierInviteRecord(env, inviteToken);
+  if (!record) return json({ ok: false, error: "supplier_invite_invalid_or_expired" }, 403);
   const existingLineUserId = cleanText(record.fields?.[SUPPLIER_FIELDS.lineUserId], 255);
   if (existingLineUserId && existingLineUserId !== lineProfile.userId) {
     return json({ ok: false, error: "supplier_already_bound" }, 409);
@@ -223,6 +209,48 @@ async function bindSupplierLiff(request, env) {
       name: cleanText(record.fields?.[SUPPLIER_FIELDS.name], 255) || "Supplier",
     },
   });
+}
+
+export async function getSupplierInvitePreview(env, inviteToken) {
+  const record = await findActiveSupplierInviteRecord(env, inviteToken);
+  if (!record) return null;
+
+  const fields = record.fields || {};
+  const supplierName = cleanText(fields[SUPPLIER_FIELDS.name], 255) || "Supplier";
+  return {
+    contact_name: cleanText(fields[SUPPLIER_FIELDS.contactName], 255) || "Supplier",
+    supplier_name: supplierName,
+    scope_name: supplierScopeName(supplierName),
+    mode: supplierModeFromNote(fields[SUPPLIER_FIELDS.internalNote]),
+    expires_at: cleanText(fields[SUPPLIER_FIELDS.inviteExpiresAt], 120),
+  };
+}
+
+async function findActiveSupplierInviteRecord(env, inviteToken) {
+  const target = cleanText(inviteToken, 512);
+  if (!target) return null;
+
+  const records = await airtableListByFieldIds(
+    env,
+    env.SHARED_SUPPLIERS_TABLE_ID || "tbl81bnFyASeXCj9x",
+    Object.values(SUPPLIER_FIELDS),
+  );
+  const now = Date.now();
+  const matches = records.filter((record) => {
+    const fields = record.fields || {};
+    if (cleanText(fields[SUPPLIER_FIELDS.inviteToken], 512) !== target) return false;
+    if (selectName(fields[SUPPLIER_FIELDS.status]).toLowerCase() !== "active") return false;
+    const expiresAt = Date.parse(cleanText(fields[SUPPLIER_FIELDS.inviteExpiresAt], 120));
+    return Number.isFinite(expiresAt) && expiresAt > now;
+  });
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function supplierScopeName(supplierName) {
+  return cleanText(supplierName, 255)
+    .replace(/^sup\s*[—-]\s*/i, "")
+    .trim() || "สินค้าของคุณ";
 }
 
 async function resolveSupplierAccessByLineBinding(env, lineUserId) {
