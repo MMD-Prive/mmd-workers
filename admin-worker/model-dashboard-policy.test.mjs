@@ -9,6 +9,10 @@ import {
   normalizeModelProfilePatch,
 } from "./src/model-liff-worker.js";
 import {
+  isMyCardSelectableMedia,
+  normalizeMyCardRequestInput,
+} from "./src/model-liff-worker-legacy.js";
+import {
   activationLiffUrl,
   isCanonicalLineUserId,
   normalizeActivationEnvironment,
@@ -28,6 +32,35 @@ test("public profile/gallery media is model self-managed", () => {
       policy: "model_self_managed_public",
     });
   }
+});
+
+
+test("My Card accepts only active public profile and gallery media", () => {
+  const eligible = {
+    media_type: "public_gallery",
+    asset_role: "gallery_candidate",
+    media_visibility: "public_candidate",
+    review_status: "active",
+    public_safe: true,
+    private_original_key: "models/rec12345678901234/public_gallery/media_12345678.jpg",
+  };
+  assert.equal(isMyCardSelectableMedia(eligible), true);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, media_type: "intro_video" }), false);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, public_safe: false }), false);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, review_status: "rejected" }), false);
+  assert.equal(isMyCardSelectableMedia({ ...eligible, media_visibility: "private" }), false);
+});
+
+test("My Card request input requires a scoped media id and an idempotency key", () => {
+  assert.deepEqual(
+    normalizeMyCardRequestInput({
+      media_id: "media_12345678",
+      idempotency_key: "my-card:request:12345678",
+    }),
+    { ok: true, media_id: "media_12345678", idempotency_key: "my-card:request:12345678" },
+  );
+  assert.equal(normalizeMyCardRequestInput({ media_id: "media_invalid" }).ok, false);
+  assert.equal(normalizeMyCardRequestInput({ media_id: "media_12345678", idempotency_key: "short" }).error, "idempotency_key_invalid");
 });
 
 test("private and flash media always requires Per approval", () => {
