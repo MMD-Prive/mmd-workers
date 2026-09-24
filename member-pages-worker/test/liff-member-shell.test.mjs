@@ -56,6 +56,24 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
   });
 
+  it("offers server-priced Public Membership signup after LINE verification and guards checkout", async () => {
+    const response = await shell("/member/liff?intent=signup&view=signup");
+    const html = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(html, /"intent":"signup"/);
+    assert.match(html, /"view":"signup"/);
+    assert.match(html, /id="signup-packages"/);
+    assert.match(html, /\/sigil\/member\/membership\?source=line&amp;intent=signup/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/catalog/);
+    assert.match(html, /\/member\/api\/liff\/public-membership\/purchase/);
+    assert.match(html, /JSON\.stringify\(\{ package_code: packageCode \}\)/);
+    assert.match(html, /payload\?\.official_verification_required === true/);
+    assert.match(html, /payload\?\.entitlement_granted === false/);
+    assert.match(html, /url\.hostname === "mmdbkk\.com"/);
+    assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("await readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
+    assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
+  });
+
   it("checks the existing same-site member session before any LIFF init or login", async () => {
     const response = await shell("/member/liff?intent=promo&campaign=care_back&view=care_back");
     const html = await response.text();
@@ -67,7 +85,7 @@ describe("same-site /member/liff shell", () => {
     assert.ok(sessionCheck >= 0, "same-site session check must be rendered");
     assert.ok(liffInit > sessionCheck, "LIFF init must happen only after same-site session check");
     assert.ok(liffLogin > liffInit, "LIFF login must remain a fallback after LIFF init");
-    assert.match(html, /if \(existingProfile\) return/);
+    assert.match(html, /if \(existingProfile\) \{ await readSignupCatalog\(\); return; \}/);
   });
 
   it("binds the canonical CARE BACK campaign to guarded same-site state and wish APIs", async () => {

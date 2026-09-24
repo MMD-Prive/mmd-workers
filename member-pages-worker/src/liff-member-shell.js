@@ -25,6 +25,8 @@ export function handleLiffMemberShell(request, env = {}) {
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
+    publicCatalogEndpoint: "/member/api/liff/public-membership/catalog",
+    publicPurchaseEndpoint: "/member/api/liff/public-membership/purchase",
     careBackEndpoint: "/member/api/liff/care-back/claim",
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
@@ -56,7 +58,7 @@ function renderShell(config, nonce) {
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
     button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
-    .profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
+    .signup{display:grid;gap:12px;margin-top:24px}.signup h2{margin:0;color:#f0d892;font-size:22px}.signup .card{display:grid;gap:8px}.signup .card strong{font-size:18px}.signup .card button{margin-top:4px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.signup .card button:disabled{opacity:.5}.signup .private-link{display:block;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;color:#f0d892;text-align:center;text-decoration:none}.signup-note{color:#b7afa4;font-size:13px;line-height:1.6}.profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
     .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
   </style>
@@ -68,6 +70,13 @@ function renderShell(config, nonce) {
   <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
   <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
+  <section id="signup" class="signup hidden" aria-label="สมัครสมาชิกใน LINE">
+    <h2 id="signup-heading">สมัคร Public Membership</h2>
+    <p id="signup-note" class="signup-note">เลือกระดับสมาชิกที่เหมาะกับคุณ ราคาจะแสดงจากระบบ MMD ก่อนยืนยันการชำระเงินครับ</p>
+    <div id="signup-packages" class="stack" aria-live="polite"></div>
+    <div class="card"><strong>Private Access / Black Card</strong><p class="signup-note">สนใจสมัคร Private Membership เลือกเส้นทางนี้เพื่อดูรายละเอียดและส่งคำขอครับ</p><a class="private-link" href="/sigil/member/membership?source=line&amp;intent=signup">ดู Private Membership</a></div>
+    <p class="signup-note">สิทธิสมาชิกจะเริ่มหลังระบบยืนยันการชำระเงินอย่างเป็นทางการ ดูสถานะได้ที่ MY MMD ครับ</p>
+  </section>
   <nav class="member-nav" aria-label="Member sections">
     <button type="button" data-view="home" aria-current="true" data-copy="navHome">👤 HOME</button>
     <button type="button" data-view="points" aria-current="false" data-copy="navPoints">Points</button>
@@ -141,6 +150,8 @@ function renderShell(config, nonce) {
   const message = document.getElementById("message");
   const actions = document.getElementById("actions");
   const profile = document.getElementById("profile");
+  const signup = document.getElementById("signup");
+  const signupPackages = document.getElementById("signup-packages");
   const careButton = document.getElementById("care-button");
   const wishPanel = document.getElementById("wish");
   const wishText = document.getElementById("wish-text");
@@ -190,6 +201,63 @@ function renderShell(config, nonce) {
   function setBusy(value) {
     busy = Boolean(value);
     for (const button of actions.querySelectorAll("button")) button.disabled = busy;
+    for (const button of signupPackages.querySelectorAll("button")) button.disabled = busy;
+  }
+
+  function verifiedCheckoutUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      const keys = [...url.searchParams.keys()];
+      return url.protocol === "https:" && url.hostname === "mmdbkk.com" && url.pathname === "/pay/checkout"
+        && !url.hash && keys.length === 1 && keys[0] === "t" && Boolean(url.searchParams.get("t")) ? url.href : "";
+    } catch { return ""; }
+  }
+
+  async function purchasePublicMembership(packageCode) {
+    if (busy) return;
+    setBusy(true);
+    show("กำลังเตรียมหน้าชำระเงินใน LINE ครับ");
+    try {
+      const response = await fetch(CONFIG.publicPurchaseEndpoint, {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json", "accept": "application/json" },
+        body: JSON.stringify({ package_code: packageCode }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (response.status === 401) { show("กรุณาเปิดหน้าสมัครผ่าน Rich Menu ใน LINE อีกครั้งเพื่อยืนยันตัวตนครับ"); return; }
+      const url = response.ok && payload?.ok === true && payload?.official_verification_required === true
+        && payload?.entitlement_granted === false ? verifiedCheckoutUrl(payload.customer_payment_url) : "";
+      if (!url) { show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง"); return; }
+      window.location.assign(url);
+    } catch { show("ตอนนี้ยังเปิดหน้าชำระเงินไม่ได้ครับ กรุณาลองอีกครั้ง"); }
+    finally { setBusy(false); }
+  }
+
+  async function readSignupCatalog() {
+    if (CONFIG.intent !== "signup") return;
+    signup.classList.remove("hidden");
+    signupPackages.replaceChildren();
+    try {
+      const response = await fetch(CONFIG.publicCatalogEndpoint, { method:"GET", credentials:"same-origin", headers:{"accept":"application/json"} });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.packages)) throw new Error("catalog_unavailable");
+      const packages = payload.packages.filter((item) =>
+        ["mmd_member", "elite", "red_card"].includes(item?.package_code)
+        && Number.isInteger(item.amount_thb) && item.amount_thb > 0
+        && Number.isInteger(item.duration_days) && item.duration_days > 0
+      );
+      if (packages.length !== 3) throw new Error("catalog_incomplete");
+      for (const item of packages) {
+        const card = document.createElement("div"); card.className = "card";
+        const title = document.createElement("strong"); title.textContent = String(item.label || item.package_code);
+        const price = document.createElement("span"); price.className = "value"; price.textContent = new Intl.NumberFormat(locale === "th" ? "th-TH" : "en-US").format(item.amount_thb) + " THB";
+        const period = document.createElement("span"); period.className = "sub"; period.textContent = locale === "th" ? "ระยะเวลา " + item.duration_days + " วัน" : item.duration_days + " days";
+        const button = document.createElement("button"); button.type = "button"; button.textContent = locale === "th" ? "เลือกแพ็กเกจนี้" : "Choose this package";
+        button.addEventListener("click", () => purchasePublicMembership(item.package_code));
+        card.append(title, price, period, button); signupPackages.append(card);
+      }
+      show(locale === "th" ? "เลือกแพ็กเกจและสมัครสมาชิกด้วยบัญชี LINE นี้ได้เลยครับ" : "Choose a package to continue with this LINE account.");
+    } catch { show("ตอนนี้ยังแสดงแพ็กเกจไม่ได้ครับ กรุณาลองเปิดใหม่อีกครั้ง"); }
   }
 
   function isDiagnosticMode() {
@@ -523,6 +591,11 @@ function renderShell(config, nonce) {
       actions.replaceChildren();
       return;
     }
+    if (CONFIG.intent === "signup") {
+      actions.replaceChildren();
+      show("กำลังเตรียมแพ็กเกจสมัครสมาชิกใน LINE ครับ");
+      return;
+    }
     show(screen.copy || "กำลังตรวจสอบข้อมูลให้ครับ");
     actions.replaceChildren();
     const serverActions = Array.isArray(screen.actions) ? screen.actions : [];
@@ -564,7 +637,7 @@ function renderShell(config, nonce) {
     }
     try {
       const existingProfile = await readProfile();
-      if (existingProfile) return;
+      if (existingProfile) { await readSignupCatalog(); return; }
     } catch {
       // No valid same-site session yet. Fall through to the one-time LIFF handshake.
     }
@@ -587,7 +660,10 @@ function renderShell(config, nonce) {
       if (CONFIG.promoCode) body.promo_code = CONFIG.promoCode;
       if (CONFIG.campaign) body.campaign = CONFIG.campaign;
       const started = await call(CONFIG.startEndpoint, body);
-      if (started && started.member_resolved) await readProfile();
+      if (started) {
+        if (started.member_resolved) await readProfile();
+        await readSignupCatalog();
+      }
     } catch {
       show("ตอนนี้ระบบตรวจสอบข้อมูลชั่วคราวยังไม่พร้อมครับ กรุณาลองใหม่อีกครั้ง");
     }
@@ -632,7 +708,7 @@ function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
   if (view === "profile") return "home";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "package", "jobs", "history", "care", "coupons"]).has(view) ? view : "home";
+  return new Set(["home", "points", "package", "jobs", "history", "care", "coupons", "signup"]).has(view) ? view : "home";
 }
 
 function normalizeLanguage(value) {

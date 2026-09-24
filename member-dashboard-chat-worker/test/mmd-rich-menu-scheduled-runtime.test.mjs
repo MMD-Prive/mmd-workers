@@ -25,7 +25,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
   const map = getMmdRichMenuActionMap();
 
   assert.deepEqual(map.guest, [
-    { type: "uri", label: "START HERE", uri: "https://mmdbkk.com/public/access?source=line&entry_route=rich_menu_guest_start" },
+    { type: "uri", label: "START HERE", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=signup&view=signup" },
     { type: "uri", label: "PUBLIC MODELS", uri: "https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_guest_models" },
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_guest_booking" },
     { type: "uri", label: "PUBLIC SERVICES", uri: "https://mmdbkk.com/services/companion?source=line&entry_route=rich_menu_guest_services" },
@@ -38,7 +38,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
     { type: "uri", label: "PUBLIC MODELS", uri: "https://mmdbkk.com/profiles?source=line&entry_route=rich_menu_public_models" },
     { type: "uri", label: "BOOKING", uri: "https://mmdbkk.com/booking?source=line&entry_route=rich_menu_public_booking" },
     { type: "uri", label: "MY MMD", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=status&view=profile" },
-    { type: "uri", label: "PRIVE ACCESS", uri: "https://mmdbkk.com/membership?source=line&entry_route=rich_menu_prive_access" },
+    { type: "uri", label: "PRIVE ACCESS", uri: "https://liff.line.me/2010862595-yT4DCEMc?intent=signup&view=signup" },
     { type: "postback", label: "SUPPORT", data: "mmd_action=support&audience=public&intent=ใช้บริการยังไง" },
   ]);
 
@@ -100,7 +100,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260923-v4.2");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.3");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
 });
 
