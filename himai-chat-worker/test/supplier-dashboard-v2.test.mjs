@@ -239,7 +239,9 @@ test("supplier invite cover explains the stocked Supplier workspace before LINE 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("referrer-policy"), "no-referrer");
     const html = await response.text();
-    assert.match(html, /สวัสดี อาร์ท/);
+    assert.match(html, /สวัสดี คุณอาร์ท/);
+    assert.match(html, /ผมจาก MMD ส่งพื้นที่ Supplier ส่วนตัว/);
+    assert.doesNotMatch(html, /คุณคุณอาร์ท/);
     assert.match(html, /Pod Premium Plus/);
     assert.match(html, /สถานะสินค้าและสต๊อก/);
     assert.match(html, /เปิดพื้นที่ Supplier ใน LINE/);
@@ -279,11 +281,48 @@ test("supplier invite cover explains the on-demand lane without a low-stock mess
     );
     assert.equal(response.status, 200);
     const html = await response.text();
-    assert.match(html, /สวัสดี มิว/);
+    assert.match(html, /สวัสดี คุณมิว/);
+    assert.match(html, /ผมส่งลิงก์นี้เพื่อให้คุณดูข้อมูล/);
+    assert.doesNotMatch(html, /คุณคุณมิว/);
     assert.match(html, /Glenburgies Pop Plus/);
     assert.match(html, /สั่งตามออเดอร์/);
     assert.match(html, /เมื่อมีออเดอร์/);
     assert.doesNotMatch(html, /ใกล้หมด/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("supplier invite cover uses a neutral greeting without a contact name", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-no-contact",
+          fields: {
+            fld1RFwNRfArWb3cS: "invite-no-contact",
+            flddW10scozb72r2T: "2099-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+            fldePq8Fmqq50CkPj: "SUP — Pod Premium Plus",
+            fldViZfj7hExC1svq: "stocked supplier",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+
+  try {
+    const response = await renderSupplierInvitePage(
+      new Request("https://example.com/shop/supplier/invite?invite=invite-no-contact"),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /สวัสดีครับ/);
+    assert.doesNotMatch(html, /คุณSupplier/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -296,6 +335,6 @@ test("supplier invite cover fails closed without a valid invite", async () => {
   );
   assert.equal(response.status, 403);
   const html = await response.text();
-  assert.match(html, /ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้/);
+  assert.match(html, /ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ผมส่งให้คุณ/);
   assert.doesNotMatch(html, /เปิดพื้นที่ Supplier ใน LINE/);
 });

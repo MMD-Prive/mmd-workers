@@ -7,7 +7,7 @@ export async function renderSupplierInvitePage(request, env = {}) {
   const inviteToken = cleanInline(url.searchParams.get("invite"), 512);
   if (!inviteToken) {
     return pageResponse(renderUnavailable(
-      "ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ MMD ส่งให้"
+      "ลิงก์ส่วนตัวนี้ต้องเปิดจากข้อความที่ผมส่งให้คุณ"
     ), 403);
   }
 
@@ -17,7 +17,7 @@ export async function renderSupplierInvitePage(request, env = {}) {
   } catch (error) {
     console.error("Himai Supplier invite cover:", error);
     return pageResponse(renderUnavailable(
-      "ระบบกำลังตรวจลิงก์ส่วนตัว กรุณาลองเปิดใหม่อีกครั้ง"
+      "ผมกำลังตรวจลิงก์ส่วนตัวให้คุณ กรุณาลองเปิดใหม่อีกครั้ง"
     ), 503);
   }
 
@@ -57,18 +57,18 @@ function pageResponse(html, status = 200) {
 
 function renderSupplierInvite(preview, portalUrl) {
   const scope = preview.scope_name || "สินค้าของคุณ";
-  const contact = preview.contact_name || "Supplier";
+  const contact = formatContactName(preview.contact_name);
   const onDemand = preview.mode === "on_demand";
   const details = onDemand
     ? [
-      ["ทำงานแบบสั่งตามออเดอร์", "Himai Shop จะเปิดข้อมูลของ " + scope + " เมื่อมีออเดอร์ที่ต้องดูแล"],
-      ["สิ่งที่คุณจะเห็น", "สินค้าและรายการที่เกี่ยวกับ " + scope + " เท่านั้น"],
-      ["ลิงก์ส่วนตัว", "ใช้เพื่อยืนยัน LINE ครั้งแรก และจะใช้ซ้ำไม่ได้เมื่อเชื่อมสำเร็จ"],
+      ["ทำงานแบบสั่งตามออเดอร์", "ผมจะเปิดข้อมูลของ " + scope + " ให้คุณเมื่อมีออเดอร์ที่ต้องดูแล"],
+      ["สิ่งที่คุณจะเห็น", "คุณจะเห็นเฉพาะสินค้าและรายการที่เกี่ยวกับ " + scope],
+      ["ลิงก์ส่วนตัว", "ผมใช้ลิงก์นี้เพื่อยืนยัน LINE ของคุณครั้งแรก และจะใช้ซ้ำไม่ได้เมื่อเชื่อมสำเร็จ"],
     ]
     : [
-      ["ดูสรุปสินค้า", "ตรวจสถานะสินค้าและสต๊อกของ " + scope + " ได้จาก LINE"],
-      ["แจ้งเตือนผ่าน LINE", "เมื่อสต๊อกเข้าเกณฑ์ใกล้หมด ระบบจะส่งแจ้งถึงคุณ"],
-      ["ลิงก์ส่วนตัว", "ใช้เพื่อยืนยัน LINE ครั้งแรก และจะใช้ซ้ำไม่ได้เมื่อเชื่อมสำเร็จ"],
+      ["ดูสรุปสินค้า", "ผมเปิดให้คุณตรวจสถานะสินค้าและสต๊อกของ " + scope + " ได้จาก LINE"],
+      ["แจ้งเตือนผ่าน LINE", "เมื่อสต๊อกเข้าเกณฑ์ใกล้หมด ผมจะแจ้งคุณผ่าน LINE"],
+      ["ลิงก์ส่วนตัว", "ผมใช้ลิงก์นี้เพื่อยืนยัน LINE ของคุณครั้งแรก และจะใช้ซ้ำไม่ได้เมื่อเชื่อมสำเร็จ"],
     ];
   const steps = [
     ["1", "เปิดพื้นที่ Supplier", "กดปุ่มด้านล่างเพื่อเปิดใน LINE"],
@@ -90,16 +90,16 @@ function renderSupplierInvite(preview, portalUrl) {
   return renderShell([
     "<section class='hero'>",
       "<p class='eyebrow'>Himai Shop's Suppliers</p>",
-      "<h1>สวัสดี " + escapeHtml(contact) + "</h1>",
-      "<p class='lead'>MMD ส่งพื้นที่ Supplier ส่วนตัวสำหรับ <strong>" + escapeHtml(scope) + "</strong> ให้คุณ</p>",
+      "<h1>" + (contact ? "สวัสดี " + escapeHtml(contact) : "สวัสดีครับ") + "</h1>",
+      "<p class='lead'>ผมจาก MMD ส่งพื้นที่ Supplier ส่วนตัวสำหรับ <strong>" + escapeHtml(scope) + "</strong> ให้คุณ</p>",
       "<div class='scope'>" + (onDemand ? "สั่งตามออเดอร์" : "Supplier Stock Summary") + "</div>",
     "</section>",
     "<section class='card intro'>",
-      "<p class='section-kicker'>MMD ส่งอะไรมา</p>",
+      "<p class='section-kicker'>ผมส่งอะไรมาให้คุณ</p>",
       "<h2>" + (onDemand ? "พื้นที่รับงานของคุณใน Himai Shop" : "พื้นที่ดูข้อมูลสินค้าของคุณใน Himai Shop") + "</h2>",
       "<p>" + (onDemand
-        ? "ลิงก์นี้พาคุณเข้าไปดูข้อมูลที่เกี่ยวกับออเดอร์ของ " + escapeHtml(scope) + " โดยตรง"
-        : "ลิงก์นี้พาคุณเข้าไปดูสรุปสินค้าและสต๊อกของ " + escapeHtml(scope) + " โดยตรง") + "</p>",
+        ? "ผมส่งลิงก์นี้เพื่อให้คุณดูข้อมูลที่เกี่ยวกับออเดอร์ของ " + escapeHtml(scope) + " โดยตรง"
+        : "ผมส่งลิงก์นี้เพื่อให้คุณดูสรุปสินค้าและสต๊อกของ " + escapeHtml(scope) + " โดยตรง") + "</p>",
     "</section>",
     "<section class='details' aria-label='รายละเอียดพื้นที่ Supplier'>" + detailHtml + "</section>",
     "<section class='steps card'>",
@@ -154,6 +154,12 @@ function formatExpiry(value) {
   }) + " น.";
 }
 
+function formatContactName(value) {
+  const name = cleanInline(value, 120).replace(/^(?:คุณ\s*)+/u, "").trim();
+  if (!name || /^supplier$/i.test(name)) return "";
+  return "คุณ" + name;
+}
+
 function cleanInline(value, max) {
   return String(value == null ? "" : value)
     .trim()
@@ -172,23 +178,23 @@ function escapeAttr(value) {
 }
 
 const STYLES = `
-:root{--bg:#f7f2e8;--paper:#fffdf8;--ink:#30281f;--muted:#766b60;--line:#ded4c4;--taupe:#9d8d7d;--espresso:#493a30;--shadow:0 16px 40px rgba(61,47,34,.10)}
+:root{--bg:#f7f2e8;--paper:#fffdf8;--ink:#30281f;--muted:#766b60;--line:#ded4c4;--taupe:#9d8d7d;--espresso:#493a30;--shadow:0 16px 40px rgba(61,47,34,.10);--font-ui:"LINE Seed Sans TH","Noto Sans Thai","Noto Sans","Sukhumvit Set","Leelawadee UI",system-ui,sans-serif;--font-display:"Noto Serif Thai","Iowan Old Style","Palatino Linotype","Sukhumvit Set",serif}
 *{box-sizing:border-box}
 html{background:var(--bg);-webkit-text-size-adjust:100%}
-body{margin:0;min-height:100vh;background:radial-gradient(circle at 100% 0,rgba(157,141,125,.18),transparent 32%),linear-gradient(180deg,#fbf8f1 0%,var(--bg) 55%,#f2ebdf 100%);color:var(--ink);font:16px/1.58 -apple-system,BlinkMacSystemFont,Noto Sans Thai,IBM Plex Sans Thai,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at 100% 0,rgba(157,141,125,.18),transparent 32%),linear-gradient(180deg,#fbf8f1 0%,var(--bg) 55%,#f2ebdf 100%);color:var(--ink);font:16px/1.68 var(--font-ui);letter-spacing:.005em;-webkit-font-smoothing:antialiased}
 .shell{width:min(560px,100%);margin:0 auto;padding:0 16px max(34px,env(safe-area-inset-bottom))}
 .top{display:flex;align-items:center;justify-content:space-between;padding:max(18px,env(safe-area-inset-top)) 0 18px;border-bottom:1px solid rgba(222,212,196,.82)}
-.brand{font:700 16px/1 Georgia,Times New Roman,serif;letter-spacing:.13em;text-transform:uppercase}
-.top span{color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.brand{font:800 14px/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase}
+.top span{color:var(--muted);font:650 10px/1.2 var(--font-ui);letter-spacing:.09em;text-transform:uppercase}
 .hero{padding:38px 2px 18px}.hero.compact{padding-bottom:10px}
-.eyebrow,.section-kicker{margin:0 0 8px;color:var(--taupe);font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-h1{margin:0;font:500 clamp(34px,9vw,48px)/1.05 Georgia,Times New Roman,serif;letter-spacing:-.04em}
+.eyebrow,.section-kicker{margin:0 0 8px;color:var(--taupe);font:750 11px/1.35 var(--font-ui);letter-spacing:.1em;text-transform:uppercase}
+h1{margin:0;font:700 clamp(36px,9vw,50px)/1.18 var(--font-display);letter-spacing:-.025em}
 .lead{max-width:37rem;margin:13px 0 0;color:var(--muted);font-size:16px}.lead strong{color:var(--ink);font-weight:650}
 .scope{display:inline-flex;margin-top:15px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:rgba(255,253,248,.72);color:var(--espresso);font-size:12px;font-weight:650}
 .card{border:1px solid var(--line);border-radius:20px;background:rgba(255,253,248,.92);box-shadow:var(--shadow)}
 .intro{padding:22px}.intro h2{margin:0;font-size:22px;letter-spacing:-.025em}.intro p{margin:9px 0 0;color:var(--muted)}.intro.unavailable{margin-top:18px}.intro.unavailable p{margin:0;color:var(--ink)}
 .details{display:grid;gap:10px;margin-top:12px}.detail{display:flex;gap:13px;padding:16px}.detail-no{display:grid;place-items:center;flex:0 0 24px;height:24px;border-radius:50%;background:#f0e9de;color:var(--espresso);font-size:15px}.detail h2{margin:0;font-size:16px}.detail p{margin:4px 0 0;color:var(--muted);font-size:14px}
-.steps{margin-top:12px;padding:20px}.steps ol{display:grid;gap:14px;margin:14px 0 0;padding:0;list-style:none}.steps li{display:flex;gap:11px}.steps li>span{display:grid;place-items:center;flex:0 0 26px;height:26px;border:1px solid var(--line);border-radius:50%;color:var(--espresso);font:600 13px/1 Georgia,Times New Roman,serif}.steps b{display:block;font-size:15px}.steps small{display:block;margin-top:2px;color:var(--muted);font-size:13px}
+.steps{margin-top:12px;padding:20px}.steps ol{display:grid;gap:14px;margin:14px 0 0;padding:0;list-style:none}.steps li{display:flex;gap:11px}.steps li>span{display:grid;place-items:center;flex:0 0 26px;height:26px;border:1px solid var(--line);border-radius:50%;color:var(--espresso);font:700 13px/1 var(--font-display)}.steps b{display:block;font-size:15px}.steps small{display:block;margin-top:2px;color:var(--muted);font-size:13px}
 .cta{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:58px;margin-top:16px;padding:0 20px;border-radius:16px;background:var(--espresso);color:#fffdf8;text-decoration:none;font-weight:700;box-shadow:0 14px 26px rgba(73,58,48,.2)}.cta span{font-size:22px;font-weight:400}.cta:focus-visible{outline:3px solid rgba(73,58,48,.3);outline-offset:3px}
 .expiry,.privacy{margin:12px 6px 0;color:var(--muted);font-size:12px;text-align:center}.privacy{margin-top:5px}
 footer{padding:26px 0 4px;color:#9e9081;font-size:10px;letter-spacing:.11em;text-align:center;text-transform:uppercase}
