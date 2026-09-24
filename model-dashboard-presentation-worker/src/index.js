@@ -1,3 +1,5 @@
+import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
+
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
 const ASSET_PREFIX = "/sigil/model/dashboard-assets/";
@@ -20,6 +22,8 @@ const WISH_STATUS_JS_PATH = `${ASSET_PREFIX}wish-status-v1.js`;
 const WISH_STATUS_CSS_PATH = `${ASSET_PREFIX}wish-status-v1.css`;
 const TELEGRAM_CONNECT_JS_PATH = `${ASSET_PREFIX}telegram-connect-v1.js`;
 const TELEGRAM_CONNECT_CSS_PATH = `${ASSET_PREFIX}telegram-connect-v1.css`;
+const MODEL_HISTORY_JS_PATH = `${ASSET_PREFIX}model-history-v1.js`;
+const MODEL_HISTORY_CSS_PATH = `${ASSET_PREFIX}model-history-v1.css`;
 const MODEL_PWA_MANIFEST_PATH = `${UI_PREFIX}/manifest.webmanifest`;
 const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp";
 
@@ -348,6 +352,11 @@ export function isWishStatusAssetPath(pathname = "") {
 export function isTelegramConnectAssetPath(pathname = "") {
   const path = normalizePath(pathname);
   return path === TELEGRAM_CONNECT_JS_PATH || path === TELEGRAM_CONNECT_CSS_PATH;
+}
+
+export function isModelHistoryAssetPath(pathname = "") {
+  const path = normalizePath(pathname);
+  return path === MODEL_HISTORY_JS_PATH || path === MODEL_HISTORY_CSS_PATH;
 }
 
 export function isModelPwaManifestPath(pathname = "") {
@@ -708,6 +717,16 @@ export function rewritePresentationHtml(html) {
       `<script src="${TELEGRAM_CONNECT_JS_PATH}" defer data-mmd-telegram-connect-runtime="v1"></script></body>`,
     );
   }
+  if (!output.includes('data-mmd-model-history-assets="v1"')) {
+    output = output.replace(
+      /<\/head\s*>/i,
+      `<link rel="stylesheet" href="${MODEL_HISTORY_CSS_PATH}" data-mmd-model-history-assets="v1"></head>`,
+    );
+    output = output.replace(
+      /<\/body\s*>/i,
+      `<script src="${MODEL_HISTORY_JS_PATH}" defer data-mmd-model-history-runtime="v1"></script></body>`,
+    );
+  }
   return output;
 }
 
@@ -861,6 +880,17 @@ function telegramConnectAssetResponse(pathname, method = "GET") {
   return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
 }
 
+function modelHistoryAssetResponse(pathname, method = "GET") {
+  const path = normalizePath(pathname);
+  const isHead = String(method || "GET").toUpperCase() === "HEAD";
+  if (!["GET", "HEAD"].includes(String(method || "GET").toUpperCase())) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "public, max-age=300" } });
+  }
+  if (path === MODEL_HISTORY_JS_PATH) return new Response(isHead ? null : MODEL_HISTORY_JS, { status: 200, headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-history-v1" } });
+  if (path === MODEL_HISTORY_CSS_PATH) return new Response(isHead ? null : MODEL_HISTORY_CSS, { status: 200, headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-history-v1" } });
+  return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
+}
+
 function modelPwaManifestResponse(method = "GET") {
   const normalizedMethod = String(method || "GET").toUpperCase();
   if (!["GET", "HEAD"].includes(normalizedMethod)) {
@@ -900,6 +930,7 @@ export default {
     if (isModelPwaManifestPath(path)) return modelPwaManifestResponse(request.method);
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isTelegramConnectAssetPath(path)) return telegramConnectAssetResponse(path, request.method);
+    if (isModelHistoryAssetPath(path)) return modelHistoryAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);

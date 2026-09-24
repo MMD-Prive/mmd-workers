@@ -22,6 +22,10 @@ import {
   isModelJobDayGuideRequest,
 } from "./model-job-day-guide.js";
 import {
+  handleModelWorkHistoryRequest,
+  isModelWorkHistoryRequest,
+} from "./model-work-history.js";
+import {
   handleModelYear6WishRequest,
   isModelYear6WishRequest,
 } from "./model-year6-wish.js";
@@ -68,6 +72,10 @@ const AI_OPS_WORKER_PAGES = new Set([
 export default {
   async fetch(request, env, ctx) {
     const path = normalizePath(new URL(request.url).pathname);
+
+    if (isModelWorkHistoryRequest(request)) {
+      return handleModelWorkHistoryRequest(request, env);
+    }
 
     // /sigil/model/wish uses the existing query-safe current-session route but
     // remains independent of any active job. A valid Model session is still
