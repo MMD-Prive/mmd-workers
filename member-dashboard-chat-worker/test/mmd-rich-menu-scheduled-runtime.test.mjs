@@ -97,7 +97,7 @@ test("unverified known customer maps to Guest", () => {
 });
 
 test("current production object version preserves the approved LV1 v4.1 artwork", () => {
-  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.5");
+  assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.6");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
 });
 
