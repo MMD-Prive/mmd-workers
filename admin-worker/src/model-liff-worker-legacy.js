@@ -13,6 +13,12 @@ const PROFILE_PATH = "/v1/model/profile";
 const TELEGRAM_BIND_PATH = "/v1/model/telegram/bind";
 const MEDIA_PATH = "/v1/model/media";
 const MEDIA_UPLOAD_PATH = "/v1/model/media/upload";
+const MY_CARD_REQUEST_PATH = "/v1/model/compcard/request";
+const MY_CARD_INTAKE_TABLE_DEFAULT = "Studio_Intake";
+const MY_CARD_SOURCE = "mmd_model_my_card";
+const MY_CARD_INTENT = "model_compcard_request";
+const MY_CARD_PENDING_STATUS = "model_request_pending";
+const MY_CARD_SELECTABLE_MEDIA_TYPES = new Set(["profile_photo", "public_gallery"]);
 const COOKIE_NAME = "mmd_model_session_v1";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const MODELS_TABLE_DEFAULT = "Models";
@@ -90,6 +96,12 @@ export default {
 
     if (path === MEDIA_UPLOAD_PATH) {
       if (method === "POST") return handleMediaUpload(request, env);
+      return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+    }
+
+    if (path === MY_CARD_REQUEST_PATH) {
+      if (method === "GET") return handleMyCardRequestList(request, env);
+      if (method === "POST") return handleMyCardRequestCreate(request, env);
       return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
     }
 
@@ -287,7 +299,7 @@ export function normalizeEtaMinutes(value) {
 }
 
 function isModelLiffPath(path) {
-  return path === EXCHANGE_PATH || path === CURRENT_PATH || path === ACTION_PATH || path === PROFILE_PATH || path === TELEGRAM_BIND_PATH || path === MEDIA_PATH || path === MEDIA_UPLOAD_PATH || path.startsWith(`${MEDIA_PATH}/`);
+  return path === EXCHANGE_PATH || path === CURRENT_PATH || path === ACTION_PATH || path === PROFILE_PATH || path === TELEGRAM_BIND_PATH || path === MEDIA_PATH || path === MEDIA_UPLOAD_PATH || path === MY_CARD_REQUEST_PATH || path.startsWith(`${MEDIA_PATH}/`);
 }
 
 async function handleExchange(request, env) {
@@ -488,6 +500,195 @@ function reviewSafeValue(value) {
 
 function reviewValuesEqual(left, right) {
   return JSON.stringify(reviewSafeValue(left)) === JSON.stringify(reviewSafeValue(right));
+}
+
+async function handleMyCardRequestList(request, env) {
+  const auth = await requireModelSession(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+
+  const result = await listMyCardRequests(env, auth.payload.model_record_id);
+  if (!result.ok) {
+    return json({ ok: false, error: "my_card_request_lookup_unavailable" }, result.status || 503, request, env);
+  }
+
+  const requests = result.records
+    .slice()
+    .sort((left, right) => Date.parse(clean(right?.fields?.created_at)) - Date.parse(clean(left?.fields?.created_at)))
+    .map((record) => safeMyCardRequest(record))
+    .filter((record) => Boolean(record.request_id));
+
+  return json({ ok: true, requests }, 200, request, env);
+}
+
+async function handleMyCardRequestCreate(request, env) {
+  const auth = await requireModelSession(request, env);
+  if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+  if (!isAllowedOrigin(request, env)) return json({ ok: false, error: "origin_not_allowed" }, 403, request, env);
+
+  const body = await request.json().catch(() => null);
+  const input = normalizeMyCardRequestInput(body);
+  if (!input.ok) return json({ ok: false, error: input.error }, 400, request, env);
+
+  const model = await airtableGetRecord(env, modelsTable(env), auth.payload.model_record_id);
+  if (!model.ok) {
+    return json({ ok: false, error: model.status === 404 ? "model_not_found" : "model_lookup_unavailable" }, model.status || 503, request, env);
+  }
+  if (!isActiveModel(model.record.fields || {}, env)) {
+    return json({ ok: false, error: "model_not_active" }, 403, request, env);
+  }
+
+  const profile = safeModelProfile(model.record);
+  const missing = myCardMissingProfileFields(profile);
+  if (missing.length) {
+    return json({ ok: false, error: "profile_incomplete", fields: missing }, 422, request, env);
+  }
+
+  const existing = await findMyCardRequestByKey(env, auth.payload.model_record_id, input.idempotency_key);
+  if (!existing.ok) {
+    return json({ ok: false, error: "my_card_request_lookup_unavailable" }, existing.status || 503, request, env);
+  }
+  if (existing.record) {
+    return json({ ok: true, request: safeMyCardRequest(existing.record), idempotent: true }, 200, request, env);
+  }
+
+  const media = await findOwnedMedia(env, auth.payload.model_record_id, input.media_id);
+  if (!media.ok) {
+    return json({ ok: false, error: media.error || "media_not_found" }, media.status || 404, request, env);
+  }
+  if (!isMyCardSelectableMedia(media.record.fields || {})) {
+    return json({ ok: false, error: "media_not_eligible" }, 403, request, env);
+  }
+
+  const now = new Date().toISOString();
+  const mediaFields = media.record.fields || {};
+  const payload = {
+    version: "my_card_request_v1",
+    model_record_id: auth.payload.model_record_id,
+    model: {
+      working_name: profile.working_name,
+      height_cm: profile.height_cm,
+      weight_kg: profile.weight_kg,
+    },
+    selected_media: {
+      media_id: input.media_id,
+      media_type: normalizeWord(mediaFields.media_type),
+      asset_role: clean(mediaFields.asset_role),
+      object_key: firstText(mediaFields, ["private_original_key"]),
+    },
+    requested_at: now,
+  };
+  const created = await airtableCreateRecord(env, myCardIntakeTable(env), {
+    studio_intake_id: `my_card_${crypto.randomUUID()}`,
+    source: MY_CARD_SOURCE,
+    intent: MY_CARD_INTENT,
+    model_name: profile.working_name,
+    internal_code: "",
+    source_owner: `model:${auth.payload.model_record_id}`,
+    category_path: "MMD MODEL / My Card",
+    field: "",
+    run_number: "",
+    layer: "",
+    template_hint: "",
+    direction: "",
+    checklist_json: JSON.stringify({
+      model_submitted: true,
+      profile_verified_at_request: true,
+      public_media_only: true,
+    }),
+    payload_json: JSON.stringify(payload),
+    status: MY_CARD_PENDING_STATUS,
+    created_by: "model_liff",
+    created_at: now,
+    idempotency_key: input.idempotency_key,
+  }, true);
+
+  if (!created.ok || !created.record) {
+    return json({ ok: false, error: "my_card_request_create_failed" }, created.status || 503, request, env);
+  }
+
+  return json({ ok: true, request: safeMyCardRequest(created.record) }, 201, request, env);
+}
+
+export function normalizeMyCardRequestInput(input = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "invalid_json" };
+  }
+  const mediaId = clean(input.media_id || input.mediaId);
+  const idempotencyKey = clean(input.idempotency_key || input.idempotencyKey);
+  if (!/^media_[A-Za-z0-9-]{8,160}$/.test(mediaId)) {
+    return { ok: false, error: "media_id_invalid" };
+  }
+  if (!/^[A-Za-z0-9._:-]{12,200}$/.test(idempotencyKey)) {
+    return { ok: false, error: "idempotency_key_invalid" };
+  }
+  return { ok: true, media_id: mediaId, idempotency_key: idempotencyKey };
+}
+
+export function isMyCardSelectableMedia(fields = {}) {
+  const policy = modelMediaPolicy(fields);
+  const mediaType = normalizeWord(fields.media_type);
+  const status = normalizeWord(fields.review_status || "active");
+  const hasSource = Boolean(firstText(fields, ["private_original_key"]));
+  return (
+    policy.self_managed === true &&
+    policy.requires_per_approval === false &&
+    MY_CARD_SELECTABLE_MEDIA_TYPES.has(mediaType) &&
+    ["active", "approved", "published"].includes(status) &&
+    fields.public_safe === true &&
+    hasSource
+  );
+}
+
+function myCardMissingProfileFields(profile) {
+  const missing = [];
+  if (!clean(profile?.working_name)) missing.push("working_name");
+  if (!(Number(profile?.height_cm) > 0)) missing.push("height_cm");
+  if (!(Number(profile?.weight_kg) > 0)) missing.push("weight_kg");
+  return missing;
+}
+
+function myCardIntakeTable(env) {
+  return clean(env.AIRTABLE_TABLE_STUDIO_INTAKE || env.AIRTABLE_TABLE_STUDIO_INTAKE_ID || MY_CARD_INTAKE_TABLE_DEFAULT);
+}
+
+async function listMyCardRequests(env, modelRecordId) {
+  const owner = `model:${clean(modelRecordId)}`;
+  const formula = `AND({source}="${MY_CARD_SOURCE}",{source_owner}="${escapeFormula(owner)}")`;
+  return airtableList(env, myCardIntakeTable(env), formula, 50);
+}
+
+async function findMyCardRequestByKey(env, modelRecordId, idempotencyKey) {
+  const owner = `model:${clean(modelRecordId)}`;
+  const formula = `AND({source}="${MY_CARD_SOURCE}",{source_owner}="${escapeFormula(owner)}",{idempotency_key}="${escapeFormula(idempotencyKey)}")`;
+  const result = await airtableList(env, myCardIntakeTable(env), formula, 2);
+  if (!result.ok) return result;
+  return { ok: true, status: 200, record: result.records.length ? result.records[0] : null };
+}
+
+function safeMyCardRequest(record) {
+  const fields = record?.fields || {};
+  const payload = parseMyCardPayload(fields.payload_json);
+  const model = payload.model || {};
+  const media = payload.selected_media || {};
+  return {
+    request_id: clean(record?.id),
+    status: clean(fields.status) || MY_CARD_PENDING_STATUS,
+    submitted_at: clean(fields.created_at) || clean(payload.requested_at),
+    model_name: clean(model.working_name) || clean(fields.model_name),
+    height_cm: finiteOrNull(model.height_cm),
+    weight_kg: finiteOrNull(model.weight_kg),
+    media_id: clean(media.media_id),
+    media_type: clean(media.media_type),
+  };
+}
+
+function parseMyCardPayload(value) {
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 async function handleMediaList(request, env) {
