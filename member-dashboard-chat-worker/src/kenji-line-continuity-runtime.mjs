@@ -489,6 +489,12 @@ export function buildKenjiPostTurnMatrix({
 
 function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = false, attempted = false) {
   const clientRecordId = text(continuity.client_record_id || matrix.client_record_id);
+  const priorPayload = parseObject(continuity?.matrix?.payload_json);
+  // The short opening context is written only after LINE confirms delivery.
+  // It stays in the seven-day conversation matrix, never in canonical Clients.
+  const openingState = delivered && decision.first_contact_state
+    ? { ...parseObject(priorPayload.first_contact_v2), ...decision.first_contact_state, updated_at: matrix.state_updated_at }
+    : null;
   return {
     [F.MATRIX_ID]: matrix.matrix_id,
     ...(clientRecordId ? { [F.MATRIX_CLIENT]: [clientRecordId] } : {}),
@@ -523,7 +529,8 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
     [F.MATRIX_STATUS]: matrix.matrix_status,
     [F.MATRIX_VERSION]: matrix.version,
     [F.MATRIX_PAYLOAD]: JSON.stringify({
-      ...parseObject(continuity?.matrix?.payload_json),
+      ...priorPayload,
+      ...(openingState ? { first_contact_v2: openingState } : {}),
       runtime_schema: "mmd.kenji_line_continuity_runtime.v1",
       continuity_schema: text(continuity.schema),
       continuity_decision: text(continuity.decision),
