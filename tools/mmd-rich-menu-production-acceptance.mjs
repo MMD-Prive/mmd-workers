@@ -83,11 +83,6 @@ assert.equal(prepare.version, VERSION);
 assert.equal(prepare.customer_assignments_changed, false);
 assert.equal(prepare.default_menu_changed, false);
 
-const activation = await call("/v1/admin/line/rich-menu/three-level/activate", "POST");
-assert.equal(activation.version, VERSION);
-assert.equal(activation.active, true);
-assert.equal(activation.selected_default, false);
-
 const audit = await call("/v1/admin/line/rich-menu/three-level/audit", "GET", { acceptStatuses: [409] });
 const auditSummary = safeAuditSummary(audit);
 console.log(`MMD_RICH_MENU_AUDIT_SAFE ${JSON.stringify(auditSummary)}`);
@@ -98,8 +93,6 @@ await writeFile(output, JSON.stringify({
   version: auditSummary.version,
   prepared_without_customer_assignment: prepare.customer_assignments_changed === false,
   prepared_without_default_change: prepare.default_menu_changed === false,
-  activated_default_and_member_menus: activation.active === true,
-  initially_collapsed: activation.selected_default === false,
   menu_checks: {
     guest: auditSummary.guest,
     public: auditSummary.public,
@@ -116,6 +109,8 @@ await writeFile(output, JSON.stringify({
 }, null, 2));
 
 assert.equal(audit.version, VERSION);
+assert.equal(audit.hidden_by_schedule, false);
+assert.equal(audit.default_state, "guest");
 assert.equal(audit.schedule_policy_match, true);
 assert.equal(audit.five_state_matrix_match, true);
 assert.deepEqual(audit.five_state_matrix, {
