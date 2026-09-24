@@ -1,6 +1,8 @@
 import { getSupplierInvitePreview } from "./supplier-portal.js";
 
 const DEFAULT_SUPPLIER_LIFF_ID = "2011701290-xBE3CirT";
+const HIMAI_SYMBOL_LOGO_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab2a13cd792398a1287e22b_himai-symbol-fullcolour.png";
+const HIMAI_MASTER_LOGO_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab29fd7687481fe3826db5e_himai-master-fullcolour.png";
 
 export async function renderSupplierInvitePage(request, env = {}) {
   const url = new URL(request.url);
@@ -46,7 +48,7 @@ function pageResponse(html, status = 200) {
       "content-security-policy": [
         "default-src 'none'",
         "style-src 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data: https://cdn.prod.website-files.com",
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
@@ -133,11 +135,12 @@ function renderShell(body) {
       "<meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'>",
       "<meta name='theme-color' content='#f7f2e8'>",
       "<meta name='color-scheme' content='light'>",
+      "<link rel='icon' href='" + HIMAI_SYMBOL_LOGO_URL + "' type='image/png'>",
       "<title>Himai Shop Supplier</title>",
       "<style>" + STYLES + "</style>",
     "</head>",
     "<body><main class='shell'>",
-      "<header class='top'><div class='brand'>Himai Shop</div><span>Supplier workspace</span></header>",
+      "<header class='top'><img class='brand-logo' src='" + HIMAI_MASTER_LOGO_URL + "' alt='Himai Shop' decoding='async' fetchpriority='high'><span>Supplier workspace</span></header>",
       body,
       "<footer>MMD Privé · Himai Shop</footer>",
     "</main></body></html>",
@@ -184,7 +187,7 @@ html{background:var(--bg);-webkit-text-size-adjust:100%}
 body{margin:0;min-height:100vh;background:radial-gradient(circle at 100% 0,rgba(157,141,125,.18),transparent 32%),linear-gradient(180deg,#fbf8f1 0%,var(--bg) 55%,#f2ebdf 100%);color:var(--ink);font:16px/1.68 var(--font-ui);letter-spacing:.005em;-webkit-font-smoothing:antialiased}
 .shell{width:min(560px,100%);margin:0 auto;padding:0 16px max(34px,env(safe-area-inset-bottom))}
 .top{display:flex;align-items:center;justify-content:space-between;padding:max(18px,env(safe-area-inset-top)) 0 18px;border-bottom:1px solid rgba(222,212,196,.82)}
-.brand{font:800 14px/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase}
+.brand-logo{display:block;width:auto;height:32px;max-width:158px;object-fit:contain;object-position:left center}
 .top span{color:var(--muted);font:650 10px/1.2 var(--font-ui);letter-spacing:.09em;text-transform:uppercase}
 .hero{padding:38px 2px 18px}.hero.compact{padding-bottom:10px}
 .eyebrow,.section-kicker{margin:0 0 8px;color:var(--taupe);font:750 11px/1.35 var(--font-ui);letter-spacing:.1em;text-transform:uppercase}
