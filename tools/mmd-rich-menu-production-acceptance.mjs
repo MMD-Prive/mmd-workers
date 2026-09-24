@@ -34,6 +34,9 @@ function safeAuditSummary(body = {}) {
     present: body?.menus?.[key]?.present === true,
     object_match: body?.menus?.[key]?.object_match === true,
     image_match: body?.menus?.[key]?.image_match === true,
+    image_issue: String(body?.menus?.[key]?.image_issue || "").slice(0, 40),
+    image_actual_bytes: Number(body?.menus?.[key]?.image_actual_bytes || 0),
+    image_expected_bytes: Number(body?.menus?.[key]?.image_expected_bytes || 0),
   });
   return {
     ok: body?.ok === true,
