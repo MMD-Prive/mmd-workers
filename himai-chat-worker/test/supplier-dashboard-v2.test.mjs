@@ -293,6 +293,41 @@ test("supplier invite cover explains the on-demand lane without a low-stock mess
   }
 });
 
+test("supplier invite cover uses a neutral greeting without a contact name", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.includes("/tbl81bnFyASeXCj9x?")) {
+      return new Response(JSON.stringify({
+        records: [{
+          id: "rec-no-contact",
+          fields: {
+            fld1RFwNRfArWb3cS: "invite-no-contact",
+            flddW10scozb72r2T: "2099-01-01T00:00:00.000Z",
+            fld0BL7nG45ueEMKQ: "active",
+            fldePq8Fmqq50CkPj: "SUP — Pod Premium Plus",
+            fldViZfj7hExC1svq: "stocked supplier",
+          },
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error("unexpected_fetch:" + href);
+  };
+
+  try {
+    const response = await renderSupplierInvitePage(
+      new Request("https://example.com/shop/supplier/invite?invite=invite-no-contact"),
+      { AIRTABLE_TOKEN: "test", AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg" },
+    );
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /สวัสดีครับ/);
+    assert.doesNotMatch(html, /คุณSupplier/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("supplier invite cover fails closed without a valid invite", async () => {
   const response = await renderSupplierInvitePage(
     new Request("https://example.com/shop/supplier/invite"),
