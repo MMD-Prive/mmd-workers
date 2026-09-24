@@ -63,6 +63,24 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/model/profile*"
 zone_name = "mmdbkk.com"
 
+# Model My Card requests are model-session-only. Keep the query-safe companion
+# narrow; all field, RUN NUMBER, template, and final design choices stay Studio-owned.
+[[routes]]
+pattern = "mmdbkk.com/v1/model/compcard/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/compcard/request"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "mmdbkk.com/v1/model/compcard/request*"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/model/compcard/request*"
+zone_name = "mmdbkk.com"
+
 # Model Telegram secondary-channel binding. LINE/session remains the identity
 # authority; this exact endpoint only issues an opaque one-time bot token.
 [[routes]]

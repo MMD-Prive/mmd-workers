@@ -401,6 +401,8 @@ jobs:
             "/v1/model/media/upload-init",
             "/v1/model/media/upload-complete",
             "/v1/model/media/review-request",
+            "/v1/model/compcard/request",
+            "/v1/model/compcard/request*",
             "/v1/model/private-gallery/request",
             "/v1/model/private-flash/request",
             "/internal/admin/recovery",
@@ -530,6 +532,14 @@ jobs:
           grep -q '"error":"dashboard_host_not_allowed"' "$body_file"
 
           for origin in https://mmdbkk.com https://www.mmdbkk.com; do
+            # My Card is model-session-only. This unauthenticated probe must reach
+            # admin-worker on both production hosts, never the Webflow fallback.
+            my_card_body="$(mktemp)"
+            my_card_code="$(curl --retry 4 --retry-delay 1 --retry-all-errors -sS -o "$my_card_body" -w "%{http_code}"               "$origin/v1/model/compcard/request")"
+            cat "$my_card_body"
+            test "$my_card_code" = "401"
+            grep -q '"error":"model_session_required"' "$my_card_body"
+
             # Conversation shadow receipt is owner/admin-only and must reach
             # admin-worker on both production hosts (never the Webflow origin).
             receipt_headers="$(mktemp)"
