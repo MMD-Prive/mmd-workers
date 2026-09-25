@@ -658,13 +658,19 @@ function renderShell(config, nonce) {
     const status = String(item.status || "");
     if (!["available", "partially_used", "used", "refunded", "expired"].includes(status)) return null;
     const amount = (value) => { const number = Number(value); return Number.isFinite(number) && number >= 0 && number <= 100000000 ? number : null; };
+    const creditId = String(item.creditId || "").trim();
+    if (!creditId || creditId.length > 120) return null;
+    const original = amount(item.originalAmountThb);
     const available = amount(item.availableAmountThb);
     const reserved = amount(item.reservedAmountThb);
     const applied = amount(item.appliedAmountThb);
-    if (available === null || reserved === null || applied === null) return null;
+    if (original === null || original <= 0 || available === null || reserved === null || applied === null) return null;
+    if (available > original + 0.001 || reserved > original + 0.001 || applied > original + 0.001 || available + reserved + applied > original + 0.001) return null;
     const expiry = creditDatePart(item.expiresAt);
     return {
+      creditId,
       status,
+      original,
       available,
       reserved,
       applied,
@@ -677,11 +683,16 @@ function renderShell(config, nonce) {
   function renderCreditWallet(data) {
     const balance = data && typeof data.balance === "object" ? data.balance : null;
     const availableBalance = Number(balance && balance.available);
-    if (!balance || balance.currency !== "THB" || !Number.isFinite(availableBalance) || availableBalance < 0 || availableBalance > 100000000) return renderCreditWalletChecking();
-    const items = safeList(data.items).map(safeCreditItem).filter(Boolean);
-    if (safeList(data.items).length && !items.length) return renderCreditWalletChecking();
+    if (!balance || typeof balance.available !== "number" || balance.currency !== "THB" || !Number.isFinite(availableBalance) || availableBalance < 0 || availableBalance > 100000000) return renderCreditWalletChecking();
+    if (!Array.isArray(data.items)) return renderCreditWalletChecking();
+    const items = data.items.map(safeCreditItem);
+    if (items.some((item) => !item)) return renderCreditWalletChecking();
+    const creditIds = new Set(items.map((item) => item.creditId));
+    if (creditIds.size !== items.length) return renderCreditWalletChecking();
     const calculatedAvailable = items.filter((item) => item.status === "available" || item.status === "partially_used").reduce((sum, item) => sum + item.available, 0);
     if (Math.abs(calculatedAvailable - availableBalance) > 0.001) return renderCreditWalletChecking();
+    const availableBuckets = [balance.paidAvailableThb, balance.bonusAvailableThb, balance.carriedForwardAvailableThb];
+    if (availableBuckets.some((value) => typeof value !== "number" || !Number.isFinite(value) || value < 0) || Math.abs(availableBuckets.reduce((sum, value) => sum + value, 0) - availableBalance) > 0.001) return renderCreditWalletChecking();
     const reserved = items.filter((item) => item.status === "available" || item.status === "partially_used").reduce((sum, item) => sum + item.reserved, 0);
     const applied = items.reduce((sum, item) => sum + item.applied, 0);
     document.getElementById("credit-available").textContent = formatThb(availableBalance);
