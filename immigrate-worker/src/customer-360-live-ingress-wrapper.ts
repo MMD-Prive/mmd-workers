@@ -12,9 +12,8 @@ const CANONICAL_PUBLIC_ORIGIN = "https://mmdbkk.com";
 const WORKERS_DEV_SUFFIX = ".workers.dev";
 const SAFE_MEMBERSHIP_CONTEXT_KEYS = ["plan", "package", "tier", "code", "promo", "src", "campaign", "from"];
 
-export function resolveRequestedClientId(searchParams: URLSearchParams): string | null {
+export function resolveRequestedClientId(searchParams: URLSearchParams): string {
   const clientIds = searchParams.getAll("client_id");
-  if (clientIds.length === 0) return null;
   return clientIds.length === 1 ? String(clientIds[0] || "").trim() : "";
 }
 

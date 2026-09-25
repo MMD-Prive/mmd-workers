@@ -22,7 +22,7 @@ try {
 
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123")), "recCanonical123");
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=%20recCanonical123%20")), "recCanonical123");
-  assert.equal(resolveRequestedClientId(new URLSearchParams("")), null);
+  assert.equal(resolveRequestedClientId(new URLSearchParams("")), "");
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")), "");
 
   const page = await decorateCustomer360Page(new Response('<html><body><main class="c360"><button data-backfill>นำเข้าจาก LINE</button><strong data-client>Not linked</strong></main></body></html>', {
@@ -73,7 +73,7 @@ try {
   assert.match(scopedHtml, /\[hidden\]\{display:none!important\}/);
   assert.match(scopedHtml, /if\(directScope\)\{if\(txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'\)throw Error\('client_scope_unresolved'\);revealDirectClient\(\)\}/);
   assert.match(scopedHtml, /if\(backfill\)backfill.disabled=imp.running\|\|directScope/);
-  assert.match(scopedHtml, /const directScope=new URL\(location\.href\)\.searchParams\.has\('client_id'\)/);
+  assert.match(scopedHtml, /const directScope=true/);
   assert.match(scopedHtml, /getAll\('client_id'\),directClient=clientIds\.length===1/);
   assert.match(scopedHtml, /String\(clientIds\[0\]\|\|''\)\.trim\(\)/);
   assert.match(scopedHtml, /INTEL\+'\?client_id='\+encodeURIComponent\(id\)/);
@@ -83,7 +83,7 @@ try {
   assert.doesNotMatch(emptyScopedHtml, /load\('review_required'\);summary\(\)/);
   assert.match(emptyScopedHtml, /CLIENT SCOPE LOCKED/);
   assert.match(emptyScopedHtml, /client_id ไม่ถูกต้องหรือไม่ชัดเจน/);
-  assert.match(emptyScopedHtml, /const directScope=new URL\(location\.href\)\.searchParams\.has\('client_id'\)/);
+  assert.match(emptyScopedHtml, /const directScope=true/);
   assert.match(scopedHtml, /CLIENT SCOPE LOCKED/);
   assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
   assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);
