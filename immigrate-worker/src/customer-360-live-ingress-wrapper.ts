@@ -91,7 +91,7 @@ export default {
       return redactCustomerQueueResponse(response);
     }
     if (method === "GET" && path === CLIENT_INTELLIGENCE) {
-      const clientId = String(url.searchParams.get("client_id") || "").trim();
+      const clientId = resolveRequestedClientId(url.searchParams) || "";
       const augmented = await augmentClientIntelligenceWithIdentityAlignment(
         response,
         env,

@@ -112,6 +112,11 @@ try {
   assert.equal(invalidScope.status, 400);
   const missingScope = await enforceExactCanonicalClientScope(Response.json({ ok: true }), "");
   assert.equal(missingScope.status, 400);
+  const repeatedScope = await enforceExactCanonicalClientScope(
+    Response.json({ ok: true, client_id: "recCanonical123", identity: { status: "canonical" } }),
+    resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")) || "",
+  );
+  assert.equal(repeatedScope.status, 400);
   const unavailableScope = await enforceExactCanonicalClientScope(new Response('{"ok":false,"error":"source_unavailable"}', {
     status: 503,
     headers: { "content-type": "application/json" },
