@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import studioWorker, { handleStudioRequest, normalizeStudioReview } from "./src/studio-real-worker.js";
+import studioWorker, { handleStudioRequest, normalizeStudioIntake, normalizeStudioReview } from "./src/studio-real-worker.js";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -109,6 +109,24 @@ test("Studio review preserves the My Card request id while Studio controls grade
     layer: "Public / MMD Privé",
     decision: "Approved Direction",
   }), /invalid_run_number/);
+});
+
+test("Studio intake retains a valid model-selected template while Studio owns the final template", () => {
+  const normalized = normalizeStudioIntake({
+    compcard_request_id: "recMyCardRequest123",
+    model_name: "Mek",
+    field: "ST",
+    layer: "Private / SIGIL",
+    template_hint: "sigil-straight-bronze",
+    model_template_id: "sigil-gws-nightwave",
+    source_owner: "model:rec12345678901234",
+    category_path: "MMD MODEL / My Card",
+  });
+  assert.equal(normalized.model_template_id, "sigil-gws-nightwave");
+  assert.throws(() => normalizeStudioIntake({
+    ...normalized,
+    model_template_id: "internal-template",
+  }), /invalid_model_template_id/);
 });
 
 test("My Card inbox never returns the stored object key to the Studio browser", async () => {
