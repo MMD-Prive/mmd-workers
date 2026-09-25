@@ -184,6 +184,7 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /function categoryMatches\(item,category\)/);
   assert.match(html, /data-action="set-folder"/);
   assert.match(html, /function folderTree\(items,activePath=''/);
+  assert.match(html, /function candidateLaneRoots\(item\)/);
   assert.match(html, /MMD Lady Boy/);
   assert.match(html, /button:focus-visible/);
   assert.match(html, /@media\(max-width:700px\).*white-space:normal/);
