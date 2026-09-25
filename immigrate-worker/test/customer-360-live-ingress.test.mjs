@@ -64,6 +64,13 @@ try {
   const scopedHtml = await scopedPage.text();
   assert.equal(scopedPage.status, 200);
   assert.match(scopedHtml, /validClientScope/);
+  assert.match(scopedHtml, /\[hidden\]\{display:none!important\}/);
+  assert.match(scopedHtml, /if\(directScope\)\{if\(txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'\)throw Error\('client_scope_unresolved'\);revealDirectClient\(\)\}/);
+  assert.match(scopedHtml, /if\(backfill\)backfill.disabled=imp.running\|\|directScope/);
+  assert.match(scopedHtml, /function syncClient\(\)\{if\(directScope\)\{loadIntel\(directClient\);return\}/);
+  const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
+  assert.equal(emptyScopedPage.status, 200);
+  assert.doesNotMatch(await emptyScopedPage.text(), /load\('review_required'\);summary\(\)/);
   assert.match(scopedHtml, /CLIENT SCOPE LOCKED/);
   assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
   assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);
