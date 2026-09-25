@@ -30,6 +30,7 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackEndpoint: "/member/api/liff/care-back/claim",
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
+    creditWalletEndpoint: "/api/member/app/credits",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
     stagingScenario: stagingScenario(env, url),
   };
@@ -108,6 +109,7 @@ function renderShell(config, nonce) {
   <nav class="member-nav" aria-label="Member sections">
     <button type="button" data-view="home" aria-current="true" data-copy="navHome">👤 HOME</button>
     <button type="button" data-view="points" aria-current="false" data-copy="navPoints">Points</button>
+    <button type="button" data-view="credits" aria-current="false" data-copy="navCredits">💳 CREDIT</button>
     <button type="button" data-view="package" aria-current="false" data-copy="navPackage">📦 PACKAGE</button>
     <button type="button" data-view="jobs" aria-current="false" data-copy="navJobs">💼 JOBS</button>
     <button type="button" data-view="history" aria-current="false" data-copy="navHistory">🧾 HISTORY</button>
@@ -135,6 +137,12 @@ function renderShell(config, nonce) {
       <div class="card"><h2 data-copy="pointsTitle">⭐ Points</h2><strong id="points-total" class="value points">—</strong><p id="points-rate" class="sub"></p><p id="points-expiry" class="sub"></p></div>
       <div class="card"><span id="service-spend-label" class="label">Service spend</span><div class="detail-grid"><div><span id="lifetime-spend-label" class="label">Lifetime</span><strong id="points-lifetime-spend" class="value">—</strong></div><div><span id="spend-365-label" class="label">Last 365 days</span><strong id="points-365-spend" class="value">—</strong></div></div></div>
       <div class="card"><span class="label" data-copy="pointsHistoryLabel">Points history</span><div id="points-history" class="history"></div></div>
+    </section>
+    <section id="credits" class="panel" aria-label="Service Credit Wallet">
+      <div class="card"><span class="label" data-copy="creditWalletLabel">MY MMD CREDIT</span><h2 data-copy="creditWalletTitle">💳 เครดิตบริการของฉัน</h2><p id="credit-wallet-message" class="sub" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p>
+        <div class="detail-grid"><div><span class="label" data-copy="creditAvailableLabel">ใช้ได้</span><strong id="credit-available" class="value">—</strong></div><div><span class="label" data-copy="creditReservedLabel">จองไว้</span><strong id="credit-reserved" class="value">—</strong></div><div><span class="label" data-copy="creditUsedLabel">ใช้แล้ว</span><strong id="credit-used" class="value">—</strong></div></div>
+      </div>
+      <div class="card"><span class="label" data-copy="creditRecentLabel">รายการล่าสุด</span><div id="credit-wallet" class="history"><p class="empty" data-copy="creditChecking">กำลังตรวจสอบเครดิตบริการของคุณครับ</p></div></div>
     </section>
     <section id="package" class="panel" aria-label="Package">
       <div class="card"><h2 data-copy="packageTitle">📦 Package</h2><div id="current-package" class="stack"></div></div>
@@ -188,14 +196,14 @@ function renderShell(config, nonce) {
   const wishResult = document.getElementById("wish-result");
   const locale = CONFIG.language || "th";
   const copy = {
-    th: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"ผมเตรียมข้อมูลสมาชิกของคุณไว้ใน LINE อย่างเรียบง่ายและเป็นส่วนตัวครับ", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
+    th: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"ผมเตรียมข้อมูลสมาชิกของคุณไว้ใน LINE อย่างเรียบง่ายและเป็นส่วนตัวครับ", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
     en: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"Your member information in LINE, simply and privately.", navProfile:"Overview", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"Member", contactLabel:"Contact", emailLabel:"Email", phoneLabel:"Phone", tierLabel:"Member tier", pointsLabel:"Active points", expiryLabel:"Membership valid until", paymentLabel:"Payment status", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"Points history", packageTitle:"📦 Package", packageHistoryLabel:"Package history", jobsTitle:"💼 Jobs", requestsLabel:"Recent requests", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"Payment history", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"We will check CARE BACK first. Your personal coupon becomes available after your wish is submitted successfully.", careButton:"Check CARE BACK", wishPlaceholder:"Leave a birthday wish for MMD here.", wishSubmit:"Send wish to MMD", ready:"Your confirmed information is ready.", checking:"We are checking your information.", checkingPoints:"Your points are being checked.", pointsRate:"Every THB 100 = 1 point", expiring:"Points expiring soon", empty:"No confirmed activity is available here yet.", careLoading:"Checking eligibility", careRetry:"Try checking again", wishEmpty:"Please write a wish before sending.", wishSaving:"Saving your wish", wishError:"Your wish could not be saved. Please try again.", wishRetry:"Try sending again", careChecked:"Your CARE BACK eligibility is checked. Submit a wish to unlock your personal 10% coupon.", wishDone:"MMD has received your wish.", wishPending:"We are securely confirming your previous wish. Please check again later.", wishReview:"This request needs further review. We have kept your route secure.", couponReady:"Send a wish to unlock the coupon", claimMessage:"MMD will update your privilege after the required membership and verification checks.", careCheckedButton:"CARE BACK checked", careResumedButton:"CARE BACK updated", promoLoading:"Checking your CARE BACK eligibility securely" },
     zh: { mark:"MMD Privé · Member Dashboard", title:"我的 MMD", subtitle:"在 LINE 内简单、私密地查看您的会员信息。", navProfile:"概览", navHome:"👤 HOME", navPoints:"⭐ POINTS", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"会员", contactLabel:"联系方式", emailLabel:"邮箱", phoneLabel:"电话", tierLabel:"会员等级", pointsLabel:"可用积分", expiryLabel:"会员有效期至", paymentLabel:"付款状态", historyLabel:"最近一年记录", pointsTitle:"⭐ 积分", pointsHistoryLabel:"积分记录", packageTitle:"📦 套餐", packageHistoryLabel:"套餐历史", jobsTitle:"💼 服务", requestsLabel:"最近请求", mmsLabel:"MMS 预订", historyTitle:"🧾 记录", paymentHistoryLabel:"付款记录", careLabel:"6 Years · Care Back", careTitle:"专属 Care Back 礼遇", careIntro:"请先检查 CARE BACK。成功提交祝福后，您的专属优惠券将会开启。", careButton:"检查 CARE BACK", wishPlaceholder:"在这里留下给 MMD 的生日祝福。", wishSubmit:"向 MMD 发送祝福", ready:"您的已确认信息已准备好。", checking:"正在检查您的信息。", checkingPoints:"正在检查您的积分。", pointsRate:"每 THB 100 = 1 积分", expiring:"即将到期的积分", empty:"目前没有可显示的已确认记录。", careLoading:"正在检查资格", careRetry:"再次检查", wishEmpty:"请先写下祝福再发送。", wishSaving:"正在保存祝福", wishError:"祝福暂时无法保存，请稍后再试。", wishRetry:"再次发送", careChecked:"您的 CARE BACK 资格已检查。成功提交祝福后即可开启专属 10% 优惠券。", wishDone:"MMD 已收到您的祝福。", wishPending:"系统正在安全确认您之前提交的祝福，请稍后再查看。", wishReview:"此请求仍需进一步审核，我们已安全保留您的流程。", couponReady:"发送祝福以开启优惠券", claimMessage:"MMD 将在完成会员与验证检查后更新您的礼遇。", careCheckedButton:"CARE BACK 已检查", careResumedButton:"CARE BACK 已更新", promoLoading:"正在安全检查 CARE BACK 资格" },
   }[locale] || {};
   Object.assign(copy, ({
     th:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 คูปองของฉัน",couponWalletEmpty:"ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ",pointsLabel:"คะแนนสะสมทั้งหมด",pointsNoExpiry:"Points สะสมตลอดอายุ · ยังไม่ตัด 365 วัน",serviceSpendLabel:"ยอดใช้บริการที่ยืนยันแล้ว",lifetimeSpendLabel:"ยอดสะสมทั้งหมด",spend365Label:"ย้อนหลัง 365 วัน"},
-    en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet.",pointsLabel:"Lifetime points",pointsNoExpiry:"Lifetime Points · no 365-day expiry",serviceSpendLabel:"Verified service spend",lifetimeSpendLabel:"Lifetime",spend365Label:"Last 365 days"},
-    zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",pointsLabel:"累计积分",pointsNoExpiry:"累计积分 · 暂不按 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
+    en:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 My coupons",couponWalletEmpty:"No coupon has been issued to this account yet.",navCredits:"💳 CREDIT",creditWalletLabel:"MY MMD CREDIT",creditWalletTitle:"💳 My service credit",creditChecking:"Checking your service credit.",creditAvailableLabel:"Available",creditReservedLabel:"Reserved",creditUsedLabel:"Used",creditRecentLabel:"Recent activity",creditEmpty:"No verified service credit is available for this account.",creditVerified:"Only verified credit is shown.",creditExpiry:"Valid until",pointsLabel:"Lifetime points",pointsNoExpiry:"Lifetime Points · no 365-day expiry",serviceSpendLabel:"Verified service spend",lifetimeSpendLabel:"Lifetime",spend365Label:"Last 365 days"},
+    zh:{navCoupons:"🎟 COUPONS",couponWalletLabel:"Member LIFF",couponWalletTitle:"🎟 我的优惠券",couponWalletEmpty:"此账户暂未获发优惠券。",navCredits:"💳 CREDIT",creditWalletLabel:"MY MMD CREDIT",creditWalletTitle:"💳 我的服务额度",creditChecking:"正在核实您的服务额度。",creditAvailableLabel:"可用",creditReservedLabel:"已预留",creditUsedLabel:"已使用",creditRecentLabel:"最近记录",creditEmpty:"此账户暂无已验证的服务额度。",creditVerified:"仅显示已验证额度。",creditExpiry:"有效期至",pointsLabel:"累计积分",pointsNoExpiry:"累计积分 · 暂不按 365 天到期",serviceSpendLabel:"已确认服务消费",lifetimeSpendLabel:"累计",spend365Label:"最近 365 天"},
   })[locale] || {});
   const allowedIntentIds = new Set(["signup", "renew", "status"]);
   let busy = false;
@@ -350,6 +358,7 @@ function renderShell(config, nonce) {
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {});
     await readCouponWallet();
+    await readCreditWallet();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
   }
@@ -360,6 +369,22 @@ function renderShell(config, nonce) {
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderCouponWallet(payload.wallet || {});
     return payload.wallet || {};
+  }
+
+  async function readCreditWallet() {
+    try {
+      const response = await fetch(CONFIG.creditWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || payload.state !== "resolved" || payload.verificationState !== "verified_only") {
+        renderCreditWalletChecking();
+        return null;
+      }
+      renderCreditWallet(payload);
+      return payload;
+    } catch {
+      renderCreditWalletChecking();
+      return null;
+    }
   }
 
   async function readCareBackState() {
@@ -620,6 +645,66 @@ function renderShell(config, nonce) {
     container.append(card);
   }
 
+  function renderCreditWalletChecking() {
+    document.getElementById("credit-wallet-message").textContent = copy.creditChecking || copy.checking || "Checking";
+    for (const id of ["credit-available", "credit-reserved", "credit-used"]) document.getElementById(id).textContent = "—";
+    const container = document.getElementById("credit-wallet");
+    container.replaceChildren();
+    appendEmpty(container, copy.creditChecking || copy.checking || "Checking");
+  }
+
+  function safeCreditItem(item) {
+    if (!item || typeof item !== "object" || item.verified !== true || item.verificationState !== "verified") return null;
+    const status = String(item.status || "");
+    if (!["available", "partially_used", "used", "refunded", "expired"].includes(status)) return null;
+    const amount = (value) => { const number = Number(value); return Number.isFinite(number) && number >= 0 && number <= 100000000 ? number : null; };
+    const available = amount(item.availableAmountThb);
+    const reserved = amount(item.reservedAmountThb);
+    const applied = amount(item.appliedAmountThb);
+    if (available === null || reserved === null || applied === null) return null;
+    const expiry = creditDatePart(item.expiresAt);
+    return {
+      status,
+      available,
+      reserved,
+      applied,
+      expiry,
+      issued: creditDatePart(item.issuedAt) || creditDatePart(item.createdAt),
+      note: String(item.customerDisplayNote || item.note || "").trim().slice(0, 500),
+    };
+  }
+
+  function renderCreditWallet(data) {
+    const balance = data && typeof data.balance === "object" ? data.balance : null;
+    const availableBalance = Number(balance && balance.available);
+    if (!balance || balance.currency !== "THB" || !Number.isFinite(availableBalance) || availableBalance < 0 || availableBalance > 100000000) return renderCreditWalletChecking();
+    const items = safeList(data.items).map(safeCreditItem).filter(Boolean);
+    if (safeList(data.items).length && !items.length) return renderCreditWalletChecking();
+    const calculatedAvailable = items.filter((item) => item.status === "available" || item.status === "partially_used").reduce((sum, item) => sum + item.available, 0);
+    if (Math.abs(calculatedAvailable - availableBalance) > 0.001) return renderCreditWalletChecking();
+    const reserved = items.filter((item) => item.status === "available" || item.status === "partially_used").reduce((sum, item) => sum + item.reserved, 0);
+    const applied = items.reduce((sum, item) => sum + item.applied, 0);
+    document.getElementById("credit-available").textContent = formatThb(availableBalance);
+    document.getElementById("credit-reserved").textContent = formatThb(reserved);
+    document.getElementById("credit-used").textContent = formatThb(applied);
+    document.getElementById("credit-wallet-message").textContent = items.length ? (copy.creditVerified || "Only verified credit is shown.") : (copy.creditEmpty || copy.empty || "");
+    const container = document.getElementById("credit-wallet");
+    container.replaceChildren();
+    if (!items.length) return appendEmpty(container, copy.creditEmpty || copy.empty || "");
+    for (const item of items.slice(0, 3)) {
+      const card = document.createElement("div"); card.className = "event";
+      const date = document.createElement("span"); date.className = "event-date"; date.textContent = item.issued ? shortDate(item.issued) : "—";
+      const title = document.createElement("strong"); title.textContent = creditStatus(item.status);
+      const detail = document.createElement("span"); detail.className = "event-status"; detail.textContent = item.expiry ? (copy.creditExpiry || "Valid until") + " · " + shortDate(item.expiry) : formatThb(item.available);
+      card.append(date, title, detail);
+      if (item.note) { const note = document.createElement("p"); note.className = "sub"; note.textContent = item.note; card.append(note); }
+      container.append(card);
+    }
+  }
+
+  function creditDatePart(value) { const match = /^(\\d{4}-\\d{2}-\\d{2})(?:T|$)/.exec(String(value || "")); return match ? match[1] : ""; }
+  function creditStatus(value) { const labels = {th:{available:"พร้อมใช้",partially_used:"ใช้บางส่วน",used:"ใช้แล้ว",refunded:"คืนเงินแล้ว",expired:"หมดอายุ"},en:{available:"Available",partially_used:"Partially used",used:"Used",refunded:"Refunded",expired:"Expired"},zh:{available:"可用",partially_used:"已部分使用",used:"已使用",refunded:"已退款",expired:"已过期"}}; return (labels[locale] || labels.th)[value] || (copy.creditChecking || "Checking"); }
+
   function benefitLabel(type) { const labels = {th:{membership_extension:"ขยายเวลาสมาชิก",points_bonus:"คะแนนพิเศษ",personal_coupon:"คูปองส่วนตัว"},en:{membership_extension:"Membership extension",points_bonus:"Bonus points",personal_coupon:"Personal coupon"},zh:{membership_extension:"会员延期",points_bonus:"奖励积分",personal_coupon:"专属优惠券"}}; return (labels[locale] || labels.th)[type] || "CARE BACK"; }
   function benefitValue(type, value) { if (type === "membership_extension") return value + (locale === "en" ? " days" : locale === "zh" ? " 天" : " วัน"); if (type === "points_bonus") return "+" + value + " Points"; return value + "%"; }
   function benefitState(value) { const state = String(value || "pending"); const labels = {th:{ready:"พร้อมใช้",wish_required:"รอคำอวยพร",renewal_required:"รอต่ออายุ",payment_required:"รอยืนยันการชำระเงิน",verification_required:"รอตรวจสอบ",pending_application:"กำลังดำเนินการ",applied:"ได้รับแล้ว",used:"ใช้แล้ว",expired:"หมดอายุ"},en:{ready:"Ready",wish_required:"Wish required",renewal_required:"Renewal required",payment_required:"Payment verification required",verification_required:"Verification required",pending_application:"Processing",applied:"Applied",used:"Used",expired:"Expired"},zh:{ready:"可使用",wish_required:"等待祝福",renewal_required:"等待续费",payment_required:"等待付款验证",verification_required:"等待验证",pending_application:"处理中",applied:"已获得",used:"已使用",expired:"已过期"}}; return (labels[locale] || labels.th)[state] || (locale === "en" ? "Pending" : locale === "zh" ? "处理中" : "กำลังตรวจสอบ"); }
@@ -755,7 +840,7 @@ function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
   if (view === "profile") return "home";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "package", "jobs", "history", "care", "coupons", "signup"]).has(view) ? view : "home";
+  return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "signup"]).has(view) ? view : "home";
 }
 
 function normalizeLanguage(value) {
