@@ -68,6 +68,17 @@ try {
   assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
   assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);
 
+  const missingScopePage = await decorateCustomer360Page(new Response('<html><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  }), "", true);
+  const missingScopeHtml = await missingScopePage.text();
+  assert.equal(missingScopePage.status, 200);
+  assert.match(missingScopeHtml, /CLIENT SCOPE LOCKED/);
+  assert.match(missingScopeHtml, /client_id ไม่ถูกต้อง/);
+  assert.doesNotMatch(missingScopeHtml, /load\('review_required'\);summary\(\)/);
+  assert.match(missingScopeHtml, /if\(directScopeRequested\)\{const next=q\('\.next',root\);if\(next\)next\.hidden=true\}/);
+  assert.match(missingScopeHtml, /txt\(d\.client_id\)!==id\|\|txt\(d\.identity\?\.status\)!=='canonical'/);
+
   const exactScope = await enforceExactCanonicalClientScope(Response.json({
     ok: true,
     client_id: "recCanonical123",
@@ -89,6 +100,9 @@ try {
     identity: { status: "ambiguous" },
   }), "recCanonical123");
   assert.equal(ambiguousScope.status, 409);
+
+  const unavailableScope = await enforceExactCanonicalClientScope(Response.json({ ok: false, error: "unavailable" }, { status: 503 }), "recCanonical123");
+  assert.equal(unavailableScope.status, 503);
 
   const invalidScope = await enforceExactCanonicalClientScope(Response.json({ ok: true }), "not-a-client");
   assert.equal(invalidScope.status, 400);

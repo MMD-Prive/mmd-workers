@@ -124,6 +124,43 @@ test("Member Intelligence provides a one-client source evidence owner workbench 
   assert.doesNotMatch(workbenchSource, /membership[_-](?:activate|renew|grant)/i);
 });
 
+test("a completed re-read for A restores the selected client's B controls and projection", async () => {
+  const start = source.indexOf("async function rereadSelectedSourceEvidence(){");
+  const end = source.indexOf("\n  function resetIdentityReadinessUi(", start);
+  assert.ok(start >= 0 && end > start, "re-read function should remain directly testable");
+  const rereadSource = source.slice(start, end);
+  const state = {
+    selected: { client_id: "recClientA123456" },
+    sourceEvidenceWorkbench: { reread_allowed: true },
+    sourceEvidenceRereading: false,
+    intelligenceCache: new Map([["recClientA123456", Promise.resolve({ client_id: "recClientA123456" })]]),
+    intelligence: { owner: "A" },
+  };
+  const renders = [];
+  let finishA;
+  const reread = new Function(
+    "state", "clean", "renderSourceEvidenceWorkbench", "setStatus", "selectRecord", "resetSourceEvidenceWorkbench",
+    `${rereadSource}; return rereadSelectedSourceEvidence;`,
+  )(
+    state,
+    (value) => String(value || "").trim(),
+    (payload, clientId) => renders.push({ payload, clientId, rereading: state.sourceEvidenceRereading }),
+    () => {},
+    () => new Promise((resolve) => { finishA = resolve; }),
+    () => {},
+  );
+
+  const pending = reread();
+  assert.equal(state.sourceEvidenceRereading, true);
+  state.selected = { client_id: "recClientB123456" };
+  state.intelligence = { owner: "B" };
+  finishA();
+  await pending;
+
+  assert.equal(state.sourceEvidenceRereading, false);
+  assert.deepEqual(renders.at(-1), { payload: { owner: "B" }, clientId: "recClientB123456", rereading: false });
+});
+
 test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {
   assert.match(source, /mmd\.kenji_continuity_operator_feedback\.v1/);
   assert.match(source, /data-feedback-outcome="accepted"/);
