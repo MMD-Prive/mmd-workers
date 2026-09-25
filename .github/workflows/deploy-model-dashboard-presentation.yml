@@ -322,24 +322,9 @@ jobs:
               "$url")"
             cat "$headers"
             test "$code" = "200"
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker
-      - name: Clean temporary config
-        if: always()
-        shell: bash
-        run: rm -f .wrangler-no-routes.toml
-
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy
-      - name: Clean temporary config
-        if: always()
-        shell: bash
-        run: rm -f .wrangler-no-routes.toml
-
-            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish
-      - name: Clean temporary config
-        if: always()
-        shell: bash
-        run: rm -f .wrangler-no-routes.toml
-
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish$'
             if tr -d '\r' < "$headers" | grep -i -q '^location:'; then
               echo "Model Wish apex route redirected and would drop the host-only session" >&2
               exit 1
