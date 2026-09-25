@@ -17,7 +17,7 @@ for (const [file, stateKey, oldValue] of [
     });
     return nodes.get(selector);
   };
-  node('[data-client]').textContent = 'recAlpha';
+  node('[data-client]').textContent = 'recAlpha123';
   let observer;
   const pending = [];
   const document = {
@@ -37,7 +37,7 @@ for (const [file, stateKey, oldValue] of [
   pending[0]({ ok: true, status: 200, text: async () => JSON.stringify({ relationship: { relationship_state: oldValue }, identity: { alignment: { status: 'verified_match', liff: { status: 'matched' } } } }) });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(node(stateKey).textContent, '—', 'late response must not restore previous client');
-  node('[data-client]').textContent = 'recBeta';
+  node('[data-client]').textContent = 'recBeta456';
   observer();
   assert.equal(pending.length, 2);
   assert.equal(node(stateKey).textContent, '—', 'new selection clears old context while loading');

@@ -54,7 +54,7 @@
     recoveryErrors:0,
     recoverySeq:0,
     sourceEvidenceWorkbench:null,
-    sourceEvidenceRereading:false
+    sourceEvidenceRereadingClients:new Set()
   };
 
   function setText(id,value){
@@ -770,8 +770,9 @@
     }
     const reread=byId("miSourceEvidenceReread");
     if(reread){
-      reread.disabled=!workbench.reread_allowed||state.sourceEvidenceRereading;
-      reread.textContent=state.sourceEvidenceRereading?"RE-READING…":"RE-READ LATEST EVIDENCE";
+      const rereading=state.sourceEvidenceRereadingClients.has(clean(clientId));
+      reread.disabled=!workbench.reread_allowed||rereading;
+      reread.textContent=rereading?"RE-READING…":"RE-READ LATEST EVIDENCE";
     }
     setTone("miSourceEvidenceWorkbench",workbench.status==="complete"?"ok":workbench.status.startsWith("locked_")?"bad":"warn");
     return true;
@@ -781,15 +782,15 @@
     const record=state.selected;
     const clientId=clean(record?.client_id);
     const workbench=state.sourceEvidenceWorkbench;
-    if(!record||!clientId||!workbench?.reread_allowed||state.sourceEvidenceRereading)return;
-    state.sourceEvidenceRereading=true;
+    if(!record||!clientId||!workbench?.reread_allowed||state.sourceEvidenceRereadingClients.has(clientId))return;
+    state.sourceEvidenceRereadingClients.add(clientId);
     renderSourceEvidenceWorkbench(state.intelligence||{},clientId);
     state.intelligenceCache.delete(clientId);
     setStatus("กำลัง re-read source evidence ของ Canonical Client รายนี้ · ยังไม่มีการเขียนหรือยืนยันอัตโนมัติ","warn");
     try{
       await selectRecord(record);
     }finally{
-      state.sourceEvidenceRereading=false;
+      state.sourceEvidenceRereadingClients.delete(clientId);
       const currentClientId=clean(state.selected?.client_id);
       if(currentClientId&&state.intelligence)renderSourceEvidenceWorkbench(state.intelligence,currentClientId);
       else if(!currentClientId)resetSourceEvidenceWorkbench();
