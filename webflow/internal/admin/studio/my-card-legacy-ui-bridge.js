@@ -2,8 +2,9 @@
  * MMD MODEL My Card → Studio bridge for the existing Webflow Studio UI.
  *
  * This script deliberately carries only safe request metadata. It never exposes
- * an object key, stores media bytes, chooses a Field / RUN NUMBER / template,
- * or publishes a card. Studio remains the decision-maker for those steps.
+ * an object key, stores media bytes, chooses a Field / RUN NUMBER,
+ * or publishes a card. The model template preference is preserved as safe
+ * metadata; Studio owns group, RUN NUMBER, and final implementation.
  */
 (function () {
   "use strict";
@@ -54,7 +55,9 @@
         field: clean(seed.field),
         run_number: clean(seed.run_number),
         layer: clean(seed.layer),
-        template_hint: clean(seed.template_hint)
+        template_hint: clean(seed.template_hint),
+        model_template_id: clean(seed.model_template_id),
+        model_template_label: clean(seed.model_template_label)
       };
     }
     return null;
@@ -82,7 +85,9 @@
       field: context.field || "",
       run_number: context.run_number || "",
       layer: context.layer || "",
-      template_hint: context.template_hint || ""
+      template_hint: context.template_hint || "",
+      model_template_id: context.model_template_id || "",
+      model_template_label: context.model_template_label || ""
     });
     writeStorage(window.localStorage, REVIEW_SEED_KEY, output);
     return output;
@@ -191,7 +196,7 @@
     var section = document.createElement("section");
     section.id = "mmd-my-card-studio";
     section.className = "mmd-my-card-studio";
-    section.innerHTML = '<div class="mmd-my-card-studio__head"><div><p class="mmd-my-card-studio__eyebrow">MMD MODEL</p><h2>My Card requests</h2></div><button class="mmd-my-card-studio__refresh" type="button">Refresh</button></div><p class="mmd-my-card-studio__copy">Choose the model-submitted public photo. Studio still chooses Field, RUN NUMBER, template, direction, and final design.</p><div class="mmd-my-card-studio__items" aria-live="polite"><p class="mmd-my-card-studio__empty">Loading requests…</p></div><div class="mmd-my-card-studio__selected" hidden></div>';
+    section.innerHTML = '<div class="mmd-my-card-studio__head"><div><p class="mmd-my-card-studio__eyebrow">MMD MODEL</p><h2>My Card requests</h2></div><button class="mmd-my-card-studio__refresh" type="button">Refresh</button></div><p class="mmd-my-card-studio__copy">Choose the model-submitted public photo and retain the model-selected template preference. Studio still chooses Group, RUN NUMBER, direction, and final implementation.</p><div class="mmd-my-card-studio__items" aria-live="polite"><p class="mmd-my-card-studio__empty">Loading requests…</p></div><div class="mmd-my-card-studio__selected" hidden></div>';
     form.parentNode.insertBefore(section, form);
     section.querySelector(".mmd-my-card-studio__refresh").addEventListener("click", function () { loadInbox(section); });
     section.addEventListener("click", function (event) {
@@ -239,9 +244,11 @@
     name.textContent = request.model_name || "Model";
     var profile = document.createElement("span");
     profile.textContent = (request.media_type === "profile_photo" ? "Profile photo" : "Public gallery") + " · " + formatMetrics(request);
+    var template = document.createElement("small");
+    template.textContent = request.template_label ? "Template selected by model · " + request.template_label : "No template selected by model";
     var meta = document.createElement("small");
     meta.textContent = statusLabel(request.status) + " · " + formatDate(request.submitted_at);
-    copy.append(name, profile, meta);
+    copy.append(name, profile, template, meta);
     var action = document.createElement("button");
     action.type = "button";
     action.className = "mmd-my-card-studio__use";
@@ -269,6 +276,8 @@
         media_type: clean(draft.source_media_type),
         source_owner: clean(draft.source_owner),
         category_path: clean(draft.category_path) || "MMD MODEL / My Card",
+        model_template_id: clean(draft.model_template_id),
+        model_template_label: clean(draft.model_template_label),
         selected_at: new Date().toISOString()
       };
       if (!context.model_name || !context.media_id) throw new Error("my_card_import_incomplete");
@@ -277,7 +286,7 @@
       return postBlob(API.media, { compcard_request_id: context.request_id }).then(function (blob) { showSelectedSource(section, context, blob); });
     }).then(function () {
       loadInbox(section);
-      showToast("My Card source loaded. Studio now chooses the card setup.");
+      showToast("My Card source and template preference loaded. Studio now chooses the group, RUN NUMBER, and final implementation.");
     }).catch(function (error) {
       button.disabled = false;
       button.textContent = "Use in Studio";
@@ -319,7 +328,7 @@
     image.src = previewUrl;
     image.alt = "Model-selected public source";
     var copy = document.createElement("p");
-    copy.textContent = context.model_name + " · " + formatMetrics(context) + ". Source photo loaded; Studio still chooses Field, RUN NUMBER, template, direction, and final design.";
+    copy.textContent = context.model_name + " · " + formatMetrics(context) + ". Source photo loaded" + (context.model_template_label ? "; template selected by model: " + context.model_template_label : "") + ". Studio still chooses Group, RUN NUMBER, direction, and final implementation.";
     selected.append(image, copy);
   }
 
@@ -340,6 +349,7 @@
       run_number: run,
       layer: layerFor(field),
       template_hint: template,
+      model_template_id: context.model_template_id || "",
       direction: value("muDirection"),
       source_media_id: context.media_id,
       source_media_type: context.media_type,
@@ -381,6 +391,8 @@
           layer: intake.layer,
           template_id: intake.template_hint,
           template_hint: intake.template_hint,
+          model_template_id: context.model_template_id || "",
+          model_template_label: context.model_template_label || "",
           direction: intake.direction,
           source_files: [{ name: "model-selected-public-media", type: context.media_type || "image/*", size: 0 }]
         });
@@ -425,7 +437,7 @@
       notice.className = "mmd-my-card-review-context";
       var copy = document.createElement("p");
       copy.innerHTML = "<b>MMD MODEL · My Card</b><br>";
-      copy.append(document.createTextNode(context.model_name + " · " + formatMetrics(context) + ". This is a model-selected public source; Studio owns the group, RUN NUMBER, template, direction, and final design."));
+      copy.append(document.createTextNode(context.model_name + " · " + formatMetrics(context) + ". This is a model-selected public source" + (context.model_template_label ? "; model-selected template: " + context.model_template_label : "") + ". Studio owns the group, RUN NUMBER, direction, and final implementation."));
       notice.appendChild(copy);
       var summary = root.querySelector(".mmd-review-r5__summary");
       if (summary && summary.parentNode) summary.parentNode.insertBefore(notice, summary);
@@ -490,7 +502,7 @@
     notice.className = "mmd-my-card-preview-context";
     var copy = document.createElement("p");
     copy.innerHTML = "<b>MMD MODEL · My Card</b><br>";
-    copy.append(document.createTextNode("Studio review is recorded for " + context.model_name + ". This preview is still internal; publishing stays manual under the existing Studio final flow."));
+    copy.append(document.createTextNode("Studio review is recorded for " + context.model_name + (context.model_template_label ? " · model-selected template: " + context.model_template_label : "") + ". This preview is still internal; publishing stays manual under the existing Studio final flow."));
     notice.appendChild(copy);
     root.insertBefore(notice, root.firstChild);
   }
