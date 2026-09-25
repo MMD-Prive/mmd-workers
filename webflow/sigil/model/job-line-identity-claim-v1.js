@@ -21,7 +21,7 @@
 
   const card = document.createElement("div");
   card.style.cssText = "position:fixed;z-index:100000;inset:auto 14px 14px 14px;max-width:540px;margin:auto;padding:16px;border:1px solid rgba(232,196,119,.4);border-radius:18px;background:rgba(7,8,9,.96);color:#fff8ec;font:14px/1.6 system-ui;box-shadow:0 20px 60px #000";
-  card.textContent = "กำลังยืนยัน LINE เพื่อเชื่อมงานกับ MMD MODEL…";
+  card.textContent = "กำลังยืนยัน LINE เพื่อเชื่อมงานกับ MMD APP…";
   document.body.append(card);
   const set = (text) => { card.textContent = text; };
 

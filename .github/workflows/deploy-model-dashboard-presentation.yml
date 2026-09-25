@@ -272,10 +272,10 @@ jobs:
           node --input-type=module - "$manifest_body" <<'NODE'
           import fs from "node:fs";
           const manifest = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          if (manifest?.display !== "standalone") throw new Error("MMD MODEL PWA must remain standalone");
-          if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD MODEL PWA start URL changed");
-          if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD MODEL PWA scope changed");
-          if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD MODEL PWA icon is required");
+          if (manifest?.display !== "standalone") throw new Error("MMD APP PWA must remain standalone");
+          if (manifest?.start_url !== "/sigil/model/dashboard?launch=pwa") throw new Error("MMD APP PWA start URL changed");
+          if (manifest?.scope !== "/sigil/model/dashboard") throw new Error("MMD APP PWA scope changed");
+          if (!Array.isArray(manifest?.icons) || manifest.icons.length < 1) throw new Error("MMD APP PWA icon is required");
           NODE
 
             asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"

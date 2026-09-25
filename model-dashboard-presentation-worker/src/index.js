@@ -32,9 +32,9 @@ const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2a
 export function modelPwaManifest() {
   return {
     id: UI_PREFIX,
-    name: "MMD MODEL",
-    short_name: "MMD MODEL",
-    description: "MMD Privé Model Circle",
+    name: "MMD APP",
+    short_name: "MMD APP",
+    description: "MMD Privé onboarding, dashboard, Wish and model-side services",
     lang: "th",
     start_url: `${UI_PREFIX}?launch=pwa`,
     scope: UI_PREFIX,
@@ -159,7 +159,7 @@ const TELEGRAM_CONNECT_JS = `(() => {
       '<div class="mmd-model-telegram-connect-v1__copy">' +
         '<small>JOB NOTIFICATIONS</small>' +
         '<strong data-mmd-tg-title>กำลังตรวจ Telegram…</strong>' +
-        '<span data-mmd-tg-copy>LINE ยังเป็นบัญชีหลักของ MMD MODEL</span>' +
+        '<span data-mmd-tg-copy>LINE ยังเป็นบัญชีหลักของ MMD APP</span>' +
       '</div>' +
       '<div class="mmd-model-telegram-connect-v1__actions">' +
         '<button type="button" data-mmd-tg-connect hidden>เชื่อม Telegram</button>' +
@@ -470,7 +470,7 @@ export function liffPrimaryBootstrapHtml(request) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
-<title>MMD MODEL · LINE</title>
+<title>MMD APP · LINE</title>
 <style>
 html,body{margin:0;min-height:100%;background:#0e0d0c;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
 main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
@@ -480,7 +480,7 @@ a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:
 <script src=${safeSdk}></script>
 </head>
 <body>
-<main><section><b>กำลังยืนยัน LINE สำหรับ MMD MODEL</b><p id="status">กำลังเปิดเซสชันที่ปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิด MMD MODEL ผ่าน LINE</a><small id="detail"></small></section></main>
+<main><section><b>กำลังยืนยัน LINE สำหรับ MMD APP</b><p id="status">กำลังเปิดเซสชันที่ปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิด MMD APP ผ่าน LINE</a><small id="detail"></small></section></main>
 <script>
 (async function(){
   var status=document.getElementById("status");
@@ -489,9 +489,9 @@ a{display:none;margin-top:18px;color:#f2cf7a;text-decoration:none}small{display:
   try{
     if(!window.liff||typeof window.liff.init!=="function") throw new Error("line_sdk_unavailable");
     await window.liff.init({liffId:${safeId}});
-    status.textContent="ยืนยัน LINE แล้ว · LINE กำลังเปิด MMD MODEL…";
+    status.textContent="ยืนยัน LINE แล้ว · LINE กำลังเปิด MMD APP…";
   }catch(error){
-    status.textContent="ยังเปิด MMD MODEL ผ่าน LINE ไม่สำเร็จ";
+    status.textContent="ยังเปิด MMD APP ผ่าน LINE ไม่สำเร็จ";
     fallback.style.display="inline-block";
     detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
   }
@@ -515,7 +515,7 @@ export function liffPwaBootstrapHtml(request) {
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex,nofollow">
 <meta name="theme-color" content="#090909">
-<title>MMD MODEL</title>
+<title>MMD APP</title>
 <style>
 html,body{margin:0;min-height:100%;background:#090909;color:#f7f1e7;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}
 main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}section{max-width:420px;text-align:center}
@@ -524,7 +524,7 @@ b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}a
 <script src=${safeSdk}></script>
 </head>
 <body>
-<main><section><b>กำลังเปิด MMD MODEL</b><p id="status">กำลังยืนยัน LINE อย่างปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิดผ่าน LINE</a><small id="detail"></small></section></main>
+<main><section><b>กำลังเปิด MMD APP</b><p id="status">กำลังยืนยัน LINE อย่างปลอดภัย…</p><a id="fallback" href=${safeFallback}>เปิดผ่าน LINE</a><small id="detail"></small></section></main>
 <script>
 (async function(){
   var status=document.getElementById("status");
@@ -535,7 +535,7 @@ b{display:block;font-size:18px;margin-bottom:8px}p{opacity:.72;line-height:1.6}a
     await window.liff.init({liffId:${safeId},withLoginOnExternalBrowser:true});
     status.textContent="ยืนยัน LINE แล้ว · กำลังเปิด Dashboard…";
   }catch(error){
-    status.textContent="ยังเปิด MMD MODEL ไม่สำเร็จ";
+    status.textContent="ยังเปิด MMD APP ไม่สำเร็จ";
     fallback.style.display="inline-block";
     detail.textContent=String((error&&error.code)||"")+(error&&error.message?" · "+String(error.message):"");
   }
@@ -695,7 +695,7 @@ function injectModelPwaShell(html) {
     `<meta name="mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
     `<meta name="apple-mobile-web-app-capable" content="yes" data-mmd-model-pwa="v1">` +
     `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" data-mmd-model-pwa="v1">` +
-    `<meta name="apple-mobile-web-app-title" content="MMD MODEL" data-mmd-model-pwa="v1">` +
+    `<meta name="apple-mobile-web-app-title" content="MMD APP" data-mmd-model-pwa="v1">` +
     `<link rel="apple-touch-icon" href="${MODEL_PWA_ICON_URL}" data-mmd-model-pwa="v1">`;
   return output.replace(/<\/head\s*>/i, `${pwa}</head>`);
 }
@@ -844,7 +844,7 @@ async function proxyModelWishPage(request) {
   try {
     upstream = await fetchUpstream(request, modelWishPresentationUrl(request));
   } catch (_) {
-    return new Response("MMD Model Wish is temporarily unavailable.", {
+    return new Response("MMD APP Wish is temporarily unavailable.", {
       status: 502,
       headers: {
         "content-type": "text/plain; charset=utf-8",
@@ -987,7 +987,7 @@ function modelPwaManifestResponse(method = "GET") {
 }
 
 function unavailable() {
-  return new Response("MMD Model Dashboard is temporarily unavailable.", {
+  return new Response("MMD APP Dashboard is temporarily unavailable.", {
     status: 502,
     headers: {
       "content-type": "text/plain; charset=utf-8",

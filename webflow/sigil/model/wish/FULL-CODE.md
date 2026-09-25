@@ -14,7 +14,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
   data-liff-id="2010864854-N34SgCqq" lang="th">
   <div class="mmw-shell">
     <header class="mmw-topbar">
-      <a class="mmw-brand" href="/sigil/model/dashboard" aria-label="กลับ MMD MODEL">
+      <a class="mmw-brand" href="/sigil/model/dashboard" aria-label="กลับ MMD APP">
         <img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp" width="48" height="48" alt="MMD Privé">
         <span>MMD PRIVÉ<small>THE MODEL CIRCLE</small></span>
       </a>
@@ -96,7 +96,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
         </div>
 
         <details class="mmw-media-update">
-          <summary><span class="mmw-media-icon" aria-hidden="true">＋</span><span><strong>อัปเดตรูปและคลิปของคุณ</strong><small>ไม่บังคับ · เพิ่มใน MMD MODEL Gallery</small></span><span class="mmw-media-total" data-media-count>0 / 5</span><span class="mmw-toggle" aria-hidden="true"></span></summary>
+          <summary><span class="mmw-media-icon" aria-hidden="true">＋</span><span><strong>อัปเดตรูปและคลิปของคุณ</strong><small>ไม่บังคับ · เพิ่มใน MMD APP Gallery</small></span><span class="mmw-media-total" data-media-count>0 / 5</span><span class="mmw-toggle" aria-hidden="true"></span></summary>
           <div class="mmw-media-body">
             <label class="mmw-media-picker">
               <input type="file" data-media-input multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm" aria-label="เลือกรูปหรือคลิป สูงสุด 5 ไฟล์" aria-describedby="mmw-media-limits">
@@ -124,7 +124,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
         <div class="mmw-submit-area">
           <div class="mmw-auth-note is-checking" data-auth-note>
             <span aria-hidden="true"></span>
-            <p>กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ</p>
+            <p>กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD APP ของคุณ</p>
             <button class="mmw-auth-retry" type="button" data-auth-retry hidden>ยืนยัน LINE</button>
           </div>
           <p class="mmw-error" data-error role="status" aria-live="polite" tabindex="-1"></p>
@@ -153,7 +153,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
       </figcaption>
     </figure>
 
-    <footer class="mmw-footer"><span>MMD PRIVÉ</span><span>SIX YEARS. AND STILL, TOGETHER.</span><a href="/sigil/model/dashboard">MMD MODEL <span aria-hidden="true">↗</span></a></footer>
+    <footer class="mmw-footer"><span>MMD PRIVÉ</span><span>SIX YEARS. AND STILL, TOGETHER.</span><a href="/sigil/model/dashboard">MMD APP <span aria-hidden="true">↗</span></a></footer>
   </div>
 </main>
 
@@ -526,7 +526,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
 
   async function checkProfile() {
     setChip('is-checking', 'กำลังยืนยันตัวตน');
-    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD APP ของคุณ');
     try {
       const response = await fetch(PROFILE, {
         credentials: 'include',
@@ -539,7 +539,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
       const name = profileName(profile);
       authed = true;
       setChip('is-ready', name ? 'ยืนยันแล้ว · ' + name : 'ยืนยันแล้ว');
-      setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD MODEL ของคุณ');
+      setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD APP ของคุณ');
       return true;
     } catch {
       return false;
@@ -570,7 +570,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
     authBusy = true;
     saveDraft();
     setChip('is-checking', 'กำลังยืนยันตัวตน');
-    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD APP ของคุณ');
     if (!automatic) setError('');
     try {
       const liff = await loadLiff();
@@ -663,7 +663,7 @@ Flow: auto-auth on entry → Wish → manual review → yellow pending Model Das
     if (!selectedFiles.length) {
       mediaNote.textContent = 'ไฟล์จะเข้า Gallery / Intro Video ของคุณ และไม่ถูกแนบไปกับ Telegram หรือข้อความถึงลูกค้าโดยอัตโนมัติ';
     } else if (uploadedMediaIds.length === selectedFiles.length) {
-      mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD MODEL เรียบร้อยแล้ว';
+      mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD APP เรียบร้อยแล้ว';
     } else {
       mediaNote.textContent = 'เลือกแล้ว ' + selectedFiles.length + ' ไฟล์ · จะอัปโหลดเมื่อกด “ส่งคำอวยพร”';
     }

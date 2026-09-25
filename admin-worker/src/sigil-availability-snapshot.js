@@ -376,10 +376,10 @@ export async function startAvailabilityAdoptionCohort(env = {}, input = {}) {
 function adoptionReminderCopy(displayName = "") {
   const name = text(displayName).slice(0, 80);
   const lines = [
-    "MMD MODEL · อัปเดตสถานะวันนี้",
+    "MMD APP · อัปเดตสถานะวันนี้",
     name ? `${name} กรุณาอัปเดตสถานะที่สะดวกตอนนี้` : "กรุณาอัปเดตสถานะที่สะดวกตอนนี้",
     "",
-    "เปิด MMD MODEL > Availability แล้วเลือกสถานะปัจจุบัน เพื่อให้คิวที่ MMD เห็นตรงกับคุณ",
+    "เปิด MMD APP > Availability แล้วเลือกสถานะปัจจุบัน เพื่อให้คิวที่ MMD เห็นตรงกับคุณ",
     "ถ้ายังไม่สะดวก ไม่ต้องเลือก “ว่าง” — ระบบจะรอการยืนยันจากคุณ",
     "",
     "https://www.mmdbkk.com/sigil/model/dashboard/availability",

@@ -237,7 +237,7 @@
 
   async function checkProfile() {
     setChip('is-checking', 'กำลังยืนยันตัวตน');
-    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD APP ของคุณ');
     try {
       const response = await fetch(PROFILE, {
         credentials: 'include',
@@ -251,7 +251,7 @@
       authed = true;
       renderTelegramStatus(profile);
       setChip('is-ready', name ? 'ยืนยันแล้ว · ' + name : 'ยืนยันแล้ว');
-      setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD MODEL ของคุณ');
+      setAuthState('is-ready', 'ยืนยันตัวตนแล้ว · พร้อมเขียนและส่งจากบัญชี MMD APP ของคุณ');
       return true;
     } catch {
       return false;
@@ -282,7 +282,7 @@
     authBusy = true;
     saveDraft();
     setChip('is-checking', 'กำลังยืนยันตัวตน');
-    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD MODEL ของคุณ');
+    setAuthState('is-checking', 'กำลังยืนยันตัวตนผ่าน LINE เพื่อเปิดฟอร์มจากบัญชี MMD APP ของคุณ');
     if (!automatic) setError('');
     try {
       const liff = await loadLiff();
@@ -375,7 +375,7 @@
     if (!selectedFiles.length) {
       mediaNote.textContent = 'ไฟล์จะเข้า Gallery / Intro Video ของคุณ และไม่ถูกแนบไปกับ Telegram หรือข้อความถึงลูกค้าโดยอัตโนมัติ';
     } else if (uploadedMediaIds.length === selectedFiles.length) {
-      mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD MODEL เรียบร้อยแล้ว';
+      mediaNote.textContent = 'อัปโหลด ' + uploadedMediaIds.length + ' ไฟล์เข้า MMD APP เรียบร้อยแล้ว';
     } else {
       mediaNote.textContent = 'เลือกแล้ว ' + selectedFiles.length + ' ไฟล์ · จะอัปโหลดเมื่อกด “ส่งคำอวยพร”';
     }

@@ -500,7 +500,7 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
   const lineToken = clean(env.MODEL_LINE_CHANNEL_ACCESS_TOKEN || env.LINE_CHANNEL_ACCESS_TOKEN);
   const telegramUserId = clean(modelFields[clean(env.AT_MODELS__TELEGRAM_USER_ID || "telegram_user_id")]);
   const telegramVerified = normalizeWord(modelFields[clean(env.AT_MODELS__TELEGRAM_VERIFICATION_STATUS || "telegram_verification_status")]) === "verified";
-  const message = "MMD MODEL · มีงานใหม่\nเปิด MMD MODEL เพื่อตรวจรายละเอียดและดำเนินการ";
+  const message = "MMD APP · มีงานใหม่\nเปิด MMD APP เพื่อตรวจรายละเอียดและดำเนินการ";
   let lineFailure = "model_line_identity_or_transport_missing";
 
   if (/^U[0-9a-f]{32}$/i.test(lineUserId) && lineToken) {
@@ -509,13 +509,13 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
       const messages = liffId
         ? [{
             type: "template",
-            altText: "MMD MODEL · มีงานใหม่",
+            altText: "MMD APP · มีงานใหม่",
             template: {
               type: "buttons",
               text: "มีงานใหม่รอให้ตรวจในแอป",
               actions: [{
                 type: "uri",
-                label: "เปิด MMD MODEL",
+                label: "เปิด MMD APP",
                 uri: "https://liff.line.me/" + encodeURIComponent(liffId),
               }],
             },
@@ -541,7 +541,7 @@ export async function sendModelNewJobNotification(env, sessionIdValue) {
     if (endpoint && token) {
       const liffId = clean(env.MODEL_LIFF_PUBLISHED_ID);
       const telegramText = liffId
-        ? `MMD MODEL · มีงานใหม่\nเปิด <a href="https://liff.line.me/${encodeURIComponent(liffId)}">MMD MODEL</a> เพื่อตรวจรายละเอียดและดำเนินการ`
+        ? `MMD APP · มีงานใหม่\nเปิด <a href="https://liff.line.me/${encodeURIComponent(liffId)}">MMD APP</a> เพื่อตรวจรายละเอียดและดำเนินการ`
         : message;
       try {
         const response = await fetch(endpoint, {
@@ -578,8 +578,8 @@ async function pushModelReconfirm(env, sessionRecord, reminder) {
   const modelName = sessionModelName(env, fields) || "Model";
   const date = sessionJobDate(env, fields) || "วันพรุ่งนี้";
   const text = reminder
-    ? `MMD MODEL · Reminder\n${modelName} ยังไม่ได้กดรับทราบงานวันที่ ${date}\nกรุณาเปิด MMD MODEL และกด “รับทราบงานแล้ว”`
-    : `MMD MODEL · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MMD MODEL เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
+    ? `MMD APP · Reminder\n${modelName} ยังไม่ได้กดรับทราบงานวันที่ ${date}\nกรุณาเปิด MMD APP และกด “รับทราบงานแล้ว”`
+    : `MMD APP · งานของคุณพรุ่งนี้\nงานวันที่ ${date}\nกรุณาเปิด MMD APP เพื่อตรวจรายละเอียดและกด “รับทราบงานแล้ว”`;
 
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
