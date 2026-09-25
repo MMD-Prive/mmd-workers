@@ -1,3 +1,5 @@
+import { handlePhaseADurableRequest } from "./model-onboarding-phase-a.js";
+
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const ACTIVATION_KIND = "model_activation_v1";
@@ -212,6 +214,7 @@ export class ModelActivationCoordinator {
 
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/phase-a") return handlePhaseADurableRequest(this.state, this.env, request);
     if (url.pathname === "/resolve-private-model" && request.method.toUpperCase() === "POST") {
       const input = await request.json().catch(() => null);
       const modelKey = clean(input?.model_key, 110);

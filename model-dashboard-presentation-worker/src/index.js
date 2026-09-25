@@ -1,4 +1,5 @@
 import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
+import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
@@ -370,6 +371,11 @@ export function isModelPwaManifestPath(pathname = "") {
   return normalizePath(pathname) === MODEL_PWA_MANIFEST_PATH;
 }
 
+export function isModelOnboardingPhaseARequest(request) {
+  const url = new URL(request.url);
+  return normalizePath(url.pathname) === UI_PREFIX && boundedParam(url, "flow") === "apply";
+}
+
 function hasCookie(request, name) {
   const raw = String(request.headers.get("cookie") || "");
   return raw.split(";").some((part) => {
@@ -450,7 +456,7 @@ function safeMiniAppUrlForBootstrap(request) {
 
   const lang = boundedParam(source, "lang");
   if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
-  if (boundedParam(source, "flow") === "verify") params.set("flow", "verify");
+  if (["verify", "apply"].includes(boundedParam(source, "flow"))) params.set("flow", boundedParam(source, "flow"));
   if (boundedParam(source, "handoff") === "job-confirmed") params.set("handoff", "job-confirmed");
   const activation = boundedParam(source, "activation");
   if (activation && activation.length <= 4096) params.set("activation", activation);
@@ -576,6 +582,34 @@ function liffPwaBootstrapResponse(request) {
   });
 }
 
+function modelOnboardingPhaseAResponse(request) {
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store, no-cache, must-revalidate, max-age=0",
+    "x-mmd-worker": WORKER_NAME,
+    "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "phase-a-no-media-v1",
+    "x-robots-tag": "noindex, nofollow",
+  });
+  if (!["GET", "HEAD"].includes(request.method.toUpperCase())) {
+    headers.set("allow", "GET, HEAD");
+    return new Response(null, { status: 405, headers });
+  }
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : modelOnboardingPhaseAHtml(resolveLiffEnvironmentFromRequest(request)), { status: 200, headers });
+}
+
+export function shouldServePhaseAAfterBootstrap(request) {
+  const url = new URL(request.url);
+  return normalizePath(url.pathname) === UI_PREFIX
+    && hasLiffPrimaryBootstrapCookie(request)
+    && !hasModelSessionCookie(request)
+    && !isPwaLaunchRequest(request)
+    && !boundedParam(url, "activation")
+    && !boundedParam(url, "return_to")
+    && !boundedParam(url, "handoff")
+    && !boundedParam(url, "flow");
+}
+
 export function modelMiniAppHandoffUrl(request) {
   const source = new URL(request.url);
   const params = new URLSearchParams();
@@ -586,7 +620,7 @@ export function modelMiniAppHandoffUrl(request) {
   const lang = source.searchParams.get("lang");
   if (lang === "th" || lang === "en" || lang === "zh") params.set("lang", lang);
 
-  if (source.searchParams.get("flow") === "verify") params.set("flow", "verify");
+  if (["verify", "apply"].includes(source.searchParams.get("flow"))) params.set("flow", source.searchParams.get("flow"));
   if (source.searchParams.get("handoff") === "job-confirmed") {
     params.set("handoff", "job-confirmed");
   }
@@ -594,7 +628,10 @@ export function modelMiniAppHandoffUrl(request) {
   const activation = String(source.searchParams.get("activation") || "");
   if (activation && activation.length <= 4096) params.set("activation", activation);
 
-  return miniAppPermanentLink(MODEL_LIFF_ID, params);
+  const phaseAId = source.searchParams.get("flow") === "apply" && (env === "developing" || env === "review")
+    ? MODEL_LIFF_IDS[env]
+    : MODEL_LIFF_ID;
+  return miniAppPermanentLink(phaseAId, params);
 }
 
 export function shouldHandoffToMiniApp(request) {
@@ -1009,9 +1046,14 @@ export default {
     if (isModelHistoryAssetPath(path)) return modelHistoryAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
+      if (isModelOnboardingPhaseARequest(request)) {
+        if (!hasLineRedirectContext(request) && !hasLiffPrimaryBootstrapCookie(request) && !hasModelSessionCookie(request)) return miniAppHandoff(request);
+        return modelOnboardingPhaseAResponse(request);
+      }
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
+      if (shouldServePhaseAAfterBootstrap(request)) return modelOnboardingPhaseAResponse(request);
       return proxyPage(request);
     }
     return new Response("Not Found", {

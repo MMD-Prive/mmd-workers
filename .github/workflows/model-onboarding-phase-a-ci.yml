@@ -1,0 +1,43 @@
+name: MMD APP Model onboarding Phase A
+
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-onboarding-phase-a.js"
+      - "admin-worker/src/model-liff-manual-review-worker.js"
+      - "admin-worker/src/model-first-time-activation.js"
+      - "admin-worker/src/public-model-application-review.js"
+      - "admin-worker/model-onboarding-phase-a.test.mjs"
+      - "model-dashboard-presentation-worker/src/model-onboarding-phase-a-page.js"
+      - "model-dashboard-presentation-worker/src/index.js"
+      - "model-dashboard-presentation-worker/model-onboarding-phase-a.test.mjs"
+      - ".github/workflows/model-onboarding-phase-a-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check changed JavaScript
+        run: |
+          node --check admin-worker/src/model-onboarding-phase-a.js
+          node --check admin-worker/src/model-liff-manual-review-worker.js
+          node --check admin-worker/src/model-first-time-activation.js
+          node --check admin-worker/src/public-model-application-review.js
+          node --check model-dashboard-presentation-worker/src/model-onboarding-phase-a-page.js
+          node --check model-dashboard-presentation-worker/src/index.js
+      - name: Verify identity, privacy, duplicate and presentation contracts
+        run: |
+          node --test \
+            admin-worker/model-onboarding-phase-a.test.mjs \
+            admin-worker/model-line-link-review.test.mjs \
+            admin-worker/model-liff-cross-origin-session.test.mjs \
+            model-dashboard-presentation-worker/model-onboarding-phase-a.test.mjs \
+            model-dashboard-presentation-worker/index.test.mjs
