@@ -44,6 +44,42 @@ for (const [file, stateKey, oldValue] of [
 }
 console.log('Customer memory selection races: passed');
 
+// Repeated scope parameters are ambiguous and must not fetch either identity panel.
+for (const file of ['customer-identity-alignment-client.ts', 'customer-identity-evidence-protocol-client.ts']) {
+  const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8').split('String.raw`')[1].split('`;')[0];
+  const nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      textContent: '', innerHTML: '', hidden: false, dataset: {}, style: {}, className: '',
+      appendChild() {}, insertAdjacentElement() {}, addEventListener() {}, closest() { return null; },
+      setAttribute() {}, replaceChildren() {}, querySelector: s => node(s), querySelectorAll: () => [],
+    });
+    return nodes.get(selector);
+  };
+  node('[data-detail]').hidden = true;
+  let calls = 0;
+  const document = {
+    querySelector: s => /runtime/.test(s) ? null : node(s),
+    querySelectorAll: () => [], createElement: () => node('duplicate-scope-' + nodes.size),
+    head: node('head'), documentElement: node('html'),
+  };
+  const context = vm.createContext({
+    document,
+    location: {
+      pathname: '/internal/admin/customer-data',
+      href: 'https://example.test/internal/admin/customer-data?client_id=recCanonical123&client_id=recDifferent456',
+      origin: 'https://example.test',
+    },
+    URL,
+    setTimeout,
+    MutationObserver: class { observe() {} },
+    fetch: () => { calls += 1; return Promise.reject(new Error('unexpected fetch')); },
+  });
+  vm.runInContext(source, context);
+  assert.equal(calls, 0, `${file} must not read either client from a repeated scope`);
+}
+console.log('Repeated customer scope locks auxiliary identity panels: passed');
+
 // A canonical deep link from Member Intelligence must reveal a read-only detail
 // surface even when the client is absent from the current staging review queue.
 {
