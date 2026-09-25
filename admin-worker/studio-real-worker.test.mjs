@@ -148,6 +148,7 @@ test("My Card inbox never returns the stored object key to the Studio browser", 
                 media_type: "public_gallery",
                 object_key: "models/rec12345678901234/public_gallery/media_12345678.jpg",
               },
+              model_template: { id: "sigil-gws-nightwave", label: "Nightwave Dossier", source: "model_selected" },
             }),
           },
         }],
@@ -164,6 +165,8 @@ test("My Card inbox never returns the stored object key to the Studio browser", 
   const data = await json(res);
   assert.equal(data.requests[0].request_id, "recMyCardRequest123");
   assert.equal(data.requests[0].media_id, "media_12345678");
+  assert.equal(data.requests[0].template_id, "sigil-gws-nightwave");
+  assert.equal(data.requests[0].template_label, "Nightwave Dossier");
   assert.equal(JSON.stringify(data.requests[0]).includes("object_key"), false);
 });
 
