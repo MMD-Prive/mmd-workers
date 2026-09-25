@@ -59,7 +59,7 @@ test("keeps Model Wish on apex while fetching only presentation HTML from Webflo
   globalThis.fetch = async (request) => {
     upstreamRequests.push(request);
     return new Response(
-      '<!doctype html><html><head></head><body><main id="mmd-wish">MMD MODEL</main></body></html>',
+      '<!doctype html><html><head></head><body><main id="mmd-wish">MMD APP</main></body></html>',
       {
         status: 200,
         headers: {
@@ -119,12 +119,12 @@ test("Model Wish front gate allows only GET and HEAD", async () => {
   assert.equal(response.headers.get("x-mmd-page"), "model-wish");
 });
 
-test("exposes an installable MMD MODEL standalone PWA manifest", async () => {
+test("exposes an installable MMD APP standalone PWA manifest", async () => {
   assert.deepEqual(modelPwaManifest(), {
     id: "/sigil/model/dashboard",
-    name: "MMD MODEL",
-    short_name: "MMD MODEL",
-    description: "MMD Privé Model Circle",
+    name: "MMD APP",
+    short_name: "MMD APP",
+    description: "MMD Privé onboarding, dashboard, Wish and model-side services",
     lang: "th",
     start_url: "/sigil/model/dashboard?launch=pwa",
     scope: "/sigil/model/dashboard",
@@ -156,7 +156,7 @@ test("exposes an installable MMD MODEL standalone PWA manifest", async () => {
   assert.equal(blocked.status, 405);
 });
 
-test("bare MMD MODEL entry keeps the exact published Mini App base URL", () => {
+test("bare MMD APP entry keeps the exact published Mini App base URL", () => {
   const request = new Request("https://mmdbkk.com/sigil/model/dashboard");
   assert.equal(
     modelMiniAppHandoffUrl(request),
@@ -347,7 +347,7 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /data-mmd-ui-source="lovable-model-dashboard"/);
   assert.match(out, /rel="manifest" href="\/sigil\/model\/dashboard\/manifest\.webmanifest"/);
   assert.match(out, /apple-mobile-web-app-capable/);
-  assert.match(out, /apple-mobile-web-app-title" content="MMD MODEL"/);
+  assert.match(out, /apple-mobile-web-app-title" content="MMD APP"/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/_build\/app\.js/);
   assert.match(out, /\/sigil\/model\/dashboard-assets\/favicon\.ico/);
   assert.match(out, /href="\/sigil\/model\/dashboard"/);
@@ -412,7 +412,7 @@ test("serves the Model Telegram readiness add-on locally and keeps LINE as autho
   assert.match(await css.text(), /#mmd-model-telegram-connect-v1/);
 });
 
-test("serves the MMD MODEL history add-on with no customer-facing or raw-chat content", async () => {
+test("serves the MMD APP history add-on with no customer-facing or raw-chat content", async () => {
   const worker = (await import("./src/index.js")).default;
   const js = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-history-v1.js"));
   assert.equal(js.status, 200);

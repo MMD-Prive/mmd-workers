@@ -19,7 +19,7 @@ test("payout summary distinguishes Public and Private money systems", () => {
 });
 
 test("payout summary explains official extension boundary", () => {
-  assert.match(source, /MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยัน/);
+  assert.match(source, /MY MMD → คุณกด Approve ใน MMD APP → MMD ยืนยัน/);
   assert.match(source, /OT หลัง 00:00/);
   assert.match(source, /OT หลัง 03:00/);
 });

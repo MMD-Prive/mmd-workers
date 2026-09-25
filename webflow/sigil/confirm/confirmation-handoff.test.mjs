@@ -11,7 +11,7 @@ test("confirmation handoff uses canonical signed pages and LINE Mini App dashboa
   assert.match(source, /MODEL_LIFF_URL = "https:\/\/miniapp\.line\.me\/2010864854-N34SgCqq"/);
   assert.match(source, /new URL\(\`\$\{MODEL_LIFF_URL\}\\/\`\)/);
   assert.match(source, /ดู Upcoming Job ใน My MMD/);
-  assert.match(source, /ไปที่ MMD MODEL ใน LINE/);
+  assert.match(source, /ไปที่ MMD APP ใน LINE/);
 });
 
 test("confirmation handoff does not route success back to legacy or web-only dashboards", () => {

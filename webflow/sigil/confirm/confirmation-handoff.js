@@ -1,6 +1,6 @@
 /* MMD SIGIL confirmation handoff
  * Customer: /sigil/confirm/job-confirmation -> My MMD LINE Mini App > Jobs
- * Model: /sigil/confirm/job-model -> MMD MODEL LINE Mini App
+ * Model: /sigil/confirm/job-model -> MMD APP LINE Mini App
  * This layer only fixes onward navigation after the signed confirmation flow.
  */
 (() => {
@@ -31,10 +31,10 @@
     target.searchParams.set("lang", lang);
     link.href = target.toString();
     link.textContent = lang === "en"
-      ? "Open MMD MODEL in LINE"
+      ? "Open MMD APP in LINE"
       : lang === "zh"
-        ? "在 LINE 中打开 MMD MODEL"
-        : "ไปที่ MMD MODEL ใน LINE";
+        ? "在 LINE 中打开 MMD APP"
+        : "ไปที่ MMD APP ใน LINE";
     link.setAttribute("data-mmd-canonical-target", "model-line-miniapp");
   }
 

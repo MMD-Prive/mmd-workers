@@ -66,7 +66,7 @@ function renderTerms(session,card){
   :'<p class="smcv3-payout-terms__foot">งาน Public ใช้เงื่อนไข Package/Session ที่ MMD อนุมัติสำหรับงานนี้</p>';
  const extension=isPrivate
   ?'หากต่อเวลา เปลี่ยนกิจกรรม หรือเพิ่มขอบเขต: ลูกค้า Request → คุณ Approve → MMD ออกเรท Private ของเคสใหม่และยืนยันก่อน จึงถือเป็นข้อตกลงของ MMD'
-  :'การต่อเวลา/เปลี่ยนแผน ต้อง Request ใน MY MMD → คุณกด Approve ใน MMD MODEL → MMD ยืนยันก่อน จึงอยู่ภายใต้ Booking เดิมต่อ';
+  :'การต่อเวลา/เปลี่ยนแผน ต้อง Request ใน MY MMD → คุณกด Approve ใน MMD APP → MMD ยืนยันก่อน จึงอยู่ภายใต้ Booking เดิมต่อ';
  terms.innerHTML='<span class="smcv3-payout-terms__title">'+title+'</span><div class="smcv3-payout-terms__grid">'+(end?'<div class="smcv3-payout-terms__row"><span>เวลาจบที่ MMD ยืนยัน</span><strong>'+end+'</strong></div>':'')+rows.join('')+'</div>'+laneNote+(exp?'<p class="smcv3-payout-terms__foot">'+exp+'</p>':'')+(t.extension_requires_mmd_confirmation?'<div class="smcv3-payout-terms__lock">'+extension+'</div>':'');
  card.append(terms);
 }
