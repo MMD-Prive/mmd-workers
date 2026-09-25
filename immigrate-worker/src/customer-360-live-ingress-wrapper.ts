@@ -79,25 +79,33 @@ export default {
 
     const response = await canonicalWorker.fetch(request, env);
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      return decorateCustomer360Page(response);
+      return decorateCustomer360Page(response, String(url.searchParams.get("client_id") || "").trim());
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
     }
     if (method === "GET" && path === CLIENT_INTELLIGENCE) {
-      return augmentClientIntelligenceWithIdentityAlignment(
+      const clientId = String(url.searchParams.get("client_id") || "").trim();
+      const augmented = await augmentClientIntelligenceWithIdentityAlignment(
         response,
         env,
-        String(url.searchParams.get("client_id") || "").trim(),
+        clientId,
       );
+      return enforceExactCanonicalClientScope(augmented, clientId);
     }
     return response;
   },
 };
 
-export async function decorateCustomer360Page(response: Response): Promise<Response> {
+export async function decorateCustomer360Page(response: Response, requestedClientId = ""): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
-  const html = await response.text();
+  let html = await response.text();
+  if (requestedClientId) {
+    const defaultBoot = "load('review_required');summary()})();";
+    const scopedBoot = "var requestedClientId=String(new URLSearchParams(location.search).get('client_id')||'').trim(),validClientScope=/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId);var queuePanel=q('.work aside'),summaryPanel=q('.summary'),guide=q('.memory-guide'),decision=q('.decision');if(queuePanel)queuePanel.hidden=true;if(summaryPanel)summaryPanel.hidden=true;if(guide)guide.hidden=true;if(decision)decision.hidden=true;if(q('[data-backfill]'))q('[data-backfill]').disabled=true;if(q('[data-refresh]'))q('[data-refresh]').disabled=true;q('[data-state]').textContent=validClientScope?'CANONICAL CLIENT':'CLIENT SCOPE LOCKED';if(!validClientScope){q('[data-empty]').hidden=false;q('[data-empty]').textContent='client_id ไม่ถูกต้อง · หยุดแบบ fail-closed และไม่เปิดคิวลูกค้ารายอื่น'}else{q('[data-list]').innerHTML='<div class=\"empty\">เปิดเฉพาะ Canonical Client ที่เลือก · กำลังตรวจ source scope</div>'}})();";
+    if (!html.includes(defaultBoot)) return new Response("customer_scope_contract_unavailable", { status: 503, headers: { "cache-control": "no-store" } });
+    html = html.replace(defaultBoot, scopedBoot);
+  }
   const liveScript = `<script data-mmd-customer-360-live-client="v1">${CUSTOMER_360_LIVE_CLIENT}</script>`;
   const alignmentScript = `<script data-mmd-customer-identity-alignment-client="v1">${CUSTOMER_IDENTITY_ALIGNMENT_CLIENT}</script>`;
   const protocolScript = `<script data-mmd-customer-identity-evidence-protocol-client="v1">${CUSTOMER_IDENTITY_EVIDENCE_PROTOCOL_CLIENT}</script>`;
@@ -113,6 +121,21 @@ export async function decorateCustomer360Page(response: Response): Promise<Respo
   headers.set("x-mmd-identity-evidence-recovery", "read-only-v1");
   headers.set("x-mmd-identity-evidence-owner-review", "read-only-v1");
   return new Response(body, { status: response.status, statusText: response.statusText, headers });
+}
+
+export async function enforceExactCanonicalClientScope(response: Response, requestedClientId: string): Promise<Response> {
+  if (!/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId)) {
+    return Response.json({ ok: false, error: "invalid_client_scope" }, { status: 400, headers: { "cache-control": "no-store" } });
+  }
+  if (!response.ok || !(response.headers.get("content-type") || "").includes("application/json")) return response;
+  const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+  const identity = payload?.identity && typeof payload.identity === "object"
+    ? payload.identity as Record<string, unknown>
+    : null;
+  if (!payload || String(payload.client_id || "").trim() !== requestedClientId || String(identity?.status || "").trim() !== "canonical") {
+    return Response.json({ ok: false, error: "client_scope_unresolved" }, { status: 409, headers: { "cache-control": "no-store" } });
+  }
+  return new Response(JSON.stringify(payload), { status: response.status, statusText: response.statusText, headers: response.headers });
 }
 
 export async function redactCustomerQueueResponse(response: Response): Promise<Response> {
