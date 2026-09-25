@@ -173,6 +173,28 @@ describe("same-site /member/liff shell", () => {
     assert.doesNotThrow(() => new Function(html.slice(scriptBodyStart, scriptBodyEnd)));
   });
 
+  it("renders a verified-only Credit Wallet through the same-site credit API", async () => {
+    const response = await shell("/member/liff?intent=status&view=credits&lang=th");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /"creditWalletEndpoint":"\/api\/member\/app\/credits"/);
+    assert.match(html, /data-view="credits"/);
+    assert.match(html, /id="credits" class="panel"/);
+    assert.match(html, /id="credit-available"/);
+    assert.match(html, /id="credit-reserved"/);
+    assert.match(html, /id="credit-used"/);
+    assert.match(html, /await readCouponWallet\(\);\s*await readCreditWallet\(\);/);
+    assert.match(html, /credentials:"same-origin"/);
+    assert.match(html, /payload\.state !== "resolved" \|\| payload\.verificationState !== "verified_only"/);
+    assert.match(html, /item\.verified !== true \|\| item\.verificationState !== "verified"/);
+    assert.match(html, /\["available", "partially_used", "used", "refunded", "expired"\]/);
+    assert.match(html, /items\.slice\(0, 3\)/);
+    assert.match(html, /กำลังตรวจสอบเครดิตบริการของคุณครับ/);
+    assert.match(html, /ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ/);
+    assert.doesNotMatch(html, /credit_id|Campaign Claim ID|Verification Snapshot|payment_authority/i);
+  });
+
   it("supports HEAD without a response body and rejects unsupported shell methods", async () => {
     const head = await shell("/member/liff", { method: "HEAD" });
     assert.equal(head.status, 200);
