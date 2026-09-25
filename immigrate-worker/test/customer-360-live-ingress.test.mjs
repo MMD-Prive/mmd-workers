@@ -21,6 +21,7 @@ try {
   const { decorateCustomer360Page, enforceExactCanonicalClientScope, redactCustomerQueueResponse, resolveRequestedClientId } = await import(pathToFileURL(outfile).href);
 
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123")), "recCanonical123");
+  assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=%20recCanonical123%20")), "recCanonical123");
   assert.equal(resolveRequestedClientId(new URLSearchParams("")), null);
   assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")), "");
 
@@ -74,6 +75,7 @@ try {
   assert.match(scopedHtml, /if\(backfill\)backfill.disabled=imp.running\|\|directScope/);
   assert.match(scopedHtml, /const directScope=new URL\(location\.href\)\.searchParams\.has\('client_id'\)/);
   assert.match(scopedHtml, /getAll\('client_id'\),directClient=clientIds\.length===1/);
+  assert.match(scopedHtml, /String\(clientIds\[0\]\|\|''\)\.trim\(\)/);
   assert.match(scopedHtml, /INTEL\+'\?client_id='\+encodeURIComponent\(id\)/);
   const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
   assert.equal(emptyScopedPage.status, 200);
