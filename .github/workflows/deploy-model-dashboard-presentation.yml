@@ -304,34 +304,87 @@ jobs:
             grep -q '"error":"model_session_required"' "$api_body"
           done
 
-          wish_headers="$(mktemp)"
-          wish_body="$(mktemp)"
-          wish_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
-            -D "$wish_headers" -o "$wish_body" -w "%{http_code}" \
-            -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
-            'https://mmdbkk.com/sigil/model/wish?line_return=1&mmd_smoke=1')"
-          cat "$wish_headers"
-          test "$wish_code" = "200"
-          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy$'
-          tr -d '\r' < "$wish_headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish$'
-          if tr -d '\r' < "$wish_headers" | grep -i -q '^location:'; then
-            echo "Model Wish apex route redirected and would drop the host-only session" >&2
-            exit 1
-          fi
-          if tr -d '\r' < "$wish_headers" | grep -i -q '^set-cookie:.*mmd_model_session_v1'; then
-            echo "Model Wish front gate unexpectedly changed the Model session cookie" >&2
-            exit 1
-          fi
-          test -s "$wish_body"
+          assert_wish_body() {
+            local body="$1"
+            grep -q 'id="mmd-model-wish-v1"' "$body"
+            grep -q 'data-mmd-wish-line-return-bridge-v1' "$body"
+            grep -q 'year6_direct_wish' "$body"
+          }
+
+          smoke_apex_wish() {
+            local url="$1"
+            local headers body code
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+              -D "$headers" -o "$body" -w "%{http_code}" \
+              -H 'Cookie: mmd_model_session_v1=production-smoke-placeholder' \
+              "$url")"
+            cat "$headers"
+            test "$code" = "200"
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-ui-source:[[:space:]]*webflow-apex-proxy$'
+            tr -d '\r' < "$headers" | grep -i -q '^x-mmd-page:[[:space:]]*model-wish$'
+            if tr -d '\r' < "$headers" | grep -i -q '^location:'; then
+              echo "Model Wish apex route redirected and would drop the host-only session" >&2
+              exit 1
+            fi
+            if tr -d '\r' < "$headers" | grep -i -q '^set-cookie:.*mmd_model_session_v1'; then
+              echo "Model Wish front gate unexpectedly changed the Model session cookie" >&2
+              exit 1
+            fi
+            assert_wish_body "$body"
+          }
+
+          smoke_apex_wish 'https://mmdbkk.com/sigil/model/wish?mmd_smoke=1'
+          smoke_apex_wish 'https://mmdbkk.com/sigil/model/wish?line_return=1&mmd_smoke=1'
+
+          www_wish_body="$(mktemp)"
+          www_wish_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -o "$www_wish_body" -w "%{http_code}" \
+            'https://www.mmdbkk.com/sigil/model/wish?mmd_smoke=1')"
+          test "$www_wish_code" = "200"
+          assert_wish_body "$www_wish_body"
+
+          canonical_headers="$(mktemp)"
+          canonical_code="$(curl --retry 8 --retry-delay 2 --retry-all-errors -sS \
+            -D "$canonical_headers" -o /dev/null -w "%{http_code}" \
+            'https://mmdbkk.com/')"
+          case "$canonical_code" in
+            301|308) ;;
+            *)
+              echo "Unrelated apex canonicalization changed: HTTP $canonical_code" >&2
+              exit 1
+              ;;
+          esac
+          tr -d '\r' < "$canonical_headers" | grep -F -i -q 'location: https://www.mmdbkk.com/'
 
       - name: Deployment receipt
         shell: bash
         run: |
+          set -euo pipefail
+          deployed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           echo "Model Dashboard presentation source: Lovable"
           echo "Worker: model-dashboard-presentation-worker"
           echo "Version: ${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}"
           echo "Commit: ${GITHUB_SHA}"
+          echo "Deployed at: ${deployed_at}"
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## MMD MODEL Wish — Production Recovery Receipt
+          - Source SHA: \`${GITHUB_SHA}\`
+          - Worker: \`model-dashboard-presentation-worker\`
+          - Deployment/version: \`${MODEL_DASHBOARD_PRESENTATION_VERSION_ID}\`
+          - Deployed at: \`${deployed_at}\`
+          - Apex \`/sigil/model/wish\`: **PASS — 200, host preserved**
+          - Apex \`line_return=1\`: **PASS — 200, host preserved**
+          - WWW Wish body: **PASS**
+          - Wish root marker: **PASS**
+          - LINE return bridge marker: **PASS**
+          - direct-Wish runtime marker: **PASS**
+          - Unrelated apex canonicalization: **PASS**
+          - Model session-cookie rewrite: **NONE**
+          - Real Model E2E: **NOT STARTED**
+          EOF
 
       - name: Clean temporary config
         if: always()
