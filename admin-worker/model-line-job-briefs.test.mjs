@@ -169,6 +169,34 @@ test("owner prepares existing LINE claim only after selecting a reviewed applica
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("owner reviews the exact Phase A application linked to an interested subject", async () => {
+  const state = { storage: new MemoryStorage() };
+  const id = await createPublished(state);
+  const interest = await durable(state, { audience: "model", action: "respond", brief_id: id,
+    subject: SUBJECT, identity_stage: "pending_review", interest: "interested" });
+  const env = { ADMIN_SESSION_SECRET: "test-secret", ADMIN_LOGIN_CREDENTIAL: "test-credential",
+    MODEL_ACTIVATION_COORDINATOR: { idFromName: (name) => name, get: (name) => ({ fetch: (url, init) =>
+      name.startsWith("phase-a:")
+        ? Response.json({ ok: true, status: "pending_review", application_id: "phasea_review123",
+          application: { nickname: "Applicant", province: "Bangkok" } })
+        : handleLineJobBriefDurableRequest(state, env, new Request(url, init)) }) } };
+  const token = await createCredentialBoundAdminSession(new Request(`${ORIGIN}/internal/admin/login`), { id: "per", role: "owner" }, env);
+  const review = async (cookie) => {
+    const response = await handleLineJobBriefRequest(new Request(`${ORIGIN}/v1/admin/model/line-briefs`, {
+      method: "POST", headers: { origin: ORIGIN, "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      body: JSON.stringify({ action: "review_application", brief_id: id, response_id: interest.body.response.response_id }),
+    }), env);
+    return { status: response.status, body: await response.json() };
+  };
+  assert.equal((await review()).status, 401);
+  const result = await review(`mmd_admin_gate_v1=${token}`);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.application_id, "phasea_review123");
+  assert.equal(result.body.application.nickname, "Applicant");
+  assert.equal(JSON.stringify(result.body).includes(SUBJECT), false);
+  assert.equal((await durable(state, { audience: "model", action: "review_application", brief_id: id, subject: SUBJECT })).status, 403);
+});
+
 test("public handler rejects missing admin session, wrong origin, wrong role and forged model identity fields", async () => {
   const env = { ADMIN_SESSION_SECRET: "test-secret", ADMIN_LOGIN_CREDENTIAL: "test-credential" };
   const req = (path, body, headers = {}) => new Request(`${ORIGIN}${path}`, { method: "POST",

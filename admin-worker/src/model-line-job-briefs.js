@@ -10,7 +10,7 @@ const RESPONSE_PREFIX = "line_brief_response:";
 const AUDIT_PREFIX = "line_brief_audit:";
 const MAX_BODY_BYTES = 12000;
 const BRIEF_STATUSES = new Set(["draft", "published", "closed", "cancelled"]);
-const OWNER_ACTIONS = new Set(["list", "detail", "create", "update", "publish", "close", "cancel", "select", "prepare_link"]);
+const OWNER_ACTIONS = new Set(["list", "detail", "create", "update", "publish", "close", "cancel", "select", "prepare_link", "review_application"]);
 const MODEL_ACTIONS = new Set(["list", "detail", "respond"]);
 
 const clean = (value, max = 1000) => String(value ?? "").trim().slice(0, max);
@@ -80,6 +80,12 @@ export async function handleLineJobBriefRequest(request, env = {}) {
     const stub = namespace.get(namespace.idFromName(STORE_NAME));
     const response = await stub.fetch(STORE_PATH, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) });
     const payload = await response.json().catch(() => ({ ok: false, error: "brief_store_unavailable" }));
+    if (owner && action === "review_application" && response.ok && payload.ok === true) {
+      const application = await inspectPhaseAApplication(env, payload.subject);
+      if (!application.ok) return json({ ok: false, error: "application_status_unavailable" }, 503);
+      if (application.status !== "pending_review" || !application.application_id) return json({ ok: false, error: "application_review_required" }, 409);
+      return json({ ok: true, application_id: application.application_id, application: application.application });
+    }
     if (owner && action === "prepare_link" && response.ok && payload.ok === true) {
       if (payload.already_bound) return json({ ok: true, state: "already_bound" });
       // Selection is already recorded. The existing claim queue is the only
@@ -108,7 +114,8 @@ async function inspectPhaseAApplication(env, subject) {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "inspect", hash }),
     });
     const data = await response.json();
-    return { ok: response.ok && data.ok === true, status: data.status || "draft" };
+    return { ok: response.ok && data.ok === true, status: data.status || "draft",
+      application_id: clean(data.application_id, 120), application: data.application || {} };
   } catch { return { ok: false }; }
 }
 
@@ -269,6 +276,12 @@ export async function handleLineJobBriefDurableRequest(state, _env, request) {
       // Private internal DO response. The public facade replaces it with a
       // claim ID and never sends the verified subject to the owner browser.
       return json({ ok: true, subject: response.subject, environment: response.environment, verified_at: response.created_at });
+    }
+    if (command.action === "review_application") {
+      const responses = await allValues(tx, `${RESPONSE_PREFIX}${briefId}:`);
+      const response = responses.find((item) => item.response_id === clean(command.response_id, 80));
+      if (!response || response.interest !== "interested" || response.identity_stage !== "pending_review") return json({ ok: false, error: "application_review_required" }, 409);
+      return json({ ok: true, subject: response.subject });
     }
     if (!Number.isInteger(command.version) || command.version !== brief.version) return json({ ok: false, error: "version_conflict", current_version: brief.version }, 409);
     if (command.action === "update") {
