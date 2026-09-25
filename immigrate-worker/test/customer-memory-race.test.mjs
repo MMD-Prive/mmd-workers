@@ -25,7 +25,7 @@ for (const [file, stateKey, oldValue] of [
     querySelectorAll: () => [], createElement: () => node('new' + nodes.size),
     head: node('head'), documentElement: node('html'),
   };
-  const context = vm.createContext({ document, location: { pathname: '/internal/admin/customer-data', href: 'https://example.test/internal/admin/customer-data?client_id=recDeepLink', origin: 'https://example.test' }, URL, setTimeout,
+  const context = vm.createContext({ document, location: { pathname: '/internal/admin/customer-data', href: 'https://example.test/internal/admin/customer-data', origin: 'https://example.test' }, URL, setTimeout,
     MutationObserver: class { constructor(fn) { observer = fn; } observe() {} },
     fetch: () => new Promise(resolve => pending.push(resolve)),
   });
@@ -81,13 +81,21 @@ console.log('Customer memory selection races: passed');
     fetch: () => new Promise(resolve => pending.push(resolve)),
   });
   vm.runInContext(source, context);
+  assert.equal(node('[data-detail]').hidden, true, 'scope stays locked before the canonical read');
+  assert.equal(node('[data-empty]').hidden, false);
+  assert.equal(node('[data-client]').textContent, '—');
+  assert.doesNotMatch(node('[data-session]').href, /client_id=recDeepLink/);
+  assert.equal(pending.length, 1);
+  pending[0]({ ok: true, status: 200, text: async () => JSON.stringify({
+    ok: true, client_id: 'recDeepLink', identity: { status: 'canonical' },
+  }) });
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(node('[data-detail]').hidden, false);
   assert.equal(node('[data-empty]').hidden, true);
   assert.equal(node('[data-client]').textContent, 'recDeepLink');
   assert.equal(node('[data-name]').textContent, 'ลูกค้า Canonical ที่เลือก');
   assert.equal(node('.decision').hidden, true);
   assert.match(node('[data-session]').href, /client_id=recDeepLink/);
-  assert.equal(pending.length, 1);
 }
 
 console.log('Customer memory deep link: passed');

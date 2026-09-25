@@ -19,6 +19,16 @@ const MY_CARD_SOURCE = "mmd_model_my_card";
 const MY_CARD_INTENT = "model_compcard_request";
 const MY_CARD_PENDING_STATUS = "model_request_pending";
 const MY_CARD_SELECTABLE_MEDIA_TYPES = new Set(["profile_photo", "public_gallery"]);
+const MY_CARD_TEMPLATE_LABELS = Object.freeze({
+  "sigil-ems-aureate": "Aureate Vault",
+  "sigil-gws-nightwave": "Nightwave Dossier",
+  "sigil-straight-bronze": "Bronze Study",
+  "sigil-gay-plum": "Plum Study",
+  "sigil-foreigner-emerald": "Emerald Study",
+  "sigil-travel-prive": "MMD Privé Travel",
+  "sigil-extreme-prive": "MMD Privé Extreme",
+});
+const MY_CARD_TEMPLATE_IDS = new Set(Object.keys(MY_CARD_TEMPLATE_LABELS));
 const COOKIE_NAME = "mmd_model_session_v1";
 const LINE_VERIFY_URL = "https://api.line.me/oauth2/v2.1/verify";
 const MODELS_TABLE_DEFAULT = "Models";
@@ -562,7 +572,7 @@ async function handleMyCardRequestCreate(request, env) {
   const now = new Date().toISOString();
   const mediaFields = media.record.fields || {};
   const payload = {
-    version: "my_card_request_v1",
+    version: "my_card_request_v2",
     model_record_id: auth.payload.model_record_id,
     model: {
       working_name: profile.working_name,
@@ -575,6 +585,12 @@ async function handleMyCardRequestCreate(request, env) {
       asset_role: clean(mediaFields.asset_role),
       object_key: firstText(mediaFields, ["private_original_key"]),
     },
+    model_template: input.template_id ? {
+      id: input.template_id,
+      label: myCardTemplateLabel(input.template_id),
+      source: "model_selected",
+      selected_at: now,
+    } : null,
     requested_at: now,
   };
   const created = await airtableCreateRecord(env, myCardIntakeTable(env), {
@@ -588,12 +604,13 @@ async function handleMyCardRequestCreate(request, env) {
     field: "",
     run_number: "",
     layer: "",
-    template_hint: "",
+    template_hint: input.template_id || "",
     direction: "",
     checklist_json: JSON.stringify({
       model_submitted: true,
       profile_verified_at_request: true,
       public_media_only: true,
+      model_template_selected: Boolean(input.template_id),
     }),
     payload_json: JSON.stringify(payload),
     status: MY_CARD_PENDING_STATUS,
@@ -609,19 +626,27 @@ async function handleMyCardRequestCreate(request, env) {
   return json({ ok: true, request: safeMyCardRequest(created.record) }, 201, request, env);
 }
 
+function myCardTemplateLabel(templateId) {
+  return MY_CARD_TEMPLATE_LABELS[clean(templateId)] || "";
+}
+
 export function normalizeMyCardRequestInput(input = {}) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return { ok: false, error: "invalid_json" };
   }
   const mediaId = clean(input.media_id || input.mediaId);
   const idempotencyKey = clean(input.idempotency_key || input.idempotencyKey);
+  const templateId = clean(input.template_id || input.templateId || input.template_preference || input.templatePreference);
   if (!/^media_[A-Za-z0-9-]{8,160}$/.test(mediaId)) {
     return { ok: false, error: "media_id_invalid" };
   }
   if (!/^[A-Za-z0-9._:-]{12,200}$/.test(idempotencyKey)) {
     return { ok: false, error: "idempotency_key_invalid" };
   }
-  return { ok: true, media_id: mediaId, idempotency_key: idempotencyKey };
+  if (templateId && !MY_CARD_TEMPLATE_IDS.has(templateId)) {
+    return { ok: false, error: "template_id_invalid" };
+  }
+  return { ok: true, media_id: mediaId, idempotency_key: idempotencyKey, template_id: templateId };
 }
 
 export function isMyCardSelectableMedia(fields = {}) {
@@ -670,6 +695,8 @@ function safeMyCardRequest(record) {
   const payload = parseMyCardPayload(fields.payload_json);
   const model = payload.model || {};
   const media = payload.selected_media || {};
+  const template = payload.model_template || {};
+  const templateId = clean(template.id) || clean(fields.template_hint);
   return {
     request_id: clean(record?.id),
     status: clean(fields.status) || MY_CARD_PENDING_STATUS,
@@ -679,6 +706,8 @@ function safeMyCardRequest(record) {
     weight_kg: finiteOrNull(model.weight_kg),
     media_id: clean(media.media_id),
     media_type: clean(media.media_type),
+    template_id: templateId,
+    template_label: clean(template.label) || myCardTemplateLabel(templateId),
   };
 }
 

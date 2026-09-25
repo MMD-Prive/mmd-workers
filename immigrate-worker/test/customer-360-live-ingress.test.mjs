@@ -58,12 +58,19 @@ try {
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
   assert.doesNotMatch(html, /Authorization|X-Confirm-Key|CONFIRM_KEY/);
 
-  const scopedPage = await decorateCustomer360Page(new Response('<html><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
+  const scopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
     headers: { "content-type": "text/html; charset=utf-8" },
   }), "recCanonical123");
   const scopedHtml = await scopedPage.text();
   assert.equal(scopedPage.status, 200);
   assert.match(scopedHtml, /validClientScope/);
+  assert.match(scopedHtml, /\[hidden\]\{display:none!important\}/);
+  assert.match(scopedHtml, /if\(directScope\)\{if\(txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'\)throw Error\('client_scope_unresolved'\);revealDirectClient\(\)\}/);
+  assert.match(scopedHtml, /if\(backfill\)backfill.disabled=imp.running\|\|directScope/);
+  assert.match(scopedHtml, /function syncClient\(\)\{if\(directScope\)\{loadIntel\(directClient\);return\}/);
+  const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
+  assert.equal(emptyScopedPage.status, 200);
+  assert.doesNotMatch(await emptyScopedPage.text(), /load\('review_required'\);summary\(\)/);
   assert.match(scopedHtml, /CLIENT SCOPE LOCKED/);
   assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
   assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);

@@ -79,7 +79,7 @@ export default {
 
     const response = await canonicalWorker.fetch(request, env);
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      return decorateCustomer360Page(response, String(url.searchParams.get("client_id") || "").trim(), url.searchParams.has("client_id"));
+      return decorateCustomer360Page(response, url.searchParams.has("client_id") ? String(url.searchParams.get("client_id") || "").trim() : null);
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
@@ -97,14 +97,14 @@ export default {
   },
 };
 
-export async function decorateCustomer360Page(response: Response, requestedClientId = "", clientScopeRequested = false): Promise<Response> {
+export async function decorateCustomer360Page(response: Response, requestedClientId: string | null = null): Promise<Response> {
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) return response;
   let html = await response.text();
-  if (clientScopeRequested || requestedClientId) {
+  if (requestedClientId !== null) {
     const defaultBoot = "load('review_required');summary()})();";
     const scopedBoot = "var requestedClientId=String(new URLSearchParams(location.search).get('client_id')||'').trim(),validClientScope=/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId);var queuePanel=q('.work aside'),summaryPanel=q('.summary'),guide=q('.memory-guide'),decision=q('.decision');if(queuePanel)queuePanel.hidden=true;if(summaryPanel)summaryPanel.hidden=true;if(guide)guide.hidden=true;if(decision)decision.hidden=true;if(q('[data-backfill]'))q('[data-backfill]').disabled=true;if(q('[data-refresh]'))q('[data-refresh]').disabled=true;q('[data-state]').textContent=validClientScope?'CANONICAL CLIENT':'CLIENT SCOPE LOCKED';if(!validClientScope){q('[data-empty]').hidden=false;q('[data-empty]').textContent='client_id ไม่ถูกต้อง · หยุดแบบ fail-closed และไม่เปิดคิวลูกค้ารายอื่น'}else{q('[data-list]').innerHTML='<div class=\"empty\">เปิดเฉพาะ Canonical Client ที่เลือก · กำลังตรวจ source scope</div>'}})();";
     if (!html.includes(defaultBoot)) return new Response("customer_scope_contract_unavailable", { status: 503, headers: { "cache-control": "no-store" } });
-    html = html.replace(defaultBoot, scopedBoot);
+    html = html.replace(defaultBoot, scopedBoot).replace("</head>", "<style>[hidden]{display:none!important}</style></head>");
   }
   const liveScript = `<script data-mmd-customer-360-live-client="v1">${CUSTOMER_360_LIVE_CLIENT}</script>`;
   const alignmentScript = `<script data-mmd-customer-identity-alignment-client="v1">${CUSTOMER_IDENTITY_ALIGNMENT_CLIENT}</script>`;

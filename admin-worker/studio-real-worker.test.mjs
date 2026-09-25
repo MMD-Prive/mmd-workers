@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import studioWorker, { handleStudioRequest, normalizeStudioReview } from "./src/studio-real-worker.js";
+import studioWorker, { handleStudioRequest, normalizeStudioIntake, normalizeStudioReview } from "./src/studio-real-worker.js";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -111,6 +111,24 @@ test("Studio review preserves the My Card request id while Studio controls grade
   }), /invalid_run_number/);
 });
 
+test("Studio intake retains a valid model-selected template while Studio owns the final template", () => {
+  const normalized = normalizeStudioIntake({
+    compcard_request_id: "recMyCardRequest123",
+    model_name: "Mek",
+    field: "ST",
+    layer: "Private / SIGIL",
+    template_hint: "sigil-straight-bronze",
+    model_template_id: "sigil-gws-nightwave",
+    source_owner: "model:rec12345678901234",
+    category_path: "MMD MODEL / My Card",
+  });
+  assert.equal(normalized.model_template_id, "sigil-gws-nightwave");
+  assert.throws(() => normalizeStudioIntake({
+    ...normalized,
+    model_template_id: "internal-template",
+  }), /invalid_model_template_id/);
+});
+
 test("My Card inbox never returns the stored object key to the Studio browser", async () => {
   globalThis.fetch = async (url, init = {}) => {
     if (!init.method || init.method === "GET") {
@@ -130,6 +148,7 @@ test("My Card inbox never returns the stored object key to the Studio browser", 
                 media_type: "public_gallery",
                 object_key: "models/rec12345678901234/public_gallery/media_12345678.jpg",
               },
+              model_template: { id: "sigil-gws-nightwave", label: "Nightwave Dossier", source: "model_selected" },
             }),
           },
         }],
@@ -146,6 +165,8 @@ test("My Card inbox never returns the stored object key to the Studio browser", 
   const data = await json(res);
   assert.equal(data.requests[0].request_id, "recMyCardRequest123");
   assert.equal(data.requests[0].media_id, "media_12345678");
+  assert.equal(data.requests[0].template_id, "sigil-gws-nightwave");
+  assert.equal(data.requests[0].template_label, "Nightwave Dossier");
   assert.equal(JSON.stringify(data.requests[0]).includes("object_key"), false);
 });
 
