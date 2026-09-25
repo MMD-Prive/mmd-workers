@@ -80,6 +80,10 @@ export async function handleLineJobBriefRequest(request, env = {}) {
     const stub = namespace.get(namespace.idFromName(STORE_NAME));
     const response = await stub.fetch(STORE_PATH, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) });
     const payload = await response.json().catch(() => ({ ok: false, error: "brief_store_unavailable" }));
+    if (owner && action === "detail" && response.ok && payload.ok === true) {
+      payload.responses = await withCurrentModelFolderStatus(env, payload.responses);
+      return json(payload, response.status);
+    }
     if (owner && action === "review_application" && response.ok && payload.ok === true) {
       const application = await inspectPhaseAApplication(env, payload.subject);
       if (!application.ok) return json({ ok: false, error: "application_status_unavailable" }, 503);
@@ -122,6 +126,36 @@ async function inspectPhaseAApplication(env, subject) {
 async function sha256(value) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function withCurrentModelFolderStatus(env, responses) {
+  if (!Array.isArray(responses)) return [];
+  const ids = [...new Set(responses.map((item) => clean(item.model_record_id, 60)).filter((id) => /^rec[A-Za-z0-9]{14,30}$/.test(id)))].slice(0, 100);
+  const current = new Map();
+  if (ids.length && clean(env.AIRTABLE_API_KEY) && clean(env.AIRTABLE_BASE_ID)) {
+    for (let offset = 0; offset < ids.length; offset += 20) {
+      const group = ids.slice(offset, offset + 20);
+      const url = new URL(`https://api.airtable.com/v0/${encodeURIComponent(env.AIRTABLE_BASE_ID)}/${encodeURIComponent(clean(env.AIRTABLE_TABLE_MODELS || "Models"))}`);
+      url.searchParams.set("pageSize", String(group.length));
+      url.searchParams.set("filterByFormula", `OR(${group.map((id) => `RECORD_ID()="${id}"`).join(",")})`);
+      try {
+        const result = await fetch(url, { headers: { authorization: `Bearer ${env.AIRTABLE_API_KEY}` } });
+        const data = await result.json().catch(() => ({}));
+        if (!result.ok || !Array.isArray(data.records)) continue;
+        for (const record of data.records) {
+          if (!group.includes(record.id)) continue;
+          const fields = record.fields || {};
+          current.set(record.id, {
+            working_name: clean(fields.working_name || fields.display_name || fields.nickname, 120),
+            folder_status: clean(fields.drive_folder_id || fields.drive_folder_url, 180) ? "linked" : "missing",
+          });
+        }
+      } catch { /* A failed lookup remains visibly unavailable to the owner. */ }
+    }
+  }
+  return responses.map((item) => item.model_record_id
+    ? { ...item, model_identity: current.get(item.model_record_id) || { working_name: "", folder_status: "unavailable" } }
+    : item);
 }
 
 function parseBangkok(value) {

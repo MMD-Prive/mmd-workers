@@ -197,6 +197,45 @@ test("owner reviews the exact Phase A application linked to an interested subjec
   assert.equal((await durable(state, { audience: "model", action: "review_application", brief_id: id, subject: SUBJECT })).status, 403);
 });
 
+test("owner detail reads current canonical Folder status without exposing Folder IDs or URLs", async () => {
+  const state = { storage: new MemoryStorage() };
+  const id = await createPublished(state);
+  const modelId = "recExisting123456";
+  await durable(state, { audience: "model", action: "respond", brief_id: id,
+    subject: SUBJECT, identity_stage: "existing_bound", model_record_id: modelId, interest: "interested" });
+  const env = { ADMIN_SESSION_SECRET: "test-secret", ADMIN_LOGIN_CREDENTIAL: "test-credential",
+    AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base",
+    MODEL_ACTIVATION_COORDINATOR: { idFromName: (name) => name, get: () => ({
+      fetch: (url, init) => handleLineJobBriefDurableRequest(state, env, new Request(url, init)),
+    }) } };
+  const token = await createCredentialBoundAdminSession(new Request(`${ORIGIN}/internal/admin/login`), { id: "per", role: "owner" }, env);
+  const originalFetch = globalThis.fetch;
+  let fields = { working_name: "Verified Model", drive_folder_id: "private-folder-123" };
+  globalThis.fetch = async (url) => {
+    const target = new URL(url);
+    assert.equal(target.hostname, "api.airtable.com");
+    assert.match(target.searchParams.get("filterByFormula") || "", /recExisting123456/);
+    return fields ? Response.json({ records: [{ id: modelId, fields }] }) : Response.json({ error: "unavailable" }, { status: 503 });
+  };
+  const detail = async () => {
+    const response = await handleLineJobBriefRequest(new Request(`${ORIGIN}/v1/admin/model/line-briefs`, {
+      method: "POST", headers: { origin: ORIGIN, "content-type": "application/json", cookie: `mmd_admin_gate_v1=${token}` },
+      body: JSON.stringify({ action: "detail", brief_id: id }),
+    }), env);
+    return response.json();
+  };
+  try {
+    const linked = await detail();
+    assert.deepEqual(linked.responses[0].model_identity, { working_name: "Verified Model", folder_status: "linked" });
+    assert.equal(JSON.stringify(linked).includes("private-folder-123"), false);
+    assert.equal(JSON.stringify(linked).includes(SUBJECT), false);
+    fields = { working_name: "Verified Model" };
+    assert.equal((await detail()).responses[0].model_identity.folder_status, "missing");
+    fields = null;
+    assert.equal((await detail()).responses[0].model_identity.folder_status, "unavailable");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("public handler rejects missing admin session, wrong origin, wrong role and forged model identity fields", async () => {
   const env = { ADMIN_SESSION_SECRET: "test-secret", ADMIN_LOGIN_CREDENTIAL: "test-credential" };
   const req = (path, body, headers = {}) => new Request(`${ORIGIN}${path}`, { method: "POST",

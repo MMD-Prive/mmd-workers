@@ -10,7 +10,7 @@ export const MODEL_LINE_BRIEFS_JS = `(() => {
     format: "jobBrief.format", duties: "jobBrief.duties", customers: "jobBrief.customers", hours: "jobBrief.hours",
     models: "jobBrief.models", note: "jobBrief.note", interest: "jobBrief.interest", decline: "jobBrief.decline",
     saved: "jobBrief.saved", interestPending: "jobBrief.interestPending", error: "jobBrief.error", empty: "jobBrief.empty", expired: "jobBrief.expired",
-    apply: "jobBrief.apply", loading: "jobBrief.loading", status: "jobBrief.status", hiddenLabel: "jobBrief.hiddenLabel",
+    apply: "jobBrief.apply", loading: "jobBrief.loading", status: "jobBrief.status", hiddenLabel: "jobBrief.hiddenLabel", backToBriefs: "jobBrief.backToBriefs",
   };
   const EN = {
     title: "Available assignments", intro: "Review the brief and tell MMD whether you are interested.", refresh: "Refresh",
@@ -18,7 +18,7 @@ export const MODEL_LINE_BRIEFS_JS = `(() => {
     format: "Format", duties: "Duties", customers: "Customers", hours: "Hours", models: "Models needed",
     note: "Note", interest: "I'm interested", decline: "Not interested", saved: "Your response was saved.", interestPending: "Interest sent. MMD will review it. This does not confirm the job.",
     error: "We could not load this brief. Please try again.", empty: "No available briefs at this time.", expired: "This brief has expired.",
-    apply: "Continue model application", loading: "Loading briefs…", status: "Status", hiddenLabel: "Hidden",
+    apply: "Continue model application", loading: "Loading briefs…", status: "Status", hiddenLabel: "Hidden", backToBriefs: "Browse open briefs",
   };
   const LANG = new URLSearchParams(location.search).get("lang") || "th";
   const params = new URLSearchParams(location.search);
@@ -97,7 +97,7 @@ export const MODEL_LINE_BRIEFS_JS = `(() => {
         if (detail.ok) { const data = await detail.json(); if (data.brief) items.unshift({ ...data.brief, my_interest: data.my_interest, identity_stage: data.identity_stage }); }
       }
       if (!items.length) { statusText(t("empty")); return; }
-      statusText(""); items.sort((a, b) => (a.brief_id === DEEP_BRIEF_ID ? -1 : b.brief_id === DEEP_BRIEF_ID ? 1 : 0)); items.forEach(item => { const card = cardFor(item); listNode.append(card); if (item.status !== "published") { card.classList.add("is-expired"); card.append(el("p", "mmd-line-briefs__expired", t("expired"))); } });
+      statusText(""); items.sort((a, b) => (a.brief_id === DEEP_BRIEF_ID ? -1 : b.brief_id === DEEP_BRIEF_ID ? 1 : 0)); items.forEach(item => { const card = cardFor(item); listNode.append(card); if (item.status !== "published") { card.classList.add("is-expired"); card.append(el("p", "mmd-line-briefs__expired", t("expired"))); const back = el("a", "mmd-line-briefs__button mmd-line-briefs__button--secondary", t("backToBriefs")); const url = new URL("/sigil/model/dashboard", location.origin); url.searchParams.set("briefs", "1"); if (ENV !== "published") url.searchParams.set("liff_env", ENV); back.href = url.toString(); card.append(back); } });
     } catch (_) { showError(); }
   }
   function withScript(url, id) { return new Promise((resolve, reject) => { if (document.getElementById(id)) return resolve(); const script = document.createElement("script"); script.id = id; script.src = url; script.onload = resolve; script.onerror = reject; document.head.append(script); }); }
