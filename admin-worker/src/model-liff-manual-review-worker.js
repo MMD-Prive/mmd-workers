@@ -109,7 +109,7 @@ async function findModelsByLineUserId(env, lineUserId) {
   return { ok: true, records: [...records.values()] };
 }
 
-async function upsertIdentityClaim(env, input) {
+export async function upsertIdentityClaim(env, input) {
   const table = claimsTable(env);
   const claimId = `model_line_${input.lineHash.slice(0, 24)}`;
   const fields = {

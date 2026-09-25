@@ -38,6 +38,7 @@ import {
   isOwnerPrivateJobGrantCreateRequest,
 } from "./owner-private-job-grant-create.js";
 import { readCredentialBoundAdminActor } from "./credential-bound-admin-session.js";
+import { handleLineJobBriefRequest, isLineJobBriefRequest } from "./model-line-job-briefs.js";
 import {
   handleKenjiConversationShadowReceiptAdmin,
   isKenjiConversationShadowReceiptAdminRequest,
@@ -189,6 +190,7 @@ export default {
   },
   async fetch(request, env, ctx) {
     const runtimeEnv = modelMoneyRuntimeEnv(env);
+    if (isLineJobBriefRequest(request)) return handleLineJobBriefRequest(request, runtimeEnv);
     if (isPartnerOwnerConsoleRequest(request)) return handlePartnerOwnerConsole(request, runtimeEnv, ctx);
     if (isModelOwnerReviewQueueRequest(request)) return handleModelOwnerReviewQueue(request, runtimeEnv);
     if (isPrivateMediaReviewRequest(request)) return handlePrivateMediaReview(request, runtimeEnv, ctx);
