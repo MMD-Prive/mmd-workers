@@ -18,7 +18,7 @@ try {
     platform: "browser",
     target: "es2022",
   });
-  const { decorateCustomer360Page, redactCustomerQueueResponse } = await import(pathToFileURL(outfile).href);
+  const { decorateCustomer360Page, enforceExactCanonicalClientScope, redactCustomerQueueResponse } = await import(pathToFileURL(outfile).href);
 
   const page = await decorateCustomer360Page(new Response('<html><body><main class="c360"><button data-backfill>นำเข้าจาก LINE</button><strong data-client>Not linked</strong></main></body></html>', {
     headers: { "content-type": "text/html; charset=utf-8", "x-mmd-customer-data-ui": "readable-v2", "x-mmd-customer-data-authority": "identity-context-staging-only" },
@@ -57,6 +57,41 @@ try {
   assert.match(html, /credentials:'include'/);
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
   assert.doesNotMatch(html, /Authorization|X-Confirm-Key|CONFIRM_KEY/);
+
+  const scopedPage = await decorateCustomer360Page(new Response('<html><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
+    headers: { "content-type": "text/html; charset=utf-8" },
+  }), "recCanonical123");
+  const scopedHtml = await scopedPage.text();
+  assert.equal(scopedPage.status, 200);
+  assert.match(scopedHtml, /validClientScope/);
+  assert.match(scopedHtml, /CLIENT SCOPE LOCKED/);
+  assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
+  assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);
+
+  const exactScope = await enforceExactCanonicalClientScope(Response.json({
+    ok: true,
+    client_id: "recCanonical123",
+    identity: { status: "canonical" },
+  }), "recCanonical123");
+  assert.equal(exactScope.status, 200);
+
+  const mismatchScope = await enforceExactCanonicalClientScope(Response.json({
+    ok: true,
+    client_id: "recDifferent456",
+    identity: { status: "canonical" },
+  }), "recCanonical123");
+  assert.equal(mismatchScope.status, 409);
+  assert.deepEqual(await mismatchScope.json(), { ok: false, error: "client_scope_unresolved" });
+
+  const ambiguousScope = await enforceExactCanonicalClientScope(Response.json({
+    ok: true,
+    client_id: "recCanonical123",
+    identity: { status: "ambiguous" },
+  }), "recCanonical123");
+  assert.equal(ambiguousScope.status, 409);
+
+  const invalidScope = await enforceExactCanonicalClientScope(Response.json({ ok: true }), "not-a-client");
+  assert.equal(invalidScope.status, 400);
 
   const queue = await redactCustomerQueueResponse(Response.json({
     ok: true,

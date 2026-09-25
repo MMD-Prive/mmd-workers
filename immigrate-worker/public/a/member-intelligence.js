@@ -716,7 +716,7 @@
     const steps=byId("miSourceEvidenceSteps");
     if(steps)steps.replaceChildren();
     const link=byId("miSourceEvidenceCustomer360");
-    if(link)link.href="/internal/admin/customer-data";
+    if(link){link.hidden=true;link.removeAttribute("href")}
     const reread=byId("miSourceEvidenceReread");
     if(reread){reread.disabled=true;reread.textContent="RE-READ LATEST EVIDENCE"}
   }
@@ -762,7 +762,12 @@
       }
     }
     const link=byId("miSourceEvidenceCustomer360");
-    if(link)link.href=`${workbench.handoff_path}?client_id=${encodeURIComponent(clientId)}`;
+    const locked=workbench.status.startsWith("locked_");
+    if(link){
+      link.hidden=locked;
+      if(locked)link.removeAttribute("href");
+      else link.href=`${workbench.handoff_path}?client_id=${encodeURIComponent(clientId)}`;
+    }
     const reread=byId("miSourceEvidenceReread");
     if(reread){
       reread.disabled=!workbench.reread_allowed||state.sourceEvidenceRereading;
@@ -786,7 +791,8 @@
     }finally{
       state.sourceEvidenceRereading=false;
       const currentClientId=clean(state.selected?.client_id);
-      if(currentClientId===clientId&&state.intelligence)renderSourceEvidenceWorkbench(state.intelligence,clientId);
+      if(currentClientId&&state.intelligence)renderSourceEvidenceWorkbench(state.intelligence,currentClientId);
+      else if(!currentClientId)resetSourceEvidenceWorkbench();
     }
   }
 

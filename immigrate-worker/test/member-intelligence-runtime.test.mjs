@@ -108,6 +108,13 @@ test("Member Intelligence provides a one-client source evidence owner workbench 
   assert.match(source, /identity_mutated:false/);
   assert.match(source, /entitlement_changed:false/);
   assert.match(source, /customer_send_allowed:false/);
+  assert.match(workbenchSource, /link\.hidden=true;link\.removeAttribute\("href"\)/);
+  assert.match(workbenchSource, /const locked=workbench\.status\.startsWith\("locked_"\)/);
+  assert.match(workbenchSource, /if\(locked\)link\.removeAttribute\("href"\)/);
+  assert.match(workbenchSource, /reread\.disabled=!workbench\.reread_allowed\|\|state\.sourceEvidenceRereading/);
+  assert.doesNotMatch(workbenchSource, /method\s*:\s*["']POST["']/);
+  assert.match(workbenchSource, /if\(currentClientId&&state\.intelligence\)renderSourceEvidenceWorkbench\(state\.intelligence,currentClientId\)/);
+  assert.doesNotMatch(workbenchSource, /currentClientId===clientId&&state\.intelligence/);
   assert.match(source, /bulk_owner_action_allowed:false/);
   assert.match(source, /state\.intelligenceCache\.delete\(clientId\)/);
   assert.match(source, /await selectRecord\(record\)/);
