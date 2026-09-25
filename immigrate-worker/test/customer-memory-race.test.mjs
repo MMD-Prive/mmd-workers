@@ -4,7 +4,6 @@ import vm from 'node:vm';
 
 // Exercise both independent readers with responses arriving after selection changed.
 for (const [file, stateKey, oldValue] of [
-  ['customer-360-live-client.ts', '[data-ci-rel]', 'OLD CLIENT'],
   ['customer-identity-alignment-client.ts', '[data-ia-liff]', 'MATCHED ✓'],
 ]) {
   const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8').split('String.raw`')[1].split('`;')[0];
@@ -17,7 +16,7 @@ for (const [file, stateKey, oldValue] of [
     });
     return nodes.get(selector);
   };
-  node('[data-client]').textContent = 'recAlpha';
+  node('[data-client]').textContent = 'recAlpha123';
   let observer;
   const pending = [];
   const document = {
@@ -37,12 +36,87 @@ for (const [file, stateKey, oldValue] of [
   pending[0]({ ok: true, status: 200, text: async () => JSON.stringify({ relationship: { relationship_state: oldValue }, identity: { alignment: { status: 'verified_match', liff: { status: 'matched' } } } }) });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(node(stateKey).textContent, '—', 'late response must not restore previous client');
-  node('[data-client]').textContent = 'recBeta';
+  node('[data-client]').textContent = 'recBeta456';
   observer();
   assert.equal(pending.length, 2);
   assert.equal(node(stateKey).textContent, '—', 'new selection clears old context while loading');
 }
 console.log('Customer memory selection races: passed');
+
+// Repeated scope parameters are ambiguous and must not fetch either identity panel.
+for (const file of ['customer-identity-alignment-client.ts', 'customer-identity-evidence-protocol-client.ts']) {
+  const source = readFileSync(new URL('../src/' + file, import.meta.url), 'utf8').split('String.raw`')[1].split('`;')[0];
+  const nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      textContent: '', innerHTML: '', hidden: false, dataset: {}, style: {}, className: '',
+      appendChild() {}, insertAdjacentElement() {}, addEventListener() {}, closest() { return null; },
+      setAttribute() {}, replaceChildren() {}, querySelector: s => node(s), querySelectorAll: () => [],
+    });
+    return nodes.get(selector);
+  };
+  node('[data-detail]').hidden = true;
+  let calls = 0;
+  const document = {
+    querySelector: s => /runtime/.test(s) ? null : node(s),
+    querySelectorAll: () => [], createElement: () => node('duplicate-scope-' + nodes.size),
+    head: node('head'), documentElement: node('html'),
+  };
+  const context = vm.createContext({
+    document,
+    location: {
+      pathname: '/internal/admin/customer-data',
+      href: 'https://example.test/internal/admin/customer-data?client_id=recCanonical123&client_id=recDifferent456',
+      origin: 'https://example.test',
+    },
+    URL,
+    setTimeout,
+    MutationObserver: class { observe() {} },
+    fetch: () => { calls += 1; return Promise.reject(new Error('unexpected fetch')); },
+  });
+  vm.runInContext(source, context);
+  assert.equal(calls, 0, `${file} must not read either client from a repeated scope`);
+}
+console.log('Repeated customer scope locks auxiliary identity panels: passed');
+
+// The Customer 360 route itself also fails closed when the client_id is missing.
+{
+  const source = readFileSync(new URL('../src/customer-360-live-client.ts', import.meta.url), 'utf8').split('String.raw`')[1].split('`;')[0];
+  const nodes = new Map();
+  const node = selector => {
+    if (!nodes.has(selector)) nodes.set(selector, {
+      textContent: '', innerHTML: '', hidden: false, href: '', dataset: {}, style: {},
+      appendChild() {}, insertAdjacentElement() {}, addEventListener() {}, closest() { return null; },
+      removeAttribute() {}, querySelector: s => node(s), querySelectorAll: () => [],
+    });
+    return nodes.get(selector);
+  };
+  node('[data-detail]').hidden = true;
+  let calls = 0;
+  const document = {
+    querySelector: s => /runtime/.test(s) ? null : node(s),
+    querySelectorAll: () => [], createElement: () => node('missing-scope-' + nodes.size),
+    head: node('head-missing-scope'), documentElement: node('html-missing-scope'),
+  };
+  const context = vm.createContext({
+    document,
+    location: {
+      pathname: '/internal/admin/customer-data',
+      href: 'https://example.test/internal/admin/customer-data',
+      origin: 'https://example.test',
+    },
+    URL,
+    setTimeout,
+    MutationObserver: class { observe() {} },
+    fetch: () => { calls += 1; return Promise.reject(new Error('unexpected fetch')); },
+  });
+  vm.runInContext(source, context);
+  assert.equal(calls, 0, 'missing client_id must not fetch the generic queue or client intelligence');
+  assert.equal(node('[data-state]').textContent, 'CLIENT SCOPE LOCKED');
+  assert.match(node('[data-empty]').textContent, /client_id ไม่ถูกต้องหรือไม่ชัดเจน/);
+  assert.equal(node('[data-detail]').hidden, true);
+}
+console.log('Missing Customer 360 scope locks without fallback: passed');
 
 // A canonical deep link from Member Intelligence must reveal a read-only detail
 // surface even when the client is absent from the current staging review queue.

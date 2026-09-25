@@ -111,7 +111,12 @@ test("Member Intelligence provides a one-client source evidence owner workbench 
   assert.match(workbenchSource, /link\.hidden=true;link\.removeAttribute\("href"\)/);
   assert.match(workbenchSource, /const locked=workbench\.status\.startsWith\("locked_"\)/);
   assert.match(workbenchSource, /if\(locked\)link\.removeAttribute\("href"\)/);
-  assert.match(workbenchSource, /reread\.disabled=!workbench\.reread_allowed\|\|state\.sourceEvidenceRereading/);
+  assert.match(workbenchSource, /reread\.disabled=!workbench\.reread_allowed\|\|rereading/);
+  assert.match(workbenchSource, /conflict_locked:"locked_conflict"/);
+  assert.match(workbenchSource, /unavailable_locked:"locked_unavailable"/);
+  assert.match(workbenchSource, /reread_allowed:!locked&&status!=="complete"/);
+  assert.match(workbenchSource, /หลักฐานขัดกัน · หยุดการทำงานใน workbench และแก้ที่ source of truth ก่อน/);
+  assert.match(workbenchSource, /อ่าน source evidence ไม่ได้อย่างปลอดภัย · หยุดการทำงานและกู้การอ่านข้อมูลก่อน/);
   assert.doesNotMatch(workbenchSource, /method\s*:\s*["']POST["']/);
   assert.match(workbenchSource, /if\(currentClientId&&state\.intelligence\)renderSourceEvidenceWorkbench\(state\.intelligence,currentClientId\)/);
   assert.doesNotMatch(workbenchSource, /currentClientId===clientId&&state\.intelligence/);
@@ -122,6 +127,54 @@ test("Member Intelligence provides a one-client source evidence owner workbench 
   assert.doesNotMatch(workbenchSource, /method:\s*["']POST["']/);
   assert.doesNotMatch(workbenchSource, /identity\/(?:verify|merge|commit)/i);
   assert.doesNotMatch(workbenchSource, /membership[_-](?:activate|renew|grant)/i);
+  assert.match(workbenchSource, /sourceEvidenceRereadingClients\.has\(clean\(clientId\)\)/);
+  assert.match(workbenchSource, /state\.sourceEvidenceRereadingClients\.add\(clientId\)/);
+  assert.match(workbenchSource, /state\.sourceEvidenceRereadingClients\.delete\(clientId\)/);
+  assert.doesNotMatch(workbenchSource, /\/(?:verify|merge|membership\/(?:activate|renew|grant)|access\/(?:grant|revoke)|points\/|payments\/.*(?:capture|confirm)|messages\/.*\/send)/i);
+});
+
+test("a completed re-read for client A leaves selected client B re-read enabled", async () => {
+  const start = source.indexOf("  async function rereadSelectedSourceEvidence(){");
+  const end = source.indexOf("\n  function resetIdentityReadinessUi(", start);
+  assert.ok(start >= 0 && end > start, "re-read implementation is available for race exercise");
+  const rereadSource = source.slice(start, end);
+  const state = {
+    selected: { client_id: "recClientA123" },
+    intelligence: { workbench: { reread_allowed: true } },
+    sourceEvidenceWorkbench: { reread_allowed: true },
+    sourceEvidenceRereadingClients: new Set(),
+    intelligenceCache: new Map([["recClientA123", {}]]),
+  };
+  let finishA;
+  const pendingA = new Promise((resolve) => { finishA = resolve; });
+  let rereadDisabled = false;
+  const renderSourceEvidenceWorkbench = (_payload, clientId) => {
+    rereadDisabled = !state.sourceEvidenceWorkbench?.reread_allowed
+      || state.sourceEvidenceRereadingClients.has(String(clientId).trim());
+  };
+  const run = new Function(
+    "state", "clean", "renderSourceEvidenceWorkbench", "setStatus", "selectRecord",
+    `${rereadSource}; return rereadSelectedSourceEvidence;`,
+  )(
+    state,
+    (value) => String(value ?? "").trim(),
+    renderSourceEvidenceWorkbench,
+    () => {},
+    async () => pendingA,
+  );
+
+  const readA = run();
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123"), true);
+  state.selected = { client_id: "recClientB456" };
+  state.intelligence = { workbench: { reread_allowed: true } };
+  state.sourceEvidenceWorkbench = { reread_allowed: true };
+  renderSourceEvidenceWorkbench(state.intelligence, "recClientB456");
+  assert.equal(rereadDisabled, false, "B is not disabled by A's in-flight request");
+
+  finishA();
+  await readA;
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123"), false);
+  assert.equal(rereadDisabled, false, "A completion leaves the currently selected B usable");
 });
 
 test("Member Intelligence records bounded operator quality feedback before enabling copy", () => {

@@ -12,6 +12,11 @@ const CANONICAL_PUBLIC_ORIGIN = "https://mmdbkk.com";
 const WORKERS_DEV_SUFFIX = ".workers.dev";
 const SAFE_MEMBERSHIP_CONTEXT_KEYS = ["plan", "package", "tier", "code", "promo", "src", "campaign", "from"];
 
+export function resolveRequestedClientId(searchParams: URLSearchParams): string {
+  const clientIds = searchParams.getAll("client_id");
+  return clientIds.length === 1 ? String(clientIds[0] || "").trim() : "";
+}
+
 function normalizePath(value: string): string {
   const path = String(value || "/").replace(/\/{2,}/g, "/");
   return path.length > 1 ? path.replace(/\/+$/g, "") : path;
@@ -79,13 +84,13 @@ export default {
 
     const response = await canonicalWorker.fetch(request, env);
     if (method === "GET" && path === CUSTOMER_PAGE) {
-      return decorateCustomer360Page(response, url.searchParams.has("client_id") ? String(url.searchParams.get("client_id") || "").trim() : null);
+      return decorateCustomer360Page(response, resolveRequestedClientId(url.searchParams));
     }
     if (method === "GET" && path === CUSTOMER_QUEUE) {
       return redactCustomerQueueResponse(response);
     }
     if (method === "GET" && path === CLIENT_INTELLIGENCE) {
-      const clientId = String(url.searchParams.get("client_id") || "").trim();
+      const clientId = resolveRequestedClientId(url.searchParams) || "";
       const augmented = await augmentClientIntelligenceWithIdentityAlignment(
         response,
         env,
@@ -102,7 +107,7 @@ export async function decorateCustomer360Page(response: Response, requestedClien
   let html = await response.text();
   if (requestedClientId !== null) {
     const defaultBoot = "load('review_required');summary()})();";
-    const scopedBoot = "var requestedClientId=String(new URLSearchParams(location.search).get('client_id')||'').trim(),validClientScope=/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId);var queuePanel=q('.work aside'),summaryPanel=q('.summary'),guide=q('.memory-guide'),decision=q('.decision');if(queuePanel)queuePanel.hidden=true;if(summaryPanel)summaryPanel.hidden=true;if(guide)guide.hidden=true;if(decision)decision.hidden=true;if(q('[data-backfill]'))q('[data-backfill]').disabled=true;if(q('[data-refresh]'))q('[data-refresh]').disabled=true;q('[data-state]').textContent=validClientScope?'CANONICAL CLIENT':'CLIENT SCOPE LOCKED';if(!validClientScope){q('[data-empty]').hidden=false;q('[data-empty]').textContent='client_id ไม่ถูกต้อง · หยุดแบบ fail-closed และไม่เปิดคิวลูกค้ารายอื่น'}else{q('[data-list]').innerHTML='<div class=\"empty\">เปิดเฉพาะ Canonical Client ที่เลือก · กำลังตรวจ source scope</div>'}})();";
+    const scopedBoot = "var requestedParams=new URLSearchParams(location.search),requestedIds=requestedParams.getAll('client_id'),requestedClientId=requestedIds.length===1?String(requestedIds[0]||'').trim():'',validClientScope=/^rec[A-Za-z0-9]{6,32}$/.test(requestedClientId);var queuePanel=q('.work aside'),summaryPanel=q('.summary'),guide=q('.memory-guide'),decision=q('.decision');if(queuePanel)queuePanel.hidden=true;if(summaryPanel)summaryPanel.hidden=true;if(guide)guide.hidden=true;if(decision)decision.hidden=true;if(q('[data-backfill]'))q('[data-backfill]').disabled=true;if(q('[data-refresh]'))q('[data-refresh]').disabled=true;q('[data-state]').textContent=validClientScope?'CANONICAL CLIENT':'CLIENT SCOPE LOCKED';if(!validClientScope){q('[data-empty]').hidden=false;q('[data-empty]').textContent='client_id ไม่ถูกต้องหรือไม่ชัดเจน · หยุดแบบ fail-closed และไม่เปิดคิวลูกค้ารายอื่น'}else{q('[data-list]').innerHTML='<div class=\"empty\">เปิดเฉพาะ Canonical Client ที่เลือก · กำลังตรวจ source scope</div>'}})();";
     if (!html.includes(defaultBoot)) return new Response("customer_scope_contract_unavailable", { status: 503, headers: { "cache-control": "no-store" } });
     html = html.replace(defaultBoot, scopedBoot).replace("</head>", "<style>[hidden]{display:none!important}</style></head>");
   }

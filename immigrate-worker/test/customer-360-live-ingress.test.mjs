@@ -18,7 +18,12 @@ try {
     platform: "browser",
     target: "es2022",
   });
-  const { decorateCustomer360Page, enforceExactCanonicalClientScope, redactCustomerQueueResponse } = await import(pathToFileURL(outfile).href);
+  const { decorateCustomer360Page, enforceExactCanonicalClientScope, redactCustomerQueueResponse, resolveRequestedClientId } = await import(pathToFileURL(outfile).href);
+
+  assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123")), "recCanonical123");
+  assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=%20recCanonical123%20")), "recCanonical123");
+  assert.equal(resolveRequestedClientId(new URLSearchParams("")), "");
+  assert.equal(resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")), "");
 
   const page = await decorateCustomer360Page(new Response('<html><body><main class="c360"><button data-backfill>นำเข้าจาก LINE</button><strong data-client>Not linked</strong></main></body></html>', {
     headers: { "content-type": "text/html; charset=utf-8", "x-mmd-customer-data-ui": "readable-v2", "x-mmd-customer-data-authority": "identity-context-staging-only" },
@@ -64,13 +69,21 @@ try {
   const scopedHtml = await scopedPage.text();
   assert.equal(scopedPage.status, 200);
   assert.match(scopedHtml, /validClientScope/);
+  assert.match(scopedHtml, /requestedIds\.length===1/);
   assert.match(scopedHtml, /\[hidden\]\{display:none!important\}/);
   assert.match(scopedHtml, /if\(directScope\)\{if\(txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'\)throw Error\('client_scope_unresolved'\);revealDirectClient\(\)\}/);
   assert.match(scopedHtml, /if\(backfill\)backfill.disabled=imp.running\|\|directScope/);
-  assert.match(scopedHtml, /function syncClient\(\)\{if\(directScope\)\{loadIntel\(directClient\);return\}/);
+  assert.match(scopedHtml, /const directScope=true/);
+  assert.match(scopedHtml, /getAll\('client_id'\),directClient=clientIds\.length===1/);
+  assert.match(scopedHtml, /String\(clientIds\[0\]\|\|''\)\.trim\(\)/);
+  assert.match(scopedHtml, /INTEL\+'\?client_id='\+encodeURIComponent\(id\)/);
   const emptyScopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><script>load(\'review_required\');summary()})();</script></body></html>', { headers: { 'content-type': 'text/html' } }), '');
   assert.equal(emptyScopedPage.status, 200);
-  assert.doesNotMatch(await emptyScopedPage.text(), /load\('review_required'\);summary\(\)/);
+  const emptyScopedHtml = await emptyScopedPage.text();
+  assert.doesNotMatch(emptyScopedHtml, /load\('review_required'\);summary\(\)/);
+  assert.match(emptyScopedHtml, /CLIENT SCOPE LOCKED/);
+  assert.match(emptyScopedHtml, /client_id ไม่ถูกต้องหรือไม่ชัดเจน/);
+  assert.match(emptyScopedHtml, /const directScope=true/);
   assert.match(scopedHtml, /CLIENT SCOPE LOCKED/);
   assert.match(scopedHtml, /เปิดเฉพาะ Canonical Client ที่เลือก/);
   assert.doesNotMatch(scopedHtml, /load\('review_required'\);summary\(\)/);
@@ -99,6 +112,18 @@ try {
 
   const invalidScope = await enforceExactCanonicalClientScope(Response.json({ ok: true }), "not-a-client");
   assert.equal(invalidScope.status, 400);
+  const missingScope = await enforceExactCanonicalClientScope(Response.json({ ok: true }), "");
+  assert.equal(missingScope.status, 400);
+  const repeatedScope = await enforceExactCanonicalClientScope(
+    Response.json({ ok: true, client_id: "recCanonical123", identity: { status: "canonical" } }),
+    resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")) || "",
+  );
+  assert.equal(repeatedScope.status, 400);
+  const unavailableScope = await enforceExactCanonicalClientScope(new Response('{"ok":false,"error":"source_unavailable"}', {
+    status: 503,
+    headers: { "content-type": "application/json" },
+  }), "recCanonical123");
+  assert.equal(unavailableScope.status, 503);
 
   const queue = await redactCustomerQueueResponse(Response.json({
     ok: true,
