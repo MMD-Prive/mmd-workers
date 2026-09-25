@@ -1,5 +1,6 @@
 import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
 import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
+import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
 const UI_PREFIX = "/sigil/model/dashboard";
@@ -27,6 +28,8 @@ const TELEGRAM_CONNECT_JS_PATH = `${ASSET_PREFIX}telegram-connect-v1.js`;
 const TELEGRAM_CONNECT_CSS_PATH = `${ASSET_PREFIX}telegram-connect-v1.css`;
 const MODEL_HISTORY_JS_PATH = `${ASSET_PREFIX}model-history-v1.js`;
 const MODEL_HISTORY_CSS_PATH = `${ASSET_PREFIX}model-history-v1.css`;
+const MODEL_LINE_BRIEFS_JS_PATH = `${ASSET_PREFIX}model-line-briefs-v1.js`;
+const MODEL_LINE_BRIEFS_CSS_PATH = `${ASSET_PREFIX}model-line-briefs-v1.css`;
 const MODEL_PWA_MANIFEST_PATH = `${UI_PREFIX}/manifest.webmanifest`;
 const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp";
 
@@ -595,7 +598,19 @@ function modelOnboardingPhaseAResponse(request) {
     headers.set("allow", "GET, HEAD");
     return new Response(null, { status: 405, headers });
   }
-  return new Response(request.method.toUpperCase() === "HEAD" ? null : modelOnboardingPhaseAHtml(resolveLiffEnvironmentFromRequest(request)), { status: 200, headers });
+  const briefId = boundedParam(new URL(request.url), "brief_id");
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : modelOnboardingPhaseAHtml(resolveLiffEnvironmentFromRequest(request), briefId), { status: 200, headers });
+}
+
+function modelLineBriefsPageResponse(request) {
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8", "cache-control": "no-store, private",
+    "x-mmd-worker": WORKER_NAME, "x-mmd-route-owner": WORKER_NAME,
+    "x-mmd-model-entry": "line-briefs-v1", "x-robots-tag": "noindex, nofollow",
+  });
+  if (!["GET", "HEAD"].includes(request.method.toUpperCase())) return new Response(null, { status: 405, headers });
+  const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>MMD APP · Model briefs</title><link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}"></head><body style="background:#090909;margin:0"><script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer></script></body></html>`;
+  return new Response(request.method.toUpperCase() === "HEAD" ? null : html, { status: 200, headers });
 }
 
 export function shouldServePhaseAAfterBootstrap(request) {
@@ -624,6 +639,10 @@ export function modelMiniAppHandoffUrl(request) {
   if (source.searchParams.get("handoff") === "job-confirmed") {
     params.set("handoff", "job-confirmed");
   }
+
+  const briefId = source.searchParams.get("brief_id");
+  if (briefId && briefId.length <= 128) params.set("brief_id", briefId);
+  if (source.pathname === `${UI_PREFIX}/briefs` || source.searchParams.get("briefs") === "1") params.set("briefs", "1");
 
   const activation = String(source.searchParams.get("activation") || "");
   if (activation && activation.length <= 4096) params.set("activation", activation);
@@ -777,6 +796,16 @@ export function rewritePresentationHtml(html) {
     output = output.replace(
       /<\/body\s*>/i,
       `<script src="${MODEL_HISTORY_JS_PATH}" defer data-mmd-model-history-runtime="v1"></script></body>`,
+    );
+  }
+  if (!output.includes('data-mmd-model-line-briefs-assets="v1"')) {
+    output = output.replace(
+      /<\/head\s*>/i,
+      `<link rel="stylesheet" href="${MODEL_LINE_BRIEFS_CSS_PATH}" data-mmd-model-line-briefs-assets="v1"></head>`,
+    );
+    output = output.replace(
+      /<\/body\s*>/i,
+      `<script src="${MODEL_LINE_BRIEFS_JS_PATH}" defer data-mmd-model-line-briefs-runtime="v1"></script></body>`,
     );
   }
   return output;
@@ -1003,6 +1032,17 @@ function modelHistoryAssetResponse(pathname, method = "GET") {
   return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
 }
 
+function modelLineBriefsAssetResponse(pathname, method = "GET") {
+  const path = normalizePath(pathname);
+  const isHead = String(method || "GET").toUpperCase() === "HEAD";
+  if (!["GET", "HEAD"].includes(String(method || "GET").toUpperCase())) {
+    return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "public, max-age=300" } });
+  }
+  if (path === MODEL_LINE_BRIEFS_JS_PATH) return new Response(isHead ? null : MODEL_LINE_BRIEFS_JS, { status: 200, headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-line-briefs-v1" } });
+  if (path === MODEL_LINE_BRIEFS_CSS_PATH) return new Response(isHead ? null : MODEL_LINE_BRIEFS_CSS, { status: 200, headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-line-briefs-v1" } });
+  return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
+}
+
 function modelPwaManifestResponse(method = "GET") {
   const normalizedMethod = String(method || "GET").toUpperCase();
   if (!["GET", "HEAD"].includes(normalizedMethod)) {
@@ -1044,6 +1084,7 @@ export default {
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isTelegramConnectAssetPath(path)) return telegramConnectAssetResponse(path, request.method);
     if (isModelHistoryAssetPath(path)) return modelHistoryAssetResponse(path, request.method);
+    if (path === MODEL_LINE_BRIEFS_JS_PATH || path === MODEL_LINE_BRIEFS_CSS_PATH) return modelLineBriefsAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
       if (isModelOnboardingPhaseARequest(request)) {
@@ -1053,6 +1094,8 @@ export default {
       if (shouldServeLiffPrimaryBootstrap(request)) return liffPrimaryBootstrapResponse(request);
       if (shouldServePwaLiffBootstrap(request)) return liffPwaBootstrapResponse(request);
       if (shouldHandoffToMiniApp(request)) return miniAppHandoff(request);
+      const briefId = boundedParam(new URL(request.url), "brief_id");
+      if ((path === `${UI_PREFIX}/briefs` || boundedParam(new URL(request.url), "briefs") === "1" || /^brf_[a-zA-Z0-9-]{10,70}$/.test(briefId)) && !isPwaLaunchRequest(request)) return modelLineBriefsPageResponse(request);
       if (shouldServePhaseAAfterBootstrap(request)) return modelOnboardingPhaseAResponse(request);
       return proxyPage(request);
     }
