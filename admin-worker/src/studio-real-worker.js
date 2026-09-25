@@ -17,6 +17,16 @@ const MY_CARD_REQUEST_MEDIA_PATH = `${STUDIO_API_PREFIX}/compcard-requests/media
 const MY_CARD_SOURCE = "mmd_model_my_card";
 const MY_CARD_INTAKE_TABLE_DEFAULT = "Studio_Intake";
 const MODEL_MEDIA_TABLE_DEFAULT = "tblrpQXhHnbTU9RhW";
+const MY_CARD_TEMPLATE_LABELS = Object.freeze({
+  "sigil-ems-aureate": "Aureate Vault",
+  "sigil-gws-nightwave": "Nightwave Dossier",
+  "sigil-straight-bronze": "Bronze Study",
+  "sigil-gay-plum": "Plum Study",
+  "sigil-foreigner-emerald": "Emerald Study",
+  "sigil-travel-prive": "MMD Privé Travel",
+  "sigil-extreme-prive": "MMD Privé Extreme",
+});
+const MY_CARD_TEMPLATE_IDS = new Set(Object.keys(MY_CARD_TEMPLATE_LABELS));
 const LEDGER_COMMIT_CONFIRMATION = "COMMIT_LEDGER_ONLY";
 const STUDIO_ASSET_PREFIX = "studio-staging/assets/";
 const STUDIO_UPLOAD_SOURCE = "mmd_studio_upload";
@@ -163,7 +173,11 @@ async function handleMyCardRequestImport(env, body) {
       model_name: request.model_name,
       source_owner: `model:${payload.model_record_id}`,
       category_path: "MMD MODEL / My Card",
-      direction: "Source selected and submitted by the model. Studio owns field, RUN NUMBER, template, and final design.",
+      model_template_id: request.template_id,
+      model_template_label: request.template_label,
+      direction: request.template_id
+        ? `Source and template selected by the model (${request.template_label || request.template_id}). Studio owns field, RUN NUMBER, and final design.`
+        : "Source selected and submitted by the model. Studio owns field, RUN NUMBER, template, and final design.",
       source_media_id: request.media_id,
       source_media_type: request.media_type,
       height_cm: request.height_cm,
@@ -220,6 +234,8 @@ function safeStudioMyCardRequest(record) {
   const payload = parseMyCardPayload(fields.payload_json);
   const model = payload.model || {};
   const media = payload.selected_media || {};
+  const modelTemplate = payload.model_template || {};
+  const templateId = clean(modelTemplate.id) || clean(fields.template_hint);
   const requestId = clean(record?.id);
   if (!requestId || !clean(payload.model_record_id) || !clean(media.media_id)) return null;
   return {
@@ -231,7 +247,13 @@ function safeStudioMyCardRequest(record) {
     weight_kg: finiteNumberOrNull(model.weight_kg),
     media_id: clean(media.media_id),
     media_type: clean(media.media_type),
+    template_id: templateId,
+    template_label: clean(modelTemplate.label) || myCardTemplateLabel(templateId),
   };
+}
+
+function myCardTemplateLabel(templateId) {
+  return MY_CARD_TEMPLATE_LABELS[clean(templateId)] || "";
 }
 
 function parseMyCardPayload(value) {
@@ -333,6 +355,7 @@ export function normalizeStudioIntake(body = {}) {
   const runNumber = clean(body.run_number || body.runNumber);
   const modelName = clean(body.model_name || body.modelName || body.name);
   const templateHint = clean(body.template_hint || body.template || body.template_title || body.template_id);
+  const modelTemplateId = clean(body.model_template_id || body.model_template || body.model_template_preference);
   const sourceOwner = clean(body.source_owner || body.sourceOwner);
   const categoryPath = clean(body.category_path || body.categoryPath);
 
@@ -341,6 +364,7 @@ export function normalizeStudioIntake(body = {}) {
   if (!field) throw badRequest("invalid_field");
   if (!layer) throw badRequest("invalid_layer");
   if (!templateHint) throw badRequest("template_hint_required");
+  if (modelTemplateId && !MY_CARD_TEMPLATE_IDS.has(modelTemplateId)) throw badRequest("invalid_model_template_id");
   assertSafePathText(sourceOwner, "invalid_source_owner", false);
   assertSafePathText(categoryPath, "invalid_category_path", false);
   requireGradeRunNumber(field, runNumber);
@@ -357,6 +381,7 @@ export function normalizeStudioIntake(body = {}) {
     run_number: runNumber,
     layer,
     template_hint: templateHint,
+    model_template_id: modelTemplateId,
     direction: clean(body.direction || body.per_direction || body.note),
     checklist: normalizeChecklist(body.checklist),
     files: normalizeFileList(body.files),
