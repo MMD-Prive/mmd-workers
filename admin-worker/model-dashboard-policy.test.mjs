@@ -52,13 +52,27 @@ test("My Card accepts only active public profile and gallery media", () => {
   assert.equal(isMyCardSelectableMedia({ ...eligible, media_visibility: "private" }), false);
 });
 
-test("My Card request input requires a scoped media id and an idempotency key", () => {
+test("My Card request input accepts a model-selected template and rejects unknown template ids", () => {
   assert.deepEqual(
     normalizeMyCardRequestInput({
       media_id: "media_12345678",
       idempotency_key: "my-card:request:12345678",
+      template_id: "sigil-gws-nightwave",
     }),
-    { ok: true, media_id: "media_12345678", idempotency_key: "my-card:request:12345678" },
+    {
+      ok: true,
+      media_id: "media_12345678",
+      idempotency_key: "my-card:request:12345678",
+      template_id: "sigil-gws-nightwave",
+    },
+  );
+  assert.equal(
+    normalizeMyCardRequestInput({ media_id: "media_12345678", idempotency_key: "my-card:request:12345678", template_id: "internal-code" }).error,
+    "template_id_invalid",
+  );
+  assert.equal(
+    normalizeMyCardRequestInput({ media_id: "media_12345678", idempotency_key: "my-card:request:12345678" }).template_id,
+    "",
   );
   assert.equal(normalizeMyCardRequestInput({ media_id: "media_invalid" }).ok, false);
   assert.equal(normalizeMyCardRequestInput({ media_id: "media_12345678", idempotency_key: "short" }).error, "idempotency_key_invalid");
