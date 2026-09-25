@@ -67,6 +67,22 @@ test("My Card request input accepts a model-selected template and rejects unknow
     },
   );
   assert.equal(
+    normalizeMyCardRequestInput({
+      media_id: "media_12345678",
+      idempotency_key: "my-card:request:12345678",
+      template_id: "mmd-prive-travel",
+    }).template_id,
+    "mmd-prive-travel",
+  );
+  assert.equal(
+    normalizeMyCardRequestInput({
+      media_id: "media_12345678",
+      idempotency_key: "my-card:request:12345678",
+      template_id: "sigil-extreme-prive",
+    }).template_id,
+    "mmd-prive-extreme",
+  );
+  assert.equal(
     normalizeMyCardRequestInput({ media_id: "media_12345678", idempotency_key: "my-card:request:12345678", template_id: "internal-code" }).error,
     "template_id_invalid",
   );

@@ -23,8 +23,12 @@ const MY_CARD_TEMPLATE_LABELS = Object.freeze({
   "sigil-straight-bronze": "Bronze Study",
   "sigil-gay-plum": "Plum Study",
   "sigil-foreigner-emerald": "Emerald Study",
-  "sigil-travel-prive": "MMD Privé Travel",
-  "sigil-extreme-prive": "MMD Privé Extreme",
+  "mmd-prive-travel": "MMD Privé Travel",
+  "mmd-prive-extreme": "MMD Privé Extreme",
+});
+const MY_CARD_TEMPLATE_ALIASES = Object.freeze({
+  "sigil-travel-prive": "mmd-prive-travel",
+  "sigil-extreme-prive": "mmd-prive-extreme",
 });
 const MY_CARD_TEMPLATE_IDS = new Set(Object.keys(MY_CARD_TEMPLATE_LABELS));
 const LEDGER_COMMIT_CONFIRMATION = "COMMIT_LEDGER_ONLY";
@@ -235,7 +239,7 @@ function safeStudioMyCardRequest(record) {
   const model = payload.model || {};
   const media = payload.selected_media || {};
   const modelTemplate = payload.model_template || {};
-  const templateId = clean(modelTemplate.id) || clean(fields.template_hint);
+  const templateId = normalizeMyCardTemplateId(modelTemplate.id || fields.template_hint);
   const requestId = clean(record?.id);
   if (!requestId || !clean(payload.model_record_id) || !clean(media.media_id)) return null;
   return {
@@ -253,7 +257,12 @@ function safeStudioMyCardRequest(record) {
 }
 
 function myCardTemplateLabel(templateId) {
-  return MY_CARD_TEMPLATE_LABELS[clean(templateId)] || "";
+  return MY_CARD_TEMPLATE_LABELS[normalizeMyCardTemplateId(templateId)] || "";
+}
+
+function normalizeMyCardTemplateId(templateId) {
+  const normalized = clean(templateId);
+  return MY_CARD_TEMPLATE_ALIASES[normalized] || normalized;
 }
 
 function parseMyCardPayload(value) {
@@ -355,7 +364,9 @@ export function normalizeStudioIntake(body = {}) {
   const runNumber = clean(body.run_number || body.runNumber);
   const modelName = clean(body.model_name || body.modelName || body.name);
   const templateHint = clean(body.template_hint || body.template || body.template_title || body.template_id);
-  const modelTemplateId = clean(body.model_template_id || body.model_template || body.model_template_preference);
+  const modelTemplateId = normalizeMyCardTemplateId(
+    body.model_template_id || body.model_template || body.model_template_preference,
+  );
   const sourceOwner = clean(body.source_owner || body.sourceOwner);
   const categoryPath = clean(body.category_path || body.categoryPath);
 

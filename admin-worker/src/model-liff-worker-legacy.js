@@ -25,8 +25,12 @@ const MY_CARD_TEMPLATE_LABELS = Object.freeze({
   "sigil-straight-bronze": "Bronze Study",
   "sigil-gay-plum": "Plum Study",
   "sigil-foreigner-emerald": "Emerald Study",
-  "sigil-travel-prive": "MMD Privé Travel",
-  "sigil-extreme-prive": "MMD Privé Extreme",
+  "mmd-prive-travel": "MMD Privé Travel",
+  "mmd-prive-extreme": "MMD Privé Extreme",
+});
+const MY_CARD_TEMPLATE_ALIASES = Object.freeze({
+  "sigil-travel-prive": "mmd-prive-travel",
+  "sigil-extreme-prive": "mmd-prive-extreme",
 });
 const MY_CARD_TEMPLATE_IDS = new Set(Object.keys(MY_CARD_TEMPLATE_LABELS));
 const COOKIE_NAME = "mmd_model_session_v1";
@@ -627,7 +631,12 @@ async function handleMyCardRequestCreate(request, env) {
 }
 
 function myCardTemplateLabel(templateId) {
-  return MY_CARD_TEMPLATE_LABELS[clean(templateId)] || "";
+  return MY_CARD_TEMPLATE_LABELS[normalizeMyCardTemplateId(templateId)] || "";
+}
+
+function normalizeMyCardTemplateId(templateId) {
+  const normalized = clean(templateId);
+  return MY_CARD_TEMPLATE_ALIASES[normalized] || normalized;
 }
 
 export function normalizeMyCardRequestInput(input = {}) {
@@ -636,7 +645,9 @@ export function normalizeMyCardRequestInput(input = {}) {
   }
   const mediaId = clean(input.media_id || input.mediaId);
   const idempotencyKey = clean(input.idempotency_key || input.idempotencyKey);
-  const templateId = clean(input.template_id || input.templateId || input.template_preference || input.templatePreference);
+  const templateId = normalizeMyCardTemplateId(
+    input.template_id || input.templateId || input.template_preference || input.templatePreference,
+  );
   if (!/^media_[A-Za-z0-9-]{8,160}$/.test(mediaId)) {
     return { ok: false, error: "media_id_invalid" };
   }
@@ -696,7 +707,7 @@ function safeMyCardRequest(record) {
   const model = payload.model || {};
   const media = payload.selected_media || {};
   const template = payload.model_template || {};
-  const templateId = clean(template.id) || clean(fields.template_hint);
+  const templateId = normalizeMyCardTemplateId(template.id || fields.template_hint);
   return {
     request_id: clean(record?.id),
     status: clean(fields.status) || MY_CARD_PENDING_STATUS,

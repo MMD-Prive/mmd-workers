@@ -123,6 +123,14 @@ test("Studio intake retains a valid model-selected template while Studio owns th
     category_path: "MMD MODEL / My Card",
   });
   assert.equal(normalized.model_template_id, "sigil-gws-nightwave");
+  const legacyPrive = normalizeStudioIntake({
+    ...normalized,
+    field: "EN",
+    layer: "Public / MMD Privé",
+    template_hint: "mmd-prive-travel",
+    model_template_id: "sigil-travel-prive",
+  });
+  assert.equal(legacyPrive.model_template_id, "mmd-prive-travel");
   assert.throws(() => normalizeStudioIntake({
     ...normalized,
     model_template_id: "internal-template",

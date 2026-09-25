@@ -100,7 +100,7 @@
       note: "MODEL NAME · CM / KG"
     },
     {
-      id: "sigil-travel-prive",
+      id: "mmd-prive-travel",
       uiFamily: "C",
       field: "EN",
       label: "Travel",
@@ -118,7 +118,7 @@
       note: "MMD PRIVÉ · PUBLIC COLLECTION"
     },
     {
-      id: "sigil-extreme-prive",
+      id: "mmd-prive-extreme",
       uiFamily: "D",
       field: "EX",
       label: "Extreme",
@@ -446,7 +446,7 @@
     var state = Object.assign({}, readState(UPLOAD_SEED_KEY) || {}, {
       template_id: template.id,
       template_title: template.title,
-      template_version: "sigil-compcard-v1",
+      template_version: template.publicCollection ? "mmd-prive-compcard-v1" : "sigil-compcard-v1",
       compcard_family: template.uiFamily,
       field: template.field,
       field_code: template.field,
@@ -516,7 +516,8 @@
   }
 
   function findTemplate(id) {
-    return TEMPLATES.find(function (template) { return template.id === id; }) || null;
+    var legacyId = id === "sigil-travel-prive" ? "mmd-prive-travel" : id === "sigil-extreme-prive" ? "mmd-prive-extreme" : id;
+    return TEMPLATES.find(function (template) { return template.id === legacyId; }) || null;
   }
 
   function findByFamily(value) {
