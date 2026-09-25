@@ -357,7 +357,8 @@ jobs:
               exit 1
               ;;
           esac
-          tr -d '\r' < "$canonical_headers" | grep -F -i -q 'location: https://www.mmdbkk.com/'
+          canonical_location="$(tr -d '\r' < "$canonical_headers" | grep -i '^location:' | head -n 1 | tr '[:upper:]' '[:lower:]')"
+          test "$canonical_location" = "location: https://www.mmdbkk.com/"
 
       - name: Deployment receipt
         shell: bash
