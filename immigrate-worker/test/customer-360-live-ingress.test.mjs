@@ -58,7 +58,7 @@ try {
   assert.doesNotMatch(html, /localStorage|sessionStorage/);
   assert.doesNotMatch(html, /Authorization|X-Confirm-Key|CONFIRM_KEY/);
 
-  const scopedPage = await decorateCustomer360Page(new Response('<html><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
+  const scopedPage = await decorateCustomer360Page(new Response('<html><head></head><body><main class="c360"><section class="summary"></section><nav class="memory-guide"></nav><section class="work"><aside></aside><article><div data-empty></div><div data-detail hidden><section class="decision"></section></div></article></section><button data-backfill></button><button data-refresh></button><span data-state></span><div data-list></div><script>(function(){function q(s){return document.querySelector(s)}function load(){}function summary(){}load(\'review_required\');summary()})();</script></main></body></html>', {
     headers: { "content-type": "text/html; charset=utf-8" },
   }), "recCanonical123");
   const scopedHtml = await scopedPage.text();
