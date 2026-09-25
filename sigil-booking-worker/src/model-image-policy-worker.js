@@ -20,7 +20,7 @@ export default {
     const original = await response.clone().json().catch(() => null);
     if (!original || original.ok !== true) return response;
 
-    const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => original);
+    const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => projectModelsWithoutMedia(original));
     const headers = new Headers(response.headers);
     headers.set("content-type", "application/json; charset=utf-8");
     headers.set("cache-control", "no-store");
@@ -35,8 +35,8 @@ function shouldHydrateModelAssets(method, path, response) {
   return !contentType || contentType.includes("json");
 }
 
-async function hydrateModelAssetPolicy(env, payload) {
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return payload;
+export async function hydrateModelAssetPolicy(env, payload) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return projectModelsWithoutMedia(payload);
 
   const models = collectModels(payload);
   if (!models.length) return payload;
@@ -49,26 +49,14 @@ async function hydrateModelAssetPolicy(env, payload) {
   for (const model of models) {
     const modelId = clean(model?.model_id || model?.model_record_id);
     if (!modelId) {
-      hydratedModels.push(model);
+      hydratedModels.push(projectModelMedia(model));
       continue;
     }
     if (!cache.has(modelId)) cache.set(modelId, fetchModelRecord(env, table, modelId));
     const record = await cache.get(modelId).catch(() => null);
     const media = mediaByModel.get(modelId) || { primary: null, photos: [], clips: [] };
     const projected = record ? applyImagePolicy(model, record.fields || {}, env) : model;
-    const primary = media.primary;
-    hydratedModels.push({
-      ...projected,
-      ...(primary ? {
-        public_image_url: primary.url,
-        cover_url: primary.url,
-        primary_image_url: primary.url,
-        primary_media_id: primary.media_id,
-      } : {}),
-      additional_images: media.photos,
-      clips: media.clips,
-      media_source: "mmd_model_media_assets",
-    });
+    hydratedModels.push(projectModelMedia(projected, media));
   }
 
   let cursor = 0;
@@ -81,6 +69,32 @@ async function hydrateModelAssetPolicy(env, payload) {
   }
   next.asset_policy = "standard_premium_real_photo__gws_ems_ai_image";
   return next;
+}
+
+function projectModelsWithoutMedia(payload) {
+  const next = { ...payload };
+  if (payload.model && typeof payload.model === "object") next.model = projectModelMedia(payload.model);
+  if (Array.isArray(payload.items)) next.items = payload.items.map((model) => model && typeof model === "object" ? projectModelMedia(model) : model);
+  return next;
+}
+
+function projectModelMedia(model, media = { primary: null, photos: [], clips: [] }) {
+  const primary = media.primary;
+  return {
+    ...model,
+    source: primary ? "mmd_model_media_assets" : "",
+    asset_source: primary ? "mmd_model_media_assets" : "",
+    public_image_url: primary?.url || "",
+    cover_url: primary?.url || "",
+    primary_image_url: primary?.url || "",
+    primary_media_id: primary?.media_id || "",
+    r2_key: "",
+    r2_prefix: "",
+    primary_image_key: "",
+    additional_images: media.photos,
+    clips: media.clips,
+    media_source: "mmd_model_media_assets",
+  };
 }
 
 export async function fetchPublicModelMedia(env, models) {
@@ -131,11 +145,16 @@ export function isPublicMedia(fields) {
   const visibility = clean(fields.media_visibility).toLowerCase();
   const status = clean(fields.review_status).toLowerCase();
   return PUBLIC_MEDIA_TYPES.has(type)
+    && hasLinkedModel(fields)
     && fields.public_safe === true
     && ["active", "approved", "public"].includes(status)
     && ["public", "public_candidate"].includes(visibility)
     && !/private|flash|sensitive/.test(role)
     && clean(fields.private_original_key).length > 0;
+}
+
+function hasLinkedModel(fields) {
+  return Array.isArray(fields.Model) && fields.Model.some((link) => clean(typeof link === "string" ? link : link?.id).length > 0);
 }
 
 async function servePublicModelMedia(request, env, mediaId) {
