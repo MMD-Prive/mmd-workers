@@ -146,9 +146,9 @@ test("owner review HTML fails visibly with retry instead of staying on loading",
   const response = renderModelLineLinkPageWithAvatar();
   const html = await response.text();
   assert.match(html, /Request timeout/);
-  assert.match(html, /โหลดคิวไม่ได้/);
+  assert.match(html, /ยังโหลดรายการไม่ได้/);
   assert.match(html, /data-action="reload-claims"/);
-  assert.match(html, /Model Link Queue/);
+  assert.match(html, /คิวเชื่อม LINE กับ Model/);
   assert.match(html, /Public และ Private Model/);
 });
 
@@ -169,4 +169,15 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /confirm:true/);
   assert.match(html, /reconcileClaim\(claimId\)/);
   assert.match(html, /ยืนยันจากสถานะล่าสุดบน server/);
+  assert.match(html, /role="status" aria-live="polite"/);
+  assert.match(html, /aria-live="polite" aria-busy="true"/);
+  assert.match(html, /addEventListener\('keydown'/);
+  assert.match(html, /claimLabel\(x\.claim_status\)/);
+  assert.match(html, /ยืนยัน LINE แล้ว · รอเชื่อม Model/);
+  assert.match(html, /พบข้อมูลซ้ำ · รอตรวจสอบ/);
+  assert.match(html, /candidate\.source==='drive'&&candidate\.drive_folder_id/);
+  assert.match(html, /โฟลเดอร์พร้อมเพิ่ม/);
+  assert.match(html, /button:focus-visible/);
+  assert.match(html, /@media\(max-width:700px\).*white-space:normal/);
+  assert.doesNotMatch(html, /notice\('เชื่อมไม่สำเร็จ: '\+\(e\.message/);
 });
