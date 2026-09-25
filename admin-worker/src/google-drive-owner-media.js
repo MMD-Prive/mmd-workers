@@ -6,7 +6,7 @@ const ALLOWED_MEDIA = new Map([
   ["image/jpeg", 15 * 1024 ** 2],
   ["image/png", 15 * 1024 ** 2],
   ["image/webp", 15 * 1024 ** 2],
-  ["video/mp4", 25 * 1024 ** 2],
+  ["video/mp4", 50 * 1024 ** 2],
 ]);
 
 function ownerDriveError(code, status = 503) {

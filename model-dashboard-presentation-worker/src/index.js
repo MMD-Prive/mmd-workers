@@ -10,6 +10,11 @@ const WISH_PRESENTATION_ORIGIN = "https://mmdprive.webflow.io";
 const UI_SOURCE = "lovable-presentation-proxy";
 const APP_MARKER = "lovable-model-dashboard";
 const APP_ROUTE_SUFFIXES = ["profile", "availability", "photos", "support"];
+const MODEL_PWA_ASSET_PATHS = new Set([
+  `${UI_PREFIX}/manifest.webmanifest`,
+  `${UI_PREFIX}/mmd-app-icon.svg`,
+  `${UI_PREFIX}/sw.js`,
+]);
 const MODEL_SESSION_COOKIE = "mmd_model_session_v1";
 const LIFF_PRIMARY_BOOTSTRAP_COOKIE = "mmd_liff_boot";
 const LIFF_SDK_URL = "https://static.line-scdn.net/liff/edge/2/sdk.js";
@@ -351,6 +356,10 @@ export function isPresentationRootRuntimePath(pathname = "") {
   return ROOT_RUNTIME_PREFIXES.some((prefix) => path.startsWith(prefix));
 }
 
+export function isModelPwaAssetPath(pathname = "") {
+  return MODEL_PWA_ASSET_PATHS.has(normalizePath(pathname));
+}
+
 export function isWishStatusAssetPath(pathname = "") {
   const path = normalizePath(pathname);
   return path === WISH_STATUS_JS_PATH || path === WISH_STATUS_CSS_PATH;
@@ -421,7 +430,7 @@ export function shouldServeLiffPrimaryBootstrap(request) {
   const method = String(request.method || "GET").toUpperCase();
   if (!new Set(["GET", "HEAD"]).has(method)) return false;
   const url = new URL(request.url);
-  if (!isPresentationUiPath(url.pathname)) return false;
+  if (!isPresentationUiPath(url.pathname) || isModelPwaAssetPath(url.pathname)) return false;
   if (!hasLineRedirectContext(request)) return false;
   if (hasLiffPrimaryBootstrapCookie(request)) return false;
   return true;
@@ -816,6 +825,7 @@ async function proxyPage(request) {
   const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
   const isHtml = contentType.includes("text/html");
   const headers = responseHeaders(upstream.headers, { html: isHtml, rewritten: isHtml });
+  if (isModelPwaAssetPath(new URL(request.url).pathname)) headers.set("cache-control", "no-cache");
   if (request.method.toUpperCase() === "HEAD") {
     return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
   }
