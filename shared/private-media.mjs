@@ -1,7 +1,7 @@
 // Private originals never share the public model bucket or a browser authority.
 export const PRIVATE_MEDIA_BUCKET = "mmd-private-model-media";
 export const PRIVATE_UPLOAD_TTL_MS = 30 * 60 * 1000;
-const MIME = new Map([["image/jpeg", ["jpg", 15 * 1024 ** 2]], ["image/png", ["png", 15 * 1024 ** 2]], ["image/webp", ["webp", 15 * 1024 ** 2]], ["video/mp4", ["mp4", 25 * 1024 ** 2]]]);
+const MIME = new Map([["image/jpeg", ["jpg", 25 * 1024 ** 2]], ["image/png", ["png", 25 * 1024 ** 2]], ["image/webp", ["webp", 25 * 1024 ** 2]], ["video/mp4", ["mp4", 25 * 1024 ** 2]]]);
 export function mediaError(code, status = 409) { return Object.assign(new Error(code), { code, status }); }
 export function mediaTable(env) { return env.AIRTABLE_TABLE_MODEL_MEDIA_ASSETS || env.AIRTABLE_TABLE_MODEL_MEDIA || "tblrpQXhHnbTU9RhW"; }
 export function privateBucket(env) {
