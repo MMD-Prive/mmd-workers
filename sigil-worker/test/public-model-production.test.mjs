@@ -442,7 +442,7 @@ test("production upload issues a signed opaque URL, stores R2 privately, and att
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   const uploadBody = await upload.json();
@@ -488,7 +488,7 @@ test("repeated upload PUT is idempotent and does not duplicate Airtable metadata
   const uploadRequest = () => new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   });
 
@@ -517,7 +517,7 @@ test("a fresh coordinator bootstraps attachment state for a pre-migration upload
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -551,7 +551,7 @@ test("production apply rejects an upload already attached to another application
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -588,7 +588,7 @@ test("concurrent applications cannot both claim the same uploaded asset", async 
   const upload = await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
   assert.equal(upload.status, 200);
@@ -621,7 +621,7 @@ test("duplicate success waits until a previously failed upload attachment is rec
   await worker.fetch(new Request(authBody.upload_url, {
     method: "PUT",
     headers: { origin: ORIGIN, "content-type": "image/jpeg", "content-length": "4" },
-    body: new Uint8Array([1, 2, 3, 4]),
+    body: new Uint8Array([255, 216, 255, 1]),
     duplex: "half",
   }), env);
 

@@ -5,7 +5,9 @@ export const PUBLIC_MODEL_UPLOAD_SERVICE = "mmd_public_model_upload_url";
 
 const APPLY_BODY_LIMIT = 64 * 1024;
 const UPLOAD_META_BODY_LIMIT = 16 * 1024;
-export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+export const PUBLIC_MODEL_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+export const PUBLIC_MODEL_MAX_PHOTOS = 8;
+export const PUBLIC_MODEL_MAX_CLIPS = 3;
 const UPLOAD_TTL_SECONDS = 15 * 60;
 const UPLOAD_SESSION_TTL_SECONDS = 60 * 60;
 const UPLOAD_STATE_PREFIX = "sigil:public-model:upload:v1:";
@@ -16,6 +18,7 @@ const R2_BUCKET_NAME = "mmd-private-public-model-uploads";
 
 const CONTACT_FIELDS = ["phone", "email", "line", "line_id", "telegram", "social_url", "instagram"];
 export const PUBLIC_MODEL_PHOTO_ROLES = new Set(["front_face", "half_body", "full_body", "lifestyle", "sport_activity", "body_presentation", "other_photo"]);
+export const PUBLIC_MODEL_CLIP_ROLES = new Set(["introduction", "body_presentation", "sport_activity", "other_clip"]);
 export const PUBLIC_MODEL_DOCUMENT_ROLES = new Set([
   "trainer_certificate",
   "medical_or_therapeutic_license",
@@ -25,7 +28,8 @@ export const PUBLIC_MODEL_DOCUMENT_ROLES = new Set([
   "professional_certificate",
   "other_document",
 ]);
-export const PUBLIC_MODEL_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+export const PUBLIC_MODEL_PHOTO_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+export const PUBLIC_MODEL_CLIP_MIME_TYPES = new Set(["video/mp4", "video/quicktime", "video/webm"]);
 export const PUBLIC_MODEL_DOCUMENT_MIME_TYPES = new Set(["application/pdf", ...PUBLIC_MODEL_PHOTO_MIME_TYPES]);
 export const PUBLIC_MODEL_ALLOWED_WORK_TYPES = new Set([
   "Modeling",
@@ -523,9 +527,15 @@ async function handleUploadPut(request, env, corsHeaders) {
 
   let persistedUpload = null;
   try {
-    await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, request.body, {
-      httpMetadata: { contentType: metadata.contentType },
-      customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role },
+    const bytes = new Uint8Array(await request.arrayBuffer());
+    if (bytes.byteLength !== metadata.fileSize) throw Object.assign(new Error('upload_size_mismatch'), { publicStatus: 400 });
+    if (!validUploadBytes(bytes, metadata.contentType)) throw Object.assign(new Error('upload_content_type_mismatch'), { publicStatus: 415 });
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+    await env.PUBLIC_MODEL_UPLOADS_R2.put(metadata.objectKey, bytes, {
+      onlyIf: { etagDoesNotMatch: '*' },
+      httpMetadata: { contentType: metadata.contentType, cacheControl: 'private, no-store' },
+      customMetadata: { upload_session_id: metadata.sessionId, upload_ref: metadata.uploadRef, kind: metadata.kind, role: metadata.role, sha256 },
     });
 
     const uploadedAt = new Date().toISOString();
@@ -559,6 +569,7 @@ async function handleUploadPut(request, env, corsHeaders) {
     if (!persistedUpload) await env.PUBLIC_MODEL_UPLOADS_R2.delete(metadata.objectKey);
     await coordinatorRequest(env, uploadScope, "/upload/release", {}).catch(() => {});
     console.error(JSON.stringify({ event: "public_model_upload_airtable_failed", error: safeError(error) }));
+    if (error?.publicStatus) return errorResponse(error.message, error.publicStatus, corsHeaders);
     return errorResponse("upload_persistence_failed", 503, corsHeaders);
   }
 }
@@ -625,7 +636,7 @@ function validateUploadMetadata(body) {
   if (typeof rawName !== "string") fields.file_name = "must be a string";
   if (body.upload_session_id !== undefined && typeof body.upload_session_id !== "string") fields.upload_session_id = "must be a string";
   if (body.source_path !== undefined && typeof body.source_path !== "string") fields.source_path = "must be a string";
-  if (!["photo", "document"].includes(kind)) fields.kind = "unsupported kind";
+  if (!["photo", "clip", "document"].includes(kind)) fields.kind = "unsupported kind";
   if (!roleAllowed(kind, role)) fields.role = "unsupported role for kind";
   if (!mimeAllowed(kind, mime)) fields.content_type = "unsupported content type for kind";
   if (!Number.isFinite(size) || size <= 0 || size > PUBLIC_MODEL_MAX_UPLOAD_BYTES) fields.file_size = "must be positive and within the approved size limit";
@@ -641,14 +652,20 @@ function validateUploadRefs(body) {
   if (sessionId !== undefined && !validRef(sessionId, "pmu")) return "invalid upload_session_id";
   if (refs === undefined) return "";
   if (!Array.isArray(refs)) return "must be an array";
-  if (refs.length > 12) return "too many upload refs";
+  if (refs.length > 18) return "too many upload refs";
+  let photoCount = 0;
+  let clipCount = 0;
   for (const item of refs) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return "contains invalid upload ref";
     const uploadRef = item.upload_ref ?? item.uploadRef;
     if (typeof uploadRef !== "string" || !validRef(uploadRef, "pmu_ref")) return "contains invalid upload_ref";
     if (typeof item.kind !== "string" || typeof item.role !== "string" || !roleAllowed(normalizeToken(item.kind), normalizeToken(item.role))) return "contains unsupported kind or role";
+    if (normalizeToken(item.kind) === "photo") photoCount += 1;
+    if (normalizeToken(item.kind) === "clip") clipCount += 1;
     if (findForbiddenField(item)) return "contains unsupported upload field";
   }
+  if (photoCount > PUBLIC_MODEL_MAX_PHOTOS) return "too many photos";
+  if (clipCount > PUBLIC_MODEL_MAX_CLIPS) return "too many clips";
   return "";
 }
 
@@ -676,7 +693,7 @@ function validatePublicRoles(value) {
 async function verifyUploads(body, env, applicationId) {
   const refs = body.uploads ?? body.upload_refs ?? body.uploadRefs ?? [];
   const required = flagEnabled(env.PUBLIC_MODEL_UPLOAD_REQUIRED);
-  if (!refs.length) return required ? { ok: false, error: "at least 7 verified applicant photos are required" } : { ok: true, items: [] };
+  if (!refs.length) return required ? { ok: false, error: "at least one verified applicant photo is required" } : { ok: true, items: [] };
   if (!env.PUBLIC_MODEL_UPLOADS_R2 || !env.SIGIL_BOARD_KV || !env.PUBLIC_MODEL_COORDINATOR) return { ok: false, error: "upload verification is not configured" };
   const sessionId = body.upload_session_id;
   const items = [];
@@ -695,8 +712,11 @@ async function verifyUploads(body, env, applicationId) {
     items.push(metadata);
   }
   const photos = items.filter((item) => item.kind === "photo");
+  const clips = items.filter((item) => item.kind === "clip");
   const bodyPhotos = photos.filter((item) => item.role === "body_presentation");
-  if (required && (photos.length < 7 || photos.length > 10)) return { ok: false, error: "requires 7 to 10 verified applicant photos" };
+  if (required && photos.length < 1) return { ok: false, error: "at least one verified applicant photo is required" };
+  if (photos.length > PUBLIC_MODEL_MAX_PHOTOS) return { ok: false, error: "too many applicant photos" };
+  if (clips.length > PUBLIC_MODEL_MAX_CLIPS) return { ok: false, error: "too many applicant clips" };
   if (bodyPhotos.length > 3) return { ok: false, error: "too many body presentation photos" };
 
   const reserved = [];
@@ -967,16 +987,27 @@ function originAllowed(request, env) {
 }
 
 function roleAllowed(kind, role) {
-  return kind === "photo" ? PUBLIC_MODEL_PHOTO_ROLES.has(role) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_ROLES.has(role) : false;
+  return kind === "photo" ? PUBLIC_MODEL_PHOTO_ROLES.has(role) : kind === "clip" ? PUBLIC_MODEL_CLIP_ROLES.has(role) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_ROLES.has(role) : false;
 }
 
 function mimeAllowed(kind, mime) {
-  return kind === "photo" ? PUBLIC_MODEL_PHOTO_MIME_TYPES.has(mime) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_MIME_TYPES.has(mime) : false;
+  return kind === "photo" ? PUBLIC_MODEL_PHOTO_MIME_TYPES.has(mime) : kind === "clip" ? PUBLIC_MODEL_CLIP_MIME_TYPES.has(mime) : kind === "document" ? PUBLIC_MODEL_DOCUMENT_MIME_TYPES.has(mime) : false;
+}
+
+function validUploadBytes(bytes, mime) {
+  const ascii = (start, end) => String.fromCharCode(...bytes.slice(start, end));
+  if (mime === 'image/jpeg') return bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
+  if (mime === 'image/png') return bytes.length >= 8 && [...bytes.slice(0, 8)].join(',') === '137,80,78,71,13,10,26,10';
+  if (mime === 'image/webp') return bytes.length >= 12 && ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP';
+  if (['image/heic', 'image/heif', 'video/mp4', 'video/quicktime'].includes(mime)) return bytes.length >= 16 && ascii(4, 8) === 'ftyp';
+  if (mime === 'video/webm') return bytes.length >= 4 && [...bytes.slice(0, 4)].join(',') === '26,69,223,163';
+  if (mime === 'application/pdf') return bytes.length >= 5 && ascii(0, 5) === '%PDF-';
+  return false;
 }
 
 function objectKeyFor(sessionId, uploadRef, contentType) {
   const now = new Date();
-  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" }[contentType];
+  const ext = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "image/heif": "heif", "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "application/pdf": "pdf" }[contentType];
   return `public-model/v1/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, "0")}/${String(now.getUTCDate()).padStart(2, "0")}/${sessionId}/${uploadRef}.${ext}`;
 }
 
@@ -1140,6 +1171,8 @@ export const publicModelTestInternals = {
   APPLICATION_FIELDS,
   UPLOAD_FIELDS,
   MAX_UPLOAD_BYTES: PUBLIC_MODEL_MAX_UPLOAD_BYTES,
+  MAX_PHOTOS: PUBLIC_MODEL_MAX_PHOTOS,
+  MAX_CLIPS: PUBLIC_MODEL_MAX_CLIPS,
   PROMO_CONSENT_VERSION: PUBLIC_MODEL_PROMO_CONSENT_VERSION,
   validateApplicationPayload,
   validateUploadMetadata,
