@@ -99,7 +99,13 @@ export async function handlePublicModelApplicationReviewRequest(request, env = {
       return json({ ok: false, error: "not_public_model_application" }, 409);
     }
     const assets = await listAssetsForApplication(env, detail[1]);
-    return json({ ok: true, application: normalizeApplication(application, assets) });
+    const projection = normalizeApplication(application, assets);
+    if (isPerOwner(actor) && projection.has_prior_work === true) {
+      const remark = await readPhaseAPerRemark(env, application);
+      if (!remark.ok) return json({ ok: false, error: "per_remark_unavailable" }, 503);
+      projection.per_only_remark = remark.remark;
+    }
+    return json({ ok: true, application: projection });
   }
 
   const decision = path.match(/^\/v1\/admin\/model-applications\/(pma_[A-Za-z0-9_-]{8,120})\/decision$/);
@@ -304,6 +310,27 @@ async function patchAssetReviewStatuses(env, assets, reviewStatus) {
   }
 }
 
+export function isPerOwner(actor) {
+  return actor?.id === "per" && actor?.role === "owner" && actor?.auth_method === "credential";
+}
+
+async function readPhaseAPerRemark(env, record) {
+  const payload = parseObject(record?.fields?.[PUBLIC_MODEL_REVIEW_FIELDS.payloadJson]);
+  const hash = clean(payload.line_subject_sha256, 80);
+  if (payload.form_version !== "mmd-app-phase-a-no-media-v1" || !/^[0-9a-f]{64}$/.test(hash)) return { ok: false };
+  const namespace = env.MODEL_ACTIVATION_COORDINATOR;
+  if (!namespace?.idFromName || !namespace?.get) return { ok: false };
+  try {
+    const stub = namespace.get(namespace.idFromName(`phase-a:${hash}`));
+    const response = await stub.fetch("https://model-activation.internal/phase-a", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "per_remark", hash }),
+    });
+    const data = await response.json().catch(() => null);
+    return response.ok && data?.ok === true ? { ok: true, remark: clean(data.remark, 1500) } : { ok: false };
+  } catch { return { ok: false }; }
+}
+
 function normalizeApplication(record, assets) {
   const fields = record?.fields || {};
   const payload = parseObject(fields[PUBLIC_MODEL_REVIEW_FIELDS.payloadJson]);
@@ -348,6 +375,17 @@ function normalizeApplication(record, assets) {
     portfolio_links: clean(payload.portfolio_links || payload.portfolio_url || summary.portfolio_links),
     public_model_category: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.category]) || clean(payload.mmd_public_model_category || payload.mmd_public_model_category_label || payload.category || payload.category_label),
     privacy_level: selectName(fields[PUBLIC_MODEL_REVIEW_FIELDS.privacyLevel]) || clean(payload.privacy_level || payload.public_level),
+    ...(payload.form_version === "mmd-app-phase-a-no-media-v1" ? {
+      display_name: clean(payload.display_name),
+      self_description: clean(payload.self_description, 1200),
+      public_client_gender: clean(payload.public_client_gender, 20),
+      private_opt_in: payload.private_opt_in === true,
+      private_client_gender: payload.private_opt_in === true ? clean(payload.private_client_gender, 20) : "",
+      has_prior_work: payload.has_prior_work === true,
+      languages: arrayStrings(payload.languages),
+      video_call_preference: clean(payload.video_call_preference, 20),
+      preferred_at_bangkok: clean(payload.preferred_at_bangkok, 24),
+    } : {}),
     contact: {
       phone: get(PUBLIC_MODEL_REVIEW_FIELDS.phone, payload.phone),
       line_id: get(PUBLIC_MODEL_REVIEW_FIELDS.lineId, payload.line_id),
@@ -436,6 +474,8 @@ function render(a){
  app.innerHTML='<section class="card hero"><div><div class="eyebrow">'+esc(a.application_id)+'</div><div class="name">'+val(a.nickname)+'</div><div class="chips">'+chip(a.public_model_category)+chip(a.status,statusClass(a))+chip(a.review_status)+chip(a.intake_status,statusClass(a))+'</div><div class="muted">ส่งเมื่อ '+val(a.submitted_at)+'</div></div><div class="grid"><div class="kv"><div class="k">Age</div><div class="v">'+val(a.age)+'</div></div><div class="kv"><div class="k">Height / Weight</div><div class="v">'+(a.height_cm?esc(a.height_cm)+' cm':'—')+' / '+(a.weight_kg?esc(a.weight_kg)+' kg':'—')+'</div></div><div class="kv"><div class="k">Location</div><div class="v">'+val(a.location)+'</div></div><div class="kv"><div class="k">Occupation / Background</div><div class="v">'+val(a.occupation)+'</div></div></div></section>'+
  (a.intake_status==='approved'?'<div class="banner">อนุมัติใบสมัครแล้ว · พร้อมเข้าสู่ onboarding แต่ยังไม่ Publish ขึ้นหน้า Public อัตโนมัติ</div>':'')+
  '<section class="card"><div class="section-title">แนะนำตัว / ภาพรวม</div><div class="lead">'+val(a.intro)+'</div></section>'+
+ (a.display_name?'<section class="card"><div class="section-title">MMD APP · ขอบเขตใบสมัคร</div><div class="grid"><div class="kv"><div class="k">ชื่อที่แสดง</div><div class="v">'+esc(a.display_name)+'</div></div><div class="kv"><div class="k">Public client gender</div><div class="v">'+val(a.public_client_gender)+'</div></div><div class="kv"><div class="k">Private opt in</div><div class="v">'+(a.private_opt_in?'เปิด · '+val(a.private_client_gender):'ปิด')+'</div></div><div class="kv"><div class="k">ภาษา</div><div class="v">'+list(a.languages)+'</div></div><div class="kv"><div class="k">วิดีโอคอล LINE</div><div class="v">'+val(a.video_call_preference)+'</div></div><div class="kv"><div class="k">เวลาที่สะดวก (กรุงเทพ)</div><div class="v">'+val(a.preferred_at_bangkok)+'</div></div></div></section>':'')+
+ (a.per_only_remark?'<section class="card"><div class="section-title">หมายเหตุผลงานเดิม · พี่เปอร์เท่านั้น</div><div class="lead">'+esc(a.per_only_remark)+'</div></section>':'')+
  '<section class="card"><div class="section-title">รูปที่ส่งมา ('+photos.length+')</div><div class="photos">'+(photos.length?photos.map(x=>'<a class="photo" href="'+esc(x.url)+'" target="_blank" rel="noopener"><img loading="lazy" src="'+esc(x.url)+'" alt="'+esc(x.role||x.kind||'photo')+'"><span>'+esc(x.role||x.kind||'photo')+'</span></a>').join(''):'<div class="muted">ไม่มีรูปที่อ่านได้</div>')+'</div>'+(docs.length?'<div class="docs">'+docs.map(x=>'<a class="doc" href="'+esc(x.url)+'" target="_blank" rel="noopener"><span>'+esc(x.file_name||x.role||'เอกสาร')+'</span><span>เปิด ↗</span></a>').join('')+'</div>':'')+'</section>'+
  '<section class="card"><div class="section-title">Role / Publication Policy</div><div class="grid"><div class="kv" style="grid-column:1/-1"><div class="k">Applicant Requested Roles</div><div class="v">'+list(a.requested_roles)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">MMD Approved Roles</div><div class="v">'+list(a.approved_roles)+'</div></div><div class="kv"><div class="k">Booking Mode</div><div class="v">'+val(a.booking_mode)+'</div></div><div class="kv"><div class="k">Public Profile</div><div class="v">'+(a.public_profile_approved?'APPROVED':'OFF')+'</div></div><div class="kv"><div class="k">Credential</div><div class="v">'+val(a.credential_status)+'</div></div><div class="kv"><div class="k">Credential Notes</div><div class="v">'+val(a.credential_notes)+'</div></div></div><div id="rolePolicy" style="margin-top:14px"></div></section>'+
  '<section class="card"><div class="section-title">ข้อมูลสำหรับตัดสินใจ</div><div class="grid"><div class="kv"><div class="k">ประสบการณ์</div><div class="v">'+val(a.experience)+'</div></div><div class="kv"><div class="k">Skills / ภาษา</div><div class="v">'+val(a.skills)+'</div></div><div class="kv"><div class="k">ประสบการณ์กับ MMD</div><div class="v">'+esc(mmdExp(a))+'</div></div><div class="kv"><div class="k">เคยทำกับ / สถานที่เดิม</div><div class="v">'+val(a.previous_agency_or_venue)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">งาน / Background ที่เคยทำ</div><div class="v">'+list(a.previous_work_background)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">กลุ่มลูกค้าที่รับ</div><div class="v">'+list(a.customer_scope)+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">ขอบเขตที่ไม่รับ</div><div class="v">'+val(a.boundaries)+'</div></div><div class="kv"><div class="k">LGBT Professional</div><div class="v">'+val(a.lgbt_professional)+'</div></div><div class="kv"><div class="k">เคยรับงานเอง</div><div class="v">'+(a.worked_independently_before?'เคย':'—')+'</div></div><div class="kv" style="grid-column:1/-1"><div class="k">Portfolio</div><div class="v">'+val(a.portfolio_links)+'</div></div></div></section>'+
