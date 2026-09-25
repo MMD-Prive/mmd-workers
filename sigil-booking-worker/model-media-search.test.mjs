@@ -14,9 +14,14 @@ test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips onl
     item("unsafe", { asset_role: "gallery_candidate", media_type: "public_gallery", public_safe: false }),
   ];
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ records });
+  const formulas = [];
+  globalThis.fetch = async (input) => {
+    formulas.push(new URL(input).searchParams.get("filterByFormula"));
+    return Response.json({ records });
+  };
   try {
-    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, [{ model_id: modelId }]);
+    const grouped = await fetchPublicModelMedia({ AIRTABLE_API_KEY: "key", AIRTABLE_BASE_ID: "base" }, [{ model_id: modelId, working_name: "EMs21 J Dye" }]);
+    assert.deepEqual(formulas, ['OR(FIND("EMs21 J Dye",ARRAYJOIN({Model})))']);
     const assets = grouped.get(modelId);
     assert.equal(assets.primary.asset_role, "profile_main");
     assert.deepEqual(assets.photos.map((photo) => photo.media_id), ["gallery"]);

@@ -84,12 +84,18 @@ async function hydrateModelAssetPolicy(env, payload) {
 }
 
 export async function fetchPublicModelMedia(env, models) {
-  const modelIds = [...new Set(models.map((model) => clean(model?.model_id || model?.model_record_id)).filter(Boolean))];
+  const modelEntries = models.map((model) => ({
+    id: clean(model?.model_id || model?.model_record_id),
+    name: clean(model?.working_name || model?.model_name || model?.display_name || model?.name),
+  })).filter((model) => model.id);
+  const modelIds = [...new Set(modelEntries.map((model) => model.id))];
   if (!modelIds.length) return new Map();
-  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
-  const clauses = modelIds.map((id) => `FIND(${formulaText(id)},ARRAYJOIN({Model}))`);
-  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
   const result = new Map(modelIds.map((id) => [id, { primary: null, photos: [], clips: [] }]));
+  const modelNames = [...new Set(modelEntries.map((model) => model.name).filter(Boolean))];
+  if (!modelNames.length) return result;
+  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
+  const clauses = modelNames.map((name) => `FIND(${formulaText(name)},ARRAYJOIN({Model}))`);
+  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
   for (const row of rows) {
     const fields = row.fields || {};
     if (!isPublicMedia(fields)) continue;
