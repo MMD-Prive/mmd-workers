@@ -61,6 +61,7 @@ jobs:
           node --check sigil-booking-worker/src/runtime-index.js
           node --check sigil-booking-worker/src/index.js
           node --check sigil-booking-worker/src/model-image-policy-worker.js
+          node --test sigil-booking-worker/model-media-search.test.mjs
           node --check sigil-booking-worker/src/entitlement-runtime-worker.js
           node --check sigil-booking-worker/src/care-back-trusted-caller.js
           node --test sigil-booking-worker/src/entitlement-runtime-worker.test.js
