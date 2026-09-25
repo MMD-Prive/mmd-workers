@@ -177,6 +177,16 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /พบข้อมูลซ้ำ · รอตรวจสอบ/);
   assert.match(html, /candidate\.source==='drive'&&candidate\.drive_folder_id/);
   assert.match(html, /โฟลเดอร์พร้อมเพิ่ม/);
+  assert.match(html, /data-category="all">All/);
+  assert.match(html, /data-category="male">นายแบบ/);
+  assert.match(html, /data-category="woman">MMD Woman/);
+  assert.match(html, /data-category="ladyboy">MMD Lady Boy/);
+  assert.match(html, /function categoryMatches\(item,category\)/);
+  assert.match(html, /data-action="set-folder"/);
+  assert.match(html, /function folderTree\(items,activePath=''/);
+  assert.match(html, /function candidateLaneRoots\(item\)/);
+  assert.match(html, /function renderCandidateResults\(card\).*sourceWarning/);
+  assert.match(html, /MMD Lady Boy/);
   assert.match(html, /button:focus-visible/);
   assert.match(html, /@media\(max-width:700px\).*white-space:normal/);
   assert.doesNotMatch(html, /notice\('เชื่อมไม่สำเร็จ: '\+\(e\.message/);
