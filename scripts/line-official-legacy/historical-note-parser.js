@@ -8,6 +8,21 @@ const THAI_MONTH_PATTERN = [
   "ต.ค.", "ตุลาคม", "พ.ย.", "พฤศจิกายน", "ธ.ค.", "ธันวาคม",
 ].map((month) => month.replace(/\./g, "\\.")).join("|");
 
+const CANCEL_PATTERNS = [
+  /ยกเลิก/gi,
+  /ยกเลิกงาน/gi,
+  /งานยกเลิก/gi,
+  /ขอยกเลิก/gi,
+  /ลูกค้ายกเลิก/gi,
+  /ไม่ได้เกิดงาน/gi,
+  /ไม่เกิดงาน/gi,
+  /งานไม่เกิด/gi,
+  /ไม่ได้ไปงาน/gi,
+  /ไม่ได้รับงาน/gi,
+  /\bcancel(?:led|ed)?\b/gi,
+  /\bjob\s+cancel(?:led|ed)?\b/gi,
+];
+
 function unique(values) {
   return Array.from(new Set(values.map(clean).filter(Boolean)));
 }
@@ -42,8 +57,8 @@ function detectAmounts(note) {
           token,
           index: match.index,
           end: match.index + token.length,
-          pre: raw.slice(Math.max(0, match.index - 36), match.index),
-          post: raw.slice(match.index + token.length, Math.min(raw.length, match.index + token.length + 24)),
+          pre: raw.slice(Math.max(0, match.index - 44), match.index),
+          post: raw.slice(match.index + token.length, Math.min(raw.length, match.index + token.length + 36)),
           context: contextWindow(raw, match.index, token.length),
         });
       }
@@ -228,6 +243,30 @@ function classifyAmount(amountItem) {
   return "unknown";
 }
 
+function classifyServiceRole(amountItem) {
+  // Money labels belong to the closest preceding phrase on the same line.
+  // A wider context window can contain final, gross, deposit and balance labels
+  // together and must never cause every amount to inherit every role.
+  const linePrefix = String(amountItem.pre || "").split(/\r?\n/).pop().toLowerCase();
+  const roles = [
+    ["final_total", [/ยอดรวม/g, /ยอดสุทธิ/g, /สุทธิ/g, /net\s+total/g, /final\s+total/g, /total\s+due/g, /amount\s+due/g]],
+    ["gross_total", [/discount\s*\d*%?\s*from/g, /ก่อนลด/g, /ราคาเต็ม/g, /gross/g, /original\s+price/g, /full\s+price/g]],
+    ["deposit", [/มัดจำ/g, /deposit/g]],
+    ["balance", [/ชำระหน้างาน/g, /จ่ายหน้างาน/g, /คงเหลือ/g, /ยอดคงเหลือ/g, /balance\s+due/g, /remaining/g]],
+    ["internal_balance", [/เราค้าง/g, /mmd\s+owes/g, /we\s+owe/g, /ค้างโมเดล/g, /ค้างให้/g]],
+  ];
+  let closest = { role: "", index: -1 };
+  for (const [role, patterns] of roles) {
+    for (const pattern of patterns) {
+      for (const match of linePrefix.matchAll(pattern)) {
+        if (match.index > closest.index) closest = { role, index: match.index };
+      }
+    }
+  }
+  if (closest.role) return closest.role;
+  return "service_amount";
+}
+
 function sumBy(events, type) {
   return events.filter((event) => event.type === type).reduce((sum, event) => sum + event.amount, 0);
 }
@@ -237,6 +276,7 @@ function parseHistoricalNote(note) {
   const parseNote = clean(rawNote);
   const lower = parseNote.toLowerCase();
   const warnings = [];
+  const cancellation = detectCancellation(parseNote);
   const amounts = detectAmounts(parseNote);
   const bareAmbiguous = detectBareAmbiguousAmounts(parseNote, amounts);
   const amountEvents = amounts.map((item) => ({ type: classifyAmount(item), amount: item.amount, token: item.token, context: item.context }));
@@ -250,17 +290,21 @@ function parseHistoricalNote(note) {
   const membershipAction = hasAny(lower, [/renew/, /renewal/, /ต่ออายุ/]) ? "renewal" : hasAny(lower, [/membership\s+fee/, /member\s+fee/, /สมัครสมาชิก/, /ค่าสมาชิก/]) ? "membership_signup" : "";
   const detectedPackage = hasAny(lower, [/\blite\b/, /standard/]) ? "standard_lite" : hasAny(lower, [/premium/]) ? "premium" : hasAny(lower, [/blackcard/, /black card/]) ? "blackcard" : hasAny(lower, [/svip/]) ? "svip" : hasAny(lower, [/\bvip\b/]) ? "vip" : "";
 
-  const serviceAmount = sumBy(amountEvents, "service");
+  const rawServiceAmount = sumBy(amountEvents, "service");
   const tipAmountMmd = sumBy(amountEvents, "tip_mmd");
   const tipAmountDirect = sumBy(amountEvents, "tip_direct");
   const membershipFeeAmount = sumBy(amountEvents, "membership_fee");
   const renewalFeeAmount = sumBy(amountEvents, "renewal_fee");
   const unknownAmount = sumBy(amountEvents, "unknown");
+  const reconciliation = reconcileServiceSpend({ cancelled: cancellation.cancelled, amounts, amountEvents });
+  const serviceAmount = cancellation.cancelled ? 0 : reconciliation.amount;
   const pointsEligibleAmount = serviceAmount;
   const pointsIneligibleAmount = tipAmountMmd + tipAmountDirect + membershipFeeAmount + renewalFeeAmount + unknownAmount;
-  const proposedPoints = pointsEligibleAmount / POINT_RATE_THB;
+  const proposedPoints = Math.floor(pointsEligibleAmount / POINT_RATE_THB);
 
-  if (unknownAmount > 0) warnings.push("ambiguous_amount_requires_review");
+  if (unknownAmount > 0 && !cancellation.cancelled) warnings.push("ambiguous_amount_requires_review");
+  if (cancellation.ambiguous) warnings.push("cancellation_status_review_required");
+  if (reconciliation.reviewRequired) warnings.push("service_amount_reconciliation_required");
   if (membershipFeeAmount > 0) warnings.push("membership_fee_not_auto_counted");
   if (renewalFeeAmount > 0) warnings.push("renewal_fee_not_auto_counted");
   if (referralBonusCandidate) warnings.push("referral_bonus_review_required");
@@ -287,6 +331,17 @@ function parseHistoricalNote(note) {
     service_details: serviceDetails,
     referral_bonus_candidate: referralBonusCandidate,
     promotion_bonus_candidate: promotionBonusCandidate,
+    cancellation: {
+      cancelled: cancellation.cancelled,
+      ambiguous: cancellation.ambiguous,
+      evidence: cancellation.evidence,
+    },
+    reconciliation: {
+      basis: reconciliation.basis,
+      reconciled_service_amount: serviceAmount,
+      raw_service_amount_sum: rawServiceAmount,
+      roles: reconciliation.roles,
+    },
   };
 
   return {
@@ -295,7 +350,7 @@ function parseHistoricalNote(note) {
     note_detected_dates: dates,
     note_detected_package: detectedPackage,
     note_detected_membership_action: membershipAction,
-    note_detected_service_count: amountEvents.filter((event) => event.type === "service").length,
+    note_detected_service_count: cancellation.cancelled ? 0 : amountEvents.filter((event) => event.type === "service").length,
     note_detected_payment_refs: paymentRefs,
     note_detected_model_text: serviceDetails.model_text,
     note_detected_start_time: serviceDetails.start_time,
@@ -306,6 +361,10 @@ function parseHistoricalNote(note) {
     note_detected_duration_minutes: serviceDetails.duration_minutes,
     service_detail_candidates: serviceDetails,
     service_amount: serviceAmount,
+    reconciled_service_amount: serviceAmount,
+    reconciliation_basis: reconciliation.basis,
+    historical_service_status: historicalServiceStatus,
+    cancellation_evidence: cancellation.evidence.join(" | "),
     tip_amount_mmd: tipAmountMmd,
     tip_amount_direct: tipAmountDirect,
     membership_fee_amount: membershipFeeAmount,
@@ -321,13 +380,25 @@ function parseHistoricalNote(note) {
     proposed_points: proposedPoints,
     points_policy_basis: [
       "Locked rate: 100 THB = 1 point.",
-      "Only service purchase through MMD generates staged proposed_points.",
+      "Cancelled jobs are recorded as cancelled and generate zero service spend and zero points.",
+      "For completed service notes, explicit final/net total is preferred over gross price and payment breakdowns.",
+      "If no final total exists, one deposit plus one remaining balance may be reconciled as the service total.",
+      "Gross price, final total, deposit and balance must never be added together as separate spend.",
+      "Only reconciled service purchase through MMD generates staged proposed_points.",
       "Tips through MMD are customer detail only and generate no points.",
       "Direct hand tips never count as points.",
       "Membership and renewal fees are review-required and not auto-counted.",
       "Referral/promotion bonuses are review-required unless explicit campaign rules exist.",
     ].join("\n"),
-    points_confidence: parseNote ? (pointsReviewRequired ? 0.5 : amountEvents.length ? 0.86 : 0.2) : 0,
+    points_confidence: parseNote
+      ? cancellation.cancelled
+        ? 0.95
+        : pointsReviewRequired
+          ? 0.5
+          : serviceAmount > 0
+            ? 0.9
+            : 0.2
+      : 0,
     points_review_required: pointsReviewRequired,
     points_parse_warnings: unique(warnings),
   };
@@ -339,4 +410,5 @@ module.exports = {
   durationMinutes,
   normalizeClock,
   parseHistoricalNote,
+  reconcileServiceSpend,
 };
