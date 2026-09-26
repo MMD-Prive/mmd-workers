@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   normalizeModelMediaType,
   normalizeModelMediaUploadSpec,
+  hasMismatchedDeclaredContentLength,
   isApprovedPublicModelMedia,
   parseMediaRoute,
   recordOwnedByCanonicalModel,
@@ -106,4 +107,14 @@ test("media delete supports the REST-compatible bare media URL plus legacy /dele
     parseMediaRoute("/v1/model/media/media_abc12345678/file"),
     { mediaId: "media_abc12345678", action: "file" },
   );
+});
+
+test("streamed Model uploads accept an omitted Content-Length but reject invalid declarations", () => {
+  const expected = 68;
+  assert.equal(hasMismatchedDeclaredContentLength(null, expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength("", expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength(String(expected), expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength(String(expected - 1), expected), true);
+  assert.equal(hasMismatchedDeclaredContentLength("not-a-length", expected), true);
+  assert.equal(hasMismatchedDeclaredContentLength("9007199254740992", expected), true);
 });
