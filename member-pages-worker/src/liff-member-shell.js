@@ -21,6 +21,7 @@ export function handleLiffMemberShell(request, env = {}) {
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
+    world: normalizeWorld(url.searchParams.get("world") || url.searchParams.get("audience")),
     language: normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("locale")),
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
@@ -84,9 +85,25 @@ function renderShell(config, nonce) {
     @media(max-width:370px){.signup-hero{padding:16px;min-height:136px}.signup-crest{flex-basis:74px;height:74px;margin-right:12px;font-size:21px}.signup-hero-copy strong{font-size:16px}.signup-steps li{font-size:10px}}
     @media(min-width:600px){body.signup-mode{padding:24px}body.signup-mode main{min-height:calc(100vh - 48px);border:1px solid #d8bd8938;border-radius:20px;padding:32px}}
     .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
+
+    /* Dual first-screen worlds: public discovery stays bright; private access stays SIGIL. */
+    body.world-public:not(.signup-mode){background:radial-gradient(circle at 50% -10%,#fffdf8 0,#f5eee3 52%,#eee3d4 100%);color:#2c2926}
+    body.world-public:not(.signup-mode) main{border-color:#d7c8b6;background:linear-gradient(160deg,#fffdf9,#f7efe4 62%,#eee2d2);box-shadow:0 24px 70px rgba(100,75,45,.16)}
+    body.world-public:not(.signup-mode) .mark{color:#8d684a}
+    body.world-public:not(.signup-mode) .title{color:#26211d}
+    body.world-public:not(.signup-mode) .sub{color:#76695d}
+    body.world-public:not(.signup-mode) #message{color:#4e443a;border-left:2px solid #b98357;background:#fffaf3}
+    body.world-public:not(.signup-mode) .member-nav{border-color:#d9cabb;background:#fffaf4}
+    body.world-public:not(.signup-mode) .member-nav button{color:#7b6f64}
+    body.world-public:not(.signup-mode) .member-nav button[aria-current="true"]{background:#1f1b18;color:#fffaf4}
+    body.world-private:not(.signup-mode){background:radial-gradient(circle at 50% -10%,#2a201d 0,transparent 42%),#080809;color:#f5f2eb}
+    body.world-private:not(.signup-mode) main{border-color:rgba(212,181,123,.22);background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
+    body.world-private:not(.signup-mode) .mark{color:#d7bd8a}
+    body.world-private:not(.signup-mode) #message{color:#e5d0b2;border-left:2px solid #d9ae77;background:#dfb58014}
+    body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
   </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode" : ""}">
+<body class="${config.intent === "signup" ? "signup-mode " : ""}world-${config.world}" data-world="${config.world}">
 <main>
   <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
   <h1 class="title" data-copy="title">My MMD</h1>
@@ -209,10 +226,44 @@ function renderShell(config, nonce) {
   let busy = false;
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
+  const WORLD_COPY = {
+    public: {
+      mark: "MMD PRIVÉ · MY MMD",
+      title: "ยินดีที่ได้รู้จัก",
+      subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์",
+      message: "MY MMD คือ APP ที่เราใช้ประสบการณ์การทำงานที่เกิดขึ้น และค้นพบว่า ในยุคย่าง 2027 นี้ โลกมันไปไกล และการมีระบบดูแลนั้นปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขที่มากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจอง จ่าย แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรชัดเจน และรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์"
+    },
+    private: {
+      mark: "SIGIL SYSTEM · PRIVATE ACCESS",
+      title: "SIGIL system",
+      subtitle: "Private member application",
+      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system APP\\n\\nเปอร์ใช้เวลาเกือบปีที่เห็นเงียบ ๆ ไม่ค่อยอัปเดต ในที่สุดเปอร์ก็ทำมันสำเร็จแล้ว\\n\\nApp ที่ปลอดภัยที่สุด ใช้งานง่ายสุด ๆ มีระบบค้นหา สะสมพ้อยท์ และประวัติการใช้งาน ซึ่งกำลังทยอยตามมาเรื่อย ๆ แต่คุณรู้ตัวหรือไม่ว่าคุณต่ออายุสมาชิกคนละ 1 ปีเต็ม ๆ ไปเรียบร้อยแล้ว ตั้งแต่คุณได้เห็นหน้านี้\\n\\nขอบคุณที่ยังรอคอย ขอบคุณที่ยังรักกัน\\n\\nเปอร์เริ่มมีเวลาว่างที่จะออกไปตามหานายแบบที่โดนใจมาให้คุณแล้วนะ\\n\\nเปอร์เองฮะ"
+    }
+  };
+  function detectWorld(data) {
+    if (CONFIG.world === "private") return "private";
+    const member = data && data.customer_360 && typeof data.customer_360.member === "object" ? data.customer_360.member : {};
+    const value = [member.tier, member.membership_status, data && data.tier, data && data.membership_status]
+      .map((item) => String(item || "").toLowerCase().replace(/[_-]/g, " ")).join(" ");
+    return /\b(private|standard|premium|vip|svip|black|sigil)\b/.test(value) ? "private" : "public";
+  }
+  function applyWorldTheme(data) {
+    const world = detectWorld(data);
+    document.body.classList.toggle("world-public", world === "public");
+    document.body.classList.toggle("world-private", world === "private");
+    document.body.dataset.world = world;
+    const worldCopy = WORLD_COPY[world];
+    document.querySelector(".mark").textContent = worldCopy.mark;
+    document.querySelector(".title").textContent = worldCopy.title;
+    document.querySelector(".sub").textContent = worldCopy.subtitle;
+    message.textContent = worldCopy.message;
+  }
+  applyWorldTheme();
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
   }
+  applyWorldTheme();
   if (CONFIG.intent === "signup") {
     document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
     document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
@@ -441,6 +492,7 @@ function renderShell(config, nonce) {
   }
 
   function renderProfile(data) {
+    applyWorldTheme(data);
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};
@@ -852,6 +904,11 @@ function normalizeView(value) {
   if (view === "profile") return "home";
   if (view === "care_back") return "care";
   return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "signup"]).has(view) ? view : "home";
+}
+
+function normalizeWorld(value) {
+  const world = String(value || "public").trim().toLowerCase();
+  return world === "private" || world === "sigil" ? "private" : "public";
 }
 
 function normalizeLanguage(value) {
