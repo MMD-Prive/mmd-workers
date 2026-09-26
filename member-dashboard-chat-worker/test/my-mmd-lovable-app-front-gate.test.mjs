@@ -59,8 +59,10 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
   assert.match(html, /id="mmd-bangkok-theme-v1"/);
   assert.match(html, /data-mmd-bangkok-theme="v1"/);
   assert.match(html, /MMD_Prive%CC%81_logo_signature_transparent/);
-  assert.match(html, /BANGKOK · THAILAND/);
-  assert.match(html, /clip-path:polygon/);
+  assert.match(html, /alt="MMD Privé"/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /data-mmd-board-layout="quiet"/);
+  assert.doesNotMatch(html, /clip-path:polygon/);
   assert.match(html, /\/my-mmd-assets\/app\.css/);
   assert.match(html, /\/my-mmd-assets\/app\.js/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
@@ -85,10 +87,43 @@ test("Private Teaser is a dedicated MY MMD viewer and never fetches the Lovable 
   assert.equal(response.headers.get("x-mmd-ui-source"), "my-mmd-private-teaser-viewer-v1");
   assert.match(response.headers.get("content-security-policy") || "", /frame-ancestors 'none'/);
   assert.match(html, /MMD PRIVÉ · PRIVATE PREVIEW/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /alt="MMD Privé"/);
   assert.match(html, /\/api\/member\/app\/private-teaser\/availability/);
   assert.match(html, /\/api\/member\/app\/private-teaser\/grant/);
   assert.match(html, /model_slug:modelSlug/);
   assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|media_id|localStorage|sessionStorage|indexedDB/);
+});
+
+test("Bangkok board uses hero treatment on home and profile, and Orders recovery keeps its closed state", async () => {
+  globalThis.fetch = async request => new Response(
+    new URL(request.url).hostname === "mmdprive.webflow.io" ? "unavailable" : "<!doctype html><html><head></head><body><main>MY MMD</main></body></html>",
+    { status: new URL(request.url).hostname === "mmdprive.webflow.io" ? 404 : 200, headers: { "content-type": "text/html" } },
+  );
+  for (const path of ["/my-mmd", "/my-mmd/", "/my-mmd/profile"]) {
+    const response = await worker.fetch(new Request(`https://mmdbkk.com${path}`), {});
+    const html = await response.text();
+    assert.match(html, /data-mmd-board-layout="hero"/);
+    assert.match(html, /BKK%20View%2001\.webp/);
+    assert.equal((html.match(/<header id="mmd-bangkok-theme-v1"/g) || []).length, 1);
+  }
+  const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
+  const ordersHtml = await orders.text();
+  assert.equal(orders.status, 502);
+  assert.match(ordersHtml, /รายการสั่งซื้อยังเปิดไม่สำเร็จ/);
+  assert.match(ordersHtml, /BKK%20View%2001\.webp/);
+  assert.match(ordersHtml, /alt="MMD Privé"/);
+});
+
+test("Orders 200 presentation receives the approved board and one logo", async () => {
+  globalThis.fetch = async () => new Response('<!doctype html><html><head></head><body><main>Orders</main></body></html>', { headers: { "content-type": "text/html" } });
+  const response = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /id="mmd-orders-board"/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.equal((html.match(/alt="MMD Privé"/g) || []).length, 1);
+  assert.match(html, /<main>Orders<\/main>/);
 });
 
 test("MY MMD Private Teaser media player stays on MY MMD and accepts read-only access only", async () => {
@@ -98,6 +133,8 @@ test("MY MMD Private Teaser media player stays on MY MMD and accepts read-only a
   assert.match(html, /\/api\/member\/app\/private-preview\/status/);
   assert.match(html, /\/api\/member\/app\/private-preview\/consume/);
   assert.match(html, /URL\.revokeObjectURL/);
+  assert.match(html, /BKK%20View%2001\.webp/);
+  assert.match(html, /alt="MMD Privé"/);
   assert.match(html, /setTimeout\(conceal,3000\)/);
   assert.doesNotMatch(html, /private_original_key|r2_bucket|signed_url|localStorage|sessionStorage|indexedDB/);
 
