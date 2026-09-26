@@ -10,8 +10,8 @@ const DETAIL_CANON = Object.freeze({
   finance_reconciliation: Object.freeze({ title: "ตรวจความสอดคล้องทางการเงิน", href: "/internal/admin/partners", authority: "canonical_finance_timeline" }),
   availability_exception_review: Object.freeze({ title: "ตรวจ Availability exception", href: "/internal/admin/calendar", authority: "sigil_availability_snapshot_v1" }),
   finance_payout_hold: Object.freeze({ title: "ตรวจรายการพักจ่าย", href: "/internal/admin/partners", authority: "canonical_finance_timeline" }),
-  job_reconfirm_overdue: Object.freeze({ title: "ยืนยันงานที่เลยเวลา", href: "/internal/admin/jobs", authority: "canonical_sessions_and_reconfirm" }),
-  job_reconfirm_pending: Object.freeze({ title: "ยืนยันงานก่อนเริ่ม", href: "/internal/admin/jobs", authority: "canonical_sessions_and_reconfirm" }),
+  job_reconfirm_overdue: Object.freeze({ title: "ยืนยันงานที่เลยเวลา", href: "/internal/admin/jobs/all?ops=confirm", authority: "canonical_sessions_and_reconfirm" }),
+  job_reconfirm_pending: Object.freeze({ title: "ยืนยันงานก่อนเริ่ม", href: "/internal/admin/jobs/all?ops=confirm", authority: "canonical_sessions_and_reconfirm" }),
   membership_review: Object.freeze({ title: "ตรวจสถานะสมาชิก", href: "/internal/admin/member-intelligence", authority: "my_mmd_entitlement_resolver_v1" }),
   mms_prebooking_coordination: Object.freeze({ title: "ประสาน MMS prebooking", href: "/internal/admin/mms", authority: "mms-worker" }),
   mms_application_review: Object.freeze({ title: "ตรวจใบสมัคร MMS", href: "/internal/admin/mms", authority: "mms-worker" }),
@@ -20,7 +20,7 @@ const DETAIL_CANON = Object.freeze({
   hype_coupon_manual_review_overdue: Object.freeze({ title: "ตรวจ Coupon manual review ที่เลยเวลา", href: "/internal/admin/member-intelligence", authority: "care_back_claim_policy" }),
   hype_telegram_bind_overdue: Object.freeze({ title: "ตรวจ Telegram bind anomaly", href: "/internal/admin/control-room", authority: "telegram_identity_bind_authority" }),
   hype_operational_watch: Object.freeze({ title: "ตรวจ HYPE overdue exception ชนิดใหม่", href: "/internal/admin/control-room", authority: "hype_coordinator_read_only" }),
-  owner_exception: Object.freeze({ title: "เรื่องที่ต้องให้เปอร์ดู", href: "/internal/admin/control-room", authority: "owner_review" }),
+  owner_exception: Object.freeze({ title: "เรื่องที่ต้องให้เปอร์ดู", href: "/internal/admin/jobs/all", authority: "owner_review" }),
 });
 
 const DETAIL_COPY = Object.freeze({
