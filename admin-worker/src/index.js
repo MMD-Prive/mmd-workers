@@ -947,51 +947,6 @@ async function readAdminGateSession(req, env) {
   }
 }
 
-async function callPaymentsCreateLink(env, payload) {
-  const confirmKey = String(env.CONFIRM_KEY || "").trim();
-  if (!confirmKey) {
-    const err = new Error("missing_CONFIRM_KEY");
-    err.status = 500;
-    throw err;
-  }
-
-  const paymentsBaseUrl = String(env.PAYMENTS_BASE_URL || env.PAYMENTS_WORKER_BASE_URL || "").trim();
-  if (!paymentsBaseUrl) {
-    const err = new Error("missing_PAYMENTS_BASE_URL");
-    err.status = 500;
-    throw err;
-  }
-
-  const paymentsBaseWithSlash = paymentsBaseUrl.endsWith("/") ? paymentsBaseUrl : `${paymentsBaseUrl}/`;
-  const linkUrl = new URL("v1/confirm/link", paymentsBaseWithSlash);
-
-  const res = await fetch(linkUrl.toString(), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      "X-Confirm-Key": confirmKey,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch (_) {
-    data = null;
-  }
-
-  if (!res.ok) {
-    const err = new Error(data?.error || data?.message || `payments_worker_http_${res.status}`);
-    err.status = 502;
-    err.response = data;
-    throw err;
-  }
-
-  return data || {};
-}
-
 async function createAdminSession(env, body) {
   const required = ["memberstack_id", "model_id", "amount_thb"];
   const missing = required.filter((k) => body?.[k] == null || body?.[k] === "");
