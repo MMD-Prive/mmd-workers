@@ -264,6 +264,39 @@ function publicExtensionScript() {
 </script>`;
 }
 
+const MY_MMD_BRAND_LOGO_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp";
+
+function myMmdBangkokTheme() {
+  return `<style id="mmd-bangkok-theme-v1">
+:root{--mmd-bkk-ink:#211b1a;--mmd-bkk-ivory:#fffaf3;--mmd-bkk-wine:#6b2737;--mmd-bkk-gold:#c59a58;--mmd-bkk-line:rgba(33,27,26,.14)}
+html,body{background:var(--mmd-bkk-ivory)!important;color:var(--mmd-bkk-ink)!important}
+body{position:relative;min-height:100svh;overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-3;pointer-events:none;background:linear-gradient(180deg,rgba(255,250,243,.86) 0%,rgba(255,250,243,.94) 48%,rgba(255,250,243,.99) 100%),linear-gradient(130deg,#edcfa6 0%,#d9a76f 32%,#70404a 100%);background-size:cover}
+body::after{content:"";position:fixed;left:-4vw;right:-4vw;bottom:0;height:31vh;z-index:-2;pointer-events:none;opacity:.24;background:linear-gradient(180deg,transparent 0 18%,#4f3033 18% 21%,transparent 21% 23%,#4f3033 23% 100%);clip-path:polygon(0 62%,4% 58%,7% 70%,10% 35%,13% 60%,16% 46%,19% 68%,22% 30%,25% 60%,28% 52%,31% 72%,34% 41%,37% 64%,40% 27%,43% 58%,46% 48%,49% 68%,52% 35%,55% 62%,58% 20%,61% 58%,64% 40%,67% 69%,70% 31%,73% 60%,76% 46%,79% 70%,82% 36%,85% 63%,88% 26%,91% 58%,94% 42%,97% 66%,100% 54%,100% 100%,0 100%)}
+#mmd-bangkok-theme-v1{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:14px;width:min(100% - 28px,1120px);margin:0 auto;padding:14px 0 10px;box-sizing:border-box;font-family:Manrope,system-ui,-apple-system,"Noto Sans Thai",sans-serif}
+#mmd-bangkok-theme-v1 .mmd-bkk-brand{display:inline-flex;align-items:center;gap:10px;color:inherit;text-decoration:none}
+#mmd-bangkok-theme-v1 .mmd-bkk-logo{width:auto;height:38px;max-width:154px;object-fit:contain;display:block}
+#mmd-bangkok-theme-v1 .mmd-bkk-copy{display:grid;gap:1px;line-height:1.15}
+#mmd-bangkok-theme-v1 .mmd-bkk-name{font-size:12px;font-weight:800;letter-spacing:.11em}
+#mmd-bangkok-theme-v1 .mmd-bkk-place{font-size:10px;letter-spacing:.16em;color:rgba(33,27,26,.6)}
+#mmd-bangkok-theme-v1 .mmd-bkk-mark{font-size:10px;letter-spacing:.15em;color:var(--mmd-bkk-wine);white-space:nowrap}
+body[data-mmd-world="private"] #mmd-bangkok-theme-v1{--mmd-bkk-ink:#f7efe5;--mmd-bkk-ivory:#171114;--mmd-bkk-wine:#f1c6cf;--mmd-bkk-line:rgba(255,255,255,.16)}
+body[data-mmd-world="private"]::before{background:linear-gradient(180deg,rgba(23,17,20,.72),rgba(23,17,20,.95)),linear-gradient(130deg,#2b1a21,#120e11)}
+body[data-mmd-world="private"]::after{opacity:.18;background:linear-gradient(180deg,transparent 0 18%,#d8a6ae 18% 21%,transparent 21% 23%,#d8a6ae 23% 100%)}
+@media(max-width:560px){#mmd-bangkok-theme-v1{width:min(100% - 22px,1120px);padding-top:11px}#mmd-bangkok-theme-v1 .mmd-bkk-logo{height:32px;max-width:130px}#mmd-bangkok-theme-v1 .mmd-bkk-place{font-size:9px}#mmd-bangkok-theme-v1 .mmd-bkk-mark{font-size:9px}}
+</style>`;
+}
+
+function myMmdBrandMarkup() {
+  return `<header id="mmd-bangkok-theme-v1" data-mmd-bangkok-theme="v1" aria-label="MMD Privé">
+<a class="mmd-bkk-brand" href="/my-mmd/" aria-label="กลับ MY MMD">
+<img class="mmd-bkk-logo" src="${MY_MMD_BRAND_LOGO_URL}" alt="MMD Privé">
+<span class="mmd-bkk-copy"><span class="mmd-bkk-name">MMD PRIVÉ</span><span class="mmd-bkk-place">BANGKOK · THAILAND</span></span>
+</a>
+<span class="mmd-bkk-mark">MY MMD</span>
+</header>`;
+}
+
 function rewriteMyMmdHtml(html) {
   let output = String(html || "");
 
@@ -284,6 +317,10 @@ function rewriteMyMmdHtml(html) {
     if (output.includes("</head>")) output = output.replace("</head>", publicExtensionSkin() + "</head>");
     if (output.includes("<body>")) output = output.replace("<body>", "<body>" + publicExtensionMarkup());
     if (output.includes("</body>")) output = output.replace("</body>", publicExtensionScript() + "</body>");
+  }
+  if (!output.includes('data-mmd-bangkok-theme="v1"')) {
+    if (output.includes("</head>")) output = output.replace("</head>", myMmdBangkokTheme() + "</head>");
+    output = output.replace(/<body\b[^>]*>/i, match => match + myMmdBrandMarkup());
   }
   return output;
 }
