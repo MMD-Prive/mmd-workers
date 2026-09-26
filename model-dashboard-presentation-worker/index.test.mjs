@@ -8,6 +8,7 @@ import {
   isWishStatusAssetPath,
   isTelegramConnectAssetPath,
   isModelHistoryAssetPath,
+  isModelMediaUploadAssetPath,
   isModelPwaManifestPath,
   modelPwaManifest,
   presentationUrlForPage,
@@ -49,6 +50,8 @@ test("matches only Model Dashboard presentation namespace plus explicit runtime 
   assert.equal(isTelegramConnectAssetPath("/sigil/model/dashboard-assets/_build/app.js"), false);
   assert.equal(isModelHistoryAssetPath("/sigil/model/dashboard-assets/model-history-v1.js"), true);
   assert.equal(isModelHistoryAssetPath("/sigil/model/dashboard-assets/model-history-v1.css"), true);
+  assert.equal(isModelMediaUploadAssetPath("/sigil/model/dashboard-assets/model-media-upload-v1.js"), true);
+  assert.equal(isModelMediaUploadAssetPath("/sigil/model/dashboard-assets/model-media-upload-v1.css"), true);
   assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/manifest.webmanifest"), true);
   assert.equal(isModelPwaManifestPath("/sigil/model/dashboard/profile"), false);
 });
@@ -363,8 +366,27 @@ test("rewrites Lovable runtime paths and bounded app links to canonical same-ori
   assert.match(out, /model-history-v1\.css/);
   assert.match(out, /model-history-v1\.js/);
   assert.match(out, /data-mmd-model-history-assets="v1"/);
+  assert.match(out, /data-mmd-model-media-upload-assets="v1"/);
   assert.doesNotMatch(out, /lovable-badge/);
   assert.doesNotMatch(out, /~flock\.js/);
+});
+
+test("serves mobile model media upload assets with review-first limits and retry", async () => {
+  const worker = (await import("./src/index.js")).default;
+  const js = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-media-upload-v1.js"));
+  assert.equal(js.status, 200);
+  assert.equal(js.headers.get("x-mmd-dashboard-addon"), "model-media-upload-v1");
+  const source = await js.text();
+  assert.match(source, /MAX_PHOTOS=8,MAX_CLIPS=3/);
+  assert.match(source, /25\*1024\*1024/);
+  assert.match(source, /\/v1\/model\/media\/upload-url/);
+  assert.match(source, /pending_review/);
+  assert.match(source, /ลองอีกครั้ง/);
+  assert.match(source, /sessionStorage/);
+  assert.match(source, /readBack/);
+  const css = await worker.fetch(new Request("https://mmdbkk.com/sigil/model/dashboard-assets/model-media-upload-v1.css"));
+  assert.equal(css.status, 200);
+  assert.match(css.headers.get("content-type"), /text\/css/);
 });
 
 test("rewrites runtime paths without touching model API authority", () => {

@@ -1,4 +1,5 @@
 import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
+import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
 import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 
 const WORKER_NAME = "model-dashboard-presentation-worker";
@@ -27,6 +28,8 @@ const TELEGRAM_CONNECT_JS_PATH = `${ASSET_PREFIX}telegram-connect-v1.js`;
 const TELEGRAM_CONNECT_CSS_PATH = `${ASSET_PREFIX}telegram-connect-v1.css`;
 const MODEL_HISTORY_JS_PATH = `${ASSET_PREFIX}model-history-v1.js`;
 const MODEL_HISTORY_CSS_PATH = `${ASSET_PREFIX}model-history-v1.css`;
+const MODEL_MEDIA_UPLOAD_JS_PATH = `${ASSET_PREFIX}model-media-upload-v1.js`;
+const MODEL_MEDIA_UPLOAD_CSS_PATH = `${ASSET_PREFIX}model-media-upload-v1.css`;
 const MODEL_PWA_MANIFEST_PATH = `${UI_PREFIX}/manifest.webmanifest`;
 const MODEL_PWA_ICON_URL = "https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa586601bf3d46fb15c5699_05-tiny-mark-512px.webp";
 
@@ -779,6 +782,10 @@ export function rewritePresentationHtml(html) {
       `<script src="${MODEL_HISTORY_JS_PATH}" defer data-mmd-model-history-runtime="v1"></script></body>`,
     );
   }
+  if (!output.includes('data-mmd-model-media-upload-assets="v1"')) {
+    output = output.replace(/<\/head\s*>/i, `<link rel="stylesheet" href="${MODEL_MEDIA_UPLOAD_CSS_PATH}" data-mmd-model-media-upload-assets="v1"></head>`);
+    output = output.replace(/<\/body\s*>/i, `<script src="${MODEL_MEDIA_UPLOAD_JS_PATH}" defer data-mmd-model-media-upload-runtime="v1"></script></body>`);
+  }
   return output;
 }
 
@@ -1003,6 +1010,21 @@ function modelHistoryAssetResponse(pathname, method = "GET") {
   return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
 }
 
+export function isModelMediaUploadAssetPath(pathname) {
+  const path = normalizePath(pathname);
+  return path === MODEL_MEDIA_UPLOAD_JS_PATH || path === MODEL_MEDIA_UPLOAD_CSS_PATH;
+}
+
+function modelMediaUploadAssetResponse(pathname, method = "GET") {
+  const path = normalizePath(pathname);
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  if (!["GET", "HEAD"].includes(normalizedMethod)) return new Response("Method Not Allowed", { status: 405, headers: { allow: "GET, HEAD", "cache-control": "public, max-age=300" } });
+  const head = normalizedMethod === "HEAD";
+  if (path === MODEL_MEDIA_UPLOAD_JS_PATH) return new Response(head ? null : MODEL_MEDIA_UPLOAD_JS, { status: 200, headers: { "content-type": "application/javascript; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-media-upload-v1" } });
+  if (path === MODEL_MEDIA_UPLOAD_CSS_PATH) return new Response(head ? null : MODEL_MEDIA_UPLOAD_CSS, { status: 200, headers: { "content-type": "text/css; charset=utf-8", "cache-control": "public, max-age=300", "x-mmd-dashboard-addon": "model-media-upload-v1" } });
+  return new Response("Not Found", { status: 404, headers: { "cache-control": "no-store" } });
+}
+
 function modelPwaManifestResponse(method = "GET") {
   const normalizedMethod = String(method || "GET").toUpperCase();
   if (!["GET", "HEAD"].includes(normalizedMethod)) {
@@ -1044,6 +1066,7 @@ export default {
     if (isWishStatusAssetPath(path)) return wishStatusAssetResponse(path, request.method);
     if (isTelegramConnectAssetPath(path)) return telegramConnectAssetResponse(path, request.method);
     if (isModelHistoryAssetPath(path)) return modelHistoryAssetResponse(path, request.method);
+    if (isModelMediaUploadAssetPath(path)) return modelMediaUploadAssetResponse(path, request.method);
     if (isPresentationAssetPath(path) || isPresentationRootRuntimePath(path)) return proxyRuntime(request);
     if (isPresentationUiPath(path)) {
       if (isModelOnboardingPhaseARequest(request)) {
