@@ -245,7 +245,7 @@ function renderShell(config, nonce) {
     const member = data && data.customer_360 && typeof data.customer_360.member === "object" ? data.customer_360.member : {};
     const value = [member.tier, member.membership_status, data && data.tier, data && data.membership_status]
       .map((item) => String(item || "").toLowerCase().replace(/[_-]/g, " ")).join(" ");
-    return /\b(private|premium|vip|svip|black|sigil)\b/.test(value) ? "private" : "public";
+    return /\b(private|standard|premium|vip|svip|black|sigil)\b/.test(value) ? "private" : "public";
   }
   function applyWorldTheme(data) {
     const world = detectWorld(data);
