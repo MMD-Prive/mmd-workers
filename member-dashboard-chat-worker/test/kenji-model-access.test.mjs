@@ -161,6 +161,10 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   }
   assert.equal(resolveLineCardCampaignTrigger("JASPER")?.display_intent, "Jasper");
   assert.equal(resolveLineCardCampaignTrigger("JASPAL"), null);
+  for (const inheritedKey of ["constructor", "toString", "__proto__"]) {
+    assert.equal(resolveLineCardCampaignTrigger(inheritedKey), null);
+    assert.notEqual(inferLineIntent(inheritedKey, lineEvent(inheritedKey)), "card_campaign_lead");
+  }
   assert.equal(extractKenjiModelLookupQuery("Sky B"), "");
   assert.equal(resolveLineCardCampaignTrigger("Sky B"), null);
   assert.notEqual(inferLineIntent("Sky B", lineEvent("Sky B")), "card_campaign_lead");
