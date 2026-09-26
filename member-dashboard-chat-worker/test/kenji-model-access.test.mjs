@@ -154,14 +154,16 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("ชื่อนายแบบ น้องซิน"), "น้องซิน");
-  for (const card of ["JASPER", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
+  for (const card of ["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     assert.equal(extractKenjiModelLookupQuery(card), card);
     assert.equal(inferLineIntent(card, lineEvent(card)), "card_campaign_lead");
     assert.equal(resolveLineCardCampaignTrigger(card)?.card_trigger, card);
   }
   assert.equal(resolveLineCardCampaignTrigger("JASPER")?.display_intent, "Jasper");
   assert.equal(resolveLineCardCampaignTrigger("JASPAL"), null);
-  assert.equal(resolveLineCardCampaignTrigger("Sky B")?.manager_action_enabled, false);
+  assert.equal(extractKenjiModelLookupQuery("Sky B"), "");
+  assert.equal(resolveLineCardCampaignTrigger("Sky B"), null);
+  assert.notEqual(inferLineIntent("Sky B", lineEvent("Sky B")), "card_campaign_lead");
   assert.equal(resolveLineCardCampaignTrigger("BOOK EI")?.card_trigger, "BOOK EI");
   assert.equal(resolveLineCardCampaignTrigger("Book EI"), null);
   assert.equal(resolveLineCardCampaignTrigger("https://mmdbkk.com/my-mmd"), null);
@@ -438,10 +440,10 @@ test("JASPER is campaign-scoped Jasper intent and never calls model access RPC",
   assert.equal(decision.reply_source, "line_card_campaign_lead");
 });
 
-test("all eight campaign triggers accept a generic brief without model resolution or rates", async () => {
+test("all seven active campaign triggers accept a generic brief without model resolution or rates", async () => {
   const calls = [];
   const env = { ...BASE_ENV, ADMIN_WORKER: adminBinding({ ok: true, status: "match" }, 200, calls) };
-  for (const trigger of ["JASPER", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
+  for (const trigger of ["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     const decision = await resolveKenjiLineReply(lineEvent(trigger), {}, env, { campaignLeadQueued: true });
     assert.equal(decision.reply_source, "line_card_campaign_lead");
     assert.match(decision.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
@@ -519,6 +521,7 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     assert.equal(metadata.parsed_intent, "card_campaign_lead");
     assert.equal(metadata.card_id, "21829530");
     assert.equal(metadata.card_trigger, "JASPER");
+    assert.equal(metadata.campaign_attribution, "line_card_action_text");
     assert.equal(metadata.display_intent, "Jasper");
     assert.equal(metadata.model_resolution_status, "unresolved");
     assert.equal(metadata.canonical_model_id, null);
