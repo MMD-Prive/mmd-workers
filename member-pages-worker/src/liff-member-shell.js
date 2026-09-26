@@ -253,13 +253,13 @@ function renderShell(config, nonce) {
       mark: "MMD PRIVÉ · MY MMD",
       title: "ยินดีที่ได้รู้จัก",
       subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์",
-      message: "MY MMD คือ APP ที่เราใช้ประสบการณ์การทำงานที่เกิดขึ้น และค้นพบว่า ในยุคย่าง 2027 นี้ โลกมันไปไกล และการมีระบบดูแลนั้นปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขที่มากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจอง จ่าย แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรชัดเจน และรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์"
+      message: "สวัสดีครับ ยินดีที่ได้รู้จัก\\n\\nMY MMD คือแอปที่ผมสร้างจากประสบการณ์ทำงานกว่า 5 ปี เพื่อให้การดูแล การค้นหา และการใช้บริการของเราสะดวก ปลอดภัย และเป็นส่วนตัวมากขึ้นในยุค 2027\\n\\nค้นหานายแบบ รับข่าวสาร จองบริการ ชำระเงิน และติดตามงานได้ในที่เดียว พร้อม ETA นับถอยหลัง บรีฟงานเป็นลายลักษณ์อักษร และรูปโปรไฟล์ที่อัปเดตที่สุด\\n\\nขอให้คุณมีความสุขกับ MMD\\nเปอร์"
     },
     private: {
       mark: "SIGIL SYSTEM · PRIVATE ACCESS",
       title: "SIGIL system",
       subtitle: "Private member application",
-      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system APP\\n\\nเปอร์ใช้เวลาเกือบปีที่เห็นเงียบ ๆ ไม่ค่อยอัปเดต ในที่สุดเปอร์ก็ทำมันสำเร็จแล้ว\\n\\nApp ที่ปลอดภัยที่สุด ใช้งานง่ายสุด ๆ มีระบบค้นหา สะสมพ้อยท์ และประวัติการใช้งาน ซึ่งกำลังทยอยตามมาเรื่อย ๆ แต่คุณรู้ตัวหรือไม่ว่าคุณต่ออายุสมาชิกคนละ 1 ปีเต็ม ๆ ไปเรียบร้อยแล้ว ตั้งแต่คุณได้เห็นหน้านี้\\n\\nขอบคุณที่ยังรอคอย ขอบคุณที่ยังรักกัน\\n\\nเปอร์เริ่มมีเวลาว่างที่จะออกไปตามหานายแบบที่โดนใจมาให้คุณแล้วนะ\\n\\nเปอร์เองฮะ"
+      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system\\n\\nเปอร์ใช้เวลาเกือบปีค่อย ๆ สร้างแอปนี้ให้ปลอดภัยและใช้งานง่ายขึ้น คุณจะค้นหา สะสมพ้อยท์ และดูประวัติการใช้งานได้ในที่เดียว ฟีเจอร์ใหม่กำลังทยอยตามมา\\n\\nสิทธิ์สมาชิกของคุณจะได้รับการดูแลและตรวจสอบตามสถานะในระบบ ตั้งแต่คุณเข้ามาที่หน้านี้\\n\\nขอบคุณที่ยังรอคอยและยังรักกัน เปอร์จะเริ่มออกไปตามหานายแบบที่โดนใจมาให้คุณมากขึ้น\\n\\nเปอร์เองฮะ"
     }
   };
   function detectWorld(data) {
@@ -279,8 +279,18 @@ function renderShell(config, nonce) {
     document.querySelector(".title").textContent = worldCopy.title;
     document.querySelector(".sub").textContent = worldCopy.subtitle;
     message.textContent = worldCopy.message;
+    if (introContinue) introContinue.textContent = world === "private" ? "เข้าสู่ SIGIL system" : "เข้าสู่ MY MMD";
   }
   applyWorldTheme();
+  let appEntered = false;
+  function enterApp() {
+    if (appEntered) return;
+    appEntered = true;
+    document.body.classList.add("app-entered");
+    introContinue?.setAttribute("aria-expanded", "true");
+    boot();
+  }
+  introContinue?.addEventListener("click", enterApp);
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
@@ -888,7 +898,7 @@ function renderShell(config, nonce) {
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  boot();
+  // Welcome screen is user-led; LINE verification begins after Continue.
 })();
 </script>
 </body>
