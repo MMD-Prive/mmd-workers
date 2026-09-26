@@ -34,6 +34,8 @@ import {
 } from "./member-history-recovery.js";
 import {
   applyMyMmdCanonicalEntitlementResponse,
+  handleMyMmdWelcomeContext,
+  isMyMmdWelcomeContextPath,
   prepareMyMmdCanonicalEntitlementContext,
 } from "./my-mmd-canonical-entitlement-bridge.js";
 import {
@@ -116,6 +118,10 @@ export default {
         });
       }
     }
+
+    // This minimal preflight reads only the authenticated session and canonical
+    // protected entitlement. It bypasses history recovery and profile projections.
+    if (isMyMmdWelcomeContextPath(url)) return handleMyMmdWelcomeContext(request, env);
 
     const canonicalContext = await prepareMyMmdCanonicalEntitlementContext(request, env);
     if (canonicalContext?.unavailable) {

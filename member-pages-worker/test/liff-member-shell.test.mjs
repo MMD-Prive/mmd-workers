@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import worker from "../src/index.js";
 import { handleCareBackLiffOrchestrator } from "../src/care-back-liff-orchestrator.js";
+import { resolveTrustedWelcomeWorld } from "../src/liff-member-shell.js";
 
 function env(overrides = {}) {
   return {
@@ -22,6 +23,33 @@ async function stagingShell(hostname, path, runtime) {
 }
 
 describe("same-site /member/liff shell", () => {
+ it("keeps browser world hints public and includes the progressive Per letter", async () => {
+    for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous"]) {
+      const response = await shell(`/member/liff${query}`);
+      const html = await response.text();
+      assert.equal(response.status, 200);
+      assert.match(html, /world-public/);
+      assert.match(html, /id="per-letter" class="per-letter"/);
+      assert.match(html, /ค้นหาโมเดลที่ตรงใจ/);
+      assert.match(html, /ติดตามงานและ ETA/);
+      assert.match(html, /"world":"public"/);
+      assert.match(html, /อุ๊ย! ขออภัยที่คิดดัง/);
+      assert.match(html, /เกือบสองแสนบาท/);
+      assert.match(html, /ขอบคุณที่ยังอยู่/);
+      assert.match(html, /context-resolving/);
+    }
+  });
+
+  it("selects Private only from canonical active protected entitlement evidence", () => {
+    const trusted = "my_mmd_entitlement_resolver_v1";
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, trusted), "private");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "Black Card", membership_status: "grace" }, trusted), "private");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "Premium", membership_status: "active" }, trusted), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "expired" }, trusted), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, "member_profile_resolver"), "public");
+    assert.equal(resolveTrustedWelcomeWorld({ tier: "VIP", membership_status: "active" }, ""), "public");
+  });
+
   it("renders the dedicated published Member Dashboard LIFF ID", async () => {
     const response = await shell("/member/liff?intent=status&view=profile", {
       runtime: env({ LINE_LIFF_ID: "2010862595-yT4DCEMc" }),

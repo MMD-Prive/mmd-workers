@@ -6,6 +6,15 @@ export function isLiffMemberShellPath(url) {
   return LIFF_SHELL_PATHS.has(url.pathname.toLowerCase());
 }
 
+export function resolveTrustedWelcomeWorld(data, authority) {
+  if (authority !== "my_mmd_entitlement_resolver_v1" || !data || typeof data !== "object") return "public";
+  const tier = String(data.tier || "").trim().toLowerCase().replace(/[_-]/g, " ");
+  const lifecycle = String(data.membership_status || "").trim().toLowerCase();
+  return new Set(["vip", "svip", "black card"]).has(tier) && new Set(["active", "grace"]).has(lifecycle)
+    ? "private"
+    : "public";
+}
+
 export function handleLiffMemberShell(request, env = {}) {
   const method = request.method.toUpperCase();
   if (method !== "GET" && method !== "HEAD") {
@@ -21,11 +30,13 @@ export function handleLiffMemberShell(request, env = {}) {
     intent: normalizeIntent(url.searchParams.get("intent") || url.searchParams.get("liff_intent")),
     campaign: normalizeCampaign(url.searchParams.get("campaign")),
     view: normalizeView(url.searchParams.get("view")),
-    world: normalizeWorld(url.searchParams.get("world") || url.searchParams.get("audience")),
+    // Browser-controlled world/audience hints are never identity or entitlement.
+    world: "public",
     language: normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("locale")),
     promoCode: normalizePromoCode(url.searchParams.get("promo_code") || url.searchParams.get("code")),
     startEndpoint: "/member/api/liff/start",
     profileEndpoint: "/member/api/liff/profile",
+    welcomeContextEndpoint: "/member/api/liff/welcome-context",
     publicCatalogEndpoint: "/member/api/liff/public-membership/catalog",
     publicPurchaseEndpoint: "/member/api/liff/public-membership/purchase",
     careBackEndpoint: "/member/api/liff/care-back/claim",
@@ -103,7 +114,7 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
     /* Full-screen mobile-first intro, then a deliberate hand-off into the app. */
     body.world-public:not(.signup-mode):not(.app-entered),
-    body.world-private:not(.signup-mode):not(.app-entered){min-height:100svh;padding:0;overflow:hidden}
+    body.world-private:not(.signup-mode):not(.app-entered){min-height:100svh;padding:0;overflow-x:hidden;overflow-y:auto}
     body.world-public:not(.signup-mode):not(.app-entered) main,
     body.world-private:not(.signup-mode):not(.app-entered) main{width:100%;max-width:none;min-height:100svh;margin:0;padding:clamp(28px,8vw,72px) clamp(20px,7vw,48px) max(28px,env(safe-area-inset-bottom));border:0;border-radius:0;display:flex;flex-direction:column;justify-content:center}
     body.world-public:not(.signup-mode):not(.app-entered) .intro-screen,
@@ -141,16 +152,24 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .member-nav{border-color:rgba(214,174,94,.28);background:rgba(13,11,10,.78)}
     body.world-private:not(.signup-mode) .member-nav button{color:#bcae96}
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#e7c477;color:#241a0d}
+    .welcome-benefits{display:grid;gap:7px;margin:18px 0 0;padding:0;list-style:none;color:#594b3e;font-size:14px;line-height:1.5}
+    .welcome-benefits li::before{content:"•";margin-right:9px;color:#b94a3f;font-weight:900}
+    body.world-private .welcome-benefits{color:#e1d1b5}.world-private .welcome-benefits li::before{color:#e5bf72}
+    .per-letter{max-width:680px;margin-top:18px;border-top:1px solid currentColor;padding-top:13px;color:inherit}
+    .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
+    body.context-resolving .intro-screen{visibility:hidden}
   </style>
 </head>
-<body class="${config.intent === "signup" ? "signup-mode " : ""}world-${config.world}" data-world="${config.world}">
+<body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}">
 <main>
   <section id="intro-screen" class="intro-screen" aria-labelledby="intro-title">
     <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
     <h1 id="intro-title" class="title" data-copy="title">My MMD</h1>
     <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
-    <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
-    <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false">เข้าสู่ MY MMD</button>
+    <div id="message" role="status" aria-live="polite">กำลังตรวจสอบการเชื่อมต่อที่ปลอดภัย</div>
+    <ul id="welcome-benefits" class="welcome-benefits" aria-label="สิ่งที่ทำได้ในแอป"><li>ค้นหาโมเดลที่ตรงใจ</li><li>ส่งคำขอจองและชำระผ่านขั้นตอนเดิม</li><li>ติดตามงานและ ETA ในที่เดียว</li></ul>
+    <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
+    <details id="per-letter" class="per-letter"><summary>จดหมายจากเปอร์</summary><div id="per-letter-copy" class="per-letter-copy"></div></details>
   </section>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
@@ -272,29 +291,26 @@ function renderShell(config, nonce) {
   let busy = false;
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
+  const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
   const WORLD_COPY = {
     public: {
       mark: "MMD PRIVÉ · MY MMD",
       title: "ยินดีที่ได้รู้จัก",
       subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์",
-      message: "สวัสดีครับ ยินดีที่ได้รู้จัก\\n\\nMY MMD คือแอปที่ผมสร้างจากประสบการณ์ทำงานกว่า 5 ปี เพื่อให้การดูแล การค้นหา และการใช้บริการของเราสะดวก ปลอดภัย และเป็นส่วนตัวมากขึ้นในยุค 2027\\n\\nค้นหานายแบบ รับข่าวสาร จองบริการ ชำระเงิน และติดตามงานได้ในที่เดียว พร้อม ETA นับถอยหลัง บรีฟงานเป็นลายลักษณ์อักษร และรูปโปรไฟล์ที่อัปเดตที่สุด\\n\\nขอให้คุณมีความสุขกับ MMD\\nเปอร์"
+      message: "พื้นที่สาธารณะของ MMD สำหรับค้นหา ส่งคำขอ และติดตามบริการของคุณ"
     },
     private: {
       mark: "SIGIL SYSTEM · PRIVATE ACCESS",
       title: "SIGIL system",
       subtitle: "Private member application",
-      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system\\n\\nเปอร์ใช้เวลาเกือบปีค่อย ๆ สร้างแอปนี้ให้ปลอดภัยและใช้งานง่ายขึ้น คุณจะค้นหา สะสมพ้อยท์ และดูประวัติการใช้งานได้ในที่เดียว ฟีเจอร์ใหม่กำลังทยอยตามมา\\n\\nสิทธิ์สมาชิกของคุณจะได้รับการดูแลและตรวจสอบตามสถานะในระบบ ตั้งแต่คุณเข้ามาที่หน้านี้\\n\\nขอบคุณที่ยังรอคอยและยังรักกัน เปอร์จะเริ่มออกไปตามหานายแบบที่โดนใจมาให้คุณมากขึ้น\\n\\nเปอร์เองฮะ"
+      message: "พื้นที่ Private สำหรับสมาชิกที่ระบบ MMD ยืนยันสิทธิ์แล้ว"
     }
   };
-  function detectWorld(data) {
-    if (CONFIG.world === "private") return "private";
-    const member = data && data.customer_360 && typeof data.customer_360.member === "object" ? data.customer_360.member : {};
-    const value = [member.tier, member.membership_status, data && data.tier, data && data.membership_status]
-      .map((item) => String(item || "").toLowerCase().replace(/[_-]/g, " ")).join(" ");
-    return /\b(private|standard|premium|vip|svip|black|sigil)\b/.test(value) ? "private" : "public";
+  function detectWorld(data, authority) {
+    return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
-  function applyWorldTheme(data) {
-    const world = detectWorld(data);
+  function applyWorldTheme(data, authority = "") {
+    const world = detectWorld(data, authority);
     document.body.classList.toggle("world-public", world === "public");
     document.body.classList.toggle("world-private", world === "private");
     document.body.dataset.world = world;
@@ -305,10 +321,37 @@ function renderShell(config, nonce) {
     message.textContent = worldCopy.message;
     if (introContinue) introContinue.textContent = world === "private" ? "เข้าสู่ SIGIL system" : "เข้าสู่ MY MMD";
   }
+  const PER_LETTER = "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\nถึงจะยังเห็นอัปเดตอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\nเปอร์อยากบอกทุกคนว่า เปอร์ไม่ได้หายไปติดผู้ชายนะครับ\\nไม่ได้หายไปไหน แต่ใช้เวลาเกือบปีศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมา\\nเปอร์ทำเหมือนเดิมก็ได้ คือต้องมานั่งจ้องมือถือ\\nเมื่อไหร่จะจองซักทีวะ เมื่อไหร่จะตอบซักที (อุ๊ย! ขออภัยที่คิดดัง)\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท ในการทำเองทุกอย่างหมด\\nเพื่อให้ทุกคนค้นหา จอง จ่าย ติดตามงาน\\nและใช้บริการกับ MMD ได้สะดวกและปลอดภัยขึ้น\\nมันอาจยังไม่สมบูรณ์ทั้งหมด แต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\nเปอร์เองครับ";
+  document.getElementById("per-letter-copy").textContent = PER_LETTER;
   applyWorldTheme();
+  let welcomeContextPromise;
+  async function resolveInitialWelcomeContext() {
+    if (CONFIG.intent === "signup") {
+      document.body.classList.remove("context-resolving");
+      introContinue.disabled = false;
+      return;
+    }
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      let response;
+      try {
+        response = await fetch(CONFIG.welcomeContextEndpoint, { method: "GET", credentials: "same-origin", redirect: "error", headers: { accept: "application/json" }, signal: controller.signal });
+      } finally { clearTimeout(timeout); }
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.ok === true) applyWorldTheme(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+    } catch {
+      // Missing, stale, ambiguous, or unavailable identity evidence remains Public.
+    } finally {
+      document.body.classList.remove("context-resolving");
+      introContinue.disabled = false;
+    }
+  }
+  welcomeContextPromise = resolveInitialWelcomeContext();
   let appEntered = false;
   async function enterApp() {
     if (appEntered || !introContinue || introContinue.disabled) return;
+    await welcomeContextPromise;
     introContinue.disabled = true;
     try {
       const existingProfile = await readProfile();
@@ -478,7 +521,7 @@ function renderShell(config, nonce) {
     const response = await fetch(CONFIG.profileEndpoint, { method: "GET", credentials: "same-origin", headers: { "accept": "application/json" } });
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
-    renderProfile(payload.data || {});
+    renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
     await readCouponWallet();
     await readCreditWallet();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
@@ -562,8 +605,8 @@ function renderShell(config, nonce) {
     }
   }
 
-  function renderProfile(data) {
-    applyWorldTheme(data);
+  function renderProfile(data, authority = "") {
+    applyWorldTheme(data, authority);
     const view = data && typeof data.customer_360 === "object" ? data.customer_360 : legacyCustomerView(data);
     const member = view.member || {};
     const points = view.points || {};
