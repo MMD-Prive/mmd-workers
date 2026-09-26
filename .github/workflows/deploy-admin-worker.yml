@@ -254,13 +254,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/admin-worker-upload.log"; then
-            echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211; refusing direct-deploy fallback." >&2
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/admin-worker-upload.log" &&
+             ! { grep -Fq 'This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.' "$RUNNER_TEMP/admin-worker-upload.log" &&
+                 grep -Fq 'Durable Object migrations must be applied with `wrangler deploy`.' "$RUNNER_TEMP/admin-worker-upload.log"; }; then
+            echo "Version upload failed without the confirmed Durable Object migration error; refusing direct-deploy fallback." >&2
             cat "$RUNNER_TEMP/admin-worker-upload.log" >&2
             exit 1
           fi
           echo "Cloudflare requires a non-versioned deployment to apply the Durable Object migration; applying the migration without mutating routes."
           echo "ADMIN_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
+          echo "ADMIN_WORKER_RECOVERY_VERIFY_ROUTES_ONLY=1" >> "$GITHUB_ENV"
           migration_config=".wrangler-migration-no-routes.toml"
           node <<'NODE'
           const fs = require("node:fs");
@@ -455,6 +458,9 @@ jobs:
           const missing = desired.filter(
             (pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker)
           );
+          if (missing.length && process.env.ADMIN_WORKER_RECOVERY_VERIFY_ROUTES_ONLY === "1") {
+            throw new Error(`Recovery is route-read-only; missing routes: ${missing.join(", ")}`);
+          }
           for (const pattern of missing) {
             await cloudflare(routePath, {
               method: "POST",
