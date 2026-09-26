@@ -57,3 +57,28 @@ test("Control Room V2 escalates degraded and action-needed live sources", () => 
   assert.equal(action.overall_status, "action_needed");
   assert.equal(action.systems.find((item) => item.key === "payments")?.status, "action_needed");
 });
+
+
+test("Control Room V2 promotes Website, Workers and PostHog to LIVE on explicit refresh", () => {
+  const health = buildControlRoomV2SystemHealth({
+    dashboardStatus: { payments: "พร้อม", data: "พร้อม", reconfirm: "พร้อม" },
+    telegramRouterHealth: { status: "configured", summary: "router configured" },
+    liveProbe: {
+      checked_at: "2026-09-22T09:30:00Z",
+      website: { ok: true, status: 200 },
+      workers: { total: 6, healthy: 6 },
+      analytics: { total: 6, configured: 6, all_configured: true },
+      release: { admin_worker: { id: "ver-live-123", tag: "gha-live", timestamp: "2026-09-22T09:29:00Z" } },
+    },
+  });
+  const byKey = Object.fromEntries(health.systems.map((item) => [item.key, item]));
+  assert.equal(health.refresh_mode, "live_on_demand");
+  assert.equal(health.refreshed_at, "2026-09-22T09:30:00Z");
+  assert.equal(byKey.website.evidence_type, "live");
+  assert.equal(byKey.website.status, "ok");
+  assert.equal(byKey.workers.evidence_type, "live");
+  assert.equal(byKey.workers.status, "ok");
+  assert.equal(byKey.analytics.evidence_type, "live");
+  assert.equal(byKey.analytics.status, "ok");
+  assert.equal(health.release.admin_worker.id, "ver-live-123");
+});

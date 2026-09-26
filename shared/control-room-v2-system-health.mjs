@@ -38,8 +38,8 @@ function clean(value) {
 
 function liveStatus(value) {
   const token = clean(value);
-  if (["พร้อม", "ready", "configured", "clear", "ok", "live", "healthy"].includes(token)) return "ok";
-  if (["บางส่วน", "partial", "degraded", "warning", "watch", "unknown", "ยังยืนยันไม่ได้"].includes(token)) return "degraded";
+  if (["พร้อม", "ข้อมูลจริง", "ready", "configured", "clear", "ok", "live", "healthy"].includes(token)) return "ok";
+  if (["บางส่วน", "ข้อมูลจริงบางส่วน", "ยังไม่มีข้อมูล", "partial", "degraded", "warning", "watch", "unknown", "ยังยืนยันไม่ได้"].includes(token)) return "degraded";
   if (["มีปัญหา", "unavailable", "failed", "error", "critical", "overdue", "down"].includes(token)) return "action_needed";
   return token ? "degraded" : "degraded";
 }
@@ -59,8 +59,12 @@ function system({ key, label, status, evidenceType, source, href = null, detail 
 export function buildControlRoomV2SystemHealth({
   dashboardStatus = {},
   telegramRouterHealth = null,
+  liveProbe = null,
 } = {}) {
   const telegramStatus = clean(telegramRouterHealth?.status) || dashboardStatus?.telegram;
+  const liveWorkers = liveProbe?.workers;
+  const liveAnalytics = liveProbe?.analytics;
+  const websiteLive = liveProbe?.website;
   const systems = [
     system({
       key: "website",
@@ -97,10 +101,12 @@ export function buildControlRoomV2SystemHealth({
     system({
       key: "analytics",
       label: "PostHog",
-      status: "ok",
-      evidenceType: ACCEPTED.analytics.evidence_type,
-      source: "phase0_authority_acceptance",
-      detail: "Authority runtime accepted 6/6 · business events remain transaction-driven",
+      status: liveAnalytics ? (liveAnalytics.all_configured === true ? "ok" : liveAnalytics.configured > 0 ? "degraded" : "action_needed") : "ok",
+      evidenceType: liveAnalytics ? "live" : ACCEPTED.analytics.evidence_type,
+      source: liveAnalytics ? "authority_runtime_health" : "phase0_authority_acceptance",
+      detail: liveAnalytics
+        ? (String(liveAnalytics.configured || 0) + "/" + String(liveAnalytics.total || 0) + " PostHog authority runtimes configured")
+        : "Authority runtime accepted 6/6 · business events remain transaction-driven",
     }),
     system({
       key: "payments",
@@ -155,10 +161,13 @@ export function buildControlRoomV2SystemHealth({
   return {
     schema: SCHEMA,
     mode: "read_only",
+    refresh_mode: liveProbe ? "live_on_demand" : "baseline",
+    refreshed_at: liveProbe?.checked_at || null,
     overall_status: overall,
     systems,
     phase0: { ...ACCEPTED.analytics },
     phase1: { ...ACCEPTED.routes },
+    release: liveProbe?.release || null,
     operational_watch: {
       label: "HYPE / STUCK / SLA",
       load_mode: "on_demand",

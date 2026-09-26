@@ -71,3 +71,42 @@ test("dashboard facade rejects non-production public hosts", async () => {
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error, "dashboard_host_not_allowed");
 });
+
+
+test("credential-bound owner session can request explicit live system refresh", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url === "https://www.mmdbkk.com/") return new Response(null, { status: 200 });
+    if (/\/health(?:$|\?)/.test(url) || url.includes("/mmd-shop/api/health") || url.includes("/v1/pay/slip/evidence/health")) {
+      return Response.json({
+        ok: true,
+        analytics: { posthog_authority: "configured", schema: "mmd_authority_v1" },
+      }, { status: 200 });
+    }
+    throw new Error("unexpected_live_probe_url:" + url);
+  };
+  try {
+    const Cookie = await issueOwnerCookie();
+    const response = await worker.fetch(new Request("https://mmdbkk.com/v1/admin/dashboard?system_health=live", {
+      headers: { Origin: "https://mmdbkk.com", Cookie },
+    }), {
+      ...ENV,
+      CF_VERSION_METADATA: {
+        id: "admin-version-live-test",
+        tag: "gha-live-test",
+        timestamp: "2026-09-22T09:30:00Z",
+      },
+    }, {});
+    const payload = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(payload.control_room_v2?.refresh_mode, "live_on_demand");
+    assert.equal(payload.control_room_v2?.systems?.find((item) => item.key === "website")?.evidence_type, "live");
+    assert.equal(payload.control_room_v2?.systems?.find((item) => item.key === "workers")?.status, "ok");
+    assert.equal(payload.control_room_v2?.systems?.find((item) => item.key === "analytics")?.evidence_type, "live");
+    assert.equal(payload.control_room_v2?.release?.admin_worker?.id, "admin-version-live-test");
+    assert.equal(payload.control_room_v2?.authority?.business_truth_mutated, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

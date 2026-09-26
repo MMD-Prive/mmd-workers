@@ -199,9 +199,11 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
     data: dataMode([paymentQueueResult, historicalQueueResult, sessionsResult, membersResult]),
     reconfirm: reconfirm.available ? "พร้อม" : "ยังยืนยันไม่ได้",
   };
+  const liveProbe = liveHealthResult.status === "fulfilled" ? liveHealthResult.value : null;
   const controlRoomV2 = buildControlRoomV2SystemHealth({
     dashboardStatus,
     telegramRouterHealth,
+    liveProbe,
   });
 
   const payload = {
@@ -237,6 +239,9 @@ export async function buildAdminDashboard(env, { ownerActor = null } = {}) {
       member_source: resultReason(membersResult),
       reconfirm_source: reconfirmSessionsResult.status === "fulfilled" ? "ok" : resultReason(reconfirmSessionsResult),
       telegram_router_source: telegramRouterResult.status === "fulfilled" ? cleanDebugStatus(telegramRouterHealth?.status) : resultReason(telegramRouterResult),
+      control_room_v2_live_source: liveSystemHealth
+        ? (liveHealthResult.status === "fulfilled" ? "ok" : resultReason(liveHealthResult))
+        : "not_requested",
     },
   };
   Object.defineProperty(payload, "owner_actions_source", {

@@ -14,6 +14,10 @@ const CONTROL_ROOM_V2_STYLE = `<style data-mmd-control-room-v2-style>
 [data-mmd-control-room-v2] .v2overall[data-status="ok"]{border-color:#29533b;color:#aee2bf}
 [data-mmd-control-room-v2] .v2overall[data-status="degraded"]{border-color:#645126;color:#f1d18b}
 [data-mmd-control-room-v2] .v2overall[data-status="action_needed"]{border-color:#6a3333;color:#ffb4b4}
+[data-mmd-control-room-v2] .v2controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+[data-mmd-control-room-v2] .v2refresh{padding:7px 9px;border:1px solid #4b402d;border-radius:999px;background:#17140e;color:#e1c47f;font:850 7px/1 inherit;cursor:pointer}
+[data-mmd-control-room-v2] .v2refresh:disabled{opacity:.5;cursor:wait}
+[data-mmd-control-room-v2] .v2release{margin-top:5px;color:#706c65;font-size:6px;letter-spacing:.04em}
 [data-mmd-control-room-v2] .v2grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:11px}
 [data-mmd-control-room-v2] .v2card{min-height:92px;padding:10px;border:1px solid #2d2a25;border-radius:12px;background:#0f0e0c;color:#eee;text-decoration:none}
 [data-mmd-control-room-v2] .v2top{display:flex;justify-content:space-between;gap:8px;align-items:center}
@@ -30,7 +34,7 @@ const CONTROL_ROOM_V2_STYLE = `<style data-mmd-control-room-v2-style>
 </style>`;
 
 const CONTROL_ROOM_V2_PANEL = `<section data-mmd-control-room-v2="system-health-v1" aria-label="MMD system health">
-  <div class="v2h"><div><div class="v2k">SYSTEM HEALTH · V2</div><h2>Production truth at a glance</h2></div><span class="v2overall" data-v2-overall data-status="degraded">CHECKING</span></div>
+  <div class="v2h"><div><div class="v2k">SYSTEM HEALTH · V2</div><h2>Production truth at a glance</h2><div class="v2release" data-v2-release>baseline · production receipts</div></div><div class="v2controls"><button class="v2refresh" type="button" data-v2-refresh>REFRESH LIVE</button><span class="v2overall" data-v2-overall data-status="degraded">CHECKING</span></div></div>
   <div class="v2grid" data-v2-systems><div class="v2card" data-status="degraded"><div class="v2top"><span class="v2name">Loading</span><span class="v2state">CHECKING</span></div><div class="v2detail">กำลังอ่าน authenticated dashboard truth…</div></div></div>
   <div class="v2watch"><div><b>HYPE / STUCK / SLA</b><span data-v2-watch>อ่านผ่าน AI Ops on demand · ไม่เพิ่ม Airtable reads ตอนเปิดหน้า</span></div><button type="button" data-v2-open-ai>OPEN AI OPS</button></div>
 </section>`;
