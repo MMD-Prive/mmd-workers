@@ -45,5 +45,12 @@ test("Boss exception lane ignores protected tiers and queue density heuristics",
     sessionRecords: [{ id: "held", fields: { status: "hold", note: "manual owner review" } }],
   });
   assert.equal(exception.length, 1);
-  assert.equal(exception[0].title, "Job Exception");
+  assert.equal(exception[0].title, "ตรวจงานที่มีปัญหา");
+  assert.equal(exception[0].href, "/internal/admin/jobs/all?session_id=held");
+  const multiple = buildBossList({ sessionRecords: [
+    { id: "only-note", fields: { status: "confirmed", note: "blocked pending discussion" } },
+    { id: "a", fields: { status: "hold", session_id: "S-A" } },
+    { id: "b", fields: { status: "blocked", session_id: "S-B" } },
+  ] });
+  assert.deepEqual(multiple.map((item) => item.id), ["S-A", "S-B"]);
 });

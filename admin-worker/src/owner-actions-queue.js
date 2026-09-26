@@ -186,7 +186,7 @@ function reconfirmAction(reconfirm, status) {
     title: overdue ? "ยืนยันงานที่เลยเวลา" : "ยืนยันงานก่อนเริ่ม",
     summary: overdue ? `มี ${count} งานที่เลยเวลายืนยันแล้ว` : `มี ${count} งานที่ถึงเวลายืนยัน`,
     count,
-    href: "/internal/admin/jobs",
+    href: "/internal/admin/jobs/all?ops=confirm",
     authority: "canonical_sessions_and_reconfirm",
   });
 }
@@ -353,7 +353,7 @@ function ownerExceptionAction(items) {
     title: "เรื่องที่ต้องให้เปอร์ดู",
     summary: `มี ${count} exception ที่ระบบไม่ควรตัดสินใจแทน`,
     count,
-    href: "/internal/admin/control-room",
+    href: "/internal/admin/jobs/all",
     authority: "owner_review",
   }) : null;
 }

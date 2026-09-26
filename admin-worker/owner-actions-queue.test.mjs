@@ -469,3 +469,23 @@ test("owner action detail is a source-safe owner-only read projection", () => {
   assert.equal(JSON.stringify(detail).includes("bank-secret"), false);
   assert.equal(buildOwnerActionDetail({ money: [{ proof_id: "proof-1" }] }, "unknown"), null);
 });
+
+
+test("problem queues lead to the canonical work page", () => {
+  const input = {
+    reconfirm: { available: true, items: [
+      { session_id: "job-1", status: "overdue" },
+      { session_id: "job-2", status: "pending" },
+    ] },
+    boss: [{ id: "job-3", href: "/internal/admin/jobs/all?date=2026-09-26" }],
+  };
+  const queue = buildOwnerActionsQueue(input);
+  const routes = Object.fromEntries(queue.actions.map((item) => [item.action_key, item.href]));
+  assert.equal(routes.job_reconfirm_overdue, "/internal/admin/jobs/all?ops=confirm");
+  assert.equal(routes.job_reconfirm_pending, "/internal/admin/jobs/all?ops=confirm");
+  assert.equal(routes.owner_exception, "/internal/admin/jobs/all");
+  for (const key of ["job_reconfirm_overdue", "job_reconfirm_pending", "owner_exception"]) {
+    assert.equal(buildOwnerActionDetail(input, key).drilldown.source_surface, routes[key]);
+  }
+  assert.equal(queue.actions.some((item) => ["/internal/admin/jobs", "/internal/admin/exceptions"].includes(item.href)), false);
+});
