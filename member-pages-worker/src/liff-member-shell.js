@@ -101,14 +101,35 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .mark{color:#d7bd8a}
     body.world-private:not(.signup-mode) #message{color:#e5d0b2;border-left:2px solid #d9ae77;background:#dfb58014}
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
+    /* Full-screen mobile-first intro, then a deliberate hand-off into the app. */
+    body.world-public:not(.signup-mode):not(.app-entered),
+    body.world-private:not(.signup-mode):not(.app-entered){min-height:100svh;padding:0;overflow:hidden}
+    body.world-public:not(.signup-mode):not(.app-entered) main,
+    body.world-private:not(.signup-mode):not(.app-entered) main{width:100%;max-width:none;min-height:100svh;margin:0;padding:clamp(28px,8vw,72px) clamp(20px,7vw,48px) max(28px,env(safe-area-inset-bottom));border:0;border-radius:0;display:flex;flex-direction:column;justify-content:center}
+    body.world-public:not(.signup-mode):not(.app-entered) .intro-screen,
+    body.world-private:not(.signup-mode):not(.app-entered) .intro-screen{min-height:100svh;display:flex;flex-direction:column;justify-content:center;gap:0}
+    .intro-screen .title{max-width:680px;margin-top:14px;font-size:clamp(34px,10vw,68px);letter-spacing:-.04em}
+    .intro-screen .sub{max-width:640px;margin-top:12px;font-size:clamp(14px,3.8vw,19px)}
+    .intro-screen #message{max-width:680px;margin-top:clamp(22px,6vw,46px);font-size:clamp(15px,4.2vw,20px);line-height:1.78}
+    .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}
+    body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
+    body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
+    body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
+    body.app-entered .intro-screen{display:none}
+    body.app-entered.world-public main,body.app-entered.world-private main{width:min(100%,760px);min-height:auto;margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;display:block}
+    body.app-entered.world-public,body.app-entered.world-private{padding:20px 16px 40px;overflow:auto}
+    @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode " : ""}world-${config.world}" data-world="${config.world}">
 <main>
-  <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
-  <h1 class="title" data-copy="title">My MMD</h1>
-  <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
-  <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
+  <section id="intro-screen" class="intro-screen" aria-labelledby="intro-title">
+    <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
+    <h1 id="intro-title" class="title" data-copy="title">My MMD</h1>
+    <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
+    <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
+    <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false">เข้าสู่ MY MMD</button>
+  </section>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
     <div class="signup-hero">
@@ -201,6 +222,7 @@ function renderShell(config, nonce) {
   "use strict";
   const CONFIG = ${safeConfig};
   const message = document.getElementById("message");
+  const introContinue = document.getElementById("intro-continue");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
   const profile = document.getElementById("profile");
