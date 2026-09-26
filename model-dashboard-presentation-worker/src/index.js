@@ -1,4 +1,5 @@
 import { MODEL_HISTORY_JS, MODEL_HISTORY_CSS } from "./model-history-presentation.js";
+import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
 import { modelOnboardingPhaseAHtml } from "./model-onboarding-phase-a-page.js";
 import { MODEL_LINE_BRIEFS_JS, MODEL_LINE_BRIEFS_CSS } from "./model-line-briefs.js";
 import { MODEL_MEDIA_UPLOAD_JS, MODEL_MEDIA_UPLOAD_CSS } from "./model-media-upload-presentation.js";
