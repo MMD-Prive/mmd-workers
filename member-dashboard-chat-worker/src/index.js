@@ -69,6 +69,13 @@ const KENJI_RUNTIME_STATUS_RPC_URL = "https://admin-worker.local/v1/internal/ken
 const KENJI_RUNTIME_STATUS_TIMEOUT_MS = 700;
 const KENJI_MODEL_ACCESS_PENDING_TIMEOUT_MS = 500;
 
+const LINE_WEBHOOK_PATHS = new Set([
+  "/webhooks/line",
+  "/webhooks/line/",
+  "/webhook/line",
+  "/webhook/line/",
+]);
+
 const PUBLIC_MENU_TEXT = [
   "MMD Member Help",
   "Open the member area from the official MMD link.",
@@ -1064,6 +1071,39 @@ export async function deliverLineText(env = {}, lineUserId, text, options = {}) 
   }
 
   return { ok: true, status: response.status };
+}
+
+async function replyLineText(env = {}, replyToken, text) {
+  const token = asString(env.LINE_CHANNEL_ACCESS_TOKEN);
+  const safeReplyToken = asString(replyToken);
+  const safeText = sanitizeLineText(text);
+
+  if (!token || !safeReplyToken || !safeText) return { ok: false, skipped: "line_reply_not_configured" };
+
+  const response = await fetch(LINE_REPLY_URL, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      replyToken: safeReplyToken,
+      messages: [{ type: "text", text: safeText }],
+    }),
+  });
+
+  if (!response.ok) return { ok: false, error: "line_reply_failed", status: response.status };
+  return { ok: true, status: response.status };
+}
+
+function buildSafeAutoReply(intent) {
+  if (intent === "greeting" || intent === "new_follow") {
+    return "สวัสดีครับ ผม Kenji จาก MMD Privé รับเรื่องให้แล้วครับ หากเป็นการจอง งานสมาชิก หรือส่งหลักฐานชำระเงิน ทีมจะตรวจสอบก่อนยืนยันทุกครั้งครับ";
+  }
+  if (intent === "booking_intake") {
+    return "รับเรื่องจองแล้วครับ รบกวนแจ้งวัน เวลาโดยประมาณ ระยะเวลา และพื้นที่ที่สะดวก ทีมจะตรวจสอบสถานะสมาชิก เงื่อนไข และความพร้อมก่อนยืนยันครับ";
+  }
+  return "";
 }
 
 export async function deliverLinePublicMenu(env = {}, lineUserId, options = {}) {
