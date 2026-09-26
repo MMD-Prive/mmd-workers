@@ -106,18 +106,30 @@ export async function searchApprovedModelFolders(accessToken, query, lane = "all
   if (!response.ok || !payload || !Array.isArray(payload.files)) throw new Error("drive_model_search_failed");
 
   const wantedLane = normalizeLane(lane);
-  const candidates = [];
-  for (const file of payload.files.slice(0, 100)) {
-    if (!file?.id || file.trashed === true || file.mimeType !== FOLDER_MIME) continue;
-    const resolved = await resolveApprovedModelFolder(accessToken, file.id, env, file);
-    if (!resolved) continue;
-    if (wantedLane !== "all" && resolved.lane !== wantedLane) continue;
-    resolved.score = modelNameScore(q, resolved.folder_name);
-    candidates.push(resolved);
-  }
-
-  const qualified = candidates
+  // Score names before walking Drive parent chains. Broad tokens (for example
+  // "Captain") can match many folders, while only the best 24 are worth resolving.
+  const rankedFiles = payload.files
+    .slice(0, 100)
+    .filter((file) => file?.id && file.trashed !== true && file.mimeType === FOLDER_MIME)
+    .map((file) => ({ file, score: modelNameScore(q, file.name) }))
     .filter((item) => item.score >= 0.28)
+    .sort((a, b) => b.score - a.score || clean(a.file.name).localeCompare(clean(b.file.name)))
+    .slice(0, 24);
+  const resolvedRows = new Array(rankedFiles.length);
+  let cursor = 0;
+  const workerCount = Math.min(8, rankedFiles.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (cursor < rankedFiles.length) {
+      const index = cursor++;
+      const candidate = rankedFiles[index];
+      const resolved = await resolveApprovedModelFolder(accessToken, candidate.file.id, env, candidate.file);
+      if (!resolved || (wantedLane !== "all" && resolved.lane !== wantedLane)) continue;
+      resolved.score = modelNameScore(q, resolved.folder_name);
+      if (resolved.score >= 0.28) resolvedRows[index] = resolved;
+    }
+  }));
+  const qualified = resolvedRows
+    .filter(Boolean)
     .sort((a, b) => b.score - a.score || a.folder_name.localeCompare(b.folder_name));
 
   return collapseDescendantsOfUniqueExactModelMatch(q, qualified)
