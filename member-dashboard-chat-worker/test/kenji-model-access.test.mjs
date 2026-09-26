@@ -90,11 +90,15 @@ function pendingBinding(calls = []) {
 function durableBinding(options = {}) {
   const objects = new Map();
   let contextPutFailuresRemaining = Number(options.contextPutFailures) || 0;
+  let claimCommitFailuresRemaining = Number(options.claimCommitFailures) || 0;
   return {
     idFromName(name) { return name; },
     get(id) {
       if (!objects.has(id)) {
         const values = new Map();
+        if (options.initialContext && String(id).includes("context-v1")) {
+          values.set("campaign-lead:context", options.initialContext);
+        }
         let alarm = null;
         const storage = {
           async get(key) { return values.get(key); },
@@ -119,6 +123,13 @@ function durableBinding(options = {}) {
             if (body.action === "put") {
               contextPutFailuresRemaining -= 1;
               return new Response(JSON.stringify({ ok: false, error: "context_unavailable" }), { status: 503 });
+            }
+          }
+          if (new URL(request.url).pathname === "/campaign-lead/claim" && claimCommitFailuresRemaining > 0) {
+            const body = JSON.parse(init.body || "{}");
+            if (body.action === "commit") {
+              claimCommitFailuresRemaining -= 1;
+              return new Response(JSON.stringify({ ok: true, committed: false }), { status: 200 });
             }
           }
           return objects.get(id).fetch(request);
@@ -204,6 +215,103 @@ test("Durable Object keeps only the pending model query and supports one-time de
   assert.equal((await (await call({ action: "delete" })).json()).deleted, true);
   assert.deepEqual(await (await call({ action: "get" })).json(), { ok: true, found: false });
   assert.doesNotMatch(JSON.stringify([...values.values()]), /@|gmail|email/i);
+});
+
+test("campaign claim requires its own token to commit or release", async () => {
+  const binding = durableBinding();
+  const object = binding.get(binding.idFromName("campaign-claim-test"));
+  const request = async (action, claimToken = "") => {
+    const response = await object.fetch("https://kenji-model-dedupe.internal/campaign-lead/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, key: "a".repeat(64), claim_token: claimToken }),
+    });
+    return response.json();
+  };
+  const first = await request("claim");
+  assert.equal(first.claimed, true);
+  assert.ok(first.claim_token);
+  assert.equal((await request("commit", "stale-token")).committed, false);
+  assert.equal((await request("release", "stale-token")).released, false);
+  assert.equal((await request("claim")).claimed, false);
+  assert.equal((await request("commit", first.claim_token)).committed, true);
+  assert.equal((await request("release", first.claim_token)).released, false);
+  assert.equal((await request("claim")).claimed, false);
+  const unlinkedContext = await object.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "put", context: { card_id: "21829530", card_trigger: "JASPER", campaign_key: "line_card_21829530_lead_v1" } }),
+  });
+  assert.equal(unlinkedContext.status, 400);
+});
+
+test("expired campaign lease can be reclaimed without stale commit or release touching the new claim", async () => {
+  const binding = durableBinding();
+  const object = binding.get(binding.idFromName("campaign-expired-claim-test"));
+  const request = async (action, claimToken = "") => {
+    const response = await object.fetch("https://kenji-model-dedupe.internal/campaign-lead/claim", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, key: "b".repeat(64), claim_token: claimToken }),
+    });
+    return response.json();
+  };
+  const originalNow = Date.now;
+  let now = 1_800_000_000_000;
+  Date.now = () => now;
+  try {
+    const first = await request("claim");
+    now += 60_001;
+    const second = await request("claim");
+    assert.equal(second.claimed, true);
+    assert.notEqual(second.claim_token, first.claim_token);
+    assert.equal((await request("commit", first.claim_token)).committed, false);
+    assert.equal((await request("release", first.claim_token)).released, false);
+    assert.equal((await request("commit", second.claim_token)).committed, true);
+    assert.equal((await request("commit", second.claim_token)).committed, false);
+    assert.equal((await request("status", second.claim_token)).committed, true);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("campaign context compare-and-delete preserves a newer lead written during an older brief", async () => {
+  const binding = durableBinding();
+  const object = binding.get(binding.idFromName("campaign-context-interleaving-test"));
+  const request = async (action, context = null) => {
+    const response = await object.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action, context }),
+    });
+    return response.json();
+  };
+  const base = {
+    card_id: "21829530",
+    campaign_key: "line_card_21829530_lead_v1",
+    lead_claim_key: "c".repeat(64),
+    lead_claim_token: "00000000-0000-4000-8000-000000000001",
+  };
+  const firstPut = await request("put", { ...base, card_trigger: "JASPER", lead_inbox_id: "line_lead-a" });
+  const contextReadByBriefA = (await request("get")).context;
+  assert.equal(contextReadByBriefA.lead_inbox_id, "line_lead-a");
+  const secondPut = await request("put", {
+    ...base,
+    card_trigger: "NANO",
+    lead_inbox_id: "line_lead-b",
+    lead_claim_key: "d".repeat(64),
+    lead_claim_token: "00000000-0000-4000-8000-000000000002",
+  });
+  assert.notEqual(secondPut.context_token, firstPut.context_token);
+  const staleDelete = await request("delete", {
+    lead_inbox_id: contextReadByBriefA.lead_inbox_id,
+    context_token: contextReadByBriefA.context_token,
+  });
+  assert.equal(staleDelete.deleted, false);
+  assert.equal(staleDelete.reason, "campaign_context_mismatch");
+  const current = await request("get");
+  assert.equal(current.context.lead_inbox_id, "line_lead-b");
+  assert.equal(current.context.context_token, secondPut.context_token);
 });
 
 test("unlinked LINE asks one necessary Google email question and continues the pending lookup", async () => {
@@ -485,6 +593,57 @@ test("campaign pilot allowlist fails closed for missing malformed and non-matchi
   }
 });
 
+test("legacy and uncommitted campaign contexts stay silent and create no brief record", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    networkCalls.push({ url: String(input), init });
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const common = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  const baseContext = {
+    card_id: "21829530",
+    campaign_key: "line_card_21829530_lead_v1",
+    card_trigger: "JASPER",
+    lead_inbox_id: "line_original-lead",
+    expires_at: Date.now() + 60_000,
+  };
+  try {
+    const legacyEnv = { ...common, KENJI_MODEL_DEDUPE: durableBinding({ initialContext: baseContext }) };
+    await worker.fetch(await signedWebhook([lineEvent("พรุ่งนี้สองทุ่ม", {
+      message: { id: "msg-legacy-brief", type: "text", text: "พรุ่งนี้สองทุ่ม" },
+    })], legacyEnv), legacyEnv);
+
+    const pendingEnv = {
+      ...common,
+      KENJI_MODEL_DEDUPE: durableBinding({
+        initialContext: {
+          ...baseContext,
+          lead_claim_key: "e".repeat(64),
+          lead_claim_token: "00000000-0000-4000-8000-000000000003",
+          context_token: "00000000-0000-4000-8000-000000000004",
+        },
+      }),
+    };
+    await worker.fetch(await signedWebhook([lineEvent("สาทร งานดินเนอร์", {
+      message: { id: "msg-pending-brief", type: "text", text: "สาทร งานดินเนอร์" },
+    })], pendingEnv), pendingEnv);
+
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com")).length, 0);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("campaign lead is queued before one reply and duplicate delivery is idempotent", async () => {
   const originalFetch = globalThis.fetch;
   const networkCalls = [];
@@ -617,6 +776,48 @@ test("failed campaign context store releases the event and retries without dupli
   }
 });
 
+test("failed claim commit removes its pending context and retries without duplicating the owner lead", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding({ claimCommitFailures: 1 });
+  let ownerRecordExists = false;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      const isTakeoverLookup = String(url.searchParams.get("filterByFormula") || "").includes("processing");
+      return new Response(JSON.stringify({ records: isTakeoverLookup || !ownerRecordExists ? [] : [{ id: "rec-commit-retry" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      ownerRecordExists = true;
+      return new Response(JSON.stringify({ id: "rec-commit-retry" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("JASPER")], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+    await worker.fetch(await signedWebhook([lineEvent("JASPER", { replyToken: "reply-token-commit-retry" })], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 1);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Airtable 422 and transport failure keep the campaign silent and retryable", async () => {
   const originalFetch = globalThis.fetch;
   const networkCalls = [];
@@ -649,6 +850,43 @@ test("Airtable 422 and transport failure keep the campaign silent and retryable"
     await worker.fetch(await signedWebhook([lineEvent("GWs19")], env), env);
     await worker.fetch(await signedWebhook([lineEvent("GWs19", { replyToken: "reply-token-retry" })], env), env);
     assert.equal(postAttempt, 2);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("ambiguous queue timeout keeps the lease so an immediate retry cannot duplicate the write", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      return new Promise((_, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new Error("aborted queue transport")), { once: true });
+      });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    LINE_CARD_21829530_QUEUE_TIMEOUT_MS: "10",
+    KENJI_MODEL_DEDUPE: durableBinding(),
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("GWs19")], env), env);
+    await worker.fetch(await signedWebhook([lineEvent("GWs19", { replyToken: "reply-token-timeout-retry" })], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 1);
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -747,6 +985,7 @@ test("next customer message is queued as the attributed campaign brief before ac
     assert.equal(metadata.card_trigger, "JASPER");
     assert.equal(metadata.display_intent, "Jasper");
     assert.equal(metadata.lead_stage, "brief_received");
+    assert.equal(metadata.lead_inbox_id, "line_msg-model-access-1");
     assert.equal(metadata.auto_rate, "disabled");
     assert.match(replies[1].init.body, /รับรายละเอียดแล้ว/);
     assert.doesNotMatch(replies[1].init.body, /บาท|โปรไฟล์|รหัส/);
@@ -779,6 +1018,49 @@ test("active owner takeover suppresses campaign queue and Kenji reply", async ()
   try {
     await worker.fetch(await signedWebhook([lineEvent("EMs19")], env), env);
     assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 0);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("owner takeover that starts after queue commit suppresses the LINE acknowledgement", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  let takeoverLookups = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      const isTakeoverLookup = String(url.searchParams.get("filterByFormula") || "").includes("processing");
+      if (isTakeoverLookup) {
+        takeoverLookups += 1;
+        return new Response(JSON.stringify({ records: takeoverLookups === 1 ? [] : [{ id: "rec-owner-now-processing" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      return new Response(JSON.stringify({ id: "rec-queued-before-takeover" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: durableBinding(),
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("EMs19")], env), env);
+    assert.equal(takeoverLookups, 2);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 1);
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
   } finally {
     globalThis.fetch = originalFetch;

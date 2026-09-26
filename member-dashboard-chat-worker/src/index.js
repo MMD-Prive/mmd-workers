@@ -463,6 +463,7 @@ const LINE_KNOWLEDGE_CHANNEL = "LINE_OFC";
 const LINE_KNOWLEDGE_TTL_MS = 60_000;
 const LINE_KNOWLEDGE_REPLY_TIMEOUT_MS = 900;
 const LINE_MODEL_DEDUPE_LOOKUP_TIMEOUT_MS = 500;
+const LINE_CARD_CAMPAIGN_QUEUE_TIMEOUT_MS = 8000;
 const LINE_KNOWLEDGE_CARD_BY_INTENT = Object.freeze({
   talk_to_per_ai: "kenji_per_voice_line_entry_v1",
   payment_slip: "kenji_20_006_payment_proof",
@@ -1399,26 +1400,30 @@ async function claimKenjiModelEvent(env = {}, event = {}) {
   return { eligible: true, deduped: false, reason: "", canary_eligible: true, rate_limited: false, quota_window: quotaWindowSeconds };
 }
 
-async function claimLineCardCampaignLead(env = {}, event = {}, action = "claim") {
-  const eventId = getStableLineMessageId(event);
-  if (!eventId) return { ok: false, claimed: false, reason: "stable_message_id_missing" };
+async function requestLineCardCampaignLeadClaim(env = {}, key = "", action = "claim", claimToken = "") {
   if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) {
     return { ok: false, claimed: false, reason: "campaign_lead_dedupe_binding_missing" };
   }
-  const key = await sha256Hex(`${LINE_CARD_21829530_ID}:${eventId}`);
   try {
     const objectId = env.KENJI_MODEL_DEDUPE.idFromName("kenji-line-card-21829530-lead-v1");
     const response = await env.KENJI_MODEL_DEDUPE.get(objectId).fetch("https://kenji-model-dedupe.internal/campaign-lead/claim", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action, key }),
+      body: JSON.stringify({ action, key, claim_token: claimToken }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, claimed: false, reason: "campaign_lead_dedupe_unavailable" };
-    return { ...payload, reason: payload.claimed === false ? "campaign_lead_already_claimed" : "" };
+    return { ...payload, claim_key: key, reason: payload.claimed === false ? "campaign_lead_already_claimed" : "" };
   } catch (_) {
     return { ok: false, claimed: false, reason: "campaign_lead_dedupe_unavailable" };
   }
+}
+
+async function claimLineCardCampaignLead(env = {}, event = {}, action = "claim", claimToken = "") {
+  const eventId = getStableLineMessageId(event);
+  if (!eventId) return { ok: false, claimed: false, reason: "stable_message_id_missing" };
+  const key = await sha256Hex(`${LINE_CARD_21829530_ID}:${eventId}`);
+  return requestLineCardCampaignLeadClaim(env, key, action, claimToken);
 }
 
 async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get", context = null) {
@@ -1436,6 +1441,19 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, found: false, reason: "campaign_context_unavailable" };
+    if (action === "get" && payload?.found === true) {
+      const claimKey = asString(payload?.context?.lead_claim_key);
+      const claimToken = asString(payload?.context?.lead_claim_token);
+      if (!/^[a-f0-9]{64}$/.test(claimKey) || !claimToken) {
+        return { ...payload, committed: false, reason: "campaign_context_link_missing" };
+      }
+      const claim = await requestLineCardCampaignLeadClaim(env, claimKey, "status", claimToken);
+      return {
+        ...payload,
+        committed: claim?.committed === true,
+        reason: claim?.committed === true ? "" : "campaign_context_uncommitted",
+      };
+    }
     return payload;
   } catch (_) {
     return { ok: false, found: false, reason: "campaign_context_unavailable" };
@@ -1471,7 +1489,7 @@ function buildConsoleInboxRecord(event = {}, profile = null, intent = "", metada
   };
 }
 
-async function writeLineEventToConsoleInbox(env = {}, event = {}, profile = null, intent = "", metadata = null) {
+async function writeLineEventToConsoleInbox(env = {}, event = {}, profile = null, intent = "", metadata = null, options = {}) {
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getAirtableTable(env);
@@ -1482,7 +1500,7 @@ async function writeLineEventToConsoleInbox(env = {}, event = {}, profile = null
     return { skipped: true, reason: "airtable_env_missing", deduped: false };
   }
 
-  const existing = await findExistingLineEvent(env, eventId, inboxId);
+  const existing = await findExistingLineEvent(env, eventId, inboxId, { signal: options.signal });
   if (existing?.id) return { id: existing.id, deduped: true };
 
   const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`, {
@@ -1492,11 +1510,38 @@ async function writeLineEventToConsoleInbox(env = {}, event = {}, profile = null
       "content-type": "application/json",
     },
     body: JSON.stringify(buildConsoleInboxRecord(event, profile, intent, metadata)),
+    signal: options.signal,
   });
 
   if (!response.ok) return { skipped: true, reason: "airtable_write_failed", status: response.status, deduped: false };
   const payload = await response.json().catch(() => ({}));
   return { id: payload?.id || "", deduped: false };
+}
+
+async function writeLineCardCampaignEventToConsoleInbox(env = {}, event = {}, metadata = null) {
+  const controller = new AbortController();
+  const timeoutMs = boundedInteger(
+    env.LINE_CARD_21829530_QUEUE_TIMEOUT_MS,
+    LINE_CARD_CAMPAIGN_QUEUE_TIMEOUT_MS,
+    10,
+    30000,
+  );
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort("campaign_lead_queue_timeout");
+      reject(Object.assign(new Error("campaign_lead_queue_timeout"), { code: "CAMPAIGN_LEAD_QUEUE_TIMEOUT" }));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      writeLineEventToConsoleInbox(env, event, null, "note_only", metadata, { signal: controller.signal }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+    controller.abort("campaign_lead_queue_complete");
+  }
 }
 
 function buildLineCardCampaignLeadMetadata(trigger = {}) {
@@ -1533,6 +1578,7 @@ function buildLineCardCampaignBriefMetadata(context = {}) {
     action_type: context.action_type || "text",
     asset_version: "line_oa_manager_live_2026-09-26",
     campaign_attribution: "line_card_followup_brief",
+    lead_inbox_id: context.lead_inbox_id,
     lead_stage: "brief_received",
     owner_queue: "MMD — Console Inbox",
     handoff_owner: "per",
@@ -2257,7 +2303,11 @@ async function handleLineWebhook(request, env, ctx = null) {
       campaignEvent &&
       canGenerateReply &&
       campaignFlagsEnabled &&
-      campaignPilotEligible
+      campaignPilotEligible &&
+      (!campaignBrief || (
+        Boolean(campaignContextResult.context?.lead_inbox_id) &&
+        campaignContextResult.committed === true
+      ))
     );
     let campaignLeadQueued = false;
     const campaignGateReason = !campaignEvent
@@ -2268,6 +2318,10 @@ async function handleLineWebhook(request, env, ctx = null) {
           ? "campaign_pilot_config_malformed"
           : !campaignPilotEligible
             ? "campaign_pilot_not_eligible"
+            : campaignBrief && !campaignContextResult.context?.lead_inbox_id
+              ? "campaign_context_link_missing"
+              : campaignBrief && campaignContextResult.committed !== true
+                ? (campaignContextResult.reason || "campaign_context_uncommitted")
             : "campaign_lead_not_processed";
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
@@ -2280,53 +2334,82 @@ async function handleLineWebhook(request, env, ctx = null) {
           : await claimLineCardCampaignLead(env, event, "claim");
       if (campaignLeadClaim.claimed === true) {
         try {
-          campaignLeadRecord = await writeLineEventToConsoleInbox(
+          campaignLeadRecord = await writeLineCardCampaignEventToConsoleInbox(
             env,
             event,
-            null,
-            "note_only",
             campaignBrief
               ? buildLineCardCampaignBriefMetadata(campaignItem)
               : buildLineCardCampaignLeadMetadata(campaignItem),
           );
         } catch (_) {
-          campaignLeadRecord = { skipped: true, reason: "campaign_lead_queue_failed", deduped: false };
+          campaignLeadRecord = {
+            skipped: true,
+            reason: "campaign_lead_queue_failed",
+            deduped: false,
+            retry_after_lease: true,
+          };
         }
         if (campaignLeadRecord?.id) {
           if (campaignTrigger) {
-            const contextStored = await lineCardCampaignContext(env, lineUserId, "put", campaignTrigger);
+            const contextStored = await lineCardCampaignContext(env, lineUserId, "put", {
+              ...campaignTrigger,
+              lead_inbox_id: `line_${getStableLineMessageId(event)}`,
+              lead_claim_key: campaignLeadClaim.claim_key,
+              lead_claim_token: campaignLeadClaim.claim_token,
+            });
             if (contextStored?.stored !== true) {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };
-              await claimLineCardCampaignLead(env, event, "release");
+              await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
             } else {
-              const committed = await claimLineCardCampaignLead(env, event, "commit");
+              const committed = await claimLineCardCampaignLead(env, event, "commit", campaignLeadClaim.claim_token);
               campaignLeadQueued = committed?.committed === true;
               if (!campaignLeadQueued) {
                 campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
-                await claimLineCardCampaignLead(env, event, "release");
+                await lineCardCampaignContext(env, lineUserId, "delete", {
+                  lead_inbox_id: `line_${getStableLineMessageId(event)}`,
+                  context_token: contextStored.context_token,
+                });
+                await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
               }
             }
           } else if (campaignBrief) {
-            const committed = await claimLineCardCampaignLead(env, event, "commit");
+            const committed = await claimLineCardCampaignLead(env, event, "commit", campaignLeadClaim.claim_token);
             campaignLeadQueued = committed?.committed === true;
             if (campaignLeadQueued) {
-              const contextDeleted = await lineCardCampaignContext(env, lineUserId, "delete");
-              if (contextDeleted?.deleted !== true) {
+              const contextDeleted = await lineCardCampaignContext(env, lineUserId, "delete", {
+                lead_inbox_id: campaignContextResult.context.lead_inbox_id,
+                context_token: campaignContextResult.context.context_token,
+              });
+              if (contextDeleted?.reason === "campaign_context_mismatch") {
+                campaignLeadRecord = { ...campaignLeadRecord, reason: "campaign_context_superseded" };
+              } else if (contextDeleted?.deleted !== true) {
                 campaignLeadRecord = { ...campaignLeadRecord, reason: "campaign_context_delete_failed" };
               }
             } else {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
-              await claimLineCardCampaignLead(env, event, "release");
+              await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
             }
           }
         } else {
-          await claimLineCardCampaignLead(env, event, "release");
+          if (campaignLeadRecord?.retry_after_lease !== true) {
+            await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
+          }
         }
       } else {
         campaignLeadRecord = {
           skipped: true,
           reason: campaignLeadClaim.reason,
           deduped: campaignLeadClaim.reason === "campaign_lead_already_claimed",
+        };
+      }
+    }
+    if (campaignLeadQueued) {
+      const takeoverAfterQueue = await getLineOwnerTakeoverState(env, lineUserId);
+      if (takeoverAfterQueue.ok !== true || takeoverAfterQueue.active === true) {
+        campaignLeadQueued = false;
+        campaignLeadRecord = {
+          ...campaignLeadRecord,
+          reason: takeoverAfterQueue.ok !== true ? takeoverAfterQueue.reason : "owner_takeover_active",
         };
       }
     }
