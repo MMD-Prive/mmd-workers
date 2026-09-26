@@ -2294,21 +2294,32 @@ async function handleLineWebhook(request, env, ctx = null) {
           campaignLeadRecord = { skipped: true, reason: "campaign_lead_queue_failed", deduped: false };
         }
         if (campaignLeadRecord?.id) {
-          const committed = await claimLineCardCampaignLead(env, event, "commit");
-          campaignLeadQueued = committed?.committed === true;
-          if (campaignLeadQueued && campaignBrief) {
-            const contextDeleted = await lineCardCampaignContext(env, lineUserId, "delete");
-            campaignLeadQueued = contextDeleted?.deleted === true;
-            if (!campaignLeadQueued) campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_delete_failed" };
-          } else if (campaignLeadQueued && campaignTrigger) {
+          if (campaignTrigger) {
             const contextStored = await lineCardCampaignContext(env, lineUserId, "put", campaignTrigger);
-            campaignLeadQueued = contextStored?.stored === true;
-            if (!campaignLeadQueued) campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };
-          } else if (!campaignLeadQueued) {
-            campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
+            if (contextStored?.stored !== true) {
+              campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_context_store_failed" };
+              await claimLineCardCampaignLead(env, event, "release");
+            } else {
+              const committed = await claimLineCardCampaignLead(env, event, "commit");
+              campaignLeadQueued = committed?.committed === true;
+              if (!campaignLeadQueued) {
+                campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
+                await claimLineCardCampaignLead(env, event, "release");
+              }
+            }
+          } else if (campaignBrief) {
+            const committed = await claimLineCardCampaignLead(env, event, "commit");
+            campaignLeadQueued = committed?.committed === true;
+            if (campaignLeadQueued) {
+              const contextDeleted = await lineCardCampaignContext(env, lineUserId, "delete");
+              if (contextDeleted?.deleted !== true) {
+                campaignLeadRecord = { ...campaignLeadRecord, reason: "campaign_context_delete_failed" };
+              }
+            } else {
+              campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
+              await claimLineCardCampaignLead(env, event, "release");
+            }
           }
-        } else if (campaignLeadRecord?.deduped) {
-          await claimLineCardCampaignLead(env, event, "commit");
         } else {
           await claimLineCardCampaignLead(env, event, "release");
         }

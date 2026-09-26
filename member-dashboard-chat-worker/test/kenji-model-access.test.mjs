@@ -87,8 +87,9 @@ function pendingBinding(calls = []) {
   };
 }
 
-function durableBinding() {
+function durableBinding(options = {}) {
   const objects = new Map();
+  let contextPutFailuresRemaining = Number(options.contextPutFailures) || 0;
   return {
     idFromName(name) { return name; },
     get(id) {
@@ -111,8 +112,16 @@ function durableBinding() {
         objects.set(id, new KenjiModelIdempotency({ storage }));
       }
       return {
-        fetch(input, init = {}) {
-          return objects.get(id).fetch(input instanceof Request ? input : new Request(String(input), init));
+        async fetch(input, init = {}) {
+          const request = input instanceof Request ? input : new Request(String(input), init);
+          if (new URL(request.url).pathname === "/campaign-lead/context" && contextPutFailuresRemaining > 0) {
+            const body = JSON.parse(init.body || "{}");
+            if (body.action === "put") {
+              contextPutFailuresRemaining -= 1;
+              return new Response(JSON.stringify({ ok: false, error: "context_unavailable" }), { status: 503 });
+            }
+          }
+          return objects.get(id).fetch(request);
         },
       };
     },
@@ -551,6 +560,48 @@ test("failed owner queue creates no reply and releases the event for retry", asy
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
     failQueue = false;
     await worker.fetch(await signedWebhook([lineEvent("NANO", { replyToken: "reply-token-2" })], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("failed campaign context store releases the event and retries without duplicating the owner lead", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding({ contextPutFailures: 1 });
+  let ownerRecordExists = false;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      const isTakeoverLookup = String(url.searchParams.get("filterByFormula") || "").includes("processing");
+      return new Response(JSON.stringify({ records: isTakeoverLookup || !ownerRecordExists ? [] : [{ id: "rec-context-retry" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      ownerRecordExists = true;
+      return new Response(JSON.stringify({ id: "rec-context-retry" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("NANO")], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+    await worker.fetch(await signedWebhook([lineEvent("NANO", { replyToken: "reply-token-context-retry" })], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 1);
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 1);
   } finally {
     globalThis.fetch = originalFetch;
