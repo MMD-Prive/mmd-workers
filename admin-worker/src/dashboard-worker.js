@@ -700,21 +700,23 @@ function buildMemberList(records, now) {
 }
 
 export function buildBossList({ sessionRecords = [] } = {}) {
-  const record = (Array.isArray(sessionRecords) ? sessionRecords : []).find((item) => {
-    const fields = item?.fields || {};
-    const state = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status);
-    return /(?:^|[\s_-])(exception|hold|blocked)(?:$|[\s_-])/i.test(state);
-  });
-  if (!record) return [];
-  const fields = record.fields || {};
-  const jobDate = normalizeDateOnly(firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]));
-  const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
-  return [{
-    id: sessionId,
-    title: "ตรวจงานที่มีปัญหา",
-    text: sessionId ? `เปิดงานทั้งหมดแล้วค้นหา ${sessionId}` : "เปิดงานทั้งหมดเพื่อตรวจสถานะ",
-    href: sessionId ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}` : (jobDate ? `/internal/admin/jobs/all?date=${jobDate}` : "/internal/admin/jobs/all"),
-  }];
+  return (Array.isArray(sessionRecords) ? sessionRecords : [])
+    .filter((item) => {
+      const fields = item?.fields || {};
+      const state = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status);
+      return /(?:^|[\s_-])(exception|hold|blocked)(?:$|[\s_-])/i.test(state);
+    })
+    .slice(0, 6)
+    .map((record) => {
+      const fields = record.fields || {};
+      const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
+      return {
+        id: sessionId,
+        title: "ตรวจงานที่มีปัญหา",
+        text: sessionId ? `เปิดงาน ${sessionId} เพื่อตรวจจุดที่ติด` : "เปิดงานทั้งหมดเพื่อตรวจสถานะ",
+        href: sessionId ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}` : "/internal/admin/jobs/all",
+      };
+    });
 }
 
 async function airtableList(env, tableName, maxRecords = 20) {
