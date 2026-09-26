@@ -283,13 +283,12 @@ async function resolveCanonicalMemberAccess(env, lineUserId, fetchImpl) {
 async function resolveExactModel(env, query, fetchImpl) {
   const table = clean(env.AIRTABLE_TABLE_MODELS || "models");
   const codeMatches = await queryAcrossFields(env, table, MODEL_CODE_FIELDS, query, fetchImpl, 5);
-  if (codeMatches.length) return { status: "resolved", records: codeMatches };
   const nameMatches = await queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5);
-  if (nameMatches.length) return { status: "resolved", records: nameMatches };
   // Card text may be the Drive folder name rather than the model code or working name.
   // Match the canonical Models record exactly; folder location never grants access.
   const folderMatches = await queryAcrossFields(env, table, ["folder_name"], query, fetchImpl, 5);
-  if (folderMatches.length) return { status: "resolved", records: folderMatches };
+  const directMatches = uniqueRecords([...codeMatches, ...nameMatches, ...folderMatches]);
+  if (directMatches.length) return { status: "resolved", records: directMatches };
 
   // Ad / Rich Menu entries reuse the published Keyword Profile aliases.
   // Alias matching is exact and only Active profiles participate. The alias
@@ -301,7 +300,9 @@ async function resolveExactModel(env, query, fetchImpl) {
     if (token(fieldValue(fields, ["status"])) !== "active") return false;
     return fieldList(fields, ["search_aliases"], 40).some((alias) => clean(alias, 80).toLowerCase() === wanted);
   });
-  if (!matchedProfiles.length) return { status: "not_found", records: [] };
+  if (!matchedProfiles.length) {
+    return { status: "not_found", records: [] };
+  }
 
   const linkedIds = new Set(matchedProfiles.flatMap((record) => fieldList(record?.fields || {}, ["Model"], 8)));
   const linkedKeys = new Set(matchedProfiles.map((record) => fieldValue(record?.fields || {}, ["model_key"]).toLowerCase()).filter(Boolean));
@@ -311,7 +312,8 @@ async function resolveExactModel(env, query, fetchImpl) {
     const key = fieldValue(record?.fields || {}, MODEL_CODE_FIELDS).toLowerCase();
     return Boolean(key && linkedKeys.has(key));
   });
-  return { status: aliasMatches.length ? "resolved" : "not_found", records: uniqueRecords(aliasMatches) };
+  const records = uniqueRecords(aliasMatches);
+  return { status: records.length ? "resolved" : "not_found", records };
 }
 
 export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}) {
@@ -325,6 +327,9 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   const access = await resolveCanonicalMemberAccess(env, lineUserId, fetchImpl);
   const model = await resolveExactModel(env, query, fetchImpl);
   if (model.status !== "resolved") return { status: "silent" };
+  // A trigger must identify one canonical record before checking what this member can see.
+  // Otherwise a duplicate name could silently resolve to a different accessible model.
+  if (model.records.length !== 1) return { status: "clarification" };
 
   const authorized = model.records.flatMap((record) => {
     const cls = modelAccessClass(record);
@@ -354,11 +359,13 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     if (!relevantRules.length) {
       return { status: "match", model: authorizedRecord.safeModel };
     }
+    const workLane = clean(input.work_lane || input.workLane, 80);
+    if (!workLane) return { status: "match", model: authorizedRecord.safeModel };
     const salesOffer = resolveModelSalesOffer({
       model_id: modelId,
       model_key: modelKey,
       requested_at: input.requested_at || input.requestedAt || new Date().toISOString(),
-      work_lane: input.work_lane || input.workLane || "",
+      work_lane: workLane,
       entitlement_snapshot: access.snapshot,
       rules: relevantRules,
     });

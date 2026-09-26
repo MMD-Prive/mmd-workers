@@ -8,6 +8,7 @@ import worker, {
   extractKenjiModelVerificationEmail,
   inferLineIntent,
   KenjiModelIdempotency,
+  resolveLineCardCampaignTrigger,
   resolveKenjiLineReply,
 } from "../src/index.js";
 
@@ -83,11 +84,45 @@ function pendingBinding(calls = []) {
   };
 }
 
+function durableBinding() {
+  const objects = new Map();
+  return {
+    idFromName(name) { return name; },
+    get(id) {
+      if (!objects.has(id)) {
+        const values = new Map();
+        let alarm = null;
+        const storage = {
+          async get(key) { return values.get(key); },
+          async put(key, value) { values.set(key, value); },
+          async delete(keyOrKeys) {
+            for (const key of Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys]) values.delete(key);
+          },
+          async list({ prefix } = {}) { return new Map([...values].filter(([key]) => !prefix || key.startsWith(prefix))); },
+          async getAlarm() { return alarm; },
+          async setAlarm(value) { alarm = value; },
+          async transaction(callback) {
+            return callback({ get: storage.get, put: storage.put, delete: storage.delete });
+          },
+        };
+        objects.set(id, new KenjiModelIdempotency({ storage }));
+      }
+      return {
+        fetch(input, init = {}) {
+          return objects.get(id).fetch(input instanceof Request ? input : new Request(String(input), init));
+        },
+      };
+    },
+  };
+}
+
 test("committed rollout configuration keeps both model capabilities off and exposes no public admin RPC route", () => {
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_CARD_21829530_LEAD_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"false"$/m);
   assert.match(lineWrangler, /binding\s*=\s*"ADMIN_WORKER"\s*\nservice\s*=\s*"admin-worker"/m);
   assert.doesNotMatch(adminWrangler, /v1\/internal\/kenji\/model-access/);
 });
@@ -102,21 +137,23 @@ async function signedWebhook(events, env = BASE_ENV) {
   });
 }
 
-test("model lookup intent accepts neutral exact codes and explicit working-name queries", () => {
+test("card triggers are campaign leads while neutral codes remain model lookups", () => {
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("ชื่อนายแบบ น้องซิน"), "น้องซิน");
-  assert.equal(extractKenjiModelLookupQuery("JASPAL"), "JASPAL");
-  for (const card of ["NANO", "EMs01", "Sky B", "Book EI", "EMs11", "GWs19", "EMs19"]) {
+  for (const card of ["JASPAL", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     assert.equal(extractKenjiModelLookupQuery(card), card);
-    assert.equal(inferLineIntent(card, lineEvent(card)), "model_lookup");
+    assert.equal(inferLineIntent(card, lineEvent(card)), "card_campaign_lead");
+    assert.equal(resolveLineCardCampaignTrigger(card)?.card_trigger, card);
   }
+  assert.equal(resolveLineCardCampaignTrigger("JASPAL")?.display_intent, "Jasper");
+  assert.equal(resolveLineCardCampaignTrigger("Sky B")?.manager_action_enabled, false);
   assert.equal(extractKenjiModelLookupQuery("/my-mmd"), "");
   assert.equal(extractKenjiModelLookupQuery("Sky B สวัสดี"), "");
   assert.equal(extractKenjiModelLookupQuery("HELLO"), "");
   assert.equal(extractKenjiModelLookupQuery("สวัสดีครับ"), "");
   assert.equal(inferLineIntent("MX17", lineEvent("MX17")), "model_lookup");
-  assert.equal(inferLineIntent("JASPAL", lineEvent("JASPAL")), "model_lookup");
+  assert.equal(inferLineIntent("JASPAL", lineEvent("JASPAL")), "card_campaign_lead");
   assert.equal(extractKenjiModelVerificationEmail("Customer.Name@gmail.com"), "customer.name@gmail.com");
   assert.equal(inferLineIntent("customer.name@gmail.com", lineEvent("customer.name@gmail.com")), "model_access_verification");
 });
@@ -190,12 +227,13 @@ test("email without a pending model lookup stays silent and never calls the acce
   assert.equal(calls.length, 0);
 });
 
-test("inactive or expired member receives only canonical renewal guidance", async () => {
+test("expired member may continue a brief without new private disclosure", async () => {
   const decision = await resolveKenjiLineReply(lineEvent("MX17"), {}, {
     ...BASE_ENV,
     ADMIN_WORKER: adminBinding({ ok: true, status: "renewal" }),
   });
-  assert.match(decision.text, /หมดอายุหรือยังไม่ active/);
+  assert.match(decision.text, /คุยเรื่องนายแบบและส่งบรีฟ/);
+  assert.match(decision.text, /ก่อนยืนยันงานหรือเปิดข้อมูลใหม่/);
   assert.match(decision.text, /sigil\/member\/membership\?source=line&intent=renew/);
   assert.doesNotMatch(decision.text, /MX17|น้องซิน|Private Model.*ชื่อ/i);
   assert.equal(decision.reply_source, "model_access_renewal");
@@ -246,22 +284,22 @@ test("authorized RPC match becomes one concise Per Voice reply without operation
   assert.deepEqual(await request.json(), { line_user_id: LINE_USER_ID, query: "MX17" });
 });
 
-test("visible approved sales rate is sent with a CTA; approval or hidden price is withheld", async () => {
+test("LINE lookup asks for the work brief and never exposes an unscoped RPC price", async () => {
   const model = { model_code: "MX17", working_name: "น้องซิน" };
   const reply = async (sales) => resolveKenjiLineReply(lineEvent("MX17"), {}, {
     ...BASE_ENV,
     ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { ...model, sales } }),
   });
   const approved = await reply({ sellable: true, price_visible: true, requires_per_approval: false, customer_rate_thb: 4500, term_summary: "เรทที่อนุมัติ" });
-  assert.match(approved.text, /4,500 บาท/);
-  assert.match(approved.text, /สนใจ MX17/);
+  assert.doesNotMatch(approved.text, /4,500/);
+  assert.match(approved.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
   for (const sales of [
     { sellable: true, price_visible: false, requires_per_approval: false, customer_rate_thb: 4500 },
     { sellable: true, price_visible: true, requires_per_approval: true, customer_rate_thb: 4500 },
     { sellable: false, price_visible: true, requires_per_approval: false, customer_rate_thb: 4500 },
   ]) {
     const withheld = await reply(sales);
-    assert.doesNotMatch(withheld.text, /4,500|เรท/);
+    assert.doesNotMatch(withheld.text, /4,500/);
   }
 });
 
@@ -369,14 +407,198 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
 });
 
 
-test("all-caps Ad entry text is sent unchanged to the authoritative model access RPC", async () => {
+test("JASPAL is campaign-scoped Jasper intent and never calls model access RPC", async () => {
   const calls = [];
   const decision = await resolveKenjiLineReply(lineEvent("JASPAL"), {}, {
     ...BASE_ENV,
     ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว" } }, 200, calls),
-  });
-  assert.equal(calls.length, 1);
-  assert.deepEqual(await calls[0].json(), { line_user_id: LINE_USER_ID, query: "JASPAL" });
-  assert.match(decision.text, /Jaspal OP/);
-  assert.equal(decision.reply_source, "model_access");
+  }, { campaignLeadQueued: true });
+  assert.equal(calls.length, 0);
+  assert.match(decision.text, /เห็นว่าคุณสนใจการ์ดนี้/);
+  assert.doesNotMatch(decision.text, /Jaspal OP|Jasper|เรท\s*\d/);
+  assert.equal(decision.reply_source, "line_card_campaign_lead");
+});
+
+test("all eight campaign triggers accept a generic brief without model resolution or rates", async () => {
+  const calls = [];
+  const env = { ...BASE_ENV, ADMIN_WORKER: adminBinding({ ok: true, status: "match" }, 200, calls) };
+  for (const trigger of ["JASPAL", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
+    const decision = await resolveKenjiLineReply(lineEvent(trigger), {}, env, { campaignLeadQueued: true });
+    assert.equal(decision.reply_source, "line_card_campaign_lead");
+    assert.match(decision.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
+    assert.doesNotMatch(decision.text, /บาท|โปรไฟล์|รหัส/);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("campaign lead is queued before one reply and duplicate delivery is idempotent", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding();
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      return new Response(JSON.stringify({ id: "rec-line-card-lead" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    const first = await worker.fetch(await signedWebhook([lineEvent("JASPAL")], env), env);
+    const second = await worker.fetch(await signedWebhook([lineEvent("JASPAL", { replyToken: "reply-token-2" })], env), env);
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    const posts = networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST");
+    const replies = networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply"));
+    assert.equal(posts.length, 1);
+    assert.equal(replies.length, 1);
+    const record = JSON.parse(posts[0].init.body);
+    assert.equal(record.fields.intent, "note_only");
+    const metadata = JSON.parse(record.fields.payload_json);
+    assert.equal(metadata.parsed_intent, "card_campaign_lead");
+    assert.equal(metadata.card_id, "21829530");
+    assert.equal(metadata.card_trigger, "JASPAL");
+    assert.equal(metadata.display_intent, "Jasper");
+    assert.equal(metadata.model_resolution_status, "unresolved");
+    assert.equal(metadata.canonical_model_id, null);
+    assert.equal(metadata.auto_rate, "disabled");
+    assert.equal(metadata.handoff_status, "queued");
+    assert.doesNotMatch(replies[0].init.body, /Jaspal OP|Jasper|\d{1,3}(?:,\d{3})* บาท/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("failed owner queue creates no reply and releases the event for retry", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding();
+  let failQueue = true;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      if (failQueue) return new Response("queue unavailable", { status: 503 });
+      return new Response(JSON.stringify({ id: "rec-retry-lead" }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("NANO")], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+    failQueue = false;
+    await worker.fetch(await signedWebhook([lineEvent("NANO", { replyToken: "reply-token-2" })], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("next customer message is queued as the attributed campaign brief before acknowledgement", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding();
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      return new Response(JSON.stringify({ id: `rec-${networkCalls.length}` }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("JASPAL")], env), env);
+    const briefEvent = lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร งานดินเนอร์", {
+      replyToken: "reply-token-brief",
+      message: { id: "msg-campaign-brief-1", type: "text", text: "พรุ่งนี้สองทุ่ม แถวสาทร งานดินเนอร์" },
+    });
+    await worker.fetch(await signedWebhook([briefEvent], env), env);
+
+    const posts = networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST");
+    const replies = networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply"));
+    assert.equal(posts.length, 2);
+    assert.equal(replies.length, 2);
+    const briefRecord = JSON.parse(posts[1].init.body);
+    const metadata = JSON.parse(briefRecord.fields.payload_json);
+    assert.equal(briefRecord.fields.intent, "note_only");
+    assert.equal(metadata.parsed_intent, "card_campaign_brief");
+    assert.equal(metadata.campaign_key, "line_card_21829530_lead_v1");
+    assert.equal(metadata.card_trigger, "JASPAL");
+    assert.equal(metadata.display_intent, "Jasper");
+    assert.equal(metadata.lead_stage, "brief_received");
+    assert.equal(metadata.auto_rate, "disabled");
+    assert.match(replies[1].init.body, /รับรายละเอียดแล้ว/);
+    assert.doesNotMatch(replies[1].init.body, /บาท|โปรไฟล์|รหัส/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("active owner takeover suppresses campaign queue and Kenji reply", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [{ id: "rec-owner-processing" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: durableBinding(),
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("EMs19")], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 0);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

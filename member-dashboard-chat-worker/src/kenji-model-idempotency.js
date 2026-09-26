@@ -1,4 +1,8 @@
 const CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+const CAMPAIGN_LEAD_PROCESSING_TTL_MS = 60 * 1000;
+const CAMPAIGN_LEAD_TTL_MS = 24 * 60 * 60 * 1000;
+const CAMPAIGN_CONTEXT_TTL_MS = 30 * 60 * 1000;
+const CAMPAIGN_CONTEXT_KEY = "campaign-lead:context";
 const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
 
@@ -24,6 +28,76 @@ export class KenjiModelIdempotency {
     }
 
     const path = new URL(request.url).pathname;
+    if (path === "/campaign-lead/claim") {
+      const action = String(input?.action || "claim");
+      const key = String(input?.key || "");
+      if (!/^[a-f0-9]{64}$/.test(key)) return json({ ok: false, error: "invalid_key" }, 400);
+      const storageKey = `campaign-lead:${key}`;
+      const now = Date.now();
+      if (action === "release") {
+        const existing = await this.state.storage.get(storageKey);
+        if (existing?.status === "processing") await this.state.storage.delete(storageKey);
+        return json({ ok: true, released: existing?.status === "processing" });
+      }
+      if (action === "commit") {
+        const expiresAt = now + CAMPAIGN_LEAD_TTL_MS;
+        await this.state.storage.put(storageKey, { status: "committed", expires_at: expiresAt });
+        if (this.state.storage.getAlarm && this.state.storage.setAlarm) {
+          const currentAlarm = await this.state.storage.getAlarm();
+          if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
+        }
+        return json({ ok: true, committed: true, expires_at: expiresAt });
+      }
+      if (action !== "claim") return json({ ok: false, error: "invalid_action" }, 400);
+      const claim = await this.state.storage.transaction(async (txn) => {
+        const existing = await txn.get(storageKey);
+        if (Number(existing?.expires_at) > now) return { claimed: false, status: existing.status || "processing" };
+        const expiresAt = now + CAMPAIGN_LEAD_PROCESSING_TTL_MS;
+        await txn.put(storageKey, { status: "processing", expires_at: expiresAt });
+        return { claimed: true, status: "processing", expires_at: expiresAt };
+      });
+      return json({ ok: true, ...claim });
+    }
+
+    if (path === "/campaign-lead/context") {
+      const action = String(input?.action || "");
+      const now = Date.now();
+      if (action === "put") {
+        const context = input?.context && typeof input.context === "object" ? input.context : null;
+        const cardId = String(context?.card_id || "");
+        const cardTrigger = String(context?.card_trigger || "").trim().slice(0, 40);
+        const campaignKey = String(context?.campaign_key || "").trim().slice(0, 80);
+        if (cardId !== "21829530" || !cardTrigger || !campaignKey) return json({ ok: false, error: "invalid_context" }, 400);
+        const expiresAt = now + CAMPAIGN_CONTEXT_TTL_MS;
+        await this.state.storage.put(CAMPAIGN_CONTEXT_KEY, {
+          card_id: cardId,
+          card_trigger: cardTrigger,
+          campaign_key: campaignKey,
+          display_intent: String(context?.display_intent || "").trim().slice(0, 80),
+          action_type: String(context?.action_type || "text").trim().slice(0, 20),
+          expires_at: expiresAt,
+        });
+        if (this.state.storage.getAlarm && this.state.storage.setAlarm) {
+          const currentAlarm = await this.state.storage.getAlarm();
+          if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
+        }
+        return json({ ok: true, stored: true, expires_at: expiresAt });
+      }
+      if (action === "get") {
+        const context = await this.state.storage.get(CAMPAIGN_CONTEXT_KEY);
+        if (!context || Number(context.expires_at) <= now) {
+          if (context) await this.state.storage.delete(CAMPAIGN_CONTEXT_KEY);
+          return json({ ok: true, found: false });
+        }
+        return json({ ok: true, found: true, context });
+      }
+      if (action === "delete") {
+        await this.state.storage.delete(CAMPAIGN_CONTEXT_KEY);
+        return json({ ok: true, deleted: true });
+      }
+      return json({ ok: false, error: "invalid_action" }, 400);
+    }
+
     if (path === "/model-access/pending") {
       const action = String(input?.action || "");
       const now = Date.now();
@@ -91,6 +165,7 @@ export class KenjiModelIdempotency {
     const now = Date.now();
     const claims = await this.state.storage.list({ prefix: "claim:" });
     const quotas = await this.state.storage.list({ prefix: "quota:" });
+    const campaignLeads = await this.state.storage.list({ prefix: "campaign-lead:" });
     const pending = await this.state.storage.get(MODEL_ACCESS_PENDING_KEY);
     const expired = [];
     let nextAlarm = 0;
@@ -100,6 +175,11 @@ export class KenjiModelIdempotency {
       else if (!nextAlarm || expiresAt < nextAlarm) nextAlarm = expiresAt;
     }
     for (const [key, value] of quotas) {
+      const expiresAt = Number(value?.expires_at) || 0;
+      if (expiresAt <= now) expired.push(key);
+      else if (!nextAlarm || expiresAt < nextAlarm) nextAlarm = expiresAt;
+    }
+    for (const [key, value] of campaignLeads) {
       const expiresAt = Number(value?.expires_at) || 0;
       if (expiresAt <= now) expired.push(key);
       else if (!nextAlarm || expiresAt < nextAlarm) nextAlarm = expiresAt;
