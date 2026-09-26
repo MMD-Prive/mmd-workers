@@ -15,10 +15,12 @@ import {
 import {
   MODEL_LINE_LINK_MATERIALIZE_MODE,
   inferModelLanes,
+  listUnifiedModelLineCandidates,
 } from "./src/unified-model-drive-link.js";
 import {
   MODEL_LINK_AIRTABLE_TIMEOUT_MS,
   MODEL_LINK_QUEUE_API_TIMEOUT_MS,
+  modelLineLinkOriginGroup,
   renderModelLineLinkPageWithAvatar,
   safeClaimSummaryWithAvatar,
   safePictureUrl,
@@ -131,6 +133,47 @@ test("admin-safe avatar summary never exposes raw LINE User ID", () => {
   assert.equal(Object.hasOwn(item, "line_user_id"), false);
 });
 
+test("model-link recruitment groups use explicit channel fields and fail closed to Unknown", () => {
+  assert.equal(modelLineLinkOriginGroup({ recruitment_channel: "Public Board" }), "public_board");
+  assert.equal(modelLineLinkOriginGroup({ application_channel: "กระดานข่าว Private" }), "private_board");
+  assert.equal(modelLineLinkOriginGroup({ referral_channel: "Social Media" }), "social_media");
+  assert.equal(modelLineLinkOriginGroup({ recruitment_channel: "Per Invite" }), "per_invite");
+  assert.equal(modelLineLinkOriginGroup({ source: "mmd_model_liff_exchange" }), "unknown");
+  assert.equal(modelLineLinkOriginGroup({ source_channel: "Facebook" }), "social_media");
+  assert.equal(modelLineLinkOriginGroup(null), "unknown");
+});
+
+test("candidate search preserves Airtable results when the Drive service throws", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input).startsWith("https://api.airtable.com/")) {
+      return Response.json({ records: [{
+        id: "recCaptainS000001",
+        fields: { working_name: "Captain S", status: "active", can_work_private: true },
+      }] });
+    }
+    throw new Error("unexpected fetch");
+  };
+  try {
+    const env = {
+      AIRTABLE_API_KEY: "test",
+      AIRTABLE_BASE_ID: "base",
+      AIRTABLE_TABLE_MODELS: "models",
+      MODEL_DRIVE_DIRECTORY: { fetch: async () => { throw new Error("directory unavailable"); } },
+    };
+    const result = await listUnifiedModelLineCandidates(
+      env,
+      new URL("https://mmdbkk.com/v1/admin/models/activation-candidates?mode=line-link-candidates&q=Captain%20S&lane=private"),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.count, 1);
+    assert.equal(result.items[0].working_name, "Captain S");
+    assert.equal(result.warning, "drive_directory_unavailable");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("admin picture sanitizer drops invalid or overlong URLs", () => {
   assert.equal(safePictureUrl("https://example.com/a.jpg"), "https://example.com/a.jpg");
   assert.equal(safePictureUrl("http://example.com/a.jpg"), "");
@@ -178,6 +221,13 @@ test("owner review HTML provides unified lane filters and explicit Drive materia
   assert.match(html, /candidate\.source==='drive'&&candidate\.drive_folder_id/);
   assert.match(html, /โฟลเดอร์พร้อมเพิ่ม/);
   assert.match(html, /data-category="all">All/);
+  assert.match(html, /กระดานข่าว Public/);
+  assert.match(html, /กระดานข่าว Private/);
+  assert.match(html, /Social Media/);
+  assert.match(html, /Per Invite/);
+  assert.match(html, /Unknown/);
+  assert.match(html, /class="claim-workflow"/);
+  assert.match(html, /searchFailureMessage/);
   assert.match(html, /data-category="male">นายแบบ/);
   assert.match(html, /data-category="woman">MMD Woman/);
   assert.match(html, /data-category="ladyboy">MMD Lady Boy/);
