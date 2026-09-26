@@ -147,7 +147,7 @@ export function projectJobs(records, now = new Date()) {
       when,
       status: thaiStatus(rawStatus),
       progress: progressFromStatus(rawStatus),
-      href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
+      href: `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}`,
     };
   });
 
