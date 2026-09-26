@@ -148,6 +148,10 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   }
   assert.equal(resolveLineCardCampaignTrigger("JASPAL")?.display_intent, "Jasper");
   assert.equal(resolveLineCardCampaignTrigger("Sky B")?.manager_action_enabled, false);
+  assert.equal(resolveLineCardCampaignTrigger("BOOK EI")?.card_trigger, "BOOK EI");
+  assert.equal(resolveLineCardCampaignTrigger("Book EI"), null);
+  assert.equal(resolveLineCardCampaignTrigger("https://mmdbkk.com/my-mmd"), null);
+  assert.notEqual(inferLineIntent("https://mmdbkk.com/my-mmd", lineEvent("https://mmdbkk.com/my-mmd")), "card_campaign_lead");
   assert.equal(extractKenjiModelLookupQuery("/my-mmd"), "");
   assert.equal(extractKenjiModelLookupQuery("Sky B สวัสดี"), "");
   assert.equal(extractKenjiModelLookupQuery("HELLO"), "");
@@ -517,6 +521,91 @@ test("failed owner queue creates no reply and releases the event for retry", asy
     assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 1);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("Airtable 422 and transport failure keep the campaign silent and retryable", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  const binding = durableBinding();
+  let postAttempt = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (url.hostname === "api.airtable.com" && init.method === "POST") {
+      postAttempt += 1;
+      if (postAttempt === 1) return new Response("invalid field", { status: 422 });
+      throw new Error("queue timeout");
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: binding,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    await worker.fetch(await signedWebhook([lineEvent("GWs19")], env), env);
+    await worker.fetch(await signedWebhook([lineEvent("GWs19", { replyToken: "reply-token-retry" })], env), env);
+    assert.equal(postAttempt, 2);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("missing stable message ID and takeover source failure create no owner lead or reply", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalConsoleLog = console.log;
+  const networkCalls = [];
+  const diagnostics = [];
+  let ownerLookupAttempt = 0;
+  console.log = (value) => {
+    try {
+      const parsed = JSON.parse(String(value));
+      if (parsed?.line_webhook === "reply_diagnostics") diagnostics.push(parsed);
+    } catch (_) {}
+  };
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input));
+    networkCalls.push({ url: url.toString(), init });
+    if (url.hostname === "api.airtable.com" && init.method === "GET") {
+      ownerLookupAttempt += 1;
+      if (ownerLookupAttempt === 1) {
+        return new Response(JSON.stringify({ records: [] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("owner source unavailable", { status: 503 });
+    }
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const env = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: durableBinding(),
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    const missingId = lineEvent("EMs01", { message: { type: "text", text: "EMs01" } });
+    await worker.fetch(await signedWebhook([missingId], env), env);
+    await worker.fetch(await signedWebhook([lineEvent("EMs11")], env), env);
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST").length, 0);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+    assert.deepEqual(diagnostics.map((entry) => entry.campaign_lead_reason), ["stable_message_id_missing", "takeover_lookup_failed"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalConsoleLog;
   }
 });
 

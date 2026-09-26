@@ -2297,7 +2297,7 @@ async function handleLineWebhook(request, env, ctx = null) {
         } else {
           await claimLineCardCampaignLead(env, event, "release");
         }
-      } else if (campaignLeadClaim.ok === true) {
+      } else {
         campaignLeadRecord = {
           skipped: true,
           reason: campaignLeadClaim.reason,
