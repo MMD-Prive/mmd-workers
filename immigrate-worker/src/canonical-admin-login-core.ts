@@ -50,6 +50,7 @@ function legacyAdminLoginMethodNotAllowed(): Response {
         allow: "GET, HEAD",
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
+        "set-cookie": "mmd_admin_gate_v1=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0",
         "x-mmd-admin-login-canonical": CANONICAL_ADMIN_LOGIN_PATH,
       },
     },
@@ -158,9 +159,6 @@ async function serveMemberIntelligenceRuntime(request: Request, env: Env): Promi
     });
   }
 
-  // Keep the Webflow page at /internal/admin/member-intelligence, but serve its
-  // browser runtime under the already Worker-owned Control Room route family.
-  // The implementation remains bundled as a private Worker static asset.
   const assetUrl = new URL(request.url);
   assetUrl.pathname = BUNDLED_MEMBER_INTELLIGENCE_RUNTIME_PATH;
   assetUrl.search = "";
@@ -215,8 +213,6 @@ async function maybeRestoreOwnerCreateSession(
   const url = new URL(request.url);
   if (url.pathname !== CANONICAL_CREATE_SESSION_PATH) return response;
 
-  // The canonical worker must approve the request first. A login redirect,
-  // auth failure, or non-HTML response is preserved exactly and never replaced.
   if (!response.ok || !(response.headers.get("content-type") || "").includes("text/html")) {
     return response;
   }
@@ -224,9 +220,6 @@ async function maybeRestoreOwnerCreateSession(
   const owner = await renderOwnerCreateSessionPage(request, env as unknown as OwnerCreateSessionEnv);
   if (!owner.ok || !(owner.headers.get("content-type") || "").includes("text/html")) return owner;
 
-  // Keep the browser core inside the already-proven MMD Create Session route
-  // family. An extensionless subroute avoids static/origin .js handling while
-  // preserving the bundled asset as the single implementation source.
   const headers = new Headers(owner.headers);
   headers.set("x-mmd-create-session-authority", "canonical-backend");
   headers.set("x-mmd-create-session-assets", "worker-owned-core-subroute");
@@ -235,18 +228,9 @@ async function maybeRestoreOwnerCreateSession(
   headers.set("x-mmd-create-session-business", "mmd-only");
 
   let html = (await owner.text())
-    .replace(
-      "/a/create-session.js?v=owner-v14-vnext2",
-      CANONICAL_CREATE_SESSION_CORE_ASSET_PATH,
-    )
-    .replace(
-      'src="/a/create-session.js"',
-      `src="${CANONICAL_CREATE_SESSION_CORE_ASSET_PATH}"`,
-    )
-    .replace(
-      "data-mmd-create-session-pro",
-      'data-mmd-create-session-pro data-business-context="mmd"',
-    );
+    .replace("/a/create-session.js?v=owner-v14-vnext2", CANONICAL_CREATE_SESSION_CORE_ASSET_PATH)
+    .replace('src="/a/create-session.js"', `src="${CANONICAL_CREATE_SESSION_CORE_ASSET_PATH}"`)
+    .replace("data-mmd-create-session-pro", 'data-mmd-create-session-pro data-business-context="mmd"');
   html = applyCreateSessionSimpleStart(html);
 
   return new Response(html, {
