@@ -25,7 +25,7 @@
         var digest = response.headers.get('x-mmd-media-sha256') || '';
         if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('unverified_media');
         var blob = await response.blob();
-        if (!['image/jpeg', 'image/png', 'image/webp', 'video/mp4'].includes(blob.type) || !blob.size || blob.size > 25 * 1024 * 1024) throw new Error('invalid_media');
+        if (!['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'video/mp4', 'video/quicktime', 'video/webm'].includes(blob.type) || !blob.size || blob.size > 25 * 1024 * 1024) throw new Error('invalid_media');
         return { blob: blob, sha: digest };
       }
       var data = await response.json();
@@ -54,14 +54,14 @@
     message('title', item.name); message('detail', (item.model_name || item.model_id) + ' · ' + labels[item.status]);
     message('review-status', 'กำลังตรวจไฟล์และโหลดสื่อ…');
     q('approve').hidden = item.status !== 'pending_review'; q('reject').hidden = item.status !== 'pending_review'; q('revoke').hidden = item.status !== 'approved';
-    q('teaser-row').hidden = item.status !== 'pending_review'; q('teaser-help').hidden = item.status !== 'pending_review'; q('teaser').checked = item.status === 'pending_review' && item.teaser_safe === true;
+    q('teaser-row').hidden = item.status !== 'pending_review' || item.audience !== 'private'; q('teaser-help').hidden = item.status !== 'pending_review' || item.audience !== 'private'; q('teaser').checked = item.status === 'pending_review' && item.audience === 'private' && item.teaser_safe === true;
     dialog.showModal(); controls();
     try {
       var result = await api('/file', { model_id: item.model_id, media_asset_id: item.id });
       if (version !== generation || !dialog.open) return;
-      var media = element(result.blob.type === 'video/mp4' ? 'video' : 'img');
+      var media = element(result.blob.type.startsWith('video/') ? 'video' : 'img');
       if (media.tagName === 'VIDEO') { media.controls = true; media.playsInline = true; media.disablePictureInPicture = true; media.setAttribute('controlsList', 'nodownload noremoteplayback'); }
-      else media.alt = 'สื่อส่วนตัวสำหรับตรวจโดยแอดมิน';
+      else media.alt = item.audience === 'public' ? 'สื่อ Public สำหรับตรวจโดยแอดมิน' : 'สื่อ Private สำหรับตรวจโดยแอดมิน';
       media.addEventListener(media.tagName === 'VIDEO' ? 'loadeddata' : 'load', function () { if (version !== generation) return; sha = result.sha; message('review-status', 'ตรวจสื่อให้ครบก่อนเลือกผลการตรวจ'); controls(); }, { once: true });
       media.addEventListener('error', function () { sha = ''; message('review-status', 'เปิดสื่อไม่ได้ กรุณาปิดแล้วลองตรวจใหม่'); controls(); });
       objectUrl = URL.createObjectURL(result.blob); media.src = objectUrl; q('media').replaceChildren(media);
@@ -69,12 +69,12 @@
   }
   function card(item) {
     var article = element('article', 'mr-card'), info = element('div', 'mr-card-info');
-    info.append(element('p', 'mr-kind', item.kind === 'private_clip' ? 'PRIVATE CLIP' : 'PRIVATE PIC'), element('h2', '', item.name));
+    info.append(element('p', 'mr-kind', item.kind === 'private_clip' ? 'PRIVATE CLIP' : item.kind === 'private_pic' ? 'PRIVATE PIC' : item.kind === 'public_clip' ? 'PUBLIC CLIP' : 'PUBLIC PIC'), element('h2', '', item.name));
     var date = new Date(item.uploaded_at), when = Number.isNaN(date.getTime()) ? '' : date.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'medium', timeStyle: 'short' });
     info.append(element('p', 'mr-muted', (item.model_name || item.model_id || 'ไม่พบ Model') + (when ? ' · ' + when : '')), element('p', 'mr-muted', labels[item.status] + (item.teaser_safe ? ' · PRIVATE TEASER' : '') + ' · ' + (Number(item.size) / 1024 / 1024).toFixed(1) + ' MB'));
     article.append(info);
     if (item.reviewable && item.status !== 'rejected') { var button = element('button', '', item.status === 'approved' ? 'ตรวจ / เพิกถอน' : 'เปิดตรวจ'); button.type = 'button'; button.addEventListener('click', function () { openReview(item); }); article.append(button); }
-    else if (!item.reviewable) info.append(element('p', 'mr-muted', 'ล็อกไว้: ต้องอัปโหลดผ่าน Private Media ใหม่'));
+    else if (!item.reviewable) info.append(element('p', 'mr-muted', 'ล็อกไว้: metadata หรือ object ไม่ผ่าน contract ของ audience นี้'));
     return article;
   }
   async function load(more) {
@@ -98,7 +98,7 @@
   async function decide(decision) {
     if (busy || !selected || !sha || !q('confirm').checked) return;
     if (decision !== 'approve' && !q('note').value.trim()) return;
-    var item = selected, teaserSafe = decision === 'approve' && q('teaser').checked; busy = true; controls(); message('review-status', 'กำลังบันทึกผลการตรวจ…');
+    var item = selected, teaserSafe = decision === 'approve' && item.audience === 'private' && q('teaser').checked; busy = true; controls(); message('review-status', 'กำลังบันทึกผลการตรวจ…');
     try {
       await api('/decision', { model_id: item.model_id, media_asset_id: item.id, expected_status: item.status, media_sha256: sha, decision: decision, teaser_safe: teaserSafe, note: q('note').value.trim() });
       busy = false; closeReview(); await load(false);
