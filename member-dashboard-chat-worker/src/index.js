@@ -295,12 +295,15 @@ function compactLookup(value) {
   return normalizeLookup(value).replace(/\s+/g, "");
 }
 
+const CARD_MODEL_ENTRY_NAMES = new Set(["JASPAL", "NANO", "EMs01", "Sky B", "Book EI", "EMs11", "GWs19", "EMs19"]);
+
 const RESERVED_MODEL_ENTRY_TRIGGERS = new Set(["HELLO", "HELP", "MMD", "LINE", "BOOK", "BOOKING", "PRICE", "RATE", "MEMBER", "PRIVATE", "PUBLIC", "VIP", "SVIP", "BLACKCARD"]);
 
 export function extractKenjiModelLookupQuery(text = "") {
   const raw = asString(text).normalize("NFKC").replace(/\s+/g, " ").trim();
   if (!raw || raw.length > 100) return "";
   const withoutPolite = raw.replace(/(?:ครับ|ค่ะ|คะ|นะครับ|หน่อยครับ|please)\s*$/i, "").trim();
+  if (CARD_MODEL_ENTRY_NAMES.has(withoutPolite)) return withoutPolite;
   const exactCode = withoutPolite.match(/^([A-Za-z]{2,8}(?:[-_]?\d{1,4}))$/);
   if (exactCode) return exactCode[1];
   const campaignEntry = withoutPolite.match(/^([A-Z][A-Z0-9_-]{3,31})$/);
@@ -357,6 +360,7 @@ export function inferLineIntent(text = "", event = {}) {
 
   if (matchHimaiSupplierRegistration(text) !== null) return "himai_supplier_registration";
   if (extractKenjiModelVerificationEmail(text)) return "model_access_verification";
+  if (CARD_MODEL_ENTRY_NAMES.has(asString(text).normalize("NFKC").trim())) return "model_lookup";
 
   if (/(human handoff|human agent|คุยกับคน|เจ้าหน้าที่)/i.test(normalized)) return "human_handoff";
   if (/(ข้อมูล|ประวัติ|เบอร์|ไลน์|ชื่อ|โปรไฟล์|payment|สมาชิก).{0,24}(?:ลูกค้าคนอื่น|คนอื่น|สมาชิกคนอื่น)|(?:ลูกค้าคนอื่น|ข้อมูลส่วนตัว|private data|other customer)/i.test(normalized)) return "privacy_request";
@@ -663,7 +667,13 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
     const rawSummary = asString(payload.model.summary).slice(0, 500);
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isSafeKenjiModelCustomerText(workingName, 120)) return { status: "silent" };
     const summary = isSafeKenjiModelCustomerText(rawSummary, 500) ? rawSummary : "";
-    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary } };
+    const rawSales = payload.model.sales;
+    const rate = Number(rawSales?.customer_rate_thb);
+    const sales = rawSales && rawSales.sellable === true && rawSales.price_visible === true &&
+      rawSales.requires_per_approval === false && Number.isSafeInteger(rate) && rate > 0 && rate <= 1000000
+      ? { customer_rate_thb: rate, term_summary: isSafeKenjiModelCustomerText(rawSales.term_summary, 240) ? asString(rawSales.term_summary) : "" }
+      : null;
+    return { status: "match", model: { model_code: modelCode, working_name: workingName, summary, sales } };
   } catch (_) {
     return { status: "silent" };
   } finally {
@@ -686,7 +696,9 @@ function buildKenjiModelAccessReply(model = {}) {
   const workingName = asString(model.working_name);
   const summary = asString(model.summary);
   if (!modelCode || !workingName) return "";
-  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}`;
+  const rate = model.sales?.customer_rate_thb;
+  const price = Number.isSafeInteger(rate) ? `\n\nเรท ${rate.toLocaleString("th-TH")} บาท${model.sales.term_summary ? ` (${model.sales.term_summary})` : ""}` : "";
+  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}${price}\n\nสนใจรายละเอียดหรือขอให้เปอร์ช่วยดูต่อ พิมพ์ “สนใจ ${modelCode}” ได้เลยครับ`;
 }
 
 function buildKenjiModelAccessDecision(access = {}, options = {}) {
@@ -716,7 +728,7 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
   if (access.status === "renewal") {
     return {
       ...base,
-      text: `สมาชิกของคุณหมดอายุหรือยังไม่ active ครับ จึงยังเปิดชื่อหรือรหัส Private Model ไม่ได้\n\nต่ออายุได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}`,
+      text: `สิทธิ์สมาชิกในระบบหมดอายุหรือยังไม่ active ครับ หากต้องการข้อมูล Private Model เพิ่มเติม กรุณาต่ออายุสมาชิก\n\nต่ออายุได้ที่นี่ครับ → ${MEMBER_RENEWAL_URL}`,
       reply_source: "model_access_renewal",
       guard_blocked: false,
       guard_reason: "",

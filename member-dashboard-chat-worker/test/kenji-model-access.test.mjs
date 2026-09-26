@@ -107,6 +107,12 @@ test("model lookup intent accepts neutral exact codes and explicit working-name 
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("ชื่อนายแบบ น้องซิน"), "น้องซิน");
   assert.equal(extractKenjiModelLookupQuery("JASPAL"), "JASPAL");
+  for (const card of ["NANO", "EMs01", "Sky B", "Book EI", "EMs11", "GWs19", "EMs19"]) {
+    assert.equal(extractKenjiModelLookupQuery(card), card);
+    assert.equal(inferLineIntent(card, lineEvent(card)), "model_lookup");
+  }
+  assert.equal(extractKenjiModelLookupQuery("/my-mmd"), "");
+  assert.equal(extractKenjiModelLookupQuery("Sky B สวัสดี"), "");
   assert.equal(extractKenjiModelLookupQuery("HELLO"), "");
   assert.equal(extractKenjiModelLookupQuery("สวัสดีครับ"), "");
   assert.equal(inferLineIntent("MX17", lineEvent("MX17")), "model_lookup");
@@ -238,6 +244,25 @@ test("authorized RPC match becomes one concise Per Voice reply without operation
   assert.equal(request.headers.get("x-mmd-internal-call"), "true");
   assert.equal(request.headers.get("authorization"), "Bearer internal-token");
   assert.deepEqual(await request.json(), { line_user_id: LINE_USER_ID, query: "MX17" });
+});
+
+test("visible approved sales rate is sent with a CTA; approval or hidden price is withheld", async () => {
+  const model = { model_code: "MX17", working_name: "น้องซิน" };
+  const reply = async (sales) => resolveKenjiLineReply(lineEvent("MX17"), {}, {
+    ...BASE_ENV,
+    ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { ...model, sales } }),
+  });
+  const approved = await reply({ sellable: true, price_visible: true, requires_per_approval: false, customer_rate_thb: 4500, term_summary: "เรทที่อนุมัติ" });
+  assert.match(approved.text, /4,500 บาท/);
+  assert.match(approved.text, /สนใจ MX17/);
+  for (const sales of [
+    { sellable: true, price_visible: false, requires_per_approval: false, customer_rate_thb: 4500 },
+    { sellable: true, price_visible: true, requires_per_approval: true, customer_rate_thb: 4500 },
+    { sellable: false, price_visible: true, requires_per_approval: false, customer_rate_thb: 4500 },
+  ]) {
+    const withheld = await reply(sales);
+    assert.doesNotMatch(withheld.text, /4,500|เรท/);
+  }
 });
 
 test("thin adapter drops unsafe summary content even if a compromised RPC labels it safe", async () => {

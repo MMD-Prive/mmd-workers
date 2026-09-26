@@ -286,6 +286,10 @@ async function resolveExactModel(env, query, fetchImpl) {
   if (codeMatches.length) return { status: "resolved", records: codeMatches };
   const nameMatches = await queryAcrossFields(env, table, MODEL_WORKING_NAME_FIELDS, query, fetchImpl, 5);
   if (nameMatches.length) return { status: "resolved", records: nameMatches };
+  // Card text may be the Drive folder name rather than the model code or working name.
+  // Match the canonical Models record exactly; folder location never grants access.
+  const folderMatches = await queryAcrossFields(env, table, ["folder_name"], query, fetchImpl, 5);
+  if (folderMatches.length) return { status: "resolved", records: folderMatches };
 
   // Ad / Rich Menu entries reuse the published Keyword Profile aliases.
   // Alias matching is exact and only Active profiles participate. The alias
