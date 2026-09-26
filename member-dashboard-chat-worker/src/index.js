@@ -2242,7 +2242,12 @@ async function handleLineWebhook(request, env, ctx = null) {
       isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
       isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)
     );
-    const campaignContextResult = !campaignTrigger && text && canGenerateReply && campaignFlagsEnabled
+    const campaignPilotCohort = parseHashAllowlist(env.LINE_CARD_21829530_PILOT_HASHES);
+    const campaignPilotUserHash = campaignFlagsEnabled && campaignPilotCohort.valid && lineUserId
+      ? await sha256Hex(lineUserId)
+      : "";
+    const campaignPilotEligible = Boolean(campaignPilotUserHash && campaignPilotCohort.hashes.has(campaignPilotUserHash));
+    const campaignContextResult = !campaignTrigger && text && canGenerateReply && campaignFlagsEnabled && campaignPilotEligible
       ? await lineCardCampaignContext(env, lineUserId, "get")
       : { ok: true, found: false };
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
@@ -2252,10 +2257,20 @@ async function handleLineWebhook(request, env, ctx = null) {
     const campaignLeadEnabled = Boolean(
       campaignEvent &&
       canGenerateReply &&
-      campaignFlagsEnabled
+      campaignFlagsEnabled &&
+      campaignPilotEligible
     );
     let campaignLeadQueued = false;
-    let campaignLeadClaim = { ok: false, claimed: false, reason: campaignEvent ? "campaign_lead_flag_off" : "not_campaign" };
+    const campaignGateReason = !campaignEvent
+      ? "not_campaign"
+      : !campaignFlagsEnabled
+        ? "campaign_lead_flag_off"
+        : !campaignPilotCohort.valid
+          ? "campaign_pilot_config_malformed"
+          : !campaignPilotEligible
+            ? "campaign_pilot_not_eligible"
+            : "campaign_lead_not_processed";
+    let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
       const takeover = await getLineOwnerTakeoverState(env, lineUserId);
@@ -2402,6 +2417,8 @@ async function handleLineWebhook(request, env, ctx = null) {
       model_rate_limited: Boolean(modelPreflight.rate_limited),
       model_quota_window: Number(modelPreflight.quota_window) || 0,
       campaign_lead_enabled: campaignLeadEnabled,
+      campaign_pilot_config_valid: campaignPilotCohort.valid,
+      campaign_pilot_eligible: campaignPilotEligible,
       campaign_lead_queued: campaignLeadQueued,
       campaign_lead_deduped: Boolean(campaignLeadRecord?.deduped),
       campaign_lead_reason: asString(campaignLeadRecord?.reason || campaignLeadClaim.reason).slice(0, 80) || null,

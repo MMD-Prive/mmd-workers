@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -13,6 +14,7 @@ import worker, {
 } from "../src/index.js";
 
 const LINE_USER_ID = "U1234567890abcdef1234567890abcdef";
+const LINE_USER_HASH = createHash("sha256").update(LINE_USER_ID).digest("hex");
 const RUNTIME_STATUS_PATH = "/v1/internal/kenji/control/runtime/status";
 const BASE_ENV = {
   INTERNAL_TOKEN: "internal-token",
@@ -23,6 +25,7 @@ const BASE_ENV = {
   LINE_KENJI_KNOWLEDGE_ENABLED: "false",
   LINE_KENJI_MODEL_ENABLED: "false",
   LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+  LINE_CARD_21829530_PILOT_HASHES: LINE_USER_HASH,
 };
 
 function healthyRuntimeResponse() {
@@ -123,6 +126,7 @@ test("committed rollout configuration keeps both model capabilities off and expo
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_LEAD_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_CARD_21829530_PILOT_HASHES\s*=\s*""$/m);
   assert.match(lineWrangler, /binding\s*=\s*"ADMIN_WORKER"\s*\nservice\s*=\s*"admin-worker"/m);
   assert.doesNotMatch(adminWrangler, /v1\/internal\/kenji\/model-access/);
 });
@@ -433,6 +437,35 @@ test("all eight campaign triggers accept a generic brief without model resolutio
     assert.doesNotMatch(decision.text, /บาท|โปรไฟล์|รหัส/);
   }
   assert.equal(calls.length, 0);
+});
+
+test("campaign pilot allowlist fails closed for missing malformed and non-matching hashes", async () => {
+  const originalFetch = globalThis.fetch;
+  const networkCalls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    networkCalls.push({ url: String(input), init });
+    return new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const common = {
+    ...BASE_ENV,
+    AIRTABLE_API_KEY: "airtable-token",
+    AIRTABLE_BASE_ID: "app-test",
+    AIRTABLE_SYNC_TABLE: "console-inbox",
+    LINE_CARD_21829530_LEAD_ENABLED: "true",
+    LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR: "true",
+    KENJI_MODEL_DEDUPE: durableBinding(),
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
+  };
+  try {
+    for (const pilotHashes of ["", "not-a-hash", "0".repeat(64)]) {
+      const env = { ...common, LINE_CARD_21829530_PILOT_HASHES: pilotHashes };
+      await worker.fetch(await signedWebhook([lineEvent("NANO", { replyToken: `reply-${pilotHashes.length}` })], env), env);
+    }
+    assert.equal(networkCalls.filter((call) => call.url.includes("api.airtable.com")).length, 0);
+    assert.equal(networkCalls.filter((call) => call.url.includes("/v2/bot/message/reply")).length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("campaign lead is queued before one reply and duplicate delivery is idempotent", async () => {
