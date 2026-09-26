@@ -94,3 +94,11 @@ test("all-jobs projection preserves date/time fallback rules from the dashboard"
   assert.equal(jobs[1].job_date, "");
   assert.equal(jobs[1].time, "ยังไม่มีวันเวลา");
 });
+
+
+test("owner handoff selects the exact canonical Session across job dates and pages", () => {
+  const records = Array.from({ length: 75 }, (_, index) => session(`job_${index + 1}`, "2026-09-11"));
+  const page = buildJobsPage(records, { now: new Date("2026-09-10T09:00:00.000Z"), sessionId: "job_74", pageSize: 20 });
+  assert.deepEqual(page.items.map((item) => item.id), ["job_74"]);
+  assert.equal(page.pagination.total, 1);
+});
