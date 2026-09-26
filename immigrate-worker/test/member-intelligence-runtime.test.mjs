@@ -185,7 +185,7 @@ test("a completed re-read for A restores the selected client's B controls and pr
   const state = {
     selected: { client_id: "recClientA123456" },
     sourceEvidenceWorkbench: { reread_allowed: true },
-    sourceEvidenceRereading: false,
+    sourceEvidenceRereadingClients: new Set(),
     intelligenceCache: new Map([["recClientA123456", Promise.resolve({ client_id: "recClientA123456" })]]),
     intelligence: { owner: "A" },
   };
@@ -197,20 +197,20 @@ test("a completed re-read for A restores the selected client's B controls and pr
   )(
     state,
     (value) => String(value || "").trim(),
-    (payload, clientId) => renders.push({ payload, clientId, rereading: state.sourceEvidenceRereading }),
+    (payload, clientId) => renders.push({ payload, clientId, rereading: state.sourceEvidenceRereadingClients.has(clientId) }),
     () => {},
     () => new Promise((resolve) => { finishA = resolve; }),
     () => {},
   );
 
   const pending = reread();
-  assert.equal(state.sourceEvidenceRereading, true);
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123456"), true);
   state.selected = { client_id: "recClientB123456" };
   state.intelligence = { owner: "B" };
   finishA();
   await pending;
 
-  assert.equal(state.sourceEvidenceRereading, false);
+  assert.equal(state.sourceEvidenceRereadingClients.has("recClientA123456"), false);
   assert.deepEqual(renders.at(-1), { payload: { owner: "B" }, clientId: "recClientB123456", rereading: false });
 });
 
