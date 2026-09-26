@@ -87,27 +87,6 @@ function renderShell(config, nonce) {
     .detail-grid,.benefit-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.detail-grid .value{font-size:17px}.payment-status{color:#e6cb91}.benefit-grid{margin:14px 0}.benefit-card{padding:14px;border:1px solid rgba(216,189,137,.18);border-radius:14px;background:rgba(255,255,255,.025)}.benefit-card strong{display:block;margin-top:6px;color:#f0d892;font-size:20px}.wallet-code{letter-spacing:.16em}.wallet-state{color:#d9c18d}
 
     /* Dual first-screen worlds: public discovery stays bright; private access stays SIGIL. */
-    /* MMD Memory theme locks: Bangkok ivory for Public, SIGIL Wall for Private. */
-    body.world-public:not(.signup-mode){font-family:"Manrope","Noto Sans Thai","LINE Seed Sans TH",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 110%,rgba(184,132,82,.22),transparent 48%),linear-gradient(180deg,#fffdf8 0%,#f6ede2 56%,#e7d8c7 100%);color:#2a2521}
-    body.world-public:not(.signup-mode) main{background:linear-gradient(160deg,rgba(255,253,249,.96),rgba(248,239,228,.94) 62%,rgba(235,220,203,.95));border-color:#d8c6b2;box-shadow:0 28px 90px rgba(105,77,47,.18)}
-    body.world-public:not(.signup-mode) .mark{font-weight:800;letter-spacing:.22em;color:#9c6744}
-    body.world-public:not(.signup-mode) .title{font-family:"Manrope","Noto Sans Thai",sans-serif;font-weight:800;color:#231e1a}
-    body.world-public:not(.signup-mode) .sub{color:#715f51}
-    body.world-public:not(.signup-mode) #message{color:#493d34;border-left-color:#b86f45;background:rgba(255,250,243,.84)}
-    body.world-public:not(.signup-mode) .intro-continue{background:linear-gradient(100deg,#b7473d,#d06c55);color:#fffaf4;box-shadow:0 14px 30px rgba(152,62,47,.24)}
-    body.world-public:not(.signup-mode) .member-nav{border-color:#d8c6b3;background:rgba(255,250,244,.86)}
-    body.world-public:not(.signup-mode) .member-nav button{color:#78675b}
-    body.world-public:not(.signup-mode) .member-nav button[aria-current="true"]{background:#24201d;color:#fffaf4}
-    body.world-private:not(.signup-mode){font-family:"Noto Sans Thai","LINE Seed Sans TH","LINE",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 50% 5%,rgba(128,89,48,.38),transparent 34%),repeating-linear-gradient(90deg,rgba(211,176,107,.045) 0,rgba(211,176,107,.045) 1px,transparent 1px,transparent 76px),linear-gradient(160deg,#0b0a0a 0%,#171210 52%,#070707 100%);color:#f3ead8}
-    body.world-private:not(.signup-mode) main{background:linear-gradient(160deg,rgba(25,20,18,.96),rgba(14,13,13,.98));border-color:rgba(224,190,119,.3);box-shadow:0 30px 100px rgba(0,0,0,.58)}
-    body.world-private:not(.signup-mode) .mark{font-weight:800;letter-spacing:.24em;color:#e0bf7a}
-    body.world-private:not(.signup-mode) .title{font-family:"Noto Sans Thai","LINE Seed Sans TH",sans-serif;font-weight:750;color:#f7e8c9}
-    body.world-private:not(.signup-mode) .sub{color:#c2b29a}
-    body.world-private:not(.signup-mode) #message{color:#ecdcbd;border-left-color:#d2a95d;background:rgba(218,172,83,.08)}
-    body.world-private:not(.signup-mode) .intro-continue{background:linear-gradient(100deg,#c79a4d,#f0d38c);color:#21170c;box-shadow:0 14px 32px rgba(194,148,63,.24)}
-    body.world-private:not(.signup-mode) .member-nav{border-color:rgba(214,174,94,.28);background:rgba(13,11,10,.78)}
-    body.world-private:not(.signup-mode) .member-nav button{color:#bcae96}
-    body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#e7c477;color:#241a0d}
     body.world-public:not(.signup-mode){background:radial-gradient(circle at 50% -10%,#fffdf8 0,#f5eee3 52%,#eee3d4 100%);color:#2c2926}
     body.world-public:not(.signup-mode) main{border-color:#d7c8b6;background:linear-gradient(160deg,#fffdf9,#f7efe4 62%,#eee2d2);box-shadow:0 24px 70px rgba(100,75,45,.16)}
     body.world-public:not(.signup-mode) .mark{color:#8d684a}
@@ -141,6 +120,27 @@ function renderShell(config, nonce) {
     body.app-entered.world-public main,body.app-entered.world-private main{width:min(100%,760px);min-height:auto;margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;display:block}
     body.app-entered.world-public,body.app-entered.world-private{padding:20px 16px 40px;overflow:auto}
     @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
+    /* MMD Memory theme locks: Bangkok ivory for Public, SIGIL Wall for Private. */
+    body.world-public:not(.signup-mode){font-family:"Manrope","Noto Sans Thai","LINE Seed Sans TH",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 50% 110%,rgba(184,132,82,.22),transparent 48%),linear-gradient(180deg,#fffdf8 0%,#f6ede2 56%,#e7d8c7 100%);color:#2a2521}
+    body.world-public:not(.signup-mode) main{background:linear-gradient(160deg,rgba(255,253,249,.96),rgba(248,239,228,.94) 62%,rgba(235,220,203,.95));border-color:#d8c6b2;box-shadow:0 28px 90px rgba(105,77,47,.18)}
+    body.world-public:not(.signup-mode) .mark{font-weight:800;letter-spacing:.22em;color:#9c6744}
+    body.world-public:not(.signup-mode) .title{font-family:"Manrope","Noto Sans Thai",sans-serif;font-weight:800;color:#231e1a}
+    body.world-public:not(.signup-mode) .sub{color:#715f51}
+    body.world-public:not(.signup-mode) #message{color:#493d34;border-left-color:#b86f45;background:rgba(255,250,243,.84)}
+    body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#b7473d,#d06c55);color:#fffaf4;box-shadow:0 14px 30px rgba(152,62,47,.24)}
+    body.world-public:not(.signup-mode) .member-nav{border-color:#d8c6b3;background:rgba(255,250,244,.86)}
+    body.world-public:not(.signup-mode) .member-nav button{color:#78675b}
+    body.world-public:not(.signup-mode) .member-nav button[aria-current="true"]{background:#24201d;color:#fffaf4}
+    body.world-private:not(.signup-mode){font-family:"Noto Sans Thai","LINE Seed Sans TH","LINE",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(circle at 50% 5%,rgba(128,89,48,.38),transparent 34%),repeating-linear-gradient(90deg,rgba(211,176,107,.045) 0,rgba(211,176,107,.045) 1px,transparent 1px,transparent 76px),linear-gradient(160deg,#0b0a0a 0%,#171210 52%,#070707 100%);color:#f3ead8}
+    body.world-private:not(.signup-mode) main{background:linear-gradient(160deg,rgba(25,20,18,.96),rgba(14,13,13,.98));border-color:rgba(224,190,119,.3);box-shadow:0 30px 100px rgba(0,0,0,.58)}
+    body.world-private:not(.signup-mode) .mark{font-weight:800;letter-spacing:.24em;color:#e0bf7a}
+    body.world-private:not(.signup-mode) .title{font-family:"Noto Sans Thai","LINE Seed Sans TH",sans-serif;font-weight:750;color:#f7e8c9}
+    body.world-private:not(.signup-mode) .sub{color:#c2b29a}
+    body.world-private:not(.signup-mode) #message{color:#ecdcbd;border-left-color:#d2a95d;background:rgba(218,172,83,.08)}
+    body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:linear-gradient(100deg,#c79a4d,#f0d38c);color:#21170c;box-shadow:0 14px 32px rgba(194,148,63,.24)}
+    body.world-private:not(.signup-mode) .member-nav{border-color:rgba(214,174,94,.28);background:rgba(13,11,10,.78)}
+    body.world-private:not(.signup-mode) .member-nav button{color:#bcae96}
+    body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#e7c477;color:#241a0d}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode " : ""}world-${config.world}" data-world="${config.world}">
