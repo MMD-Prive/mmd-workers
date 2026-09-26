@@ -58,6 +58,13 @@ function recovery(method) {
   const html = `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MY MMD Orders</title><style>*{box-sizing:border-box}body{margin:0;min-height:100svh;background:linear-gradient(180deg,rgba(255,250,243,.78),rgba(255,250,243,.95)),url("${MY_MMD_BANGKOK_BOARD_URL}") center top/cover fixed no-repeat;color:#181511;font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif}main{width:min(100% - 40px,560px);margin:auto;padding:28px 0}.brand{display:block;width:60px;height:60px;object-fit:contain}.card{margin-top:clamp(44px,12vh,120px);padding:clamp(24px,7vw,40px);border:1px solid #e6ddd0;border-radius:24px;background:rgba(255,250,243,.95)}h1{font-size:22px}p{line-height:1.65}a{color:#6b2737}</style></head><body><main><img class="brand" src="${MY_MMD_BRAND_LOGO_URL}" alt="MMD Privé"><section class="card"><h1>รายการสั่งซื้อยังเปิดไม่สำเร็จ</h1><p>กรุณากลับ MY MMD แล้วลองอีกครั้ง</p><a href="/my-mmd/">กลับ MY MMD</a></section></main></body></html>`;
   return new Response(method === "HEAD" ? null : html, {
     status: 502,
-    headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" },
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-robots-tag": "noindex, nofollow",
+      "x-mmd-route-owner": "member-dashboard-chat-worker",
+      "x-mmd-ui-source": "webflow:my-mmd-orders",
+      "x-mmd-behavior-owner": "member-pages-worker",
+    },
   });
 }

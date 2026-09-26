@@ -110,6 +110,9 @@ test("Bangkok board uses hero treatment on home and profile, and Orders recovery
   const orders = await worker.fetch(new Request("https://mmdbkk.com/my-mmd/orders"), {});
   const ordersHtml = await orders.text();
   assert.equal(orders.status, 502);
+  assert.equal(orders.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(orders.headers.get("x-mmd-ui-source"), "webflow:my-mmd-orders");
+  assert.equal(orders.headers.get("x-mmd-behavior-owner"), "member-pages-worker");
   assert.match(ordersHtml, /รายการสั่งซื้อยังเปิดไม่สำเร็จ/);
   assert.match(ordersHtml, /BKK%20View%2001\.webp/);
   assert.match(ordersHtml, /alt="MMD Privé"/);
