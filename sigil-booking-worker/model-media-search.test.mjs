@@ -212,3 +212,31 @@ function item(id, overrides) {
     ...overrides,
   } };
 }
+
+test("booking intake stores approved MMD media registry provenance and fails closed on unknown sources", async () => {
+  const originalFetch = globalThis.fetch;
+  const persisted = [];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.match(String(url), /^https:\/\/api\.airtable\.com\/v0\/test-base\//);
+    if (init.method === "POST") {
+      const fields = JSON.parse(init.body).fields;
+      persisted.push(fields);
+      return Response.json({ id: "recTestBooking", fields });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    for (const [source, expected] of [["mmd_model_media_assets", "mmd_model_media_assets"], ["unexpected_source", "manual_review"]]) {
+      const response = await worker.fetch(new Request("https://sigil.mmdbkk.com/sigil/api/booking/intake", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ booking_ref: `test_${source}`, selected_model_id: modelId, model_asset_source: source, suppress_telegram_notify: true }),
+      }), { AIRTABLE_API_KEY: "test-key", AIRTABLE_BASE_ID: "test-base" });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).ok, true);
+      assert.equal(persisted.at(-1).model_asset_source, expected);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
