@@ -96,7 +96,7 @@ try {
   assert.match(missingScopeHtml, /CLIENT SCOPE LOCKED/);
   assert.match(missingScopeHtml, /client_id ไม่ถูกต้อง/);
   assert.doesNotMatch(missingScopeHtml, /load\('review_required'\);summary\(\)/);
-  assert.match(missingScopeHtml, /const directScope=new URL\(location\.href\)\.searchParams\.has\('client_id'\)/);
+  assert.match(missingScopeHtml, /const directScope=true/);
   assert.match(missingScopeHtml, /if\(backfill\)backfill\.disabled=imp\.running\|\|directScope/);
   assert.match(missingScopeHtml, /if\(backfill\)backfill\.onclick=directScope\?null:startImport/);
   assert.match(missingScopeHtml, /txt\(d\.client_id\)!==id\|\|d\.identity\?\.status!=='canonical'/);
