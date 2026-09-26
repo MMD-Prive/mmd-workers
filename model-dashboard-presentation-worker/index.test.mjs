@@ -377,7 +377,10 @@ test("serves mobile model media upload assets with review-first limits and retry
   assert.equal(js.status, 200);
   assert.equal(js.headers.get("x-mmd-dashboard-addon"), "model-media-upload-v1");
   const source = await js.text();
-  assert.match(source, /MAX_PHOTOS=8,MAX_CLIPS=3/);
+  assert.match(source, /MAX_PHOTOS=8,MAX_CLIPS=1/);
+  assert.match(source, /Private: รูปสูงสุด 2 รูป · คลิปสูงสุด 1 คลิป/);
+  assert.match(source, /private-upload-plan/);
+  assert.match(source, /mmd-private-media-v1-20260927/);
   assert.match(source, /25\*1024\*1024/);
   assert.match(source, /\/v1\/model\/media\/upload-url/);
   assert.match(source, /pending_review/);

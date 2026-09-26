@@ -1,4 +1,4 @@
-import { mediaRequest, planPrivateUpload, uploadPrivateMedia, readMedia } from '../../shared/private-media.mjs';
+import { PRIVATE_MEDIA_CONSENT_VERSION, mediaRequest, planPrivateUpload, uploadPrivateMedia, readMedia } from '../../shared/private-media.mjs';
 
 export const PRIVATE_MEDIA_INGEST_ONCE_PATH = '/v1/admin/private-media/ingest-once';
 export const PRIVATE_MEDIA_INGEST_STAGED_PATH = '/v1/admin/private-media/ingest-staged';
@@ -90,6 +90,9 @@ export async function handlePrivateMediaIngestOnce(request,env){
 
     try{
       const plan=await planPrivateUpload(env,modelId,{
+        upload_ref:`media_${crypto.randomUUID().replace(/-/g,'')}`,
+        purpose:'private_teaser',
+        consent_version:PRIVATE_MEDIA_CONSENT_VERSION,
         file_name:fileName,
         content_type:contentType,
         file_size_bytes:expectedSize,
@@ -101,6 +104,7 @@ export async function handlePrivateMediaIngestOnce(request,env){
       });
       const result=await uploadPrivateMedia(uploadRequest,env,modelId,plan.asset_id,{
         requestedBy:'owner:one-time-private-ingest',
+        purpose:'private_teaser',
       });
       const media=await readMedia(env,plan.asset_id);
       await patchCapability(env,capability.id,{
@@ -158,10 +162,10 @@ async function consumeVerifiedCapabilityBytes(env,capability,buffer,{requestedBy
 
   await patchCapability(env,capability.id,{status:'consuming'});
   try{
-    const plan=await planPrivateUpload(env,modelId,{file_name:fileName,content_type:contentType,file_size_bytes:expectedSize});
+    const plan=await planPrivateUpload(env,modelId,{upload_ref:`media_${crypto.randomUUID().replace(/-/g,'')}`,purpose:'private_teaser',consent_version:PRIVATE_MEDIA_CONSENT_VERSION,file_name:fileName,content_type:contentType,file_size_bytes:expectedSize});
     const result=await uploadPrivateMedia(new Request('https://private-media-ingest.internal/upload',{
       method:'POST',headers:{'content-type':contentType},body:buffer,
-    }),env,modelId,plan.asset_id,{requestedBy:clean(requestedBy,160)||'owner:private-ingest'});
+    }),env,modelId,plan.asset_id,{requestedBy:clean(requestedBy,160)||'owner:private-ingest',purpose:'private_teaser'});
     const media=await readMedia(env,plan.asset_id);
     await patchCapability(env,capability.id,{
       status:'consumed',consumed_at:new Date().toISOString(),media_asset_record_id:media.id,failure_reason:'',source_attachment:[],

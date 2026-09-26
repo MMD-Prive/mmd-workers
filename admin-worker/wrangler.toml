@@ -994,6 +994,11 @@ class_name = "ModelActivationCoordinator"
 name = "MODEL_LOCATION_COORDINATOR"
 class_name = "ModelLocationCoordinator"
 
+# Serializes public/private media quota reservations per canonical Model record.
+[[durable_objects.bindings]]
+name = "MODEL_MEDIA_SLOT_COORDINATOR"
+class_name = "ModelMediaSlotCoordinator"
+
 
 # One durable job serializes Console Inbox pagination and provides resumable progress.
 [[durable_objects.bindings]]
@@ -1054,6 +1059,10 @@ class_name = "MmsPartnerAuthStore"
 [[migrations]]
 tag = "v2026-09-06-mms-partner-auth"
 new_sqlite_classes = ["MmsPartnerAuthStore"]
+
+[[migrations]]
+tag = "v2026-09-27-model-media-slot-coordinator"
+new_sqlite_classes = ["ModelMediaSlotCoordinator"]
 
 # Canonical client lookup: avoid Webflow HTML fallback for POST requests.
 

@@ -5,6 +5,7 @@ import {
   normalizeModelMediaUploadSpec,
   hasMismatchedDeclaredContentLength,
   isApprovedPublicModelMedia,
+  modelMediaCapacity,
   parseMediaRoute,
   recordOwnedByCanonicalModel,
 } from "./src/model-liff-worker-legacy.js";
@@ -117,4 +118,22 @@ test("streamed Model uploads accept an omitted Content-Length but reject invalid
   assert.equal(hasMismatchedDeclaredContentLength(String(expected - 1), expected), true);
   assert.equal(hasMismatchedDeclaredContentLength("not-a-length", expected), true);
   assert.equal(hasMismatchedDeclaredContentLength("9007199254740992", expected), true);
+});
+
+test("public quota is 8 photos / 1 clip and never counts the private lane", async () => {
+  const originalFetch = globalThis.fetch;
+  const modelId = "recBKaHfxUKs8fkMV";
+  const publicPhoto = (index) => ({ id: `recPublic${index}`, fields: { media_id: `media_public_${index}`, Model: [modelId], media_type: "public_gallery", media_visibility: "public_candidate", review_status: "pending_review" } });
+  const privatePhoto = (index) => ({ id: `recPrivate${index}`, fields: { Model: [modelId], media_type: "private_gallery", media_visibility: "private_candidate", review_status: "pending_review", file_type: "image/png" } });
+  try {
+    globalThis.fetch = async () => Response.json({ records: [
+      ...Array.from({ length: 7 }, (_, index) => publicPhoto(index)),
+      ...Array.from({ length: 2 }, (_, index) => privatePhoto(index)),
+      { id: "recClip", fields: { media_id: "media_public_clip", Model: [modelId], media_type: "intro_video", media_visibility: "public_candidate", review_status: "pending_review" } },
+    ] });
+    assert.deepEqual(await modelMediaCapacity({ AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "appTest" }, modelId, "image"), { ok: true, photos: 7, clips: 1, refs: Array.from({ length: 7 }, (_, index) => `media_public_${index}`) });
+    assert.deepEqual(await modelMediaCapacity({ AIRTABLE_API_KEY: "test", AIRTABLE_BASE_ID: "appTest" }, modelId, "video"), { ok: false, error: "clip_limit_reached", status: 409, max_files: 1, refs: ["media_public_clip"] });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
