@@ -135,11 +135,11 @@ try {
     resolveRequestedClientId(new URLSearchParams("client_id=recCanonical123&client_id=recDifferent456")) || "",
   );
   assert.equal(repeatedScope.status, 400);
-  const unavailableScope = await enforceExactCanonicalClientScope(new Response('{"ok":false,"error":"source_unavailable"}', {
+  const unavailableTransportScope = await enforceExactCanonicalClientScope(new Response('{"ok":false,"error":"source_unavailable"}', {
     status: 503,
     headers: { "content-type": "application/json" },
   }), "recCanonical123");
-  assert.equal(unavailableScope.status, 503);
+  assert.equal(unavailableTransportScope.status, 503);
 
   const queue = await redactCustomerQueueResponse(Response.json({
     ok: true,
