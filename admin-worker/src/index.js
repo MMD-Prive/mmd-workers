@@ -844,6 +844,12 @@ export default {
   },
 };
 
+function getAdminPrefix(path) {
+  if (path.startsWith("/v1/admin/")) return "/v1/admin";
+  if (path.startsWith("/internal/admin/")) return "/internal/admin";
+  return "";
+}
+
 /* =========================
    CORS
 ========================= */
@@ -946,6 +952,107 @@ async function readAdminGateSession(req, env) {
   }
 }
 
+async function createAdminSession(env, body) {
+  const required = ["memberstack_id", "model_id", "amount_thb"];
+  const missing = required.filter((k) => body?.[k] == null || body?.[k] === "");
+  if (missing.length) {
+    return { ok: false, error: "missing_required_fields", missing, status: 400 };
+  }
+
+  const amount = Number(body.amount_thb);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: "invalid_amount_thb", status: 400 };
+  }
+
+  const paymentsBaseUrl = String(env.PAYMENTS_BASE_URL || env.PAYMENTS_WORKER_BASE_URL || "").trim();
+  if (!paymentsBaseUrl) {
+    return { ok: false, error: "missing_payments_base_url", status: 500 };
+  }
+  const confirmKey = String(env.CONFIRM_KEY || "").trim();
+  if (!confirmKey) {
+    return { ok: false, error: "missing_confirm_key", status: 500 };
+  }
+
+  const paymentRef = String(
+    body.payment_ref || body.paymentRef || `admin_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+  );
+  const sessionId = String(body.session_id || body.sessionId || `sess_${crypto.randomUUID()}`);
+
+  const normalized = {
+    session_id: sessionId,
+    memberstack_id: String(body.memberstack_id),
+    model_id: String(body.model_id),
+    amount_thb: amount,
+    currency: String(body.currency || "THB"),
+    payment_ref: paymentRef,
+    return_url: body.return_url || body.success_url || null,
+    cancel_url: body.cancel_url || null,
+    metadata: body.metadata && typeof body.metadata === "object" ? body.metadata : {},
+  };
+
+  const paymentsBaseWithSlash = paymentsBaseUrl.endsWith("/") ? paymentsBaseUrl : `${paymentsBaseUrl}/`;
+  const linkUrl = new URL("v1/confirm/link", paymentsBaseWithSlash).toString();
+  const linkPayload = {
+    session_id: normalized.session_id,
+    payment_ref: normalized.payment_ref,
+    memberstack_id: normalized.memberstack_id,
+    model_id: normalized.model_id,
+    amount_thb: normalized.amount_thb,
+    currency: normalized.currency,
+    return_url: normalized.return_url,
+    cancel_url: normalized.cancel_url,
+    metadata: normalized.metadata,
+  };
+
+  const res = await fetch(linkUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Confirm-Key": confirmKey,
+    },
+    body: JSON.stringify(linkPayload),
+  });
+
+  const confirmData = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: "payments_link_failed",
+      status: err?.status || 502,
+      payment_ref: normalized.payment_ref,
+      detail: {
+        message: err?.message || "unknown_error",
+        response: err?.response || null,
+      },
+    };
+  }
+
+  const confirmation_url =
+    confirmData.confirmation_url || confirmData.confirm_url || confirmData.url || confirmData.link || null;
+  const confirmation_urls = {
+    confirmation_url,
+    confirm_url: confirmData.confirm_url || confirmation_url,
+    short_url: confirmData.short_url || null,
+  };
+
+  return {
+    ok: true,
+    session_id: normalized.session_id,
+    payment_ref: normalized.payment_ref,
+    amount_thb: normalized.amount_thb,
+    memberstack_id: normalized.memberstack_id,
+    model_id: normalized.model_id,
+    ...confirmation_urls,
+    payments_response: confirmData,
+  };
+}
+
+/* =========================
+   Airtable (optional)
+async function airtableFetch(env, path, init) {
+  const key = env.AIRTABLE_API_KEY;
+  const base = env.AIRTABLE_BASE_ID;
+  if (!key || !base) return { ok: false, error: "missing_airtable_env" };
 function parseCookieMap(req) {
   const map = new Map();
   const raw = req.headers.get("Cookie") || "";
