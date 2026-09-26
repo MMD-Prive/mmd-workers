@@ -588,7 +588,9 @@ export function buildJobList(records, now = new Date()) {
       when,
       status: thaiStatus(status),
       progress: progressFromStatus(status),
-      href: `/internal/admin/jobs/${encodeURIComponent(sessionId)}`,
+      href: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId)
+        ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}`
+        : "/internal/admin/jobs/all",
     };
   });
 

@@ -13,9 +13,9 @@ test('production dashboard cards resolve only to published admin job surfaces', 
   });
 
   assert.deepEqual(projected.jobs.map((job) => job.href), [
-    '/internal/admin/jobs/all?date=2026-09-16',
-    '/internal/admin/jobs/all?date=2026-09-17',
-    '/internal/admin/jobs/all?date=2026-09-17',
+    '/internal/admin/jobs/all?session_id=sess_ems20',
+    '/internal/admin/jobs/all?session_id=sess_ems22',
+    '/internal/admin/jobs/all?session_id=sess_book_ie',
   ]);
   assert.equal(projected.jobs.some((job) => /^\/internal\/admin\/jobs\/sess_/.test(job.href)), false);
 });

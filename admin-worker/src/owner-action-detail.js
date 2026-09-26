@@ -86,7 +86,7 @@ const DETAIL_COPY = Object.freeze({
   },
   owner_exception: {
     reason: "ระบบพบเรื่องที่ต้องให้ Owner ใช้ judgement",
-    decision_boundary: "เปิด Control Room เพื่อดู diagnostic ของ authority ที่เกี่ยวข้องก่อนตัดสินใจ",
+    decision_boundary: "เปิด All Jobs เพื่อดู Session ที่เกี่ยวข้อง แล้วตรวจสถานะและหลักฐานใน authority ของเคสก่อนตัดสินใจ",
   },
 });
 

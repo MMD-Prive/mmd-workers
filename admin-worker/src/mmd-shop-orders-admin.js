@@ -19,7 +19,7 @@ const API_LIST_PATH = "/v1/admin/shop/orders";
 const API_FULFILL_PATH = "/v1/admin/shop/orders/fulfill";
 const API_FULFILLMENT_PATH = "/v1/admin/shop/orders/fulfillment";
 const API_CREATE_PATH = "/v1/admin/shop/orders/create";
-const SOURCE_URL = "https://mmdprive.webflow.io/internal-admin-shop-orders";
+const SOURCE_URL = "https://mmdprive.webflow.io/internal/admin/shop/orders";
 
 const TABLES = Object.freeze({
   customers: "tbllkfCySeL9fSfZw",

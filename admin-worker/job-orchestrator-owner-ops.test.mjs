@@ -63,10 +63,17 @@ test('dashboard job links never point at nonexistent dynamic admin job routes', 
     },
   });
 
-  assert.equal(out.jobs[0].href, '/internal/admin/jobs/all?date=2026-09-16');
-  assert.equal(out.jobs[1].href, '/internal/admin/jobs/all');
+  assert.equal(out.jobs[0].href, '/internal/admin/jobs/all?session_id=sess_A');
+  assert.equal(out.jobs[1].href, '/internal/admin/jobs/all?session_id=sess_B');
   assert.equal(out.jobs[2].href, '/internal/admin/jobs/create-job');
-  assert.equal(out.todos[0].href, '/internal/admin/jobs/all?date=2026-09-16');
+  assert.equal(out.todos[0].href, '/internal/admin/jobs/all?session_id=sess_A');
   assert.equal(out.queues.jobs_need_confirm.href, '/internal/admin/jobs/all?ops=confirm');
   assert.equal(out.queues.payment_review.href, '/internal/admin/payments');
+});
+
+test('invalid legacy Session paths do not become exact-case links', () => {
+  const out = canonicalizeDashboardJobLinks({
+    jobs: [{ href: '/internal/admin/jobs/sess%2Fwrong', job_date: '2026-09-16' }],
+  });
+  assert.equal(out.jobs[0].href, '/internal/admin/jobs/all?date=2026-09-16');
 });

@@ -53,6 +53,17 @@ function allJobsHref(jobDate = "") {
   const date = clean(jobDate, 10);
   return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${ALL_JOBS_PAGE_PATH}?date=${date}` : ALL_JOBS_PAGE_PATH;
 }
+function exactJobHref(legacyHref, jobDate = "") {
+  const match = /^\/internal\/admin\/jobs\/([^/?#]+)(?:[?#].*)?$/.exec(clean(legacyHref, 500));
+  if (!match) return allJobsHref(jobDate);
+  try {
+    const sessionId = decodeURIComponent(match[1]);
+    if (/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId)) {
+      return `${ALL_JOBS_PAGE_PATH}?session_id=${encodeURIComponent(sessionId)}`;
+    }
+  } catch {}
+  return allJobsHref(jobDate);
+}
 export function canonicalizeDashboardJobLinks(payload = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
 
@@ -65,12 +76,12 @@ export function canonicalizeDashboardJobLinks(payload = {}) {
 
   const jobs = sourceJobs.map((item) => {
     if (!item || typeof item !== "object" || !isLegacyDynamicJobHref(item.href)) return item;
-    return { ...item, href: allJobsHref(item.job_date) };
+    return { ...item, href: exactJobHref(item.href, item.job_date) };
   });
   const todos = Array.isArray(payload.todos)
     ? payload.todos.map((item) => {
         if (!item || typeof item !== "object" || !isLegacyDynamicJobHref(item.href)) return item;
-        return { ...item, href: allJobsHref(dateByLegacyHref.get(clean(item.href, 500))) };
+        return { ...item, href: exactJobHref(item.href, dateByLegacyHref.get(clean(item.href, 500))) };
       })
     : payload.todos;
   const queues = payload.queues && typeof payload.queues === "object" && !Array.isArray(payload.queues)
