@@ -465,7 +465,7 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
     todos.push({
       title: `เช็กงาน ${job.id || job.title}`,
       text: job.text,
-      href: job.href || "/internal/admin/jobs",
+      href: job.href || "/internal/admin/jobs/all",
       icon: "+",
       tag: "เช็กงาน",
       color: "yellow",
@@ -487,7 +487,7 @@ function buildTodos({ money, historicalPending, jobs, members, boss }) {
     todos.push({
       title: boss[0].title,
       text: boss[0].text,
-      href: boss[0].href || "/internal/admin/exceptions",
+      href: boss[0].href || "/internal/admin/jobs/all",
       icon: "!",
       tag: "Boss Per",
       color: "gold",
@@ -699,15 +699,21 @@ function buildMemberList(records, now) {
     });
 }
 
-export function buildBossList({ sessionRecords = [] } = {}) {
-  const exceptionJob = (Array.isArray(sessionRecords) ? sessionRecords : []).find((record) =>
-    /(?:^|\b)(exception|hold|blocked)(?:\b|$)/i.test(JSON.stringify(record?.fields || {}))
-  );
-  if (!exceptionJob) return [];
+export export function buildBossList({ sessionRecords = [] } = {}) {
+  const record = (Array.isArray(sessionRecords) ? sessionRecords : []).find((item) => {
+    const fields = item?.fields || {};
+    const state = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status);
+    return /(?:^|[\s_-])(exception|hold|blocked)(?:$|[\s_-])/i.test(state);
+  });
+  if (!record) return [];
+  const fields = record.fields || {};
+  const jobDate = normalizeDateOnly(firstText(fields.job_date, fields.service_date, fields.date, fields["Job Date"]));
+  const sessionId = firstText(fields.session_id, fields.sid, fields.job_id, record.id);
   return [{
-    title: "Job Exception",
-    text: "มีงานที่ถูกระบุเป็น exception / hold / blocked และต้องให้ Owner ตรวจใน authority ต้นทาง",
-    href: "/internal/admin/exceptions",
+    id: sessionId,
+    title: "ตรวจงานที่มีปัญหา",
+    text: sessionId ? `เปิดงานทั้งหมดแล้วค้นหา ${sessionId}` : "เปิดงานทั้งหมดเพื่อตรวจสถานะ",
+    href: jobDate ? `/internal/admin/jobs/all?date=${jobDate}` : "/internal/admin/jobs/all",
   }];
 }
 
