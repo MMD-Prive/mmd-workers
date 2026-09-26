@@ -473,6 +473,40 @@ test("production upload issues a signed opaque URL, stores R2 privately, and att
   assert.equal(env.__airtable.applications.length, 1);
 });
 
+test("upload without Content-Length accepts only the signed number of actual bytes", async () => {
+  for (const { bytes, expectedStatus, expectedError } of [
+    { bytes: [255, 216, 255, 1], expectedStatus: 200 },
+    { bytes: [255, 216, 255], expectedStatus: 400, expectedError: "upload_size_mismatch" },
+  ]) {
+    const env = makeEnv();
+    const authorization = await post(UPLOAD_URL, {
+      application_type: "public_model",
+      consent: true,
+      kind: "photo",
+      role: "front_face",
+      file_name: "front.jpg",
+      content_type: "image/jpeg",
+      file_size: 4,
+    }, env);
+    assert.equal(authorization.status, 200);
+    const { upload_url: uploadUrl } = await authorization.json();
+    const request = new Request(uploadUrl, {
+      method: "PUT",
+      headers: { origin: ORIGIN, "content-type": "image/jpeg" },
+      body: new Uint8Array(bytes),
+      duplex: "half",
+    });
+    assert.equal(request.headers.get("content-length"), null);
+
+    const response = await worker.fetch(request, env);
+    assert.equal(response.status, expectedStatus);
+    const result = await response.json();
+    assert.equal(result.error, expectedError);
+    assert.equal(env.PUBLIC_MODEL_UPLOADS_R2.objects.size, expectedStatus === 200 ? 1 : 0);
+    assert.equal(env.__airtable.uploads.length, expectedStatus === 200 ? 1 : 0);
+  }
+});
+
 test("repeated upload PUT is idempotent and does not duplicate Airtable metadata", async () => {
   const env = makeEnv();
   const authorization = await post(UPLOAD_URL, {
