@@ -263,6 +263,7 @@ jobs:
           fi
           echo "Cloudflare requires a non-versioned deployment to apply the Durable Object migration; applying the migration without mutating routes."
           echo "ADMIN_WORKER_VERSION_ID=direct-deploy-${GITHUB_SHA:0:12}" >> "$GITHUB_ENV"
+          echo "ADMIN_WORKER_RECOVERY_VERIFY_ROUTES_ONLY=1" >> "$GITHUB_ENV"
           migration_config=".wrangler-migration-no-routes.toml"
           node <<'NODE'
           const fs = require("node:fs");
@@ -457,6 +458,9 @@ jobs:
           const missing = desired.filter(
             (pattern) => !existing.some((route) => route.pattern === pattern && route.script === worker)
           );
+          if (missing.length && process.env.ADMIN_WORKER_RECOVERY_VERIFY_ROUTES_ONLY === "1") {
+            throw new Error(`Recovery is route-read-only; missing routes: ${missing.join(", ")}`);
+          }
           for (const pattern of missing) {
             await cloudflare(routePath, {
               method: "POST",
