@@ -162,11 +162,12 @@ test("public model upload-url rejects invalid JSON and invalid payload", async (
 
 test("public model upload-url validates kind, role, MIME, and size", async () => {
   const cases = [
-    [{ kind: "video" }, "kind"],
+    [{ kind: "audio" }, "kind"],
     [{ kind: "photo", role: "trainer_certificate" }, "role"],
     [{ kind: "document", role: "front_face" }, "role"],
     [{ kind: "photo", content_type: "application/pdf", file_name: "profile.pdf" }, "content_type"],
     [{ kind: "document", role: "trainer_certificate", content_type: "application/pdf", file_name: "certificate.pdf" }, ""],
+    [{ kind: "clip", role: "introduction", content_type: "video/mp4", file_name: "intro.mp4" }, ""],
     [{ file_size: testInternals.PUBLIC_MODEL_MAX_UPLOAD_BYTES + 1 }, "file_size"],
     [{ file_size: 0 }, "file_size"],
     [{ file_name: "../front-face.jpg" }, "file_name"],
@@ -191,6 +192,29 @@ test("public model upload-url validates kind, role, MIME, and size", async () =>
       assert.equal(Object.hasOwn(body.fields, field), true, field);
     }
   }
+});
+
+test("public model upload contract caps photos at 8 and clips at 3", async () => {
+  const photos = Array.from({ length: 9 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_photo_${index}_123456` }));
+  const tooManyPhotos = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ upload_session_id: "pmu_session_123456", uploads: photos })),
+  });
+  const photoBody = await tooManyPhotos.json();
+  assert.equal(tooManyPhotos.status, 400);
+  assert.equal(photoBody.fields.upload_refs, "too many photos");
+
+  const clips = Array.from({ length: 4 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_clip_${index}_123456`, kind: "clip", role: "introduction" }));
+  const tooManyClips = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
+    method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify(validPayload({ upload_session_id: "pmu_session_123456", uploads: clips })),
+  });
+  const clipBody = await tooManyClips.json();
+  assert.equal(tooManyClips.status, 400);
+  assert.equal(clipBody.fields.upload_refs, "too many clips");
+  assert.equal(testInternals.PUBLIC_MODEL_MAX_UPLOAD_BYTES, 25 * 1024 * 1024);
+  assert.equal(testInternals.MAX_PHOTOS, 8);
+  assert.equal(testInternals.MAX_CLIPS, 3);
 });
 
 test("public model upload-url rejects structured metadata and camelCase server fields", async () => {

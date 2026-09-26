@@ -88,6 +88,26 @@ test('queue exposes only review metadata, paginates and rejects formula injectio
 test('legacy public-bucket originals stay locked in queue',async()=>{
  const {env,request,f}=await setup();f.asset.fields.r2_bucket='mmd-models';const data=await(await handlePrivateMediaReview(request(),env)).json();assert.equal(data.items[0].reviewable,false);
 });
+test('Studio can preview and approve a verified public candidate without granting private access',async()=>{
+ const {env,request,f}=await setup();
+ const bytes=new Uint8Array([255,216,255,1,2,3,4]);
+ const digest=Buffer.from(await crypto.subtle.digest('SHA-256',bytes)).toString('hex');
+ Object.assign(f.asset.fields,{
+  media_type:'public_gallery',media_visibility:'public_candidate',asset_role:'gallery_candidate',
+  review_status:'pending_review',public_safe:false,private_safe:false,flash_safe:false,teaser_safe:false,
+  file_name:'public-candidate.jpg',file_type:'image/jpeg',file_size_bytes:bytes.length,r2_bucket:'mmd-models',
+  private_original_key:'models/recModel/public_gallery/media_test.jpg',
+ });
+ const object={size:bytes.length,httpMetadata:{contentType:'image/jpeg'},customMetadata:{media_id:f.asset.fields.media_id,model_record_id:'recModel',sha256:digest}};
+ env.MMD_MODEL_ASSETS={head:async()=>object,get:async()=>({...object,body:bytes})};
+ const queue=await(await handlePrivateMediaReview(request(),env)).json();
+ assert.equal(queue.items[0].audience,'public');assert.equal(queue.items[0].kind,'public_pic');assert.equal(queue.items[0].reviewable,true);
+ const preview=await handlePrivateMediaReview(request(REVIEW_API+'/file',{model_id:'recModel',media_asset_id:'recMedia'}),env);
+ assert.equal(preview.status,200);assert.equal(preview.headers.get('x-mmd-media-sha256'),digest);
+ const approved=await handlePrivateMediaReview(request(REVIEW_API+'/decision',{model_id:'recModel',media_asset_id:'recMedia',expected_status:'pending_review',media_sha256:digest,decision:'approve',teaser_safe:true,note:'Public profile approved'}),env);
+ assert.equal(approved.status,200,await approved.clone().text());assert.equal((await approved.json()).audience,'public');
+ assert.equal(f.asset.fields.review_status,'approved');assert.equal(f.asset.fields.public_safe,true);assert.equal(f.asset.fields.private_safe,false);assert.equal(f.asset.fields.teaser_safe,false);
+});
 test('page has CSP and no storage; unknown suffixes fail closed',async()=>{
  const {env,request}=await setup();const res=await handlePrivateMediaReview(request(REVIEW_PAGE),env);assert.match(res.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.match(await res.text(),/MMD Review/);
  assert.equal((await handlePrivateMediaReview(request(REVIEW_PAGE+'/unknown'),env)).status,404);

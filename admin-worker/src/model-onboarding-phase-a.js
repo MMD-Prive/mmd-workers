@@ -142,7 +142,13 @@ async function identityState(env, subject, displayName) {
   }
   if (!validLineField) return { state: "unavailable" };
   if (matches.size > 1) return { state: "identity_review_required", reason: "identity_binding_conflict" };
-  if (matches.size === 1) return { state: "existing_bound" };
+  if (matches.size === 1) {
+    const model = [...matches.values()][0];
+    const fields = model.fields || {};
+    const status = clean(fields[clean(env.AT_MODELS__STATUS)] || fields.status || fields.Status || fields.model_status, 60);
+    return { state: "existing_bound", modelRecordId: model.id,
+      modelActive: !/inactive|disabled|suspended|blocked|archived|rejected|offboard/i.test(status) };
+  }
   const hash = await sha256(subject);
   const claim = await listAirtable(env, clean(env.AIRTABLE_TABLE_MODEL_LINE_IDENTITY_CLAIMS || CLAIMS_TABLE), `{claim_id}=${formulaString(`model_line_${hash.slice(0, 24)}`)}`, 2);
   if (!claim.ok) return { state: "unavailable" };
@@ -168,6 +174,15 @@ async function verifyLine(idToken, channelId) {
     if (!response.ok || clean(data.aud) !== channelId || !/^U[0-9a-f]{32}$/i.test(clean(data.sub))) return { ok: false, error: "invalid_line_id_token", status: 401 };
     return { ok: true, subject: clean(data.sub), displayName: clean(data.name, 160) };
   } catch { return { ok: false, error: "line_verify_unavailable", status: 503 }; }
+}
+
+// Shared with the LINE job brief endpoint. The browser never supplies the
+// subject or a Model record ID; both are resolved from a verified LINE token.
+export async function resolvePhaseALineIdentity(idToken, env, environment) {
+  const verified = await verifyLine(idToken, resolveLineChannelId(env, normalizeLineEnvironment(environment)));
+  if (!verified.ok) return verified;
+  const resolution = await identityState(env, verified.subject, verified.displayName);
+  return { ok: resolution.state !== "unavailable", ...resolution, subject: verified.subject };
 }
 
 export async function handlePhaseAExchange(request, env, body) {

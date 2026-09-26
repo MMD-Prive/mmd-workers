@@ -222,6 +222,43 @@ test("Drive search end-to-end collapses live-shaped EMs16 Gohan root over Review
   assert.equal(items[0].folder_scope_key, `exclusive:drive:${rootId}`);
 });
 
+test("Drive search resolves a bounded, best-name-ranked folder set", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const publicRoot = "1pr8X4sk7A_5vPZxG5syp5fmgEs9fZF77";
+  const exactId = "1CaptainExact12345";
+  const folders = [
+    { id: exactId, name: "Captain S", parents: [publicRoot], mimeType: "application/vnd.google-apps.folder", trashed: false },
+    ...Array.from({ length: 40 }, (_, index) => ({
+      id: "1CaptainCandidate" + String(index).padStart(2, "0"),
+      name: "Captain Model " + String(index).padStart(2, "0"),
+      parents: [publicRoot],
+      mimeType: "application/vnd.google-apps.folder",
+      trashed: false,
+    })),
+  ];
+  let folderReads = 0;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/drive/v3/files" && !url.pathname.endsWith("/")) {
+      if (url.searchParams.has("q")) return Response.json({ files: folders });
+    }
+    if (url.pathname.startsWith("/drive/v3/files/")) {
+      folderReads += 1;
+      const id = decodeURIComponent(url.pathname.split("/").pop());
+      const folder = folders.find((item) => item.id === id) || {
+        id: publicRoot, name: "MMD Models - Public", parents: [],
+        mimeType: "application/vnd.google-apps.folder", trashed: false,
+      };
+      return Response.json(folder);
+    }
+    throw new Error("unexpected Drive request " + url.pathname);
+  };
+  const items = await searchApprovedModelFolders("test-token", "Captain S", "all", {});
+  assert.ok(items.some((item) => item.drive_folder_id === exactId));
+  assert.ok(folderReads <= 48, "at most 24 candidate folders and their approved root should be read");
+});
+
 test("exact model root still suppresses nested operational children", () => {
   const rows = [
     { drive_folder_id: "root-folder-12345", folder_name: "EMs16", folder_path: "MMD Exclusive Models / Exclusive PN / EMs16", score: 1 },

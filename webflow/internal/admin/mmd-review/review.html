@@ -1,13 +1,13 @@
 <main id="mmd-review" data-mmd-color-lock data-mmd-headline-gradient="off" data-mmd-type-skip>
   <nav class="mr-nav" aria-label="Admin"><a href="/internal/admin/dashboard">← หน้าหลักแอดมิน</a><span>MMD PRIVÉ · ADMIN</span></nav>
-  <header class="mr-header"><div><p class="mr-eyebrow">PRIVATE MEDIA</p><h1>MMD Review</h1><p class="mr-muted">ตรวจสื่อส่วนตัวก่อนเปิดให้ลูกค้าที่ได้รับสิทธิ์</p></div><span class="mr-badge">สำหรับแอดมิน</span></header>
+  <header class="mr-header"><div><p class="mr-eyebrow">MEDIA REVIEW</p><h1>MMD Review</h1><p class="mr-muted">ตรวจสื่อ Public และ Private ตามสิทธิ์ก่อนนำไปใช้</p></div><span class="mr-badge">สำหรับแอดมิน</span></header>
   <section class="mr-toolbar" aria-label="เลือกคิว"><label for="mr-filter">สถานะ <select id="mr-filter"><option value="pending_review">รอตรวจ</option><option value="approved">อนุมัติแล้ว</option><option value="rejected">ปฏิเสธ / เพิกถอนแล้ว</option></select></label><button type="button" id="mr-refresh">โหลดใหม่</button></section>
   <p id="mr-status" role="status" aria-live="polite">กำลังตรวจสิทธิ์และโหลดคิว…</p>
   <section id="mr-list" class="mr-list" aria-label="รายการสื่อ"></section>
   <button type="button" id="mr-more" hidden>โหลดรายการถัดไป</button>
-  <aside class="mr-help"><strong>อนุมัติสื่อ ≠ เปิดสิทธิ์ลูกค้า</strong><p>การอนุมัติจะทำให้สื่อพร้อมสำหรับ Private Pic / Private Clip เท่านั้น ลูกค้ายังต้องผ่านการยืนยันและได้รับสิทธิ์แยกต่างหาก</p></aside>
+  <aside class="mr-help"><strong>อนุมัติสื่อ Public และ Private แยกสิทธิ์</strong><p>สื่อ Public จะแสดงได้เมื่ออนุมัติและ public_safe เท่านั้น ส่วนสื่อ Private ยังต้องผ่านสิทธิ์ลูกค้าแยกต่างหาก</p></aside>
   <dialog id="mr-dialog" aria-labelledby="mr-title">
-    <div class="mr-dialog-head"><div><p class="mr-eyebrow">ตรวจสื่อส่วนตัว</p><h2 id="mr-title">Private media</h2><p id="mr-detail" class="mr-muted"></p></div><button type="button" id="mr-close" aria-label="ปิดการตรวจ">ปิด</button></div>
+    <div class="mr-dialog-head"><div><p class="mr-eyebrow">ตรวจสื่อ</p><h2 id="mr-title">Private media</h2><p id="mr-detail" class="mr-muted"></p></div><button type="button" id="mr-close" aria-label="ปิดการตรวจ">ปิด</button></div>
     <div id="mr-media" class="mr-media"></div><p id="mr-review-status" role="status" aria-live="polite"></p>
     <form id="mr-form"><label class="mr-check"><input type="checkbox" id="mr-confirm"> ฉันตรวจสื่อชิ้นนี้แล้ว และยืนยันผลที่เลือก</label><label class="mr-check" id="mr-teaser-row"><input type="checkbox" id="mr-teaser"> อนุมัติให้ใช้เป็น Private Teaser ก่อนจอง</label><p class="mr-muted" id="mr-teaser-help">เลือกเฉพาะสื่อที่ตั้งใจให้ลูกค้า LINE-verified ดูก่อนจอง · ไม่ทำให้เป็นสื่อ Public</p><label for="mr-note">บันทึกการตรวจ <span class="mr-muted">(ต้องระบุเมื่อปฏิเสธหรือเพิกถอน)</span></label><textarea id="mr-note" rows="3" maxlength="1000" placeholder="เหตุผลหรือสิ่งที่ต้องแก้ไข"></textarea><div class="mr-actions"><button type="button" id="mr-approve" class="mr-primary" disabled>อนุมัติสื่อ</button><button type="button" id="mr-reject" class="mr-danger" disabled>ปฏิเสธ</button><button type="button" id="mr-revoke" class="mr-danger" disabled hidden>เพิกถอนการอนุมัติ</button></div></form>
   </dialog>

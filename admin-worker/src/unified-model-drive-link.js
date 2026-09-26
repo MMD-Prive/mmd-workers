@@ -13,10 +13,16 @@ export async function listUnifiedModelLineCandidates(env, url) {
   const lane = normalizeLane(url?.searchParams?.get("lane"));
   if (!q) return { ok: true, count: 0, items: [], lane, sources: { airtable: true, drive: true } };
 
-  const [airtable, drive] = await Promise.all([
+  const [airtableResult, driveResult] = await Promise.allSettled([
     searchCanonicalModels(env, q, lane),
     searchDriveDirectory(env, q, lane),
   ]);
+  const airtable = airtableResult.status === "fulfilled"
+    ? airtableResult.value
+    : { ok: false, status: 503, items: [] };
+  const drive = driveResult.status === "fulfilled"
+    ? driveResult.value
+    : { ok: false, status: 503, items: [] };
 
   if (!airtable.ok && !drive.ok) {
     return { ok: false, error: "model_candidate_lookup_unavailable", status: Math.max(airtable.status || 503, drive.status || 503) };

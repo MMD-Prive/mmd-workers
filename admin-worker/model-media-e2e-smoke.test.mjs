@@ -20,6 +20,7 @@ function request(body = { model_record_id: MODEL_ID }, origin = ORIGIN) {
 function fakeModelWorker() {
   let media = null;
   let object = null;
+  let plannedFileName = "";
   const calls = [];
 
   return {
@@ -38,30 +39,35 @@ function fakeModelWorker() {
         });
       }
 
-      if (req.method === "POST" && url.pathname === "/v1/model/media/upload") {
-        const form = await req.formData();
-        const file = form.get("file");
-        assert.equal(form.get("media_type"), "public_gallery");
-        assert.equal(file.type, "image/png");
-        object = new Uint8Array(await file.arrayBuffer());
+      if (req.method === "POST" && url.pathname === "/v1/model/media/upload-url") {
+        const input = await req.json();
+        assert.equal(input.media_type, "public_gallery");
+        assert.equal(input.content_type, "image/png");
+        plannedFileName = input.file_name;
+        return Response.json({ ok: true, upload_url: `${ORIGIN}/v1/model/media/upload-url?authorization=test`, upload_method: "PUT", review_required: true });
+      }
+
+      if (req.method === "PUT" && url.pathname === "/v1/model/media/upload-url") {
+        assert.equal(req.headers.get("content-type"), "image/png");
+        object = new Uint8Array(await req.arrayBuffer());
         media = {
           media_id: "media_smokee2e12345678",
           media_type: "public_gallery",
           asset_role: "gallery_candidate",
-          review_status: "active",
-          file_name: file.name,
-          file_type: file.type,
-          file_size_bytes: file.size,
+          review_status: "pending_review",
+          file_name: plannedFileName,
+          file_type: "image/png",
+          file_size_bytes: object.byteLength,
           uploaded_at: new Date().toISOString(),
           preview_url: "/v1/model/media/media_smokee2e12345678/file",
           can_delete: true,
-          can_request_main: true,
+          can_request_main: false,
           self_managed: true,
           requires_per_approval: false,
           policy: "model_self_managed_public",
-          main_action: "set_main",
+          main_action: "await_review",
         };
-        return Response.json({ ok: true, media, policy: "model_self_managed_public", review_required: false }, { status: 201 });
+        return Response.json({ ok: true, media, review_required: true }, { status: 201 });
       }
 
       if (req.method === "GET" && url.pathname === "/v1/model/media") {
@@ -107,8 +113,10 @@ test("owner-gated smoke exercises model session, upload, registry, R2 read-back 
   assert.deepEqual(body.checks, {
     model_session_authenticated: true,
     real_model_profile_read: true,
+    short_lived_upload_authorized: true,
     r2_write: true,
     media_record_created: true,
+    pending_review_observed: true,
     media_record_read_back: true,
     r2_file_opened: true,
     byte_match: true,
@@ -119,7 +127,8 @@ test("owner-gated smoke exercises model session, upload, registry, R2 read-back 
   assert.deepEqual(modelWorker.calls, [
     "GET /v1/model/profile",
     "GET /v1/model/media",
-    "POST /v1/model/media/upload",
+    "POST /v1/model/media/upload-url",
+    "PUT /v1/model/media/upload-url",
     "GET /v1/model/media",
     "GET /v1/model/media/media_smokee2e12345678/file",
     "DELETE /v1/model/media/media_smokee2e12345678",

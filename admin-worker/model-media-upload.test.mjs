@@ -3,50 +3,59 @@ import assert from "node:assert/strict";
 import {
   normalizeModelMediaType,
   normalizeModelMediaUploadSpec,
+  hasMismatchedDeclaredContentLength,
+  isApprovedPublicModelMedia,
   parseMediaRoute,
   recordOwnedByCanonicalModel,
 } from "./src/model-liff-worker-legacy.js";
 
 const MB = 1024 * 1024;
 
-test("MMD MODEL self-managed upload accepts public photos up to 15MB", () => {
+test("MMD MODEL upload accepts public photos up to 25MB", () => {
   assert.equal(normalizeModelMediaType("public_gallery"), "public_gallery");
-  const accepted = normalizeModelMediaUploadSpec("public_gallery", "image/webp", 15 * MB);
+  const accepted = normalizeModelMediaUploadSpec("public_gallery", "image/webp", 25 * MB);
   assert.deepEqual(accepted, {
     ok: true,
     kind: "image",
     mediaType: "public_gallery",
     mime: "image/webp",
-    size: 15 * MB,
-    maxBytes: 15 * MB,
+    size: 25 * MB,
+    maxBytes: 25 * MB,
     ext: "webp",
     assetRole: "gallery_candidate",
   });
   assert.deepEqual(
-    normalizeModelMediaUploadSpec("public_gallery", "image/webp", 15 * MB + 1),
-    { ok: false, error: "file_size_invalid", max_bytes: 15 * MB },
+    normalizeModelMediaUploadSpec("public_gallery", "image/webp", 25 * MB + 1),
+    { ok: false, error: "file_size_invalid", max_bytes: 25 * MB },
   );
 });
 
-test("MMD MODEL self-managed upload accepts MP4 MOV and WEBM clips up to 50MB", () => {
+test("MMD MODEL upload accepts MP4 MOV and WEBM clips up to 25MB", () => {
   assert.equal(normalizeModelMediaType("intro_video"), "intro_video");
   for (const [mime, ext] of [
     ["video/mp4", "mp4"],
     ["video/quicktime", "mov"],
     ["video/webm", "webm"],
   ]) {
-    const accepted = normalizeModelMediaUploadSpec("intro_video", mime, 50 * MB);
+    const accepted = normalizeModelMediaUploadSpec("intro_video", mime, 25 * MB);
     assert.equal(accepted.ok, true);
     assert.equal(accepted.kind, "video");
     assert.equal(accepted.mediaType, "intro_video");
-    assert.equal(accepted.maxBytes, 50 * MB);
+    assert.equal(accepted.maxBytes, 25 * MB);
     assert.equal(accepted.ext, ext);
     assert.equal(accepted.assetRole, "intro_video_candidate");
   }
   assert.deepEqual(
-    normalizeModelMediaUploadSpec("intro_video", "video/mp4", 50 * MB + 1),
-    { ok: false, error: "file_size_invalid", max_bytes: 50 * MB },
+    normalizeModelMediaUploadSpec("intro_video", "video/mp4", 25 * MB + 1),
+    { ok: false, error: "file_size_invalid", max_bytes: 25 * MB },
   );
+});
+
+test("pending public candidates cannot become profile main before Studio approval", () => {
+  assert.equal(isApprovedPublicModelMedia({ review_status: "pending_review", public_safe: false }), false);
+  assert.equal(isApprovedPublicModelMedia({ review_status: "approved", public_safe: false }), false);
+  assert.equal(isApprovedPublicModelMedia({ review_status: "approved", public_safe: true }), true);
+  assert.equal(isApprovedPublicModelMedia({ review_status: "active", public_safe: true }), true);
 });
 
 test("photo and clip media types stay explicit", () => {
@@ -98,4 +107,14 @@ test("media delete supports the REST-compatible bare media URL plus legacy /dele
     parseMediaRoute("/v1/model/media/media_abc12345678/file"),
     { mediaId: "media_abc12345678", action: "file" },
   );
+});
+
+test("streamed Model uploads accept an omitted Content-Length but reject invalid declarations", () => {
+  const expected = 68;
+  assert.equal(hasMismatchedDeclaredContentLength(null, expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength("", expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength(String(expected), expected), false);
+  assert.equal(hasMismatchedDeclaredContentLength(String(expected - 1), expected), true);
+  assert.equal(hasMismatchedDeclaredContentLength("not-a-length", expected), true);
+  assert.equal(hasMismatchedDeclaredContentLength("9007199254740992", expected), true);
 });

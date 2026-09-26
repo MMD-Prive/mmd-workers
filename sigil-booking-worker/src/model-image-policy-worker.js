@@ -20,7 +20,7 @@ export default {
     const original = await response.clone().json().catch(() => null);
     if (!original || original.ok !== true) return response;
 
-    const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => original);
+    const hydrated = await hydrateModelAssetPolicy(env, original).catch(() => projectModelsWithoutMedia(original));
     const headers = new Headers(response.headers);
     headers.set("content-type", "application/json; charset=utf-8");
     headers.set("cache-control", "no-store");
@@ -35,8 +35,8 @@ function shouldHydrateModelAssets(method, path, response) {
   return !contentType || contentType.includes("json");
 }
 
-async function hydrateModelAssetPolicy(env, payload) {
-  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return payload;
+export async function hydrateModelAssetPolicy(env, payload) {
+  if (!env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return projectModelsWithoutMedia(payload);
 
   const models = collectModels(payload);
   if (!models.length) return payload;
@@ -49,26 +49,14 @@ async function hydrateModelAssetPolicy(env, payload) {
   for (const model of models) {
     const modelId = clean(model?.model_id || model?.model_record_id);
     if (!modelId) {
-      hydratedModels.push(model);
+      hydratedModels.push(projectModelMedia(model));
       continue;
     }
     if (!cache.has(modelId)) cache.set(modelId, fetchModelRecord(env, table, modelId));
     const record = await cache.get(modelId).catch(() => null);
     const media = mediaByModel.get(modelId) || { primary: null, photos: [], clips: [] };
     const projected = record ? applyImagePolicy(model, record.fields || {}, env) : model;
-    const primary = media.primary;
-    hydratedModels.push({
-      ...projected,
-      ...(primary ? {
-        public_image_url: primary.url,
-        cover_url: primary.url,
-        primary_image_url: primary.url,
-        primary_media_id: primary.media_id,
-      } : {}),
-      additional_images: media.photos,
-      clips: media.clips,
-      media_source: "mmd_model_media_assets",
-    });
+    hydratedModels.push(projectModelMedia(projected, media));
   }
 
   let cursor = 0;
@@ -83,13 +71,45 @@ async function hydrateModelAssetPolicy(env, payload) {
   return next;
 }
 
+function projectModelsWithoutMedia(payload) {
+  const next = { ...payload };
+  if (payload.model && typeof payload.model === "object") next.model = projectModelMedia(payload.model);
+  if (Array.isArray(payload.items)) next.items = payload.items.map((model) => model && typeof model === "object" ? projectModelMedia(model) : model);
+  return next;
+}
+
+function projectModelMedia(model, media = { primary: null, photos: [], clips: [] }) {
+  const primary = media.primary;
+  return {
+    ...model,
+    source: primary ? "mmd_model_media_assets" : "",
+    asset_source: primary ? "mmd_model_media_assets" : "",
+    public_image_url: primary?.url || "",
+    cover_url: primary?.url || "",
+    primary_image_url: primary?.url || "",
+    primary_media_id: primary?.media_id || "",
+    r2_key: "",
+    r2_prefix: "",
+    primary_image_key: "",
+    additional_images: media.photos,
+    clips: media.clips,
+    media_source: "mmd_model_media_assets",
+  };
+}
+
 export async function fetchPublicModelMedia(env, models) {
-  const modelIds = [...new Set(models.map((model) => clean(model?.model_id || model?.model_record_id)).filter(Boolean))];
+  const modelEntries = models.map((model) => ({
+    id: clean(model?.model_id || model?.model_record_id),
+    name: clean(model?.working_name || model?.model_name || model?.display_name || model?.name),
+  })).filter((model) => model.id);
+  const modelIds = [...new Set(modelEntries.map((model) => model.id))];
   if (!modelIds.length) return new Map();
-  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
-  const clauses = modelIds.map((id) => `FIND(${formulaText(id)},ARRAYJOIN({Model}))`);
-  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
   const result = new Map(modelIds.map((id) => [id, { primary: null, photos: [], clips: [] }]));
+  const modelNames = [...new Set(modelEntries.map((model) => model.name).filter(Boolean))];
+  if (!modelNames.length) return result;
+  const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
+  const clauses = modelNames.map((name) => `FIND(${formulaText(name)},ARRAYJOIN({Model}))`);
+  const rows = await airtableList(env, table, `OR(${clauses.join(",")})`, 1000);
   for (const row of rows) {
     const fields = row.fields || {};
     if (!isPublicMedia(fields)) continue;
@@ -125,6 +145,7 @@ export function isPublicMedia(fields) {
   const visibility = clean(fields.media_visibility).toLowerCase();
   const status = clean(fields.review_status).toLowerCase();
   return PUBLIC_MEDIA_TYPES.has(type)
+    && hasLinkedModel(fields)
     && fields.public_safe === true
     && ["active", "approved", "public"].includes(status)
     && ["public", "public_candidate"].includes(visibility)
@@ -132,8 +153,12 @@ export function isPublicMedia(fields) {
     && clean(fields.private_original_key).length > 0;
 }
 
+function hasLinkedModel(fields) {
+  return Array.isArray(fields.Model) && fields.Model.some((link) => clean(typeof link === "string" ? link : link?.id).length > 0);
+}
+
 async function servePublicModelMedia(request, env, mediaId) {
-  if (!/^media_[a-f0-9]{32}$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
+  if (!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
   if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") return json({ ok: false, error: "media_storage_unavailable" }, 503);
   const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
   const escaped = mediaId.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
