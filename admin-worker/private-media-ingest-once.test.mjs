@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handlePrivateMediaIngestOnce, handlePrivateMediaStagedIngest, PRIVATE_MEDIA_INGEST_ONCE_PATH } from './src/private-media-ingest-once.js';
+import { modelMediaSlotCoordinatorFixture } from '../shared/model-media-slot-coordinator-fixture.mjs';
 
 const enc=new TextEncoder();
 async function sha(value){
@@ -28,6 +29,7 @@ async function fixture(overrides={}){
  const requests=[];
  const env={
   AIRTABLE_API_KEY:'test',AIRTABLE_BASE_ID:'appTest',
+  MODEL_MEDIA_SLOT_COORDINATOR:modelMediaSlotCoordinatorFixture(),
   AIRTABLE_TABLE_PRIVATE_MEDIA_INGEST_CAPABILITIES:'tblCapabilities',
   AIRTABLE_TABLE_MODEL_MEDIA_ASSETS:'tblMedia',
   AIRTABLE_TABLE_MODEL_REVIEW_REQUESTS:'tblReviews',
