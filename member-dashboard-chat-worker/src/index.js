@@ -309,8 +309,8 @@ const CARD_MODEL_ENTRY_NAMES = new Set(Object.keys(LINE_CARD_21829530_TRIGGERS))
 
 export function resolveLineCardCampaignTrigger(text = "") {
   const cardTrigger = asString(text).normalize("NFKC").trim();
+  if (!Object.hasOwn(LINE_CARD_21829530_TRIGGERS, cardTrigger)) return null;
   const config = LINE_CARD_21829530_TRIGGERS[cardTrigger];
-  if (!config) return null;
   return {
     card_id: LINE_CARD_21829530_ID,
     campaign_key: "line_card_21829530_lead_v1",
