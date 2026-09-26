@@ -86,11 +86,13 @@ test("all-jobs projection preserves date/time fallback rules from the dashboard"
   ], new Date("2026-09-10T09:00:00.000Z"));
 
   assert.equal(jobs[0].id, "iso");
+  assert.equal(jobs[0].href, "/internal/admin/jobs/all?session_id=iso");
   assert.equal(jobs[0].job_date, "2026-09-11");
   assert.equal(jobs[0].time_only, "19:15");
   assert.match(jobs[0].time, /19:15$/);
 
   assert.equal(jobs[1].id, "missing");
+  assert.equal(jobs[1].href, "/internal/admin/jobs/all?session_id=missing");
   assert.equal(jobs[1].job_date, "");
   assert.equal(jobs[1].time, "ยังไม่มีวันเวลา");
 });
