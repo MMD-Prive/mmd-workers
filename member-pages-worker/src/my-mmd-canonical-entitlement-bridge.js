@@ -14,6 +14,7 @@ const AIRTABLE_API = "https://api.airtable.com/v0";
 const CONTACT_PROFILE_SOURCE = "canonical_client";
 const LINE_OFC_NOTE_SOURCE = "line_ofc_notes";
 const CONSOLE_INBOX_TABLE = "MMD — Console Inbox";
+const WELCOME_CONTEXT_PATH = "/member/api/liff/welcome-context";
 
 const ELIGIBLE_PATHS = new Set([
   "/api/member/app/points", "/api/member/app/points/",
@@ -33,6 +34,32 @@ const PROTECTED_LABELS = Object.freeze({ black_card: "Black Card", svip: "SVIP",
 
 export function isMyMmdCanonicalEntitlementPath(url) {
   return Boolean(url && ELIGIBLE_PATHS.has(url.pathname));
+}
+
+export function isMyMmdWelcomeContextPath(url) {
+  return Boolean(url && (url.pathname === WELCOME_CONTEXT_PATH || url.pathname === `${WELCOME_CONTEXT_PATH}/`));
+}
+
+export async function handleMyMmdWelcomeContext(request, env = {}) {
+  const headers = { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" };
+  if (!(request instanceof Request) || request.method !== "GET") {
+    return Response.json({ ok: false, state: "public" }, { status: 405, headers: { ...headers, allow: "GET" } });
+  }
+  const url = new URL(request.url);
+  if (!isMyMmdWelcomeContextPath(url) || url.search) return Response.json({ ok: false, state: "public" }, { status: 400, headers });
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin) return Response.json({ ok: false, state: "public" }, { status: 403, headers });
+  const sessionRef = await readSessionRef(request, env);
+  if (!sessionRef) return Response.json({ ok: true, data: { tier: "", membership_status: "" } }, { status: 200, headers });
+  const resolved = await readCanonicalMemberProfile(env, sessionRef.lineUserId);
+  if (!resolved) return Response.json({ ok: false, state: "public" }, { status: 503, headers });
+  const denied = ["blocked", "suspended", "revoked", "expired", "pending_review", "under_review"].includes(String(resolved.profile?.membership_status || "").toLowerCase());
+  const projection = denied ? null : projectProtectedEntitlement(resolved.entitlementSnapshot);
+  const safeData = projection
+    ? { tier: projection.label, membership_status: projection.lifecycle }
+    : { tier: "", membership_status: "" };
+  if (projection) headers["x-mmd-member-display-authority"] = RESOLVER_SOURCE;
+  return Response.json({ ok: true, data: safeData }, { status: 200, headers });
 }
 
 export async function prepareMyMmdCanonicalEntitlementContext(request, env = {}) {
