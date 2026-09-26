@@ -622,7 +622,7 @@ function normalizeMemberStatus(v) { const t = token(v); if (["active", "existing
 function normalizeAccessScope(v) { const t = token(v); if (["public_private", "private_review", "blocked"].includes(t)) return t; return "public_only"; }
 function normalizeRequestStatus(v) { const t = token(unwrapJsonString(v)); return ["draft", "pending", "review_required", "confirmed", "cancelled", "canceled"].includes(t) ? t : "draft"; }
 function normalizeJobClass(v) { const t = token(v); return ["travel", "extreme", "vip", "pn", "private_review"].includes(t) ? t : "travel"; }
-function normalizeModelAssetSource(v) { const t = token(v); return ["r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
+function normalizeModelAssetSource(v) { const t = token(v); return ["mmd_model_media_assets", "r2_catalog", "r2_prefix", "airtable_attachment", "drive_folder", "gmail_folder_reference", "manual_review"].includes(t) ? t : "manual_review"; }
 function unwrapJsonString(v) { const s = str(v); if (s.length < 2 || s[0] !== '"' || s[s.length - 1] !== '"') return s; try { const parsed = JSON.parse(s); return typeof parsed === "string" ? parsed : s; } catch (_) { return s.replace(/^"+|"+$/g, ""); } }
 function isRequestStatusSelectFailure(res, fields) { return Object.hasOwn(fields || {}, "Request Status") && res.status === 422 && /(INVALID_MULTIPLE_CHOICE_OPTIONS|INVALID_VALUE_FOR_COLUMN|Request Status|draft)/i.test(str(res.text)); }
 function withoutRequestStatus(fields) { const next = { ...fields }; delete next["Request Status"]; return next; }
