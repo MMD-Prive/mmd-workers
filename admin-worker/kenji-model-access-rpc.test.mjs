@@ -89,7 +89,7 @@ function keywordProfile(alias, model = privateModel(), overrides = {}) {
 
 const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
-  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name"]),
+  models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "folder_name"]),
   approvals: new Set(["line_user_id"]),
   profiles: new Set([]),
 };
@@ -161,6 +161,15 @@ test("published exact Keyword Profile alias resolves an Ad / Rich Menu trigger w
   const guestData = baseData([entitlement("guest_pass")], [model], [], [], [keywordProfile("JASPAL", model)]);
   const guest = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, { fetchImpl: airtableFetch(guestData) });
   assert.equal(guest.status, "silent");
+});
+
+test("exact folder name resolves only through canonical member access", async () => {
+  const model = privateModel("NANO7", "standard", { folder_name: "Nano", working_name: "นายแบบนาโน" });
+  const active = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "Nano" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) });
+  assert.equal(active.status, "match");
+  assert.equal(active.model.model_code, "NANO7");
+  const expired = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "Nano" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard", "expired")], [model])) });
+  assert.equal(expired.status, "renewal");
 });
 
 test("Premium canonical envelope includes Standard and Premium while Standard cannot see Premium", async () => {
