@@ -101,14 +101,35 @@ function renderShell(config, nonce) {
     body.world-private:not(.signup-mode) .mark{color:#d7bd8a}
     body.world-private:not(.signup-mode) #message{color:#e5d0b2;border-left:2px solid #d9ae77;background:#dfb58014}
     body.world-private:not(.signup-mode) .member-nav button[aria-current="true"]{background:#f0d892;color:#181207}
+    /* Full-screen mobile-first intro, then a deliberate hand-off into the app. */
+    body.world-public:not(.signup-mode):not(.app-entered),
+    body.world-private:not(.signup-mode):not(.app-entered){min-height:100svh;padding:0;overflow:hidden}
+    body.world-public:not(.signup-mode):not(.app-entered) main,
+    body.world-private:not(.signup-mode):not(.app-entered) main{width:100%;max-width:none;min-height:100svh;margin:0;padding:clamp(28px,8vw,72px) clamp(20px,7vw,48px) max(28px,env(safe-area-inset-bottom));border:0;border-radius:0;display:flex;flex-direction:column;justify-content:center}
+    body.world-public:not(.signup-mode):not(.app-entered) .intro-screen,
+    body.world-private:not(.signup-mode):not(.app-entered) .intro-screen{min-height:100svh;display:flex;flex-direction:column;justify-content:center;gap:0}
+    .intro-screen .title{max-width:680px;margin-top:14px;font-size:clamp(34px,10vw,68px);letter-spacing:-.04em}
+    .intro-screen .sub{max-width:640px;margin-top:12px;font-size:clamp(14px,3.8vw,19px)}
+    .intro-screen #message{max-width:680px;margin-top:clamp(22px,6vw,46px);font-size:clamp(15px,4.2vw,20px);line-height:1.78}
+    .intro-continue{width:100%;max-width:360px;margin-top:clamp(24px,7vw,52px);padding:15px 20px;border:0;border-radius:999px;text-align:center;font-size:15px;font-weight:800;letter-spacing:.01em;box-shadow:0 12px 28px rgba(0,0,0,.16)}
+    body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
+    body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
+    body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
+    body.app-entered .intro-screen{display:none}
+    body.app-entered.world-public main,body.app-entered.world-private main{width:min(100%,760px);min-height:auto;margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;display:block}
+    body.app-entered.world-public,body.app-entered.world-private{padding:20px 16px 40px;overflow:auto}
+    @media(max-width:430px){.intro-screen #message{max-height:46svh;overflow:auto;padding-right:4px}.intro-continue{max-width:none}}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode " : ""}world-${config.world}" data-world="${config.world}">
 <main>
-  <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
-  <h1 class="title" data-copy="title">My MMD</h1>
-  <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
-  <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
+  <section id="intro-screen" class="intro-screen" aria-labelledby="intro-title">
+    <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
+    <h1 id="intro-title" class="title" data-copy="title">My MMD</h1>
+    <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
+    <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
+    <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false">เข้าสู่ MY MMD</button>
+  </section>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
     <div class="signup-hero">
@@ -201,6 +222,7 @@ function renderShell(config, nonce) {
   "use strict";
   const CONFIG = ${safeConfig};
   const message = document.getElementById("message");
+  const introContinue = document.getElementById("intro-continue");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
   const profile = document.getElementById("profile");
@@ -231,13 +253,13 @@ function renderShell(config, nonce) {
       mark: "MMD PRIVÉ · MY MMD",
       title: "ยินดีที่ได้รู้จัก",
       subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์",
-      message: "MY MMD คือ APP ที่เราใช้ประสบการณ์การทำงานที่เกิดขึ้น และค้นพบว่า ในยุคย่าง 2027 นี้ โลกมันไปไกล และการมีระบบดูแลนั้นปลอดภัยที่สุด\\n\\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขที่มากขึ้น\\n\\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจอง จ่าย แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรชัดเจน และรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\\n\\nขอให้มีความสุข\\nเปอร์"
+      message: "สวัสดีครับ ยินดีที่ได้รู้จัก\\n\\nMY MMD คือแอปที่ผมสร้างจากประสบการณ์ทำงานกว่า 5 ปี เพื่อให้การดูแล การค้นหา และการใช้บริการของเราสะดวก ปลอดภัย และเป็นส่วนตัวมากขึ้นในยุค 2027\\n\\nค้นหานายแบบ รับข่าวสาร จองบริการ ชำระเงิน และติดตามงานได้ในที่เดียว พร้อม ETA นับถอยหลัง บรีฟงานเป็นลายลักษณ์อักษร และรูปโปรไฟล์ที่อัปเดตที่สุด\\n\\nขอให้คุณมีความสุขกับ MMD\\nเปอร์"
     },
     private: {
       mark: "SIGIL SYSTEM · PRIVATE ACCESS",
       title: "SIGIL system",
       subtitle: "Private member application",
-      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system APP\\n\\nเปอร์ใช้เวลาเกือบปีที่เห็นเงียบ ๆ ไม่ค่อยอัปเดต ในที่สุดเปอร์ก็ทำมันสำเร็จแล้ว\\n\\nApp ที่ปลอดภัยที่สุด ใช้งานง่ายสุด ๆ มีระบบค้นหา สะสมพ้อยท์ และประวัติการใช้งาน ซึ่งกำลังทยอยตามมาเรื่อย ๆ แต่คุณรู้ตัวหรือไม่ว่าคุณต่ออายุสมาชิกคนละ 1 ปีเต็ม ๆ ไปเรียบร้อยแล้ว ตั้งแต่คุณได้เห็นหน้านี้\\n\\nขอบคุณที่ยังรอคอย ขอบคุณที่ยังรักกัน\\n\\nเปอร์เริ่มมีเวลาว่างที่จะออกไปตามหานายแบบที่โดนใจมาให้คุณแล้วนะ\\n\\nเปอร์เองฮะ"
+      message: "ขออภัยที่ทำให้รอช้า แต่มาแล้วนะ SIGIL system\\n\\nเปอร์ใช้เวลาเกือบปีค่อย ๆ สร้างแอปนี้ให้ปลอดภัยและใช้งานง่ายขึ้น คุณจะค้นหา สะสมพ้อยท์ และดูประวัติการใช้งานได้ในที่เดียว ฟีเจอร์ใหม่กำลังทยอยตามมา\\n\\nสิทธิ์สมาชิกของคุณจะได้รับการดูแลและตรวจสอบตามสถานะในระบบ ตั้งแต่คุณเข้ามาที่หน้านี้\\n\\nขอบคุณที่ยังรอคอยและยังรักกัน เปอร์จะเริ่มออกไปตามหานายแบบที่โดนใจมาให้คุณมากขึ้น\\n\\nเปอร์เองฮะ"
     }
   };
   function detectWorld(data) {
@@ -257,8 +279,18 @@ function renderShell(config, nonce) {
     document.querySelector(".title").textContent = worldCopy.title;
     document.querySelector(".sub").textContent = worldCopy.subtitle;
     message.textContent = worldCopy.message;
+    if (introContinue) introContinue.textContent = world === "private" ? "เข้าสู่ SIGIL system" : "เข้าสู่ MY MMD";
   }
   applyWorldTheme();
+  let appEntered = false;
+  function enterApp() {
+    if (appEntered) return;
+    appEntered = true;
+    document.body.classList.add("app-entered");
+    introContinue?.setAttribute("aria-expanded", "true");
+    boot();
+  }
+  introContinue?.addEventListener("click", enterApp);
   for (const element of document.querySelectorAll("[data-copy]")) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
@@ -866,7 +898,7 @@ function renderShell(config, nonce) {
 
   careButton.addEventListener("click", claimCareBack);
   wishSubmit.addEventListener("click", submitBirthdayWish);
-  boot();
+  // Welcome screen is user-led; LINE verification begins after Continue.
 })();
 </script>
 </body>
