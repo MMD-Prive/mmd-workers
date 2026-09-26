@@ -42,6 +42,29 @@ test("CEO model supply smoke follows the current v3 Webflow contract", async () 
   assert.equal(syntax.status, 0, syntax.stderr || "CEO model supply smoke shell syntax failed");
 });
 
+test("CEO model smoke reports a safe named failure before making a request", async () => {
+  const workflow = await readFile(
+    new URL(".github/workflows/model-supply-production-ingress.yml", root),
+    "utf8",
+  );
+  const stepName = "      - name: Smoke authenticated CEO models page and live model APIs";
+  const stepStart = workflow.indexOf(stepName);
+  const runStart = workflow.indexOf("        run: |\n", stepStart);
+  assert.ok(stepStart >= 0 && runStart > stepStart);
+  const script = workflow
+    .slice(runStart + "        run: |\n".length)
+    .split("\n")
+    .map((line) => line.startsWith("          ") ? line.slice(10) : line)
+    .join("\n");
+  const result = spawnSync("bash", ["-c", script], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH || "", ADMIN_SMOKE_CREDENTIAL: "" },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /stage=credential_present http=none exit=1/);
+  assert.doesNotMatch(result.stderr, /cookie=|credential=/);
+});
+
 test("historical controlled smoke checks business safety, not one transport status", async () => {
   const workflow = await readFile(
     new URL(".github/workflows/historical-backfill-authenticated-controlled-smoke.yml", root),
