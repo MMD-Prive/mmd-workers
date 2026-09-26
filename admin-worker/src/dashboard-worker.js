@@ -713,7 +713,7 @@ export export function buildBossList({ sessionRecords = [] } = {}) {
     id: sessionId,
     title: "ตรวจงานที่มีปัญหา",
     text: sessionId ? `เปิดงานทั้งหมดแล้วค้นหา ${sessionId}` : "เปิดงานทั้งหมดเพื่อตรวจสถานะ",
-    href: jobDate ? `/internal/admin/jobs/all?date=${jobDate}` : "/internal/admin/jobs/all",
+    href: sessionId ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}` : (jobDate ? `/internal/admin/jobs/all?date=${jobDate}` : "/internal/admin/jobs/all"),
   }];
 }
 
