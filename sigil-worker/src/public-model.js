@@ -513,8 +513,9 @@ async function handleUploadPut(request, env, corsHeaders) {
   if (!constantTimeEqual(signature, expected)) return errorResponse("invalid_upload_authorization", 403, corsHeaders);
 
   const contentType = normalizeMime(request.headers.get("content-type"));
-  const contentLength = Number(request.headers.get("content-length"));
-  if (contentType !== metadata.contentType || !Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > PUBLIC_MODEL_MAX_UPLOAD_BYTES || !request.body) {
+  const declaredLength = request.headers.get("content-length");
+  const contentLength = declaredLength === null ? null : Number(declaredLength);
+  if (contentType !== metadata.contentType || (contentLength !== null && (!Number.isFinite(contentLength) || contentLength !== metadata.fileSize || contentLength > PUBLIC_MODEL_MAX_UPLOAD_BYTES)) || !request.body) {
     return errorResponse("upload_metadata_mismatch", 400, corsHeaders);
   }
 
