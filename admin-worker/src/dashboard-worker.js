@@ -699,7 +699,7 @@ function buildMemberList(records, now) {
     });
 }
 
-export export function buildBossList({ sessionRecords = [] } = {}) {
+export function buildBossList({ sessionRecords = [] } = {}) {
   const record = (Array.isArray(sessionRecords) ? sessionRecords : []).find((item) => {
     const fields = item?.fields || {};
     const state = firstText(fields.session_state, fields.status, fields["Session Status"], fields.job_status);
