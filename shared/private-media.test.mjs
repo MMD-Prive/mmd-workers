@@ -1,21 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { planPrivateUpload, uploadPrivateMedia, completePrivateMetadata } from "./private-media.mjs";
+import { PRIVATE_MEDIA_CONSENT_VERSION, planPrivateUpload, uploadPrivateMedia, completePrivateMetadata } from "./private-media.mjs";
+import { modelMediaSlotCoordinatorFixture } from "./model-media-slot-coordinator-fixture.mjs";
 import modelWorker from "../admin-worker/src/model-liff-worker.js";
 
 function fixture() {
   const records = new Map(), objects = new Map(), reviews=[];
   const env = {AIRTABLE_API_KEY:'test',AIRTABLE_BASE_ID:'appTest',
+    MODEL_MEDIA_SLOT_COORDINATOR:modelMediaSlotCoordinatorFixture(),
     PRIVATE_MODEL_MEDIA:{
       head:async key=>objects.get(key),get:async key=>objects.get(key),
       put:async(key,bytes,options)=>{assert.deepEqual(options.onlyIf,{etagDoesNotMatch:'*'});if(objects.has(key))return null;const object={size:bytes.length,...options,bytes};objects.set(key,object);return object;},
     },
     AIRTABLE_HTTP:{fetch:async req=>{
       const url=new URL(req.url),id=url.pathname.split('/')[4];
-      if(req.method==='GET')return Response.json({records:[...records.values()].filter(row=>url.search.includes(row.fields.media_id))});
+      if(req.method==='GET'){const formula=url.searchParams.get('filterByFormula');return Response.json({records:[...records.values()].filter(row=>!formula||formula.includes(row.fields.media_id))});}
       const body=await req.json();
       if(decodeURIComponent(url.pathname).includes('Model Review Requests')) { reviews.push(body.fields);return Response.json({id:'recReview',fields:body.fields}); }
-      if(req.method==='POST'){const record={id:'recMedia',fields:body.fields};records.set('recMedia',record);return Response.json(record);}
+      if(req.method==='POST'){const id=records.size?'recMedia'+(records.size+1):'recMedia';const record={id,fields:body.fields};records.set(id,record);return Response.json(record);}
       if(req.method==='PATCH'){const row=records.get(id);Object.assign(row.fields,body.fields);return Response.json(row);}
       throw new Error('unexpected_method');
     }},
@@ -23,7 +25,7 @@ function fixture() {
   return {env,records,objects,reviews};
 }
 const png=new Uint8Array([137,80,78,71,13,10,26,10]);
-const planInput={file_name:'private.png',content_type:'image/png',file_size_bytes:8};
+const planInput={upload_ref:'media_0123456789abcdef0123456789abcdef',purpose:'sigil_private_profile',consent_version:PRIVATE_MEDIA_CONSENT_VERSION,file_name:'private.png',content_type:'image/png',file_size_bytes:8};
 const uploadRequest=(bytes=png)=>new Request('https://www.mmdbkk.com/v1/model/media/private-upload',{method:'POST',headers:{'content-type':'image/png'},body:bytes});
 
 test('private upload persists bytes before review and never grants approval',async()=>{
@@ -34,7 +36,12 @@ test('private upload persists bytes before review and never grants approval',asy
   assert.equal(result.status,'pending_review');assert.equal(f.objects.size,1);assert.equal(f.reviews.length,1);
   const fields=f.records.get('recMedia').fields;
   assert.deepEqual(fields.Model,['recModel']);assert.equal(fields.private_safe,false);assert.equal(fields.public_safe,false);
-  await assert.rejects(uploadPrivateMedia(uploadRequest(),f.env,'recModel',plan.asset_id),/media_upload_state_conflict/);
+  // A retry must rebuild the short-lived coordinator bridge from Airtable truth.
+  f.env.MODEL_MEDIA_SLOT_COORDINATOR=modelMediaSlotCoordinatorFixture();
+  const replay=await uploadPrivateMedia(uploadRequest(),f.env,'recModel',plan.asset_id);
+  assert.equal(replay.duplicate,true);assert.equal(f.reviews.length,1);
+  const replanned=await planPrivateUpload(f.env,'recModel',planInput);
+  assert.equal(replanned.upload_complete,true);assert.equal(replanned.duplicate,true);
 });
 test('owner upload keeps the same private checks and records the owner as requester',async()=>{
   const f=fixture(),plan=await planPrivateUpload(f.env,'recModel',planInput);
@@ -59,6 +66,25 @@ test('wrong model, forged MIME and expired plans cannot upload',async()=>{
 });
 test('private storage never falls back to the public bucket',async()=>{
   await assert.rejects(planPrivateUpload({MMD_MODEL_ASSETS:{put:()=>{throw Error('public bucket reached');}}},'recModel',planInput),/private_media_storage_unavailable/);
+});
+test('private plan is subject-bound, idempotent and enforces 2 photo / 1 clip quotas',async()=>{
+  const f=fixture();
+  const first=await planPrivateUpload(f.env,'recModel',planInput);
+  const duplicate=await planPrivateUpload(f.env,'recModel',planInput);
+  assert.equal(duplicate.asset_id,first.asset_id);assert.equal(duplicate.duplicate,true);
+  await assert.rejects(planPrivateUpload(f.env,'recOther',planInput),/private_media_upload_ref_conflict/);
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...planInput,purpose:'private_teaser'}),/private_media_upload_ref_conflict/);
+  await planPrivateUpload(f.env,'recModel',{...planInput,upload_ref:'media_1123456789abcdef0123456789abcdef'});
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...planInput,upload_ref:'media_2123456789abcdef0123456789abcdef'}),/private_photo_limit_reached/);
+  const clip={...planInput,upload_ref:'media_3123456789abcdef0123456789abcdef',file_name:'private.mp4',content_type:'video/mp4',file_size_bytes:16};
+  await planPrivateUpload(f.env,'recModel',clip);
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...clip,upload_ref:'media_4123456789abcdef0123456789abcdef'}),/private_clip_limit_reached/);
+});
+test('private plan rejects forged purpose, consent and upload refs',async()=>{
+  const f=fixture();
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...planInput,purpose:'public'}),/private_media_purpose_invalid/);
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...planInput,consent_version:'legacy'}),/private_media_consent_required/);
+  await assert.rejects(planPrivateUpload(f.env,'recModel',{...planInput,upload_ref:'media_bad'}),/private_media_upload_ref_invalid/);
 });
 test('admin bearer cannot substitute for a Model session on private uploads',async()=>{
   const response=await modelWorker.fetch(new Request('https://www.mmdbkk.com/v1/model/media/private-upload-plan',{method:'POST',headers:{authorization:'Bearer test-admin',origin:'https://www.mmdbkk.com','content-type':'application/json'},body:JSON.stringify(planInput)}),{ADMIN_BEARER:'test-admin',ALLOWED_ORIGINS:'https://www.mmdbkk.com'});

@@ -42,7 +42,7 @@ async function setup(role = 'owner') {
   const table=decodeURIComponent(parts[3]),id=parts[4];calls.push({table,method:req.method,url});
   if(req.method==='GET') {
    if(table==='models') return Response.json(id?{id:'recModel',fields:modelFields}:{records:[{id:'recModel',fields:modelFields}]});
-   return Response.json(id?f.asset:{records:[f.asset],offset:'next-page'});
+   return Response.json(id?f.asset:{records:[f.asset],...(url.searchParams.get('sort[0][field]')?{offset:'next-page'}:{})});
   }
   const data=await req.json();
   if(req.method==='POST') {

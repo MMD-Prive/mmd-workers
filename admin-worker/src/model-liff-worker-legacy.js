@@ -1,5 +1,6 @@
 import dashboardWorker from "./dashboard-worker.js";
 import { planPrivateUpload, uploadPrivateMedia } from "../../shared/private-media.mjs";
+import { claimModelMediaSlot, commitModelMediaSlot, releaseModelMediaSlot, removeModelMediaSlot } from "../../shared/model-media-slot-coordinator.mjs";
 import {
   availabilityStateFromModelProfile,
 } from "../../shared/sigil-availability-snapshot-v1.mjs";
@@ -41,7 +42,7 @@ const MEDIA_TABLE_DEFAULT = "tblrpQXhHnbTU9RhW";
 const MAX_IMAGE_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_MEDIA_BYTES = 25 * 1024 * 1024;
 const MAX_MODEL_PHOTOS = 8;
-const MAX_MODEL_CLIPS = 3;
+const MAX_MODEL_CLIPS = 1;
 const MODEL_MEDIA_UPLOAD_TTL_SECONDS = 10 * 60;
 const MODEL_LANGUAGE_ALLOWLIST = new Set(["thai", "english"]);
 const MODEL_AVAILABILITY_ALLOWLIST = new Set(["available", "busy", "vacation"]);
@@ -769,18 +770,23 @@ async function handleMediaList(request, env) {
   return json({ ok: true, media }, 200, request, env);
 }
 
-async function modelMediaCapacity(env, modelRecordId, kind) {
+export async function modelMediaCapacity(env, modelRecordId, kind) {
   const result = await listOwnedMedia(env, modelRecordId);
   if (!result.ok) return { ok: false, error: "media_lookup_unavailable", status: 503 };
   const retained = result.records.filter((record) => {
     const status = normalizeWord(record?.fields?.review_status);
-    return !["rejected", "deleted", "archived"].includes(status);
+    return modelMediaPolicy(record?.fields || {}).self_managed
+      && !["rejected", "deleted", "archived"].includes(status);
   });
   const photos = retained.filter((record) => normalizeWord(record?.fields?.media_type) !== "intro_video").length;
   const clips = retained.filter((record) => normalizeWord(record?.fields?.media_type) === "intro_video").length;
-  if (kind === "image" && photos >= MAX_MODEL_PHOTOS) return { ok: false, error: "photo_limit_reached", status: 409, max_files: MAX_MODEL_PHOTOS };
-  if (kind === "video" && clips >= MAX_MODEL_CLIPS) return { ok: false, error: "clip_limit_reached", status: 409, max_files: MAX_MODEL_CLIPS };
-  return { ok: true, photos, clips };
+  const refs = retained
+    .filter((record) => kind === "video" ? normalizeWord(record?.fields?.media_type) === "intro_video" : normalizeWord(record?.fields?.media_type) !== "intro_video")
+    .map((record) => clean(record?.fields?.media_id))
+    .filter(Boolean);
+  if (kind === "image" && photos >= MAX_MODEL_PHOTOS) return { ok: false, error: "photo_limit_reached", status: 409, max_files: MAX_MODEL_PHOTOS, refs };
+  if (kind === "video" && clips >= MAX_MODEL_CLIPS) return { ok: false, error: "clip_limit_reached", status: 409, max_files: MAX_MODEL_CLIPS, refs };
+  return { ok: true, photos, clips, refs };
 }
 
 function safeModelMediaFileName(value, fallback) {
@@ -853,9 +859,12 @@ async function handleMediaUploadUrl(request, env) {
     const status = spec.error === "file_type_not_allowed" ? 415 : spec.error === "file_size_invalid" ? 413 : 400;
     return json({ ok: false, error: spec.error, ...(spec.max_bytes ? { max_bytes: spec.max_bytes } : {}) }, status, request, env);
   }
+  const mediaId = `media_${crypto.randomUUID().replace(/-/g, "")}`;
   const capacity = await modelMediaCapacity(env, auth.payload.model_record_id, spec.kind);
   if (!capacity.ok) return json({ ok: false, error: capacity.error, max_files: capacity.max_files }, capacity.status, request, env);
-  const mediaId = `media_${crypto.randomUUID().replace(/-/g, "")}`;
+  const slotInput = { model_record_id: auth.payload.model_record_id, lane: "public", kind: spec.kind === "video" ? "clip" : "photo", upload_ref: mediaId, authoritative_refs: capacity.refs };
+  const claimed = await claimModelMediaSlot(env, slotInput);
+  if (!claimed.ok) return json({ ok: false, error: claimed.error, max_files: claimed.max_files }, claimed.status || 503, request, env);
   const fileName = safeModelMediaFileName(body.file_name, `${mediaId}.${spec.ext}`);
   const expires = Math.floor(Date.now() / 1000) + MODEL_MEDIA_UPLOAD_TTL_SECONDS;
   const authorization = await signPayload({
@@ -871,7 +880,10 @@ async function handleMediaUploadUrl(request, env) {
     file_name: fileName,
     expires,
   }, env);
-  if (!authorization) return json({ ok: false, error: "upload_authorization_unavailable" }, 503, request, env);
+  if (!authorization) {
+    await releaseModelMediaSlot(env, slotInput).catch(() => {});
+    return json({ ok: false, error: "upload_authorization_unavailable" }, 503, request, env);
+  }
   const uploadUrl = new URL(MEDIA_UPLOAD_URL_PATH, request.url);
   uploadUrl.searchParams.set("authorization", authorization);
   return json({
@@ -913,9 +925,16 @@ async function handleAuthorizedMediaUpload(request, env) {
   const declaredLength = request.headers.get("content-length");
   if (hasMismatchedDeclaredContentLength(declaredLength, spec.size)) return json({ ok: false, error: "upload_size_mismatch" }, 400, request, env);
   const capacity = await modelMediaCapacity(env, auth.payload.model_record_id, spec.kind);
-  if (!capacity.ok) return json({ ok: false, error: capacity.error, max_files: capacity.max_files }, capacity.status, request, env);
+  if (capacity.error === "media_lookup_unavailable") return json({ ok: false, error: capacity.error }, capacity.status, request, env);
+  const slotInput = { model_record_id: auth.payload.model_record_id, lane: "public", kind: spec.kind === "video" ? "clip" : "photo", upload_ref: payload.media_id, authoritative_refs: capacity.refs };
+  const claimed = await claimModelMediaSlot(env, slotInput);
+  if (!claimed.ok) return json({ ok: false, error: claimed.error, max_files: claimed.max_files }, claimed.status || 503, request, env);
   const existing = await findOwnedMedia(env, auth.payload.model_record_id, payload.media_id);
-  if (existing.ok) return json({ ok: true, media: safeMediaRecord(existing.record), duplicate: true, review_required: true }, 200, request, env);
+  if (existing.ok) {
+    const committed = await commitModelMediaSlot(env, slotInput);
+    if (!committed.ok) return json({ ok: false, error: committed.error }, committed.status || 503, request, env);
+    return json({ ok: true, media: safeMediaRecord(existing.record), duplicate: true, review_required: true }, 200, request, env);
+  }
   if (existing.status !== 404) return json({ ok: false, error: existing.error }, existing.status, request, env);
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.length !== spec.size) return json({ ok: false, error: "upload_size_mismatch" }, 400, request, env);
@@ -948,8 +967,11 @@ async function handleAuthorizedMediaUpload(request, env) {
   });
   if (!registered.ok) {
     await env.MMD_MODEL_ASSETS.delete(objectKey).catch(() => {});
+    await releaseModelMediaSlot(env, slotInput).catch(() => {});
     return json({ ok: false, error: registered.error }, registered.status || 503, request, env);
   }
+  const committed = await commitModelMediaSlot(env, slotInput);
+  if (!committed.ok) return json({ ok: false, error: committed.error }, committed.status || 503, request, env);
   return json({ ok: true, media: safeMediaRecord(registered.record), review_required: true }, 201, request, env);
 }
 
@@ -988,15 +1010,18 @@ async function handleMediaUpload(request, env) {
   }
   const { mediaType, mime, size, ext, assetRole } = spec;
 
-  const capacity = await modelMediaCapacity(env, auth.payload.model_record_id, spec.kind);
-  if (!capacity.ok) return json({ ok: false, error: capacity.error, max_files: capacity.max_files }, capacity.status, request, env);
-
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (bytes.length !== size) return json({ ok: false, error: "upload_size_mismatch" }, 400, request, env);
   if (!validModelMediaBytes(bytes, mime)) return json({ ok: false, error: "media_content_type_mismatch" }, 415, request, env);
   const sha256 = await sha256Hex(bytes);
 
   const mediaId = `media_${crypto.randomUUID().replace(/-/g, "")}`;
+  const capacity = await modelMediaCapacity(env, auth.payload.model_record_id, spec.kind);
+  if (!capacity.ok) return json({ ok: false, error: capacity.error, max_files: capacity.max_files }, capacity.status, request, env);
+  const slotInput = { model_record_id: auth.payload.model_record_id, lane: "public", kind: spec.kind === "video" ? "clip" : "photo", upload_ref: mediaId, authoritative_refs: capacity.refs };
+  const claimed = await claimModelMediaSlot(env, slotInput);
+  if (!claimed.ok) return json({ ok: false, error: claimed.error, max_files: claimed.max_files }, claimed.status || 503, request, env);
+
   const objectKey = `models/${auth.payload.model_record_id}/${mediaType}/${mediaId}.${ext}`;
   const uploadedAt = new Date().toISOString();
 
@@ -1012,6 +1037,7 @@ async function handleMediaUpload(request, env) {
       },
     });
   } catch {
+    await releaseModelMediaSlot(env, slotInput).catch(() => {});
     return json({ ok: false, error: "media_storage_write_failed" }, 503, request, env);
   }
 
@@ -1028,8 +1054,11 @@ async function handleMediaUpload(request, env) {
   });
   if (!registered.ok) {
     await env.MMD_MODEL_ASSETS.delete(objectKey).catch(() => {});
+    await releaseModelMediaSlot(env, slotInput).catch(() => {});
     return json({ ok: false, error: registered.error }, registered.status || 503, request, env);
   }
+  const committed = await commitModelMediaSlot(env, slotInput);
+  if (!committed.ok) return json({ ok: false, error: committed.error }, committed.status || 503, request, env);
 
   return json({
     ok: true,
@@ -1118,7 +1147,14 @@ async function handleMediaDelete(request, env, mediaId) {
   if (key && env.MMD_MODEL_ASSETS && typeof env.MMD_MODEL_ASSETS.delete === "function") {
     await env.MMD_MODEL_ASSETS.delete(key).catch(() => {});
   }
-  return json({ ok: true, media_id: mediaId, policy: "model_self_managed_public" }, 200, request, env);
+  const removed = await removeModelMediaSlot(env, {
+    model_record_id: auth.payload.model_record_id,
+    lane: "public",
+    kind: normalizeWord(media.record.fields?.media_type) === "intro_video" ? "clip" : "photo",
+    upload_ref: mediaId,
+    authoritative_refs: [],
+  });
+  return json({ ok: true, media_id: mediaId, policy: "model_self_managed_public", slot_sync: removed.ok ? "complete" : "deferred" }, 200, request, env);
 }
 
 async function handleSendEta(request, env, ctx, body) {

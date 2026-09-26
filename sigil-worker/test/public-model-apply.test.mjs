@@ -194,7 +194,7 @@ test("public model upload-url validates kind, role, MIME, and size", async () =>
   }
 });
 
-test("public model upload contract caps photos at 8 and clips at 3", async () => {
+test("public model upload contract caps photos at 8 and clips at 1", async () => {
   const photos = Array.from({ length: 9 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_photo_${index}_123456` }));
   const tooManyPhotos = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
     method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
@@ -204,7 +204,7 @@ test("public model upload contract caps photos at 8 and clips at 3", async () =>
   assert.equal(tooManyPhotos.status, 400);
   assert.equal(photoBody.fields.upload_refs, "too many photos");
 
-  const clips = Array.from({ length: 4 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_clip_${index}_123456`, kind: "clip", role: "introduction" }));
+  const clips = Array.from({ length: 2 }, (_, index) => validUploadRef({ upload_ref: `pmu_ref_clip_${index}_123456`, kind: "clip", role: "introduction" }));
   const tooManyClips = await call(testInternals.PUBLIC_MODEL_APPLY_PATH, {
     method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
     body: JSON.stringify(validPayload({ upload_session_id: "pmu_session_123456", uploads: clips })),
@@ -214,7 +214,7 @@ test("public model upload contract caps photos at 8 and clips at 3", async () =>
   assert.equal(clipBody.fields.upload_refs, "too many clips");
   assert.equal(testInternals.PUBLIC_MODEL_MAX_UPLOAD_BYTES, 25 * 1024 * 1024);
   assert.equal(testInternals.MAX_PHOTOS, 8);
-  assert.equal(testInternals.MAX_CLIPS, 3);
+  assert.equal(testInternals.MAX_CLIPS, 1);
 });
 
 test("public model upload-url rejects structured metadata and camelCase server fields", async () => {

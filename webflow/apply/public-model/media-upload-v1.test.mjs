@@ -7,7 +7,7 @@ test('Public Model mobile media add-on enforces the MMD upload contract', async 
   const source=await readFile(new URL('./media-upload-v1.html',import.meta.url),'utf8');
   const script=source.match(/<script>([\s\S]*?)<\/script>/)?.[1]||'';
   new vm.Script(script);
-  assert.match(script,/MAX_BYTES=25\*1024\*1024,MAX_PHOTOS=8,MAX_CLIPS=3/);
+  assert.match(script,/MAX_BYTES=25\*1024\*1024,MAX_PHOTOS=8,MAX_CLIPS=1/);
   assert.match(script,/\/v1\/public-model\/upload-url/);
   assert.match(script,/upload_session_id/);
   assert.match(source,/pending review/);

@@ -1,5 +1,5 @@
 import { readCredentialBoundAdminActor } from './credential-bound-admin-session.js';
-import { mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
+import { PRIVATE_MEDIA_CONSENT_VERSION, mediaRequest, mediaTable, mediaKind, privateKey, readMedia, readMediaByRecord, assertPrivateObject, planPrivateUpload, uploadPrivateMedia } from '../../shared/private-media.mjs';
 import coreWorker from './index.js';
 import { renderPrivateMediaReview } from './private-media-review-page.js';
 import { readOwnerApprovedDriveMedia } from './google-drive-owner-media.js';
@@ -83,6 +83,9 @@ export async function handlePrivateMediaReview(request, env, ctx) {
         file_name: input.file_name,
         content_type: input.content_type,
         file_size_bytes: input.file_size_bytes,
+        purpose: 'private_teaser',
+        consent_version: PRIVATE_MEDIA_CONSENT_VERSION,
+        upload_ref: input.upload_ref,
       });
       return json({ ok: true, asset_id: plan.asset_id, status: plan.status, upload_url: `${OWNER_UPLOAD_API}?asset_id=${encodeURIComponent(plan.asset_id)}&model_id=${encodeURIComponent(modelId)}` });
     }
@@ -91,7 +94,7 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       const modelId = url.searchParams.get('model_id') || '';
       const assetId = url.searchParams.get('asset_id') || '';
       if (!/^rec[a-zA-Z0-9]+$/.test(modelId) || !/^media_[a-zA-Z0-9-]+$/.test(assetId)) return json({ ok: false, error: 'upload_identity_invalid' }, 400);
-      const result = await uploadPrivateMedia(request, env, modelId, assetId, { requestedBy: `owner:${actor.id}` });
+      const result = await uploadPrivateMedia(request, env, modelId, assetId, { requestedBy: `owner:${actor.id}`, purpose: 'private_teaser' });
       return json({ ok: result.ok === true, asset_id: result.asset_id, status: result.status });
     }
     if (path === OWNER_DRIVE_IMPORT_API && request.method === 'POST') {
@@ -122,6 +125,9 @@ export async function handlePrivateMediaReview(request, env, ctx) {
         file_name: fileName,
         content_type: contentType,
         file_size_bytes: bytes.length,
+        purpose: 'private_teaser',
+        consent_version: PRIVATE_MEDIA_CONSENT_VERSION,
+        upload_ref: `media_${crypto.randomUUID().replace(/-/g, '')}`,
       });
       const uploadRequest = new Request('https://private-media-import.internal/upload', {
         method: 'POST',
@@ -130,6 +136,7 @@ export async function handlePrivateMediaReview(request, env, ctx) {
       });
       const result = await uploadPrivateMedia(uploadRequest, env, modelId, plan.asset_id, {
         requestedBy: `owner:${actor.id}:approved_drive_import`,
+        purpose: 'private_teaser',
       });
       const record = await readMedia(env, plan.asset_id);
       return json({
