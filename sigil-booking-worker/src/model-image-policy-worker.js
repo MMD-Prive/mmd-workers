@@ -158,7 +158,7 @@ function hasLinkedModel(fields) {
 }
 
 async function servePublicModelMedia(request, env, mediaId) {
-  if (!/^media_[a-f0-9]{32}$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
+  if (!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(mediaId) || !env.AIRTABLE_API_KEY || !env.AIRTABLE_BASE_ID) return json({ ok: false, error: "media_not_found" }, 404);
   if (!env.MMD_MODEL_ASSETS || typeof env.MMD_MODEL_ASSETS.get !== "function") return json({ ok: false, error: "media_storage_unavailable" }, 503);
   const table = env.AIRTABLE_TABLE_MODEL_MEDIA_ID || "tblrpQXhHnbTU9RhW";
   const escaped = mediaId.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");

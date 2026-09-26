@@ -3,7 +3,7 @@
   if(!item||item.media_source!=='mmd_model_media_assets')return empty;
   var seen=new Set();
   function valid(id,url){
-    if(!/^media_[a-f0-9]{32}$/i.test(String(id||'')))return null;
+    if(!/^media_(?:[a-f0-9]{32}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})$/i.test(String(id||'')))return null;
     try{
       var parsed=new URL(String(url||''),API);
       if(parsed.origin!==new URL(API).origin||parsed.pathname!=='/sigil/api/models/media/'+encodeURIComponent(id)||parsed.search||parsed.hash)return null;

@@ -13,7 +13,7 @@ const projectedMedia = vm.runInNewContext(
   { API: 'https://sigil.mmdbkk.com', URL, Set },
 );
 
-const mediaId = (character) => `media_${character.repeat(32)}`;
+const mediaId = (character) => `media_${character.repeat(8)}-${character.repeat(4)}-${character.repeat(4)}-${character.repeat(4)}-${character.repeat(12)}`;
 const mediaUrl = (id) => `https://sigil.mmdbkk.com/sigil/api/models/media/${encodeURIComponent(id)}`;
 
 test('renderer accepts only per-item API projection and rejects foreign media URLs', () => {
@@ -38,6 +38,9 @@ test('renderer accepts only per-item API projection and rejects foreign media UR
   assert.equal(result.primary.url, mediaUrl(primaryId));
   assert.deepEqual(Array.from(result.photos, ({ media_id }) => media_id), [photoId]);
   assert.deepEqual(Array.from(result.clips, ({ media_id }) => media_id), [clipId]);
+  const compactId = `media_${'f'.repeat(32)}`;
+  assert.equal(projectedMedia({ ...item, primary_media_id: compactId, primary_image_url: mediaUrl(compactId) }).primary.media_id, compactId);
+  assert.equal(projectedMedia({ ...item, primary_media_id: `media_${'z'.repeat(32)}` }).primary, null);
   assert.equal(projectedMedia({ ...item, media_source: 'legacy' }).primary, null);
   assert.equal(projectedMedia({ model_id: 'recOtherModel', media_source: 'mmd_model_media_assets' }).photos.length, 0);
 });

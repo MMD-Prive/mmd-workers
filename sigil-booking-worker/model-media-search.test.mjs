@@ -4,11 +4,11 @@ import worker, { fetchPublicModelMedia, hydrateModelAssetPolicy, isPublicMedia }
 
 const modelId = "recModel000000001";
 const secondModelId = "recModel000000002";
-const mediaId = `media_${"a".repeat(32)}`;
-const primaryMediaId = `media_${"b".repeat(32)}`;
-const galleryMediaId = `media_${"c".repeat(32)}`;
-const clipMediaId = `media_${"d".repeat(32)}`;
-const secondPrimaryMediaId = `media_${"e".repeat(32)}`;
+const mediaId = "media_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+const primaryMediaId = "media_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+const galleryMediaId = "media_cccccccc-cccc-cccc-cccc-cccccccccccc";
+const clipMediaId = "media_dddddddd-dddd-dddd-dddd-dddddddddddd";
+const secondPrimaryMediaId = "media_eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
 
 test("SIGIL hydrates MMD MODEL primary image, public gallery and intro clips only", async () => {
   const records = [
