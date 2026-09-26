@@ -172,6 +172,15 @@ test("exact folder name resolves only through canonical member access", async ()
   assert.equal(expired.status, "renewal");
 });
 
+test("duplicate exact card name fails closed before membership filtering", async () => {
+  const first = privateModel("JASPAL1", "standard", { folder_name: "JASPAL", working_name: "Jaspal" });
+  const second = privateModel("JASPER1", "premium", { folder_name: "JASPAL", working_name: "Jasper" });
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "JASPAL" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [first, second])),
+  });
+  assert.equal(result.status, "clarification");
+});
+
 test("Premium canonical envelope includes Standard and Premium while Standard cannot see Premium", async () => {
   const models = [privateModel("PR22", "premium")];
   const standard = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "PR22" }, { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], models)) });
@@ -286,7 +295,7 @@ test("canonical Sales Control projects the customer-safe matched offer after ent
   })];
   const result = await resolveKenjiModelAccess(
     ENV,
-    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { line_user_id: LINE_USER_ID, query: "MX17", work_lane: "pn", requested_at: "2026-09-21T19:00:00+07:00" },
     { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
   );
   assert.equal(result.status, "match");
@@ -295,6 +304,20 @@ test("canonical Sales Control projects the customer-safe matched offer after ent
   assert.equal(result.model.sales.price_visible, true);
   assert.equal(result.model.sales.matched_rule_key, null);
   assert.equal(result.model.sales.rule_version, 2);
+});
+
+test("lookup without a verified work lane never returns a rate", async () => {
+  const model = privateModel("MX17", "standard");
+  const rules = [record("rec-offer-active", {
+    Model: [model.id], model_key: "MX17", status: "Active", sales_visibility: "on",
+    audience_scope: ["Standard"], offer_type: "pn", customer_sell_rate_thb: 25000,
+    price_visibility: "visible", version: 2,
+  })];
+  const result = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "MX17" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)),
+  });
+  assert.equal(result.status, "match");
+  assert.equal(result.model.sales, undefined);
 });
 
 test("Draft Model Offer Rules remain fail-closed in the Kenji consumer", async () => {
@@ -311,7 +334,7 @@ test("Draft Model Offer Rules remain fail-closed in the Kenji consumer", async (
   })];
   const result = await resolveKenjiModelAccess(
     ENV,
-    { line_user_id: LINE_USER_ID, query: "MX17", requested_at: "2026-09-21T19:00:00+07:00" },
+    { line_user_id: LINE_USER_ID, query: "MX17", work_lane: "pn", requested_at: "2026-09-21T19:00:00+07:00" },
     { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model], [], rules)) },
   );
   assert.equal(result.status, "match");

@@ -439,6 +439,9 @@ LINE_KENJI_MODEL_ENABLED = "false"
 # is independent from LLM generation and must remain off until the V1 privacy
 # review, synthetic smoke, and explicit Production approval are complete.
 LINE_KENJI_MODEL_ACCESS_ENABLED = "false"
+LINE_CARD_21829530_LEAD_ENABLED = "false"
+LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR = "false"
+LINE_CARD_21829530_PILOT_HASHES = ""
 OPENAI_MODEL = "gpt-5.6"
 # Safe defaults: model-on still reaches nobody until approved SHA-256 tester
 # hashes and approved grounding card IDs are supplied as production config.
