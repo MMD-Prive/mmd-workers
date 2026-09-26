@@ -27,6 +27,11 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
     return jobsJson({ ok: false, error: "invalid_job_date", expected: "YYYY-MM-DD" }, 400);
   }
 
+  const sessionId = String(url.searchParams.get("session_id") || "").trim();
+  if (url.searchParams.getAll("session_id").length > 1 || (url.searchParams.has("session_id") && !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId))) {
+    return jobsJson({ ok: false, error: "invalid_session_id" }, 400);
+  }
+
   const page = positiveInt(url.searchParams.get("page"), 1);
   const pageSize = clamp(positiveInt(url.searchParams.get("page_size"), DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE);
   const sessionsTable = env.AIRTABLE_TABLE_SESSIONS || DEFAULT_SESSIONS_TABLE_ID;
@@ -38,6 +43,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       page,
       pageSize,
       jobDate,
+      sessionId,
     });
 
     const body = {
@@ -48,6 +54,7 @@ export async function handleAdminDashboardJobsRequest(request, env, actor) {
       generated_at: new Date().toISOString(),
       filters: {
         job_date: jobDate || null,
+        session_id: sessionId || null,
       },
       pagination: result.pagination,
       counts: result.counts,
@@ -73,8 +80,9 @@ export function buildJobsPage(records, options = {}) {
   const requestedPage = positiveInt(options.page, 1);
   const pageSize = clamp(positiveInt(options.pageSize, DEFAULT_PAGE_SIZE), 1, MAX_PAGE_SIZE);
   const jobDate = normalizeDateOnly(options.jobDate || "");
+  const sessionId = String(options.sessionId || "").trim();
   const allItems = projectJobs(records, now);
-  const filtered = jobDate ? allItems.filter((item) => item.job_date === jobDate) : allItems;
+  const filtered = allItems.filter((item) => (!jobDate || item.job_date === jobDate) && (!sessionId || item.id === sessionId));
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
