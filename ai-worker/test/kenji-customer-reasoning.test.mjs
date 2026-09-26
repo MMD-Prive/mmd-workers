@@ -43,6 +43,7 @@ test("Rename Blackcard confirms historical paid context without creating current
 
   assert.equal(result.identity.primary_reference, "โป้ Blackcard 15/08/23");
   assert.equal(result.identity.resolution, "rename");
+  assert.equal(result.client_level.level, "blackcard");
   assert.equal(result.historical_recognition.level, "black_card");
   assert.equal(result.historical_recognition.historical_blackcard_paid_confirmed, true);
   assert.equal(result.latest_membership_cycle.package_base, "premium");
@@ -66,6 +67,7 @@ test("SVIP recognition remains separate from Lite package base", () => {
     entitlement_snapshot: snapshot({ inactive: ["private_standard", "svip"] }),
   }, { now: "2026-09-03T12:00:00Z" });
 
+  assert.equal(result.client_level.level, "svip");
   assert.equal(result.historical_recognition.level, "svip");
   assert.equal(result.latest_membership_cycle.package_base, "standard_lite");
   assert.equal(result.conversation.cta, "renew_lite");
@@ -83,11 +85,43 @@ test("VIP recognition can coexist with an active 7 Days base", () => {
     entitlement_snapshot: snapshot({ active: ["guest_pass"], envelope: "none" }),
   }, { now: "2026-09-03T12:00:00Z" });
 
+  assert.equal(result.client_level.level, "vip");
   assert.equal(result.historical_recognition.level, "vip");
   assert.equal(result.latest_membership_cycle.package_base, "7_days");
   assert.equal(result.canonical_current_state.lifecycle, "active");
   assert.equal(result.canonical_current_state.rights.guest_pass_access, true);
   assert.equal(result.conversation.strategy, "active_member_continuation");
+});
+
+test("member tags without an explicit tier resolve Premium while current access remains resolver-owned", () => {
+  const result = reasonKenjiCustomerContext({
+    rename: "หนุ่ย 4 กพ 69",
+    hashtags: ["#client", "#mem2024", "#memMay2024", "#mem2026", "#memFeb26"],
+    line_user_id: "U00000000000000000000000000000000",
+    entitlement_snapshot: snapshot({ inactive: ["private_premium"] }),
+  }, { now: "2026-09-04T00:00:00Z" });
+
+  assert.equal(result.client_level.level, "premium");
+  assert.equal(result.client_level.source, "line_oa_member_signal_inference");
+  assert.equal(result.client_level.warning, "inferred_premium_from_member_signal");
+  assert.equal(result.canonical_current_state.lifecycle, "expired");
+  assert.equal(result.canonical_current_state.rights.private_visibility_envelope, "none");
+  assert.equal(result.membership_resolution.client_level, "premium");
+  assert.equal(result.membership_resolution.current_access_authority, "my_mmd_entitlement_resolver_v1");
+  assert.equal(result.membership_resolution.display_client_level_and_current_access_separately, true);
+  assert.equal(result.membership_resolution.client_level_never_grants_current_access, true);
+});
+
+test("ambiguous LINE tier labels require review instead of guessing", () => {
+  const result = reasonKenjiCustomerContext({
+    rename: "Maybe VIP?",
+    line_user_id: "U00000000000000000000000000000000",
+    entitlement_snapshot: snapshot({ active: ["public_member"], envelope: "none" }),
+  }, { now: "2026-09-04T00:00:00Z" });
+
+  assert.equal(result.client_level.level, "review_required");
+  assert.equal(result.client_level.warning, "ambiguous_client_level_review_required");
+  assert.equal(result.review_required, true);
 });
 
 test("missing Rename is review-required even when secondary identifiers exist", () => {
@@ -99,6 +133,7 @@ test("missing Rename is review-required even when secondary identifiers exist", 
   }, { now: "2026-09-03T12:00:00Z" });
 
   assert.equal(result.identity.resolution, "review_required");
+  assert.equal(result.client_level.level, "guest");
   assert.equal(result.review_required, true);
   assert.equal(result.conversation.strategy, "review_required");
   assert.equal(result.conversation.cta, "human_review");
@@ -111,6 +146,7 @@ test("missing canonical Resolver snapshot fails closed", () => {
     latest_cycle: { package_code: "premium", expire_at: "2026-12-31T23:59:59Z" },
   }, { now: "2026-09-03T12:00:00Z" });
 
+  assert.equal(result.client_level.level, "vip");
   assert.equal(result.canonical_current_state.resolver_snapshot_valid, false);
   assert.equal(result.canonical_current_state.rights.public_service_access, false);
   assert.equal(result.canonical_current_state.rights.private_visibility_envelope, "none");
@@ -126,6 +162,7 @@ test("blocked Resolver state never produces a reactivation CTA", () => {
     entitlement_snapshot: blocked,
   }, { now: "2026-09-03T12:00:00Z" });
 
+  assert.equal(result.client_level.level, "blackcard");
   assert.equal(result.canonical_current_state.member_blocked, true);
   assert.equal(result.canonical_current_state.rights.private_visibility_envelope, "none");
   assert.equal(result.conversation.strategy, "restricted_human_review");
@@ -165,5 +202,7 @@ test("Kenji reasoning route requires internal auth and returns read-only contrac
   const payload = await allowed.json();
   assert.equal(payload.ok, true);
   assert.equal(payload.data.read_only, true);
+  assert.equal(payload.data.client_level.level, "premium");
+  assert.equal(payload.data.membership_resolution.display_client_level_and_current_access_separately, true);
   assert.equal(payload.data.canonical_current_state.authority, "my_mmd_entitlement_resolver_v1");
 });
