@@ -56,6 +56,11 @@ test("canonical /my-mmd proxies the full Lovable app without forwarding member c
   assert.equal(response.headers.get("x-mmd-presentation-owner"), "lovable");
   assert.equal(response.headers.get("x-mmd-behavior-owner"), "mmd-workers");
   assert.match(html, /MMD PRIVÉ · MY MMD/);
+  assert.match(html, /id="mmd-bangkok-theme-v1"/);
+  assert.match(html, /data-mmd-bangkok-theme="v1"/);
+  assert.match(html, /MMD_Prive%CC%81_logo_signature_transparent/);
+  assert.match(html, /BANGKOK · THAILAND/);
+  assert.match(html, /clip-path:polygon/);
   assert.match(html, /\/my-mmd-assets\/app\.css/);
   assert.match(html, /\/my-mmd-assets\/app\.js/);
   assert.match(html, /\/my-mmd-assets\/favicon\.ico/);
