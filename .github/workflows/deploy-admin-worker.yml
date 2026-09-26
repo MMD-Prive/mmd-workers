@@ -254,8 +254,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/admin-worker-upload.log"; then
-            echo "Version upload failed for a reason other than Cloudflare Durable Object migration code 10211; refusing direct-deploy fallback." >&2
+          if ! grep -Eq 'code:[[:space:]]*10211|\[code:[[:space:]]*10211\]' "$RUNNER_TEMP/admin-worker-upload.log" &&
+             ! { grep -Fq 'This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`.' "$RUNNER_TEMP/admin-worker-upload.log" &&
+                 grep -Fq 'Durable Object migrations must be applied with `wrangler deploy`.' "$RUNNER_TEMP/admin-worker-upload.log"; }; then
+            echo "Version upload failed without the confirmed Durable Object migration error; refusing direct-deploy fallback." >&2
             cat "$RUNNER_TEMP/admin-worker-upload.log" >&2
             exit 1
           fi
