@@ -297,7 +297,7 @@ function compactLookup(value) {
 
 const LINE_CARD_21829530_ID = "21829530";
 const LINE_CARD_21829530_TRIGGERS = Object.freeze({
-  JASPAL: { display_intent: "Jasper", action_type: "text" },
+  JASPER: { display_intent: "Jasper", action_type: "text" },
   NANO: { display_intent: "", action_type: "text" },
   EMs01: { display_intent: "", action_type: "text" },
   "Sky B": { display_intent: "", action_type: "text", manager_action_enabled: false },

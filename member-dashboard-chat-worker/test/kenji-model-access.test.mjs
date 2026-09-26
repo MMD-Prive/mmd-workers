@@ -154,12 +154,13 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   assert.equal(extractKenjiModelLookupQuery("MX17"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("model MX17 ครับ"), "MX17");
   assert.equal(extractKenjiModelLookupQuery("ชื่อนายแบบ น้องซิน"), "น้องซิน");
-  for (const card of ["JASPAL", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
+  for (const card of ["JASPER", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     assert.equal(extractKenjiModelLookupQuery(card), card);
     assert.equal(inferLineIntent(card, lineEvent(card)), "card_campaign_lead");
     assert.equal(resolveLineCardCampaignTrigger(card)?.card_trigger, card);
   }
-  assert.equal(resolveLineCardCampaignTrigger("JASPAL")?.display_intent, "Jasper");
+  assert.equal(resolveLineCardCampaignTrigger("JASPER")?.display_intent, "Jasper");
+  assert.equal(resolveLineCardCampaignTrigger("JASPAL"), null);
   assert.equal(resolveLineCardCampaignTrigger("Sky B")?.manager_action_enabled, false);
   assert.equal(resolveLineCardCampaignTrigger("BOOK EI")?.card_trigger, "BOOK EI");
   assert.equal(resolveLineCardCampaignTrigger("Book EI"), null);
@@ -170,7 +171,8 @@ test("card triggers are campaign leads while neutral codes remain model lookups"
   assert.equal(extractKenjiModelLookupQuery("HELLO"), "");
   assert.equal(extractKenjiModelLookupQuery("สวัสดีครับ"), "");
   assert.equal(inferLineIntent("MX17", lineEvent("MX17")), "model_lookup");
-  assert.equal(inferLineIntent("JASPAL", lineEvent("JASPAL")), "card_campaign_lead");
+  assert.equal(inferLineIntent("JASPER", lineEvent("JASPER")), "card_campaign_lead");
+  assert.notEqual(inferLineIntent("JASPAL", lineEvent("JASPAL")), "card_campaign_lead");
   assert.equal(extractKenjiModelVerificationEmail("Customer.Name@gmail.com"), "customer.name@gmail.com");
   assert.equal(inferLineIntent("customer.name@gmail.com", lineEvent("customer.name@gmail.com")), "model_access_verification");
 });
@@ -424,9 +426,9 @@ test("authorized webhook match sends exactly one LINE Reply and never Push", asy
 });
 
 
-test("JASPAL is campaign-scoped Jasper intent and never calls model access RPC", async () => {
+test("JASPER is campaign-scoped Jasper intent and never calls model access RPC", async () => {
   const calls = [];
-  const decision = await resolveKenjiLineReply(lineEvent("JASPAL"), {}, {
+  const decision = await resolveKenjiLineReply(lineEvent("JASPER"), {}, {
     ...BASE_ENV,
     ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว" } }, 200, calls),
   }, { campaignLeadQueued: true });
@@ -439,7 +441,7 @@ test("JASPAL is campaign-scoped Jasper intent and never calls model access RPC",
 test("all eight campaign triggers accept a generic brief without model resolution or rates", async () => {
   const calls = [];
   const env = { ...BASE_ENV, ADMIN_WORKER: adminBinding({ ok: true, status: "match" }, 200, calls) };
-  for (const trigger of ["JASPAL", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
+  for (const trigger of ["JASPER", "NANO", "EMs01", "Sky B", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     const decision = await resolveKenjiLineReply(lineEvent(trigger), {}, env, { campaignLeadQueued: true });
     assert.equal(decision.reply_source, "line_card_campaign_lead");
     assert.match(decision.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
@@ -503,8 +505,8 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
   };
   try {
-    const first = await worker.fetch(await signedWebhook([lineEvent("JASPAL")], env), env);
-    const second = await worker.fetch(await signedWebhook([lineEvent("JASPAL", { replyToken: "reply-token-2" })], env), env);
+    const first = await worker.fetch(await signedWebhook([lineEvent("JASPER")], env), env);
+    const second = await worker.fetch(await signedWebhook([lineEvent("JASPER", { replyToken: "reply-token-2" })], env), env);
     assert.equal(first.status, 200);
     assert.equal(second.status, 200);
     const posts = networkCalls.filter((call) => call.url.includes("api.airtable.com") && call.init.method === "POST");
@@ -516,7 +518,7 @@ test("campaign lead is queued before one reply and duplicate delivery is idempot
     const metadata = JSON.parse(record.fields.payload_json);
     assert.equal(metadata.parsed_intent, "card_campaign_lead");
     assert.equal(metadata.card_id, "21829530");
-    assert.equal(metadata.card_trigger, "JASPAL");
+    assert.equal(metadata.card_trigger, "JASPER");
     assert.equal(metadata.display_intent, "Jasper");
     assert.equal(metadata.model_resolution_status, "unresolved");
     assert.equal(metadata.canonical_model_id, null);
@@ -719,7 +721,7 @@ test("next customer message is queued as the attributed campaign brief before ac
     ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }),
   };
   try {
-    await worker.fetch(await signedWebhook([lineEvent("JASPAL")], env), env);
+    await worker.fetch(await signedWebhook([lineEvent("JASPER")], env), env);
     const briefEvent = lineEvent("พรุ่งนี้สองทุ่ม แถวสาทร งานดินเนอร์", {
       replyToken: "reply-token-brief",
       message: { id: "msg-campaign-brief-1", type: "text", text: "พรุ่งนี้สองทุ่ม แถวสาทร งานดินเนอร์" },
@@ -735,7 +737,7 @@ test("next customer message is queued as the attributed campaign brief before ac
     assert.equal(briefRecord.fields.intent, "note_only");
     assert.equal(metadata.parsed_intent, "card_campaign_brief");
     assert.equal(metadata.campaign_key, "line_card_21829530_lead_v1");
-    assert.equal(metadata.card_trigger, "JASPAL");
+    assert.equal(metadata.card_trigger, "JASPER");
     assert.equal(metadata.display_intent, "Jasper");
     assert.equal(metadata.lead_stage, "brief_received");
     assert.equal(metadata.auto_rate, "disabled");
