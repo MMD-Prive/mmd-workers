@@ -241,6 +241,17 @@ export function normalizeModelProfilePatch(input = {}) {
   return { ok: errors.length === 0, patch, errors };
 }
 
+export function hasMismatchedDeclaredContentLength(value, expectedSize) {
+  // Workers and intermediaries may omit Content-Length for a streamed PUT.
+  // Treat only an explicit, well-formed declaration as an early check; the
+  // request body byte count below remains the authoritative size validation.
+  if (value == null || String(value).trim() === "") return false;
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) return true;
+  const declaredLength = Number(text);
+  return !Number.isSafeInteger(declaredLength) || declaredLength !== expectedSize;
+}
+
 export function normalizeModelMediaType(value = "") {
   const normalized = clean(value).toLowerCase();
   return MODEL_MEDIA_UPLOAD_TYPES.has(normalized) ? normalized : "";
@@ -899,8 +910,8 @@ async function handleAuthorizedMediaUpload(request, env) {
     return json({ ok: false, error: "invalid_upload_authorization" }, 403, request, env);
   }
   if (clean(request.headers.get("content-type")).toLowerCase() !== spec.mime) return json({ ok: false, error: "upload_metadata_mismatch" }, 400, request, env);
-  const declaredLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength !== spec.size) return json({ ok: false, error: "upload_size_mismatch" }, 400, request, env);
+  const declaredLength = request.headers.get("content-length");
+  if (hasMismatchedDeclaredContentLength(declaredLength, spec.size)) return json({ ok: false, error: "upload_size_mismatch" }, 400, request, env);
   const capacity = await modelMediaCapacity(env, auth.payload.model_record_id, spec.kind);
   if (!capacity.ok) return json({ ok: false, error: capacity.error, max_files: capacity.max_files }, capacity.status, request, env);
   const existing = await findOwnedMedia(env, auth.payload.model_record_id, payload.media_id);
