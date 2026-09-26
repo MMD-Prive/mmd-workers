@@ -4,7 +4,7 @@ const PAYMENTS = "tblWGGJJOx5eBvBZJ";
 const SESSIONS = "tblC98mKWbzmPuNzX";
 const P = Object.freeze({
   ref: "fldOO6SY49iDw8VBZ",
-  received: "fld5rTIVEF1DXwfe2",
+  amount: "fldvCSwrUW8OMAooS",
   date: "fld3yAwxIu2dkw7fO",
   verification: "fldJ7a0Ube9F0bmRy",
   officialAt: "fldPNK6qgxCSdaJRM",
@@ -67,7 +67,7 @@ export function summarizeOwnerAnnualFinance(payments, sessions, year) {
     const date = value(fields[P.date]);
     if (!/^\d{4}-\d{2}-\d{2}/.test(date)) { excluded.missing_date++; continue; }
     if (Number(date.slice(0, 4)) !== year) continue;
-    const amount = Number(fields[P.received]);
+    const amount = Number(fields[P.amount]);
     if (!Number.isFinite(amount) || amount <= 0) { excluded.missing_received_amount++; continue; }
     const ref = value(fields[P.ref]) || row.id;
     if (!ref || seen.has(ref)) { excluded.duplicates++; continue; }
