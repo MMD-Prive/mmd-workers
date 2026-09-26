@@ -117,6 +117,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          origin=not_started
+          stage=credential_present
+          http_status=none
+          trap 'rc=$?; printf "::error::CEO models smoke origin=%s stage=%s http=%s exit=%s\n" "$origin" "$stage" "$http_status" "$rc" >&2' ERR
           test -n "${ADMIN_SMOKE_CREDENTIAL:-}"
           echo "::add-mask::$ADMIN_SMOKE_CREDENTIAL"
 
@@ -125,6 +129,7 @@ jobs:
             headers="$(mktemp)"
             body="$(mktemp)"
 
+            stage=login_request
             login_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -D "$headers" -o "$body" -c "$cookie" -w "%{http_code}" \
               -X POST \
@@ -133,28 +138,45 @@ jobs:
               --data-urlencode "credential=$ADMIN_SMOKE_CREDENTIAL" \
               --data-urlencode "next=/internal/ceo/models" \
               "$origin/internal/admin/login/session")"
+            http_status="$login_code"
+            stage=login_status_303
             test "$login_code" = "303"
+            stage=login_cookie
             grep -qi '^set-cookie: mmd_admin_gate_v1=' "$headers"
+            stage=login_dashboard_first_header
             grep -Eqi '^x-mmd-admin-post-login:[[:space:]]*dashboard-first' "$headers"
+            stage=login_next_header
             grep -Eqi '^x-mmd-admin-next:[[:space:]]*/internal/admin/dashboard' "$headers"
 
+            stage=login_redirect_location
             location="$(tr -d '\r' < "$headers" | awk 'BEGIN{IGNORECASE=1} /^location:/ {sub(/^[^:]+:[[:space:]]*/, ""); print; exit}')"
             node -e 'const u=new URL(process.argv[1],process.argv[2]); if(u.pathname!=="/internal/admin/dashboard") process.exit(1)' "$location" "$origin"
 
+            stage=models_page_request
             page_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \
               "$origin/internal/ceo/models")"
+            http_status="$page_code"
+            stage=models_page_status_200
             test "$page_code" = "200"
+            stage=models_page_v3_marker
             grep -q 'model-supply-v3' "$body"
+            stage=models_page_headline
             grep -q 'SUPPLY INTELLIGENCE' "$body"
+            stage=models_page_list_contract
             grep -Fq '/v1/admin/models/list?limit=100' "$body"
+            stage=models_page_resolve_contract
             grep -Fq '/v1/admin/models/resolve-source?q=' "$body"
 
+            stage=models_list_request
             list_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \
               "$origin/v1/admin/models/list?limit=5")"
+            http_status="$list_code"
+            stage=models_list_status_200
             test "$list_code" = "200"
 
+            stage=models_list_nonempty
             model_count="$(node - "$body" <<'NODE'
           const fs = require('fs');
           const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -164,6 +186,7 @@ jobs:
           NODE
             )"
 
+            stage=models_list_query_field
             model_query="$(node - "$body" <<'NODE'
           const fs = require('fs');
           const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -177,11 +200,15 @@ jobs:
           NODE
             )"
 
+            stage=resolve_request
             resolve_code="$(curl --retry 3 --retry-delay 1 --retry-all-errors -sS \
               -o "$body" -b "$cookie" -w "%{http_code}" \
               -G --data-urlencode "q=$model_query" \
               "$origin/v1/admin/models/resolve-source")"
+            http_status="$resolve_code"
+            stage=resolve_status_200
             test "$resolve_code" = "200"
+            stage=resolve_business_contract
             node - "$body" <<'NODE'
           const fs = require('fs');
           const p = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
