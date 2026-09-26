@@ -263,6 +263,7 @@ function renderShell(config, nonce) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
   }
+  applyWorldTheme();
   if (CONFIG.intent === "signup") {
     document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
     document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
