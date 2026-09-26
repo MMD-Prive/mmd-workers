@@ -115,6 +115,7 @@ function renderShell(config, nonce) {
     body.world-public:not(.signup-mode):not(.app-entered) .intro-continue{background:#b94a3f;color:#fffaf4}
     body.world-private:not(.signup-mode):not(.app-entered) .intro-continue{background:#e5bf72;color:#20170f}
     body:not(.app-entered) .actions,body:not(.app-entered) .member-nav,body:not(.app-entered) #profile,body:not(.app-entered) #signup{display:none!important}
+    .app-status{display:none;margin:0 0 14px;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.04);color:#bdb4ad;font-size:13px;line-height:1.55}.app-entered .app-status{display:block}
     body.app-entered .intro-screen{display:none}
     body.app-entered.world-public main,body.app-entered.world-private main{width:min(100%,760px);min-height:auto;margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;display:block}
     body.app-entered.world-public,body.app-entered.world-private{padding:20px 16px 40px;overflow:auto}
@@ -130,6 +131,7 @@ function renderShell(config, nonce) {
     <div id="message" role="status" aria-live="polite">กำลังเปิดการเชื่อมต่อกับ MMD ครับ</div>
     <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false">เข้าสู่ MY MMD</button>
   </section>
+  <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
   <section id="signup" class="signup${config.intent === "signup" ? "" : " hidden"}" aria-label="สมัครสมาชิกใน LINE">
     <div class="signup-hero">
@@ -222,6 +224,7 @@ function renderShell(config, nonce) {
   "use strict";
   const CONFIG = ${safeConfig};
   const message = document.getElementById("message");
+  const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
   const actions = document.getElementById("actions");
   const signupLineEntry = document.getElementById("signup-line-entry");
@@ -283,11 +286,24 @@ function renderShell(config, nonce) {
   }
   applyWorldTheme();
   let appEntered = false;
-  function enterApp() {
-    if (appEntered) return;
+  async function enterApp() {
+    if (appEntered || !introContinue || introContinue.disabled) return;
+    introContinue.disabled = true;
+    try {
+      const existingProfile = await readProfile();
+      if (existingProfile) {
+        appEntered = true;
+        document.body.classList.add("app-entered");
+        introContinue.setAttribute("aria-expanded", "true");
+        await readSignupCatalog();
+        return;
+      }
+    } catch {
+      // Continue into the normal LINE handshake; the visible app status remains available.
+    }
     appEntered = true;
     document.body.classList.add("app-entered");
-    introContinue?.setAttribute("aria-expanded", "true");
+    introContinue.setAttribute("aria-expanded", "true");
     boot();
   }
   introContinue?.addEventListener("click", enterApp);
@@ -320,7 +336,9 @@ function renderShell(config, nonce) {
   }
 
   function show(text) {
-    message.textContent = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+    const value = String(text || "ไม่สามารถดำเนินการต่อได้ครับ กรุณากลับมาเปิดผ่าน LINE ของ MMD อีกครั้ง");
+    message.textContent = value;
+    if (appStatus) appStatus.textContent = value;
   }
 
   function setBusy(value) {
