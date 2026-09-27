@@ -370,7 +370,7 @@ test("CARE BACK model-off sub-intents answer at least 40 adversarial LINE cases 
 test("context-free CARE BACK minimum and production-smoke phrases stay deterministic and non-authoritative", async () => {
   const minimumCases = [
     ["ผมได้ 180 วันแล้วใช่ไหม", "care_back_personal_status", /ยังยืนยันจากข้อความนี้ไม่ได้/],
-    ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /กลับเป็น active หรือ grace ก่อน/],
+    ["หมดอายุแล้วได้ 150 แต้มเลยไหม", "care_back_expired_member", /150 Points ยังเป็นสิทธิ์แยก/],
     ["สมัคร Standard วันนี้แต้มเข้าเลยไหม", "care_back_new_standard", /150 Welcome Points/],
     ["Premium ได้ 250 แล้วใช่ไหม", "care_back_new_premium", /250 Welcome Points/],
     ["350 แต้มคือ Black Card ใช่ไหม", "care_back_black_card", /ไม่ได้รับ Black Card อัตโนมัติ/],
