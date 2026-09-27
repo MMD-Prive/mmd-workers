@@ -76,7 +76,7 @@ test("signed LINE opening replies once while follow and protected events stay si
     const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
     const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
       method: "POST", headers: { "x-line-signature": signature }, body: raw,
-    }), env, null, { fetch: async () => Response.json({ ok: true }) });
+    }), env, null, { fetch: async () => Response.json({ ok: true, saved: events.map(() => ({ ok: true })) }) });
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(sent.length, 3);
