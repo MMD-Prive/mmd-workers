@@ -1,5 +1,5 @@
 <!-- Canonical Webflow snippet mirror for /internal/admin/jobs/create-job
-2026-09-27: plain Thai labels + checkbox-gated optional Public Job details. -->
+2026-09-27: public brief with care-count preset 1-5 and explicit care mode. -->
 <div class='mmd-cj__subgrid' data-cj='publicJobWrap' hidden>
 <div class='mmd-cj__sectionLabel mmd-cj__wide'>รายละเอียดงาน Public</div>
 <label class='mmd-cj__field'>
@@ -31,8 +31,21 @@
 <input class='mmd-cj__input' type='number' min='1' max='200' step='1' inputmode='numeric' data-cj='publicCustomerCount' placeholder='เช่น 8'>
 </label>
 <label class='mmd-cj__field'>
-<span>ต้องดูแลใกล้ชิดกี่คน</span>
-<input class='mmd-cj__input' type='number' min='0' max='200' step='1' inputmode='numeric' value='0' data-cj='publicCareCount'>
+<span>ต้องดูแลกี่คน</span>
+<select class='mmd-cj__input' data-cj='publicCareCount'>
+<option value='1' selected>1 คน</option>
+<option value='2'>2 คน</option>
+<option value='3'>3 คน</option>
+<option value='4'>4 คน</option>
+<option value='5'>5 คน</option>
+</select>
+</label>
+<label class='mmd-cj__field'>
+<span>วิธีดูแลลูกค้า</span>
+<select class='mmd-cj__input' data-cj='publicCareMode'>
+<option value='overall' selected>ดูแลรวม ๆ ในงาน</option>
+<option value='brief_only'>ดูแลตามหน้าที่ที่ได้รับบรีฟเท่านั้น</option>
+</select>
 </label>
 
 <div class='mmd-cj__sectionLabel mmd-cj__wide'>รายละเอียดเพิ่มเติม · ติ๊กเฉพาะที่ใช้</div>
