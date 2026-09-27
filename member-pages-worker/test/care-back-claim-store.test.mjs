@@ -112,7 +112,32 @@ test("CARE BACK activates the code for exactly two calendar months without inven
   assert.equal(result.discount_percent, 0);
 });
 
-test("expired members receive the Wish coupon immediately while renewal benefits stay separate", async () => {
+test("current members receive the one-year Verify benefit", async () => {
+  const writes = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const table = tableFrom(input);
+    if ((init.method || "GET") === "GET") return Response.json({ records: [] });
+    const body = JSON.parse(init.body);
+    const fields = body.records?.[0]?.fields || body.fields;
+    writes.push({ table, fields });
+    return Response.json({ records: [{ id: `rec${String(writes.length).padStart(14, "C")}`, fields }] });
+  };
+
+  const result = await getCareBackStore(env()).openOrResume({
+    identityHash: IDENTITY,
+    memberId: "MMD-PER-CURRENT",
+    memberProfile: { membership_status: "active", tier: "Standard" },
+    now: BIRTHDAY_NOW,
+  });
+
+  assert.equal(result.membership_benefit.days, 365);
+  assert.equal(result.membership_benefit.state, "pending_application");
+  const benefitWrite = writes.find((write) => write.table === "MMD — Campaign Benefit Applications");
+  assert.ok(benefitWrite);
+  assert.match(benefitWrite.fields.before_json, /"requested_extension_days":365/);
+});
+
+test("expired existing members receive the one-year Verify benefit immediately while renewal Points stay separate", async () => {
   const writes = [];
   globalThis.fetch = async (input, init = {}) => {
     const table = tableFrom(input);
@@ -136,7 +161,8 @@ test("expired members receive the Wish coupon immediately while renewal benefits
   assert.equal(promo.fields.status, "active");
   assert.equal(result.coupon_state, "ready");
   assert.equal(result.coupon_wallet.status, "ready");
-  assert.equal(result.membership_benefit.state, "renewal_required");
+  assert.equal(result.membership_benefit.days, 365);
+  assert.equal(result.membership_benefit.state, "pending_application");
   assert.equal(result.points_policy.renewal_bonus_state, "renewal_required");
 });
 
