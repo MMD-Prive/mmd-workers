@@ -12,6 +12,7 @@ import {
   isMmdRichMenuScheduledRequest,
   handleMmdRichMenuScheduledRequest,
   prepareMmdRichMenus,
+  auditMmdRichMenus,
 } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
 
 function pngFixture(bytes, marker = 0) {
@@ -219,6 +220,43 @@ test("Guest, Public, and Private artwork sources pin their approved S3 versions"
   }
 });
 
+test("audit compares LINE images with pinned fingerprints without refetching mutable source URLs", async () => {
+  const keys = ["guest", "public", "private"];
+  const images = Object.fromEntries(keys.map((key, index) => [key, pngFixture(100 + index, index)]));
+  const specs = menuSpecs(images.private);
+  for (const key of keys) {
+    specs[key].images = [{ url: `https://assets.example/${key}.png`, bytes: images[key].byteLength, sha256: sha256(images[key]) }];
+  }
+  const rows = keys.map((key) => menuRow(`${key}-id`, specs[key]));
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url.endsWith("/v2/bot/richmenu/list")) return Response.json({ richmenus: rows });
+    if (url.endsWith("/v2/bot/user/all/richmenu")) return Response.json({ richMenuId: "guest-id" });
+    for (const key of keys) {
+      if (url.endsWith(`/richmenu/${key}-id/content`)) return new Response(images[key]);
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+  try {
+    const env = { LINE_CHANNEL_ACCESS_TOKEN: "test" };
+    const now = new Date("2026-09-27T00:00:00Z");
+    const cleanAudit = await auditMmdRichMenus(env, now, specs);
+    assert.equal(cleanAudit.ok, true);
+    assert.deepEqual(keys.map((key) => cleanAudit.menus[key].image_match), [true, true, true]);
+    assert.equal(calls.some((url) => url.includes("assets.example")), false);
+
+    images.public = pngFixture(101, 99);
+    const driftedAudit = await auditMmdRichMenus(env, now, specs);
+    assert.equal(driftedAudit.ok, false);
+    assert.equal(driftedAudit.menus.public.image_issue, "pinned_content_mismatch");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("prepare repairs wrong Guest and Public artwork once, leaving Private, default, and links untouched", async () => {
   const canonical = pngFixture(4096, 1);
   const wrong = pngFixture(4096, 2);
@@ -262,9 +300,9 @@ for (const key of ["guest", "public"]) {
     specs[key].images = [{
       url: `https://assets.example/${key}.png`,
       bytes: canonical.byteLength,
-      sha256: sha256(wrong),
+      sha256: sha256(canonical),
     }];
-    const mock = installRichMenuFetch(specs, { [key]: canonical, private: canonical }, {
+    const mock = installRichMenuFetch(specs, { [key]: wrong, private: canonical }, {
       [key]: wrong, private: canonical,
     });
     try {
@@ -304,8 +342,8 @@ test("prepare replaces a same-name Private menu with wrong artwork without touch
 test("prepare fails closed when a pinned Private source changes bytes", async () => {
   const canonical = pngFixture(4096, 1);
   const wrong = pngFixture(4096, 2);
-  const specs = menuSpecs(canonical, sha256(wrong));
-  const mock = installRichMenuFetch(specs, canonical, wrong);
+  const specs = menuSpecs(canonical);
+  const mock = installRichMenuFetch(specs, wrong, wrong);
   try {
     await assert.rejects(
       prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs }),
