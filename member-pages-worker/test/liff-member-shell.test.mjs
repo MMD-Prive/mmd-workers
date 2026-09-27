@@ -79,6 +79,10 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /\/member\/api\/liff\/care-back\/state/);
     assert.match(html, /\/member\/api\/liff\/care-back\/wallet/);
     assert.match(html, /\/member\/api\/liff\/care-back\/wish/);
+    assert.match(html, /\/member\/api\/liff\/customer-requests/);
+    assert.match(html, /\/member\/api\/liff\/customer-request-evidence/);
+    assert.match(html, /YOUR REQUEST/);
+    assert.match(html, /window\.MMD_LIFF_SAVE_MODEL/);
     assert.doesNotMatch(html, /line_user_id|lineUserId|decodedIDToken|getProfile\(/);
     assert.doesNotMatch(html, /must-not-render-secret|must-not-render-airtable-key/);
     assert.doesNotMatch(html, /https:\/\/mmdprive\.webflow\.io/);
