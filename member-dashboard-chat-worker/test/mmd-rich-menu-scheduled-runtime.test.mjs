@@ -69,12 +69,17 @@ function menuSpecs(canonical, expectedHash = sha256(canonical)) {
 }
 
 function installRichMenuFetch(specs, canonical, livePrivate) {
-  const rows = [
-    menuRow("guest-id", specs.guest),
-    menuRow("public-id", specs.public),
-    menuRow("private-old-id", specs.private),
-  ];
-  const images = new Map([["private-old-id", livePrivate]]);
+  const keys = ["guest", "public", "private"];
+  const ids = { guest: "guest-id", public: "public-id", private: "private-old-id" };
+  const rows = keys.map((key) => menuRow(ids[key], specs[key]));
+  const sources = typeof canonical === "object" && !Buffer.isBuffer(canonical)
+    ? canonical
+    : { private: canonical };
+  const images = new Map(keys.map((key) => [ids[key],
+    typeof livePrivate === "object" && !Buffer.isBuffer(livePrivate)
+      ? livePrivate[key]
+      : key === "private" ? livePrivate : sources[key],
+  ]).filter(([, image]) => image));
   const calls = [];
   let created = 0;
   const originalFetch = globalThis.fetch;
@@ -83,7 +88,11 @@ function installRichMenuFetch(specs, canonical, livePrivate) {
     const method = String(init.method || "GET").toUpperCase();
     calls.push({ url, method });
     if (url.endsWith("/v2/bot/richmenu/list")) return Response.json({ richmenus: rows });
-    if (url === "https://assets.example/private.png") return new Response(canonical, { status: 200 });
+    for (const key of keys) {
+      if (url === `https://assets.example/${key}.png` && sources[key]) {
+        return new Response(sources[key], { status: 200 });
+      }
+    }
     if (url.includes("api-data.line.me/v2/bot/richmenu/") && method === "GET") {
       const id = decodeURIComponent(url.split("/richmenu/")[1].split("/content")[0]);
       return new Response(images.get(id) || Buffer.alloc(0), { status: images.has(id) ? 200 : 404 });
@@ -147,7 +156,7 @@ test("MMD 3-level Rich Menu actions match the canonical customer labels", () => 
 
 test("LV1 v4.1 uses the MMD Stories image and never falls back to the ABOUT MMD asset", () => {
   const images = getMmdRichMenuImageSources();
-  assert.equal(images.guest.length, 2);
+  assert.equal(images.guest.length, 1);
   assert.ok(images.guest.every((url) => url.includes("6ab373e94a52accb54062a99")));
   assert.equal(images.guest.some((url) => url.includes("6a9ef89d2b35f4308fb3de8e")), false);
 });
@@ -197,11 +206,78 @@ test("current production object version preserves the approved LV1 v4.1 artwork"
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
 });
 
-test("Private artwork sources are immutable S3 versions", () => {
-  const sources = getMmdRichMenuImageSources().private;
-  assert.equal(sources.length, 1);
-  assert.ok(sources.every((url) => new URL(url).searchParams.has("versionId")));
+test("Guest, Public, and Private artwork sources pin their approved S3 versions", () => {
+  const sources = getMmdRichMenuImageSources();
+  const versions = {
+    guest: "_NVnI6XjyjYKc2WXR.0RjR34IkKj75eA",
+    public: "vZj_Lsl1geNEDlhqsXC4b4iaFEZ5uzKk",
+    private: "pf8SCzdglxtzEEhD1obnZYhmsY.7rzvJ",
+  };
+  for (const [key, version] of Object.entries(versions)) {
+    assert.equal(sources[key].length, 1);
+    assert.equal(new URL(sources[key][0]).searchParams.get("versionId"), version);
+  }
 });
+
+test("prepare repairs wrong Guest and Public artwork once, leaving Private, default, and links untouched", async () => {
+  const canonical = pngFixture(4096, 1);
+  const wrong = pngFixture(4096, 2);
+  const specs = menuSpecs(canonical);
+  for (const key of ["guest", "public"]) {
+    specs[key].repairName = `${specs[key].name} artwork-${sha256(canonical).slice(0, 8)}`;
+    specs[key].images = [{
+      url: `https://assets.example/${key}.png`,
+      bytes: canonical.byteLength,
+      sha256: sha256(canonical),
+    }];
+  }
+  const mock = installRichMenuFetch(specs, { guest: canonical, public: canonical, private: canonical }, {
+    guest: wrong, public: wrong, private: canonical,
+  });
+  try {
+    const first = await prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs });
+    assert.equal(first.menu_names.guest, specs.guest.repairName);
+    assert.equal(first.menu_names.public, specs.public.repairName);
+    assert.equal(first.menu_names.private, specs.private.name);
+    assert.equal(first.customer_assignments_changed, false);
+    assert.equal(first.default_menu_changed, false);
+    assert.deepEqual(mock.rows.filter((row) => row.name.endsWith(`artwork-${sha256(canonical).slice(0, 8)}`))
+      .map((row) => row.name), [specs.guest.repairName, specs.public.repairName]);
+    assert.equal(mock.calls.filter((call) => call.method === "POST" && call.url.endsWith("/v2/bot/richmenu")).length, 2);
+    assert.equal(mock.calls.some((call) => call.url.includes("/user/") || call.url.includes("/bulk/")), false);
+
+    await prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs });
+    assert.equal(mock.calls.filter((call) => call.method === "POST" && call.url.endsWith("/v2/bot/richmenu")).length, 2);
+  } finally {
+    mock.restore();
+  }
+});
+
+for (const key of ["guest", "public"]) {
+  test(`prepare fails closed before creating a ${key} object if its pinned source has drifted`, async () => {
+    const canonical = pngFixture(4096, 1);
+    const wrong = pngFixture(4096, 2);
+    const specs = menuSpecs(canonical);
+    specs[key].repairName = `${specs[key].name} artwork-approved`;
+    specs[key].images = [{
+      url: `https://assets.example/${key}.png`,
+      bytes: canonical.byteLength,
+      sha256: sha256(wrong),
+    }];
+    const mock = installRichMenuFetch(specs, { [key]: canonical, private: canonical }, {
+      [key]: wrong, private: canonical,
+    });
+    try {
+      await assert.rejects(
+        prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs }),
+        /image_integrity_mismatch/,
+      );
+      assert.equal(mock.calls.some((call) => call.method === "POST"), false);
+    } finally {
+      mock.restore();
+    }
+  });
+}
 
 test("prepare replaces a same-name Private menu with wrong artwork without touching Guest or Public", async () => {
   const canonical = pngFixture(4096, 1);

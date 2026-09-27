@@ -13,7 +13,11 @@ const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activ
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
 const VERSION = "mmd-rm3-20260924-v4.6";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
+const GUEST_PRIMARY_SHA256 = "3d8ce3eea915806f46bffb7119705a7251f71b8f2a892ff94f664e66f8fda86c";
+const PUBLIC_PRIMARY_SHA256 = "2d1cfaee2865db81f3bc7cc3e3c95c13241861a8c0d5a59c7bdbc3a8e9c82957";
 const PRIVATE_PRIMARY_SHA256 = "afc7a024ab6bca40d873aca18f17c0de5be56f6bfc4c701dffd9c75c870b9620";
+const GUEST_REPAIR_NAME = `MMD Guest ${VERSION} artwork-${GUEST_PRIMARY_SHA256.slice(0, 8)}`;
+const PUBLIC_REPAIR_NAME = `MMD Public ${VERSION} artwork-${PUBLIC_PRIMARY_SHA256.slice(0, 8)}`;
 const PRIVATE_REPAIR_NAME = `MMD Private ${VERSION} artwork-${PRIVATE_PRIMARY_SHA256.slice(0, 8)}`;
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
@@ -30,9 +34,13 @@ const MENUS = Object.freeze({
   guest: {
     name: `MMD Guest ${VERSION}`,
     frame: { left: .49, top: .16, right: .985, bottom: .75 },
+    repairName: GUEST_REPAIR_NAME,
     images: [
-      `${ROOT}/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
-      `https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png`,
+      {
+        url: `${ROOT}/6ab373e94a52accb54062a99_Rich%20Menu%20Guest%20v4.1%20LINE.png?versionId=_NVnI6XjyjYKc2WXR.0RjR34IkKj75eA`,
+        bytes: 347487,
+        sha256: GUEST_PRIMARY_SHA256,
+      },
     ],
     actions: [
       uri("START HERE", signupLiff()),
@@ -46,9 +54,13 @@ const MENUS = Object.freeze({
   public: {
     name: `MMD Public ${VERSION}`,
     frame: { left: .45, top: .215, right: .99, bottom: .755 },
+    repairName: PUBLIC_REPAIR_NAME,
     images: [
-      `${ROOT}/6a9ef89d845a6bc6a34f52c2_Rich%20Menu%20Public-p-1080.png`,
-      `${ROOT}/6a9ef89d845a6bc6a34f52c2_Rich%20Menu%20Public-p-800.png`,
+      {
+        url: `${ROOT}/6a9ef89d845a6bc6a34f52c2_Rich%20Menu%20Public-p-1080.png?versionId=vZj_Lsl1geNEDlhqsXC4b4iaFEZ5uzKk`,
+        bytes: 409143,
+        sha256: PUBLIC_PRIMARY_SHA256,
+      },
     ],
     actions: [
       msg("คุยกับ PER", "Hi Per"),
