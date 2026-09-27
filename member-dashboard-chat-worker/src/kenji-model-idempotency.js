@@ -165,13 +165,20 @@ export class KenjiModelIdempotency {
       const webhookEventId = String(input?.webhook_event_id || "");
       const subjectHash = String(input?.subject_hash || "");
       if (
-        !["bind", "cancel"].includes(action) ||
+        !["bind", "cancel", "lookup"].includes(action) ||
         !/^[A-Za-z0-9_-]{1,120}$/.test(messageId) ||
-        !/^[a-f0-9]{64}$/.test(receiptId) ||
+        (action !== "lookup" && !/^[a-f0-9]{64}$/.test(receiptId)) ||
         !/^[a-f0-9]{64}$/.test(subjectHash) ||
         (action === "bind" && !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId))
       ) {
         return json({ ok: false, error: "invalid_message_alias" }, 400);
+      }
+      if (action === "lookup") {
+        const existing = await this.state.storage.get(CAMPAIGN_INGRESS_ALIAS_KEY);
+        if (existing && (existing.message_id !== messageId || existing.subject_hash !== subjectHash)) {
+          return json({ ok: false, error: "event_key_collision" }, 409);
+        }
+        return json({ ok: true, found: Boolean(existing), receipt_id: existing?.receipt_id || "" });
       }
       const now = Date.now();
       const result = await this.state.storage.transaction(async (txn) => {
@@ -179,10 +186,15 @@ export class KenjiModelIdempotency {
         if (existing && (
           existing.message_id !== messageId ||
           existing.subject_hash !== subjectHash ||
-          (action === "bind" && existing.receipt_id !== receiptId) ||
+          (action === "bind" && existing.receipt_id !== receiptId && !(existing.cancelled === true && !existing.webhook_event_id)) ||
           (action === "bind" && existing.webhook_event_id && existing.webhook_event_id !== webhookEventId)
         )) {
           return { ok: false, error: "event_key_collision" };
+        }
+        // An unsend can arrive before the message. Its receipt is keyed by
+        // message.id because the webhookEventId is not known yet.
+        if (action === "bind" && existing?.cancelled === true && !existing.webhook_event_id) {
+          return { ok: true, duplicate: true, cancelled: true, receipt_id: existing.receipt_id };
         }
         const next = action === "cancel"
           ? {
@@ -562,7 +574,12 @@ export class KenjiModelIdempotency {
     else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
     const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
-    const ingressAlarm = Number(currentIngress?.next_attempt_at || currentIngress?.lease_expires_at || currentIngress?.next_alert_at || currentIngress?.next_cleanup_at || currentIngress?.expires_at) || 0;
+    // Processing retains its earlier queue time; scheduling that past value
+    // would wake the object repeatedly until the lease actually expires.
+    const ingressAlarmAt = currentIngress?.status === "processing"
+      ? currentIngress.lease_expires_at
+      : currentIngress?.next_attempt_at || currentIngress?.next_alert_at || currentIngress?.next_cleanup_at || currentIngress?.expires_at;
+    const ingressAlarm = Number(ingressAlarmAt) || 0;
     if (ingressAlarm && (!nextAlarm || ingressAlarm < nextAlarm)) nextAlarm = ingressAlarm;
     const messageAlias = await this.state.storage.get(CAMPAIGN_INGRESS_ALIAS_KEY);
     const aliasExpiresAt = Number(messageAlias?.expires_at) || 0;

@@ -229,7 +229,44 @@ test("LINE membership or renewal proof routes to Membership topic 20", async () 
   assert.equal(h.messages.length, 1);
   assert.equal(h.messages[0].flow, "membership");
   assert.equal(h.messages[0].message_thread_id, 20);
-  assert.match(h.messages[0].text, /Membership Payment Proof/);
+  assert.match(h.messages[0].text, /สลิปค่าสมาชิก/);
+});
+
+test("Telegram clearly labels four LINE slip categories and does not verify from classification alone", async () => {
+  const cases = [
+    { kind: "membership_signup", context: "สมัครสมาชิก", label: "ค่าสมาชิก", thread: 20 },
+    { kind: "membership_renewal", context: "ต่ออายุสมาชิก", label: "ค่าต่อสมาชิก", thread: 20 },
+    { kind: "job_deposit", context: "โอนมัดจำงาน", label: "ค่ามัดจำ", thread: 22 },
+    { kind: "job_final", context: "โอนยอดคงเหลืองาน", label: "ค่าจบงาน", thread: 22 },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const h = telegramHarness();
+    const result = await notifyPaymentProofOps(h.env, {
+      proofId: `line_four_types_${index}`,
+      sourceType: "user",
+      sourceContext: "direct_user_payment_followup",
+      paymentContextText: item.context,
+      analysis: {
+        extraction: { amount_thb: item.kind === "membership_renewal" ? 1000 : 7500 },
+        payment_intelligence: { tracking_kind: item.kind },
+      },
+    }, { deduped: false });
+    assert.equal(result.thread_id, item.thread, item.kind);
+    assert.match(h.messages[0].text, new RegExp(`ประเภท: ${item.label}`), item.kind);
+    assert.match(h.messages[0].text, /สถานะ: รอตรวจสอบ/, item.kind);
+    assert.doesNotMatch(h.messages[0].text, /verified|ยืนยันแล้วจากระบบรับเงิน/i, item.kind);
+  }
+});
+
+test("Telegram confirms membership only after settlement reports materialized", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_membership_materialized_1",
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: { payment_intelligence: { tracking_kind: "membership_renewal" } },
+  }, { deduped: false, settlement: { status: "materialized" } });
+  assert.match(h.messages[0].text, /สถานะ: ยืนยันแล้วจากระบบรับเงิน/);
 });
 
 test("LINE generic transfer proof stays in Payments Confirm topic 22", async () => {

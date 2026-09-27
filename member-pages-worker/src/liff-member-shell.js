@@ -161,13 +161,10 @@ function renderShell(config, nonce) {
     .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
     /* MY MMD customer welcome: member world only, before the board. */
     body:not(.app-entered){background:#171715;color:#f4ede1}
-    body:not(.app-entered) main,
-    body.world-public:not(.signup-mode):not(.app-entered) main,
-    body.world-private:not(.signup-mode):not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
-    body:not(.app-entered) .my-mmd-welcome,
-    body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome,
-    body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
-    .welcome-hero{position:relative;min-height:178px;background:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cead27f3ee081d057794_TMIB%20Bangkok.webp") center 54%/cover no-repeat}
+    body:not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
+    body:not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
+    .welcome-hero{position:relative;min-height:178px;background:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa39420fe79ed62c01d842a_MMD%20Academy%20fback%20inside.webp") center 54%/cover no-repeat}
+    body[data-welcome-audience="existing"] .welcome-hero{background-image:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a317ccf809d2f8493a4632e_SIGIL%20Apply%20Hero.webp")}
     .welcome-brand{position:absolute;left:26px;bottom:22px;display:flex;align-items:center;gap:10px;min-width:0}.welcome-logo{display:grid;width:31px;height:31px;place-items:center;overflow:hidden;border-radius:5px;background:#090909}.welcome-logo img{display:block;width:31px;height:31px;object-fit:contain}.welcome-brand strong{display:block;color:#f4ede1;font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:400;line-height:1.05;letter-spacing:.01em}.welcome-brand small{display:block;margin-top:4px;color:rgba(244,237,225,.68);font-size:9px;line-height:1.1;letter-spacing:.08em}
     .welcome-letter{padding:26px 26px max(42px,env(safe-area-inset-bottom))}.my-mmd-welcome .mark{color:#c9a866;font-size:10px;letter-spacing:.14em}.my-mmd-welcome .title{max-width:680px;margin:10px 0 7px;color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-size:clamp(30px,9vw,48px);font-weight:400;line-height:1.12;letter-spacing:-.025em}.my-mmd-welcome .sub{max-width:680px;margin:0;color:rgba(244,237,225,.68);font-size:13px;line-height:1.55}
     body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .mark,
