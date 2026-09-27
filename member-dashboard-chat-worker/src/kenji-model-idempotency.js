@@ -34,27 +34,51 @@ export class KenjiModelIdempotency {
       if (!/^[a-f0-9]{64}$/.test(key)) return json({ ok: false, error: "invalid_key" }, 400);
       const storageKey = `campaign-lead:${key}`;
       const now = Date.now();
+      const claimToken = String(input?.claim_token || "");
       if (action === "release") {
-        const existing = await this.state.storage.get(storageKey);
-        if (existing?.status === "processing") await this.state.storage.delete(storageKey);
-        return json({ ok: true, released: existing?.status === "processing" });
+        const released = await this.state.storage.transaction(async (txn) => {
+          const existing = await txn.get(storageKey);
+          if (!claimToken || existing?.status !== "processing" || existing.claim_token !== claimToken) return false;
+          await txn.delete(storageKey);
+          return true;
+        });
+        return json({ ok: true, released });
       }
       if (action === "commit") {
         const expiresAt = now + CAMPAIGN_LEAD_TTL_MS;
-        await this.state.storage.put(storageKey, { status: "committed", expires_at: expiresAt });
+        const committed = await this.state.storage.transaction(async (txn) => {
+          const existing = await txn.get(storageKey);
+          if (!claimToken || existing?.status !== "processing" || existing.claim_token !== claimToken || Number(existing.expires_at) <= now) return false;
+          await txn.put(storageKey, { status: "committed", claim_token: claimToken, expires_at: expiresAt });
+          return true;
+        });
+        if (!committed) return json({ ok: true, committed: false });
         if (this.state.storage.getAlarm && this.state.storage.setAlarm) {
           const currentAlarm = await this.state.storage.getAlarm();
           if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
         }
         return json({ ok: true, committed: true, expires_at: expiresAt });
       }
+      if (action === "status") {
+        const existing = await this.state.storage.get(storageKey);
+        return json({
+          ok: true,
+          committed: Boolean(
+            claimToken &&
+            existing?.status === "committed" &&
+            existing.claim_token === claimToken &&
+            Number(existing.expires_at) > now
+          ),
+        });
+      }
       if (action !== "claim") return json({ ok: false, error: "invalid_action" }, 400);
       const claim = await this.state.storage.transaction(async (txn) => {
         const existing = await txn.get(storageKey);
         if (Number(existing?.expires_at) > now) return { claimed: false, status: existing.status || "processing" };
         const expiresAt = now + CAMPAIGN_LEAD_PROCESSING_TTL_MS;
-        await txn.put(storageKey, { status: "processing", expires_at: expiresAt });
-        return { claimed: true, status: "processing", expires_at: expiresAt };
+        const newClaimToken = crypto.randomUUID();
+        await txn.put(storageKey, { status: "processing", claim_token: newClaimToken, expires_at: expiresAt });
+        return { claimed: true, status: "processing", claim_token: newClaimToken, expires_at: expiresAt };
       });
       return json({ ok: true, ...claim });
     }
@@ -67,13 +91,30 @@ export class KenjiModelIdempotency {
         const cardId = String(context?.card_id || "");
         const cardTrigger = String(context?.card_trigger || "").trim().slice(0, 40);
         const campaignKey = String(context?.campaign_key || "").trim().slice(0, 80);
-        if (cardId !== "21829530" || !cardTrigger || !campaignKey) return json({ ok: false, error: "invalid_context" }, 400);
+        const leadInboxId = String(context?.lead_inbox_id || "").trim();
+        const leadClaimKey = String(context?.lead_claim_key || "").trim();
+        const leadClaimToken = String(context?.lead_claim_token || "").trim();
+        if (
+          cardId !== "21829530" ||
+          !cardTrigger ||
+          !campaignKey ||
+          !/^line_[A-Za-z0-9_-]{1,120}$/.test(leadInboxId) ||
+          !/^[a-f0-9]{64}$/.test(leadClaimKey) ||
+          !/^[A-Za-z0-9-]{16,80}$/.test(leadClaimToken)
+        ) {
+          return json({ ok: false, error: "invalid_context" }, 400);
+        }
         const expiresAt = now + CAMPAIGN_CONTEXT_TTL_MS;
+        const contextToken = crypto.randomUUID();
         await this.state.storage.put(CAMPAIGN_CONTEXT_KEY, {
           card_id: cardId,
           card_trigger: cardTrigger,
           campaign_key: campaignKey,
           display_intent: String(context?.display_intent || "").trim().slice(0, 80),
+          lead_inbox_id: leadInboxId,
+          lead_claim_key: leadClaimKey,
+          lead_claim_token: leadClaimToken,
+          context_token: contextToken,
           action_type: String(context?.action_type || "text").trim().slice(0, 20),
           expires_at: expiresAt,
         });
@@ -81,7 +122,7 @@ export class KenjiModelIdempotency {
           const currentAlarm = await this.state.storage.getAlarm();
           if (!currentAlarm || currentAlarm > expiresAt) await this.state.storage.setAlarm(expiresAt);
         }
-        return json({ ok: true, stored: true, expires_at: expiresAt });
+        return json({ ok: true, stored: true, context_token: contextToken, expires_at: expiresAt });
       }
       if (action === "get") {
         const context = await this.state.storage.get(CAMPAIGN_CONTEXT_KEY);
@@ -92,8 +133,21 @@ export class KenjiModelIdempotency {
         return json({ ok: true, found: true, context });
       }
       if (action === "delete") {
-        await this.state.storage.delete(CAMPAIGN_CONTEXT_KEY);
-        return json({ ok: true, deleted: true });
+        const expectedLeadInboxId = String(input?.context?.lead_inbox_id || "").trim();
+        const expectedContextToken = String(input?.context?.context_token || "").trim();
+        const deleted = await this.state.storage.transaction(async (txn) => {
+          const existing = await txn.get(CAMPAIGN_CONTEXT_KEY);
+          if (
+            !existing ||
+            !expectedLeadInboxId ||
+            !expectedContextToken ||
+            existing.lead_inbox_id !== expectedLeadInboxId ||
+            existing.context_token !== expectedContextToken
+          ) return false;
+          await txn.delete(CAMPAIGN_CONTEXT_KEY);
+          return true;
+        });
+        return json({ ok: true, deleted, reason: deleted ? "" : "campaign_context_mismatch" });
       }
       return json({ ok: false, error: "invalid_action" }, 400);
     }
