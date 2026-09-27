@@ -719,7 +719,7 @@ function buildKenjiModelAccessReply(model = {}) {
   const workingName = asString(model.working_name);
   const summary = asString(model.summary);
   if (!modelCode || !workingName) return "";
-  return `ชื่อที่ยืนยันได้คือ ${workingName} รหัส ${modelCode} ครับ${summary ? `\n\n${summary}` : ""}\n\nสนใจ ${workingName} ส่งวัน เวลา สถานที่ และรูปแบบงานคร่าว ๆ มาได้เลยครับ เปอร์จะเช็กเรทที่ตรงกับงานให้`;
+  return `ข้อมูลที่เปิดเผยได้ของ ${workingName} (รหัส ${modelCode}) ครับ${summary ? `\n\n${summary}` : ""}`;
 }
 
 function buildKenjiModelAccessDecision(access = {}, options = {}) {
@@ -958,6 +958,20 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
 
   if (intent === "card_campaign_lead" || options.campaignBrief === true) {
     if (options.campaignLeadQueued !== true) return buildKenjiModelAccessDecision({ status: "silent" });
+    // LINE text actions can also be typed manually. Reveal only an approved
+    // profile whose model code exactly matches this campaign text.
+    if (options.campaignBrief !== true && options.modelAccessAllowed !== false &&
+        isEnabled(env.LINE_CARD_21829530_MODEL_INFO_ENABLED)) {
+      const trigger = resolveLineCardCampaignTrigger(eventText);
+      if (trigger) {
+        const access = await requestKenjiModelAccess(env, getLineUserId({ event }), trigger.card_trigger);
+        if (access.status === "match" &&
+            asString(access.model?.model_code).toLowerCase() === trigger.card_trigger.toLowerCase()) {
+          const decision = buildKenjiModelAccessDecision(access);
+          if (decision.text) return { ...decision, reply_source: "line_card_model_info" };
+        }
+      }
+    }
     return {
       text: options.campaignBrief === true ? buildLineCardBriefReply() : buildLineCardLeadReply(),
       fallback: false,
@@ -1596,11 +1610,11 @@ function buildLineCardCampaignBriefMetadata(context = {}) {
 }
 
 function buildLineCardLeadReply() {
-  return "เห็นว่าคุณสนใจการ์ดนี้ครับ ส่งวัน เวลา สถานที่ และรูปแบบงานคร่าว ๆ มาได้เลย เดี๋ยวเปอร์ดูตัวเลือกและเรทที่ตรงกับงานให้ครับ";
+  return "ได้รับชื่อ Model ที่ส่งมาแล้วครับ เปอร์จะตรวจข้อมูลที่เปิดเผยได้ก่อนตอบครับ";
 }
 
 function buildLineCardBriefReply() {
-  return "รับรายละเอียดแล้วครับ เปอร์จะตรวจตัวเลือกและเรทที่ตรงกับงานให้ครับ";
+  return "ได้รับข้อความเพิ่มเติมแล้วครับ เปอร์จะตรวจข้อมูลให้ครับ";
 }
 
 export async function pushLinePublicMenu(input = {}, env = {}, request = null) {
