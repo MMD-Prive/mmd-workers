@@ -40,7 +40,7 @@ describe("same-site /member/liff shell", () => {
       assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
       assert.match(html, /กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี/);
       assert.match(html, /ระบบจะรวมสิทธิ์ให้เป็น 2 ปี/);
-      assert.match(html, /TMIB%20Bangkok\.webp/);
+      assert.match(html, /MMD%20Academy%20fback%20inside\.webp/);
       assert.match(html, /width="31" height="31"/);
       assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
       assert.match(html, /ENTER →/);
