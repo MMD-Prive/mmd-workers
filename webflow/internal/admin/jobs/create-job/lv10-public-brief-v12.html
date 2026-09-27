@@ -1,0 +1,73 @@
+<!-- Canonical Webflow snippet mirror for /internal/admin/jobs/create-job
+2026-09-27: plain Thai labels + checkbox-gated optional Public Job details. -->
+<div class='mmd-cj__subgrid' data-cj='publicJobWrap' hidden>
+<div class='mmd-cj__sectionLabel mmd-cj__wide'>รายละเอียดงาน Public</div>
+<label class='mmd-cj__field'>
+<span>ลักษณะงาน</span>
+<select class='mmd-cj__input' data-cj='publicFormat'>
+<option value=''>เลือกว่างานแบบไหน</option>
+<option value='dining'>ร่วมรับประทานอาหาร</option>
+<option value='event'>งานอีเวนต์</option>
+<option value='party'>ปาร์ตี้ / งานสังคม</option>
+<option value='travel'>เดินทาง / ทริป</option>
+<option value='guest_care'>ดูแลแขก / โฮสต์</option>
+<option value='social_appearance'>ร่วมออกงาน</option>
+<option value='brand_guest'>งานแบรนด์ / สื่อ</option>
+<option value='city_companion'>พาเที่ยว / ช้อปปิ้ง</option>
+<option value='other'>อื่น ๆ</option>
+</select>
+</label>
+<label class='mmd-cj__field'>
+<span>จำนวนนายแบบทั้งหมด</span>
+<input class='mmd-cj__input' type='number' min='1' max='20' step='1' inputmode='numeric' value='1' data-cj='publicModelCount'>
+</label>
+<label class='mmd-cj__field mmd-cj__wide'>
+<span>นายแบบต้องทำอะไร</span>
+<textarea class='mmd-cj__input mmd-cj__textarea' data-cj='publicDuties' placeholder='เช่น ร่วมโต๊ะอาหาร ดูแลแขก เดินทางด้วย ช่วยต้อนรับแขก'>
+</textarea>
+</label>
+<label class='mmd-cj__field'>
+<span>จำนวนลูกค้าทั้งหมด</span>
+<input class='mmd-cj__input' type='number' min='1' max='200' step='1' inputmode='numeric' data-cj='publicCustomerCount' placeholder='เช่น 8'>
+</label>
+<label class='mmd-cj__field'>
+<span>ต้องดูแลใกล้ชิดกี่คน</span>
+<input class='mmd-cj__input' type='number' min='0' max='200' step='1' inputmode='numeric' value='0' data-cj='publicCareCount'>
+</label>
+
+<div class='mmd-cj__sectionLabel mmd-cj__wide'>รายละเอียดเพิ่มเติม · ติ๊กเฉพาะที่ใช้</div>
+<p class='mmd-cj__hint mmd-cj__wide'>ไม่ติ๊ก = ไม่ต้องกรอก และระบบจะไม่ส่งรายละเอียดส่วนนั้น</p>
+
+<label class='mmd-cj__field mmd-cj__wide' style='display:flex;flex-direction:row;align-items:center;gap:10px;cursor:pointer;'>
+<input type='checkbox' data-cj='publicSpecialToggle' style='width:18px;height:18px;flex:0 0 auto;'>
+<span>มีคนที่ต้องดูแลเป็นพิเศษ</span>
+</label>
+<label class='mmd-cj__field mmd-cj__wide' data-cj='publicSpecialWrap' hidden>
+<span>ใคร และต้องใส่ใจเรื่องอะไร</span>
+<textarea class='mmd-cj__input mmd-cj__textarea' data-cj='publicSpecialGuests' placeholder='เช่น เจ้าตัว · ดูแลเป็นหลัก / คุณ A · แพ้อาหารทะเล'>
+</textarea>
+</label>
+
+<label class='mmd-cj__field mmd-cj__wide' style='display:flex;flex-direction:row;align-items:center;gap:10px;cursor:pointer;'>
+<input type='checkbox' data-cj='publicAssignmentToggle' style='width:18px;height:18px;flex:0 0 auto;'>
+<span>ต้องแบ่งหน้าที่ให้นายแบบแต่ละคน</span>
+</label>
+<label class='mmd-cj__field mmd-cj__wide' data-cj='publicAssignmentWrap' hidden>
+<span>แบ่งหน้าที่อย่างไร</span>
+<textarea class='mmd-cj__input mmd-cj__textarea' data-cj='publicAssignment' placeholder='เช่น คนหลักดูแลเจ้าตัว · คนที่ 2 ดูแลแขกโดยรวม'>
+</textarea>
+</label>
+
+<label class='mmd-cj__field mmd-cj__wide' style='display:flex;flex-direction:row;align-items:center;gap:10px;cursor:pointer;'>
+<input type='checkbox' data-cj='publicPresentationToggle' style='width:18px;height:18px;flex:0 0 auto;'>
+<span>มีข้อกำหนดเรื่องการแต่งตัวหรือภาพลักษณ์</span>
+</label>
+<label class='mmd-cj__field mmd-cj__wide' data-cj='publicPresentationWrap' hidden>
+<span>ต้องการลุคแบบไหน</span>
+<textarea class='mmd-cj__input mmd-cj__textarea' data-cj='publicPresentation' placeholder='เช่น ชุดแคชชวล ใส่น้ำหอม หล่อดูดี ไม่แต่งหน้าหนัก'>
+</textarea>
+</label>
+
+<p class='mmd-cj__hint mmd-cj__wide'>ถ้ามีนายแบบหลายคน คนที่เลือกในขั้นถัดไปจะเป็นนายแบบหลักของงานนี้</p>
+</div>
+
