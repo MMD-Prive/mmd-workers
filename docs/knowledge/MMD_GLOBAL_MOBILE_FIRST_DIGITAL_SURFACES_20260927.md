@@ -24,8 +24,9 @@ All pages should feel like the MMD Privé visual world, but the visible UI shoul
 
 ## Theme direction
 
-- Public/member/normal MMD Privé: warm ivory/soft bone, charcoal or black-glass structure, champagne-gold detail, and restrained wine/red accents. It should feel brighter, clearer, and more inviting than Private.
-- SIGIL/private: a distinct controlled world — deep black/charcoal, smoked glass, champagne gold, restrained cool-blue highlight, warm amber light, cinematic vignette, and less visible chrome. Private must not look like Public with only a darker background.
+- Public: warm ivory/soft bone, charcoal detail, restrained wine/red accents, and small champagne-gold detail. Brighter and more inviting.
+- MY MMD / Member: matte charcoal, champagne gold, ivory and warm amber; compact app/dashboard composition. Darker than Public but more open and service-oriented than SIGIL.
+- SIGIL/private: a distinct controlled world — deep black/charcoal, smoked glass, champagne gold, restrained cool-blue highlight, warm amber light, cinematic vignette, and less visible chrome. Private must not look like Member with only a darker background.
 - MMS: forest green remains when route-specific MMS rules require it, while preserving compact mobile-first structure.
 - Internal: owner-first dashboard, compact workspace, clear action zones, no long scattered forms.
 
@@ -117,6 +118,7 @@ For each affected page:
 - No raw URLs are visible in rendered copy.
 - No unnecessary brand-name wordmark is added.
 - Page uses correct world theme.
+- Public, Member, and Private use visibly different world treatments.
 - Private Job covers show labeled Budget and customer-gender chips.
 - Primary CTA is visible without long reading.
 - Route/system/debug language is hidden from customer/model surfaces.
