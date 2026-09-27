@@ -5489,8 +5489,23 @@ function effectivePrivateModelLane(profile, fields, selectedLane) {
   return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
 }
 
+function modelProfilePhotoUrls(fields = {}) {
+  const seen = new Set();
+  const out = [];
+  const add = (value) => {
+    const url = str(value?.url || value?.thumbnails?.large?.url || value?.thumbnails?.full?.url || value);
+    if (!url || seen.has(url)) return;
+    seen.add(url);
+    out.push(url);
+  };
+  for (const item of Array.isArray(fields.profile_photo) ? fields.profile_photo : []) add(item);
+  add(fields["Public Image URL"]);
+  return out.slice(0, 8);
+}
+
 function sanitizeCreateSessionModel(record, profile) {
   const fields = record.fields || {};
+  const profilePhotos = modelProfilePhotoUrls(fields);
   const folders = profile.bookingVisibility === "private"
     ? (profile.accessFolder ? [profile.accessFolder] : [])
     : profile.publicFolders.slice();
@@ -5501,6 +5516,8 @@ function sanitizeCreateSessionModel(record, profile) {
     model_id: record.id,
     model_name: str(fields.working_name || fields.display_name || fields.model_name || fields.nickname || fields.name || fields.Name),
     model_lookup_key: str(fields.model_lookup_key || fields.unique_key || fields.model_code),
+    profile_photos: profilePhotos,
+    profile_image_url: profilePhotos[0] || "",
     telegram_username: telegramConnected ? str(fields.telegram_username).replace(/^@/, "") : "",
     telegram_status: telegramConnected ? "verified" : (telegramStatus || "not_connected"),
     telegram_connected: telegramConnected,
