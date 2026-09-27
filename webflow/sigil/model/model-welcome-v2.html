@@ -1,0 +1,207 @@
+<script id="mmd-model-welcome-v2-runtime">/* MMD APP Model Welcome v2
+ * Presentation-only source mirror for Webflow page 6a04caa6fdf06182e2dd739c.
+ *
+ * Security boundary:
+ * - URL params, localStorage, DOM attributes, and browser-selected values never
+ *   select Private or Per-invite presentation.
+ * - Private / Per-invite variants require an authenticated profile response
+ *   carrying a server-resolved, subject-bound welcome_context.
+ * - This module does not grant Model, Private, booking, payment, membership, or
+ *   media access. Existing authorization remains Worker-owned.
+ */
+(function modelWelcomeV2(global) {
+  "use strict";
+
+  const LIFF_URL = "https://miniapp.line.me/2010864854-N34SgCqq/";
+  const PROFILE_URL = "/v1/model/profile";
+  const DASHBOARD_URL = "/sigil/model/dashboard";
+  const SIGIL_WALL_URL = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90/6a61b1d19a4570eb40235c4b_SigilWall.webp";
+
+  const COPY = Object.freeze({
+    self: Object.freeze({
+      eyebrow: "ข้อความจาก เปอร์ ·",
+      title: "สวัสดีครับ ยินดีที่ได้รู้จัก",
+      paragraphs: Object.freeze([
+        "ผมใช้ประสบการณ์กว่า 5 ปี + เขียนโค้ดอีก 1 ปีด้วยตัวเอง สร้างแอปและระบบนี้ เพื่อให้เราได้ทำงานด้วยกันอย่างสะดวกและง่ายขึ้นในอนาคต",
+        "ที่นี่ปลอดภัย และมีความเป็นส่วนตัวสูง เราจะเชื่อมโปรไฟล์ ประวัติงานใหม่ๆ ลูกค้าที่ใช้บริการ และรายได้จาก MMD ให้คุณกลับมาดูได้ในที่เดียว",
+        "MMD มีคนทำงานคนเดียวคือผม ไม่มีพาร์ทเนอร์ ไม่ใช่องค์กร ไม่มีลูกน้อง มีแต่ AI ที่ช่วยผมทำงาน",
+      ]),
+      signature: "— เปอร์",
+    }),
+    per_invite: Object.freeze({
+      eyebrow: "ข้อความจาก พี่เปอร์ ·",
+      title: "ยินดีต้อนรับอีกครั้ง และขอบคุณที่เป็นพลังงานที่ดี",
+      paragraphs: Object.freeze([
+        "พี่ใช้เวลากว่าปีสร้างแอปและระบบนี้ เพื่อให้การทำงานด้วยกันสะดวกและง่ายขึ้นในอนาคต",
+        "ที่นี่จะค่อย ๆ เชื่อมโปรไฟล์ ประวัติงานเก่า ลูกค้าที่เราเคยดูแลร่วมกัน และรายได้ย้อนหลังจาก MMD ให้คุณกลับมาดูได้ในที่เดียว",
+        "MMD มีคนทำงานคนเดียวคือพี่ ไม่มีพาร์ทเนอร์ ไม่มีผู้ช่วยอีกต่อไป มีแต่ AI กับคุณที่พี่ไว้ใจที่จะทำงานไปด้วยกัน",
+        "เดินทางกันต่อ ถ้าอยากพอก็บอกได้เสมอ",
+      ]),
+      signature: "— พี่เปอร์",
+    }),
+  });
+
+  function token(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function trustedContext(payload) {
+    const context = payload && payload.welcome_context;
+    if (!context || typeof context !== "object") return null;
+    if (context.authority !== "admin-worker") return null;
+    if (context.resolved !== true || context.subject_bound !== true) return null;
+    if (token(context.version) !== "model_welcome_v2") return null;
+    return context;
+  }
+
+  function resolveWelcomeVariant(payload) {
+    const context = trustedContext(payload);
+    if (!context) return Object.freeze({ lane: "public", entrySource: "self", trusted: false });
+
+    const declaredLane = token(context.model_lane);
+    const primaryLane = token(context.primary_welcome_lane);
+    const lane = declaredLane === "private"
+      ? "private"
+      : declaredLane === "both" && primaryLane === "private"
+        ? "private"
+        : "public";
+
+    const inviteTrusted = token(context.entry_source) === "per_invite"
+      && context.invite_verified === true
+      && context.invite_replay_safe === true;
+
+    return Object.freeze({
+      lane,
+      entrySource: inviteTrusted ? "per_invite" : "self",
+      trusted: true,
+    });
+  }
+
+  function liffTarget() {
+    const url = new URL(LIFF_URL);
+    url.searchParams.set("source", "model_login");
+    url.searchParams.set("return_to", "dashboard");
+    return url.toString();
+  }
+
+  function ensureStyle() {
+    if (document.getElementById("mmd-model-welcome-v2-style")) return;
+    const style = document.createElement("style");
+    style.id = "mmd-model-welcome-v2-style";
+    style.textContent = `
+      #mmd-model-welcome-v2{--bg:#f4efe5;--ink:#281f18;--muted:#675d52;--line:rgba(67,45,28,.18);--accent:#791d22;--button:#791d22;--button-ink:#fff8ef;position:relative;isolation:isolate;width:100%;min-height:100svh;overflow-x:hidden;background:var(--bg);color:var(--ink);font-family:Manrope,"Noto Sans Thai",system-ui,sans-serif}
+      #mmd-model-welcome-v2[data-lane="private"]{--bg:#0b0907;--ink:#fff7e8;--muted:#d8cbb9;--line:rgba(232,194,120,.28);--accent:#e3b85e;--button:#d7a844;--button-ink:#1a1207;background:#0b0907}
+      #mmd-model-welcome-v2 *{box-sizing:border-box}
+      #mmd-model-welcome-v2 .mw2-bg{position:absolute;inset:0;z-index:-2;background:radial-gradient(circle at 72% 10%,rgba(153,105,54,.2),transparent 40%),linear-gradient(160deg,#fbf7ee 0%,#e9dfcc 100%)}
+      #mmd-model-welcome-v2[data-lane="private"] .mw2-bg{background-image:linear-gradient(180deg,rgba(5,4,3,.38),rgba(5,4,3,.9)),url("${SIGIL_WALL_URL}");background-size:cover;background-position:center}
+      #mmd-model-welcome-v2 .mw2-shade{position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.46))}
+      #mmd-model-welcome-v2[data-lane="private"] .mw2-shade{background:linear-gradient(180deg,rgba(4,3,2,.12),rgba(4,3,2,.66) 46%,rgba(4,3,2,.9))}
+      #mmd-model-welcome-v2 .mw2-shell{width:min(100%,720px);min-height:100svh;margin:0 auto;padding:max(22px,env(safe-area-inset-top)) 22px max(26px,env(safe-area-inset-bottom));display:flex;flex-direction:column}
+      #mmd-model-welcome-v2 .mw2-brand{display:flex;align-items:center;gap:9px;min-height:34px;color:var(--ink);-webkit-text-fill-color:var(--ink);font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+      #mmd-model-welcome-v2 .mw2-mark{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);font:700 10px/1 Georgia,serif;color:var(--accent);-webkit-text-fill-color:var(--accent)}
+      #mmd-model-welcome-v2[data-lane="private"] .mw2-mark{display:none}
+      #mmd-model-welcome-v2 .mw2-copy{margin-top:auto;padding:42px 0 24px}
+      #mmd-model-welcome-v2 .mw2-eyebrow{margin:0 0 13px;color:var(--accent);-webkit-text-fill-color:var(--accent);font-size:11px;font-weight:800;letter-spacing:.12em}
+      #mmd-model-welcome-v2 h1{margin:0;color:var(--ink);-webkit-text-fill-color:var(--ink);font:700 clamp(30px,9vw,54px)/1.08 Manrope,"Noto Sans Thai",sans-serif;letter-spacing:-.045em;text-wrap:balance}
+      #mmd-model-welcome-v2 .mw2-body{margin-top:25px;display:grid;gap:14px}
+      #mmd-model-welcome-v2 .mw2-body p{margin:0;color:var(--muted);-webkit-text-fill-color:var(--muted);font:500 15px/1.72 "Noto Sans Thai",Manrope,sans-serif}
+      #mmd-model-welcome-v2 .mw2-signature{margin:18px 0 0;color:var(--ink);-webkit-text-fill-color:var(--ink);font-weight:750;font-size:14px}
+      #mmd-model-welcome-v2 .mw2-actions{display:grid;gap:10px;padding-top:10px}
+      #mmd-model-welcome-v2 .mw2-verify{width:min(215px,100%);min-height:44px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;padding:0 18px;background:var(--button);border:1px solid color-mix(in srgb,var(--button),#fff 16%);color:var(--button-ink)!important;-webkit-text-fill-color:var(--button-ink)!important;text-decoration:none!important;font-size:12px;font-weight:800;letter-spacing:.02em;box-shadow:0 12px 32px rgba(55,25,15,.18)}
+      #mmd-model-welcome-v2 .mw2-status{min-height:21px;margin:0;color:var(--muted);-webkit-text-fill-color:var(--muted);font-size:11px;line-height:1.55}
+      #mmd-model-welcome-v2 .mw2-status[data-tone="error"]{color:#9e292f;-webkit-text-fill-color:#9e292f}
+      #mmd-model-welcome-v2[data-lane="private"] .mw2-status[data-tone="error"]{color:#ffd3ca;-webkit-text-fill-color:#ffd3ca}
+      #mmd-model-welcome-v2 .mw2-disclosure{margin-top:16px;border-top:1px solid var(--line);padding-top:14px}
+      #mmd-model-welcome-v2 .mw2-disclosure summary{cursor:pointer;color:var(--ink);-webkit-text-fill-color:var(--ink);font-size:12px;font-weight:750}
+      #mmd-model-welcome-v2 .mw2-disclosure p{margin:9px 0 0;color:var(--muted);-webkit-text-fill-color:var(--muted);font-size:12px;line-height:1.6}
+      @media(max-width:359px){#mmd-model-welcome-v2 .mw2-shell{padding-left:16px;padding-right:16px}#mmd-model-welcome-v2 .mw2-copy{padding-top:30px}#mmd-model-welcome-v2 h1{font-size:29px}}
+      @media(min-width:760px){#mmd-model-welcome-v2 .mw2-shell{padding-left:42px;padding-right:42px}#mmd-model-welcome-v2 .mw2-copy{padding-bottom:36px}}
+      @media(prefers-reduced-motion:reduce){#mmd-model-welcome-v2 *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+      #mmd-model-welcome-v2,#mmd-model-welcome-v2 .mw2-brand,#mmd-model-welcome-v2 h1,#mmd-model-welcome-v2 .mw2-body p,#mmd-model-welcome-v2 .mw2-signature,#mmd-model-welcome-v2 .mw2-status,#mmd-model-welcome-v2 .mw2-disclosure summary,#mmd-model-welcome-v2 .mw2-disclosure p{background-image:none!important;text-shadow:none}
+      body:has(#mmd-model-welcome-v2)>:not(#mmd-model-welcome-v2):not(.w-embed){display:none!important}
+      html:has(#mmd-model-welcome-v2),body:has(#mmd-model-welcome-v2){margin:0!important;width:100%!important;max-width:none!important;overflow-x:hidden!important;background:var(--bg,#f4efe5)!important}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function render(payload) {
+    const variant = resolveWelcomeVariant(payload);
+    const content = COPY[variant.entrySource];
+    ensureStyle();
+
+    let root = document.getElementById("mmd-model-welcome-v2");
+    if (!root) {
+      root = document.createElement("main");
+      root.id = "mmd-model-welcome-v2";
+      document.body.prepend(root);
+    }
+    root.dataset.lane = variant.lane;
+    root.dataset.entrySource = variant.entrySource;
+    root.innerHTML = `
+      <div class="mw2-bg" aria-hidden="true"></div><div class="mw2-shade" aria-hidden="true"></div>
+      <div class="mw2-shell">
+        <div class="mw2-brand"><span class="mw2-mark" aria-hidden="true">M</span><span>${variant.lane === "private" ? "SĪGIL system" : "MMD APP"}</span></div>
+        <section class="mw2-copy" aria-labelledby="mw2-title">
+          <p class="mw2-eyebrow"></p><h1 id="mw2-title"></h1><div class="mw2-body"></div><p class="mw2-signature"></p>
+        </section>
+        <div class="mw2-actions">
+          <a class="mw2-verify" data-model-login-v2 href="${liffTarget()}">ยืนยันตัวตนด้วย LINE</a>
+          <p class="mw2-status" role="status" aria-live="polite">LINE เป็นบัญชีหลัก ระบบจะตรวจสิทธิ์จากข้อมูลที่ MMD ยืนยันแล้ว</p>
+        </div>
+        <details class="mw2-disclosure"><summary>ข้อมูลที่จะแสดงหลังยืนยัน</summary><p>ระบบแสดงเฉพาะโปรไฟล์ ประวัติ และสถานะที่ backend ของ MMD ยืนยันแล้ว หากยังไม่มีข้อมูล ระบบจะแสดงสถานะตามจริง</p></details>
+      </div>`;
+    root.querySelector(".mw2-eyebrow").textContent = content.eyebrow;
+    root.querySelector("h1").textContent = content.title;
+    root.querySelector(".mw2-signature").textContent = content.signature;
+    const body = root.querySelector(".mw2-body");
+    content.paragraphs.forEach((value) => {
+      const paragraph = document.createElement("p");
+      paragraph.textContent = value;
+      body.appendChild(paragraph);
+    });
+    return variant;
+  }
+
+  async function boot() {
+    render(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    try {
+      const response = await fetch(PROFILE_URL, {
+        credentials: "include",
+        cache: "no-store",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (response.status === 401 || response.status === 403) return;
+      if (!response.ok) throw new Error("profile_unavailable");
+      const payload = await response.json();
+      render(payload && payload.ok === true ? payload : null);
+      if (payload && payload.ok === true) {
+        const action = document.querySelector("#mmd-model-welcome-v2 .mw2-verify");
+        action.removeAttribute("data-model-login-v2");
+        action.href = DASHBOARD_URL;
+        action.textContent = "เข้าสู่ Dashboard";
+        document.querySelector("#mmd-model-welcome-v2 .mw2-status").textContent =
+          "ยืนยัน LINE แล้ว อ่านข้อความจากเปอร์ก่อน แล้วกดเข้าสู่ Dashboard ได้เลย";
+      }
+    } catch (error) {
+      const status = document.querySelector("#mmd-model-welcome-v2 .mw2-status");
+      status.dataset.tone = "error";
+      status.textContent = error && error.name === "AbortError"
+        ? "ตรวจสถานะใช้เวลานาน คุณยืนยันผ่าน LINE ต่อได้ หรือลองเปิดหน้านี้ใหม่"
+        : "ยังตรวจสถานะไม่ได้ คุณยืนยันผ่าน LINE ต่อได้ หรือลองอีกครั้ง";
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  const api = Object.freeze({ COPY, resolveWelcomeVariant, trustedContext });
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  if (global) global.MMDModelWelcomeV2 = api;
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+    else boot();
+  }
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
