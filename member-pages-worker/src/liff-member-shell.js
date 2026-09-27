@@ -159,19 +159,41 @@ function renderShell(config, nonce) {
     body.world-private .welcome-benefits{color:#e1d1b5}.world-private .welcome-benefits li::before{color:#e5bf72}
     .per-letter{max-width:680px;margin-top:18px;border-top:1px solid currentColor;padding-top:13px;color:inherit}
     .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
-    body.context-resolving .intro-screen{visibility:hidden}
+    /* MY MMD customer welcome: member world only, before the board. */
+    body:not(.signup-mode):not(.app-entered){background:#171715;color:#f4ede1}
+    body:not(.signup-mode):not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
+    body:not(.signup-mode):not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
+    .welcome-hero{position:relative;min-height:178px;background:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cead27f3ee081d057794_TMIB%20Bangkok.webp") center 54%/cover no-repeat}
+    .welcome-brand{position:absolute;left:26px;bottom:22px;display:flex;align-items:center;gap:10px;min-width:0}.welcome-logo{display:grid;width:31px;height:31px;place-items:center;overflow:hidden;border-radius:5px;background:#090909}.welcome-logo img{display:block;width:31px;height:31px;object-fit:contain}.welcome-brand strong{display:block;color:#f4ede1;font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:400;line-height:1.05;letter-spacing:.01em}.welcome-brand small{display:block;margin-top:4px;color:rgba(244,237,225,.68);font-size:9px;line-height:1.1;letter-spacing:.08em}
+    .welcome-letter{padding:26px 26px max(42px,env(safe-area-inset-bottom))}.my-mmd-welcome .mark{color:#c9a866;font-size:10px;letter-spacing:.14em}.my-mmd-welcome .title{max-width:680px;margin:10px 0 7px;color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-size:clamp(30px,9vw,48px);font-weight:400;line-height:1.12;letter-spacing:-.025em}.my-mmd-welcome .sub{max-width:680px;margin:0;color:rgba(244,237,225,.68);font-size:13px;line-height:1.55}
+    .my-mmd-welcome #message{max-width:680px;margin:18px 0 0;padding:12px 14px;border:1px solid rgba(201,168,102,.28);border-left:2px solid #c9a866;border-radius:0 8px 8px 0;background:rgba(201,168,102,.07);color:#eadcc1;font-size:13px;line-height:1.65}
+    .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
+    .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
+    body.context-resolving .my-mmd-welcome{visibility:visible}body.context-resolving .my-mmd-welcome .intro-continue{opacity:.55}
+    @media(max-width:430px){.welcome-hero{min-height:178px}.welcome-letter{padding:24px 26px max(38px,env(safe-area-inset-bottom))}.my-mmd-welcome .per-letter-copy{font-size:16px;line-height:1.65}.my-mmd-welcome .intro-continue{width:195px;max-width:100%}}
+    @media(max-width:340px){.welcome-hero{min-height:168px}.welcome-brand{left:24px;bottom:20px}.welcome-letter{padding-left:24px;padding-right:24px}.my-mmd-welcome .per-letter-copy{font-size:15px}}
+    @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
+    body.context-resolving .intro-screen{visibility:visible}
   </style>
 </head>
 <body class="${config.intent === "signup" ? "signup-mode " : "context-resolving "}world-${config.world}" data-world="${config.world}">
 <main>
-  <section id="intro-screen" class="intro-screen" aria-labelledby="intro-title">
-    <div class="mark" data-copy="mark">MMD Privé · Member Access</div>
-    <h1 id="intro-title" class="title" data-copy="title">My MMD</h1>
-    <p class="sub" data-copy="subtitle">ดูสถานะสมาชิก คะแนน และสิทธิ์ของคุณได้ใน LINE ที่เดียว</p>
-    <div id="message" role="status" aria-live="polite">กำลังตรวจสอบการเชื่อมต่อที่ปลอดภัย</div>
-    <ul id="welcome-benefits" class="welcome-benefits" aria-label="สิ่งที่ทำได้ในแอป"><li>ค้นหาโมเดลที่ตรงใจ</li><li>ส่งคำขอจองและชำระผ่านขั้นตอนเดิม</li><li>ติดตามงานและ ETA ในที่เดียว</li></ul>
-    <button id="intro-continue" class="intro-continue" type="button" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
-    <details id="per-letter" class="per-letter"><summary>จดหมายจากเปอร์</summary><div id="per-letter-copy" class="per-letter-copy"></div></details>
+  <section id="intro-screen" class="intro-screen my-mmd-welcome" aria-labelledby="intro-title">
+    <div class="welcome-hero">
+      <div class="welcome-brand">
+        <span class="welcome-logo"><img src="https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6a6c4486e7585ba74ab2eeb1_MMD_Prive%CC%81_logo_signature_transparent%20Final.webp" alt="MMD Privé" width="31" height="31"></span>
+        <span><strong>MY MMD</strong><small>MMD PRIVÉ · MEMBER APP</small></span>
+      </div>
+    </div>
+    <div class="welcome-letter">
+      <div class="mark" data-copy="mark">MMD PRIVÉ · MY MMD</div>
+      <h1 id="intro-title" class="title" data-copy="title">ยินดีที่ได้รู้จัก</h1>
+      <p class="sub" data-copy="subtitle">MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์</p>
+      <div id="message" class="welcome-context-note hidden" role="status" aria-live="polite"></div>
+      <div id="per-letter" class="per-letter"><div id="per-letter-copy" class="per-letter-copy"></div></div>
+      <div class="welcome-divider" aria-hidden="true"></div>
+      <button id="intro-continue" class="intro-continue" type="button" aria-label="เข้าสู่บอร์ดสมาชิก MY MMD" aria-expanded="false" disabled>กำลังตรวจสอบ…</button>
+    </div>
   </section>
   <div id="app-status" class="app-status" role="status" aria-live="polite"></div>
   <div id="actions" class="actions" aria-label="ตัวเลือก"></div>
@@ -309,37 +331,32 @@ function renderShell(config, nonce) {
 
   document.documentElement.lang = locale === "zh" ? "zh-CN" : locale;
   const resolveTrustedWelcomeWorldInBrowser = (${resolveTrustedWelcomeWorld.toString()});
-  const WORLD_COPY = {
-    public: {
-      mark: "MMD PRIVÉ · MY MMD",
-      title: "ยินดีที่ได้รู้จัก",
-      subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์",
-      message: "พื้นที่สาธารณะของ MMD สำหรับค้นหา ส่งคำขอ และติดตามบริการของคุณ"
-    },
-    private: {
-      mark: "SIGIL SYSTEM · PRIVATE ACCESS",
-      title: "SIGIL system",
-      subtitle: "Private member application",
-      message: "พื้นที่ Private สำหรับสมาชิกที่ระบบ MMD ยืนยันสิทธิ์แล้ว"
-    }
+  const WELCOME_COPY = {
+    new: { title: "ยินดีที่ได้รู้จัก", subtitle: "MY MMD · แอปที่ออกแบบจากประสบการณ์จริงของเปอร์", note: "", letter: "ยินดีที่ได้รู้จัก\n\nMY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา และจากสิ่งที่เปอร์ค้นพบว่า ในยุคที่กำลังย่างเข้าสู่ปี 2027 โลกไปไกลมากแล้ว การมีระบบดูแลที่ดีจึงเป็นสิ่งที่ปลอดภัยที่สุด\n\nการใช้งานของคุณจะสะดวกขึ้น ค้นหาได้ง่ายขึ้น ตอบโจทย์ขึ้น และได้รับความสุขมากขึ้น\n\nที่นี่คุณสามารถใช้ค้นหา รับข่าวสาร รวมถึงบริการจองและจ่ายเงิน แล้วออกไปมีความสุขโดยไม่ต้องพะวงว่าจะมีเหตุการณ์เซอร์ไพรส์ ด้วยระบบ ETA นับถอยหลังนายแบบ การบรีฟงานที่เป็นลายลักษณ์อักษรอย่างชัดเจน รวมถึงรูปที่อัปเดตที่สุดจากน้อง ๆ เช่นกัน\n\nขอให้มีความสุข\nเปอร์" },
+    existing: { title: "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว", subtitle: "MY MMD · ขอบคุณที่ยังอยู่และยังรอ", note: "กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี ทั้งสมาชิกปัจจุบันและสมาชิกที่หมดอายุแล้ว เมื่อสมัครหรือต่ออายุอีกครั้ง ระบบจะรวมสิทธิ์ให้เป็น 2 ปี", letter: "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว\n\nเปอร์หายไปนานจริง ๆ\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\n\nถึงจะยังเห็นอัปเดตกันอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\n\nเปอร์ไม่ได้หายไปติดผู้ชายนะครับ 5555\nแต่ใช้เวลาปีกว่า ๆ ศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมาจากที่ทำไม่เป็นเลย\n\nจริงๆแล้วเราจะทำงานกันแบบเดิมก็ได้ ที่ต้องมานั่งจ้องมือถือกัน\nเมื่อไหร่จะจองสักทีวะ เมื่อไหร่จะตอบสักที\n(อุ๊ย! ขออภัยที่คิดดัง) เมื่อไหร่จะตอบซักที ถามไป หายไม่มีคนตอบ\nมีใครสะดวกบ้างก็ไม่รุ้ แล้วรำคาญกันไหม AI เปอร์ก็รำคาญนะ 555\n\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท และทำทุกอย่างด้วยตัวเอง\nเพื่อให้ทุกคนค้นหา จอง จ่าย และติดตามงานกับ MMD ได้สะดวกและปลอดภัยขึ้น\n\nมันอาจยังไม่สมบูรณ์ทั้งหมดในวันนี้\nแต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\n\nขอบคุณที่ยังอยู่\nขอบคุณที่ยังรอ\n\nเปอร์เองครับ" },
   };
   function detectWorld(data, authority) {
     return resolveTrustedWelcomeWorldInBrowser(data, authority);
   }
-  function applyWorldTheme(data, authority = "") {
+  function resolveWelcomeAudience(data, authority) {
+    return authority === "canonical_member_profile" && data?.audience === "existing" ? "existing" : "new";
+  }
+  function applyWorldTheme(data, authority = "", audienceAuthority = "") {
     const world = detectWorld(data, authority);
+    const audience = resolveWelcomeAudience(data, audienceAuthority);
+    const welcomeCopy = WELCOME_COPY[audience];
     document.body.classList.toggle("world-public", world === "public");
     document.body.classList.toggle("world-private", world === "private");
     document.body.dataset.world = world;
-    const worldCopy = WORLD_COPY[world];
-    document.querySelector(".mark").textContent = worldCopy.mark;
-    document.querySelector(".title").textContent = worldCopy.title;
-    document.querySelector(".sub").textContent = worldCopy.subtitle;
-    message.textContent = worldCopy.message;
-    if (introContinue) introContinue.textContent = world === "private" ? "เข้าสู่ SIGIL system" : "เข้าสู่ MY MMD";
+    document.body.dataset.welcomeAudience = audience;
+    document.querySelector(".mark").textContent = "MMD PRIVÉ · MY MMD";
+    document.querySelector(".title").textContent = welcomeCopy.title;
+    document.querySelector(".sub").textContent = welcomeCopy.subtitle;
+    message.textContent = welcomeCopy.note;
+    message.classList.toggle("hidden", !welcomeCopy.note);
+    document.getElementById("per-letter-copy").textContent = welcomeCopy.letter;
+    if (introContinue) introContinue.textContent = "ENTER →";
   }
-  const PER_LETTER = "ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว\\nเปอร์หายไปนานจริง ๆ\\n(จริง ๆ ไม่นานหรอก…นานมากกก!!)\\nถึงจะยังเห็นอัปเดตอยู่เรื่อย ๆ แต่เมื่อก่อนเปอร์อัปเดตถี่กว่านี้มาก\\nเปอร์อยากบอกทุกคนว่า เปอร์ไม่ได้หายไปติดผู้ชายนะครับ\\nไม่ได้หายไปไหน แต่ใช้เวลาเกือบปีศึกษา เรียนรู้ และสร้างแอปกับระบบนี้ขึ้นมา\\nเปอร์ทำเหมือนเดิมก็ได้ คือต้องมานั่งจ้องมือถือ\\nเมื่อไหร่จะจองซักทีวะ เมื่อไหร่จะตอบซักที (อุ๊ย! ขออภัยที่คิดดัง)\\nแต่เปอร์เลือกลงทุนเกือบสองแสนบาท ในการทำเองทุกอย่างหมด\\nเพื่อให้ทุกคนค้นหา จอง จ่าย ติดตามงาน\\nและใช้บริการกับ MMD ได้สะดวกและปลอดภัยขึ้น\\nมันอาจยังไม่สมบูรณ์ทั้งหมด แต่ทุกอย่างที่ทำ เปอร์ตั้งใจทำเพื่อพวกคุณจริง ๆ\\nขอบคุณที่ยังอยู่\\nขอบคุณที่ยังรอ\\nเปอร์เองครับ";
-  document.getElementById("per-letter-copy").textContent = PER_LETTER;
   applyWorldTheme();
   let welcomeContextPromise;
   async function resolveInitialWelcomeContext() {
@@ -356,7 +373,7 @@ function renderShell(config, nonce) {
         response = await fetch(CONFIG.welcomeContextEndpoint, { method: "GET", credentials: "same-origin", redirect: "error", headers: { accept: "application/json" }, signal: controller.signal });
       } finally { clearTimeout(timeout); }
       const payload = await response.json().catch(() => null);
-      if (response.ok && payload?.ok === true) applyWorldTheme(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+      if (response.ok && payload?.ok === true) applyWorldTheme(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "", response.headers.get("x-mmd-welcome-audience-authority") || "");
     } catch {
       // Missing, stale, ambiguous, or unavailable identity evidence remains Public.
     } finally {
@@ -392,7 +409,6 @@ function renderShell(config, nonce) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
   }
-  applyWorldTheme();
   if (CONFIG.intent === "signup") {
     document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
     document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
