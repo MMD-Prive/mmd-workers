@@ -171,7 +171,7 @@ test("verified LIFF member links an existing public Wish, receives coupon, and k
           claim_status: "identity_verified",
           review_status: "pending",
           coupon_state: "wish_required",
-          membership_benefit: { type: "membership_extension", days: 180, state: "pending_application" },
+          membership_benefit: { type: "membership_extension", days: 365, state: "pending_application" },
           points_policy: { rate_thb_per_point: 100, renewal_bonus_points: 0, reconciliation_state: "pending" },
           wish_submitted: true,
         };
