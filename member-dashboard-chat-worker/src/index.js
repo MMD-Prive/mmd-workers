@@ -834,7 +834,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "care_back_expired_member") {
-    return `${prefix}สมาชิกเดิมที่หมดอายุต้องต่ออายุหรือชำระ และให้ MMD ยืนยันจนสถานะกลับเป็น active หรือ grace ก่อนครับ จากนั้นจึงเข้าเกณฑ์ CARE BACK เพิ่มอายุ 90 วันและ 150 Points ข้อความนี้ยังไม่ใช่การยืนยันสิทธิ์หรือยอดชำระครับ`;
+    return `${prefix}สมาชิกเดิมที่หมดอายุ ถ้า Verify ตรงกับบัญชีเดิมสำเร็จ จะได้รับสิทธิ์สมาชิกเพิ่ม 1 ปีจากวัน Verify ครับ ส่วน +150 Points ยังเป็นสิทธิ์แยกที่เกิดหลังการต่ออายุหรือชำระที่ MMD ตรวจยืนยันแล้ว`;
   }
 
   if (intent === "care_back_new_standard") {
