@@ -830,7 +830,7 @@ export function buildKenjiLineReply(event = {}, profile = {}, options = {}) {
   }
 
   if (intent === "care_back_current_member") {
-    return `${prefix}สมาชิกที่มีสถานะ active หรือ grace เมื่อ MMD ตรวจสถานะและวันหมดอายุจริงแล้ว นโยบาย CARE BACK คือขยายอายุสมาชิก 180 วันจากวันหมดอายุจริงครับ ข้อความนี้ยังไม่ใช่การยืนยันว่าได้เพิ่มวันแล้ว`;
+    return `${prefix}สมาชิกเดิมที่มีสถานะ active หรือ grace เมื่อ Verify ตรงกับบัญชีเดิมแล้ว จะได้รับสิทธิ์ต่อสมาชิกเพิ่ม 1 ปีจากวันหมดอายุจริงครับ ระบบต้องยืนยัน canonical identity ก่อนจึงจะบันทึกสิทธิ์`;
   }
 
   if (intent === "care_back_expired_member") {
