@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
   isMmdRichMenuHidden,
   classifyMmdUsers,
@@ -10,7 +11,102 @@ import {
   getMmdRichMenuFiveStateMatrix,
   isMmdRichMenuScheduledRequest,
   handleMmdRichMenuScheduledRequest,
+  prepareMmdRichMenus,
 } from "../src/mmd-rich-menu-scheduled-runtime.mjs";
+
+function pngFixture(bytes, marker = 0) {
+  const buffer = Buffer.alloc(bytes);
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(buffer, 0);
+  buffer.writeUInt32BE(1080, 16);
+  buffer.writeUInt32BE(728, 20);
+  buffer[buffer.length - 1] = marker;
+  return buffer;
+}
+
+function sha256(buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function bounds(width, height, frame, index) {
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  const x0 = Math.round(width * frame.left);
+  const x1 = Math.round(width * frame.right);
+  const y0 = Math.round(height * frame.top);
+  const y1 = Math.round(height * frame.bottom);
+  const xs = x0 + Math.round((x1 - x0) * col / 3);
+  const xe = x0 + Math.round((x1 - x0) * (col + 1) / 3);
+  const ys = y0 + Math.round((y1 - y0) * row / 2);
+  const ye = y0 + Math.round((y1 - y0) * (row + 1) / 2);
+  return { x: xs, y: ys, width: Math.max(1, xe - xs), height: Math.max(1, ye - ys) };
+}
+
+function menuRow(id, spec) {
+  return {
+    richMenuId: id,
+    size: { width: 1080, height: 728 },
+    selected: false,
+    name: spec.name,
+    chatBarText: "MMD",
+    areas: spec.actions.map((action, index) => ({ bounds: bounds(1080, 728, spec.frame, index), action })),
+  };
+}
+
+function menuSpecs(canonical, expectedHash = sha256(canonical)) {
+  const frame = { left: .43, top: .15, right: .99, bottom: .76 };
+  const action = { type: "message", label: "TEST", text: "test" };
+  return {
+    guest: { name: "MMD Guest test", frame, images: ["https://assets.example/guest.png"], actions: [action] },
+    public: { name: "MMD Public test", frame, images: ["https://assets.example/public.png"], actions: [action] },
+    private: {
+      name: "MMD Private test",
+      repairName: "MMD Private test artwork-approved",
+      frame,
+      images: [{ url: "https://assets.example/private.png", bytes: canonical.byteLength, sha256: expectedHash }],
+      actions: [action],
+    },
+  };
+}
+
+function installRichMenuFetch(specs, canonical, livePrivate) {
+  const rows = [
+    menuRow("guest-id", specs.guest),
+    menuRow("public-id", specs.public),
+    menuRow("private-old-id", specs.private),
+  ];
+  const images = new Map([["private-old-id", livePrivate]]);
+  const calls = [];
+  let created = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init = {}) => {
+    const url = String(input);
+    const method = String(init.method || "GET").toUpperCase();
+    calls.push({ url, method });
+    if (url.endsWith("/v2/bot/richmenu/list")) return Response.json({ richmenus: rows });
+    if (url === "https://assets.example/private.png") return new Response(canonical, { status: 200 });
+    if (url.includes("api-data.line.me/v2/bot/richmenu/") && method === "GET") {
+      const id = decodeURIComponent(url.split("/richmenu/")[1].split("/content")[0]);
+      return new Response(images.get(id) || Buffer.alloc(0), { status: images.has(id) ? 200 : 404 });
+    }
+    if (url.endsWith("/v2/bot/richmenu") && method === "POST") {
+      created += 1;
+      const richMenuId = `created-${created}`;
+      rows.push({ richMenuId, ...JSON.parse(String(init.body)) });
+      return Response.json({ richMenuId });
+    }
+    if (url.includes("api-data.line.me/v2/bot/richmenu/") && method === "POST") {
+      const id = decodeURIComponent(url.split("/richmenu/")[1].split("/content")[0]);
+      images.set(id, Buffer.from(init.body));
+      return new Response("", { status: 200 });
+    }
+    throw new Error(`unexpected fetch ${method} ${url}`);
+  };
+  return {
+    calls,
+    rows,
+    restore() { globalThis.fetch = originalFetch; },
+  };
+}
 
 test("MMD Rich Menu remains available at every Bangkok hour", () => {
   for (let hour = 0; hour < 24; hour += 1) {
@@ -99,6 +195,50 @@ test("unverified known customer maps to Guest", () => {
 test("current production object version preserves the approved LV1 v4.1 artwork", () => {
   assert.equal(getMmdRichMenuVersion(), "mmd-rm3-20260924-v4.6");
   assert.ok(getMmdRichMenuImageSources().guest.every((url) => url.includes("Guest%20v4.1%20LINE.png")));
+});
+
+test("Private artwork sources are immutable S3 versions", () => {
+  const sources = getMmdRichMenuImageSources().private;
+  assert.equal(sources.length, 1);
+  assert.ok(sources.every((url) => new URL(url).searchParams.has("versionId")));
+});
+
+test("prepare replaces a same-name Private menu with wrong artwork without touching Guest or Public", async () => {
+  const canonical = pngFixture(4096, 1);
+  const wrong = pngFixture(4096, 2);
+  const specs = menuSpecs(canonical);
+  const mock = installRichMenuFetch(specs, canonical, wrong);
+  try {
+    const first = await prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs });
+    assert.equal(first.menu_names.private, specs.private.repairName);
+    assert.equal(mock.rows.filter((row) => row.name === specs.private.repairName).length, 1);
+    assert.equal(mock.rows.filter((row) => row.name === specs.guest.name).length, 1);
+    assert.equal(mock.rows.filter((row) => row.name === specs.public.name).length, 1);
+    assert.equal(mock.calls.filter((call) => call.method === "POST" && call.url.endsWith("/v2/bot/richmenu")).length, 1);
+    assert.equal(mock.calls.some((call) => call.url.endsWith("/user/all/richmenu")), false);
+    assert.equal(mock.calls.some((call) => call.url.includes("/bulk/")), false);
+
+    await prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs });
+    assert.equal(mock.calls.filter((call) => call.method === "POST" && call.url.endsWith("/v2/bot/richmenu")).length, 1);
+  } finally {
+    mock.restore();
+  }
+});
+
+test("prepare fails closed when a pinned Private source changes bytes", async () => {
+  const canonical = pngFixture(4096, 1);
+  const wrong = pngFixture(4096, 2);
+  const specs = menuSpecs(canonical, sha256(wrong));
+  const mock = installRichMenuFetch(specs, canonical, wrong);
+  try {
+    await assert.rejects(
+      prepareMmdRichMenus({ LINE_CHANNEL_ACCESS_TOKEN: "test" }, { menuSpecs: specs }),
+      /image_integrity_mismatch/,
+    );
+    assert.equal(mock.calls.some((call) => call.method === "POST" && call.url.endsWith("/v2/bot/richmenu")), false);
+  } finally {
+    mock.restore();
+  }
 });
 
 test("five-state resolver matrix never grants Private to expired or blocked users", () => {

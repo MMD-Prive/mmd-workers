@@ -13,6 +13,8 @@ const THREE_LEVEL_ACTIVATE_PATH = "/v1/internal/line/rich-menu/three-level/activ
 const THREE_LEVEL_AUDIT_PATH = "/v1/internal/line/rich-menu/three-level/audit";
 const VERSION = "mmd-rm3-20260924-v4.6";
 const ROOT = "https://s3.amazonaws.com/webflow-prod-assets/68f879d546d2f4e2ab186e90";
+const PRIVATE_PRIMARY_SHA256 = "afc7a024ab6bca40d873aca18f17c0de5be56f6bfc4c701dffd9c75c870b9620";
+const PRIVATE_REPAIR_NAME = `MMD Private ${VERSION} artwork-${PRIVATE_PRIMARY_SHA256.slice(0, 8)}`;
 
 function clean(v) { return String(v == null ? "" : v).trim(); }
 function token(v) { return clean(v).toLowerCase().replace(/[\s-]+/g, "_"); }
@@ -63,9 +65,13 @@ const MENUS = Object.freeze({
     // active cells are the right-side 3×2 grid only; a full-canvas grid made
     // taps on the character trigger the wrong action.
     frame: { left: .43, top: .15, right: .99, bottom: .76 },
+    repairName: PRIVATE_REPAIR_NAME,
     images: [
-      `${ROOT}/6a9ef89de09b20e8750bdf5d_Rich%20Menu%20Private-p-1080.png`,
-      `${ROOT}/6a9ef89de09b20e8750bdf5d_Rich%20Menu%20Private-p-800.png`,
+      {
+        url: `${ROOT}/6a9ef89de09b20e8750bdf5d_Rich%20Menu%20Private-p-1080.png?versionId=pf8SCzdglxtzEEhD1obnZYhmsY.7rzvJ`,
+        bytes: 439105,
+        sha256: PRIVATE_PRIMARY_SHA256,
+      },
     ],
     actions: [
       postback("KENJI AI", "mmd_action=kenji_ai&audience=private&source=private_rich_menu"),
@@ -88,7 +94,7 @@ export function getMmdRichMenuActionMap() {
 export function getMmdRichMenuImageSources() {
   return Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [
     key,
-    [...spec.images],
+    spec.images.map((source) => imageSource(source).url),
   ]));
 }
 
@@ -172,16 +178,39 @@ function draft(spec, width, height) {
   return { size: { width, height }, selected: false, name: spec.name, chatBarText: "MMD", areas: spec.actions.map((action, i) => ({ bounds: area(width, height, spec.frame, i), action })) };
 }
 
+function imageSource(source) {
+  if (typeof source === "string") return { url: source, bytes: 0, sha256: "" };
+  return {
+    url: clean(source?.url),
+    bytes: Number(source?.bytes || 0),
+    sha256: clean(source?.sha256).toLowerCase(),
+  };
+}
+
+async function imageIntegrity(buffer, source) {
+  const descriptor = imageSource(source);
+  const digest = await sha256Hex(buffer);
+  return {
+    ok: (!descriptor.bytes || descriptor.bytes === buffer.byteLength) &&
+      (!descriptor.sha256 || descriptor.sha256 === digest),
+    bytes: buffer.byteLength,
+    sha256: digest,
+  };
+}
+
 function lineHeaders(env, extra = {}) { const t = clean(env.LINE_CHANNEL_ACCESS_TOKEN); if (!t) throw new Error("line_channel_access_token_missing"); return { authorization: `Bearer ${t}`, ...extra }; }
 async function line(env, url, init = {}, allowed = []) { const r = await fetch(url, { ...init, headers: { ...lineHeaders(env), ...(init.headers || {}) } }); const raw = await r.text(); let body = null; try { body = raw ? JSON.parse(raw) : null; } catch { body = raw; } if (!r.ok && !allowed.includes(r.status)) throw new Error(`line_${r.status}:${clean(body?.message || body).slice(0,160)}`); return { r, body }; }
 
 async function imageFor(spec) {
   let why = "image_unavailable";
-  for (const url of spec.images) {
-    const r = await fetch(url).catch(() => null); if (!r?.ok) { why = `image_http_${r?.status || 0}`; continue; }
+  for (const source of spec.images) {
+    const descriptor = imageSource(source);
+    const r = await fetch(descriptor.url).catch(() => null); if (!r?.ok) { why = `image_http_${r?.status || 0}`; continue; }
     const buffer = await r.arrayBuffer(); if (buffer.byteLength > MAX_IMAGE_BYTES) { why = `image_too_large_${buffer.byteLength}`; continue; }
     const size = pngSize(buffer); if (!size) { why = "image_not_png"; continue; }
     if (size.width < 800 || size.width > 2500 || size.height < 250 || size.width / size.height < 1.45) { why = `image_bad_size_${size.width}x${size.height}`; continue; }
+    const integrity = await imageIntegrity(buffer, descriptor);
+    if (!integrity.ok) { why = "image_integrity_mismatch"; continue; }
     return { buffer, ...size };
   }
   throw new Error(why);
@@ -233,18 +262,22 @@ async function menuImageCheck(env, richMenuId, spec) {
   const actualHash = await sha256Hex(actual);
   let expectedBytes = 0;
   let validSources = 0;
+  let invalidPinnedSources = 0;
   let sameSize = false;
   const sourceFingerprints = [];
   // Upload may use the CDN fallback if the primary image host is temporarily unavailable.
   // Accept only a byte-exact match against one of the approved artwork sources.
-  for (const url of spec.images) {
-    const source = await fetch(url).catch(() => null);
+  for (const configuredSource of spec.images) {
+    const descriptor = imageSource(configuredSource);
+    const source = await fetch(descriptor.url).catch(() => null);
     if (!source?.ok) continue;
     const expected = await source.arrayBuffer();
     const size = pngSize(expected);
     if (expected.byteLength > MAX_IMAGE_BYTES || !size || size.width < 800 || size.width > 2500 || size.height < 250 || size.width / size.height < 1.45) continue;
+    const integrity = await imageIntegrity(expected, descriptor);
+    if (!integrity.ok) { invalidPinnedSources += 1; continue; }
     validSources += 1;
-    const expectedHash = await sha256Hex(expected);
+    const expectedHash = integrity.sha256;
     sourceFingerprints.push({ bytes: expected.byteLength, sha256: expectedHash });
     if (!expectedBytes) expectedBytes = expected.byteLength;
     if (actual.byteLength !== expected.byteLength) continue;
@@ -259,7 +292,7 @@ async function menuImageCheck(env, richMenuId, spec) {
   }
   return {
     match: false,
-    reason: !validSources ? "source_unavailable" : sameSize ? "content_mismatch" : "byte_length_mismatch",
+    reason: !validSources ? (invalidPinnedSources ? "source_integrity_mismatch" : "source_unavailable") : sameSize ? "content_mismatch" : "byte_length_mismatch",
     actual_bytes: actual.byteLength,
     actual_sha256: actualHash,
     expected_bytes: expectedBytes,
@@ -267,13 +300,15 @@ async function menuImageCheck(env, richMenuId, spec) {
   };
 }
 
-export async function prepareMmdRichMenus(env) {
-  await ensureMenus(env);
+export async function prepareMmdRichMenus(env, options = {}) {
+  const menuSpecs = options.menuSpecs || MENUS;
+  const selectedNames = {};
+  await ensureMenus(env, menuSpecs, { repairImages: true, selectedNames });
   return {
     ok: true,
     prepared: true,
     version: VERSION,
-    menu_names: Object.fromEntries(Object.entries(MENUS).map(([key, spec]) => [key, spec.name])),
+    menu_names: selectedNames,
     customer_assignments_changed: false,
     default_menu_changed: false,
   };
@@ -286,12 +321,14 @@ export async function auditMmdRichMenus(env, now = new Date()) {
   const ids = {};
 
   for (const [key, spec] of Object.entries(MENUS)) {
-    const row = rows.find((item) => clean(item?.name) === spec.name);
+    const row = rows.find((item) => clean(item?.name) === clean(spec.repairName)) ||
+      rows.find((item) => clean(item?.name) === spec.name);
+    const expectedSpec = row && clean(row?.name) === clean(spec.repairName) ? { ...spec, name: spec.repairName } : spec;
     ids[key] = clean(row?.richMenuId);
     const image = row ? await menuImageCheck(env, ids[key], spec).catch(() => ({ match: false, reason: "check_error" })) : { match: false, reason: "missing_menu" };
     checks[key] = {
       present: Boolean(ids[key]),
-      object_match: Boolean(row && menuObjectMatches(row, spec)),
+      object_match: Boolean(row && menuObjectMatches(row, expectedSpec)),
       image_match: image.match,
       image_issue: image.reason,
       image_actual_bytes: image.actual_bytes || 0,
@@ -329,19 +366,51 @@ export async function auditMmdRichMenus(env, now = new Date()) {
     physical_tap_verified: false,
   };
 }
-async function ensureMenus(env) {
+async function createMenu(env, spec, name) {
+  const image = await imageFor(spec);
+  const targetSpec = { ...spec, name };
+  const created = await line(env, `${LINE_API}/richmenu`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft(targetSpec, image.width, image.height)) });
+  const id = clean(created.body?.richMenuId); if (!id) throw new Error("rich_menu_id_missing");
+  try { await line(env, `${LINE_DATA_API}/richmenu/${encodeURIComponent(id)}/content`, { method: "POST", headers: { "content-type": "image/png" }, body: image.buffer }); }
+  catch (e) { await line(env, `${LINE_API}/richmenu/${encodeURIComponent(id)}`, { method: "DELETE" }, [404]).catch(() => null); throw e; }
+  return id;
+}
+
+async function ensureMenus(env, menuSpecs = MENUS, options = {}) {
   const listed = await line(env, `${LINE_API}/richmenu/list`, { method: "GET" });
   const rows = Array.isArray(listed.body?.richmenus) ? listed.body.richmenus : [];
   const out = {};
-  for (const [key, spec] of Object.entries(MENUS)) {
+  for (const [key, spec] of Object.entries(menuSpecs)) {
+    const repaired = clean(spec.repairName) ? rows.find((x) => clean(x.name) === clean(spec.repairName)) : null;
+    if (repaired?.richMenuId) {
+      if (options.repairImages) {
+        const expectedSpec = { ...spec, name: spec.repairName };
+        const image = await menuImageCheck(env, repaired.richMenuId, spec);
+        if (!menuObjectMatches(repaired, expectedSpec) || !image.match) throw new Error(`rich_menu_repair_invalid_${key}`);
+      }
+      out[key] = repaired.richMenuId;
+      if (options.selectedNames) options.selectedNames[key] = spec.repairName;
+      continue;
+    }
     const existing = rows.find((x) => clean(x.name) === spec.name);
-    if (existing?.richMenuId) { out[key] = existing.richMenuId; continue; }
-    const image = await imageFor(spec);
-    const created = await line(env, `${LINE_API}/richmenu`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft(spec, image.width, image.height)) });
-    const id = clean(created.body?.richMenuId); if (!id) throw new Error("rich_menu_id_missing");
-    try { await line(env, `${LINE_DATA_API}/richmenu/${encodeURIComponent(id)}/content`, { method: "POST", headers: { "content-type": "image/png" }, body: image.buffer }); }
-    catch (e) { await line(env, `${LINE_API}/richmenu/${encodeURIComponent(id)}`, { method: "DELETE" }, [404]).catch(() => null); throw e; }
-    out[key] = id;
+    if (existing?.richMenuId) {
+      if (!options.repairImages || !clean(spec.repairName)) {
+        out[key] = existing.richMenuId;
+        if (options.selectedNames) options.selectedNames[key] = spec.name;
+        continue;
+      }
+      const image = await menuImageCheck(env, existing.richMenuId, spec);
+      if (menuObjectMatches(existing, spec) && image.match) {
+        out[key] = existing.richMenuId;
+        if (options.selectedNames) options.selectedNames[key] = spec.name;
+        continue;
+      }
+      out[key] = await createMenu(env, spec, spec.repairName);
+      if (options.selectedNames) options.selectedNames[key] = spec.repairName;
+      continue;
+    }
+    out[key] = await createMenu(env, spec, spec.name);
+    if (options.selectedNames) options.selectedNames[key] = spec.name;
   }
   return out;
 }
