@@ -1,6 +1,6 @@
 import { MY_MMD_BANGKOK_BOARD_URL, MY_MMD_BRAND_LOGO_URL } from "./my-mmd-visual-assets.js";
 
-const SOURCE_URL = "https://mmdprive.webflow.io/my-mmd-orders";
+const SOURCE_URL = "https://mmdprive.webflow.io/my-mmd/orders";
 const CANONICAL_PATHS = new Set(["/my-mmd/orders", "/my-mmd/orders/"]);
 
 export function isMyMmdOrdersPage(request) {
