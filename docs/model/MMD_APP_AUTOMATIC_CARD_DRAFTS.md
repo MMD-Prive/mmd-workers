@@ -99,6 +99,21 @@ This implementation does not establish a new retention policy for that bucket.
 | `POST /studio/api/model-cards/preview` | Existing Studio admin gate | Authenticated PNG; exact model ID + job ID required |
 | `POST /studio/api/model-cards/resume` | Existing Studio admin gate | Resume a preflight hold or saved-portrait render only |
 
+The inbox returns up to 50 drafts in global newest-created-first order. New index
+keys under `studio-card-drafts/index-by-created/` start with a reverse timestamp;
+model and job IDs break ties deterministically. The opaque `v1:` cursor records
+the last returned key, so newer arrivals do not shift later pages. Refresh the
+inbox to see those arrivals. Cursors from the previous R2-only format are rejected
+with `invalid_cursor`; start again without a cursor after upgrading.
+
+Existing `studio-card-drafts/index/` summaries remain readable and are merged
+before pagination. Saving a job writes its ordered entry first, then removes only
+its obsolete legacy index entry. Failed writes preserve the old entry; failed
+cleanup uses the existing retry alarm. When both entries exist, the ordered one
+wins. Listing is read-only and scans all remaining legacy summaries; ordered
+entries fetch at most one page plus a lookahead unless objects disappear during
+the read. Images and draft jobs are not deleted by this index migration.
+
 The existing MMD APP presentation addon displays status. Studio Upload uses the
 standalone `auto-card-inbox.html`, `.css` and `.js` split module. The live Webflow
 page uses `#mmdStudioUploadR5` and `#muUploadForm`, not the generic production

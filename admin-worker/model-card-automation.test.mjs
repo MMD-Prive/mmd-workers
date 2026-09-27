@@ -36,7 +36,8 @@ function harness(t) {
     async put(key, value, options = {}) { objects.set(key, { bytes: typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value), ...options }); return { etag: key }; },
     async head(key) { const x = objects.get(key); return x ? { size: x.bytes.length, etag: key, httpMetadata: x.httpMetadata || {}, customMetadata: x.customMetadata || {} } : null; },
     async get(key) { const x = objects.get(key); if (!x) return null; return { ...await this.head(key), body: new Blob([x.bytes]).stream(), arrayBuffer: async () => x.bytes.slice().buffer, json: async () => JSON.parse(new TextDecoder().decode(x.bytes)) }; },
-    async list({ prefix }) { return { objects: [...objects.keys()].filter((key) => key.startsWith(prefix)).map((key) => ({ key })), truncated: false }; },
+    async delete(key) { objects.delete(key); },
+    async list({ prefix }) { return { objects: [...objects.keys()].filter((key) => key.startsWith(prefix)).sort().map((key) => ({ key })), truncated: false }; },
   };
   objects.set(sourceKey, { bytes: png(800, 900), customMetadata: { model_record_id: modelId }, httpMetadata: { contentType: "image/png" } });
   for (const key of ["studio-card-brand/mmd.png", "studio-card-brand/sigil.webp"]) objects.set(key, { bytes: png(80, 80), httpMetadata: { contentType: "image/png" } });

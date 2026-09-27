@@ -2,6 +2,10 @@ import { CARD_VERSION, CARD_SIZE, projectCardDesign, cardPortraitPrompt, cardHtm
 
 const PREFIX = "studio-card-drafts/";
 const INDEX = `${PREFIX}index/`;
+const ORDERED_INDEX = `${PREFIX}index-by-created/`;
+const PAGE_SIZE = 50;
+const INDEX_TIME_MAX = 9999999999999;
+const CURSOR = /^v1:(\d{13}\/rec[A-Za-z0-9]{14,24}\/card_[a-f0-9]{32}\.json)$/;
 const RECORD = /^rec[A-Za-z0-9]{14,24}$/;
 const SAFE_STATES = new Set(["queued", "preparing", "waiting_profile", "waiting_configuration", "generating", "rendering", "awaiting_owner_review", "source_changed", "needs_review", "paused"]);
 const clean = (x) => String(x ?? "").trim();
@@ -20,6 +24,60 @@ export function safeCardJob(job, owner = false) {
     review_required: true, published: false,
     ...(owner ? { model_record_id: job.model_record_id, model_name: job.design?.title || "Model", missing: job.missing || [], error: job.error || "", can_resume: ["waiting_profile", "waiting_configuration", "paused"].includes(job.state) || (job.state === "needs_review" && job.stage === "render" && job.render_attempts < 3) } : {}),
   };
+}
+
+// Immutable creation time first, then unique identifiers for deterministic ties.
+// R2 lists keys lexicographically, so newer drafts precede older ones before
+// pagination. The cursor is this boundary, not an offset that inserts can shift.
+function cardIndexSuffix(job) {
+  const time = Date.parse(job.created_at);
+  if (!Number.isFinite(time) || time < 0 || time > INDEX_TIME_MAX ||
+      !RECORD.test(job.model_record_id) || !/^card_[a-f0-9]{32}$/.test(job.job_id)) throw fail("invalid_card_index");
+  return `${String(INDEX_TIME_MAX - time).padStart(13, "0")}/${job.model_record_id}/${job.job_id}.json`;
+}
+
+async function listCardJobs(bucket, after) {
+  const candidates = new Map();
+  const retain = (suffix, job) => {
+    if (suffix <= after) return;
+    candidates.set(suffix, job);
+    // Only one page plus a lookahead is needed, even for legacy metadata.
+    if (candidates.size > PAGE_SIZE + 1) candidates.delete([...candidates.keys()].sort().at(-1));
+  };
+  const read = async (entries) => Promise.all(entries.map(async ({ key }) => {
+    const object = await bucket.get(key);
+    return object ? await object.json() : null;
+  }));
+
+  // Read legacy entries first: save() writes the new index before deleting the
+  // old one, so a migration during this request cannot fall between both scans.
+  let cursor;
+  do {
+    const page = await bucket.list({ prefix: INDEX, limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) });
+    for (const job of await read(page.objects)) if (job) retain(cardIndexSuffix(job), job);
+    cursor = page.truncated ? page.cursor : null;
+  } while (cursor);
+
+  let loaded = 0;
+  cursor = null;
+  do {
+    const page = await bucket.list({ prefix: ORDERED_INDEX, limit: 1000, ...(cursor ? { cursor } : {}) });
+    const entries = page.objects.filter(({ key }) => key > `${ORDERED_INDEX}${after}`);
+    // Older pages may scan earlier keys, but never fetch those objects again.
+    // Missing objects do not consume a slot; keep reading until the lookahead.
+    for (let offset = 0; offset < entries.length && loaded < PAGE_SIZE + 1;) {
+      const batch = entries.slice(offset, offset + PAGE_SIZE + 1 - loaded);
+      offset += batch.length;
+      for (const job of await read(batch)) if (job) {
+        retain(cardIndexSuffix(job), job); loaded++;
+      }
+    }
+    cursor = page.truncated ? page.cursor : null;
+  } while (cursor && loaded < PAGE_SIZE + 1);
+
+  const sorted = [...candidates.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  const page = sorted.slice(0, PAGE_SIZE);
+  return { jobs: page.map(([, job]) => job), cursor: sorted.length > PAGE_SIZE ? `v1:${page.at(-1)[0]}` : null };
 }
 
 function stub(env, modelId) {
@@ -55,13 +113,9 @@ export async function handleStudioCards(env, path, body) {
   if (path === "/studio/api/model-cards/list") {
     if (!env.MMD_MODEL_ASSETS?.list) return json({ ok: false, error: "card_storage_unavailable" }, 503);
     const cursor = clean(body.cursor);
-    if (cursor.length > 2048) return json({ ok: false, error: "invalid_cursor" }, 400);
-    const page = await env.MMD_MODEL_ASSETS.list({ prefix: INDEX, limit: 50, ...(cursor ? { cursor } : {}) });
-    const jobs = await Promise.all(page.objects.map(async (entry) => {
-      const object = await env.MMD_MODEL_ASSETS.get(entry.key);
-      return object ? await object.json() : null;
-    }));
-    return json({ ok: true, enabled: enabled(env), jobs: jobs.filter(Boolean).sort((a, b) => b.created_at.localeCompare(a.created_at)), cursor: page.truncated ? page.cursor : null });
+    const boundary = cursor ? CURSOR.exec(cursor) : null;
+    if (cursor && !boundary) return json({ ok: false, error: "invalid_cursor" }, 400);
+    return json({ ok: true, enabled: enabled(env), ...await listCardJobs(env.MMD_MODEL_ASSETS, boundary?.[1] || "") });
   }
   if (!["/studio/api/model-cards/preview", "/studio/api/model-cards/resume"].includes(path)) return json({ ok: false, error: "not_found" }, 404);
   if (!RECORD.test(clean(body.model_record_id))) return json({ ok: false, error: "invalid_model_id" }, 400);
@@ -165,9 +219,12 @@ export class ModelCardCoordinator {
     // R2 index is a private review projection. No Media Assets registration,
     // approval/visibility writes, public URL or Telegram notification is created.
     try {
-      await this.env.MMD_MODEL_ASSETS.put(`${INDEX}${job.model_record_id}.json`, JSON.stringify(safeCardJob(job, true)), {
+      await this.env.MMD_MODEL_ASSETS.put(`${ORDERED_INDEX}${cardIndexSuffix(job)}`, JSON.stringify(safeCardJob(job, true)), {
         httpMetadata: { contentType: "application/json", cacheControl: "private, no-store" },
       });
+      // Remove only obsolete index metadata, after the replacement is durable.
+      // A failed write/delete is retried by the existing alarm; images stay put.
+      await this.env.MMD_MODEL_ASSETS.delete(`${INDEX}${job.model_record_id}.json`);
       if (job.index_retries) { delete job.index_retries; await this.ctx.storage.put("job", job); }
     } catch {
       job.index_retries = (job.index_retries || 0) + 1;
