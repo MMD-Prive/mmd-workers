@@ -50,7 +50,7 @@ test("new LINE photo is prepended and rolling album is capped at 8", async () =>
       assert.equal(incoming.length, 8);
       assert.match(incoming[0].filename, /^line-profile-[0-9a-f]{20}\.jpg$/);
       assert.equal(incoming[0].url, "https://profile.line-scdn.net/current-avatar");
-      assert.deepEqual(incoming.slice(1), existing.slice(0, 7).map((item) => ({ id: item.id })));
+      assert.deepEqual(incoming.slice(1), existing.slice(0, 7));
       return Response.json({
         id: "recClient12345678",
         fields: {
