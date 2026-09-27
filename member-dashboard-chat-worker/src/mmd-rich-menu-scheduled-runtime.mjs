@@ -272,6 +272,19 @@ async function menuImageCheck(env, richMenuId, spec) {
   if (!response?.ok) return { match: false, reason: `line_http_${response?.status || 0}` };
   const actual = await response.arrayBuffer();
   const actualHash = await sha256Hex(actual);
+  const pinned = spec.images.map(imageSource);
+  if (pinned.length && pinned.every((source) => source.bytes > 0 && /^[a-f0-9]{64}$/.test(source.sha256))) {
+    const sourceFingerprints = pinned.map(({ bytes, sha256 }) => ({ bytes, sha256 }));
+    const match = pinned.some(({ bytes, sha256 }) => actual.byteLength === bytes && actualHash === sha256);
+    return {
+      match,
+      reason: match ? "" : "pinned_content_mismatch",
+      actual_bytes: actual.byteLength,
+      actual_sha256: actualHash,
+      expected_bytes: pinned[0].bytes,
+      source_fingerprints: sourceFingerprints,
+    };
+  }
   let expectedBytes = 0;
   let validSources = 0;
   let invalidPinnedSources = 0;
@@ -326,13 +339,13 @@ export async function prepareMmdRichMenus(env, options = {}) {
   };
 }
 
-export async function auditMmdRichMenus(env, now = new Date()) {
+export async function auditMmdRichMenus(env, now = new Date(), menuSpecs = MENUS) {
   const listed = await line(env, `${LINE_API}/richmenu/list`, { method: "GET" });
   const rows = Array.isArray(listed.body?.richmenus) ? listed.body.richmenus : [];
   const checks = {};
   const ids = {};
 
-  for (const [key, spec] of Object.entries(MENUS)) {
+  for (const [key, spec] of Object.entries(menuSpecs)) {
     const row = rows.find((item) => clean(item?.name) === clean(spec.repairName)) ||
       rows.find((item) => clean(item?.name) === spec.name);
     const expectedSpec = row && clean(row?.name) === clean(spec.repairName) ? { ...spec, name: spec.repairName } : spec;
