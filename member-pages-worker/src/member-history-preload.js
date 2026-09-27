@@ -45,7 +45,7 @@ export function validateProjection(projection, { clientId = "", now = new Date()
   if (!projection || typeof projection !== "object" || Array.isArray(projection)) return unavailable("projection_invalid", { clientId });
   if (clean(projection.schema) !== SCHEMA) return unavailable("projection_schema_mismatch", { clientId });
   if (clientId && clean(projection.client_id) !== clean(clientId)) return unavailable("projection_client_mismatch", { clientId });
-  if (clean(projection.points_policy?.mode) !== "lifetime_total" || projection.points_policy?.expires !== false) {
+  if (clean(projection.points_policy?.mode) !== "expiring_lots" || projection.points_policy?.expires !== true) {
     return unavailable("projection_points_policy_mismatch", { clientId });
   }
 
@@ -114,7 +114,7 @@ export function recoveryStatusFromPreload(preload, trigger = "preload", now = ne
     historical_points_recovered: nonNegativeInt(projection.points_earned_lifetime_ledger),
     historical_points_added: 0,
     current_points_total: nonNegativeIntOrNull(projection.current_points_confirmed),
-    points_expire: false,
+    points_expire: true,
     source_pending: false,
     preload_source: SCHEMA,
     projection_computed_at: isoDate(projection.computed_at),

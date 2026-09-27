@@ -59,8 +59,8 @@ jobs:
           grep -F 'POINTS_PHASE1_COORDINATOR' payments-worker/points-phase1.js
           grep -F 'class_name = "PointsPhase1Coordinator"' payments-worker/wrangler.merged.toml
           grep -F 'new_sqlite_classes = ["PointsPhase1Coordinator"]' payments-worker/wrangler.merged.toml
-      - name: Non-expiring base ledger contract
+      - name: Expiring base ledger contract
         run: |
           grep -F 'points_bucket: "base_phase1"' payments-worker/points-phase1.js
-          grep -F 'expires_at intentionally unset' payments-worker/points-phase1.js
+          grep -F 'expires_at: expiresAt' payments-worker/points-phase1.js
           grep -F 'remainder_after_thb' payments-worker/points-phase1.js

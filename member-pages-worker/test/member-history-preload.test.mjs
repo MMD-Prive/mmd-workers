@@ -35,9 +35,9 @@ function projection(overrides = {}) {
     points_state: "confirmed",
     points_policy: {
       thb_per_point: 100,
-      expires: false,
-      validity_days: null,
-      mode: "lifetime_total",
+      expires: true,
+      validity_days: 365,
+      mode: "expiring_lots",
     },
     ...overrides,
   };
@@ -105,14 +105,14 @@ test("preload resolves the canonical client projection once and then uses KV cac
   assert.match(calls[1].formula, new RegExp(`client:${CLIENT_ID}`));
 });
 
-test("projection remains lifetime Points even when the 365-day spend is lower", () => {
+test("projection exposes expiring lots even when the 365-day spend is lower", () => {
   const preload = validateProjection(projection(), { clientId: CLIENT_ID, now: NOW });
   const points = lifetimePointsFromPreload(preload, MEMBER_ID);
   const status = recoveryStatusFromPreload(preload, "login", NOW);
 
   assert.equal(points.confirmedBalance, 1475);
   assert.equal(points.earnedTotal, 1500);
-  assert.equal(points.pointsExpire, false);
+  assert.equal(points.pointsExpire, true);
   assert.equal(points.lifetimeServiceSpendThb, 150000);
   assert.equal(points.serviceSpend365dThb, 25000);
   assert.equal(status.current_points_total, 1475);
@@ -121,7 +121,7 @@ test("projection remains lifetime Points even when the 365-day spend is lower", 
 
 test("stale or rolling-expiry projections are rejected and fall back", () => {
   const stale = validateProjection(projection({ computed_at: "2026-09-20T10:00:00.000Z" }), { clientId: CLIENT_ID, now: NOW });
-  const rolling = validateProjection(projection({ points_policy: { expires: true, mode: "rolling_365d" } }), { clientId: CLIENT_ID, now: NOW });
+  const rolling = validateProjection(projection({ points_policy: { expires: false, mode: "lifetime_total" } }), { clientId: CLIENT_ID, now: NOW });
   assert.equal(stale.available, false);
   assert.equal(stale.reason, "projection_stale");
   assert.equal(rolling.available, false);
@@ -140,7 +140,7 @@ test("history recovery uses a fresh batch projection without scanning source tab
 
   assert.equal(result.state, "reconciled");
   assert.equal(result.current_points_total, 1475);
-  assert.equal(result.points_expire, false);
+  assert.equal(result.points_expire, true);
   assert.equal(result.preload_source, "my_mmd_batch_preload_v1");
   assert.deepEqual(calls.map((call) => call.table), ["tblVv58TCbwh5j1fS", "tblNV1b5sMC2fQPxt"]);
 });
