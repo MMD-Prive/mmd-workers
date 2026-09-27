@@ -1,6 +1,7 @@
 // Create Job LV7 Profile Photo gallery
 // Mobile-first. Desktop dialog intentionally capped at 680px / 78vh.
-// Reads up to 8 canonical Profile Photo attachments from Client/Model API responses.
+// Reads up to 8 canonical Profile Photo attachments.
+// Empty Client galleries can sync the current LINE profile image into the rolling Profile Photo album.
 
 <script id="mmd-create-job-lv7-profile-gallery">
 (()=>{'use strict';
@@ -11,7 +12,7 @@ const photos=r=>{const a=[];for(const x of (Array.isArray(r?.profile_photos)?r.p
 const nameOf=r=>String(r?.client_name||r?.remembered_name||r?.canonical_name||r?.model_name||r?.working_name||r?.display_name||'Profile');
 function css(){if(document.getElementById('mmd-cj-lv7-gallery-style'))return;const s=document.createElement('style');s.id='mmd-cj-lv7-gallery-style';s.textContent=`
 .mmd-cj__result{position:relative}.mmd-cj__galleryThumb{width:58px;height:58px;flex:0 0 58px;border-radius:14px;overflow:hidden;background:#181a18;border:1px solid rgba(224,190,105,.28);display:grid;place-items:center;cursor:zoom-in;position:relative}
-.mmd-cj__galleryThumb img{width:100%;height:100%;object-fit:cover;display:block}.mmd-cj__galleryThumb:focus-visible{outline:2px solid #e0be69;outline-offset:2px}
+.mmd-cj__galleryThumb img{width:100%;height:100%;object-fit:cover;display:block}.mmd-cj__galleryThumb.is-empty{cursor:pointer;color:#d8bd79;font:800 11px/1 -apple-system,BlinkMacSystemFont,Arial,sans-serif;letter-spacing:.04em}.mmd-cj__galleryThumb.is-busy{opacity:.55;pointer-events:none}.mmd-cj__galleryThumb:focus-visible{outline:2px solid #e0be69;outline-offset:2px}
 .mmd-cj__galleryBadge{position:absolute;right:4px;bottom:4px;min-width:22px;height:19px;padding:0 5px;border-radius:10px;background:rgba(11,12,11,.82);color:#fff;font:700 10px/19px -apple-system,BlinkMacSystemFont,Arial,sans-serif;text-align:center;backdrop-filter:blur(8px)}
 .mmd-cj__clientResultWithPhoto{display:flex!important;align-items:center;gap:12px!important}.mmd-cj__clientResultWithPhoto .mmd-cj__resultMain{min-width:0}
 .mmd-cj__galleryBackdrop{position:fixed;inset:0;z-index:2147483000;background:rgba(4,5,4,.78);backdrop-filter:blur(12px);display:none;align-items:flex-end;justify-content:center;padding:8px}
@@ -32,9 +33,26 @@ function modal(){let m=document.getElementById('mmd-cj-gallery-modal');if(m)retu
 function setZoom(v){zoom=Math.max(1,Math.min(2.5,Math.round(v*4)/4));const m=modal(),img=m.querySelector('[data-g-image]'),r=m.querySelector('[data-g-reset]');img.style.setProperty('--mmd-gallery-zoom',zoom);r.textContent=Math.round(zoom*100)+'%'}
 function paint(){const m=modal(),img=m.querySelector('[data-g-image]');if(!active.length)return;idx=(idx+active.length)%active.length;zoom=1;img.src=active[idx];img.alt=(m.querySelector('[data-g-name]').textContent||'Profile')+' รูป '+(idx+1);m.querySelector('[data-g-count]').textContent=(idx+1)+' / '+active.length;m.querySelector('[data-g-prev]').disabled=active.length<2;m.querySelector('[data-g-next]').disabled=active.length<2;setZoom(1);const strip=m.querySelector('[data-g-strip]');strip.innerHTML=active.map((u,i)=>`<button type="button" class="mmd-cj__galleryMini${i===idx?' is-active':''}" data-g-index="${i}" aria-label="เปิดรูป ${i+1}"><img src="${esc(u)}" alt="" loading="lazy"></button>`).join('')+Array.from({length:Math.max(0,8-active.length)},()=>'<span class="mmd-cj__galleryMini" hidden></span>').join('');for(const j of [idx-1,idx+1]){const u=active[(j+active.length)%active.length];if(u){const p=new Image();p.src=u}}}
 function open(record,focus){const list=photos(record);if(!list.length)return;active=list;idx=0;lastFocus=focus||document.activeElement;const m=modal();m.querySelector('[data-g-name]').textContent=nameOf(record);m.querySelector('[data-g-meta]').textContent='Profile Photo · สูงสุด 8 รูป';m.classList.add('is-open');m.setAttribute('aria-hidden','false');document.documentElement.style.overflow='hidden';paint();m.querySelector('[data-g-close]').focus()}
+function note(msg,tone='ok'){const n=root.querySelector('[data-cj="notice"]');if(!n)return;n.textContent=msg;n.className='mmd-cj__alert is-'+tone}
+async function openClient(record,focus){
+  if(photos(record).length){open(record,focus);return}
+  if(!record?.client_id){note('ยังไม่มีรูปโปรไฟล์ของลูกค้ารายนี้','warn');return}
+  if(focus?.dataset?.busy==='1')return;
+  if(focus){focus.dataset.busy='1';focus.classList.add('is-busy');focus.textContent='…'}
+  try{
+    const res=await fetch('/v1/admin/clients/profile-photo/sync',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({client_id:record.client_id})});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok||body.ok===false){note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn');return}
+    record.profile_photos=Array.isArray(body.profile_photos)?body.profile_photos.slice(0,8):[];
+    record.profile_image_url=record.profile_photos[0]||'';
+    if(record.profile_photos.length){schedule();open(record,focus);note(body.added?'บันทึกรูป LINE ล่าสุดเข้า Profile Photo แล้ว':'เปิดอัลบั้ม Profile Photo แล้ว','ok')}
+    else note(body.reason==='client_line_user_id_missing'?'ลูกค้ารายนี้ยังไม่มี LINE User ID สำหรับดึงรูป':'ยังไม่มีรูป Profile Photo ของลูกค้ารายนี้','warn')
+  }catch{note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn')}
+  finally{if(focus){delete focus.dataset.busy;focus.classList.remove('is-busy')}}
+}
 function close(){const m=modal();m.classList.remove('is-open');m.setAttribute('aria-hidden','true');document.documentElement.style.overflow='';lastFocus?.focus?.();active=[]}
 function move(d){if(active.length<2)return;idx=(idx+d+active.length)%active.length;paint()}
-function decorateClients(){root.querySelectorAll('[data-cj-client-index]').forEach(card=>{const i=Number(card.dataset.cjClientIndex),r=clients[i],list=photos(r);if(!r||!list.length)return;let th=card.querySelector('.mmd-cj__galleryThumb');if(!th){th=document.createElement('span');th.className='mmd-cj__galleryThumb';th.tabIndex=0;th.setAttribute('role','button');th.setAttribute('aria-label','ดูรูปโปรไฟล์ '+nameOf(r));card.prepend(th);card.classList.add('mmd-cj__clientResultWithPhoto')}th.innerHTML='<img src="'+esc(list[0])+'" alt="" loading="lazy" decoding="async">'+(list.length>1?'<span class="mmd-cj__galleryBadge">'+list.length+'</span>':'');th.onclick=e=>{e.preventDefault();e.stopPropagation();open(r,th)};th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();open(r,th)}}})}
+function decorateClients(){root.querySelectorAll('[data-cj-client-index]').forEach(card=>{const i=Number(card.dataset.cjClientIndex),r=clients[i];if(!r)return;const list=photos(r);let th=card.querySelector('.mmd-cj__galleryThumb');if(!th){th=document.createElement('span');th.className='mmd-cj__galleryThumb';th.tabIndex=0;th.setAttribute('role','button');card.prepend(th);card.classList.add('mmd-cj__clientResultWithPhoto')}th.classList.toggle('is-empty',!list.length);th.setAttribute('aria-label',(list.length?'ดูรูปโปรไฟล์ ':'โหลดรูปโปรไฟล์ ')+nameOf(r));th.innerHTML=list.length?'<img src="'+esc(list[0])+'" alt="" loading="lazy" decoding="async">'+(list.length>1?'<span class="mmd-cj__galleryBadge">'+list.length+'</span>':''):'รูป';th.onclick=e=>{e.preventDefault();e.stopPropagation();openClient(r,th)};th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();openClient(r,th)}}})}
 function decorateModels(){root.querySelectorAll('[data-cj-model-index]').forEach(card=>{const i=Number(card.dataset.cjModelIndex),r=models[i],list=photos(r);if(!r||!list.length)return;let th=card.querySelector('.mmd-cj__thumb');if(!th)return;th.classList.add('mmd-cj__galleryThumb');th.tabIndex=0;th.setAttribute('role','button');th.setAttribute('aria-label','ดูรูปโปรไฟล์ '+nameOf(r));th.innerHTML='<img src="'+esc(list[0])+'" alt="" loading="lazy" decoding="async">'+(list.length>1?'<span class="mmd-cj__galleryBadge">'+list.length+'</span>':'');th.onclick=e=>{e.preventDefault();e.stopPropagation();open(r,th)};th.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();open(r,th)}}})}
 function decorate(){decorateClients();decorateModels()}
 function schedule(){clearTimeout(decorateTimer);decorateTimer=setTimeout(decorate,30)}
