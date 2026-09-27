@@ -370,12 +370,13 @@ zone_name = "mmdbkk.com"
 # muted/disabled runtime value by accident. An intentional emergency mute can
 # still be made by changing this config and redeploying.
 [vars]
-# Keep the older conversation/knowledge response lane paused while the bounded
-# First Contact V2 lane can answer safe opening messages under the kill switch.
-LINE_AUTO_REPLY_ENABLED = "false"
+# Owner-authorized customer conversation lane. Delivery stays bounded to the
+# reviewed Seed Pack / deterministic live-truth routes and the runtime kill switch.
+LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
-# First Contact V2 answers safe openings and explicit greeting follow-ups. LINE OA owns the
-# add-friend greeting; all other legacy/autonomous replies remain paused.
+# First Contact V2 takes over whenever the reviewed broad Seed Pack has no safe
+# answer, and remains the bounded fallback if that broad lane is deliberately muted.
+# LINE OA owns the add-friend greeting; Runtime Controls can stop all delivery immediately.
 LINE_FIRST_CONTACT_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
@@ -435,10 +436,10 @@ TG_THREAD_ALERTS = "9"
 # Model generation is a separate, production-gated capability. Keep it off in
 # committed configuration until an explicitly approved deployment enables it.
 LINE_KENJI_MODEL_ENABLED = "false"
-# Deterministic membership-gated model code/name lookup. This rollout switch
-# is independent from LLM generation and must remain off until the V1 privacy
-# review, synthetic smoke, and explicit Production approval are complete.
-LINE_KENJI_MODEL_ACCESS_ENABLED = "false"
+# Deterministic membership-gated Model code/name lookup is owner-authorized.
+# GWs/EMs remain default-deny unless one current Per approval matches this exact
+# verified client and Model. LLM generation remains separately disabled below.
+LINE_KENJI_MODEL_ACCESS_ENABLED = "true"
 LINE_CARD_21829530_LEAD_ENABLED = "false"
 LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR = "false"
 LINE_CARD_21829530_PILOT_HASHES = ""

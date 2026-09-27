@@ -143,7 +143,7 @@ test("committed rollout configuration keeps both model capabilities off and expo
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
-  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_LEAD_ENABLED\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"false"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_PILOT_HASHES\s*=\s*""$/m);
