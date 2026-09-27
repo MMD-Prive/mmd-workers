@@ -397,8 +397,8 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   const deniedRecord = model.records[0];
   const deniedClass = modelAccessClass(deniedRecord);
   const deniedCode = fieldValue(deniedRecord?.fields || {}, MODEL_CODE_FIELDS);
-  const restrictedCategory = /^gws\\d+$/i.test(deniedCode) ? "gws"
-    : /^ems\\d+$/i.test(deniedCode) ? "ems" : "";
+  const restrictedCategory = /^gws[0-9]+$/i.test(deniedCode) ? "gws"
+    : /^ems[0-9]+$/i.test(deniedCode) ? "ems" : "";
   if (deniedClass.active && deniedClass.visibility === "private" && restrictedCategory) {
     return { status: "restricted_category", category: restrictedCategory };
   }
