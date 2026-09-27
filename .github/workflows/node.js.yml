@@ -28,6 +28,7 @@ jobs:
         cache: 'npm'
     - run: npm ci
     - run: npm run build --if-present
+    - run: node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
     - if: matrix.node-version != '18.x'
       run: npm test
     - if: matrix.node-version != '18.x'

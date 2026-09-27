@@ -2,6 +2,16 @@ name: Deploy member-dashboard-chat-worker
 
 on:
   workflow_dispatch:
+    inputs:
+      payment_center_pending_intent_approved:
+        description: "Consented LINE test account and pending membership intent explicitly approved"
+        type: boolean
+        required: false
+        default: false
+      payment_center_test_plan:
+        description: "Approved test plan reference for authenticated Payment Center acceptance"
+        type: string
+        required: false
   push:
     branches:
       - main
@@ -119,6 +129,7 @@ jobs:
       - name: Validate LINE, LIFF, CARE BACK, MMS Therapist, and MMS AI front gate
         id: tests
         run: |
+          node --test scripts/member-dashboard-payment-acceptance-gate.test.mjs
           npm run test:payment-delivery
           node --check member-dashboard-chat-worker/src/index.js
           node --check member-dashboard-chat-worker/src/my-mmd-orders-webflow-page.js
@@ -491,13 +502,23 @@ jobs:
         id: member_payments_authenticated
         if: steps.route_sync.outcome == 'success'
         shell: bash
+        env:
+          PAYMENT_CENTER_INTENT_APPROVED: ${{ github.event_name == 'workflow_dispatch' && inputs.payment_center_pending_intent_approved && 'true' || 'false' }}
+          PAYMENT_CENTER_TEST_PLAN: ${{ inputs.payment_center_test_plan || '' }}
         run: |
           set -euo pipefail
-          if [ -z "${MY_MMD_E2E_ID_TOKEN:-}" ]; then
-            echo "MY_MMD_E2E_ID_TOKEN is not configured. Refusing synthetic production acceptance." >&2
-            exit 1
+          if [ -z "${MY_MMD_E2E_ID_TOKEN:-}" ] || [ "$PAYMENT_CENTER_INTENT_APPROVED" != "true" ] || [ -z "${PAYMENT_CENTER_TEST_PLAN//[[:space:]]/}" ]; then
+            echo 'status=BLOCKED_MISSING_CONSENT_OR_TOKEN' >> "$GITHUB_OUTPUT"
+            echo 'Payment Center acceptance: BLOCKED_MISSING_CONSENT_OR_TOKEN — a token, explicit pending-intent approval, and an approved test plan are required.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           echo "::add-mask::$MY_MMD_E2E_ID_TOKEN"
+          payment_center_status=RUNNING
+          payment_center_report() {
+            echo "status=$payment_center_status" >> "$GITHUB_OUTPUT"
+            echo "Payment Center acceptance: $payment_center_status" >> "$GITHUB_STEP_SUMMARY"
+          }
+          trap 'if [ "$payment_center_status" = RUNNING ]; then payment_center_status=FAILED; fi; payment_center_report' EXIT
 
           jar="$RUNNER_TEMP/member-payments-live.cookies"
           start_headers="$RUNNER_TEMP/member-payments-live-start.headers"
@@ -557,6 +578,7 @@ jobs:
           reject_code="$(curl -sS -b "$jar" -o "$reject_body" -w "%{http_code}"             -H 'Origin: https://www.mmdbkk.com'             'https://www.mmdbkk.com/v1/member/payments?payment_ref=browser-selected')"
           test "$reject_code" = "400"
           jq -e '.error.code == "BROWSER_PAYMENT_CONTEXT_REJECTED"' "$reject_body" >/dev/null
+          payment_center_status=PASSED
 
       - name: Smoke internal AI service binding
         id: ai_binding_smoke
@@ -718,6 +740,8 @@ jobs:
           ROUTE_SYNC_OUTCOME: ${{ steps.route_sync.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME: ${{ steps.private_teaser_route_smoke.outcome }}
+          PAYMENT_CENTER_ACCEPTANCE_OUTCOME: ${{ steps.member_payments_authenticated.outcome }}
+          PAYMENT_CENTER_ACCEPTANCE_STATUS: ${{ steps.member_payments_authenticated.outputs.status }}
           KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
           KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
           KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
@@ -790,6 +814,8 @@ jobs:
           - MMS route sync: \`${ROUTE_SYNC_OUTCOME}\`
           - production smoke: \`${SMOKE_OUTCOME}\`
           - Private Teaser live route acceptance: \`${PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME}\`
+          - Payment Center authenticated acceptance step: \`${PAYMENT_CENTER_ACCEPTANCE_OUTCOME}\`
+          - Payment Center authenticated acceptance status: \`${PAYMENT_CENTER_ACCEPTANCE_STATUS:-NOT_RUN}\`
           - **stopped_at: \`${stopped}\`**
 
           Cloudflare/Wrangler detail:
