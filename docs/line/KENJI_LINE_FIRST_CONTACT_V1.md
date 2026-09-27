@@ -15,7 +15,7 @@ Verify the actual OA greeting and its enabled state in LINE OA Manager before cl
 ## Runtime
 
 - `LINE_FIRST_CONTACT_ENABLED=true` opens a deterministic, text-only DM lane after a customer sends a message.
-- `LINE_AUTO_REPLY_ENABLED=false` keeps the older broad Kenji Seed/knowledge/model response lanes paused.
+- `LINE_AUTO_REPLY_ENABLED=true` enables the owner-authorized deterministic Seed/knowledge lane. LLM generation remains disabled; Runtime Controls and protected-topic handoffs still win.
 - A fresh Runtime Controls read remains required. The existing LINE or all-Kenji kill switch stops delivery.
 - Greeting, short discovery messages, public booking intake, membership navigation and initial price brief receive short Per-voice guidance. No exact model access, availability, final price, entitlement or payment truth is asserted.
 - MMS has a separate LINE Official Account: `@malemassage`, `https://lin.ee/NkfXMu7` (owner-confirmed). MMD greeting and intake must not offer MMS. An explicit massage inquiry in MMD LINE gets only this MMS LINE link; MMD does not collect the MMS brief or continue the MMS conversation.
