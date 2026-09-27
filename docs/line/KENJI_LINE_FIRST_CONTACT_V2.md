@@ -2,7 +2,7 @@
 
 ## Owner and scope
 
-LINE OA Manager sends the add-friend greeting. The signed MMD webhook handles only an active, non-redelivered customer text DM after that greeting. The reply still speaks as Per; it never introduces Kenji. `LINE_AUTO_REPLY_ENABLED=true` now enables the owner-authorized deterministic Seed/knowledge lane. `LINE_FIRST_CONTACT_ENABLED=true` remains the fallback only if the broad lane is deliberately muted; Runtime Controls and protected-topic handoffs still win.
+LINE OA Manager sends the add-friend greeting. The signed MMD webhook handles only an active, non-redelivered customer text DM after that greeting. The reply still speaks as Per; it never introduces Kenji. `LINE_AUTO_REPLY_ENABLED=true` enables the owner-authorized deterministic Seed/knowledge lane. `LINE_FIRST_CONTACT_ENABLED=true` also takes over direct customer messages when no safe Seed reply exists, and remains the fallback if the broad lane is deliberately muted; Runtime Controls and protected-topic handoffs still win.
 
 ## Conversation
 
