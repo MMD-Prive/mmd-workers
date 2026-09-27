@@ -149,7 +149,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /final_display/);
     assert.match(html, /CONFIG\.intent === "promo" && CONFIG\.campaign === "care_back"/);
     assert.match(html, /กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ/);
-    assert.doesNotMatch(html, /localStorage|sessionStorage|line_user_id|claim_id/);
+    assert.doesNotMatch(html, /localStorage|line_user_id|claim_id/);
+    assert.match(html, /window\.sessionStorage/);
+    assert.match(html, /mmd\.customer_request\.pending\.v1\./);
   });
 
   it("normalizes untrusted query intent and promo values before embedding them", async () => {
@@ -218,6 +220,37 @@ describe("same-site /member/liff shell", () => {
     const scriptBodyEnd = html.indexOf("</script>", scriptBodyStart);
     assert.ok(scriptStart >= 0 && scriptBodyStart > scriptStart && scriptBodyEnd > scriptBodyStart);
     assert.doesNotThrow(() => new Function(html.slice(scriptBodyStart, scriptBodyEnd)));
+  });
+
+  it("keeps Customer Requests retry state opaque, stable, and bounded to session storage", async () => {
+    const response = await shell("/member/liff?intent=status&view=my-requests");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /pendingRequestId\("profile_update"\)/);
+    assert.match(html, /pendingRequestId\("your_request"\)/);
+    assert.match(html, /pendingRequestId\("saved_model", token\)/);
+    assert.match(html, /opaqueStorageToken\(action \+ ":" \+ modelId\)/);
+    assert.match(html, /opaqueStorageToken\(\[file\.type, file\.size, file\.lastModified/);
+    assert.match(html, /\^evidence_\[a-f0-9\]\{32\}\$/);
+    assert.match(html, /terminalClientError\(response\)/);
+    assert.match(html, /contact\.telegramUsername \|\| contact\.telegram_username \|\| contact\.telegram/);
+    assert.doesNotMatch(html, /sessionStorage\.setItem\([^\n]*(?:email|phone|telegram|line_user_id|entitlement|preferences)/i);
+  });
+
+  it("keeps MY MMD welcome and request surfaces readable at the approved fixture breakpoints", async () => {
+    const response = await shell("/member/liff");
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /@media\(max-width:340px\)/);
+    assert.match(html, /@media\(max-width:390px\)/);
+    assert.match(html, /@media\(max-width:430px\)/);
+    assert.match(html, /@media\(min-width:700px\)/);
+    assert.match(html, /body:not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
+    assert.match(html, /overflow-x:hidden/);
+    assert.match(html, /\.my-mmd-welcome \.per-letter-copy\{[^}]*max-height:none[^}]*overflow:visible/);
+    assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
   });
 
   it("renders a verified-only Credit Wallet through the same-site credit API", async () => {

@@ -25,7 +25,7 @@ export function isMemberCustomerRequestPath(input) {
 export async function handleMemberCustomerRequest(request, env = {}) {
   const path = new URL(request.url).pathname.replace(/\/+$/, "") || "/";
   if (path === ADMIN_PATH || path === ADMIN_EVIDENCE_PATH) return handleAdmin(request, env, path);
-  if (!sameOrigin(request)) return fail(403, "SAME_ORIGIN_REQUIRED");
+  if (!browserOriginAllowed(request)) return fail(403, "SAME_ORIGIN_REQUIRED");
   if (new URL(request.url).search) return fail(400, "BROWSER_AUTHORITY_REJECTED");
   const identity = await verifiedIdentity(request, env);
   if (!identity.ok) return fail(identity.status, identity.code);
@@ -35,8 +35,11 @@ export async function handleMemberCustomerRequest(request, env = {}) {
 }
 
 async function handleRequest(request, env, identity) {
-  if (request.method === "GET") return json({ ok: true, authority: "mmd.customer_request_intake.v1", items: await listRequests(env, identity.lineUserId) });
-  if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "GET, POST" });
+  if (request.method === "GET" || request.method === "HEAD") {
+    const response = json({ ok: true, authority: "mmd.customer_request_intake.v1", items: await listRequests(env, identity.lineUserId) });
+    return request.method === "HEAD" ? new Response(null, { status: response.status, headers: response.headers }) : response;
+  }
+  if (request.method !== "POST") return fail(405, "METHOD_NOT_ALLOWED", { allow: "GET, HEAD, POST" });
   const body = await request.json().catch(() => null);
   const input = validateRequest(body);
   if (!input.ok) return fail(400, input.code);
@@ -171,7 +174,7 @@ async function listInbox(env, lineUserId) {
   const key = safeText(env.AIRTABLE_API_KEY, 2000); const base = safeText(env.AIRTABLE_BASE_ID, 100); const table = safeText(env.AIRTABLE_TABLE_CONSOLE_INBOX, 180) || INBOX_TABLE;
   if (!key || !base) return [];
   const url = new URL(`${API}/${encodeURIComponent(base)}/${encodeURIComponent(table)}`);
-  url.searchParams.set("filterByFormula", `{line_user_id}=${formula(lineUserId)}`); url.searchParams.set("maxRecords", String(MAX_LIST));
+  url.searchParams.set("filterByFormula", `AND({line_user_id}=${formula(lineUserId)},{source}='my_mmd_liff',OR({intent}='your_request',{intent}='saved_model',{intent}='profile_update'))`); url.searchParams.set("maxRecords", String(MAX_LIST));
   const response = await airtableFetch(env, url, { headers: { authorization: `Bearer ${key}`, accept: "application/json" } });
   const payload = await response.json().catch(() => null); return response.ok && Array.isArray(payload?.records) ? payload.records : [];
 }
@@ -183,7 +186,13 @@ async function createInbox(env, fields) {
 }
 function internalAuthorized(request) { const url = new URL(request.url); return request.method === "POST" && url.hostname === SERVICE_HOST && token(request.headers.get("x-mmd-internal-call")) === "true" && safeText(request.headers.get("x-mmd-service-binding"), 80) === "admin-worker"; }
 async function airtableFetch(env, url, init = {}) { return env.AIRTABLE_HTTP?.fetch ? env.AIRTABLE_HTTP.fetch(new Request(url, init)) : fetch(url, init); }
-function sameOrigin(request) { const origin = request.headers.get("origin"); return origin === "https://mmdbkk.com" || origin === "https://www.mmdbkk.com"; }
+function browserOriginAllowed(request) {
+  const url = new URL(request.url);
+  if (url.protocol !== "https:" || !["mmdbkk.com", "www.mmdbkk.com"].includes(url.hostname)) return false;
+  const origin = request.headers.get("origin");
+  if (!origin && (request.method === "GET" || request.method === "HEAD")) return true;
+  return origin === url.origin;
+}
 function json(data, status = 200, extra = {}) { return Response.json(data, { status, headers: { "cache-control": "no-store, private", "x-mmd-customer-request": "v1", ...extra } }); }
 function fail(status, code, extra = {}) { return json({ ok: false, error: { code } }, status, extra); }
 function adminNote(data) { return data.request_type === "your_request" ? `Your Request · ${data.model.display_name} · ${data.model.audience}` : data.request_type === "saved_model" ? `Saved Model · ${data.model.action}` : "Customer profile update request"; }

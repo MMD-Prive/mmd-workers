@@ -566,6 +566,27 @@ function renderShell(config, nonce) {
     return "req_" + uuid;
   }
 
+  const customerRequestSession = (() => { try { return window.sessionStorage; } catch { return null; } })();
+  const customerRequestStoragePrefix = "mmd.customer_request.pending.v1.";
+  function customerRequestStorageKey(kind, token = "default") { return customerRequestStoragePrefix + kind + "." + token; }
+  function pendingRequestId(kind, token = "default") {
+    const key = customerRequestStorageKey(kind, token);
+    const stored = customerRequestSession?.getItem(key) || "";
+    if (/^req_[A-Za-z0-9_-]{12,80}$/.test(stored)) return stored;
+    const next = requestId(); customerRequestSession?.setItem(key, next); return next;
+  }
+  function clearPendingRequest(kind, token = "default") { customerRequestSession?.removeItem(customerRequestStorageKey(kind, token)); }
+  function terminalClientError(response) { return response.status >= 400 && response.status < 500 && ![408, 409, 425, 429].includes(response.status); }
+  async function opaqueStorageToken(value) {
+    const input = new TextEncoder().encode(String(value).slice(0, 500));
+    if (crypto?.subtle) {
+      const digest = await crypto.subtle.digest("SHA-256", input);
+      return Array.from(new Uint8Array(digest)).slice(0, 12).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    let hash = 2166136261; for (const byte of input) { hash ^= byte; hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  }
+
   async function requestJson(body) {
     const response = await fetch(CONFIG.customerRequestsEndpoint, { method:"POST", credentials:"same-origin", headers:{"content-type":"application/json",accept:"application/json"}, body:JSON.stringify(body) });
     const payload = await response.json().catch(() => null);
@@ -576,7 +597,7 @@ function renderShell(config, nonce) {
     const contact = data.contactProfile || data.contact_profile || {};
     document.getElementById("customer-email").value = String(contact.email || "");
     document.getElementById("customer-phone").value = String(contact.phone || "");
-    document.getElementById("customer-telegram").value = String(contact.telegram || contact.telegram_username || "").replace(/^@/, "");
+    document.getElementById("customer-telegram").value = String(contact.telegramUsername || contact.telegram_username || contact.telegram || "").replace(/^@/, "");
   }
 
   async function readCustomerRequests() {
@@ -606,21 +627,29 @@ function renderShell(config, nonce) {
   }
 
   async function uploadRequestEvidence(files) {
-    const ids = [];
+    const ids = []; const storageKeys = [];
     for (const file of Array.from(files || []).slice(0, 3)) {
+      const fingerprint = await opaqueStorageToken([file.type, file.size, file.lastModified, String(file.name || "").slice(0, 180)].join("|"));
+      const storageKey = customerRequestStorageKey("evidence", fingerprint);
+      const savedEvidenceId = customerRequestSession?.getItem(storageKey) || "";
+      if (/^evidence_[a-f0-9]{32}$/.test(savedEvidenceId)) { ids.push(savedEvidenceId); storageKeys.push(storageKey); continue; }
       const form = new FormData(); form.append("file", file, file.name || "reference-image");
       const response = await fetch(CONFIG.customerRequestEvidenceEndpoint, { method:"POST", credentials:"same-origin", body:form });
       const payload = await response.json().catch(() => null);
       if (!response.ok || payload?.ok !== true || !/^evidence_[a-f0-9]{32}$/.test(String(payload.evidence_id || ""))) throw new Error("upload_failed");
-      ids.push(payload.evidence_id);
+      ids.push(payload.evidence_id); storageKeys.push(storageKey); customerRequestSession?.setItem(storageKey, payload.evidence_id);
     }
-    return ids;
+    return { ids, storageKeys };
   }
+
+  function clearEvidenceState(storageKeys) { for (const key of storageKeys || []) customerRequestSession?.removeItem(key); }
 
   // Catalog cards may call this bridge; the server still validates identity, model id and idempotency.
   window.MMD_LIFF_SAVE_MODEL = async (modelId, modelName = "") => {
-    const { response, payload } = await requestJson({ request_id:requestId(), request_type:"saved_model", model_id:modelId, model_name:modelName, action:"save" });
-    if (!response.ok || payload?.ok !== true) throw new Error("save_model_failed");
+    const action = "save"; const token = await opaqueStorageToken(action + ":" + modelId); const request_id = pendingRequestId("saved_model", token);
+    const { response, payload } = await requestJson({ request_id, request_type:"saved_model", model_id:modelId, model_name:modelName, action });
+    if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) clearPendingRequest("saved_model", token); throw new Error("save_model_failed"); }
+    clearPendingRequest("saved_model", token);
     await readCustomerRequests();
     return payload.item;
   };
@@ -629,8 +658,10 @@ function renderShell(config, nonce) {
     event.preventDefault();
     const button = customerProfileForm.querySelector("button"); button.disabled = true;
     try {
-      const { response, payload } = await requestJson({ request_id:requestId(), request_type:"profile_update", email:document.getElementById("customer-email").value, phone:document.getElementById("customer-phone").value, telegram_username:document.getElementById("customer-telegram").value, preferences:document.getElementById("customer-preferences").value });
-      if (!response.ok || payload?.ok !== true) throw new Error("request_failed");
+      const request_id = pendingRequestId("profile_update");
+      const { response, payload } = await requestJson({ request_id, request_type:"profile_update", email:document.getElementById("customer-email").value, phone:document.getElementById("customer-phone").value, telegram_username:document.getElementById("customer-telegram").value, preferences:document.getElementById("customer-preferences").value });
+      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) clearPendingRequest("profile_update"); throw new Error("request_failed"); }
+      clearPendingRequest("profile_update");
       show("รับข้อมูลแล้วครับ ทีม MMD จะตรวจสอบก่อนอัปเดต"); await readCustomerRequests();
     } catch { show("ตอนนี้ยังส่งข้อมูลไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"); }
     finally { button.disabled = false; }
@@ -638,10 +669,13 @@ function renderShell(config, nonce) {
 
   yourRequestForm?.addEventListener("submit", async (event) => {
     event.preventDefault(); const button = yourRequestForm.querySelector("button"); button.disabled = true; yourRequestStatus.textContent = "กำลังรับ Your Request อย่างปลอดภัย…";
+    let evidenceState = { ids:[], storageKeys:[] };
     try {
-      const evidenceIds = await uploadRequestEvidence(document.getElementById("requested-model-evidence").files);
-      const { response, payload } = await requestJson({ request_id:requestId(), request_type:"your_request", model_name:document.getElementById("requested-model-name").value, model_social:document.getElementById("requested-model-social").value, audience:document.getElementById("requested-model-audience").value, reason:document.getElementById("requested-model-reason").value, evidence_ids:evidenceIds });
-      if (!response.ok || payload?.ok !== true) throw new Error("request_failed");
+      evidenceState = await uploadRequestEvidence(document.getElementById("requested-model-evidence").files);
+      const request_id = pendingRequestId("your_request");
+      const { response, payload } = await requestJson({ request_id, request_type:"your_request", model_name:document.getElementById("requested-model-name").value, model_social:document.getElementById("requested-model-social").value, audience:document.getElementById("requested-model-audience").value, reason:document.getElementById("requested-model-reason").value, evidence_ids:evidenceState.ids });
+      if (!response.ok || payload?.ok !== true) { if (terminalClientError(response)) { clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys); } throw new Error("request_failed"); }
+      clearPendingRequest("your_request"); clearEvidenceState(evidenceState.storageKeys);
       yourRequestForm.reset(); yourRequestStatus.textContent = "MMD รับคำขอแล้วครับ ทีมจะตรวจสอบเป็นการภายใน"; await readCustomerRequests();
     } catch { yourRequestStatus.textContent = "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
     finally { button.disabled = false; }
