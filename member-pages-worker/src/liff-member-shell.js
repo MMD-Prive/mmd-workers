@@ -161,11 +161,21 @@ function renderShell(config, nonce) {
     .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
     /* MY MMD customer welcome: member world only, before the board. */
     body:not(.app-entered){background:#171715;color:#f4ede1}
-    body:not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
-    body:not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
+    body:not(.app-entered) main,
+    body.world-public:not(.signup-mode):not(.app-entered) main,
+    body.world-private:not(.signup-mode):not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
+    body:not(.app-entered) .my-mmd-welcome,
+    body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome,
+    body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
     .welcome-hero{position:relative;min-height:178px;background:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cead27f3ee081d057794_TMIB%20Bangkok.webp") center 54%/cover no-repeat}
     .welcome-brand{position:absolute;left:26px;bottom:22px;display:flex;align-items:center;gap:10px;min-width:0}.welcome-logo{display:grid;width:31px;height:31px;place-items:center;overflow:hidden;border-radius:5px;background:#090909}.welcome-logo img{display:block;width:31px;height:31px;object-fit:contain}.welcome-brand strong{display:block;color:#f4ede1;font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:400;line-height:1.05;letter-spacing:.01em}.welcome-brand small{display:block;margin-top:4px;color:rgba(244,237,225,.68);font-size:9px;line-height:1.1;letter-spacing:.08em}
     .welcome-letter{padding:26px 26px max(42px,env(safe-area-inset-bottom))}.my-mmd-welcome .mark{color:#c9a866;font-size:10px;letter-spacing:.14em}.my-mmd-welcome .title{max-width:680px;margin:10px 0 7px;color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-size:clamp(30px,9vw,48px);font-weight:400;line-height:1.12;letter-spacing:-.025em}.my-mmd-welcome .sub{max-width:680px;margin:0;color:rgba(244,237,225,.68);font-size:13px;line-height:1.55}
+    body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .mark,
+    body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .mark{color:#c9a866}
+    body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .title,
+    body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .title{color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-weight:400}
+    body.world-public:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub,
+    body.world-private:not(.signup-mode):not(.app-entered) .my-mmd-welcome .sub{color:rgba(244,237,225,.68)}
     .my-mmd-welcome #message{max-width:680px;margin:18px 0 0;padding:12px 14px;border:1px solid rgba(201,168,102,.28);border-left:2px solid #c9a866;border-radius:0 8px 8px 0;background:rgba(201,168,102,.07);color:#eadcc1;font-size:13px;line-height:1.65}
     .my-mmd-welcome .per-letter{max-width:680px;margin:24px 0 0;padding:0;border:0;color:#f4ede1}.my-mmd-welcome .per-letter-copy{max-height:none;overflow:visible;margin:0;padding:0;white-space:pre-line;font-size:16px;line-height:1.65}
     .welcome-divider{width:min(100%,680px);height:1px;margin:30px 0 0;background:rgba(201,168,102,.34)}.my-mmd-welcome .intro-continue{width:195px;min-height:48px;margin:26px 0 0;padding:12px 20px;border:0;border-radius:999px;background:#c9a866!important;color:#171715!important;box-shadow:none;font-size:14px;font-weight:800;text-align:center;letter-spacing:.05em}.my-mmd-welcome .intro-continue:disabled{opacity:.55}
