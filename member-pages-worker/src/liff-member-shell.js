@@ -43,6 +43,8 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
     creditWalletEndpoint: "/api/member/app/credits",
+    customerRequestsEndpoint: "/member/api/liff/customer-requests",
+    customerRequestEvidenceEndpoint: "/member/api/liff/customer-request-evidence",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
     stagingScenario: stagingScenario(env, url),
   };
@@ -70,7 +72,7 @@ function renderShell(config, nonce) {
     main{width:min(100%,760px);margin:0 auto;padding:24px 16px;border:1px solid rgba(212,181,123,.22);border-radius:8px;background:#101011;box-shadow:0 28px 80px rgba(0,0,0,.45)}
     .mark{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#d7bd8a}.title{margin:10px 0 8px;font-size:30px;line-height:1.08;font-weight:650}.sub{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     #message{white-space:pre-line;margin:30px 0 0;font-size:18px;line-height:1.65}.actions{display:grid;gap:10px;margin-top:24px}.actions:empty{display:none}
-    button,textarea{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
+    button,textarea,input,select{width:100%;border:1px solid rgba(216,189,137,.28);border-radius:12px;padding:12px 14px;background:#171511;color:#f7f3eb;font:inherit;text-align:left}button{cursor:pointer}button:disabled{opacity:.55;cursor:default}textarea{min-height:124px;resize:vertical;line-height:1.55}input[type=file]{padding:10px}.form-stack{display:grid;gap:10px}.form-stack label{display:grid;gap:6px}.form-stack button{background:#f0d892;color:#181207;font-weight:700;text-align:center}.form-note{margin:0;color:#aaa29a;font-size:12px;line-height:1.55}.wish{display:grid;gap:12px;margin-top:16px}.wish-result{white-space:pre-line;color:#e7d5ad;line-height:1.65}
     .signup{display:grid;gap:12px;margin-top:24px}.signup h2{margin:0;color:#f0d892;font-size:22px}.signup .card{display:grid;gap:8px}.signup .card strong{font-size:18px}.signup .card button{margin-top:4px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.signup .card button:disabled{opacity:.5}.signup .private-link{display:block;border:1px solid rgba(216,189,137,.28);border-radius:16px;padding:14px 16px;color:#f0d892;text-align:center;text-decoration:none}.signup-note{color:#b7afa4;font-size:13px;line-height:1.6}.profile{display:block;margin-top:14px}.section-rail{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;overscroll-behavior-x:contain;padding:0 2px 12px;scrollbar-width:none}.section-rail::-webkit-scrollbar{display:none}.panel{display:flex;flex:0 0 100%;min-height:430px;flex-direction:column;gap:12px;scroll-snap-align:start;scroll-snap-stop:always}.summary{display:grid;grid-template-columns:1.2fr .8fr;gap:12px}.card{border:1px solid rgba(216,189,137,.18);border-radius:8px;padding:17px;background:#080809}.label{color:#948c82;font-size:11px;letter-spacing:.12em;text-transform:uppercase}.value{display:block;margin-top:6px;font-size:22px;line-height:1.15}.points{font-size:34px;color:#e6cb91}.history,.stack{display:grid;gap:9px;margin-top:12px}.event{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;padding:11px 0;border-top:1px solid rgba(255,255,255,.07);font-size:13px}.event:first-child{border-top:0}.event-date,.event-status{color:#8f8880}.event-delta{color:#d9bd82}.care{border-color:rgba(225,193,126,.38);background:#15120f}.care h2{margin:8px 0;font-size:21px}.care p{margin:0;color:#b7afa4;font-size:13px;line-height:1.6}.care-code{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0;padding:13px 14px;border-radius:8px;background:#080807}.care-code strong{font-size:24px;letter-spacing:.15em;color:#ecd18f}.care button{margin-top:14px;text-align:center;background:#f0d892;color:#181207;font-weight:700}.details{border-top:1px solid rgba(255,255,255,.08);padding-top:12px}.details summary{cursor:pointer;color:#e7e2d8;font-size:14px}.details[open] summary{margin-bottom:10px}.group-title{margin:4px 0;font-size:14px;color:#e7e2d8}.empty{margin:0;color:#aaa29a;font-size:14px;line-height:1.55}
     .member-nav{display:flex;gap:8px;overflow-x:auto;margin:22px 0 0;padding:4px;border:1px solid rgba(216,189,137,.18);border-radius:8px;background:rgba(0,0,0,.22);scrollbar-width:none}.member-nav::-webkit-scrollbar{display:none}.member-nav button{width:auto;white-space:nowrap;border:0;border-radius:999px;padding:10px 12px;background:transparent;color:#aaa29a;font-size:12px;text-align:center}.member-nav button[aria-current="true"]{background:#f0d892;color:#181207;font-weight:800}.status{margin-top:22px;color:#7f7972;font-size:12px;line-height:1.5}.hidden{display:none!important}@media(max-width:390px){main{padding:24px 16px}.summary,.detail-grid{grid-template-columns:1fr}.event{grid-template-columns:66px 1fr}.event-status{grid-column:2}}@media(min-width:700px){.panel{flex-basis:calc(50% - 6px)}.section-rail{flex-wrap:wrap;overflow:visible;scroll-snap-type:none}}@media(prefers-reduced-motion:reduce){.section-rail{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
 
@@ -195,6 +197,7 @@ function renderShell(config, nonce) {
     <button type="button" data-view="history" aria-current="false" data-copy="navHistory">🧾 HISTORY</button>
     <button type="button" data-view="care" aria-current="false" data-copy="navCare">🎁 CARE</button>
     <button type="button" data-view="coupons" aria-current="false" data-copy="navCoupons">🎟 COUPONS</button>
+    <button type="button" data-view="my-requests" aria-current="false">✦ MY REQUESTS</button>
   </nav>
   <section id="profile" class="profile hidden" aria-label="Member profile">
     <div class="section-rail">
@@ -254,6 +257,17 @@ function renderShell(config, nonce) {
       <span class="label" data-copy="couponWalletLabel">Member LIFF</span><h2 data-copy="couponWalletTitle">🎟 คูปองของฉัน</h2>
       <div id="coupon-wallet" class="stack"><p class="empty" data-copy="couponWalletEmpty">ยังไม่มีคูปองที่ออกให้กับบัญชีนี้ครับ</p></div>
     </div></section>
+    <section id="my-requests" class="panel" aria-label="My requests">
+      <div class="card"><span class="label">MY DETAILS</span><h2>ข้อมูลที่อยากให้ MMD ใช้ดูแลคุณ</h2><p class="form-note">ข้อมูลนี้ส่งให้ทีม MMD ตรวจสอบก่อนอัปเดต จึงไม่เปลี่ยนประวัติที่ยืนยันแล้วเอง</p>
+        <form id="customer-profile-form" class="form-stack"><label>อีเมล<input id="customer-email" type="email" maxlength="160" autocomplete="email"></label><label>เบอร์โทรศัพท์<input id="customer-phone" type="tel" maxlength="40" autocomplete="tel"></label><label>Telegram<input id="customer-telegram" type="text" maxlength="65" autocomplete="off" placeholder="username ไม่ต้องใส่ @"></label><label>ความชอบ / สเป็ก / สิ่งที่อยากให้ทีมรู้<textarea id="customer-preferences" maxlength="1200"></textarea></label><button type="submit">ส่งข้อมูลให้ MMD ตรวจสอบ</button></form>
+      </div>
+      <div class="card"><span class="label">YOUR REQUEST</span><h2>อยากให้ MMD ตามหาใคร</h2><p class="form-note">อัปโหลดรูปที่คุณมีได้สูงสุด 3 รูป (JPG, PNG หรือ WebP) เพื่อให้ทีมตามหาเป็นการภายใน รูปจะไม่ขึ้นหน้า Public หรือโปรไฟล์โมเดลโดยอัตโนมัติ</p>
+        <form id="your-request-form" class="form-stack"><label>ชื่อนายแบบ<input id="requested-model-name" type="text" maxlength="120" required></label><label>ลิงก์โซเชียล (ได้สูงสุด 3 ลิงก์)<textarea id="requested-model-social" maxlength="500" placeholder="https://..."></textarea></label><label>สนใจงานแบบไหน<select id="requested-model-audience"><option value="public">งานทั่วไป (Public)</option><option value="private">งาน Private</option></select></label><label>ทำไมอยากให้ MMD ตามหา<textarea id="requested-model-reason" maxlength="1800" required></textarea></label><label>รูปอ้างอิง (ไม่บังคับ)<input id="requested-model-evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><button type="submit">ส่ง Your Request</button></form>
+        <div id="your-request-status" class="form-note" role="status" aria-live="polite"></div>
+      </div>
+      <div class="card"><span class="label">REQUEST STATUS</span><div id="customer-request-list" class="history"><p class="empty">กำลังตรวจสอบคำขอของคุณ</p></div></div>
+      <div class="card"><span class="label">SAVED MODELS</span><div id="saved-model-list" class="history"><p class="empty">ยังไม่มีนายแบบที่บันทึกไว้</p></div></div>
+    </section>
     </div>
   </section>
   <div id="status" class="status">MMD Privé</div>
@@ -276,6 +290,9 @@ function renderShell(config, nonce) {
   const wishText = document.getElementById("wish-text");
   const wishSubmit = document.getElementById("wish-submit");
   const wishResult = document.getElementById("wish-result");
+  const customerProfileForm = document.getElementById("customer-profile-form");
+  const yourRequestForm = document.getElementById("your-request-form");
+  const yourRequestStatus = document.getElementById("your-request-status");
   const locale = CONFIG.language || "th";
   const copy = {
     th: { mark:"MMD Privé · Member Dashboard", title:"My MMD", subtitle:"ผมเตรียมข้อมูลสมาชิกของคุณไว้ใน LINE อย่างเรียบง่ายและเป็นส่วนตัวครับ", navProfile:"ภาพรวม", navHome:"👤 HOME", navPoints:"⭐ POINTS", navCredits:"💳 CREDIT", navPackage:"📦 PACKAGE", navJobs:"💼 JOBS", navHistory:"🧾 HISTORY", navCare:"🎁 CARE", memberLabel:"สวัสดีครับ", contactLabel:"ข้อมูลติดต่อ", emailLabel:"อีเมล", phoneLabel:"เบอร์โทร", tierLabel:"ระดับสมาชิก", pointsLabel:"คะแนนที่ใช้งานได้", expiryLabel:"สมาชิกใช้ได้ถึง", paymentLabel:"สถานะการชำระ", historyLabel:"History · Last 1 Year", pointsTitle:"⭐ Points", pointsHistoryLabel:"รายการคะแนน", creditWalletLabel:"MY MMD CREDIT", creditWalletTitle:"💳 เครดิตบริการของฉัน", creditChecking:"กำลังตรวจสอบเครดิตบริการของคุณครับ", creditAvailableLabel:"ใช้ได้", creditReservedLabel:"จองไว้", creditUsedLabel:"ใช้แล้ว", creditRecentLabel:"รายการล่าสุด", creditEmpty:"ยังไม่มีเครดิตบริการที่ยืนยันแล้วสำหรับบัญชีนี้ครับ", creditVerified:"แสดงเฉพาะเครดิตที่ยืนยันแล้ว", creditExpiry:"ใช้ได้ถึง", packageTitle:"📦 Package", packageHistoryLabel:"ประวัติแพ็กเกจ", jobsTitle:"💼 Jobs", requestsLabel:"คำขอล่าสุด", mmsLabel:"MMS prebookings", historyTitle:"🧾 History", paymentHistoryLabel:"ประวัติการชำระ", careLabel:"6 Years · Care Back", careTitle:"Personal Care-Back Privilege", careIntro:"ผมจะช่วยตรวจสอบสิทธิ์ CARE BACK ให้ก่อนครับ คูปองส่วนตัวจะเปิดหลังส่งคำอวยพรถึง MMD สำเร็จ", careButton:"ตรวจสิทธิ์ CARE BACK", wishPlaceholder:"ฝากคำอวยพรวันเกิดให้ MMD ได้ที่นี่ครับ", wishSubmit:"ส่งคำอวยพรให้ MMD", ready:"ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ", checking:"ผมกำลังตรวจสอบข้อมูลของคุณครับ", checkingPoints:"กำลังตรวจสอบคะแนนของคุณครับ", pointsRate:"ทุก 100 บาท = 1 คะแนน", expiring:"คะแนนใกล้หมดอายุ", empty:"ยังไม่มีรายการที่ยืนยันได้ในช่วงนี้ครับ", careLoading:"กำลังตรวจสอบสิทธิ์", careRetry:"ลองตรวจสอบอีกครั้ง", wishEmpty:"กรุณาเขียนคำอวยพรก่อนส่งครับ", wishSaving:"กำลังเก็บคำอวยพร", wishError:"ตอนนี้ยังเก็บคำอวยพรไม่ได้ครับ กรุณาลองใหม่อีกครั้ง", wishRetry:"ลองส่งอีกครั้ง", careChecked:"สิทธิ์ CARE BACK ของคุณถูกตรวจแล้ว ส่งคำอวยพรถึง MMD สำเร็จเพื่อเปิดคูปองส่วนตัว 10% ครับ", wishDone:"MMD ได้รับคำอวยพรของคุณแล้วครับ", wishPending:"ระบบกำลังยืนยันการบันทึกคำอวยพรเดิมอย่างปลอดภัย กรุณากลับมาตรวจสอบอีกครั้งครับ", wishReview:"ข้อมูลนี้ยังต้องตรวจสอบก่อนครับ ผมจะเก็บเส้นทางของคุณไว้อย่างปลอดภัย", couponReady:"ส่งคำอวยพรเพื่อเปิดคูปอง", claimMessage:"ผมจะอัปเดตสิทธิ์ตามสถานะสมาชิกและการยืนยันที่เกี่ยวข้องครับ", careCheckedButton:"ตรวจสิทธิ์ CARE BACK แล้ว", careResumedButton:"อัปเดตสิทธิ์ CARE BACK แล้ว", promoLoading:"กำลังตรวจสอบสิทธิ์ CARE BACK อย่างปลอดภัยครับ" },
@@ -522,11 +539,99 @@ function renderShell(config, nonce) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
+    renderCustomerContact(payload.data || {});
     await readCouponWallet();
     await readCreditWallet();
+    await readCustomerRequests();
     if (CONFIG.intent === "promo" && CONFIG.campaign === "care_back") await readCareBackState();
     return payload.data || {};
   }
+
+  function requestId() {
+    const uuid = typeof crypto?.randomUUID === "function" ? crypto.randomUUID().replace(/-/g, "") : String(Date.now()) + Math.random().toString(36).slice(2);
+    return "req_" + uuid;
+  }
+
+  async function requestJson(body) {
+    const response = await fetch(CONFIG.customerRequestsEndpoint, { method:"POST", credentials:"same-origin", headers:{"content-type":"application/json",accept:"application/json"}, body:JSON.stringify(body) });
+    const payload = await response.json().catch(() => null);
+    return { response, payload };
+  }
+
+  function renderCustomerContact(data) {
+    const contact = data.contactProfile || data.contact_profile || {};
+    document.getElementById("customer-email").value = String(contact.email || "");
+    document.getElementById("customer-phone").value = String(contact.phone || "");
+    document.getElementById("customer-telegram").value = String(contact.telegram || contact.telegram_username || "").replace(/^@/, "");
+  }
+
+  async function readCustomerRequests() {
+    const list = document.getElementById("customer-request-list");
+    const saved = document.getElementById("saved-model-list");
+    try {
+      const response = await fetch(CONFIG.customerRequestsEndpoint, { method:"GET", credentials:"same-origin", headers:{accept:"application/json"} });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok !== true || !Array.isArray(payload.items)) throw new Error("unavailable");
+      renderCustomerRequests(payload.items);
+    } catch {
+      list.replaceChildren(); saved.replaceChildren();
+      appendEmpty(list, "ตอนนี้ยังตรวจสอบคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง");
+      appendEmpty(saved, "ตอนนี้ยังตรวจสอบรายการที่บันทึกไว้ไม่ได้ครับ");
+    }
+  }
+
+  function renderCustomerRequests(items) {
+    const list = document.getElementById("customer-request-list"); const saved = document.getElementById("saved-model-list");
+    list.replaceChildren(); saved.replaceChildren();
+    const requests = safeList(items).filter((item) => item?.request_type !== "saved_model");
+    const savedItems = safeList(items).filter((item) => item?.request_type === "saved_model" && item.action === "save");
+    if (!requests.length) appendEmpty(list, "ยังไม่มีคำขอที่ส่งจากบัญชีนี้");
+    else for (const item of requests) list.append(eventRow(item.created_at, item.request_type === "your_request" ? (item.model_name || "Your Request") : "อัปเดตข้อมูลของฉัน", item.status, item.audience ? item.audience.toUpperCase() : "กำลังตรวจสอบ"));
+    if (!savedItems.length) appendEmpty(saved, "ยังไม่มีนายแบบที่บันทึกไว้");
+    else for (const item of savedItems) saved.append(eventRow(item.created_at, item.model_name || "Saved model", item.status, "บันทึกไว้"));
+  }
+
+  async function uploadRequestEvidence(files) {
+    const ids = [];
+    for (const file of Array.from(files || []).slice(0, 3)) {
+      const form = new FormData(); form.append("file", file, file.name || "reference-image");
+      const response = await fetch(CONFIG.customerRequestEvidenceEndpoint, { method:"POST", credentials:"same-origin", body:form });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.ok !== true || !/^evidence_[a-f0-9]{32}$/.test(String(payload.evidence_id || ""))) throw new Error("upload_failed");
+      ids.push(payload.evidence_id);
+    }
+    return ids;
+  }
+
+  // Catalog cards may call this bridge; the server still validates identity, model id and idempotency.
+  window.MMD_LIFF_SAVE_MODEL = async (modelId, modelName = "") => {
+    const { response, payload } = await requestJson({ request_id:requestId(), request_type:"saved_model", model_id:modelId, model_name:modelName, action:"save" });
+    if (!response.ok || payload?.ok !== true) throw new Error("save_model_failed");
+    await readCustomerRequests();
+    return payload.item;
+  };
+
+  customerProfileForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = customerProfileForm.querySelector("button"); button.disabled = true;
+    try {
+      const { response, payload } = await requestJson({ request_id:requestId(), request_type:"profile_update", email:document.getElementById("customer-email").value, phone:document.getElementById("customer-phone").value, telegram_username:document.getElementById("customer-telegram").value, preferences:document.getElementById("customer-preferences").value });
+      if (!response.ok || payload?.ok !== true) throw new Error("request_failed");
+      show("รับข้อมูลแล้วครับ ทีม MMD จะตรวจสอบก่อนอัปเดต"); await readCustomerRequests();
+    } catch { show("ตอนนี้ยังส่งข้อมูลไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"); }
+    finally { button.disabled = false; }
+  });
+
+  yourRequestForm?.addEventListener("submit", async (event) => {
+    event.preventDefault(); const button = yourRequestForm.querySelector("button"); button.disabled = true; yourRequestStatus.textContent = "กำลังรับ Your Request อย่างปลอดภัย…";
+    try {
+      const evidenceIds = await uploadRequestEvidence(document.getElementById("requested-model-evidence").files);
+      const { response, payload } = await requestJson({ request_id:requestId(), request_type:"your_request", model_name:document.getElementById("requested-model-name").value, model_social:document.getElementById("requested-model-social").value, audience:document.getElementById("requested-model-audience").value, reason:document.getElementById("requested-model-reason").value, evidence_ids:evidenceIds });
+      if (!response.ok || payload?.ok !== true) throw new Error("request_failed");
+      yourRequestForm.reset(); yourRequestStatus.textContent = "MMD รับคำขอแล้วครับ ทีมจะตรวจสอบเป็นการภายใน"; await readCustomerRequests();
+    } catch { yourRequestStatus.textContent = "ตอนนี้ยังส่งคำขอไม่ได้ครับ กรุณาลองใหม่อีกครั้ง"; }
+    finally { button.disabled = false; }
+  });
 
   async function readCouponWallet() {
     const response = await fetch(CONFIG.couponWalletEndpoint, { method:"GET",credentials:"same-origin",headers:{"accept":"application/json"} });
@@ -1017,7 +1122,7 @@ function normalizeView(value) {
   const view = String(value || "home").trim().toLowerCase();
   if (view === "profile") return "home";
   if (view === "care_back") return "care";
-  return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "signup"]).has(view) ? view : "home";
+  return new Set(["home", "points", "credits", "package", "jobs", "history", "care", "coupons", "my-requests", "signup"]).has(view) ? view : "home";
 }
 
 function normalizeWorld(value) {
