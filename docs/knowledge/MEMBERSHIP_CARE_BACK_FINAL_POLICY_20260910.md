@@ -1,5 +1,7 @@
 # MMD Private Membership + CARE BACK — Final Policy Lock
 
+> **2026-09-28 owner override:** Existing-member Verify duration is now governed by `EXISTING_MEMBER_VERIFY_1Y_FINAL_LOCK_20260928.md`. Any older current-member +180-day or expired-member +90-day status rule is superseded for Existing Member Verify. Package base terms and separate package-specific signup/renewal promotions remain governed by this document where they do not conflict with the new Verify lock.
+
 Status: CANONICAL
 Effective: 2026-09-10 Asia/Bangkok
 Owner / final authority: Per
