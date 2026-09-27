@@ -5489,7 +5489,7 @@ function effectivePrivateModelLane(profile, fields, selectedLane) {
   return isDriveLazyPrivateModel(fields) && (lane === "straight" || lane === "gay") ? lane : "";
 }
 
-function modelProfilePhotoUrls(fields = {}) {
+export function modelProfilePhotoUrls(fields = {}) {
   const seen = new Set();
   const out = [];
   const add = (value) => {
