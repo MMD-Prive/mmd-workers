@@ -139,13 +139,13 @@ function durableBinding(options = {}) {
   };
 }
 
-test("committed rollout configuration keeps both model capabilities off and exposes no public admin RPC route", () => {
+test("owner-approved rollout keeps LLM and card leads off while gated model lookup is on", () => {
   const lineWrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   const adminWrangler = readFileSync(new URL("../../admin-worker/wrangler.toml", import.meta.url), "utf8");
   assert.match(lineWrangler, /^LINE_KENJI_MODEL_ENABLED\s*=\s*"false"$/m);
-  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_KENJI_MODEL_ACCESS_ENABLED\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_LEAD_ENABLED\s*=\s*"false"$/m);
-  assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"false"$/m);
+  assert.match(lineWrangler, /^LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR\s*=\s*"true"$/m);
   assert.match(lineWrangler, /^LINE_CARD_21829530_PILOT_HASHES\s*=\s*""$/m);
   assert.match(lineWrangler, /binding\s*=\s*"ADMIN_WORKER"\s*\nservice\s*=\s*"admin-worker"/m);
   assert.doesNotMatch(adminWrangler, /v1\/internal\/kenji\/model-access/);
