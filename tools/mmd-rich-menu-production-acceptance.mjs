@@ -60,6 +60,15 @@ function safeAuditSummary(body = {}) {
   };
 }
 
+function safePrepareReason(body = {}) {
+  const reason = String(body?.reason || "").trim();
+  if (/^rich_menu_repair_invalid_(guest|public|private)$/.test(reason)) return reason;
+  if (/^image_(integrity_mismatch|unavailable|not_png|bad_size_\d+x\d+|http_\d{3}|too_large_\d+)$/.test(reason)) return reason;
+  if (/^line_\d{3}(?::|$)/.test(reason)) return reason.slice(0, 8).replace(/:$/, "");
+  if (reason === "rich_menu_id_missing") return reason;
+  return "unclassified";
+}
+
 async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
   let last = null;
   for (let attempt = 1; attempt <= 30; attempt += 1) {
@@ -78,11 +87,30 @@ async function call(path, method = "GET", { acceptStatuses = [] } = {}) {
     const body = response ? await response.json().catch(() => ({})) : {};
     last = { status: response?.status || 0, body };
     if ((response?.ok && body?.ok === true) || acceptStatuses.includes(response?.status || 0)) return body;
-    const retryable = !response || [404, 429, 502, 503, 504].includes(response.status);
+    const deterministicPrepareFailure = path.endsWith("/three-level/prepare") &&
+      response?.status === 502 &&
+      /^(rich_menu_repair_invalid_(guest|public|private)|image_integrity_mismatch|image_not_png|image_bad_size_\d+x\d+)$/.test(String(body?.reason || ""));
+    const retryable = !deterministicPrepareFailure && (!response || [404, 429, 502, 503, 504].includes(response.status));
     if (!retryable || attempt === 30) break;
     await new Promise((resolve) => setTimeout(resolve, 5000));
   }
-  throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${String(last?.body?.error || "unknown").slice(0, 80)}`);
+  const errorCode = String(last?.body?.error || "unknown").replace(/[^a-z0-9_]/gi, "").slice(0, 80);
+  if (path.endsWith("/three-level/prepare")) {
+    const reasonCode = safePrepareReason(last?.body);
+    const output = `${process.env.RUNNER_TEMP || "/tmp"}/mmd-rich-menu-production-acceptance.json`;
+    await writeFile(output, JSON.stringify({
+      ok: false,
+      version: VERSION,
+      stage: "prepare",
+      http_status: last?.status || 0,
+      error_code: errorCode,
+      reason_code: reasonCode,
+      physical_tap_verified: false,
+      checked_at: new Date().toISOString(),
+    }, null, 2));
+    throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}:${reasonCode}`);
+  }
+  throw new Error(`acceptance_call_failed:${path}:${last?.status || 0}:${errorCode}`);
 }
 
 const prepare = await call("/v1/admin/line/rich-menu/three-level/prepare", "POST");
