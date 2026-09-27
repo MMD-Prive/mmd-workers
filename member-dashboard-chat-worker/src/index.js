@@ -688,6 +688,9 @@ async function requestKenjiModelAccess(env = {}, lineUserId = "", query = "", ve
     if (payload?.status === "clarification") return { status: "clarification" };
     if (payload?.status === "verification_required") return { status: "verification_required" };
     if (payload?.status === "renewal") return { status: "renewal" };
+    if (payload?.status === "restricted_category" && ["gws", "ems"].includes(payload.category)) {
+      return { status: "restricted_category", category: payload.category };
+    }
     if (payload?.status !== "match" || !payload?.model || typeof payload.model !== "object") return { status: "silent" };
     const modelCode = asString(payload.model.model_code).slice(0, 80);
     const workingName = asString(payload.model.working_name).slice(0, 120);
@@ -733,6 +736,15 @@ function buildKenjiModelAccessDecision(access = {}, options = {}) {
   if (access.status === "match") {
     const answer = buildKenjiModelAccessReply(access.model);
     if (answer) return { ...base, text: answer, reply_source: "model_access", guard_blocked: false, guard_reason: "" };
+  }
+  if (access.status === "restricted_category" && ["gws", "ems"].includes(access.category)) {
+    return {
+      ...base,
+      text: "ต้องสะสม Point ให้ครบก่อนนะคร้าบ 🖤\n\n🔹 GWs หรือ Guest Who? — 1,200 points\nกลุ่มนายแบบ เทรนเนอร์ หรือหนุ่มหล่อสายลุคจัดที่ไม่เปิดเผยตัวตนบนสาธารณะ เรทโดยประมาณมักเริ่มที่หลักหมื่นกลางขึ้นไปต่อ booking\n\n🔹 EMs หรือ Exclusive Models — 2,500 points\nกลุ่มนักแสดง ศิลปิน หรือบุคคลที่มีชื่อเสียงในระดับหนึ่ง เรทจะสูงกว่า GWs และมักประเมินเป็นรายเคสครับ\n\nเรทรายบุคคลจริง รวมถึงโปรไฟล์ รูปภาพ และรายละเอียดบริการ จะเปิดให้เฉพาะสมาชิก MMD ปัจจุบันที่มีสิทธิ์เข้าถึงเท่านั้นครับ 🗝️\n\nGWs: 1,200 points = 120,000 บาท | EMs: 2,500 points = 250,000 บาท\nสมัคร Black Card 35,000 บาท ได้สิทธิ์ 3 ปี เพื่อเข้าถึงกลุ่มนายแบบความลับโดยไม่ต้องรอสะสม points ครับ ✨\n\nดู Points และสิทธิ์ใน MMD APP → https://mmdbkk.com/member/liff?view=points",
+      reply_source: "model_access_restricted_category",
+      guard_blocked: false,
+      guard_reason: "",
+    };
   }
   if (access.status === "clarification") {
     return { ...base, text: "ขอชื่อที่ใช้ทำงานหรือรหัส Model ให้ครบอีกนิดครับ", reply_source: "model_access_clarification", guard_blocked: false, guard_reason: "" };
@@ -965,6 +977,11 @@ export async function resolveKenjiLineReply(event = {}, profile = {}, env = {}, 
       const trigger = resolveLineCardCampaignTrigger(eventText);
       if (trigger) {
         const access = await requestKenjiModelAccess(env, getLineUserId({ event }), trigger.card_trigger);
+        if (access.status === "restricted_category" &&
+            (trigger.card_trigger.toLowerCase().startsWith(access.category))) {
+          const decision = buildKenjiModelAccessDecision(access);
+          if (decision.text) return { ...decision, reply_source: "line_card_model_access_restricted" };
+        }
         if (access.status === "match" &&
             asString(access.model?.model_code).toLowerCase() === trigger.card_trigger.toLowerCase()) {
           const decision = buildKenjiModelAccessDecision(access);
