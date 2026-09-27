@@ -49,7 +49,7 @@
   function esc(value) {
     const node = document.createElement('div');
     node.textContent = value == null ? '—' : String(value);
-    return node.innerHTML;
+    return node.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
   function id(item) { return item.proof_id || item.id || ''; }
   function text(value) { return String(value == null ? '' : value).trim(); }
@@ -69,8 +69,21 @@
   }
   function purpose(item) { return stageLabels[text(item.payment_stage).toLowerCase()] || item.inferred_label || 'ยังจัดประเภทไม่ได้'; }
   function searchable(item) {
-    return [item.customer_name, item.payer_name, item.evidence_amount_thb, item.payment_ref, item.channel, item.created_at, item.inferred_label, item.payment_stage]
+    return [id(item), item.customer_name, item.payer_name, item.evidence_amount_thb, item.payment_ref, item.channel, item.created_at, item.inferred_label, item.payment_stage]
       .join(' ').toLowerCase();
+  }
+  function evidenceHref(item) {
+    // The admin API supplies this path after checking the proof's private R2 key.
+    // Never let a queue field send the operator to another host or proof.
+    const proofId = id(item);
+    if (!proofId || !item.evidence_preview_url) return '';
+    try {
+      const url = new URL(item.evidence_preview_url, window.location.origin);
+      return url.origin === window.location.origin
+        && url.pathname === '/v1/admin/payments/evidence'
+        && url.searchParams.get('proof_id') === proofId
+        ? url.pathname + url.search : '';
+    } catch { return ''; }
   }
   function autoReason(item) {
     const parts = ['ระบบตรวจหลักฐาน'];
@@ -144,10 +157,10 @@
   }
 
   function clientHref(item) {
-    const clientId = item.client_record_id || item.client_id || item.canonical_client_id || '';
+    const clientId = item.client_record_id || '';
     return clientId
       ? `/internal/admin/member-intelligence?client_id=${encodeURIComponent(clientId)}`
-      : '/internal/admin/member-intelligence';
+      : '';
   }
 
   function renderDetail() {
@@ -155,10 +168,16 @@
     if (!item) return;
     const issues = item.context_issues || [];
     const reason = autoReason(item);
+    const preview = evidenceHref(item);
+    const client = clientHref(item);
+    const source = item.channel === 'line_ofc' ? 'LINE OA' : item.channel || 'ยังไม่ทราบช่องทาง';
+    const handoff = item.payment_stage === 'membership'
+      ? '<div class="psi-next"><strong>หลังตรวจรับเงิน</strong><p>ตรวจสถานะสมาชิกใน MY MMD จากข้อมูลที่ระบบยืนยันแล้ว หากยังไม่อัปเดตให้ตรวจ Money Control และ Payment reference นี้ก่อน ไม่ปรับสิทธิ์จากสลิปโดยตรง</p></div>'
+      : '';
     const review = item.reviewable
       ? `<div class="psi-reviewbox"><label for="psi-reason">สรุปจากระบบ / หมายเหตุเพิ่มเติม</label><textarea id="psi-reason" placeholder="ระบบสรุปให้แล้ว — แก้หรือเพิ่มเฉพาะกรณีจำเป็น">${esc(reason)}</textarea><div class="psi-actions"><button type="button" data-action="approve" ${item.can_approve ? '' : 'disabled'}>ยืนยันรับเงิน · Official Verify</button><button type="button" data-action="issue">บันทึกว่าต้องตรวจต่อ</button><button type="button" data-action="reject">Reject หลักฐาน</button></div><div class="psi-save" id="psi-save">${item.can_approve ? 'ข้อมูล canonical ครบ · พร้อม Official Verify' : `ยังยืนยันไม่ได้ · ${esc(issues.join(' · ') || 'context ไม่ครบ')}`}</div></div>`
       : '';
-    detail.innerHTML = `<p class="psi-kicker">CEO · PAYMENT DECISION</p><h2>${esc(item.customer_name || item.payer_name || 'ยังไม่ทราบลูกค้า')}</h2><div class="psi-info"><div><span>ประเภทเงิน</span><strong>${esc(purpose(item))}</strong></div><div><span>ยอดในหลักฐาน</span><strong>${esc(money(item.evidence_amount_thb))}</strong></div><div><span>Canonical match</span><strong>${esc(matchText(item))}</strong></div><div><span>Payment reference</span><strong>${esc(item.payment_ref || 'ยังไม่พบ')}</strong></div><div><span>Session / Job</span><strong>${esc(item.session_id || 'ยังไม่ผูก')}</strong></div><div><span>Image / extraction</span><strong>${esc((item.extraction_method || 'not_run') + (item.extraction_error ? ` · ${item.extraction_error}` : ''))}</strong></div></div><div class="psi-next"><strong>${item.can_approve ? 'สิ่งที่เปอร์ต้องทำ' : 'ระบบยังต้องเติมข้อมูล'}</strong><p>${item.settlement_recovery ? 'Money Truth ยืนยันแล้วจากรอบก่อน · กดเพื่อปิด Proof / Audit ที่ค้าง โดยไม่สร้างยอดซ้ำ' : item.can_approve ? 'ตรวจสรุปด้านบน แล้วกด “ยืนยันรับเงิน” ได้เลย ไม่ต้องพิมพ์เหตุผลใหม่' : esc(issues.join(' · ') || 'ระบบยังไม่มี canonical context ที่ครบพอ')}</p></div><a class="psi-client-link" href="${clientHref(item)}">เปิด Member Intelligence ↗</a> <a class="psi-client-link" href="/internal/admin/payments">เปิด Money Control ↗</a>${review}`;
+    detail.innerHTML = `<p class="psi-kicker">CEO · PAYMENT DECISION</p><h2>${esc(item.customer_name || item.payer_name || 'ยังไม่ทราบลูกค้า')}</h2><div class="psi-info"><div><span>ช่องทางรับ</span><strong>${esc(source)}</strong></div><div><span>Proof ID</span><strong>${esc(id(item))}</strong></div><div><span>ประเภทเงิน</span><strong>${esc(purpose(item))}</strong></div><div><span>ยอดในหลักฐาน / ยอดที่รอ</span><strong>${esc(money(item.evidence_amount_thb))} / ${esc(item.expected_amount_thb == null ? 'ยังไม่ผูกยอดที่คาด' : money(item.expected_amount_thb))}</strong></div><div><span>Canonical match</span><strong>${esc(matchText(item))}</strong></div><div><span>Payment reference</span><strong>${esc(item.payment_ref || 'ยังไม่พบ')}</strong></div><div><span>Session / Job</span><strong>${esc(item.session_id || 'ยังไม่ผูก')}</strong></div><div><span>Image / extraction</span><strong>${esc((item.extraction_method || 'not_run') + (item.extraction_error ? ` · ${item.extraction_error}` : ''))}</strong></div></div>${preview ? `<a class="psi-client-link" href="${esc(preview)}" target="_blank" rel="noopener noreferrer">เปิดหลักฐานใน Admin ↗</a>` : '<p class="psi-sub">ยังไม่มีหลักฐานที่เปิดตรวจได้จาก Admin</p>'}<div class="psi-next"><strong>${item.can_approve ? 'สิ่งที่เปอร์ต้องทำ' : 'ระบบยังต้องเติมข้อมูล'}</strong><p>${item.settlement_recovery ? 'Money Truth ยืนยันแล้วจากรอบก่อน · กดเพื่อปิด Proof / Audit ที่ค้าง โดยไม่สร้างยอดซ้ำ' : item.can_approve ? 'ตรวจหลักฐานและสรุปด้านบน แล้วกด “ยืนยันรับเงิน” ได้เลย' : esc(issues.join(' · ') || 'ระบบยังไม่มี canonical context ที่ครบพอ')}</p></div>${handoff}${client ? `<a class="psi-client-link" href="${esc(client)}">เปิด Member Intelligence ↗</a>` : '<p class="psi-sub">ยังไม่ผูก Canonical Client · ตรวจความสัมพันธ์ก่อนเปิดข้อมูลสมาชิก</p>'} <a class="psi-client-link" href="/internal/admin/payments">เปิด Money Control ↗</a>${review}`;
     if (!item.reviewable) return;
     const textarea = document.getElementById('psi-reason');
     const save = document.getElementById('psi-save');
