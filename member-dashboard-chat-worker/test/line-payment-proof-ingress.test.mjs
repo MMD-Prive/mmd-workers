@@ -258,6 +258,17 @@ test("Telegram clearly labels four LINE slip categories and does not verify from
   }
 });
 
+test("Telegram confirms membership only after settlement reports materialized", async () => {
+  const h = telegramHarness();
+  await notifyPaymentProofOps(h.env, {
+    proofId: "line_membership_materialized_1",
+    sourceType: "user",
+    paymentContextText: "ต่ออายุสมาชิก",
+    analysis: { payment_intelligence: { tracking_kind: "membership_renewal" } },
+  }, { deduped: false, settlement: { status: "materialized" } });
+  assert.match(h.messages[0].text, /สถานะ: ยืนยันแล้วจากระบบรับเงิน/);
+});
+
 test("LINE generic transfer proof stays in Payments Confirm topic 22", async () => {
   const h = telegramHarness();
   const result = await notifyPaymentProofOps(h.env, { proofId: "line_payment_1", sourceType: "user", sourceContext: "direct_user_payment_followup", paymentContextText: "โอนแล้วครับ ส่งสลิปให้" }, { deduped: false });
