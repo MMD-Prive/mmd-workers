@@ -1413,7 +1413,7 @@ async function requestLineCardCampaignLeadClaim(env = {}, key = "", action = "cl
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, claimed: false, reason: "campaign_lead_dedupe_unavailable" };
-    return { ...payload, claim_key: key, reason: payload.claimed === false ? "campaign_lead_already_claimed" : "" };
+    return { ...payload, claim_key: key, reason: action === "claim" && payload.claimed === false ? "campaign_lead_already_claimed" : "" };
   } catch (_) {
     return { ok: false, claimed: false, reason: "campaign_lead_dedupe_unavailable" };
   }
@@ -1441,13 +1441,17 @@ async function lineCardCampaignContext(env = {}, lineUserId = "", action = "get"
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) return { ok: false, found: false, reason: "campaign_context_unavailable" };
-    if (action === "get" && payload?.found === true) {
+    if ((action === "get" || action === "claim") && payload?.found === true) {
       const claimKey = asString(payload?.context?.lead_claim_key);
       const claimToken = asString(payload?.context?.lead_claim_token);
       if (!/^[a-f0-9]{64}$/.test(claimKey) || !claimToken) {
+        if (action === "claim" && payload?.claimed === true) await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token });
         return { ...payload, committed: false, reason: "campaign_context_link_missing" };
       }
       const claim = await requestLineCardCampaignLeadClaim(env, claimKey, "status", claimToken);
+      if (action === "claim" && payload?.claimed === true && claim?.committed !== true) {
+        await lineCardCampaignContext(env, lineUserId, "release", { claim_token: payload.claim_token });
+      }
       return {
         ...payload,
         committed: claim?.committed === true,
@@ -2247,7 +2251,7 @@ async function syncLineEventAfterReply(env, event, intent, autoReplyEnabled, ken
   return writeLineEventToConsoleInbox(env, event, profile, intent);
 }
 
-async function handleLineWebhook(request, env, ctx = null) {
+async function handleLineWebhook(request, env, ctx = null, options = {}) {
   const rawBody = await request.text();
   const signature = getHeader(request.headers, "x-line-signature");
   const validSignature = await verifyLineSignature(rawBody, signature, env.LINE_CHANNEL_SECRET);
@@ -2283,6 +2287,11 @@ async function handleLineWebhook(request, env, ctx = null) {
     const supplierRegistrationName = matchHimaiSupplierRegistration(text);
     const isSupplierRegistration = supplierRegistrationName !== null;
     const canGenerateReply = Boolean(autoReplyEnabled && kenjiEnabled && eventMode !== "standby" && getReplyToken(event));
+    const campaignCanReply = Boolean(
+      kenjiEnabled && !runtimeLineKill && eventMode !== "standby" &&
+      event?.type === "message" && event?.message?.type === "text" &&
+      event?.source?.type === "user" && getReplyToken(event)
+    );
     const campaignFlagsEnabled = Boolean(
       isEnabled(env.LINE_CARD_21829530_LEAD_ENABLED) &&
       isEnabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)
@@ -2292,37 +2301,36 @@ async function handleLineWebhook(request, env, ctx = null) {
       ? await sha256Hex(lineUserId)
       : "";
     const campaignPilotEligible = Boolean(campaignPilotUserHash && campaignPilotCohort.hashes.has(campaignPilotUserHash));
-    const campaignContextResult = !campaignTrigger && text && canGenerateReply && campaignFlagsEnabled && campaignPilotEligible
-      ? await lineCardCampaignContext(env, lineUserId, "get")
+    const campaignContextResult = !campaignTrigger && text && campaignCanReply && campaignFlagsEnabled && campaignPilotEligible
+      ? await lineCardCampaignContext(env, lineUserId, "claim")
       : { ok: true, found: false };
     const campaignBrief = Boolean(campaignContextResult.found && campaignContextResult.context);
+    const campaignContextUnavailable = Boolean(
+      !campaignTrigger && text && campaignCanReply &&
+      ((options.requireCampaignContext === true && (!campaignFlagsEnabled || !campaignPilotEligible || campaignContextResult.found !== true)) ||
+        (campaignFlagsEnabled && campaignPilotEligible && (campaignContextResult.ok !== true || (campaignContextResult.found === true && (!campaignContextResult.context || campaignContextResult.committed !== true)))))
+    );
     const campaignItem = campaignTrigger || campaignContextResult.context || null;
-    const campaignEvent = Boolean(campaignTrigger || campaignBrief);
+    const campaignEvent = Boolean(campaignTrigger || campaignBrief || campaignContextUnavailable);
     const intent = campaignBrief ? "card_campaign_brief" : inferredIntent;
     const campaignLeadEnabled = Boolean(
+      !campaignContextUnavailable &&
       campaignEvent &&
-      canGenerateReply &&
+      campaignCanReply &&
       campaignFlagsEnabled &&
       campaignPilotEligible &&
-      (!campaignBrief || (
-        Boolean(campaignContextResult.context?.lead_inbox_id) &&
-        campaignContextResult.committed === true
-      ))
+      (!campaignBrief || campaignContextResult.claimed === true)
     );
     let campaignLeadQueued = false;
     const campaignGateReason = !campaignEvent
       ? "not_campaign"
-      : !campaignFlagsEnabled
-        ? "campaign_lead_flag_off"
-        : !campaignPilotCohort.valid
-          ? "campaign_pilot_config_malformed"
-          : !campaignPilotEligible
-            ? "campaign_pilot_not_eligible"
-            : campaignBrief && !campaignContextResult.context?.lead_inbox_id
-              ? "campaign_context_link_missing"
-              : campaignBrief && campaignContextResult.committed !== true
-                ? (campaignContextResult.reason || "campaign_context_uncommitted")
-            : "campaign_lead_not_processed";
+      : campaignContextUnavailable ? "campaign_context_unavailable"
+      : !campaignFlagsEnabled ? "campaign_lead_flag_off"
+      : !campaignPilotCohort.valid ? "campaign_pilot_config_malformed"
+      : !campaignPilotEligible ? "campaign_pilot_not_eligible"
+      : campaignBrief && !campaignContextResult.context?.lead_inbox_id ? "campaign_context_link_missing"
+      : campaignBrief && campaignContextResult.claimed !== true ? "campaign_context_already_claimed"
+      : "campaign_lead_not_processed";
     let campaignLeadClaim = { ok: false, claimed: false, reason: campaignGateReason };
     let campaignLeadRecord = campaignEvent ? { skipped: true, reason: campaignLeadClaim.reason, deduped: false } : null;
     if (campaignLeadEnabled) {
@@ -2365,27 +2373,16 @@ async function handleLineWebhook(request, env, ctx = null) {
               campaignLeadQueued = committed?.committed === true;
               if (!campaignLeadQueued) {
                 campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
-                await lineCardCampaignContext(env, lineUserId, "delete", {
-                  lead_inbox_id: `line_${getStableLineMessageId(event)}`,
-                  context_token: contextStored.context_token,
-                });
                 await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
               }
             }
           } else if (campaignBrief) {
-            const committed = await claimLineCardCampaignLead(env, event, "commit", campaignLeadClaim.claim_token);
-            campaignLeadQueued = committed?.committed === true;
-            if (campaignLeadQueued) {
-              const contextDeleted = await lineCardCampaignContext(env, lineUserId, "delete", {
-                lead_inbox_id: campaignContextResult.context.lead_inbox_id,
-                context_token: campaignContextResult.context.context_token,
-              });
-              if (contextDeleted?.reason === "campaign_context_mismatch") {
-                campaignLeadRecord = { ...campaignLeadRecord, reason: "campaign_context_superseded" };
-              } else if (contextDeleted?.deleted !== true) {
-                campaignLeadRecord = { ...campaignLeadRecord, reason: "campaign_context_delete_failed" };
-              }
-            } else {
+            const contextCommitted = await lineCardCampaignContext(env, lineUserId, "commit", { claim_token: campaignContextResult.claim_token });
+            if (contextCommitted?.committed === true) {
+              const committed = await claimLineCardCampaignLead(env, event, "commit", campaignLeadClaim.claim_token);
+              campaignLeadQueued = committed?.committed === true;
+            }
+            if (!campaignLeadQueued) {
               campaignLeadRecord = { ...campaignLeadRecord, skipped: true, reason: "campaign_lead_commit_failed" };
               await claimLineCardCampaignLead(env, event, "release", campaignLeadClaim.claim_token);
             }
@@ -2403,15 +2400,8 @@ async function handleLineWebhook(request, env, ctx = null) {
         };
       }
     }
-    if (campaignLeadQueued) {
-      const takeoverAfterQueue = await getLineOwnerTakeoverState(env, lineUserId);
-      if (takeoverAfterQueue.ok !== true || takeoverAfterQueue.active === true) {
-        campaignLeadQueued = false;
-        campaignLeadRecord = {
-          ...campaignLeadRecord,
-          reason: takeoverAfterQueue.ok !== true ? takeoverAfterQueue.reason : "owner_takeover_active",
-        };
-      }
+    if (campaignBrief && campaignContextResult.claimed === true && !campaignLeadQueued) {
+      await lineCardCampaignContext(env, lineUserId, "release", { claim_token: campaignContextResult.claim_token });
     }
     const canRegisterSupplier = Boolean(autoReplyEnabled && eventMode !== "standby" && getReplyToken(event));
     const capabilityDecision = decideKenjiCapability({ text, intent });
@@ -2423,13 +2413,16 @@ async function handleLineWebhook(request, env, ctx = null) {
     const supplierRegistration = isSupplierRegistration && canRegisterSupplier
       ? await registerHimaiSupplier(event, env, supplierRegistrationName)
       : null;
-    const replyDecision = isSupplierRegistration
-      ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
-      : (canGenerateReply && !modelPreflight.deduped
+    const replyDecision = campaignContextUnavailable
+      ? { text: "", fallback: false, reply_source: "silent", model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: true, guard_reason: "campaign_context_unavailable" }
+      : isSupplierRegistration
+        ? (supplierRegistration || { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" })
+      : ((canGenerateReply || (campaignEvent && campaignCanReply)) && !modelPreflight.deduped
         ? await resolveKenjiLineReply(event, {}, env, { forceReply: autoReplyEnabled, modelEligible: modelPreflight.eligible, modelAccessAllowed: !runtimeModelKill, deadlineAt: modelDeadlineAt, campaignLeadQueued, campaignBrief })
         : { text: "", fallback: false, reply_source: null, model_attempted: false, model_success: false, model_latency_ms: 0, knowledge_hits: 0, guard_blocked: false, guard_reason: "" });
     const replyText = replyDecision.text;
-    const shouldReply = Boolean(autoReplyEnabled && eventMode !== "standby" && replyText && getReplyToken(event));
+    const postQueueTakeover = campaignLeadQueued ? await getLineOwnerTakeoverState(env, lineUserId) : null;
+    const shouldReply = Boolean((autoReplyEnabled || (campaignEvent && campaignCanReply)) && eventMode !== "standby" && replyText && getReplyToken(event) && (!campaignEvent || (postQueueTakeover?.ok === true && postQueueTakeover.active !== true && options.suppressCampaignReply !== true)));
     const replyResult = shouldReply ? await sendLineReply(env, getReplyToken(event), replyText, { trusted_event: true }) : null;
 
     const afterReply = campaignEvent
@@ -2525,6 +2518,10 @@ async function handleLineWebhook(request, env, ctx = null) {
       ok: true,
       type: event?.type || "",
       intent,
+      campaign_event: campaignEvent,
+      campaign_lead_queued: campaignLeadQueued,
+      campaign_lead_reason: asString(campaignLeadRecord?.reason || campaignLeadClaim.reason).slice(0, 80),
+      campaign_queue_status: Number.isInteger(campaignLeadRecord?.status) ? campaignLeadRecord.status : null,
       deduped: Boolean(record?.deduped),
       recorded: Boolean(record?.id),
       record_pending: Boolean(record?.pending),
@@ -2546,6 +2543,29 @@ async function handleLineWebhook(request, env, ctx = null) {
   }
 
   return json({ ok: true, worker: WORKER_NAME, route: "line_webhook", events: events.length, saved });
+}
+
+export async function processDurableLineCardEvent(event, env = {}, receivedAt = Date.now()) {
+  const timestamp = Number(event?.timestamp);
+  const ageStart = Number.isFinite(timestamp) && timestamp > 0 ? Math.min(timestamp, receivedAt) : receivedAt;
+  const suppressCampaignReply = Date.now() - ageStart >= 50_000;
+  const body = JSON.stringify({ events: [event] });
+  const signature = await createLineSignature(body, env.LINE_CHANNEL_SECRET);
+  const response = await handleLineWebhook(new Request("https://mmdbkk.com/webhooks/line", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-line-signature": signature },
+    body,
+  }), env, null, { suppressCampaignReply, requireCampaignContext: true });
+  if (!response.ok) return { ok: false, reason: "campaign_processor_unavailable" };
+  const result = await response.json().catch(() => ({}));
+  const saved = result?.saved?.[0];
+  return {
+    ok: saved?.campaign_lead_queued === true,
+    reason: saved?.campaign_lead_reason || "campaign_not_queued",
+    queue_status: saved?.campaign_queue_status || null,
+    replied: saved?.replied === true,
+    reply_suppressed: suppressCampaignReply,
+  };
 }
 
 export default {

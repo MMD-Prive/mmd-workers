@@ -222,7 +222,7 @@ test("signed MMD LINE webhook sends one Seed Pack reply and writes telemetry", a
   const legacyWorker = {
     fetch: async () => {
       calls.shadow += 1;
-      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      return new Response(JSON.stringify({ ok: true, saved: [{ campaign_event: false }] }), { status: 200 });
     },
   };
 

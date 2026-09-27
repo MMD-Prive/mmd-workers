@@ -3,6 +3,10 @@ const CAMPAIGN_LEAD_PROCESSING_TTL_MS = 60 * 1000;
 const CAMPAIGN_LEAD_TTL_MS = 24 * 60 * 60 * 1000;
 const CAMPAIGN_CONTEXT_TTL_MS = 30 * 60 * 1000;
 const CAMPAIGN_CONTEXT_KEY = "campaign-lead:context";
+const CAMPAIGN_INGRESS_KEY = "campaign-ingress:event";
+const CAMPAIGN_INGRESS_DONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const CAMPAIGN_INGRESS_DEAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const CAMPAIGN_INGRESS_MAX_ATTEMPTS = 6;
 const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
 
@@ -14,8 +18,46 @@ function json(payload, status = 200) {
 }
 
 export class KenjiModelIdempotency {
-  constructor(state) {
+  constructor(state, env = {}) {
     this.state = state;
+    this.env = env;
+  }
+
+  async processCampaignIngress() {
+    const now = Date.now();
+    const entry = await this.state.storage.transaction(async (txn) => {
+      const current = await txn.get(CAMPAIGN_INGRESS_KEY);
+      if (!current || current.status !== "pending" || Number(current.next_attempt_at) > now) return null;
+      const next = { ...current, status: "processing", lease_token: crypto.randomUUID(), lease_expires_at: now + 60_000 };
+      await txn.put(CAMPAIGN_INGRESS_KEY, next);
+      await txn.setAlarm(next.lease_expires_at);
+      return next;
+    });
+    if (!entry) return { ok: true, processed: false };
+    let outcome;
+    try {
+      const { processDurableLineCardEvent } = await import("./index.js");
+      outcome = await processDurableLineCardEvent(entry.event, this.env, entry.received_at);
+    } catch (_) {
+      outcome = { ok: false, reason: "campaign_processor_failed" };
+    }
+    const completedAt = Date.now();
+    const attempts = Number(entry.attempts || 0) + 1;
+    const dead = outcome.ok !== true && (attempts >= CAMPAIGN_INGRESS_MAX_ATTEMPTS || outcome.queue_status === 422);
+    const delay = outcome.reason === "campaign_lead_already_claimed" ? 61_000 : Math.min(60_000, 1000 * 2 ** (attempts - 1));
+    await this.state.storage.transaction(async (txn) => {
+      const current = await txn.get(CAMPAIGN_INGRESS_KEY);
+      if (current?.status !== "processing" || current.lease_token !== entry.lease_token) return;
+      const next = outcome.ok === true
+        ? { event_id: entry.event_id, status: "done", attempts, expires_at: completedAt + CAMPAIGN_INGRESS_DONE_TTL_MS, replied: outcome.replied === true, reply_suppressed: outcome.reply_suppressed === true }
+        : dead
+          ? { ...entry, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
+          : { ...entry, status: "pending", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
+      await txn.put(CAMPAIGN_INGRESS_KEY, next);
+      await txn.setAlarm(next.expires_at || next.next_attempt_at);
+    });
+    if (dead) console.log(JSON.stringify({ line_card_ingress: "dead_letter", reason: String(outcome.reason || "processor_failed").slice(0, 80), attempts }));
+    return { ok: outcome.ok === true, processed: true, status: outcome.ok === true ? "done" : dead ? "dead" : "pending", reason: outcome.reason || "" };
   }
 
   async fetch(request) {
@@ -28,6 +70,54 @@ export class KenjiModelIdempotency {
     }
 
     const path = new URL(request.url).pathname;
+    if (path === "/campaign-lead/ingress") {
+      const action = String(input?.action || "enqueue");
+      if (action === "process") return json(await this.processCampaignIngress());
+      if (action === "status") {
+        const entry = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
+        return json({ ok: true, found: Boolean(entry), status: entry?.status || "missing", attempts: Number(entry?.attempts) || 0, reason: String(entry?.reason || "").slice(0, 80) });
+      }
+      if (action === "reprocess") {
+        const changed = await this.state.storage.transaction(async (txn) => {
+          const entry = await txn.get(CAMPAIGN_INGRESS_KEY);
+          if (entry?.status !== "dead" || !entry.event) return false;
+          await txn.put(CAMPAIGN_INGRESS_KEY, { ...entry, status: "pending", attempts: 0, reason: "", next_attempt_at: Date.now() });
+          await txn.setAlarm(Date.now() + 1000);
+          return true;
+        });
+        return json({ ok: true, reprocessed: changed });
+      }
+      if (action !== "enqueue") return json({ ok: false, error: "invalid_action" }, 400);
+      const event = input?.event;
+      const eventId = String(event?.webhookEventId || event?.message?.id || "");
+      if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
+        return json({ ok: false, error: "invalid_event" }, 400);
+      }
+      const receivedAt = Date.now();
+      const result = await this.state.storage.transaction(async (txn) => {
+        const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
+        if (existing) {
+          if (existing.event_id !== eventId) return { ok: false, error: "event_key_collision" };
+          return { ok: true, accepted: true, status: existing.status, duplicate: true };
+        }
+        await txn.put(CAMPAIGN_INGRESS_KEY, {
+          event_id: eventId,
+          status: "pending",
+          attempts: 0,
+          received_at: receivedAt,
+          next_attempt_at: receivedAt,
+          event: {
+            type: "message", mode: event.mode, timestamp: event.timestamp, webhookEventId: event.webhookEventId,
+            replyToken: event.replyToken, deliveryContext: event.deliveryContext,
+            source: { type: "user", userId: event.source.userId },
+            message: { type: "text", id: event.message.id, text: event.message.text },
+          },
+        });
+        await txn.setAlarm(receivedAt + 1000);
+        return { ok: true, accepted: true, status: "pending", duplicate: false };
+      });
+      return json(result, result.ok ? 200 : 409);
+    }
     if (path === "/campaign-lead/claim") {
       const action = String(input?.action || "claim");
       const key = String(input?.key || "");
@@ -97,7 +187,7 @@ export class KenjiModelIdempotency {
         if (
           cardId !== "21829530" ||
           !cardTrigger ||
-          !campaignKey ||
+          campaignKey !== "line_card_21829530_lead_v1" ||
           !/^line_[A-Za-z0-9_-]{1,120}$/.test(leadInboxId) ||
           !/^[a-f0-9]{64}$/.test(leadClaimKey) ||
           !/^[A-Za-z0-9-]{16,80}$/.test(leadClaimToken)
@@ -130,7 +220,41 @@ export class KenjiModelIdempotency {
           if (context) await this.state.storage.delete(CAMPAIGN_CONTEXT_KEY);
           return json({ ok: true, found: false });
         }
-        return json({ ok: true, found: true, context });
+        const { brief_claim: _briefClaim, ...safeContext } = context;
+        return json({ ok: true, found: true, context: safeContext });
+      }
+      if (action === "claim") {
+        const claim = await this.state.storage.transaction(async (txn) => {
+          const context = await txn.get(CAMPAIGN_CONTEXT_KEY);
+          if (!context || Number(context.expires_at) <= now) return { found: false, claimed: false };
+          if (context.campaign_key !== "line_card_21829530_lead_v1" || context.card_id !== "21829530" || !context.lead_inbox_id) {
+            return { found: true, claimed: false, reason: "invalid_context" };
+          }
+          if (context.consumed === true || Number(context.brief_claim?.expires_at) > now) {
+            const { brief_claim: _briefClaim, ...safeContext } = context;
+            return { found: true, claimed: false, reason: "context_already_claimed", context: safeContext };
+          }
+          const claimToken = crypto.randomUUID();
+          await txn.put(CAMPAIGN_CONTEXT_KEY, {
+            ...context,
+            brief_claim: { token: claimToken, expires_at: Math.min(context.expires_at, now + CAMPAIGN_LEAD_PROCESSING_TTL_MS) },
+          });
+          return { found: true, claimed: true, claim_token: claimToken, context };
+        });
+        return json({ ok: true, ...claim });
+      }
+      if (action === "release" || action === "commit") {
+        const claimToken = String(input?.context?.claim_token || "");
+        const changed = await this.state.storage.transaction(async (txn) => {
+          const context = await txn.get(CAMPAIGN_CONTEXT_KEY);
+          if (!claimToken || !context || context.consumed === true || context.brief_claim?.token !== claimToken || Number(context.brief_claim.expires_at) <= now) return false;
+          const next = { ...context };
+          delete next.brief_claim;
+          if (action === "commit") next.consumed = true;
+          await txn.put(CAMPAIGN_CONTEXT_KEY, next);
+          return true;
+        });
+        return json({ ok: true, [action === "commit" ? "committed" : "released"]: changed });
       }
       if (action === "delete") {
         const expectedLeadInboxId = String(input?.context?.lead_inbox_id || "").trim();
@@ -216,6 +340,12 @@ export class KenjiModelIdempotency {
   }
 
   async alarm() {
+    const ingress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
+    if (ingress?.status === "pending" && Number(ingress.next_attempt_at) <= Date.now()) await this.processCampaignIngress();
+    else if (ingress?.status === "processing" && Number(ingress.lease_expires_at) <= Date.now()) {
+      await this.state.storage.put(CAMPAIGN_INGRESS_KEY, { ...ingress, status: "pending", next_attempt_at: Date.now() });
+      await this.processCampaignIngress();
+    } else if (ingress?.expires_at && Number(ingress.expires_at) <= Date.now()) await this.state.storage.delete(CAMPAIGN_INGRESS_KEY);
     const now = Date.now();
     const claims = await this.state.storage.list({ prefix: "claim:" });
     const quotas = await this.state.storage.list({ prefix: "quota:" });
@@ -242,6 +372,9 @@ export class KenjiModelIdempotency {
     if (pending && pendingExpiresAt <= now) expired.push(MODEL_ACCESS_PENDING_KEY);
     else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
+    const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
+    const ingressAlarm = Number(currentIngress?.next_attempt_at || currentIngress?.lease_expires_at || currentIngress?.expires_at) || 0;
+    if (ingressAlarm && (!nextAlarm || ingressAlarm < nextAlarm)) nextAlarm = ingressAlarm;
     if (nextAlarm) await this.state.storage.setAlarm(nextAlarm);
   }
 }

@@ -8,8 +8,10 @@ import {
 } from "./mmd-rich-menu-scheduled-runtime.mjs";
 import {
   handleKenjiSeedLineRequestWithRedeliveryRecovery,
+  hasCardCampaignContext,
   isKenjiSeedLineRequest,
 } from "./kenji-line-redelivery-recovery.mjs";
+import { createLineSignature, resolveLineCardCampaignTrigger } from "./index.js";
 import {
   handleKenjiLineTransportHealth,
   isKenjiLineTransportHealthRequest,
@@ -409,6 +411,64 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
   }
 
   const eventCount = Array.isArray(body?.events) ? body.events.length : 0;
+  const events = Array.isArray(body?.events) ? body.events : [];
+  const flagsOn = [env.LINE_CARD_21829530_LEAD_ENABLED, env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR]
+    .every((value) => ["1", "true", "yes", "on"].includes(text(value).toLowerCase()));
+  if (flagsOn && events.length) {
+    const hashes = text(env.LINE_CARD_21829530_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
+    if (hashes.length && hashes.every((hash) => /^[a-f0-9]{64}$/.test(hash))) {
+      const campaignEvents = [];
+      const ordinaryEvents = [];
+      const triggeredUsers = new Set(events
+        .filter((event) => event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text))
+        .map((event) => text(event.source.userId)));
+      for (const event of events) {
+        const userId = text(event?.source?.userId);
+        let pilot = false;
+        if (event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && /^U[a-f0-9]{32}$/i.test(userId)) {
+          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
+          const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          pilot = hashes.includes(hash);
+        }
+        const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
+        (campaign ? campaignEvents : ordinaryEvents).push(event);
+      }
+      if (campaignEvents.length) {
+        if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
+        const stubs = [];
+        for (const event of campaignEvents) {
+          const eventId = text(event?.webhookEventId || event?.message?.id);
+          if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
+          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
+          const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+          let response;
+          try {
+            response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result?.accepted !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          stubs.push(stub);
+        }
+        ctx.waitUntil((async () => {
+          for (const stub of stubs) {
+            await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
+            }).catch(() => null);
+          }
+          if (ordinaryEvents.length) {
+            const subsetBody = JSON.stringify({ ...body, events: ordinaryEvents });
+            const subsetHeaders = new Headers(request.headers);
+            subsetHeaders.set("x-line-signature", await createLineSignature(subsetBody, env.LINE_CHANNEL_SECRET));
+            await handler(new Request(request.url, { method: "POST", headers: subsetHeaders, body: subsetBody }));
+          }
+        })());
+        return lineAckResponse(eventCount);
+      }
+    }
+  }
   const backgroundRequest = new Request(request.url, {
     method: "POST",
     headers: new Headers(request.headers),
