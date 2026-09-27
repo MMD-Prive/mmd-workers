@@ -100,6 +100,11 @@ const fixtures = {
         line_display_name: "Per LINE",
         telegram_username: "@perclient",
         email: "per@example.com",
+        "Profile Photo": Array.from({ length: 9 }, (_, i) => ({
+          id: `attClient${i + 1}`,
+          url: `https://cdn.example/client-${i + 1}.jpg`,
+          filename: `client-${i + 1}.jpg`,
+        })),
       },
     },
   ],
@@ -227,6 +232,9 @@ test("lineage lookup returns canonical client enriched by member, entitlement an
     const record = body.records[0];
     assert.equal(record.client_id, "recClient1");
     assert.equal(record.member_id, "perpm");
+    assert.equal(record.profile_photos.length, 8);
+    assert.equal(record.profile_image_url, "https://cdn.example/client-1.jpg");
+    assert.equal(record.profile_photos.at(-1), "https://cdn.example/client-8.jpg");
     assert.equal(record.remembered_name, "Per Premium");
     assert.equal(record.canonical_name, "Per Client");
     assert.equal(record.client_name, "Per Premium");
