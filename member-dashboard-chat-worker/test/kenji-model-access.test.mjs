@@ -1107,3 +1107,37 @@ test("owner takeover that starts after queue commit suppresses the LINE acknowle
     globalThis.fetch = originalFetch;
   }
 });
+
+test("verified EMs denial gives points policy and opens the LIFF points view", async () => {
+  const calls = [];
+  const env = {
+    ...BASE_ENV,
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "restricted_category", category: "ems" }, 200, calls),
+  };
+  const decision = await resolveKenjiLineReply(lineEvent("EMs19"), {}, env, { campaignLeadQueued: true });
+  assert.equal(decision.reply_source, "line_card_model_access_restricted");
+  assert.match(decision.text, /1,200 points.*2,500 points/s);
+  assert.match(decision.text, /35,000 บาท.*3 ปี/s);
+  assert.match(decision.text, /ดูได้เฉพาะรายที่เปอร์อนุญาต/);
+  assert.match(decision.text, /ไม่ได้เปิดดูทุกคนโดยอัตโนมัติ/);
+  assert.match(decision.text, /Black Card.*การอนุญาตของเปอร์/s);
+  assert.ok(decision.text.includes("https://mmdbkk.com/member/liff?view=points"));
+  assert.doesNotMatch(decision.text, /Sprite|EMs19|รูปภาพของ|25000/);
+  assert.equal(calls.length, 1);
+});
+
+test("unknown Model and disabled campaign never send the access promotion", async () => {
+  const calls = [];
+  const env = {
+    ...BASE_ENV,
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "silent" }, 200, calls),
+  };
+  const unknown = await resolveKenjiLineReply(lineEvent("EMs19"), {}, env, { campaignLeadQueued: true });
+  assert.equal(unknown.reply_source, "line_card_campaign_lead");
+  assert.doesNotMatch(unknown.text, /1,200|2,500|35,000/);
+  const disabled = await resolveKenjiLineReply(lineEvent("EMs19"), {}, env, { campaignLeadQueued: false });
+  assert.equal(disabled.text, "");
+  assert.equal(calls.length, 1);
+});
