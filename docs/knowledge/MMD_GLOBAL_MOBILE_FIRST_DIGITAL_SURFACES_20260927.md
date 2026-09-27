@@ -24,10 +24,37 @@ All pages should feel like the MMD Privé visual world, but the visible UI shoul
 
 ## Theme direction
 
-- Public/member: ivory, charcoal, champagne gold, restrained red where route rules require.
-- SIGIL/private: charcoal/black, champagne gold, soft vignette, private card mood.
+- Public/member/normal MMD Privé: warm ivory/soft bone, charcoal or black-glass structure, champagne-gold detail, and restrained wine/red accents. It should feel brighter, clearer, and more inviting than Private.
+- SIGIL/private: a distinct controlled world — deep black/charcoal, smoked glass, champagne gold, restrained cool-blue highlight, warm amber light, cinematic vignette, and less visible chrome. Private must not look like Public with only a darker background.
 - MMS: forest green remains when route-specific MMS rules require it, while preserving compact mobile-first structure.
 - Internal: owner-first dashboard, compact workspace, clear action zones, no long scattered forms.
+
+## Private Job cover contract
+
+Every Private Job cover/card must show two compact labeled chips:
+
+- `BUDGET · <value>`
+- `ลูกค้า · <เพศลูกค้า>`
+
+Rules:
+
+- `BUDGET` is always visibly labeled.
+- When `budget_disclosure_approved=true`, show the approved compensation value.
+- When budget disclosure is not approved, keep the chip but render `BUDGET · PRIVATE`.
+- Customer gender must come only from explicit structured data or explicit brief wording.
+- Never infer customer gender from sexual orientation, name, behavior, photos, or model preference.
+- Do not display customer sexual orientation on the cover.
+- Unknown gender renders `ลูกค้า · ไม่ระบุ`.
+- Private card still hides title, full brief, customer detail, and protected fields before reveal.
+- Existing 30-minute reveal-token behavior and private access controls remain unchanged.
+
+Canonical structured values:
+
+- `male` → `ชาย`
+- `female` → `หญิง`
+- `couple` → `คู่ ชาย/หญิง` only when explicitly stated
+- `mixed` → `หลายเพศ` only when explicitly stated
+- `unspecified` → `ไม่ระบุ`
 
 ## Layout contract
 
@@ -90,6 +117,7 @@ For each affected page:
 - No raw URLs are visible in rendered copy.
 - No unnecessary brand-name wordmark is added.
 - Page uses correct world theme.
+- Private Job covers show labeled Budget and customer-gender chips.
 - Primary CTA is visible without long reading.
 - Route/system/debug language is hidden from customer/model surfaces.
 - Internal surfaces remain operational and owner-first.
