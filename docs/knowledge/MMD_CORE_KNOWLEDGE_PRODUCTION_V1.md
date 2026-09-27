@@ -153,8 +153,8 @@ Benefit lock:
 - Card status colors: Blue = Standard, Silver = Premium, Red = Red Card, Black = Black Card + VIP customer status, Gold = SVIP
 - Coupon validity: ใช้จองภายใน 2 เดือนนับจาก activation; เมื่อยืนยันการจองภายในกำหนดแล้ว วันรับบริการอยู่ได้ภายใน 90 วันนับจากวันที่จองเดิม แม้วันรับบริการจะเลยวันหมดอายุคูปอง และการเลื่อนนัดต้องไม่ขยายกรอบ 90 วันนี้
 
-- Existing member active/grace: MY MMD Verify ให้สิทธิ์ต่อสมาชิก **+1 ปีจากวันหมดอายุจริง** แบบ one-time/idempotent ไม่มี CARE BACK point bonus อัตโนมัติ
-- Existing former/expired: MY MMD Verify ให้สิทธิ์ **+1 ปีจากวันที่ Verify** เมื่อไม่มี future expiry; ส่วน +150 Points ยังต้องอาศัย renewal/payment verification แยกต่างหาก
+- Current member active/grace: Verify แล้วเพิ่ม 1 ปีจากวันหมดอายุจริง ไม่มี CARE BACK point bonus อัตโนมัติ
+- Former/expired: Verify ตัวตนเดิมสำเร็จแล้วเพิ่มสมาชิก 1 ปีจากวัน Verify; +150 Points ยังต้องรอ renewal/payment ที่ตรวจแล้ว
 - New Standard: +150 Welcome Points หลังตรวจ membership/payment
 - New Premium: +250 Welcome Points หลังตรวจ membership/payment
 - Approved special campaign selection: สูงสุด +350 Points หลังตรวจ membership/payment ใช้เป็นสัญญาณประกอบ Black Card review เท่านั้น
