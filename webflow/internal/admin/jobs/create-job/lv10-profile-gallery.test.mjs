@@ -33,3 +33,13 @@ test("gallery supports arrows, keyboard navigation, counter, thumbnails and zoom
   assert.match(js, /data-g-minus/);
   assert.match(js, /data-g-reset/);
 });
+
+
+test("empty Client gallery can sync current LINE photo into Profile Photo history", async () => {
+  const js = await readFile(file, "utf8");
+  assert.match(js, /\/v1\/admin\/clients\/profile-photo\/sync/);
+  assert.match(js, /function openClient\(record,focus\)/);
+  assert.match(js, /client_id:record\.client_id/);
+  assert.match(js, /record\.profile_photos=Array\.isArray\(body\.profile_photos\)/);
+  assert.match(js, /บันทึกรูป LINE ล่าสุดเข้า Profile Photo แล้ว/);
+});
