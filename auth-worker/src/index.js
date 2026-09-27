@@ -9,6 +9,10 @@
 //   POST /v1/admin/access/grant
 
 import { buildCustomer360MemberProfile } from "./customer-360-resolver.js";
+import {
+  EXISTING_MEMBER_VERIFY_EXTENSION_PATH,
+  handleExistingMemberVerifyOneYear,
+} from "./existing-member-verify-one-year.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "https://mmdbkk.com",
@@ -79,6 +83,10 @@ export default {
 
       if (path === MEMBER_PROFILE_RESOLVER_PATH && request.method === "POST") {
         return handleInternalMemberProfileRead(request, env);
+      }
+
+      if (path === EXISTING_MEMBER_VERIFY_EXTENSION_PATH && request.method === "POST") {
+        return handleExistingMemberVerifyOneYear(request, env);
       }
 
       if (path === "/v1/admin/access/grant" && request.method === "POST") {
