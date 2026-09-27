@@ -37,12 +37,12 @@ function attachmentUrls(value) {
   return out;
 }
 
-function retainedAttachmentRefs(value, limit = MAX_PROFILE_PHOTOS) {
+function retainedAttachments(value, limit = MAX_PROFILE_PHOTOS) {
   const out = [];
   for (const item of Array.isArray(value) ? value : []) {
-    const id = clean(item?.id, 160);
-    if (!id) continue;
-    out.push({ id });
+    if (!item || typeof item !== "object" || !clean(item.id, 160)) continue;
+    // Airtable requires existing attachment objects to be passed back unchanged.
+    out.push({ ...item });
     if (out.length >= limit) break;
   }
   return out;
@@ -157,7 +157,7 @@ export async function handleClientProfilePhotoSync(request, env = {}, actor = nu
     if (alreadyStored) {
       if (existing.length > MAX_PROFILE_PHOTOS) {
         const trimmed = await airtablePatch(env, clientId, {
-          "Profile Photo": retainedAttachmentRefs(existing, MAX_PROFILE_PHOTOS),
+          "Profile Photo": retainedAttachments(existing, MAX_PROFILE_PHOTOS),
         });
         return json({
           ok: true,
@@ -179,7 +179,7 @@ export async function handleClientProfilePhotoSync(request, env = {}, actor = nu
 
     const next = [
       { url: line.pictureUrl, filename },
-      ...retainedAttachmentRefs(existing, MAX_PROFILE_PHOTOS - 1),
+      ...retainedAttachments(existing, MAX_PROFILE_PHOTOS - 1),
     ];
     const updated = await airtablePatch(env, clientId, { "Profile Photo": next });
     const updatedPhotos = updated?.fields?.["Profile Photo"] || [];
