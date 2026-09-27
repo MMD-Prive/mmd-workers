@@ -28,8 +28,21 @@ test("resolves the exact customer, verified per-job spend, click, reviewed histo
   assert.equal(result.attribution, "line_text_origin_unverified");
   assert.equal(result.verified_budget_per_job_thb, 15000);
   assert.equal(result.owner_rate_thb, 20000);
+  assert.match(result.suggested_per_reply_for_review, /^พี่โจ้ครับ เห็นข้อความแล้วครับ/);
+  assert.doesNotMatch(result.suggested_per_reply_for_review, /ลูกค้า|VIP|15000|20000/);
   assert.equal(result.customer_reply, "");
   assert.doesNotMatch(JSON.stringify(result), /private note|U012345/);
+});
+
+test("without a safe Per rename the suggested reply stays neutral", async () => {
+  const { methods } = readers({ resolveCustomer: async () => ({
+    status: "resolved", status_verified: true, customer_status: "new_contact",
+    client_id: "recExact", per_rename: "Joe - private note",
+  }) });
+  const result = await reviewMonthlyAdLead(event, methods);
+  assert.equal(result.address, "");
+  assert.match(result.suggested_per_reply_for_review, /^เห็นข้อความแล้วครับ/);
+  assert.doesNotMatch(result.suggested_per_reply_for_review, /Joe|ลูกค้า/);
 });
 
 test("typed Model names resolve through a separate lookup without claiming a Card click", async () => {
