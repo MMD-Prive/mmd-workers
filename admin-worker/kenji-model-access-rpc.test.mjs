@@ -392,3 +392,24 @@ test("canonical folder inference never rescues an inactive or review-only model"
   );
   assert.equal(result.status, "silent");
 });
+
+test("exact denied GWs and EMs return only their broad category", async () => {
+  for (const [code, category] of [["GWs19", "gws"], ["EMs19", "ems"]]) {
+    const model = privateModel(code, "exclusive", { working_name: "Private Name" });
+    const result = await resolveKenjiModelAccess(
+      ENV, { line_user_id: LINE_USER_ID, query: code },
+      { fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])) },
+    );
+    assert.deepEqual(result, { status: "restricted_category", category });
+    assert.doesNotMatch(JSON.stringify(result), /Private Name|exclusive|image|summary/i);
+  }
+});
+
+test("unknown or inactive GWs and EMs never produce an access promotion", async () => {
+  const data = baseData([entitlement("private_standard")], [privateModel("GWs19", "exclusive", { status: "inactive" })]);
+  const fetchImpl = airtableFetch(data);
+  const inactive = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "GWs19" }, { fetchImpl });
+  const unknown = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "GWs20" }, { fetchImpl });
+  assert.equal(inactive.status, "silent");
+  assert.equal(unknown.status, "silent");
+});
