@@ -54,6 +54,65 @@ test("First Contact answers a natural opening but sends protected matters for re
   assert.equal(group.text, "");
 });
 
+test("live broad lane falls back to First Contact and stays silent in groups", async () => {
+  const originalFetch = globalThis.fetch;
+  const sent = [];
+  globalThis.fetch = async (url, init = {}) => {
+    assert.match(String(url), /api\.line\.me\/v2\/bot\/message\/reply/);
+    sent.push(JSON.parse(init.body));
+    return Response.json({});
+  };
+  try {
+    const events = [
+      message("แนะนำหน่อย", { replyToken: "live-opening", message: { id: "live-opening-id", type: "text", text: "แนะนำหน่อย" } }),
+      message("แนะนำหน่อย", { replyToken: "group-opening", source: { type: "group", groupId: "G-synthetic" }, message: { id: "group-opening-id", type: "text", text: "แนะนำหน่อย" } }),
+    ];
+    const raw = JSON.stringify({ events });
+    const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
+    const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: raw,
+    }), { ...env, LINE_AUTO_REPLY_ENABLED: "true" }, null, { fetch: async () => Response.json({ ok: true, saved: events.map(() => ({ ok: true })) }) });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].replyToken, "live-opening");
+    assert.match(sent[0].messages[0].text, /งานหรือกิจกรรม/);
+    assert.deepEqual(body.saved.map((row) => row.replied), [true, false]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("live broad lane honors the First Contact mute", async () => {
+  const originalFetch = globalThis.fetch;
+  let deliveries = 0;
+  globalThis.fetch = async (url) => {
+    if (/api\.line\.me\/v2\/bot\/message\/reply/.test(String(url))) deliveries += 1;
+    return Response.json({});
+  };
+  try {
+    const events = [message("แนะนำหน่อย", {
+      replyToken: "muted-opening",
+      message: { id: "muted-opening-id", type: "text", text: "แนะนำหน่อย" },
+    })];
+    const raw = JSON.stringify({ events });
+    const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
+    const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: raw,
+    }), {
+      ...env,
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_FIRST_CONTACT_ENABLED: "false",
+    }, null, { fetch: async () => Response.json({ ok: true, saved: [{ ok: true }] }) });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(deliveries, 0);
+    assert.equal(body.saved[0].replied, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("signed LINE opening replies once while follow and protected events stay silent", async () => {
   const originalFetch = globalThis.fetch;
   const sent = [];
