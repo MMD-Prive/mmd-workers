@@ -322,6 +322,24 @@ test("unsend before processing leaves a cancellation tombstone and blocks later 
   assert.equal((await status.json()).status, "cancelled");
 });
 
+test("unsend before a message with a different webhookEventId still acknowledges the cancelled redelivery", async () => {
+  const f = fixture();
+  const messageId = "msg-unsent-before-real-shape";
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([unsendEvent(messageId)], f.env), f.env, ctx)).status, 200);
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", messageId)], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+  });
+  assert.equal(f.records.has(`line_${messageId}`), false);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 0);
+  const messageKey = createHash("sha256").update(messageId).digest("hex");
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${messageKey}`));
+  const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
+  assert.equal((await status.json()).status, "cancelled");
+});
+
 test("unsend after processing redacts the Inbox record and preserves a cancellation tombstone", async () => {
   const f = fixture();
   const eventId = "msg-unsent-after";
@@ -408,6 +426,48 @@ test("unsend uses LINE message ID when webhookEventId differs from the original 
   const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
   const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
   assert.equal((await status.json()).status, "cancelled");
+});
+
+test("unsend after pilot rollback redacts the prior Card record", async () => {
+  const f = fixture();
+  const messageId = "msg-unsent-after-rollback";
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", messageId)], f.env), f.env, ctx)).status, 200);
+    for (let round = 0; round < 5; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+    assert.equal(f.records.has(`line_${messageId}`), true);
+    f.env.LINE_CARD_21829530_LEAD_ENABLED = "false";
+    f.env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR = "false";
+    f.env.LINE_CARD_21829530_PILOT_HASHES = "";
+    assert.equal((await route.fetch(await signedWebhook([unsendEvent(messageId)], f.env), f.env, ctx)).status, 200);
+  });
+  const record = f.records.get(`line_${messageId}`);
+  assert.equal(record.fields.line_user_id, "");
+  assert.equal(record.fields.admin_note, "[LINE message unsent]");
+  assert.equal(JSON.parse(record.fields.payload_json).unsent, true);
+  assert.equal(f.calls.filter((call) => call.type === "redact").length, 1);
+});
+
+test("post-rollback unsend from another LINE subject cannot redact the Card record", async () => {
+  const f = fixture();
+  const messageId = "msg-unsent-wrong-subject";
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", messageId)], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+    f.env.LINE_CARD_21829530_LEAD_ENABLED = "false";
+    const unsend = unsendEvent(messageId);
+    unsend.source.userId = "Uffffffffffffffffffffffffffffffff";
+    assert.equal((await route.fetch(await signedWebhook([unsend], f.env), f.env, ctx)).status, 503);
+  });
+  assert.equal(f.records.get(`line_${messageId}`).fields.line_user_id, LINE_USER_ID);
+  assert.equal(f.calls.filter((call) => call.type === "redact").length, 0);
 });
 
 test("invalid LINE signature cannot create a durable campaign receipt", async () => {
@@ -523,6 +583,21 @@ test("expired processing lease is recovered by an alarm after a worker crash", a
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }),
   }));
   assert.equal((await status.json()).status, "done");
+});
+
+test("processing lease alarm is scheduled for lease expiry rather than the earlier queue attempt", async () => {
+  const f = fixture();
+  const id = f.env.KENJI_MODEL_DEDUPE.idFromName("line-card-ingress-v1:processing-lease-alarm");
+  f.env.KENJI_MODEL_DEDUPE.get(id);
+  const object = f.env.KENJI_MODEL_DEDUPE.objects.get(id);
+  const now = Date.now();
+  const leaseExpiresAt = now + 60_000;
+  await object.state.storage.put("campaign-ingress:event", {
+    event_id: "msg-processing-lease-alarm", status: "processing",
+    next_attempt_at: now - 1000, lease_expires_at: leaseExpiresAt,
+  });
+  await object.alarm();
+  assert.equal(await object.state.storage.getAlarm(), leaseExpiresAt);
 });
 
 test("alarm removes an expired ingress tombstone", async () => {
