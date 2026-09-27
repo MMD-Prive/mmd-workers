@@ -478,16 +478,16 @@ async function sendReply(env = {}, replyToken = "", replyText = "") {
 }
 
 async function runLegacyShadow(request, env, ctx, legacyWorker, rawBody) {
-  if (!legacyWorker?.fetch) return;
+  if (!legacyWorker?.fetch) return null;
   const shadowRequest = new Request(request.url, {
     method: "POST",
     headers: new Headers(request.headers),
     body: rawBody,
   });
   const shadowEnv = { ...env, LINE_AUTO_REPLY_ENABLED: "false" };
-  const work = legacyWorker.fetch(shadowRequest, shadowEnv, ctx).catch(() => null);
-  if (typeof ctx?.waitUntil === "function") ctx.waitUntil(work);
-  else await work;
+  const response = await legacyWorker.fetch(shadowRequest, shadowEnv, ctx).catch(() => null);
+  if (!response?.ok) return null;
+  return response.json().catch(() => null);
 }
 
 async function handleSyntheticSmoke(request, env) {
@@ -542,7 +542,11 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
     return json({ ok: false, error: "invalid_json" }, 400);
   }
 
-  await runLegacyShadow(request, env, ctx, legacyWorker, rawBody);
+  const legacyOutcome = await runLegacyShadow(request, env, ctx, legacyWorker, rawBody);
+  const events = Array.isArray(body.events) ? body.events : [];
+  if (!Array.isArray(legacyOutcome?.saved) || legacyOutcome.saved.length !== events.length) {
+    return json({ ok: false, error: "line_intake_unavailable" }, 503);
+  }
 
   const runtime = await requestKenjiRuntimeStatus(env);
   const controls = runtime.controls || {};
@@ -551,10 +555,13 @@ export async function handleKenjiSeedLineRequest(request, env = {}, ctx = null, 
   const autoReplyEnabled = enabled(env.LINE_AUTO_REPLY_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
   const firstContactEnabled = !autoReplyEnabled && enabled(env.LINE_FIRST_CONTACT_ENABLED) && enabled(env.LINE_KENJI_AI_ENABLED) && !runtimeLineKill;
   const continuityEnabled = enabled(env.KENJI_LINE_CONTINUITY_ENABLED);
-  const events = Array.isArray(body.events) ? body.events : [];
   const saved = [];
 
-  for (const event of events) {
+  for (const [index, event] of events.entries()) {
+    if (legacyOutcome.saved[index]?.campaign_event === true) {
+      saved.push({ ok: true, type: text(event?.type), campaign_handled: true, replied: legacyOutcome.saved[index].replied === true });
+      continue;
+    }
     const eventMode = text(event?.mode).toLowerCase() || "unknown";
     const redelivered = event?.deliveryContext?.isRedelivery === true;
     const replyToken = replyTokenOf(event);

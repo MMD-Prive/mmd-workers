@@ -1,4 +1,4 @@
-import { createLineSignature, verifyLineSignature } from "./index.js";
+import { createLineSignature, resolveLineCardCampaignTrigger, verifyLineSignature } from "./index.js";
 import {
   handleKenjiSeedLineRequest,
   isKenjiSeedLineRequest,
@@ -18,6 +18,36 @@ const MEMBERSHIP_STATUS_CANONICAL_TEXT = "สถานะสมาชิกข�
 
 function text(value) {
   return value == null ? "" : String(value).trim();
+}
+
+function enabled(value) {
+  return ["1", "true", "yes", "on"].includes(text(value).toLowerCase());
+}
+
+export async function hasCardCampaignContext(env = {}, event = {}) {
+  if (!enabled(env.LINE_CARD_21829530_LEAD_ENABLED) || !enabled(env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR)) return false;
+  if (event?.source?.type !== "user" || event?.type !== "message" || event?.message?.type !== "text") return false;
+  const userId = text(event?.source?.userId);
+  if (!/^U[a-f0-9]{32}$/i.test(userId)) return false;
+  const hashes = text(env.LINE_CARD_21829530_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
+  if (!hashes.length || hashes.some((hash) => !/^[a-f0-9]{64}$/.test(hash))) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
+  const userHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (!hashes.includes(userHash)) return false;
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return true;
+  try {
+    const id = env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${userHash}`);
+    const response = await env.KENJI_MODEL_DEDUPE.get(id).fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "get" }),
+    });
+    if (!response.ok) return true;
+    const result = await response.json();
+    return result?.ok !== true || result.found === true;
+  } catch (_) {
+    return true;
+  }
 }
 
 function escapeFormulaValue(value) {
@@ -196,7 +226,11 @@ export async function handleKenjiSeedLineRequestWithRedeliveryRecovery(
     .map((event, index) => membershipStatusEvent(event) ? index : -1)
     .filter((index) => index >= 0);
 
-  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0) {
+  const hasCardCampaignAction = events.some((event) => event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text));
+  const hasPendingCardCampaign = !hasCardCampaignAction && events.length === 1
+    ? await hasCardCampaignContext(env, events[0])
+    : false;
+  if (redeliveryIndexes.length === 0 && membershipStatusIndexes.length === 0 && !hasCardCampaignAction && !hasPendingCardCampaign) {
     const operationalRequest = new Request(request.url, {
       method: "POST",
       headers: new Headers(request.headers),

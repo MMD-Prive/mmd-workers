@@ -118,7 +118,7 @@ test("unseen LINE redelivery is recovered and can reply once", async () => {
   const raw = JSON.stringify({ events: [lineEvent] });
   const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
   const calls = { line: 0, telemetryPost: 0, aiReads: 0, knowledgeReads: 0, v2Probes: 0 };
-  const legacyWorker = { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) };
+  const legacyWorker = { fetch: async () => Response.json({ ok: true, saved: [{ ok: true }] }) };
 
   const response = await withFetch(async (url, init = {}) => {
     const target = String(url);
@@ -216,7 +216,7 @@ test("completed LINE redelivery remains deduped and never replies twice", async 
     }),
     env,
     null,
-    { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) },
+    { fetch: async () => Response.json({ ok: true, saved: [{ ok: true }] }) },
   ));
 
   const body = await response.json();
@@ -271,7 +271,7 @@ test("natural membership status LINE request is refined into protected membershi
     }),
     env,
     null,
-    { fetch: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }) },
+    { fetch: async () => Response.json({ ok: true, saved: [{ ok: true }] }) },
   ));
 
   const body = await response.json();
