@@ -7,6 +7,7 @@ const CAMPAIGN_INGRESS_KEY = "campaign-ingress:event";
 const CAMPAIGN_INGRESS_DONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_DEAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_MAX_ATTEMPTS = 6;
+const CAMPAIGN_INGRESS_ALERT_RETRY_MS = 15 * 60 * 1000;
 const MODEL_ACCESS_PENDING_TTL_MS = 10 * 60 * 1000;
 const MODEL_ACCESS_PENDING_KEY = "model-access:pending";
 
@@ -21,6 +22,75 @@ export class KenjiModelIdempotency {
   constructor(state, env = {}) {
     this.state = state;
     this.env = env;
+  }
+
+  async notifyCampaignIngressOwner(entry = {}) {
+    if (!entry.receipt_id || !this.env.TELEGRAM_WORKER?.fetch) return { sent: false, reason: "owner_alert_binding_missing" };
+    const token = String(this.env.AUTH_SERVICE_LINE_TO_TELEGRAM || this.env.INTERNAL_TOKEN || "").trim();
+    const chatId = String(this.env.TELEGRAM_OPS_CHAT_ID || this.env.TELEGRAM_CHAT_ID || "").trim();
+    if (!token || !chatId) return { sent: false, reason: "owner_alert_config_missing" };
+    const threadId = Number(this.env.TELEGRAM_ALERTS_THREAD_ID || this.env.TG_THREAD_ALERTS || 9) || 9;
+    try {
+      const response = await this.env.TELEGRAM_WORKER.fetch(new Request("https://telegram-worker/telegram/internal/send", {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          flow: "alert",
+          chat_id: chatId,
+          message_thread_id: threadId,
+          text: [
+            "⚠️ LINE Card 21829530 · durable ingress needs owner review",
+            `Receipt: ${entry.receipt_id}`,
+            `State: ${String(entry.status || "dead").slice(0, 40)}`,
+            `Reason: ${String(entry.reason || "processor_failed").slice(0, 80)}`,
+            `Attempts: ${Number(entry.attempts) || 0}`,
+            "Action: inspect the authenticated ingress status; reprocess only after the cause is fixed.",
+            "Authority: notification_only · no customer data or reply authority is included.",
+          ].join("\n"),
+        }),
+      }));
+      return { sent: response.ok, reason: response.ok ? "" : "owner_alert_failed", status: response.status };
+    } catch (_) {
+      return { sent: false, reason: "owner_alert_failed" };
+    }
+  }
+
+  async sendPendingCampaignIngressAlert() {
+    const entry = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
+    if (!entry || entry.status !== "dead" || entry.alert_sent === true || Number(entry.next_alert_at) > Date.now()) return false;
+    const result = await this.notifyCampaignIngressOwner(entry);
+    const now = Date.now();
+    await this.state.storage.transaction(async (txn) => {
+      const current = await txn.get(CAMPAIGN_INGRESS_KEY);
+      if (!current || current.status !== "dead" || current.alert_sent === true) return;
+      const next = result.sent
+        ? { ...current, alert_sent: true, alert_status: result.status || 200, alerted_at: now }
+        : { ...current, alert_sent: false, alert_reason: result.reason, next_alert_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
+      await txn.put(CAMPAIGN_INGRESS_KEY, next);
+      await txn.setAlarm(result.sent ? current.expires_at : next.next_alert_at);
+    });
+    return result.sent;
+  }
+
+  async cleanupCampaignIngressUnsend() {
+    const entry = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
+    if (!entry || entry.status !== "cancelled" || entry.cleanup_pending !== true) return true;
+    let result = { ok: false };
+    try {
+      const { processDurableLineCardUnsend } = await import("./index.js");
+      result = await processDurableLineCardUnsend(entry.event_id, this.env);
+    } catch (_) {}
+    const now = Date.now();
+    await this.state.storage.transaction(async (txn) => {
+      const current = await txn.get(CAMPAIGN_INGRESS_KEY);
+      if (!current || current.status !== "cancelled" || current.event_id !== entry.event_id) return;
+      const next = result.ok === true
+        ? { ...current, cleanup_pending: false, cleanup_completed_at: now }
+        : { ...current, cleanup_pending: true, next_cleanup_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
+      await txn.put(CAMPAIGN_INGRESS_KEY, next);
+      await txn.setAlarm(result.ok === true ? current.expires_at : next.next_cleanup_at);
+    });
+    return result.ok === true;
   }
 
   async processCampaignIngress() {
@@ -45,19 +115,28 @@ export class KenjiModelIdempotency {
     const attempts = Number(entry.attempts || 0) + 1;
     const dead = outcome.ok !== true && (attempts >= CAMPAIGN_INGRESS_MAX_ATTEMPTS || outcome.queue_status === 422);
     const delay = outcome.reason === "campaign_lead_already_claimed" ? 61_000 : Math.min(60_000, 1000 * 2 ** (attempts - 1));
-    await this.state.storage.transaction(async (txn) => {
+    const finalStatus = await this.state.storage.transaction(async (txn) => {
       const current = await txn.get(CAMPAIGN_INGRESS_KEY);
-      if (current?.status !== "processing" || current.lease_token !== entry.lease_token) return;
+      if (current?.status === "cancelled" && current.event_id === entry.event_id) {
+        const next = { ...current, cleanup_pending: true, next_cleanup_at: completedAt };
+        await txn.put(CAMPAIGN_INGRESS_KEY, next);
+        await txn.setAlarm(completedAt);
+        return "cancelled";
+      }
+      if (current?.status !== "processing" || current.lease_token !== entry.lease_token) return current?.status || "missing";
       const next = outcome.ok === true
-        ? { event_id: entry.event_id, status: "done", attempts, expires_at: completedAt + CAMPAIGN_INGRESS_DONE_TTL_MS, replied: outcome.replied === true, reply_suppressed: outcome.reply_suppressed === true }
+        ? { event_id: entry.event_id, receipt_id: entry.receipt_id, status: "done", attempts, expires_at: completedAt + CAMPAIGN_INGRESS_DONE_TTL_MS, replied: outcome.replied === true, reply_suppressed: outcome.reply_suppressed === true }
         : dead
-          ? { ...entry, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
+          ? { event_id: entry.event_id, receipt_id: entry.receipt_id, event: entry.event, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), alert_sent: false, next_alert_at: completedAt, expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
           : { ...entry, status: "pending", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
       await txn.setAlarm(next.expires_at || next.next_attempt_at);
+      return next.status;
     });
-    if (dead) console.log(JSON.stringify({ line_card_ingress: "dead_letter", reason: String(outcome.reason || "processor_failed").slice(0, 80), attempts }));
-    return { ok: outcome.ok === true, processed: true, status: outcome.ok === true ? "done" : dead ? "dead" : "pending", reason: outcome.reason || "" };
+    if (finalStatus === "cancelled") await this.cleanupCampaignIngressUnsend();
+    if (finalStatus === "dead") await this.sendPendingCampaignIngressAlert();
+    if (finalStatus === "dead") console.log(JSON.stringify({ line_card_ingress: "dead_letter", reason: String(outcome.reason || "processor_failed").slice(0, 80), attempts }));
+    return { ok: outcome.ok === true, processed: true, status: finalStatus, reason: outcome.reason || "" };
   }
 
   async fetch(request) {
@@ -75,7 +154,18 @@ export class KenjiModelIdempotency {
       if (action === "process") return json(await this.processCampaignIngress());
       if (action === "status") {
         const entry = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
-        return json({ ok: true, found: Boolean(entry), status: entry?.status || "missing", attempts: Number(entry?.attempts) || 0, reason: String(entry?.reason || "").slice(0, 80) });
+        return json({
+          ok: true,
+          found: Boolean(entry),
+          receipt_id: String(entry?.receipt_id || ""),
+          status: entry?.status || "missing",
+          attempts: Number(entry?.attempts) || 0,
+          reason: String(entry?.reason || "").slice(0, 80),
+          alert_sent: entry?.alert_sent === true,
+          alert_reason: String(entry?.alert_reason || "").slice(0, 80),
+          cleanup_pending: entry?.cleanup_pending === true,
+          reply_suppressed: entry?.reply_suppressed === true,
+        });
       }
       if (action === "reprocess") {
         const changed = await this.state.storage.transaction(async (txn) => {
@@ -87,10 +177,39 @@ export class KenjiModelIdempotency {
         });
         return json({ ok: true, reprocessed: changed });
       }
+      if (action === "unsend") {
+        const eventId = String(input?.event_id || "");
+        const receiptId = String(input?.receipt_id || "");
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[a-f0-9]{64}$/.test(receiptId)) {
+          return json({ ok: false, error: "invalid_unsend" }, 400);
+        }
+        const now = Date.now();
+        const result = await this.state.storage.transaction(async (txn) => {
+          const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
+          if (existing?.event_id && existing.event_id !== eventId) return { ok: false, error: "event_key_collision" };
+          await txn.put(CAMPAIGN_INGRESS_KEY, {
+            event_id: eventId,
+            receipt_id: receiptId,
+            status: "cancelled",
+            attempts: Number(existing?.attempts) || 0,
+            processed_before_unsend: existing?.status === "done",
+            cleanup_pending: ["processing", "done", "dead"].includes(existing?.status),
+            expires_at: now + CAMPAIGN_INGRESS_DONE_TTL_MS,
+          });
+          await txn.setAlarm(now + CAMPAIGN_INGRESS_DONE_TTL_MS);
+          return { ok: true, cancelled: true, previous_status: existing?.status || "missing" };
+        });
+        if (!result.ok) return json(result, 409);
+        const cleaned = ["processing", "done", "dead"].includes(result.previous_status)
+          ? await this.cleanupCampaignIngressUnsend()
+          : true;
+        return json({ ...result, cleanup_pending: !cleaned });
+      }
       if (action !== "enqueue") return json({ ok: false, error: "invalid_action" }, 400);
       const event = input?.event;
       const eventId = String(event?.webhookEventId || event?.message?.id || "");
-      if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
+      const receiptId = String(input?.receipt_id || "");
+      if (!/^[a-f0-9]{64}$/.test(receiptId) || !/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
         return json({ ok: false, error: "invalid_event" }, 400);
       }
       const receivedAt = Date.now();
@@ -98,10 +217,12 @@ export class KenjiModelIdempotency {
         const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
         if (existing) {
           if (existing.event_id !== eventId) return { ok: false, error: "event_key_collision" };
+          if (existing.status === "cancelled") return { ok: true, accepted: false, cancelled: true, status: existing.status, duplicate: true };
           return { ok: true, accepted: true, status: existing.status, duplicate: true };
         }
         await txn.put(CAMPAIGN_INGRESS_KEY, {
           event_id: eventId,
+          receipt_id: receiptId,
           status: "pending",
           attempts: 0,
           received_at: receivedAt,
@@ -346,6 +467,8 @@ export class KenjiModelIdempotency {
       await this.state.storage.put(CAMPAIGN_INGRESS_KEY, { ...ingress, status: "pending", next_attempt_at: Date.now() });
       await this.processCampaignIngress();
     } else if (ingress?.expires_at && Number(ingress.expires_at) <= Date.now()) await this.state.storage.delete(CAMPAIGN_INGRESS_KEY);
+    else if (ingress?.status === "dead" && ingress.alert_sent !== true && Number(ingress.next_alert_at) <= Date.now()) await this.sendPendingCampaignIngressAlert();
+    else if (ingress?.status === "cancelled" && ingress.cleanup_pending === true && Number(ingress.next_cleanup_at) <= Date.now()) await this.cleanupCampaignIngressUnsend();
     const now = Date.now();
     const claims = await this.state.storage.list({ prefix: "claim:" });
     const quotas = await this.state.storage.list({ prefix: "quota:" });
@@ -373,7 +496,7 @@ export class KenjiModelIdempotency {
     else if (pendingExpiresAt && (!nextAlarm || pendingExpiresAt < nextAlarm)) nextAlarm = pendingExpiresAt;
     if (expired.length) await this.state.storage.delete(expired);
     const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
-    const ingressAlarm = Number(currentIngress?.next_attempt_at || currentIngress?.lease_expires_at || currentIngress?.expires_at) || 0;
+    const ingressAlarm = Number(currentIngress?.next_attempt_at || currentIngress?.lease_expires_at || currentIngress?.next_alert_at || currentIngress?.next_cleanup_at || currentIngress?.expires_at) || 0;
     if (ingressAlarm && (!nextAlarm || ingressAlarm < nextAlarm)) nextAlarm = ingressAlarm;
     if (nextAlarm) await this.state.storage.setAlarm(nextAlarm);
   }

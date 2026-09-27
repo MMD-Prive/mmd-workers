@@ -2568,6 +2568,36 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
   };
 }
 
+export async function processDurableLineCardUnsend(eventId, env = {}) {
+  const safeEventId = asString(eventId);
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(safeEventId)) return { ok: false, reason: "invalid_event_id" };
+  const apiKey = asString(env.AIRTABLE_API_KEY);
+  const baseId = asString(env.AIRTABLE_BASE_ID);
+  const table = getAirtableTable(env);
+  if (!apiKey || !baseId || !table) return { ok: false, reason: "airtable_env_missing" };
+  const existing = await findExistingLineEvent(env, safeEventId, `line_${safeEventId}`, { throwOnUnavailable: true });
+  if (!existing?.id) return { ok: true, found: false, redacted: false };
+  const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}/${encodeURIComponent(existing.id)}`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      fields: {
+        member_name: "",
+        line_user_id: "",
+        admin_note: "[LINE message unsent]",
+        payload_json: JSON.stringify({
+          source_channel: "line",
+          source_message_id: safeEventId,
+          unsent: true,
+          unsent_at: new Date().toISOString(),
+        }),
+      },
+    }),
+  });
+  if (!response.ok) return { ok: false, found: true, redacted: false, reason: "airtable_unsend_redaction_failed", status: response.status };
+  return { ok: true, found: true, redacted: true };
+}
+
 export default {
   async fetch(request, env = {}, ctx) {
     const url = new URL(request.url);

@@ -29,6 +29,7 @@ const KENJI_RUNTIME_SCOPES = Object.freeze([
   "all_kenji_mutations",
 ]);
 const RUNTIME_STATUS_SENTINEL = "service-binding-runtime-status";
+const LINE_CARD_INGRESS_OWNER_PATH = "/v1/internal/line/card-21829530/ingress";
 
 // MY MMS Therapist work app is a separate, approval-gated private surface.
 // Lovable owns only the presentation bytes. All session/access/job authority
@@ -85,6 +86,33 @@ function runtimeJson(payload, status = 200) {
       "x-mmd-runtime-status-source": status === 200 ? "airtable-fallback" : "fail-closed",
     },
   });
+}
+
+async function handleLineCardIngressOwner(request, env = {}) {
+  const respond = (payload, status = 200) => new Response(JSON.stringify(payload), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, private", "x-content-type-options": "nosniff" },
+  });
+  const expected = text(env.INTERNAL_TOKEN);
+  const supplied = text(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
+  if (!expected || !supplied || !timingSafeStringEqual(expected, supplied)) return respond({ ok: false, error: "unauthorized" }, 401);
+  if (String(request.method || "GET").toUpperCase() !== "POST") return respond({ ok: false, error: "method_not_allowed" }, 405);
+  let input;
+  try { input = await request.json(); } catch (_) { return respond({ ok: false, error: "invalid_json" }, 400); }
+  const action = text(input?.action);
+  const receiptId = text(input?.receipt_id).toLowerCase();
+  if (!["status", "reprocess"].includes(action) || !/^[a-f0-9]{64}$/.test(receiptId)) return respond({ ok: false, error: "invalid_request" }, 400);
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return respond({ ok: false, error: "campaign_ingress_binding_missing" }, 503);
+  try {
+    const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${receiptId}`));
+    const response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    return respond(payload, response.status);
+  } catch (_) {
+    return respond({ ok: false, error: "campaign_ingress_unavailable" }, 503);
+  }
 }
 
 function myMmsJson(payload, status = 200) {
@@ -418,6 +446,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
     const hashes = text(env.LINE_CARD_21829530_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
     if (hashes.length && hashes.every((hash) => /^[a-f0-9]{64}$/.test(hash))) {
       const campaignEvents = [];
+      const unsendEvents = [];
       const ordinaryEvents = [];
       const triggeredUsers = new Set(events
         .filter((event) => event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && resolveLineCardCampaignTrigger(event.message.text))
@@ -425,17 +454,35 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       for (const event of events) {
         const userId = text(event?.source?.userId);
         let pilot = false;
-        if (event?.source?.type === "user" && event?.type === "message" && event?.message?.type === "text" && /^U[a-f0-9]{32}$/i.test(userId)) {
+        if (event?.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(userId)) {
           const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
           const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
           pilot = hashes.includes(hash);
         }
+        if (pilot && event?.type === "unsend" && /^[A-Za-z0-9_-]{1,120}$/.test(text(event?.unsend?.messageId))) {
+          unsendEvents.push(event);
+          continue;
+        }
         const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
         (campaign ? campaignEvents : ordinaryEvents).push(event);
       }
-      if (campaignEvents.length) {
+      if (campaignEvents.length || unsendEvents.length) {
         if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
         const stubs = [];
+        for (const event of unsendEvents) {
+          const eventId = text(event?.unsend?.messageId);
+          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
+          const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+          let response;
+          try {
+            response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unsend", event_id: eventId, receipt_id: key }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+        }
         for (const event of campaignEvents) {
           const eventId = text(event?.webhookEventId || event?.message?.id);
           if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
@@ -445,12 +492,12 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           let response;
           try {
             response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event }),
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key }),
             });
           } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
           const result = await response.json().catch(() => ({}));
-          if (!response.ok || result?.accepted !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
-          stubs.push(stub);
+          if (!response.ok || (result?.accepted !== true && result?.cancelled !== true)) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (result?.accepted === true) stubs.push(stub);
         }
         ctx.waitUntil((async () => {
           for (const stub of stubs) {
@@ -501,6 +548,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
 
 export default {
   async fetch(request, env = {}, ctx) {
+    if (normalizedPath(request) === LINE_CARD_INGRESS_OWNER_PATH) return handleLineCardIngressOwner(request, env);
     if (isMyMmsTherapistAppApiRequest(request)) return forwardMyMmsTherapistAppApi(request, env);
     if (isMyMmsTherapistAppUiRequest(request)) return handleMyMmsTherapistAppUi(request, env);
     if (isKenjiLineTransportHealthRequest(request)) {
