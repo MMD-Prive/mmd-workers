@@ -10,6 +10,18 @@ This document is the final membership-duration and CARE BACK wording authority. 
 
 It does not replace the separate coupon, Wish, Points, identity, payment, or legacy-reconstruction rules unless this document explicitly says so.
 
+## Existing Member Verify precedence — Owner Decision 2026-09-28
+
+The MY MMD Existing Member Verify launch benefit is governed by `MY_MMD_EXISTING_MEMBER_VERIFY_ONE_YEAR_LOCK_20260928.md`.
+
+For a canonical existing Private Standard/Premium member:
+- active/grace → **+1 calendar year / 12 months from the real existing expiry**;
+- former/expired → **+1 calendar year / 12 months from canonical Verify** when no future expiry exists;
+- the benefit is one-time and idempotent;
+- repeat login/Verify does not add another year.
+
+This supersedes the older status-based Verify rules of `current +180 days` and `expired +90 days`. It **does not** supersede the separately priced Private signup/renewal tier bonus rules below, and it does not alter protected VIP/SVIP/Black Card recovery.
+
 ## Private Membership base duration
 
 | Tier | Base term | Signup price currently presented |
@@ -41,9 +53,9 @@ Do not flatten both tiers into a generic `current +180 days` or `membership +180
 
 ## Relationship to the original 6 Years campaign matrix
 
-Older CARE BACK material may contain a status-based benefit such as `Current member (active/grace) +180 days`. That is a **specific 6-year campaign/current-member benefit path** and is not the universal duration rule for every new signup or renewal.
+Older CARE BACK material may contain status-based Existing Member Verify benefits such as `Current member +180 days` or `Expired member +90 days`. Those Verify durations are **superseded** by the 2026-09-28 owner lock: canonical Existing Member Verify is +1 year / 12 months.
 
-Where that historical/current-member card remains visible, its wording must clearly identify it as a verified campaign benefit so it cannot be mistaken for the Premium signup/renewal rule.
+The separate paid Private signup/renewal bonus table above remains valid and must not be confused with the Existing Member Verify launch benefit.
 
 Existing former/expired/new-member Points, coupon, Wish, and historical reconstruction mechanics remain governed by their dedicated canon unless separately updated.
 
