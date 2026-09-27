@@ -132,6 +132,7 @@ test("cross-system watch ranks six bounded operational stuck lanes without leaki
   });
   assert.equal(watch.items[0].sla_status, "overdue");
   assert.equal(watch.items.at(-1).sla_status, "watch");
+  assert.equal(watch.items.find((item) => item.kind === "job_confirmation_pending")?.href, "/internal/admin/jobs/all?session_id=SES-1");
   assert.equal(watch.business_truth_mutated, false);
   assert.equal(watch.operational_only, true);
 
