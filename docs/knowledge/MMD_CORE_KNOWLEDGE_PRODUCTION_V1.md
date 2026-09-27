@@ -153,8 +153,8 @@ Benefit lock:
 - Card status colors: Blue = Standard, Silver = Premium, Red = Red Card, Black = Black Card + VIP customer status, Gold = SVIP
 - Coupon validity: ใช้จองภายใน 2 เดือนนับจาก activation; เมื่อยืนยันการจองภายในกำหนดแล้ว วันรับบริการอยู่ได้ภายใน 90 วันนับจากวันที่จองเดิม แม้วันรับบริการจะเลยวันหมดอายุคูปอง และการเลื่อนนัดต้องไม่ขยายกรอบ 90 วันนี้
 
-- Current member active/grace: เพิ่ม 180 วันจากวันหมดอายุจริง ไม่มี CARE BACK point bonus อัตโนมัติ
-- Former/expired: ต้องตรวจ renewal/payment และกลับเป็น active/grace ก่อน จึง eligible สำหรับ +90 วันและ +150 Points
+- Existing member active/grace: MY MMD Verify ให้สิทธิ์ต่อสมาชิก **+1 ปีจากวันหมดอายุจริง** แบบ one-time/idempotent ไม่มี CARE BACK point bonus อัตโนมัติ
+- Existing former/expired: MY MMD Verify ให้สิทธิ์ **+1 ปีจากวันที่ Verify** เมื่อไม่มี future expiry; ส่วน +150 Points ยังต้องอาศัย renewal/payment verification แยกต่างหาก
 - New Standard: +150 Welcome Points หลังตรวจ membership/payment
 - New Premium: +250 Welcome Points หลังตรวจ membership/payment
 - Approved special campaign selection: สูงสุด +350 Points หลังตรวจ membership/payment ใช้เป็นสัญญาณประกอบ Black Card review เท่านั้น
@@ -248,8 +248,8 @@ HYPE แจกโชคเป็นกิจกรรมลุ้นของข
 10. ระบบไม่พบข้อมูล → ส่งต่อเปอร์
 11. ทุกข้อความ LINE OA ไม่แนะนำตัวว่า Kenji และไม่ใช้คำว่า “ทีม”
 12. Handoff payload มีข้อมูลขั้นต่ำครบและไม่เปิดเผย internal data
-13. Login/identity verification อย่างเดียวไม่ออก CARE BACK coupon หรือ Points
-14. Current member extension เริ่มจาก expiry จริง; expired/new benefits รอ verification ที่เกี่ยวข้อง
+13. Login/identity verification อย่างเดียวไม่ออก CARE BACK coupon หรือ Points; Existing Member Verify +1 ปีเป็นข้อยกเว้นที่ backend membership owner apply แบบ idempotent
+14. Existing active/grace +1 ปีจาก expiry จริง; existing expired +1 ปีจาก canonical Verify; new-member/Points/payment benefits รอ verification ตาม policy ของตัวเอง
 
 ## 17. Source references reviewed
 
