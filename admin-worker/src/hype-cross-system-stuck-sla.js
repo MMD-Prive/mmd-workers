@@ -262,7 +262,9 @@ export function buildCrossSystemStuckSlaWatch(sources = {}, now = new Date(), op
         firstField(fields, [SESSION_FIELDS.clientName, "client_name", "customer_name"]),
       ]) || "Job confirmation",
       detail: `รอ ${missing} confirmation`,
-      href: sessionId ? `/internal/admin/jobs/${encodeURIComponent(clean(sessionId, 160))}` : "/internal/admin/jobs",
+      href: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}$/.test(sessionId)
+        ? `/internal/admin/jobs/all?session_id=${encodeURIComponent(sessionId)}`
+        : "/internal/admin/jobs/all",
       authority: "canonical_sessions_and_reconfirm",
     });
     if (item) items.push(item);
