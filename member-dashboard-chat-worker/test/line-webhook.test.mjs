@@ -385,8 +385,8 @@ test("context-free CARE BACK minimum and production-smoke phrases stay determini
   const smokeCases = [
     ["โปร 6 ปีคืออะไร", "care_back_overview", /สิทธิ์ดูแลกลับ/],
     ["โปรถึงวันไหน", "care_back_dates", /31 สิงหาคม 2026/],
-    ["สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /180 วัน/],
-    ["หมดอายุแล้วได้อะไร", "care_back_expired_member", /90 วันและ 150 Points/],
+    ["สมาชิกปัจจุบันได้อะไร", "care_back_current_member", /1 ปี/],
+    ["หมดอายุแล้วได้อะไร", "care_back_expired_member", /1 ปี/],
     ["Standard ใหม่ได้อะไร", "care_back_new_standard", /150 Welcome Points/],
     ["Premium ใหม่ได้อะไร", "care_back_new_premium", /250 Welcome Points/],
     ["Guest Pass ได้แต้มไหม", "care_back_new_member", /ไม่มี CARE BACK Welcome Points อัตโนมัติ/],
