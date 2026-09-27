@@ -23,20 +23,30 @@ async function stagingShell(hostname, path, runtime) {
 }
 
 describe("same-site /member/liff shell", () => {
- it("keeps browser world hints public and includes the progressive Per letter", async () => {
+ it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
     for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous"]) {
       const response = await shell(`/member/liff${query}`);
       const html = await response.text();
       assert.equal(response.status, 200);
       assert.match(html, /world-public/);
-      assert.match(html, /id="per-letter" class="per-letter"/);
-      assert.match(html, /ค้นหาโมเดลที่ตรงใจ/);
-      assert.match(html, /ติดตามงานและ ETA/);
+      assert.match(html, /id="intro-screen" class="intro-screen my-mmd-welcome"/);
+      assert.match(html, /data\.welcomeAudience = audience/);
+      assert.match(html, /canonical_member_profile/);
+      assert.match(html, /audience === "existing"/);
+      assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+      assert.match(html, /ฮายยย เปอร์เองครับ เปอร์กลับมาแว้วว/);
+      assert.match(html, /ไม่ได้หายไปติดผู้ชายนะครับ 5555/);
+      assert.match(html, /ถามไป หายไม่มีคนตอบ/);
+      assert.match(html, /AI เปอร์ก็รำคาญนะ 555/);
+      assert.match(html, /กด Verify เพื่อรับสิทธิ์ต่ออายุสมาชิก 1 ปี/);
+      assert.match(html, /ระบบจะรวมสิทธิ์ให้เป็น 2 ปี/);
+      assert.match(html, /TMIB%20Bangkok\.webp/);
+      assert.match(html, /width="31" height="31"/);
+      assert.match(html, /aria-label="เข้าสู่บอร์ดสมาชิก MY MMD"/);
+      assert.match(html, /ENTER →/);
       assert.match(html, /"world":"public"/);
-      assert.match(html, /อุ๊ย! ขออภัยที่คิดดัง/);
-      assert.match(html, /เกือบสองแสนบาท/);
-      assert.match(html, /ขอบคุณที่ยังอยู่/);
       assert.match(html, /context-resolving/);
+      assert.doesNotMatch(html, /<details id="per-letter"/);
     }
   });
 
