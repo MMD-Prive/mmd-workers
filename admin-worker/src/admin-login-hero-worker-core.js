@@ -16,6 +16,7 @@ export { ModelActivationCoordinator } from "./model-first-time-activation.js";
 export { ModelLocationCoordinator } from "./model-location-runtime.js";
 export { LineOfcConsoleBackfillCoordinator } from "./line-ofc-console-backfill.js";
 export { ModelMediaSlotCoordinator } from "../../shared/model-media-slot-coordinator.mjs";
+export { ModelCardCoordinator } from "./model-card-automation.js";
 import { handleKenjiPublicKnowledgeRequest, isKenjiPublicKnowledgeRequest } from "./kenji-public-knowledge-runtime.js";
 import { handleMmsAdminRequest, isMmsAdminRequest } from "./mms-admin-runtime.js";
 import {

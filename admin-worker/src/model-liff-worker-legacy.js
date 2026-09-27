@@ -6,6 +6,7 @@ import {
 } from "../../shared/sigil-availability-snapshot-v1.mjs";
 import { issueModelTelegramBind, telegramConnectedFromFields } from "./telegram-identity-bind-authority.js";
 import { writeSigilAvailabilitySnapshot } from "./sigil-availability-snapshot.js";
+import { enqueuePrimaryCard, readModelCardStatus } from "./model-card-automation.js";
 
 const EXCHANGE_PATH = "/v1/model/liff/exchange";
 const CURRENT_PATH = "/v1/model/session/current";
@@ -111,6 +112,15 @@ export default {
     if (path === MEDIA_PATH) {
       if (method === "GET") return handleMediaList(request, env);
       return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+    }
+
+    if (path === "/v1/model/media/card-status") {
+      const auth = await requireModelSession(request, env);
+      if (!auth.ok) return json({ ok: false, error: auth.error }, auth.status, request, env);
+      if (method !== "GET") return json({ ok: false, error: "method_not_allowed" }, 405, request, env);
+      try {
+        return json({ ok: true, ...await readModelCardStatus(env, auth.payload.model_record_id) }, 200, request, env);
+      } catch { return json({ ok: false, error: "card_status_unavailable" }, 503, request, env); }
     }
 
     if (path === MEDIA_UPLOAD_PATH) {
@@ -1122,12 +1132,15 @@ async function handleMediaSetMain(request, env, mediaId) {
   }, true);
   if (!updated.ok) return json({ ok: false, error: "media_registry_write_failed" }, updated.status, request, env);
 
+  const cardGeneration = await enqueuePrimaryCard(env, auth.payload.model_record_id, media.record.id);
+
   return json({
     ok: true,
     status: clean(updated.record?.fields?.review_status) || "approved",
     media: safeMediaRecord(updated.record),
     policy: "model_self_managed_public",
     review_required: false,
+    card_generation: cardGeneration,
   }, 200, request, env);
 }
 

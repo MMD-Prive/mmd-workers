@@ -1,6 +1,7 @@
 import modelLiffWorker from "./model-liff-worker.js";
 import { isAuthed as isCoreAuthed } from "./index.js";
 import { handleCareBackRequest, isCareBackPath } from "./care-back-worker.js";
+import { handleStudioCards } from "./model-card-automation.js";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const STUDIO_API_PREFIX = "/studio/api";
@@ -84,6 +85,8 @@ export async function handleStudioRequest(request, env, path = normalizePathname
     if (containsBrowserLineUserId(body)) return json({ ok: false, error: "line_user_id_not_allowed" }, 400);
     const forbidden = findForbiddenStudioInput(body);
     if (forbidden) return json({ ok: false, error: "raw_storage_field_not_allowed", field: forbidden }, 400);
+
+    if (path.startsWith("/studio/api/model-cards/")) return await handleStudioCards(env, path, body);
 
     if (path === MY_CARD_REQUEST_LIST_PATH) return await handleMyCardRequestList(env);
     if (path === MY_CARD_REQUEST_IMPORT_PATH) return await handleMyCardRequestImport(env, body);

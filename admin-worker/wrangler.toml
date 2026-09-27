@@ -887,6 +887,12 @@ binding = "CAL_SYNC_WORKER"
 service = "cal-sync-worker"
 
 [vars]
+MODEL_CARD_AUTO_ENABLED = "false"
+MODEL_CARD_DAILY_LIMIT = "20"
+# Approved brand assets must exist before enabling generation. No public URLs.
+MODEL_CARD_MMD_LOGO_KEY = "studio-card-brand/mmd-approved.png"
+MODEL_CARD_SIGIL_LOGO_KEY = "studio-card-brand/sigil-v4.webp"
+MODEL_CARD_PROVINCE_BY_MODEL_JSON = "{}"
 AIRTABLE_TABLE_SESSION_EXTENSION_REQUESTS = "tblbIhMUXMAYlXmpi"
 MMD_MODEL_DRIVE_METADATA_SYNC_ENABLED = "false"
 ALLOWED_ORIGINS = "https://mmdbkk.com,https://www.mmdbkk.com,https://mmdprive.webflow.io,https://sigil.mmdbkk.com,https://mmdprive.com,https://www.mmdprive.com,https://mmdmodel.lovable.app"
@@ -1063,6 +1069,20 @@ new_sqlite_classes = ["MmsPartnerAuthStore"]
 [[migrations]]
 tag = "v2026-09-27-model-media-slot-coordinator"
 new_sqlite_classes = ["ModelMediaSlotCoordinator"]
+
+# Draft only: deploy/configure after owner review, then enable explicitly.
+[[durable_objects.bindings]]
+name = "MODEL_CARD_COORDINATOR"
+class_name = "ModelCardCoordinator"
+
+[[migrations]]
+tag = "v2026-09-27-model-card-drafts"
+new_sqlite_classes = ["ModelCardCoordinator"]
+
+[browser]
+binding = "MODEL_CARD_BROWSER"
+
+# Secret, server-side only: OPENAI_IMAGE_API_KEY
 
 # Canonical client lookup: avoid Webflow HTML fallback for POST requests.
 

@@ -1,0 +1,35 @@
+name: Model primary-photo card drafts
+on:
+  pull_request:
+    paths:
+      - "admin-worker/src/model-card-*.js"
+      - "admin-worker/model-card-automation.test.mjs"
+      - "admin-worker/src/model-liff-worker-legacy.js"
+      - "admin-worker/src/studio-real-worker.js"
+      - "admin-worker/src/admin-login-hero-worker-core.js"
+      - "admin-worker/wrangler.toml"
+      - "webflow/internal/admin/studio/studio-production-bridge.js"
+      - "model-dashboard-presentation-worker/src/model-media-upload-presentation.js"
+      - ".github/workflows/model-card-drafts-ci.yml"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify card draft flow and existing media boundaries
+        run: |
+          node --experimental-global-webcrypto --test \
+            admin-worker/model-card-automation.test.mjs \
+            admin-worker/model-media-upload.test.mjs \
+            admin-worker/model-dashboard-policy.test.mjs \
+            admin-worker/studio-real-worker.test.mjs \
+            admin-worker/studio-webflow-source.test.mjs \
+            model-dashboard-presentation-worker/index.test.mjs
+      - name: Bundle without deployment or credentials
+        run: npx --yes wrangler@4.141.0 deploy --dry-run --config admin-worker/wrangler.toml --outdir /tmp/mmd-card-worker

@@ -37,6 +37,7 @@
     if (!ok) return;
     bindStudioForms();
     installMyCardInbox();
+    installAutoCardInbox();
     hydrateMyCardReviewContext();
     window.MMDStudioBridge = {
       api: API,
@@ -62,6 +63,62 @@
 
 
   var myCardPreviewUrl = "";
+
+  function installAutoCardInbox() {
+    if (PAGE !== "upload" && PAGE !== "studio-upload") return;
+    var form = findIntakeForm();
+    if (!form || document.getElementById("mmd-auto-card-inbox")) return;
+    injectMyCardInboxStyles();
+    var section = document.createElement("section");
+    section.id = "mmd-auto-card-inbox";
+    section.className = "mmd-my-card-inbox";
+    section.innerHTML = '<div class="mmd-my-card-inbox__head"><h2>การ์ดจากรูปโปรไฟล์</h2><button type="button" data-refresh>รีเฟรช</button></div><p class="mmd-my-card-inbox__help">ร่างอัตโนมัติ 1322 × 1200 · รอตรวจภาพและข้อมูลก่อนนำไปใช้</p><div data-jobs aria-live="polite"></div><button type="button" data-more hidden>ดูต่อ</button><div data-preview></div>';
+    form.parentNode.insertBefore(section, form);
+    var cursor = null, previewUrl = "";
+    var labels = { queued: "เข้าคิวแล้ว", preparing: "กำลังเตรียมข้อมูล", waiting_profile: "รอข้อมูลโปรไฟล์", waiting_configuration: "รอการตั้งค่าระบบ", generating: "กำลังสร้างภาพ", rendering: "กำลังจัดการ์ด", awaiting_owner_review: "รอตรวจการ์ด", source_changed: "รูปหลักหรือข้อมูลเปลี่ยนแล้ว", needs_review: "ต้องตรวจงาน", paused: "พักการสร้างภาพ" };
+    function load(append) {
+      var target = section.querySelector("[data-jobs]");
+      if (!append) { cursor = null; target.textContent = "กำลังอ่านรายการ…"; }
+      post("/studio/api/model-cards/list", cursor ? { cursor: cursor } : {}).then(function (data) {
+        if (!append) target.textContent = "";
+        (data.jobs || []).forEach(function (job) {
+          var item = document.createElement("article"); item.className = "mmd-my-card-request";
+          var copy = document.createElement("div"); copy.className = "mmd-my-card-request__copy";
+          var name = document.createElement("strong"); name.textContent = job.model_name || "Model"; copy.appendChild(name);
+          var state = document.createElement("span"); state.textContent = labels[job.state] || "ต้องตรวจงาน"; copy.appendChild(state);
+          if ((job.missing || []).length) { var note = document.createElement("small"); note.textContent = "ข้อมูลที่ยังขาด: " + job.missing.join(", "); copy.appendChild(note); }
+          item.appendChild(copy);
+          var identity = { model_record_id: job.model_record_id, job_id: job.job_id };
+          if (job.state === "awaiting_owner_review") {
+            var view = document.createElement("button"); view.type = "button"; view.textContent = "ดูการ์ด";
+            view.onclick = function () {
+              view.disabled = true;
+              postBlob("/studio/api/model-cards/preview", identity).then(function (blob) {
+                if (previewUrl) URL.revokeObjectURL(previewUrl);
+                previewUrl = URL.createObjectURL(blob);
+                var area = section.querySelector("[data-preview]"); area.textContent = "";
+                var image = document.createElement("img"); image.src = previewUrl; image.alt = "ร่างการ์ด " + job.model_name; image.style.cssText = "display:block;width:100%;height:auto;margin-top:16px";
+                var link = document.createElement("a"); link.href = previewUrl; link.download = job.job_id + "-1322x1200.png"; link.textContent = "ดาวน์โหลดร่าง PNG";
+                area.appendChild(image); area.appendChild(link);
+              }).catch(function (error) { section.querySelector("[data-preview]").textContent = "เปิดการ์ดไม่ได้: " + error.message; }).finally(function () { view.disabled = false; });
+            };
+            item.appendChild(view);
+          } else if (job.can_resume) {
+            var resume = document.createElement("button"); resume.type = "button"; resume.textContent = "ตรวจข้อมูลแล้วดำเนินต่อ";
+            resume.onclick = function () { resume.disabled = true; post("/studio/api/model-cards/resume", identity).then(function () { load(false); }).catch(function (error) { state.textContent = error.message; resume.disabled = false; }); };
+            item.appendChild(resume);
+          }
+          target.appendChild(item);
+        });
+        if (!target.children.length) target.textContent = "ยังไม่มีร่างจากการเลือกรูปหลัก";
+        cursor = data.cursor || null; section.querySelector("[data-more]").hidden = !cursor;
+      }).catch(function () { target.textContent = "ยังอ่านร่างอัตโนมัติไม่ได้ กรุณาลองอีกครั้ง"; });
+    }
+    section.querySelector("[data-refresh]").onclick = function () { load(false); };
+    section.querySelector("[data-more]").onclick = function () { load(true); };
+    window.addEventListener("pagehide", function () { if (previewUrl) URL.revokeObjectURL(previewUrl); });
+    load(false);
+  }
 
   function installMyCardInbox() {
     if (PAGE !== "upload" && PAGE !== "studio-upload") return;
