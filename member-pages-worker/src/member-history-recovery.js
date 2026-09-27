@@ -11,6 +11,7 @@ const LOCK_TTL_SECONDS = 180;
 const AIRTABLE_TIMEOUT_MS = 10000;
 const HISTORY_WINDOW_YEARS = 5;
 const POINT_RATE_THB = 100;
+const POINTS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const POINTS_BUCKET = "base_phase1";
 const POINTS_SOURCE = "line_ofc_history";
 
@@ -269,7 +270,7 @@ export async function runMemberHistoryRecovery({
       historical_points_recovered: pointsTarget.points,
       historical_points_added: pointsResult.historical_points_added,
       current_points_total: pointsResult.current_points_total,
-      points_expire: false,
+      points_expire: true,
       history_window_years: HISTORY_WINDOW_YEARS,
       source_pending: sourcePending,
       trigger,
@@ -418,9 +419,10 @@ async function reconcileHistoricalPointsTotal({ db, wallet, clientId, pointsTarg
     points: aggregatePoints,
     rate_policy: "historical_lifetime_total_100_thb_1_point_v2",
     source: POINTS_SOURCE,
-    note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=none_phase1;notes_primary=true;slips_optional=true`,
+    note: `policy=${POLICY};window_years=${HISTORY_WINDOW_YEARS};expiry=365d_from_entry;notes_primary=true;slips_optional=true`,
     idempotency_key: aggregateKey,
     posted_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + POINTS_TTL_MS).toISOString(),
     transaction_status: "posted",
     created_by: POLICY,
     points_bucket: POINTS_BUCKET,
@@ -767,7 +769,7 @@ async function markQueued(env, lineUserId, trigger) {
     trigger,
     reason: "queued",
     updated_at: new Date().toISOString(),
-    points_expire: false,
+    points_expire: true,
     history_window_years: HISTORY_WINDOW_YEARS,
   });
   await writeStatusKey(env, await recoveryKey("status", lineUserId), status);
@@ -799,7 +801,7 @@ function statusPayload(state, extra = {}) {
     historical_points_recovered: nonNegativeInt(extra.historical_points_recovered),
     historical_points_added: signedInt(extra.historical_points_added),
     current_points_total: nullableNonNegativeInt(extra.current_points_total),
-    points_expire: false,
+    points_expire: true,
     history_window_years: HISTORY_WINDOW_YEARS,
     source_pending: extra.source_pending === true,
     preload_source: bounded(extra.preload_source, 48) || null,
@@ -822,7 +824,7 @@ function refreshExpired(status) {
 }
 
 function reviewNote(trigger, reason) {
-  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;note_occurrence=true;old_slip_required=false;points_expiry=none_phase1;entitlements=untouched`;
+  return `policy=${POLICY};trigger=${bounded(trigger, 32) || "unknown"};reason=${bounded(reason, 120) || "unknown"};identity=verified_liff_exact_client;note_occurrence=true;old_slip_required=false;points_expiry=365d_from_entry;entitlements=untouched`;
 }
 
 class AirtableHistoryStore {
