@@ -160,9 +160,9 @@ function renderShell(config, nonce) {
     .per-letter{max-width:680px;margin-top:18px;border-top:1px solid currentColor;padding-top:13px;color:inherit}
     .per-letter summary{cursor:pointer;font-weight:750}.per-letter-copy{max-height:42svh;overflow:auto;margin-top:12px;padding-right:6px;white-space:pre-line;font-size:14px;line-height:1.75}
     /* MY MMD customer welcome: member world only, before the board. */
-    body:not(.signup-mode):not(.app-entered){background:#171715;color:#f4ede1}
-    body:not(.signup-mode):not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
-    body:not(.signup-mode):not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
+    body:not(.app-entered){background:#171715;color:#f4ede1}
+    body:not(.app-entered) main{display:block;width:100%;max-width:none;min-height:100svh;margin:0;padding:0;border:0;border-radius:0;background:#171715;box-shadow:none}
+    body:not(.app-entered) .my-mmd-welcome{display:block;min-height:100svh;background:#171715;color:#f4ede1}
     .welcome-hero{position:relative;min-height:178px;background:linear-gradient(90deg,rgba(12,12,11,.82) 0%,rgba(12,12,11,.64) 38%,rgba(12,12,11,.10) 78%),url("https://cdn.prod.website-files.com/68f879d546d2f4e2ab186e90/6aa6cead27f3ee081d057794_TMIB%20Bangkok.webp") center 54%/cover no-repeat}
     .welcome-brand{position:absolute;left:26px;bottom:22px;display:flex;align-items:center;gap:10px;min-width:0}.welcome-logo{display:grid;width:31px;height:31px;place-items:center;overflow:hidden;border-radius:5px;background:#090909}.welcome-logo img{display:block;width:31px;height:31px;object-fit:contain}.welcome-brand strong{display:block;color:#f4ede1;font-family:Georgia,"Times New Roman",serif;font-size:19px;font-weight:400;line-height:1.05;letter-spacing:.01em}.welcome-brand small{display:block;margin-top:4px;color:rgba(244,237,225,.68);font-size:9px;line-height:1.1;letter-spacing:.08em}
     .welcome-letter{padding:26px 26px max(42px,env(safe-area-inset-bottom))}.my-mmd-welcome .mark{color:#c9a866;font-size:10px;letter-spacing:.14em}.my-mmd-welcome .title{max-width:680px;margin:10px 0 7px;color:#f4ede1;font-family:Georgia,"Times New Roman","Noto Sans Thai",serif;font-size:clamp(30px,9vw,48px);font-weight:400;line-height:1.12;letter-spacing:-.025em}.my-mmd-welcome .sub{max-width:680px;margin:0;color:rgba(244,237,225,.68);font-size:13px;line-height:1.55}
@@ -360,12 +360,7 @@ function renderShell(config, nonce) {
   applyWorldTheme();
   let welcomeContextPromise;
   async function resolveInitialWelcomeContext() {
-    if (CONFIG.intent === "signup") {
-      document.body.classList.remove("context-resolving");
-      introContinue.disabled = false;
-      return;
-    }
-    try {
+     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
       let response;
@@ -381,7 +376,6 @@ function renderShell(config, nonce) {
       introContinue.disabled = false;
     }
   }
-  welcomeContextPromise = resolveInitialWelcomeContext();
   let appEntered = false;
   async function enterApp() {
     if (appEntered || !introContinue || introContinue.disabled) return;
@@ -409,11 +403,8 @@ function renderShell(config, nonce) {
     const key = element.getAttribute("data-copy");
     if (copy[key]) element.textContent = copy[key];
   }
-  if (CONFIG.intent === "signup") {
-    document.querySelector(".mark").textContent = "MMD PRIVÉ · LINE MEMBERSHIP";
-    document.querySelector(".title").textContent = locale === "en" ? "Join MMD" : locale === "zh" ? "加入 MMD" : "สมัครสมาชิก MMD";
-    document.querySelector(".sub").textContent = locale === "en" ? "Choose your membership inside LINE." : locale === "zh" ? "在 LINE 中选择您的会员方案。" : "เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE";
-  }
+  applyWorldTheme();
+  welcomeContextPromise = resolveInitialWelcomeContext();
   document.getElementById("care-message").textContent = copy.careIntro || document.getElementById("care-message").textContent;
   document.getElementById("service-spend-label").textContent = copy.serviceSpendLabel || "Service spend";
   document.getElementById("lifetime-spend-label").textContent = copy.lifetimeSpendLabel || "Lifetime";
