@@ -276,10 +276,10 @@ test("Phase 2 model deadline is bounded to the post-response shadow budget", () 
   assert.equal(KENJI_CONTEXTUAL_SHADOW_INTERNALS.MODEL_TIMEOUT_MS, 12_000);
 });
 
-test("Phase 2 production config is shadow-only while LINE auto reply stays off", () => {
+test("Phase 2 contextual model remains shadow-only after owner-approved LINE replies", () => {
   const wrangler = readFileSync(new URL("../wrangler.toml", import.meta.url), "utf8");
   assert.match(wrangler, /^KENJI_LINE_CONTEXTUAL_SHADOW_ENABLED\s*=\s*"true"$/m);
   assert.match(wrangler, /^KENJI_CONTEXTUAL_OPENAI_MODEL\s*=\s*"gpt-4\.1-mini"$/m);
   assert.match(wrangler, /^KENJI_LINE_CONVERSATION_SHADOW_ENABLED\s*=\s*"true"$/m);
-  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"false"$/m);
+  assert.match(wrangler, /^LINE_AUTO_REPLY_ENABLED\s*=\s*"true"$/m);
 });
