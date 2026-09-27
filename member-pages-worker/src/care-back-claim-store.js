@@ -5,8 +5,7 @@ const LANDING_PATH = "/promotion/6-years-care-back";
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const COUPON_VALIDITY_MONTHS = 2;
 const COUPON_MAX_DISCOUNT_PERCENT = 10;
-const CURRENT_MEMBER_EXTENSION_DAYS = 180;
-const RENEWED_MEMBER_EXTENSION_DAYS = 90;
+const EXISTING_MEMBER_VERIFY_EXTENSION_DAYS = 365;
 const RENEWED_MEMBER_BONUS_POINTS = 150;
 const NEW_MEMBER_WELCOME_POINTS = 66;
 const POINTS_RATE_THB = 100;
@@ -341,7 +340,24 @@ class AirtableCareBackStore {
     const idempotencyKey = `${CAMPAIGN_ID}:${claimId}:${benefit.kind}`;
     const records = await this.list(tableName(this.env, "BENEFIT_APPLICATIONS"), `{idempotency_key}=${formulaString(idempotencyKey)}`, 2);
     if (records.length > 1) throw new CareBackStoreError("CARE_BACK_BENEFIT_CONFLICT");
-    if (records.length) return records[0];
+    if (records.length) {
+      const existing = records[0];
+      const fields = existing.fields || {};
+      const status = String(fields.status || "");
+      let requestedDays = null;
+      try { requestedDays = Number(JSON.parse(String(fields.before_json || "{}")).requested_extension_days); } catch {}
+      if (status === "pending" && requestedDays !== benefit.days) {
+        return this.patch(tableName(this.env, "BENEFIT_APPLICATIONS"), existing.id, {
+          before_json: JSON.stringify({
+            requested_extension_days: benefit.days,
+            requested_extension_months: 12,
+            policy: "MY_MMD_EXISTING_MEMBER_VERIFY_1Y",
+          }),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      return existing;
+    }
     const now = new Date().toISOString();
     return this.create(tableName(this.env, "BENEFIT_APPLICATIONS"), {
       idempotency_key: idempotencyKey,
@@ -349,7 +365,11 @@ class AirtableCareBackStore {
       campaign_id: CAMPAIGN_ID,
       benefit_type: benefit.kind,
       status: "pending",
-      before_json: JSON.stringify({ requested_extension_days: benefit.days }),
+      before_json: JSON.stringify({
+        requested_extension_days: benefit.days,
+        requested_extension_months: 12,
+        policy: "MY_MMD_EXISTING_MEMBER_VERIFY_1Y",
+      }),
       retry_count: 0,
       request_id: idempotencyKey,
       created_at: now,
@@ -515,12 +535,12 @@ function initialClaimPolicy(observed) {
     return {
       match_status: "matched",
       classification_group: "current_member",
-      default_months: 6,
+      default_months: 12,
       payment_status: "not_required",
       payment_required: false,
       review_status: "not_required",
       claim_status: "benefit_approved",
-      membership_benefit: { kind: "membership_extension", days: CURRENT_MEMBER_EXTENSION_DAYS, state: "pending_application" },
+      membership_benefit: { kind: "membership_extension", days: EXISTING_MEMBER_VERIFY_EXTENSION_DAYS, state: "pending_application" },
       points_policy: {
         reconciliation_state: "pending",
         rate_thb_per_point: POINTS_RATE_THB,
@@ -533,12 +553,12 @@ function initialClaimPolicy(observed) {
     return {
       match_status: "matched",
       classification_group: "inactive_expired",
-      default_months: 3,
-      payment_status: "pending",
-      payment_required: true,
+      default_months: 12,
+      payment_status: "not_required",
+      payment_required: false,
       review_status: "not_required",
-      claim_status: "payment_pending",
-      membership_benefit: { kind: "membership_extension", days: RENEWED_MEMBER_EXTENSION_DAYS, state: "renewal_required" },
+      claim_status: "benefit_approved",
+      membership_benefit: { kind: "membership_extension", days: EXISTING_MEMBER_VERIFY_EXTENSION_DAYS, state: "pending_application" },
       points_policy: {
         reconciliation_state: "pending",
         rate_thb_per_point: POINTS_RATE_THB,
@@ -574,11 +594,12 @@ function resolvedClaimPolicy(fields, observed) {
     const membershipRestored = observed.status === "active" || observed.status === "grace";
     return {
       ...policy,
-      payment_status: paymentVerified ? "verified" : "pending",
-      claim_status: paymentVerified && membershipRestored ? "benefit_approved" : "payment_pending",
+      payment_status: "not_required",
+      payment_required: false,
+      claim_status: "benefit_approved",
       membership_benefit: {
         ...policy.membership_benefit,
-        state: paymentVerified && membershipRestored ? "pending_application" : "renewal_required",
+        state: "pending_application",
       },
       points_policy: {
         ...policy.points_policy,
