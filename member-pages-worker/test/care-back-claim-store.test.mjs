@@ -40,7 +40,7 @@ function currentClaim(derived, overrides = {}) {
       matched_member_id: "MMD-PER-01",
       match_status: "matched",
       classification_group: "current_member",
-      default_months: 6,
+      default_months: 12,
       payment_status: "not_required",
       payment_required: false,
       review_status: "not_required",
@@ -110,9 +110,17 @@ test("CARE BACK activates the code for exactly two calendar months without inven
   assert.equal(result.approved_discount_percent, null);
   assert.equal(result.coupon_wallet.approved_discount_percent, null);
   assert.equal(result.discount_percent, 0);
+  assert.equal(result.membership_benefit.days, 365);
+  assert.equal(result.membership_benefit.state, "pending_application");
+  const benefit = writes.find((write) => write.table === "MMD — Campaign Benefit Applications");
+  assert.ok(benefit);
+  const benefitBefore = JSON.parse(benefit.fields.before_json);
+  assert.equal(benefitBefore.requested_extension_days, 365);
+  assert.equal(benefitBefore.requested_extension_months, 12);
+  assert.equal(benefitBefore.policy, "MY_MMD_EXISTING_MEMBER_VERIFY_1Y");
 });
 
-test("expired members receive the Wish coupon immediately while renewal benefits stay separate", async () => {
+test("expired existing members receive Verify +1Y while renewal Points remain separately gated", async () => {
   const writes = [];
   globalThis.fetch = async (input, init = {}) => {
     const table = tableFrom(input);
@@ -136,8 +144,62 @@ test("expired members receive the Wish coupon immediately while renewal benefits
   assert.equal(promo.fields.status, "active");
   assert.equal(result.coupon_state, "ready");
   assert.equal(result.coupon_wallet.status, "ready");
-  assert.equal(result.membership_benefit.state, "renewal_required");
+  assert.equal(result.payment_required, false);
+  assert.equal(result.membership_benefit.days, 365);
+  assert.equal(result.membership_benefit.state, "pending_application");
   assert.equal(result.points_policy.renewal_bonus_state, "renewal_required");
+  const benefit = writes.find((write) => write.table === "MMD — Campaign Benefit Applications");
+  assert.ok(benefit);
+  const before = JSON.parse(benefit.fields.before_json);
+  assert.equal(before.requested_extension_days, 365);
+  assert.equal(before.requested_extension_months, 12);
+  assert.equal(before.policy, "MY_MMD_EXISTING_MEMBER_VERIFY_1Y");
+});
+
+test("stale pending 180-day benefit is self-healed to the canonical one-year Verify policy", async () => {
+  const derived = await deriveClaimAndCode(IDENTITY, SECRET);
+  const claim = currentClaim(derived);
+  const stale = {
+    id: `rec${"S".repeat(14)}`,
+    fields: {
+      idempotency_key: `6-years-care-back:${derived.claimId}:membership_extension`,
+      claim_id: derived.claimId,
+      campaign_id: "6-years-care-back",
+      benefit_type: "membership_extension",
+      status: "pending",
+      before_json: JSON.stringify({ requested_extension_days: 180 }),
+    },
+  };
+  let benefitPatch = null;
+  globalThis.fetch = async (input, init = {}) => {
+    const table = tableFrom(input);
+    if ((init.method || "GET") === "GET") {
+      if (table === "MMD — Campaign Claims") return Response.json({ records: [claim] });
+      if (table === "MMD — Campaign Benefit Applications") return Response.json({ records: [stale] });
+      return Response.json({ records: [] });
+    }
+    const body = JSON.parse(init.body);
+    if (init.method === "PATCH" && table === "MMD — Campaign Benefit Applications") {
+      benefitPatch = body.fields;
+      return Response.json({ id: stale.id, fields: { ...stale.fields, ...body.fields } });
+    }
+    if (init.method === "PATCH") return Response.json({ id: `rec${"P".repeat(14)}`, fields: body.fields });
+    return Response.json({ records: [{ id: `rec${"N".repeat(14)}`, fields: body.records?.[0]?.fields || body.fields }] });
+  };
+
+  const result = await getCareBackStore(env()).openOrResume({
+    identityHash: IDENTITY,
+    memberId: "MMD-PER-01",
+    memberProfile: { membership_status: "active", tier: "Premium" },
+    now: BIRTHDAY_NOW,
+  });
+
+  assert.equal(result.membership_benefit.days, 365);
+  assert.ok(benefitPatch);
+  const before = JSON.parse(benefitPatch.before_json);
+  assert.equal(before.requested_extension_days, 365);
+  assert.equal(before.requested_extension_months, 12);
+  assert.equal(before.policy, "MY_MMD_EXISTING_MEMBER_VERIFY_1Y");
 });
 
 test("calendar-month validity preserves month semantics and clamps end-of-month", () => {
