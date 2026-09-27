@@ -196,6 +196,22 @@ async function post(url, body, env) {
   }), env);
 }
 
+test("production apply accepts V12 form version while keeping the V8 contract", async () => {
+  const env = makeEnv();
+  const response = await post(APPLY_URL, validApplication({
+    form_version: "public-model-apply-v12",
+    nickname: "V12 Production Test",
+  }), env);
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.mode, "intake_received");
+  assert.equal(env.__airtable.applications.length, 1);
+  const fields = env.__airtable.applications[0].fields;
+  assert.equal(fields[publicModelTestInternals.APPLICATION_FIELDS.formVersion], "public-model-apply-v12");
+});
+
 test("production apply persists once and returns an idempotent duplicate response", async () => {
   const env = makeEnv();
   const first = await post(APPLY_URL, validApplication(), env);
