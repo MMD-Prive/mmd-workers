@@ -48,6 +48,10 @@ import {
   isModelPayoutAdjustmentRequest,
 } from "./model-payout-adjustments.js";
 import {
+  handleClientProfilePhotoSync,
+  isClientProfilePhotoSyncRequest,
+} from "./client-profile-photo-history.js";
+import {
   handleAdminShopOrdersApi,
   handleAdminShopOrdersPage,
   isAdminShopOrdersApiRequest,
@@ -252,6 +256,11 @@ export default {
     if (isModelPayoutAdjustmentRequest(normalizedPath, method)) {
       const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
       return handleModelPayoutAdjustments(request, runtimeEnv, actor);
+    }
+
+    if (isClientProfilePhotoSyncRequest(normalizedPath, method)) {
+      const actor = await readCredentialBoundAdminActor(request, runtimeEnv);
+      return handleClientProfilePhotoSync(request, runtimeEnv, actor);
     }
 
     if (isKenjiConversationShadowReceiptAdminRequest(normalizedPath, method)) {
