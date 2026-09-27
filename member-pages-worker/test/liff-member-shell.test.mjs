@@ -247,7 +247,7 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /@media\(max-width:390px\)/);
     assert.match(html, /@media\(max-width:430px\)/);
     assert.match(html, /@media\(min-width:700px\)/);
-    assert.match(html, /body:not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
+    assert.match(html, /body:not\(\.app-entered\) main,\s*body\.world-public:not\(\.signup-mode\):not\(\.app-entered\) main,\s*body\.world-private:not\(\.signup-mode\):not\(\.app-entered\) main\{[^}]*width:100%[^}]*max-width:none/);
     assert.match(html, /overflow-x:hidden/);
     assert.match(html, /\.my-mmd-welcome \.per-letter-copy\{[^}]*max-height:none[^}]*overflow:visible/);
     assert.doesNotMatch(html, /line-clamp|-webkit-line-clamp/);
