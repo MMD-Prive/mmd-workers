@@ -2,17 +2,27 @@
 // the caller owns authorization, the durable LINE receipt and any reply.
 const TRIGGERS = new Set(["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "EMs19"]);
 
+function entryOf(input = {}) {
+  const raw = String(input.message_text || input.trigger || "").normalize("NFKC").trim();
+  if (TRIGGERS.has(raw)) return { kind: "card_action_text", trigger: raw, query: raw };
+  const explicit = /^(?:สนใจ|ขอดู|ถามเรื่อง|ชื่อ(?:\s*model|\s*นายแบบ)?\s*[:：-]?|model\s*[:：-]?)\s*(.{2,48})$/iu.exec(raw);
+  const query = explicit?.[1]?.trim() || "";
+  return query && query.length <= 48 ? { kind: "typed_model_name", trigger: "", query } : null;
+}
+
 function safeAddress(rename) {
   const first = String(rename || "").split(/\s+[-–—|]\s+/u)[0].trim();
   return /^(?:พี่|คุณ)\s*[\p{L}\p{M} .]{1,38}$/u.test(first) ? first : "";
 }
 
-export async function reviewMonthlyAdLead({ card_id = "", trigger = "", line_user_id = "" } = {}, readers = {}) {
+export async function reviewMonthlyAdLead({ card_id = "", trigger = "", message_text = "", line_user_id = "" } = {}, readers = {}) {
   const log = [];
-  if (card_id !== "21829530" || !TRIGGERS.has(trigger) || !/^U[0-9a-f]{32}$/i.test(line_user_id)) {
+  const entry = entryOf({ trigger, message_text });
+  if (!entry || !/^U[0-9a-f]{32}$/i.test(line_user_id) || (card_id && card_id !== "21829530")) {
     return { status: "out_of_scope", review_only: true, customer_reply: "" };
   }
-  for (const method of ["resolveCustomer", "readVerifiedSpend", "resolveClickedModel", "readReviewedHistory", "readOwnerRate"]) {
+  const modelReader = entry.kind === "card_action_text" ? "resolveClickedModel" : "resolveTypedModel";
+  for (const method of ["resolveCustomer", "readVerifiedSpend", modelReader, "readReviewedHistory", "readOwnerRate"]) {
     if (typeof readers[method] !== "function") return { status: "source_unavailable", review_only: true, customer_reply: "" };
   }
   try {
@@ -28,11 +38,14 @@ export async function reviewMonthlyAdLead({ card_id = "", trigger = "", line_use
     log.push("verified_spend");
     const spend = await readers.readVerifiedSpend(scope);
     log.push("clicked_model");
-    const model = await readers.resolveClickedModel({ card_id, trigger });
+    const model = await readers[modelReader](entry.kind === "card_action_text"
+      ? { card_id: "21829530", trigger: entry.trigger }
+      : { query: entry.query, client_id: identity.client_id });
     log.push("reviewed_history");
     const history = await readers.readReviewedHistory(scope);
     log.push("owner_rate");
-    const modelId = /^rec[A-Za-z0-9]+$/.test(String(model?.canonical_model_id || "")) ? model.canonical_model_id : null;
+    const modelId = model?.status === "resolved" && model?.owner_approved === true &&
+      /^rec[A-Za-z0-9]+$/.test(String(model?.canonical_model_id || "")) ? model.canonical_model_id : null;
     const rate = modelId && spend?.verified === true && history?.reviewed === true
       ? await readers.readOwnerRate({ client_id: identity.client_id, model_id: modelId })
       : null;
@@ -44,15 +57,20 @@ export async function reviewMonthlyAdLead({ card_id = "", trigger = "", line_use
       status: readyForPer ? "owner_review_ready" : "evidence_review_required",
       review_only: true,
       steps: log,
-      card_id,
-      trigger,
+      card_id: entry.kind === "card_action_text" ? "21829530" : null,
+      trigger: entry.trigger || null,
+      entry_kind: entry.kind,
+      // LINE text actions and manually typed exact triggers are indistinguishable.
+      attribution: "line_text_origin_unverified",
       client_id: identity.client_id,
       customer_status: identity.customer_status,
       address,
       verified_budget_per_job_thb: budget,
       canonical_model_id: modelId,
       reviewed_history_summary: history?.reviewed === true ? String(history.summary || "").slice(0, 300) : "",
-      owner_rate_thb: rate?.owner_approved === true && Number.isFinite(Number(rate.customer_sell_rate_thb))
+      owner_rate_thb: rate?.owner_approved === true && rate?.client_id === identity.client_id &&
+        rate?.model_id === modelId && Number.isFinite(Number(rate.customer_sell_rate_thb)) &&
+        Number(rate.customer_sell_rate_thb) > 0
         ? Number(rate.customer_sell_rate_thb) : null,
       // Card 21829530 remains lead-only; a preset is context for Per, never an auto-quote.
       customer_reply: "",
