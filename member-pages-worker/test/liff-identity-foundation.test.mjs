@@ -151,6 +151,23 @@ function resolver(payload = { member_exists: false }, status = 200) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (path === "/__internal/member-existing-verify/extend") {
+        return new Response(JSON.stringify({
+          ok: status < 400,
+          data: {
+            eligible: payload.member_exists === true,
+            applied: payload.member_exists === true,
+            idempotent: false,
+            policy: "MY_MMD_EXISTING_VERIFY_1Y",
+            extension_years: 1,
+            extension_months: 12,
+            active_through: payload.profile?.membership_expires_at === "2027-08-31" ? "2028-08-31" : "2027-09-28",
+          },
+        }), {
+          status,
+          headers: { "content-type": "application/json" },
+        });
+      }
       return new Response(JSON.stringify({ ok: status < 400, data: payload }), {
         status,
         headers: { "content-type": "application/json" },
@@ -405,9 +422,13 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const runtime = env({ MEMBER_STATUS_RESOLVER: memberResolver });
     const started = await start(runtime);
     assert.equal(started.response.status, 200);
-    assert.equal(memberResolver.calls.length, 1);
+    assert.equal(memberResolver.calls.length, 2);
     assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
     assert.equal(memberResolver.calls[0].purpose, "liff_member_profile_read");
+    assert.equal(memberResolver.calls[1]._path, "/__internal/member-existing-verify/extend");
+    assert.equal(memberResolver.calls[1].purpose, "my_mmd_existing_member_verify_one_year");
+    assert.equal(started.payload.data.verify_membership_extension.extension_years, 1);
+    assert.equal(started.payload.data.verify_membership_extension.extension_months, 12);
   });
 
   it("uses the same single profile contract for an unknown LINE identity", async () => {
@@ -543,7 +564,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
             discount_percent: 0,
             coupon_state: "wish_required",
             coupon_message: "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้",
-            membership_benefit: { type: "membership_extension", days: 180, state: "pending_application" },
+            membership_benefit: { type: "membership_extension", days: 365, state: "pending_application" },
             resumed: false,
           };
         },
@@ -1091,10 +1112,13 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const { response, payload } = await request("/member/api/liff/start?t=private-signed-t", { body: { id_token: "private-id-token" } }, runtime);
     assert.equal(response.status, 200);
     assert.equal(memberResolver.calls[0].line_user_id, "Uprivate-line-sub");
-    assert.equal(memberResolver.calls.length, 1);
+    assert.equal(memberResolver.calls.length, 2);
     assert.equal(memberResolver.calls[0]._path, "/__internal/member-profile/read");
     assert.equal(memberResolver.calls[0].purpose, "liff_member_profile_read");
+    assert.equal(memberResolver.calls[1]._path, "/__internal/member-existing-verify/extend");
+    assert.equal(memberResolver.calls[1].purpose, "my_mmd_existing_member_verify_one_year");
     assert.equal(memberResolver.calls[0]._resolver_secret, runtime.MEMBER_STATUS_RESOLVER_SECRET);
+    assert.equal(memberResolver.calls[1]._resolver_secret, runtime.MEMBER_STATUS_RESOLVER_SECRET);
     assert.equal(payload.data.identity_state, "existing_member");
     assert.equal(payload.data.member_resolved, true);
     assert.equal(payload.data.pending_identity, false);
