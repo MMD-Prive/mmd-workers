@@ -432,10 +432,11 @@ test("owner can list jobs and update status privacy plus budget disclosure serve
   let body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.jobs.length, 1);
-  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true } });
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true, customer_gender: "female" } });
   body = await response.json();
   assert.equal(body.job.public.world, "private");
   assert.equal(body.job.public.budget_disclosure_approved, true);
+  assert.equal(body.job.public.customer_gender, "female");
   response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: false, budget_disclosure_approved: true } });
   body = await response.json();
   assert.equal(body.job.public.world, "public");
