@@ -20,8 +20,10 @@ const MEMBER_RESOLVER_TIMEOUT_MS = 12000;
 const SESSION_COOKIE = "__Host-mmd_liff_session";
 const MEMBER_RESOLVER_PATH = "/__internal/member-status/resolve";
 const MEMBER_PROFILE_RESOLVER_PATH = "/__internal/member-profile/read";
+const EXISTING_MEMBER_VERIFY_EXTENSION_PATH = "/__internal/member-existing-verify/extend";
 const MEMBER_RESOLVER_PURPOSE = "liff_identity_resolution";
 const MEMBER_PROFILE_RESOLVER_PURPOSE = "liff_member_profile_read";
+const EXISTING_MEMBER_VERIFY_PURPOSE = "my_mmd_existing_member_verify_one_year";
 const MEMBER_RESOLVER_SECRET_HEADER = "x-mmd-member-resolver-secret";
 const PAYMENT_BINDING_STATUS = "contract_unavailable";
 const CANONICAL_MEMBER_ROUTE = "/sigil/member/membership";
@@ -565,6 +567,22 @@ export async function handleStart(request, env = {}) {
     return json({ ok: false, error: { code: "MEMBER_RESOLUTION_FAILED", message: "Member identity could not be resolved safely." } }, 503);
   }
 
+  let verifyBenefit = null;
+  if (memberState.exists) {
+    verifyBenefit = await applyExistingMemberVerifyOneYear(env, verified.sub);
+    if (!verifyBenefit.ok) {
+      return json({ ok: false, error: { code: "MEMBER_VERIFY_BENEFIT_FAILED", message: "Member Verify could not be completed safely. Please try again." } }, 503);
+    }
+    if (verifyBenefit.data?.eligible === true) {
+      const refreshed = await resolveMemberIdentity(env, verified.sub);
+      if (!refreshed.ok || refreshed.exists !== true || !refreshed.profile) {
+        return json({ ok: false, error: { code: "MEMBER_VERIFY_REFRESH_FAILED", message: "Verified membership could not be refreshed safely." } }, 503);
+      }
+      memberState.member_id = refreshed.member_id;
+      memberState.profile = refreshed.profile;
+    }
+  }
+
   const pending = memberState.exists ? null : await getOrCreatePendingIdentity(env, identityKey);
   const intent = normalizeIntent(body.intent);
   const liffIntent = normalizeLiffIntent(body.liff_intent ?? body.intent);
@@ -577,6 +595,14 @@ export async function handleStart(request, env = {}) {
     member_exists: memberState.exists,
     member_id: memberState.member_id || null,
     member_profile: memberState.profile || null,
+    verify_membership_extension: verifyBenefit?.data?.eligible === true ? {
+      policy: "MY_MMD_EXISTING_VERIFY_1Y",
+      extension_years: 1,
+      extension_months: 12,
+      active_through: verifyBenefit.data.active_through || null,
+      applied: verifyBenefit.data.applied === true,
+      idempotent: verifyBenefit.data.idempotent === true,
+    } : null,
     pending_identity_id: pending?.pending_identity_id || null,
     intent,
     liff_intent: liffIntent,
@@ -1484,6 +1510,44 @@ async function resolveMemberIdentity(env, lineUserId) {
     clearTimeout(timeout);
   }
 }
+async function applyExistingMemberVerifyOneYear(env, lineUserId) {
+  const resolver = env.MEMBER_STATUS_RESOLVER;
+  const resolverSecret = String(env.MEMBER_STATUS_RESOLVER_SECRET || "");
+  if (!resolver?.fetch || resolverSecret.length < 32) return { ok: false };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(env.LIFF_MEMBER_RESOLVER_TIMEOUT_MS || MEMBER_RESOLVER_TIMEOUT_MS));
+  try {
+    const response = await resolver.fetch(new Request(`https://mmd-auth-worker.internal${EXISTING_MEMBER_VERIFY_EXTENSION_PATH}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [MEMBER_RESOLVER_SECRET_HEADER]: resolverSecret,
+      },
+      body: JSON.stringify({ line_user_id: lineUserId, purpose: EXISTING_MEMBER_VERIFY_PURPOSE }),
+      signal: controller.signal,
+    }));
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || payload?.ok !== true || !payload.data || typeof payload.data !== "object") {
+      console.warn({
+        event: "existing_member_verify_one_year_failure",
+        component: "member-pages-worker",
+        status: response.status,
+      });
+      return { ok: false };
+    }
+    return { ok: true, data: payload.data };
+  } catch (error) {
+    console.warn({
+      event: "existing_member_verify_one_year_failure",
+      component: "member-pages-worker",
+      failure_class: error?.name === "AbortError" ? "timeout" : "request_failure",
+    });
+    return { ok: false };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function refreshStaleMemberSession(env, session) {
   if (!session || session.member_exists === true && session.member_id && session.member_profile) {
     return { refreshed: false, reason: "session_already_resolved" };
@@ -2007,6 +2071,7 @@ async function safeSessionView(gatewayStore, session) {
     screen,
     route_after_liff: session.route_after_liff || null,
     ...(session.payment_binding_status ? { payment_binding_status: session.payment_binding_status } : {}),
+    ...(session.verify_membership_extension ? { verify_membership_extension: session.verify_membership_extension } : {}),
     expires_in: SESSION_TTL_SECONDS,
     grants: noGrants(),
   };
