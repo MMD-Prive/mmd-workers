@@ -1,0 +1,23 @@
+#mmd-auto-card-inbox{margin:0 0 20px;padding:20px;border:1px solid #504432;border-radius:18px;background:#151311;color:#f2e8d9;font:14px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","Noto Sans Thai",Arial,sans-serif;overflow-wrap:anywhere}
+#mmd-auto-card-inbox *{box-sizing:border-box}
+#mmd-auto-card-inbox .ac-head{display:flex;flex-direction:column;gap:12px}
+#mmd-auto-card-inbox h2{margin:0;font-size:20px;line-height:1.4}
+#mmd-auto-card-inbox p{margin:8px 0}
+#mmd-auto-card-inbox button,#mmd-auto-card-inbox a{font:inherit;font-weight:600;border:1px solid #82704f;border-radius:10px;padding:10px 14px;min-height:44px;background:#292218;color:#f2e8d9;text-decoration:none;cursor:pointer}
+#mmd-auto-card-inbox a{display:inline-block}
+#mmd-auto-card-inbox button:hover,#mmd-auto-card-inbox a:hover{background:#3a3020}
+#mmd-auto-card-inbox button:focus-visible,#mmd-auto-card-inbox a:focus-visible{outline:3px solid #e3bf7f;outline-offset:3px}
+#mmd-auto-card-inbox button:disabled{opacity:.5;cursor:wait}
+#mmd-auto-card-inbox [hidden]{display:none!important}
+#mmd-auto-card-inbox [data-jobs]{display:grid;gap:10px;margin:14px 0}
+#mmd-auto-card-inbox article{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid #494035;border-radius:12px;background:#1c1915}
+#mmd-auto-card-inbox article div{display:grid;gap:4px;min-width:0}
+#mmd-auto-card-inbox strong{font-size:16px}
+#mmd-auto-card-inbox small{font-size:12px}
+#mmd-auto-card-inbox [data-image] img{display:block;width:100%;height:auto;margin:16px 0;border-radius:12px}
+#mmd-auto-card-inbox [aria-busy="true"]{opacity:.7}
+@media(min-width:680px){#mmd-auto-card-inbox .ac-head,#mmd-auto-card-inbox article{flex-direction:row;align-items:center;justify-content:space-between}#mmd-auto-card-inbox button{flex-shrink:0}}
+/* Final contrast protection against older page and site heading rules. */
+#mmd-auto-card-inbox h2,#mmd-auto-card-inbox strong{color:#f2e8d9!important;-webkit-text-fill-color:#f2e8d9!important;background:none!important}
+#mmd-auto-card-inbox p,#mmd-auto-card-inbox span,#mmd-auto-card-inbox small{color:#cfc4b3!important;-webkit-text-fill-color:#cfc4b3!important}
+#mmd-auto-card-inbox button,#mmd-auto-card-inbox a{color:#f2e8d9!important;-webkit-text-fill-color:#f2e8d9!important}

@@ -9,6 +9,7 @@ on:
       - "admin-worker/src/admin-login-hero-worker-core.js"
       - "admin-worker/wrangler.toml"
       - "webflow/internal/admin/studio/studio-production-bridge.js"
+      - "webflow/internal/admin/studio/auto-card-inbox*"
       - "model-dashboard-presentation-worker/src/model-media-upload-presentation.js"
       - ".github/workflows/model-card-drafts-ci.yml"
 permissions:
@@ -33,3 +34,7 @@ jobs:
             model-dashboard-presentation-worker/index.test.mjs
       - name: Bundle without deployment or credentials
         run: npx --yes wrangler@4.141.0 deploy --dry-run --config admin-worker/wrangler.toml --outdir /tmp/mmd-card-worker
+      - name: Verify Webflow inbox behavior with the real split HTML
+        run: |
+          npm install --prefix /tmp/mmd-card-ui --no-audit --no-fund linkedom@0.18.12
+          MMD_CARD_DOM_MODULE=/tmp/mmd-card-ui/node_modules/linkedom/esm/index.js node --test webflow/internal/admin/studio/auto-card-inbox.test.mjs

@@ -61,7 +61,7 @@ export async function handleStudioCards(env, path, body) {
       const object = await env.MMD_MODEL_ASSETS.get(entry.key);
       return object ? await object.json() : null;
     }));
-    return json({ ok: true, jobs: jobs.filter(Boolean).sort((a, b) => b.created_at.localeCompare(a.created_at)), cursor: page.truncated ? page.cursor : null });
+    return json({ ok: true, enabled: enabled(env), jobs: jobs.filter(Boolean).sort((a, b) => b.created_at.localeCompare(a.created_at)), cursor: page.truncated ? page.cursor : null });
   }
   if (!["/studio/api/model-cards/preview", "/studio/api/model-cards/resume"].includes(path)) return json({ ok: false, error: "not_found" }, 404);
   if (!RECORD.test(clean(body.model_record_id))) return json({ ok: false, error: "invalid_model_id" }, 400);

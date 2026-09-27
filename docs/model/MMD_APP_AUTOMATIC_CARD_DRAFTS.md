@@ -99,9 +99,13 @@ This implementation does not establish a new retention policy for that bucket.
 | `POST /studio/api/model-cards/preview` | Existing Studio admin gate | Authenticated PNG; exact model ID + job ID required |
 | `POST /studio/api/model-cards/resume` | Existing Studio admin gate | Resume a preflight hold or saved-portrait render only |
 
-The existing MMD APP presentation addon displays status. The Studio production
-bridge mounts the owner inbox on the Upload page. Those presentation files must
-be released along with the backend for the complete user experience.
+The existing MMD APP presentation addon displays status. Studio Upload uses the
+standalone `auto-card-inbox.html`, `.css` and `.js` split module. The live Webflow
+page uses `#mmdStudioUploadR5` and `#muUploadForm`, not the generic production
+bridge form hooks. The three split parts were saved in the Webflow draft on
+2026-09-27; they are not published. The backend and MMD APP presentation still
+need release for the complete user experience. The list API returns `enabled`
+so the inbox distinguishes paused automation from an empty queue.
 
 ## Activation after owner review
 
@@ -122,7 +126,7 @@ be released along with the backend for the complete user experience.
 5. Populate province mappings only for current confirmed locations. BKK needs no
    mapping. No Airtable schema change is required.
 6. Deploy the backend with the feature OFF, deploy MMD APP presentation and the
-   updated Studio bridge through their existing release paths. A merge to main
+   Studio Upload split module through their existing release paths. A merge to main
    triggers existing production workflows; keep the PR draft until approved.
 7. Enable for a controlled owner-approved real model example. Verify one image
    charge, identity treatment, logo, color, exact dimensions, model status, Studio

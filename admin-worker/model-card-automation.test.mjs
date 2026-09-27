@@ -141,6 +141,11 @@ test("concurrent selections and retries result in one job, one paid generation a
   assert.equal(h.calls.form.get("size"), "1328x1200"); assert.equal(h.calls.form.get("n"), "1");
   assert.equal(h.calls.form.get("input_fidelity"), null);
   const list = await (await handleStudioCards(h.env, "/studio/api/model-cards/list", {})).json();
+  assert.equal(list.enabled, true);
+  h.env.MODEL_CARD_AUTO_ENABLED = "false";
+  const pausedList = await (await handleStudioCards(h.env, "/studio/api/model-cards/list", {})).json();
+  assert.equal(pausedList.enabled, false); assert.equal(pausedList.jobs.length, 1);
+  h.env.MODEL_CARD_AUTO_ENABLED = "true";
   assert.equal(list.jobs[0].model_name, "Jasper OP"); assert.equal(list.jobs[0].published, false);
   const preview = await handleStudioCards(h.env, "/studio/api/model-cards/preview", { model_record_id: modelId, job_id: job.job_id });
   assert.equal(preview.status, 200); assert.equal(preview.headers.get("content-type"), "image/png");
