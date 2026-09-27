@@ -161,7 +161,7 @@ function resolver(payload = { member_exists: false }, status = 200) {
             policy: "MY_MMD_EXISTING_VERIFY_1Y",
             extension_years: 1,
             extension_months: 12,
-            active_through: payload.profile?.membership_expires_at === "2027-08-31" ? "2028-08-31" : "2027-09-28",
+            active_through: payload.verify_active_through || null,
           },
         }), {
           status,
@@ -537,11 +537,12 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     const memberResolver = resolver({
       member_exists: true,
       mmd_member_id: "MMD-PER-01",
+      verify_active_through: "2028-08-31",
       profile: {
         display_name: "เปอร์",
         tier: "Premium",
         membership_status: "active",
-        membership_expires_at: "2027-08-31",
+        membership_expires_at: "2028-08-31",
         payment_status: "verified",
         points: 345,
         history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" },
@@ -580,7 +581,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
       display_name: "เปอร์",
       tier: "Premium",
       membership_status: "active",
-      membership_expires_at: "2027-08-31",
+      membership_expires_at: "2028-08-31",
       payment_status: "verified",
       points: null,
       points_records_count: null,
@@ -599,7 +600,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(claim.payload.data.coupon_state, "wish_required");
     assert.equal(careCalls.length, 1);
     assert.equal(careCalls[0].memberId, "MMD-PER-01");
-    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", points: null, points_records_count: null, payment_history: [], history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
+    assert.deepEqual(careCalls[0].memberProfile, { display_name: "เปอร์", tier: "Premium", membership_status: "active", membership_expires_at: "2028-08-31", payment_status: "verified", points: null, points_records_count: null, payment_history: [], history_window: { from: "2025-08-10", to: "2026-08-10", timezone: "Asia/Bangkok" }, history: [{ type: "points", date: "2026-08-01", title: "Points added", status: "posted", points_delta: 25 }] });
     assert.match(careCalls[0].identityHash, /^[a-f0-9]{64}$/);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records.length, 1);
     assert.equal(runtime.LIFF_GATEWAY_STORE.records[0].campaign_code, "6-years-care-back");
@@ -614,13 +615,13 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
     assert.equal(careCalls.length, 1);
   });
 
-  it("normalizes the public payment enum and omits unproven member expiry", async () => {
+  it("normalizes the public payment enum and presents canonical Existing Member Verify active-through", async () => {
     const cases = [
-      { membership_status: "active", membership_expires_at: "2027-08-31", payment_status: "verified", expiry: "2027-08-31", payment: "verified" },
-      { membership_status: "grace", membership_expires_at: "2028-02-29", payment_status: "pending_review", expiry: "2028-02-29", payment: "pending_review" },
-      { membership_status: "active", membership_expires_at: "2026-02-30", payment_status: "paid", expiry: "", payment: "unavailable" },
-      { membership_status: "active", membership_expires_at: "2027-08-31T00:00:00Z", payment_status: "refunded", expiry: "", payment: "unavailable" },
-      { membership_status: "expired", membership_expires_at: "2027-08-31", payment_status: "unavailable", expiry: "", payment: "unavailable" },
+      { membership_status: "active", membership_expires_at: "2027-08-31", verify_active_through: "2028-08-31", payment_status: "verified", expiry: "2028-08-31", payment: "verified" },
+      { membership_status: "grace", membership_expires_at: "2028-02-29", verify_active_through: "2029-02-28", payment_status: "pending_review", expiry: "2029-02-28", payment: "pending_review" },
+      { membership_status: "active", membership_expires_at: "2026-02-30", verify_active_through: "2027-09-28", payment_status: "paid", expiry: "2027-09-28", payment: "unavailable" },
+      { membership_status: "active", membership_expires_at: "2027-08-31T00:00:00Z", verify_active_through: "2028-08-31", payment_status: "refunded", expiry: "2028-08-31", payment: "unavailable" },
+      { membership_status: "expired", membership_expires_at: "2027-08-31", verify_active_through: "2027-09-28", payment_status: "unavailable", expiry: "2027-09-28", payment: "unavailable" },
     ];
 
     for (const scenario of cases) {
@@ -628,6 +629,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
         MEMBER_STATUS_RESOLVER: resolver({
           member_exists: true,
           mmd_member_id: "MMD-PER-01",
+          verify_active_through: scenario.verify_active_through,
           profile: {
             display_name: "เปอร์",
             tier: "Premium",
