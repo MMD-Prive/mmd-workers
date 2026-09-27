@@ -87,7 +87,7 @@ test("live broad lane honors the First Contact mute", async () => {
   const originalFetch = globalThis.fetch;
   let deliveries = 0;
   globalThis.fetch = async (url) => {
-    if (/api\\.line\\.me\\/v2\\/bot\\/message\\/reply/.test(String(url))) deliveries += 1;
+    if (/api\.line\.me\/v2\/bot\/message\/reply/.test(String(url))) deliveries += 1;
     return Response.json({});
   };
   try {
