@@ -68,6 +68,6 @@
     "test:control-room-v2": "node --experimental-global-webcrypto --test shared/control-room-v2-system-health.test.mjs admin-worker/control-room-dashboard-facade.test.mjs admin-worker/owner-actions-queue.test.mjs admin-worker/owner-actions-triage.test.mjs",
     "test:member-intelligence-observation": "node --test scripts/member-intelligence-authenticated-observation.test.mjs",
     "test:model-media-upload": "node --experimental-global-webcrypto --test admin-worker/model-media-upload.test.mjs",
-    "test:create-job-webflow": "node --test webflow/internal/admin/jobs/create-job/lv10-public-care-controls.test.mjs"
+    "test:create-job-webflow": "node --test webflow/internal/admin/jobs/create-job/lv10-public-care-controls.test.mjs webflow/internal/admin/jobs/create-job/lv10-draft-kenji-patch.test.mjs"
   }
 }
