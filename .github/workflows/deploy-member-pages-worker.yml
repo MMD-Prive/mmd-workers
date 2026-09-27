@@ -2,6 +2,17 @@ name: Deploy member-pages-worker
 
 on:
   workflow_dispatch:
+    inputs:
+      synthetic_write_acceptance:
+        description: "Allow the explicitly approved synthetic Airtable/Wish write checks"
+        required: false
+        type: boolean
+        default: false
+      test_plan_ref:
+        description: "Required approval/test-plan reference when synthetic writes are enabled"
+        required: false
+        type: string
+        default: ""
   push:
     branches:
       - main
@@ -104,8 +115,16 @@ jobs:
         run: node scripts/validate-my-mmd-fast-trust-airtable-schema.mjs
 
       - name: Verify Birthday Wish Airtable write access
+        if: github.event_name == 'workflow_dispatch' && inputs.synthetic_write_acceptance == true
         shell: bash
+        env:
+          SYNTHETIC_TEST_PLAN_REF: ${{ inputs.test_plan_ref }}
         run: |
+          if [ -z "$SYNTHETIC_TEST_PLAN_REF" ]; then
+            echo "synthetic_write_acceptance requires a non-empty test_plan_ref" >&2
+            exit 1
+          fi
+          echo "SYNTHETIC_WRITE_ACCEPTANCE · test_plan_ref=$SYNTHETIC_TEST_PLAN_REF" >> "$GITHUB_STEP_SUMMARY"
           node <<'NODE'
           const { createHash, randomUUID } = await import("node:crypto");
           const token = String(process.env.AIRTABLE_API_KEY || "").trim();
@@ -173,13 +192,6 @@ jobs:
       - name: Validate Cloudflare deploy
         working-directory: member-pages-worker
         run: npx --yes wrangler@4 deploy --dry-run --keep-vars
-
-      - name: Provision Airtable API secret
-        shell: bash
-        run: |
-          set -euo pipefail
-          set +x
-          printf '%s' "$AIRTABLE_API_KEY" | npx --yes wrangler@4 secret put AIRTABLE_API_KEY --env="" --config member-pages-worker/wrangler.toml
 
       - name: Deploy member-pages-worker
         id: deploy
@@ -304,6 +316,7 @@ jobs:
           NODE
 
       - name: Smoke production public Wish endpoint
+        if: github.event_name == 'workflow_dispatch' && inputs.synthetic_write_acceptance == true
         shell: bash
         run: |
           node <<'NODE'
