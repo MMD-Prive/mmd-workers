@@ -543,7 +543,7 @@ describe("Phase 1 LIFF identity foundation security correction", () => {
             discount_percent: 0,
             coupon_state: "wish_required",
             coupon_message: "ส่งคำอวยพรวันเกิดถึง MMD สำเร็จก่อน จึงจะเปิดคูปองส่วนตัวได้",
-            membership_benefit: { type: "membership_extension", days: 180, state: "pending_application" },
+            membership_benefit: { type: "membership_extension", days: 365, state: "pending_application" },
             resumed: false,
           };
         },
