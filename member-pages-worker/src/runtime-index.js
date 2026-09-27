@@ -49,6 +49,7 @@ import {
   PrivatePreviewGate,
 } from "./private-preview.js";
 import { handlePrivateTeaser, isPrivateTeaserRequest } from "./private-teaser.js";
+import { handleMemberCustomerRequest, isMemberCustomerRequestPath } from "./member-customer-requests.js";
 
 export * from "./legacy-member-pages.js";
 export { CareBackBirthdayWishCoordinator } from "./care-back-birthday-wish-durable-object.js";
@@ -109,6 +110,9 @@ const worker = {
     }
     if (isMemberClientCreditsRequest(request)) {
       return handleMemberClientCredits(request, env);
+    }
+    if (isMemberCustomerRequestPath(request)) {
+      return handleMemberCustomerRequest(request, env);
     }
     if (isPrivatePreviewRequest(request)) {
       return handlePrivatePreview(request, env);
