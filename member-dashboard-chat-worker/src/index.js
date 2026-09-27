@@ -2568,34 +2568,56 @@ export async function processDurableLineCardEvent(event, env = {}, receivedAt = 
   };
 }
 
-export async function processDurableLineCardUnsend(eventId, env = {}) {
+export async function processDurableLineCardUnsend(eventId, env = {}, subjectHash = "") {
   const safeEventId = asString(eventId);
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(safeEventId)) return { ok: false, reason: "invalid_event_id" };
+  const safeSubjectHash = asString(subjectHash).toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(safeSubjectHash)) return { ok: false, reason: "invalid_subject_hash" };
   const apiKey = asString(env.AIRTABLE_API_KEY);
   const baseId = asString(env.AIRTABLE_BASE_ID);
   const table = getAirtableTable(env);
   if (!apiKey || !baseId || !table) return { ok: false, reason: "airtable_env_missing" };
   const existing = await findExistingLineEvent(env, safeEventId, `line_${safeEventId}`, { throwOnUnavailable: true });
-  if (!existing?.id) return { ok: true, found: false, redacted: false };
-  const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}/${encodeURIComponent(existing.id)}`, {
-    method: "PATCH",
-    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      fields: {
-        member_name: "",
-        line_user_id: "",
-        admin_note: "[LINE message unsent]",
-        payload_json: JSON.stringify({
-          source_channel: "line",
-          source_message_id: safeEventId,
-          unsent: true,
-          unsent_at: new Date().toISOString(),
-        }),
-      },
-    }),
+  let redacted = false;
+  if (existing?.id) {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}/${encodeURIComponent(existing.id)}`, {
+      method: "PATCH",
+      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        fields: {
+          member_name: "",
+          line_user_id: "",
+          line_id: "",
+          admin_note: "[LINE message unsent]",
+          payload_json: JSON.stringify({
+            source_channel: "line",
+            unsent: true,
+            unsent_at: new Date().toISOString(),
+          }),
+        },
+      }),
+    });
+    if (!response.ok) return { ok: false, found: true, redacted: false, reason: "airtable_unsend_redaction_failed", status: response.status };
+    redacted = true;
+  }
+  if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_binding_missing" };
+  const contextStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${safeSubjectHash}`));
+  const contextResponse = await contextStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "get" }),
   });
-  if (!response.ok) return { ok: false, found: true, redacted: false, reason: "airtable_unsend_redaction_failed", status: response.status };
-  return { ok: true, found: true, redacted: true };
+  const contextPayload = await contextResponse.json().catch(() => ({}));
+  if (!contextResponse.ok || contextPayload?.ok !== true) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_unavailable" };
+  let contextDeleted = false;
+  if (contextPayload?.found === true && contextPayload?.context?.lead_inbox_id === `line_${safeEventId}`) {
+    const deleteResponse = await contextStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "delete", context: { lead_inbox_id: contextPayload.context.lead_inbox_id, context_token: contextPayload.context.context_token } }),
+    });
+    const deleted = await deleteResponse.json().catch(() => ({}));
+    if (!deleteResponse.ok || deleted?.deleted !== true) return { ok: false, found: Boolean(existing?.id), redacted, reason: "campaign_context_delete_failed" };
+    contextDeleted = true;
+  }
+  return { ok: true, found: Boolean(existing?.id), redacted, context_deleted: contextDeleted };
 }
 
 export default {

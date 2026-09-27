@@ -95,7 +95,10 @@ async function handleLineCardIngressOwner(request, env = {}) {
   });
   const expected = text(env.INTERNAL_TOKEN);
   const supplied = text(request.headers.get("authorization")).replace(/^Bearer\s+/i, "");
-  if (!expected || !supplied || !timingSafeStringEqual(expected, supplied)) return respond({ ok: false, error: "unauthorized" }, 401);
+  if (!expected || !supplied || !timingSafeStringEqual(expected, supplied)) {
+    console.log(JSON.stringify({ line_card_ingress_owner: "denied", reason: "unauthorized" }));
+    return respond({ ok: false, error: "unauthorized" }, 401);
+  }
   if (String(request.method || "GET").toUpperCase() !== "POST") return respond({ ok: false, error: "method_not_allowed" }, 405);
   let input;
   try { input = await request.json(); } catch (_) { return respond({ ok: false, error: "invalid_json" }, 400); }
@@ -109,6 +112,7 @@ async function handleLineCardIngressOwner(request, env = {}) {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }),
     });
     const payload = await response.json().catch(() => ({}));
+    console.log(JSON.stringify({ line_card_ingress_owner: "authorized", action, receipt_prefix: receiptId.slice(0, 12), status: Number(response.status) || 0 }));
     return respond(payload, response.status);
   } catch (_) {
     return respond({ ok: false, error: "campaign_ingress_unavailable" }, 503);
@@ -454,13 +458,15 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       for (const event of events) {
         const userId = text(event?.source?.userId);
         let pilot = false;
+        let subjectHash = "";
         if (event?.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(userId)) {
           const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
           const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          subjectHash = hash;
           pilot = hashes.includes(hash);
         }
         if (pilot && event?.type === "unsend" && /^[A-Za-z0-9_-]{1,120}$/.test(text(event?.unsend?.messageId))) {
-          unsendEvents.push(event);
+          unsendEvents.push({ event, subjectHash });
           continue;
         }
         const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
@@ -469,7 +475,8 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
       if (campaignEvents.length || unsendEvents.length) {
         if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
         const stubs = [];
-        for (const event of unsendEvents) {
+        for (const item of unsendEvents) {
+          const { event, subjectHash } = item;
           const eventId = text(event?.unsend?.messageId);
           const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
           const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -477,7 +484,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           let response;
           try {
             response = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
-              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unsend", event_id: eventId, receipt_id: key }),
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "unsend", event_id: eventId, receipt_id: key, subject_hash: subjectHash }),
             });
           } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
           const result = await response.json().catch(() => ({}));

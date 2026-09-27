@@ -105,7 +105,7 @@ async function signedWebhook(events, env) {
   });
 }
 
-function fixture({ queueStatus = 200, queueThrows = false, queueAmbiguous = false, flags = true, ownerActive = false, contextPutFailures = 0, ingressEnqueueFailures = 0, ingressAlarmFailures = 0, pilotHashes = PILOT_HASH } = {}) {
+function fixture({ queueStatus = 200, queueThrows = false, queueAmbiguous = false, redactStatus = 200, flags = true, ownerActive = false, contextPutFailures = 0, ingressEnqueueFailures = 0, ingressAlarmFailures = 0, pilotHashes = PILOT_HASH } = {}) {
   const calls = [];
   const records = new Map();
   const env = {
@@ -156,6 +156,7 @@ function fixture({ queueStatus = 200, queueThrows = false, queueAmbiguous = fals
         return Response.json(saved);
       }
       if (init.method === "PATCH") {
+        if (redactStatus !== 200) return new Response("redaction failed", { status: redactStatus });
         const id = decodeURIComponent(url.pathname.split("/").pop());
         const saved = [...records.values()].find((record) => record.id === id);
         if (!saved) return new Response("missing", { status: 404 });
@@ -170,7 +171,7 @@ function fixture({ queueStatus = 200, queueThrows = false, queueAmbiguous = fals
     }
     throw new Error(`unexpected request ${url.hostname}${url.pathname}`);
   };
-  return { env, calls, records, fetch, setQueueStatus(status) { queueStatus = status; }, setQueueAmbiguous(value) { queueAmbiguous = value; } };
+  return { env, calls, records, fetch, setQueueStatus(status) { queueStatus = status; }, setQueueAmbiguous(value) { queueAmbiguous = value; }, setRedactStatus(status) { redactStatus = status; } };
 }
 
 async function withFetch(mock, action) {
@@ -253,6 +254,26 @@ test("durable ingress retains post-200 Airtable 422 for explicit reprocess", asy
   assert.equal(f.calls.filter((call) => call.type === "owner_alert").length, 1);
 });
 
+test("concurrent manual reprocess and processor calls recover a dead receipt once", async () => {
+  const f = fixture({ queueStatus: 422 });
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-concurrent-reprocess")], f.env), f.env, ctx);
+    await Promise.all(pending);
+  });
+  const key = createHash("sha256").update("msg-concurrent-reprocess").digest("hex");
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+  f.setQueueStatus(200);
+  const reprocess = () => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "reprocess" }) });
+  const results = await Promise.all([reprocess(), reprocess()]);
+  const changed = await Promise.all(results.map((response) => response.json()));
+  assert.equal(changed.filter((result) => result.reprocessed === true).length, 1);
+  await withFetch(f.fetch, () => Promise.all([0, 1].map(() => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }) }))));
+  assert.equal(f.calls.filter((call) => call.type === "queue").length, 2);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
+});
+
 test("durable ingress write failure returns 503 before a webhook acknowledgement", async () => {
   const f = fixture({ ingressEnqueueFailures: 1 });
   const pending = [];
@@ -317,13 +338,52 @@ test("unsend after processing redacts the Inbox record and preserves a cancellat
   });
   const record = f.records.get(`line_${eventId}`);
   assert.equal(record.fields.line_user_id, "");
+  assert.equal(record.fields.line_id, "");
   assert.equal(record.fields.admin_note, "[LINE message unsent]");
-  assert.equal(JSON.parse(record.fields.payload_json).unsent, true);
+  const unsentPayload = JSON.parse(record.fields.payload_json);
+  assert.equal(unsentPayload.unsent, true);
+  assert.deepEqual(Object.keys(unsentPayload).sort(), ["source_channel", "unsent", "unsent_at"]);
   assert.equal(f.calls.filter((call) => call.type === "redact").length, 1);
   const key = createHash("sha256").update(eventId).digest("hex");
   const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
   const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
   assert.equal((await status.json()).cleanup_pending, false);
+  const contextStub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`kenji-line-card-21829530-context-v1:${PILOT_HASH}`));
+  const context = await contextStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/context", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "get" }) });
+  assert.equal((await context.json()).found, false);
+});
+
+test("failed unsend cleanup alerts the owner once and alarm retry completes redaction", async () => {
+  const f = fixture({ redactStatus: 500 });
+  const eventId = "msg-unsent-cleanup-retry";
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([productionLineEvent("JASPER", eventId)], f.env), f.env, ctx);
+    for (let round = 0; round < 5; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+    assert.equal((await route.fetch(await signedWebhook([unsendEvent(eventId)], f.env), f.env, ctx)).status, 200);
+  });
+  const key = createHash("sha256").update(eventId).digest("hex");
+  const objectId = f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`);
+  const object = f.env.KENJI_MODEL_DEDUPE.objects.get(objectId);
+  let status = await object.fetch(new Request("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }));
+  assert.equal((await status.json()).cleanup_pending, true);
+  assert.equal(f.calls.filter((call) => call.type === "owner_alert").length, 1);
+  assert.doesNotMatch(JSON.stringify(f.calls.find((call) => call.type === "owner_alert")), new RegExp(`${LINE_USER_ID}|JASPER`));
+  f.setRedactStatus(200);
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 16 * 60 * 1000;
+    await withFetch(f.fetch, () => object.alarm());
+  } finally { Date.now = realNow; }
+  status = await object.fetch(new Request("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }));
+  assert.equal((await status.json()).cleanup_pending, false);
+  assert.equal(f.records.get(`line_${eventId}`).fields.line_user_id, "");
+  assert.equal(f.calls.filter((call) => call.type === "owner_alert").length, 1);
 });
 
 test("unsend uses LINE message ID when webhookEventId differs from the original message ID", async () => {
@@ -465,6 +525,19 @@ test("expired processing lease is recovered by an alarm after a worker crash", a
   assert.equal((await status.json()).status, "done");
 });
 
+test("alarm removes an expired ingress tombstone", async () => {
+  const f = fixture();
+  const eventId = "msg-expired-tombstone";
+  const key = createHash("sha256").update(eventId).digest("hex");
+  const objectId = f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`);
+  f.env.KENJI_MODEL_DEDUPE.get(objectId);
+  const object = f.env.KENJI_MODEL_DEDUPE.objects.get(objectId);
+  await object.state.storage.put("campaign-ingress:event", { event_id: eventId, receipt_id: key, status: "done", expires_at: Date.now() - 1 });
+  await object.alarm();
+  const status = await object.fetch(new Request("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }));
+  assert.equal((await status.json()).found, false);
+});
+
 test("expired reply token keeps the lead and suppresses customer reply", async () => {
   const f = fixture();
   const event = lineEvent("JASPER", "msg-expired-token", { timestamp: Date.now() - 61_000 });
@@ -478,6 +551,30 @@ test("expired reply token keeps the lead and suppresses customer reply", async (
   }));
   assert.equal(f.records.has("line_msg-expired-token"), true);
   assert.equal(f.calls.filter((call) => call.type === "reply").length, 0);
+});
+
+test("a lost ingress completion after a successful LINE reply does not send the reply twice", async () => {
+  const f = fixture();
+  const event = productionLineEvent("JASPER", "msg-reply-commit-lost");
+  const key = createHash("sha256").update(event.message.id).digest("hex");
+  const objectId = f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`);
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(objectId);
+  await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "enqueue", event, receipt_id: key }),
+  });
+  const object = f.env.KENJI_MODEL_DEDUPE.objects.get(objectId);
+  const originalReceipt = await object.state.storage.get("campaign-ingress:event");
+  await withFetch(f.fetch, () => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
+  }));
+  assert.equal(f.calls.filter((call) => call.type === "queue").length, 1);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
+  await object.state.storage.put("campaign-ingress:event", { ...originalReceipt, status: "pending", next_attempt_at: Date.now() });
+  await withFetch(f.fetch, () => stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "process" }),
+  }));
+  assert.equal(f.calls.filter((call) => call.type === "queue").length, 1);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
 });
 
 test("ambiguous Airtable write recovers by logical Inbox ID after claim lease", async () => {

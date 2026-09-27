@@ -78,7 +78,7 @@ export class KenjiModelIdempotency {
     let result = { ok: false };
     try {
       const { processDurableLineCardUnsend } = await import("./index.js");
-      result = await processDurableLineCardUnsend(entry.event_id, this.env);
+      result = await processDurableLineCardUnsend(entry.event_id, this.env, entry.subject_hash);
     } catch (_) {}
     const now = Date.now();
     await this.state.storage.transaction(async (txn) => {
@@ -86,10 +86,18 @@ export class KenjiModelIdempotency {
       if (!current || current.status !== "cancelled" || current.event_id !== entry.event_id) return;
       const next = result.ok === true
         ? { ...current, cleanup_pending: false, cleanup_completed_at: now }
-        : { ...current, cleanup_pending: true, next_cleanup_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
+        : { ...current, cleanup_pending: true, cleanup_reason: String(result.reason || "unsend_cleanup_failed").slice(0, 80), next_cleanup_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
       await this.state.storage.setAlarm(result.ok === true ? current.expires_at : next.next_cleanup_at);
     });
+    if (result.ok !== true && entry.cleanup_alert_sent !== true) {
+      const alert = await this.notifyCampaignIngressOwner({ ...entry, status: "cancelled", reason: String(result.reason || "unsend_cleanup_failed").slice(0, 80) });
+      await this.state.storage.transaction(async (txn) => {
+        const current = await txn.get(CAMPAIGN_INGRESS_KEY);
+        if (!current || current.status !== "cancelled" || current.event_id !== entry.event_id) return;
+        await txn.put(CAMPAIGN_INGRESS_KEY, { ...current, cleanup_alert_sent: alert.sent === true });
+      });
+    }
     return result.ok === true;
   }
 
@@ -164,6 +172,7 @@ export class KenjiModelIdempotency {
           alert_sent: entry?.alert_sent === true,
           alert_reason: String(entry?.alert_reason || "").slice(0, 80),
           cleanup_pending: entry?.cleanup_pending === true,
+          cleanup_alert_sent: entry?.cleanup_alert_sent === true,
           reply_suppressed: entry?.reply_suppressed === true,
         });
       }
@@ -180,7 +189,8 @@ export class KenjiModelIdempotency {
       if (action === "unsend") {
         const eventId = String(input?.event_id || "");
         const receiptId = String(input?.receipt_id || "");
-        if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[a-f0-9]{64}$/.test(receiptId)) {
+        const subjectHash = String(input?.subject_hash || "");
+        if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[a-f0-9]{64}$/.test(receiptId) || !/^[a-f0-9]{64}$/.test(subjectHash)) {
           return json({ ok: false, error: "invalid_unsend" }, 400);
         }
         const now = Date.now();
@@ -190,6 +200,7 @@ export class KenjiModelIdempotency {
           await txn.put(CAMPAIGN_INGRESS_KEY, {
             event_id: eventId,
             receipt_id: receiptId,
+            subject_hash: subjectHash,
             status: "cancelled",
             attempts: Number(existing?.attempts) || 0,
             processed_before_unsend: existing?.status === "done",
