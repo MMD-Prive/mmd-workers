@@ -374,8 +374,8 @@ zone_name = "mmdbkk.com"
 # reviewed Seed Pack / deterministic live-truth routes and the runtime kill switch.
 LINE_AUTO_REPLY_ENABLED = "true"
 LINE_KENJI_AI_ENABLED = "true"
-# First Contact V2 answers safe openings and explicit greeting follow-ups. LINE OA owns the
-# add-friend greeting; all other legacy/autonomous replies remain paused.
+# First Contact V2 remains the bounded fallback if the broad lane is deliberately muted.
+# LINE OA owns the add-friend greeting; Runtime Controls can stop all delivery immediately.
 LINE_FIRST_CONTACT_ENABLED = "true"
 # Canonical Airtable Supplier registry used by the production LINE webhook.
 HIMAI_SUPPLIERS_TABLE_ID = "tbl81bnFyASeXCj9x"
