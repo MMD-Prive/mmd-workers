@@ -24,7 +24,7 @@ async function stagingShell(hostname, path, runtime) {
 
 describe("same-site /member/liff shell", () => {
  it("keeps browser hints fail-closed and renders both trusted customer welcome copies", async () => {
-    for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous"]) {
+    for (const query of ["?world=private", "?audience=private", "?world=sigil", "?world=private&welcome_context=forged", "?welcome_context=expired", "?welcome_context=replayed", "?welcome_context=ambiguous", "?intent=signup&view=signup"]) {
       const response = await shell(`/member/liff${query}`);
       const html = await response.text();
       assert.equal(response.status, 200);
@@ -114,6 +114,9 @@ describe("same-site /member/liff shell", () => {
     assert.match(html, /payload\?\.official_verification_required === true/);
     assert.match(html, /payload\?\.entitlement_granted === false/);
     assert.match(html, /url\.hostname === "mmdbkk\.com"/);
+    assert.match(html, /welcomeContextPromise = resolveInitialWelcomeContext\(\)/);
+    assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
+    assert.doesNotMatch(html, /MMD PRIVÉ · LINE MEMBERSHIP|สมัครสมาชิก MMD|เลือกแพ็กเกจที่เหมาะกับคุณได้ใน LINE/);
     assert.ok(html.indexOf("const started = await call(CONFIG.startEndpoint, body)") < html.indexOf("await readSignupCatalog();", html.indexOf("const started = await call(CONFIG.startEndpoint, body)")));
     assert.doesNotMatch(html, /amount_thb:\s*690|amount_thb:\s*4990|amount_thb:\s*11499/);
   });
