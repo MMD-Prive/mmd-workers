@@ -367,7 +367,7 @@ test("failed unsend cleanup alerts the owner once and alarm retry completes reda
     }
     assert.equal((await route.fetch(await signedWebhook([unsendEvent(eventId)], f.env), f.env, ctx)).status, 200);
   });
-  const key = createHash("sha256").update(eventId).digest("hex");
+  const key = createHash("sha256").update(`webhook-${eventId}`).digest("hex");
   const objectId = f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`);
   const object = f.env.KENJI_MODEL_DEDUPE.objects.get(objectId);
   let status = await object.fetch(new Request("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }));
@@ -404,7 +404,7 @@ test("unsend uses LINE message ID when webhookEventId differs from the original 
   assert.equal(record.fields.line_user_id, "");
   assert.equal(record.fields.admin_note, "[LINE message unsent]");
   assert.equal(f.calls.filter((call) => call.type === "redact").length, 1);
-  const key = createHash("sha256").update(messageId).digest("hex");
+  const key = createHash("sha256").update(`webhook-${messageId}`).digest("hex");
   const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
   const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
   assert.equal((await status.json()).status, "cancelled");
@@ -607,20 +607,49 @@ test("ambiguous Airtable write recovers by logical Inbox ID after claim lease", 
   assert.equal(f.calls.filter((call) => call.type === "reply").length, 0);
 });
 
-test("redelivery reuses one durable receipt and sends one campaign reply", async () => {
+test("redelivery with the same message and webhook IDs reuses one durable receipt and sends one campaign reply", async () => {
   const f = fixture();
   const pending = [];
   const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
   await withFetch(f.fetch, async () => {
-    await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-redelivered")], f.env), f.env, ctx);
+    await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-redelivered", "webhook-redelivered")], f.env), f.env, ctx);
     for (let round = 0; round < 5; round += 1) {
       const count = pending.length;
       await Promise.all(pending);
       if (pending.length === count) break;
     }
-    await route.fetch(await signedWebhook([lineEvent("JASPER", "msg-redelivered", { deliveryContext: { isRedelivery: true } })], f.env), f.env, ctx);
+    await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-redelivered", "webhook-redelivered", { deliveryContext: { isRedelivery: true } })], f.env), f.env, ctx);
     await Promise.all(pending);
   });
+  assert.equal(f.calls.filter((call) => call.type === "queue").length, 1);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
+});
+
+test("reused message ID with a different webhookEventId fails closed", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-message-collision", "webhook-original")], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-message-collision", "webhook-conflict")], f.env), f.env, ctx)).status, 503);
+    await Promise.all(pending);
+  });
+  assert.equal(f.calls.filter((call) => call.type === "queue").length, 1);
+  assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
+});
+
+test("reused webhookEventId with a different message ID fails closed", async () => {
+  const f = fixture();
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-webhook-original", "webhook-shared")], f.env), f.env, ctx)).status, 200);
+    await Promise.all(pending);
+    assert.equal((await route.fetch(await signedWebhook([productionLineEvent("JASPER", "msg-webhook-conflict", "webhook-shared")], f.env), f.env, ctx)).status, 503);
+    await Promise.all(pending);
+  });
+  assert.equal(f.records.has("line_msg-webhook-conflict"), false);
   assert.equal(f.calls.filter((call) => call.type === "queue").length, 1);
   assert.equal(f.calls.filter((call) => call.type === "reply").length, 1);
 });

@@ -4,6 +4,7 @@ const CAMPAIGN_LEAD_TTL_MS = 24 * 60 * 60 * 1000;
 const CAMPAIGN_CONTEXT_TTL_MS = 30 * 60 * 1000;
 const CAMPAIGN_CONTEXT_KEY = "campaign-lead:context";
 const CAMPAIGN_INGRESS_KEY = "campaign-ingress:event";
+const CAMPAIGN_INGRESS_ALIAS_KEY = "campaign-ingress:message-alias";
 const CAMPAIGN_INGRESS_DONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_DEAD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const CAMPAIGN_INGRESS_MAX_ATTEMPTS = 6;
@@ -133,9 +134,9 @@ export class KenjiModelIdempotency {
       }
       if (current?.status !== "processing" || current.lease_token !== entry.lease_token) return current?.status || "missing";
       const next = outcome.ok === true
-        ? { event_id: entry.event_id, receipt_id: entry.receipt_id, status: "done", attempts, expires_at: completedAt + CAMPAIGN_INGRESS_DONE_TTL_MS, replied: outcome.replied === true, reply_suppressed: outcome.reply_suppressed === true }
+        ? { event_id: entry.event_id, webhook_event_id: entry.webhook_event_id, receipt_id: entry.receipt_id, status: "done", attempts, expires_at: completedAt + CAMPAIGN_INGRESS_DONE_TTL_MS, replied: outcome.replied === true, reply_suppressed: outcome.reply_suppressed === true }
         : dead
-          ? { event_id: entry.event_id, receipt_id: entry.receipt_id, event: entry.event, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), alert_sent: false, next_alert_at: completedAt, expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
+          ? { event_id: entry.event_id, webhook_event_id: entry.webhook_event_id, receipt_id: entry.receipt_id, event: entry.event, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), alert_sent: false, next_alert_at: completedAt, expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
           : { ...entry, status: "pending", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
       await this.state.storage.setAlarm(next.expires_at || next.next_attempt_at);
@@ -157,6 +158,55 @@ export class KenjiModelIdempotency {
     }
 
     const path = new URL(request.url).pathname;
+    if (path === "/campaign-lead/message-alias") {
+      const action = String(input?.action || "bind");
+      const messageId = String(input?.message_id || "");
+      const receiptId = String(input?.receipt_id || "");
+      const webhookEventId = String(input?.webhook_event_id || "");
+      const subjectHash = String(input?.subject_hash || "");
+      if (
+        !["bind", "cancel"].includes(action) ||
+        !/^[A-Za-z0-9_-]{1,120}$/.test(messageId) ||
+        !/^[a-f0-9]{64}$/.test(receiptId) ||
+        !/^[a-f0-9]{64}$/.test(subjectHash) ||
+        (action === "bind" && !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId))
+      ) {
+        return json({ ok: false, error: "invalid_message_alias" }, 400);
+      }
+      const now = Date.now();
+      const result = await this.state.storage.transaction(async (txn) => {
+        const existing = await txn.get(CAMPAIGN_INGRESS_ALIAS_KEY);
+        if (existing && (
+          existing.message_id !== messageId ||
+          existing.subject_hash !== subjectHash ||
+          (action === "bind" && existing.receipt_id !== receiptId) ||
+          (action === "bind" && existing.webhook_event_id && existing.webhook_event_id !== webhookEventId)
+        )) {
+          return { ok: false, error: "event_key_collision" };
+        }
+        const next = action === "cancel"
+          ? {
+              ...(existing || {}),
+              message_id: messageId,
+              receipt_id: existing?.receipt_id || receiptId,
+              subject_hash: subjectHash,
+              cancelled: true,
+              expires_at: now + CAMPAIGN_INGRESS_DONE_TTL_MS,
+            }
+          : {
+              message_id: messageId,
+              receipt_id: receiptId,
+              webhook_event_id: webhookEventId,
+              subject_hash: subjectHash,
+              cancelled: existing?.cancelled === true,
+              expires_at: now + CAMPAIGN_INGRESS_DONE_TTL_MS,
+            };
+        await txn.put(CAMPAIGN_INGRESS_ALIAS_KEY, next);
+        await this.state.storage.setAlarm(next.expires_at);
+        return { ok: true, duplicate: Boolean(existing), cancelled: next.cancelled === true, receipt_id: next.receipt_id };
+      });
+      return json(result, result.ok ? 200 : 409);
+    }
     if (path === "/campaign-lead/ingress") {
       const action = String(input?.action || "enqueue");
       if (action === "process") return json(await this.processCampaignIngress());
@@ -199,6 +249,7 @@ export class KenjiModelIdempotency {
           if (existing?.event_id && existing.event_id !== eventId) return { ok: false, error: "event_key_collision" };
           await txn.put(CAMPAIGN_INGRESS_KEY, {
             event_id: eventId,
+            webhook_event_id: existing?.webhook_event_id || "",
             receipt_id: receiptId,
             subject_hash: subjectHash,
             status: "cancelled",
@@ -221,6 +272,7 @@ export class KenjiModelIdempotency {
       // LINE unsend events reference message.id, so message events must use the
       // same durable key even when webhookEventId is also present.
       const eventId = String(event?.message?.id || event?.webhookEventId || "");
+      const webhookEventId = String(event?.webhookEventId || eventId);
       const receiptId = String(input?.receipt_id || "");
       if (!/^[a-f0-9]{64}$/.test(receiptId) || !/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
         return json({ ok: false, error: "invalid_event" }, 400);
@@ -229,12 +281,13 @@ export class KenjiModelIdempotency {
       const result = await this.state.storage.transaction(async (txn) => {
         const existing = await txn.get(CAMPAIGN_INGRESS_KEY);
         if (existing) {
-          if (existing.event_id !== eventId) return { ok: false, error: "event_key_collision" };
+          if (existing.event_id !== eventId || existing.webhook_event_id !== webhookEventId) return { ok: false, error: "event_key_collision" };
           if (existing.status === "cancelled") return { ok: true, accepted: false, cancelled: true, status: existing.status, duplicate: true };
           return { ok: true, accepted: true, status: existing.status, duplicate: true };
         }
         await txn.put(CAMPAIGN_INGRESS_KEY, {
           event_id: eventId,
+          webhook_event_id: webhookEventId,
           receipt_id: receiptId,
           status: "pending",
           attempts: 0,
@@ -511,6 +564,10 @@ export class KenjiModelIdempotency {
     const currentIngress = await this.state.storage.get(CAMPAIGN_INGRESS_KEY);
     const ingressAlarm = Number(currentIngress?.next_attempt_at || currentIngress?.lease_expires_at || currentIngress?.next_alert_at || currentIngress?.next_cleanup_at || currentIngress?.expires_at) || 0;
     if (ingressAlarm && (!nextAlarm || ingressAlarm < nextAlarm)) nextAlarm = ingressAlarm;
+    const messageAlias = await this.state.storage.get(CAMPAIGN_INGRESS_ALIAS_KEY);
+    const aliasExpiresAt = Number(messageAlias?.expires_at) || 0;
+    if (messageAlias && aliasExpiresAt <= now) await this.state.storage.delete(CAMPAIGN_INGRESS_ALIAS_KEY);
+    else if (aliasExpiresAt && (!nextAlarm || aliasExpiresAt < nextAlarm)) nextAlarm = aliasExpiresAt;
     if (nextAlarm) await this.state.storage.setAlarm(nextAlarm);
   }
 }

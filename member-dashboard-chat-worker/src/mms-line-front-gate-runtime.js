@@ -46,6 +46,11 @@ function text(value) {
   return value == null ? "" : String(value).trim();
 }
 
+async function sha256HexText(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(value)));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function normalizedPath(request) {
   try {
     return new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
@@ -460,8 +465,7 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
         let pilot = false;
         let subjectHash = "";
         if (event?.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(userId)) {
-          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(userId));
-          const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          const hash = await sha256HexText(userId);
           subjectHash = hash;
           pilot = hashes.includes(hash);
         }
@@ -470,7 +474,8 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           continue;
         }
         const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
-        (campaign ? campaignEvents : ordinaryEvents).push(event);
+        if (campaign) campaignEvents.push({ event, subjectHash });
+        else ordinaryEvents.push(event);
       }
       if (campaignEvents.length || unsendEvents.length) {
         if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
@@ -478,8 +483,17 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
         for (const item of unsendEvents) {
           const { event, subjectHash } = item;
           const eventId = text(event?.unsend?.messageId);
-          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
-          const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+          const messageKey = await sha256HexText(eventId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "cancel", message_id: eventId, receipt_id: messageKey, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok || alias?.cancelled !== true || !/^[a-f0-9]{64}$/.test(text(alias?.receipt_id))) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          const key = text(alias.receipt_id);
           const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
           let response;
           try {
@@ -490,13 +504,23 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           const result = await response.json().catch(() => ({}));
           if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
         }
-        for (const event of campaignEvents) {
-          // Unsend webhooks identify the original message by messageId. Prefer
-          // message.id here so the cancellation reaches the same durable object.
-          const eventId = text(event?.message?.id || event?.webhookEventId);
-          if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
-          const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
-          const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+        for (const item of campaignEvents) {
+          const { event, subjectHash } = item;
+          const eventId = text(event?.message?.id);
+          const webhookEventId = text(event?.webhookEventId || eventId);
+          if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || !/^[A-Za-z0-9_-]{1,120}$/.test(webhookEventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
+          const key = await sha256HexText(webhookEventId);
+          const messageKey = await sha256HexText(eventId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "bind", message_id: eventId, receipt_id: key, webhook_event_id: webhookEventId, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (alias?.cancelled === true) continue;
           const stub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
           let response;
           try {
