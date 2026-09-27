@@ -2,7 +2,7 @@
 // MMD Privé — Public Access Intake V1
 // Public brief + evidence only. Never grants access, confirms payment, or confirms a booking.
 
-import { handlePublicJobBoard, isPublicJobBoardPath } from "./public-job-board-v2.js";
+import { handlePublicJobBoardV2Request } from "./public-job-board-v2.js";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
@@ -14,22 +14,14 @@ export default {
     const cors = corsHeaders(request, env);
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+
+    const jobBoard = await handlePublicJobBoardV2Request(request, env);
+    if (jobBoard) return withCors(jobBoard, cors);
+
     if (!isAllowedOrigin(request, env)) return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
 
     if (request.method === "GET" && (path === "/health" || path === "/ping")) {
       return withCors(json({ ok: true, worker: "public-access-worker", version: "v1", ts: Date.now() }), cors);
-    }
-
-    if (isPublicJobBoardPath(path)) {
-      try {
-        return withCors(await handlePublicJobBoard(request, env, path), cors);
-      } catch (error) {
-        return withCors(json({
-          ok: false,
-          error: "public_job_board_failed",
-          message: safeError(error)
-        }, statusFor(error)), cors);
-      }
     }
 
     if (request.method === "POST" && path === "/public/api/access/intake") {
@@ -236,12 +228,15 @@ function corsHeaders(request, env) {
   const origin = request.headers.get("Origin") || "";
   const allowed = String(env.ALLOWED_ORIGINS || "").split(",").map((x) => x.trim()).filter(Boolean);
   const headers = new Headers({
-    "Access-Control-Allow-Methods": "POST,OPTIONS,GET",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "POST,OPTIONS,GET,PUT",
+    "Access-Control-Allow-Headers": "Content-Type,X-Line-Id-Token",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin"
   });
-  if (origin && allowed.includes(origin)) headers.set("Access-Control-Allow-Origin", origin);
+  if (origin && allowed.includes(origin)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
   return headers;
 }
 

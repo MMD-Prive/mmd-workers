@@ -1,89 +1,466 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handlePublicJobBoard } from "../src/public-job-board-v2.js";
+import worker from "../src/index.js";
+import { createJobRecord, parsePublicJobBriefV2 } from "../src/public-job-board-v2.js";
 
-class MemoryKV {
-  constructor() { this.map = new Map(); }
-  async get(key, type) { const value = this.map.get(key); return value === undefined ? null : (type === "json" ? JSON.parse(value) : value); }
-  async put(key, value) { this.map.set(key, value); }
+class MemoryR2 {
+  constructor() { this.rows = new Map(); }
+  async put(key, value, options = {}) {
+    if (options.onlyIf?.etagDoesNotMatch === "*" && this.rows.has(key)) return null;
+    const bytes = typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(value);
+    this.rows.set(key, { bytes, options });
+    return { key };
+  }
+  async get(key) {
+    const row = this.rows.get(key);
+    if (!row) return null;
+    return {
+      text: async () => new TextDecoder().decode(row.bytes),
+      arrayBuffer: async () => row.bytes.buffer.slice(row.bytes.byteOffset, row.bytes.byteOffset + row.bytes.byteLength),
+      customMetadata: row.options.customMetadata || {},
+    };
+  }
+  async list({ prefix = "", limit = 1000 } = {}) {
+    return { objects: [...this.rows.keys()].filter((key) => key.startsWith(prefix)).slice(0, limit).map((key) => ({ key })) };
+  }
+  async delete(key) { this.rows.delete(key); }
 }
-const makeEnv = () => ({ PUBLIC_JOB_BOARD_OWNER_TOKEN: "owner-test", PUBLIC_JOB_BOARD_STORE: new MemoryKV() });
-const request = (path, method = "GET", body, headers = {}) => new Request(`https://example.test${path}`, { method, headers: { "Origin": "https://mmdbkk.com", ...(body ? { "Content-Type": "application/json" } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
 
-test("creates a public and private job, then lists safe cards", async () => {
-  const env = makeEnv();
-  const owner = request("/public/api/owner/jobs", "POST", { type: "private", brief: "งานกินข้าว ลูกค้าเกย์ผู้ใหญ่\nงาน 3 ชม.\nพฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n10,000 ถึงตัว", title: "งานกินข้าวลับ", budget_disclosure_approved: true }, { Authorization: "Bearer owner-test" });
-  const created = await handlePublicJobBoard(owner, env, "/public/api/owner/jobs"); assert.equal(created.status, 201);
-  const list = await handlePublicJobBoard(request("/public/api/jobs", "GET"), env, "/public/api/jobs"); const data = await list.json();
-  assert.equal(data.jobs.length, 1); assert.equal(data.jobs[0].budget_label, "10,000 ถึงตัว"); assert.equal(data.jobs[0].safe_customer_description, undefined);
+function env(extra = {}) {
+  return {
+    PUBLIC_ACCESS_EVIDENCE: new MemoryR2(),
+    PUBLIC_JOB_BOARD_SIGNING_SECRET: "local-test-signing-secret-32-characters",
+    INTERNAL_TOKEN: "owner-test-token",
+    ALLOWED_ORIGINS: "https://sigil.mmdbkk.com",
+    ...extra,
+  };
+}
+
+async function call(testEnv, path, { method = "GET", body, headers = {} } = {}) {
+  const init = { method, headers: new Headers(headers) };
+  if (body !== undefined) {
+    if (body instanceof Blob) init.body = body;
+    else {
+      init.body = JSON.stringify(body);
+      init.headers.set("content-type", "application/json");
+    }
+  }
+  return worker.fetch(new Request(`https://sigil.mmdbkk.com${path}`, init), testEnv);
+}
+
+async function ownerCreate(testEnv, overrides = {}) {
+  const response = await call(testEnv, "/public/api/jobs/internal/jobs", {
+    method: "POST",
+    headers: { "x-internal-token": "owner-test-token" },
+    body: {
+      id: "JOB-20261001-DEMO01",
+      status: "published",
+      brief: "งาน กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์\nถ้าเป็นนายแบบ/นักแสดง มีโปรไฟล์ ได้บัทพิเศษ 🔐\n\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 10,000 ถึงตัว\n👤 ลูกค้า 1 ท่าน ร้านมีห้องส่วนตัว ไม่ล่วงเกิน\n\n🍌 ส่งด่วน รูปเดี่ยว 2 รูป",
+      ...overrides,
+    },
+  });
+  const text = await response.text();
+  assert.equal(response.status, 201, text);
+  return JSON.parse(text);
+}
+
+async function anonymousCookie(testEnv) {
+  const response = await call(testEnv, "/public/api/jobs");
+  assert.equal(response.status, 200);
+  const raw = response.headers.get("set-cookie");
+  assert.ok(raw);
+  return raw.split(";", 1)[0];
+}
+
+async function interest(testEnv, cookie, body = {}) {
+  const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
+  assert.equal(reveal.status, 303, await reveal.text());
+  const revealCookie = reveal.headers.get("set-cookie").split(";", 1)[0];
+  return call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/interest", { method: "POST", headers: { cookie: `${cookie}; ${revealCookie}` }, body });
+}
+
+function visibleText(html) {
+  return String(html).replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+test("free-form Per brief maps to the Public Job Board V2 contract", () => {
+  const parsed = parsePublicJobBriefV2("งาน กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์\n⏳ งาน 3 ชม.\n🏡 พฤ 1 ต.ค. 20:00 ย่านสุขุมวิท\n💰 10,000 ถึงตัว\n👤 ลูกค้า 1 ท่าน ร้านมีห้องส่วนตัว ไม่ล่วงเกิน 🔐\n🍌 ส่งด่วน รูปเดี่ยว 8 รูป");
+  assert.equal(parsed.category, "dining");
+  assert.equal(parsed.duration, "3 ชั่วโมง");
+  assert.equal(parsed.time, "20:00");
+  assert.equal(parsed.area, "สุขุมวิท");
+  assert.equal(parsed.compensation, "10,000 ถึงตัว");
+  assert.equal(parsed.customer_count, 1);
+  assert.equal(parsed.confidentiality, true);
+  assert.equal(parsed.media_requirements.count, 8);
 });
 
-test("private brief is click-to-reveal and interest is owner-review only", async () => {
-  const env = makeEnv();
-  const owner = request("/public/api/owner/jobs", "POST", { type: "private", brief: "งานลับ\n10,000 บาท", title: "งานลับ" }, { Authorization: "Bearer owner-test" });
-  const created = await handlePublicJobBoard(owner, env, "/public/api/owner/jobs"); const { job } = await created.json();
-  const before = await handlePublicJobBoard(request(`/public/api/jobs/${job.id}`), env, `/public/api/jobs/${job.id}`); const beforeData = await before.json(); assert.equal(beforeData.job.safe_customer_description, undefined);
-  const reveal = await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/reveal`, "POST", {}, { Cookie: "mmd_job_viewer=testviewer" }), env, `/public/api/jobs/${job.id}/reveal`);
-  const revealToken = reveal.headers.get("Set-Cookie")?.split("=")[1]?.split(";")[0];
-  assert.equal((await reveal.json()).job.compensation, "10,000 บาท");
-  const interest = await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/interest`, "POST", { nickname: "A", gender_identity: "เกย์", customer_scope: "ผู้ชาย", boundaries: "คุยได้" }, { Cookie: "mmd_job_viewer=testviewer", "X-Job-Reveal-Token": revealToken }), env, `/public/api/jobs/${job.id}/interest`); assert.equal(interest.status, 201);
+test("runtime fails closed without durable R2 or a strong signing secret", async () => {
+  let response = await call({ PUBLIC_JOB_BOARD_SIGNING_SECRET: "local-test-signing-secret-32-characters" }, "/public/api/jobs");
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "public_job_board_store_unavailable");
+  response = await call({ PUBLIC_ACCESS_EVIDENCE: new MemoryR2(), PUBLIC_JOB_BOARD_SIGNING_SECRET: "short" }, "/public/api/jobs");
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "public_job_board_signing_unavailable");
 });
 
-test("rejects unauthenticated owner access and invalid applicant identity", async () => {
-  const env = makeEnv();
-  const owner = request("/public/api/owner/jobs", "POST", { brief: "งาน" }); await assert.rejects(() => handlePublicJobBoard(owner, env, "/public/api/owner/jobs"), (e) => e.status === 401);
+test("public welcome uses approved copy and hides internal identity language", async () => {
+  const testEnv = env();
+  const created = await ownerCreate(testEnv);
+  assert.equal(created.job.public.title, "กินข้าว ลูกค้าเกย์ผู้ใหญ่ ขอหล่อ สูงหุ่นดี มีโปรไฟล์");
+  assert.equal(created.job.public.area, "สุขุมวิท");
+  assert.equal(created.job.public.compensation, "10,000 ถึงตัว");
+  const response = await call(testEnv, "/public/api/jobs");
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(html, /ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD/);
+  assert.match(html, /เลือกงานที่คุณสนใจ/);
+  assert.match(html, /PRIVATE JOB/);
+  assert.match(html, /งานลับ 🔐/);
+  const copy = visibleText(html);
+  for (const banned of ["Verify", "ยืนยันตัวตน", "Bind", "Candidate", "Identity review", "สมัครสมาชิก"]) assert.doesNotMatch(copy, new RegExp(banned, "i"));
+  assert.doesNotMatch(html, /source_brief|owner_note|private-media/);
 });
 
-test("hides private budget unless owner approves disclosure", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { type: "private", brief: "งานลับ\n10,000 บาท" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs");
-  const { job } = await created.json(); const list = await handlePublicJobBoard(request("/public/api/jobs"), env, "/public/api/jobs"); assert.equal((await list.json()).jobs[0].budget_label, undefined); assert.ok(job.id);
+test("job detail and intake expose approved applicant copy without internal statuses", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const gate = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie } });
+  const gateHtml = await gate.text();
+  assert.match(gateHtml, /งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด/);
+  assert.doesNotMatch(gateHtml, /งานนี้กำลังเปิดรับคนที่สนใจครับ/);
+  assert.doesNotMatch(gateHtml, /ลูกค้าเกย์ผู้ใหญ่/);
+  const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
+  assert.equal(reveal.status, 303);
+  const openedCookie = `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}`;
+  const detail = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } });
+  const detailHtml = await detail.text();
+  assert.match(detailHtml, /งานนี้กำลังเปิดรับคนที่สนใจครับ/);
+  assert.match(detailHtml, /สนใจงานนี้/);
+  const apply = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } });
+  const applyHtml = await apply.text();
+  assert.match(applyHtml, /ขอข้อมูลสั้น ๆ และรูปปัจจุบัน/);
+  assert.match(applyHtml, /เพศสภาพ/);
+  assert.match(applyHtml, /รับงานกับลูกค้า/);
+  assert.match(applyHtml, /ส่งข้อมูลให้พี่พิจารณา/);
+  assert.doesNotMatch(applyHtml, /Verify|ยืนยันตัวตน|Identity review|สมัครสมาชิก/i);
 });
 
-test("requires reveal before interest", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { type: "private", brief: "งานลับ" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json();
-  await assert.rejects(() => handlePublicJobBoard(request(`/public/api/jobs/${job.id}/interest`, "POST", { nickname: "A", gender_identity: "เกย์", customer_scope: "ผู้ชาย" }, { Cookie: "mmd_job_viewer=v" }), env, `/public/api/jobs/${job.id}/interest`), (e) => e.status === 403);
+test("Public and Private cards are separated and only owner-approved Private budget is exposed", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { budget_disclosure_approved: true });
+  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
+  const response = await call(testEnv, "/public/api/jobs");
+  const page = await response.text();
+  assert.match(page, /PUBLIC JOB/);
+  assert.match(page, /PRIVATE JOB/);
+  assert.match(page, /เลือกงานนี้/);
+  assert.match(page, /ดูงานลับ · 10,000/);
+  assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
+
+  const hiddenEnv = env();
+  await ownerCreate(hiddenEnv, { budget_disclosure_approved: false });
+  const data = await (await call(hiddenEnv, "/public/api/jobs/data")).json();
+  assert.equal(data.jobs[0].compensation, "");
+  assert.equal(data.jobs[0].title, "งานร่วมรับประทานอาหาร");
 });
 
-test("rejects invalid gender identity", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { type: "public", brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json();
-  await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/reveal`, "POST", {}, { Cookie: "mmd_job_viewer=g" }), env, `/public/api/jobs/${job.id}/reveal`);
-  await assert.rejects(() => handlePublicJobBoard(request(`/public/api/jobs/${job.id}/interest`, "POST", { nickname: "A", gender_identity: "x", customer_scope: "ผู้ชาย" }, { Cookie: "mmd_job_viewer=g", "X-Job-Reveal-Token": "bad" }), env, `/public/api/jobs/${job.id}/interest`), (e) => e.status === 403);
+test("Private reveal is server-issued and pause invalidates an opened link immediately", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { budget_disclosure_approved: true });
+  const cookie = await anonymousCookie(testEnv);
+  const blockedApply = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie } });
+  assert.equal(blockedApply.status, 403);
+  const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
+  const openedCookie = `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}`;
+  assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } })).status, 200);
+  const paused = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers: { "x-internal-token": "owner-test-token" }, body: { status: "paused" } });
+  assert.equal(paused.status, 200, await paused.text());
+  assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } })).status, 404);
 });
 
-test("owner can pause a job", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json();
-  const changed = await handlePublicJobBoard(request(`/public/api/owner/jobs/${job.id}`, "PATCH", { status: "paused" }, { Authorization: "Bearer owner-test" }), env, `/public/api/owner/jobs/${job.id}`); assert.equal((await changed.json()).job.type, "public");
-  await assert.rejects(() => handlePublicJobBoard(request(`/public/api/jobs/${job.id}`), env, `/public/api/jobs/${job.id}`), (e) => e.status === 404);
+test("Private reveal token expires and returns to the redacted gate", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const issuedAt = Date.now();
+  const reveal = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/reveal", { method: "POST", headers: { cookie } });
+  const openedCookie = `${cookie}; ${reveal.headers.get("set-cookie").split(";", 1)[0]}`;
+  const realNow = Date.now;
+  try {
+    Date.now = () => issuedAt + 31 * 60 * 1000;
+    const detail = await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie: openedCookie } });
+    const page = await detail.text();
+    assert.equal(detail.status, 200);
+    assert.match(page, /งานนี้เป็นงานลับ กดต่อเพื่อดูรายละเอียด/);
+    assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
+    assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01/apply", { headers: { cookie: openedCookie } })).status, 403);
+  } finally { Date.now = realNow; }
 });
 
-test("owner can list all jobs", async () => {
-  const env = makeEnv(); await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const res = await handlePublicJobBoard(request("/public/api/owner/jobs", "GET", null, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); assert.equal((await res.json()).jobs.length, 1);
+test("anonymous viewer summaries trigger owner alerts without storing direct identity and remain owner-controlled", async () => {
+  const alerts = [];
+  const testEnv = env({ PUBLIC_JOB_OWNER_ALERTS: { fetch: async (_url, init) => { alerts.push(JSON.parse(init.body)); return new Response(null, { status: 202 }); } } });
+  for (const id of ["JOB-20261001-PRIV01", "JOB-20261001-PRIV02", "JOB-20261001-PRIV03"]) await ownerCreate(testEnv, { id, confidentiality: true });
+  const cookie = await anonymousCookie(testEnv);
+  for (const id of ["JOB-20261001-PRIV01", "JOB-20261001-PRIV02", "JOB-20261001-PRIV03"]) {
+    const opened = await call(testEnv, `/public/api/jobs/${id}/reveal`, { method: "POST", headers: { cookie } });
+    assert.equal(opened.status, 303, await opened.text());
+  }
+  const viewerResponse = await call(testEnv, "/public/api/jobs/internal/viewers", { headers: { "x-internal-token": "owner-test-token" } });
+  const viewers = (await viewerResponse.json()).viewers;
+  assert.equal(viewerResponse.status, 200);
+  assert.equal(viewers.length, 1);
+  assert.equal(viewers[0].alert_level, "SUSPICIOUS");
+  assert.equal(viewers[0].viewer_status, "interested_not_applied");
+  assert.equal(Object.hasOwn(viewers[0], "ip"), false);
+  assert.equal(Object.hasOwn(viewers[0], "line_id"), false);
+  assert.equal(alerts.length, 1);
+  assert.equal(Object.hasOwn(alerts[0], "events"), false);
+
+  const ref = viewers[0].viewer_ref;
+  const restricted = await call(testEnv, `/public/api/jobs/internal/viewers/${ref}/action`, { method: "POST", headers: { "x-internal-token": "owner-test-token" }, body: { action: "restrict_private" } });
+  assert.equal(restricted.status, 200, await restricted.text());
+  for (let i = 0; i < 3; i += 1) assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-PRIV01", { headers: { cookie } })).status, 404);
+  const escalated = await call(testEnv, "/public/api/jobs/internal/viewers", { headers: { "x-internal-token": "owner-test-token" } });
+  assert.equal((await escalated.json()).viewers[0].alert_level, "HIGH_RISK");
+  assert.equal(alerts.length, 2);
+  const unbanned = await call(testEnv, `/public/api/jobs/internal/viewers/${ref}/action`, { method: "POST", headers: { "x-internal-token": "owner-test-token" }, body: { action: "unban" } });
+  assert.equal(unbanned.status, 200, await unbanned.text());
+  assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-PRIV01", { headers: { cookie } })).status, 200);
 });
 
-test("owner candidates endpoint is authenticated", async () => {
-  const env = makeEnv(); await assert.rejects(() => handlePublicJobBoard(request("/public/api/owner/jobs/x/candidates"), env, "/public/api/owner/jobs/x/candidates"), (e) => e.status === 401);
+test("brief reading time and CTA signals are stored as bounded anonymous events", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC2", confidentiality: false });
+  const cookie = await anonymousCookie(testEnv);
+  assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-PUBLIC2", { headers: { cookie } })).status, 200);
+  const ping = await call(testEnv, "/public/api/jobs/events", { method: "POST", headers: { cookie }, body: { type: "read_ping", job_id: "JOB-20261001-PUBLIC2", read_seconds: 42 } });
+  assert.equal(ping.status, 204, await ping.text());
+  const owner = await call(testEnv, "/public/api/jobs/internal/viewers", { headers: { "x-internal-token": "owner-test-token" } });
+  const viewers = (await owner.json()).viewers;
+  const event = viewers[0].events.find((item) => item.type === "read_ping");
+  assert.equal(event.read_seconds, 42);
+  assert.equal(event.job_id, "JOB-20261001-PUBLIC2");
 });
 
-test("duplicate interest is rejected", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json(); const headers = { Cookie: "mmd_job_viewer=d" }; const reveal = await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/reveal`, "POST", {}, headers), env, `/public/api/jobs/${job.id}/reveal`); const token = reveal.headers.get("Set-Cookie").split("=")[1].split(";")[0]; const body = { nickname: "A", gender_identity: "เกย์", customer_scope: "ผู้ชาย", reveal_token: token }; await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/interest`, "POST", body, headers), env, `/public/api/jobs/${job.id}/interest`); await assert.rejects(() => handlePublicJobBoard(request(`/public/api/jobs/${job.id}/interest`, "POST", body, headers), env, `/public/api/jobs/${job.id}/interest`), (e) => e.status === 409);
+test("unknown visitor becomes a new candidate and duplicate interest is rejected", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const first = await interest(testEnv, cookie);
+  const created = await first.json();
+  assert.equal(first.status, 201);
+  assert.equal(created.status, "received");
+  assert.doesNotMatch(JSON.stringify(created), /candidate|identity|verify/i);
+  const applicationKey = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/applications/"));
+  const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(applicationKey).bytes));
+  assert.equal(application.identity.identity_class, "UNVERIFIED_CANDIDATE");
+  assert.equal(application.workflow_status, "new_candidate");
+  const second = await interest(testEnv, cookie);
+  assert.equal(second.status, 409);
+  assert.equal((await second.json()).error, "job_interest_already_exists");
 });
 
-test("owner viewer summary is opaque", async () => {
-  const env = makeEnv(); await handlePublicJobBoard(request("/public/api/jobs", "GET", null, { Cookie: "mmd_job_viewer=abcd" }), env, "/public/api/jobs"); const res = await handlePublicJobBoard(request("/public/api/owner/viewers/abcd", "GET", null, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/viewers/abcd"); assert.equal(res.status, 200); assert.equal((await res.json()).viewer.viewer_ref, "Viewer #ABCD");
+test("existing-model claim remains review-only while trusted LINE resolution stays unbound", async () => {
+  const untrustedEnv = env();
+  await ownerCreate(untrustedEnv);
+  let cookie = await anonymousCookie(untrustedEnv);
+  let response = await interest(untrustedEnv, cookie, { existing_model_claim: "MMD Model A" });
+  let body = await response.json();
+  assert.equal(body.status, "received");
+  const records = [...untrustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].filter((key) => key.includes("/applications/"));
+  const application = JSON.parse(new TextDecoder().decode(untrustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(records[0]).bytes));
+  assert.equal(application.workflow_status, "identity_review_required");
+  assert.equal(application.identity.verified_model_record_id, null);
+
+  const trustedEnv = env({
+    PUBLIC_JOB_IDENTITY_RESOLVER: {
+      fetch: async () => new Response(JSON.stringify({ verified: true, model_record_id: "rec12345678901234" }), { headers: { "content-type": "application/json" } }),
+    },
+  });
+  await ownerCreate(trustedEnv);
+  cookie = await anonymousCookie(trustedEnv);
+  response = await interest(trustedEnv, cookie);
+  body = await response.json();
+  assert.equal(body.status, "received");
+  const trustedKey = [...trustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/applications/"));
+  const trustedApplication = JSON.parse(new TextDecoder().decode(trustedEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(trustedKey).bytes));
+  assert.equal(trustedApplication.workflow_status, "existing_model_unbound");
+  assert.equal(trustedApplication.controls.auto_bind, false);
 });
 
-test("expired and closed jobs are not public", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json(); await handlePublicJobBoard(request(`/public/api/owner/jobs/${job.id}`, "PATCH", { status: "expired" }, { Authorization: "Bearer owner-test" }), env, `/public/api/owner/jobs/${job.id}`); await assert.rejects(() => handlePublicJobBoard(request(`/public/api/jobs/${job.id}`), env, `/public/api/jobs/${job.id}`), (e) => e.status === 404);
+test("upload grant is bound to job application slot and media remains private", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const created = await (await interest(testEnv, cookie)).json();
+  const bytes = new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/jpeg" });
+  const grantResponse = await call(testEnv, `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/upload-grant`, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/jpeg", size: 4 } });
+  const grant = await grantResponse.json();
+  assert.equal(grantResponse.status, 200, JSON.stringify(grant));
+  const upload = await call(testEnv, new URL(grant.upload.url, "https://sigil.mmdbkk.com").pathname + new URL(grant.upload.url, "https://sigil.mmdbkk.com").search, { method: "PUT", headers: { cookie, "content-type": "image/jpeg" }, body: bytes });
+  const uploaded = await upload.json();
+  assert.equal(upload.status, 200, JSON.stringify(uploaded));
+  assert.equal(uploaded.private, true);
+  assert.equal(Object.hasOwn(uploaded, "object_key"), false);
+  const mediaKeys = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].filter((key) => key.includes("/private-media/"));
+  assert.equal(mediaKeys.length, 1);
+  assert.equal(mediaKeys[0].includes(created.application_ref), true);
 });
 
-test("service alert payload is bounded", async () => {
-  const calls = []; const env = makeEnv(); env.PUBLIC_JOB_OWNER_ALERTS = { fetch: async (_url, init) => calls.push(JSON.parse(init.body)) }; for (let i = 0; i < 5; i++) { const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: `งาน ${i}` }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json(); await handlePublicJobBoard(request("/public/api/jobs", "GET", null, { Cookie: "mmd_job_viewer=alert" }), env, "/public/api/jobs"); await handlePublicJobBoard(request(`/public/api/jobs/${job.id}/reveal`, "POST", {}, { Cookie: "mmd_job_viewer=alert" }), env, `/public/api/jobs/${job.id}/reveal`); } assert.ok(calls.every((x) => Object.keys(x).sort().join(",") === "alert_level,display_label,last_seen,viewer_ref,viewer_status"));
+test("upload contract rejects invalid MIME size slot payload and expired grants", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { media_requirements: { count: 1 } });
+  const cookie = await anonymousCookie(testEnv);
+  const created = await (await interest(testEnv, cookie)).json();
+  const base = `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/upload-grant`;
+  assert.equal((await call(testEnv, base, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/gif", size: 3 } })).status, 415);
+  assert.equal((await call(testEnv, base, { method: "POST", headers: { cookie }, body: { slot: 2, content_type: "image/png", size: 3 } })).status, 400);
+  assert.equal((await call(testEnv, base, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/png", size: 10 * 1024 * 1024 + 1 } })).status, 400);
+  let grant = await (await call(testEnv, base, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/png", size: 3 } })).json();
+  let target = new URL(grant.upload.url, "https://sigil.mmdbkk.com");
+  assert.equal((await call(testEnv, target.pathname + target.search, { method: "PUT", headers: { cookie, "content-type": "image/png" }, body: new Blob([new Uint8Array([1, 2])], { type: "image/png" }) })).status, 400);
+  const realNow = Date.now;
+  try {
+    const issuedAt = realNow();
+    grant = await (await call(testEnv, base, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/png", size: 3 } })).json();
+    target = new URL(grant.upload.url, "https://sigil.mmdbkk.com");
+    Date.now = () => issuedAt + 11 * 60 * 1000;
+    assert.equal((await call(testEnv, target.pathname + target.search, { method: "PUT", headers: { cookie, "content-type": "image/png" }, body: new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }) })).status, 401);
+  } finally { Date.now = realNow; }
 });
 
-test("public list returns no customer identifiers", async () => {
-  const env = makeEnv(); await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน ลูกค้า คุณลับ line abc" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const res = await handlePublicJobBoard(request("/public/api/jobs"), env, "/public/api/jobs"); const text = JSON.stringify(await res.json()); assert.equal(text.includes("line abc"), false);
+test("submission preserves self-described gender and customer scope without inference", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv);
+  const cookie = await anonymousCookie(testEnv);
+  const created = await (await interest(testEnv, cookie)).json();
+  for (let slot = 1; slot <= 2; slot += 1) {
+    const grant = await (await call(testEnv, `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/upload-grant`, { method: "POST", headers: { cookie }, body: { slot, content_type: "image/png", size: 3 } })).json();
+    const target = new URL(grant.upload.url, "https://sigil.mmdbkk.com");
+    const upload = await call(testEnv, target.pathname + target.search, { method: "PUT", headers: { cookie, "content-type": "image/png" }, body: new Blob([new Uint8Array([slot, 2, 3])], { type: "image/png" }) });
+    assert.equal(upload.status, 200, await upload.text());
+  }
+  const submitted = await call(testEnv, `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/submit`, { method: "POST", headers: { cookie }, body: { nickname: "เอ", age: 25, height_cm: 180, weight_kg: 70, profile: "งานแสดง", gender: "self_described", gender_note: "nonbinary", customer_scope: "both", work_scope: "งานสังคมและงานแสดง", unavailable_scope: "ไม่รับงานสัมผัสตัว", clothing_size: "M" } });
+  const result = await submitted.json();
+  assert.equal(submitted.status, 200, JSON.stringify(result));
+  assert.equal(result.auto_bound, false);
+  const key = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((item) => item.endsWith(`/${created.application_ref}.json`));
+  const application = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(key).bytes));
+  assert.equal(application.applicant.gender, "self_described");
+  assert.equal(application.applicant.gender_note, "nonbinary");
+  assert.equal(application.applicant.customer_scope, "both");
+  assert.equal(application.applicant.unavailable_scope, "ไม่รับงานสัมผัสตัว");
 });
 
-test("unsupported job status is ignored", async () => {
-  const env = makeEnv(); const created = await handlePublicJobBoard(request("/public/api/owner/jobs", "POST", { brief: "งาน" }, { Authorization: "Bearer owner-test" }), env, "/public/api/owner/jobs"); const { job } = await created.json(); const res = await handlePublicJobBoard(request(`/public/api/owner/jobs/${job.id}`, "PATCH", { status: "hack" }, { Authorization: "Bearer owner-test" }), env, `/public/api/owner/jobs/${job.id}`); assert.equal((await res.json()).job.type, "public");
+test("only owner decisions can bind and no decision auto-rates books or replies", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { media_requirements: { count: 1 } });
+  const cookie = await anonymousCookie(testEnv);
+  const created = await (await interest(testEnv, cookie)).json();
+  const grant = await (await call(testEnv, `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/upload-grant`, { method: "POST", headers: { cookie }, body: { slot: 1, content_type: "image/jpeg", size: 2 } })).json();
+  const target = new URL(grant.upload.url, "https://sigil.mmdbkk.com");
+  assert.equal((await call(testEnv, target.pathname + target.search, { method: "PUT", headers: { cookie, "content-type": "image/jpeg" }, body: new Blob([new Uint8Array([1, 2])], { type: "image/jpeg" }) })).status, 200);
+  const submit = await call(testEnv, `/public/api/jobs/JOB-20261001-DEMO01/applications/${created.application_ref}/submit`, { method: "POST", headers: { cookie }, body: { nickname: "บี", age: 28, height_cm: 178, weight_kg: 68, gender: "male", customer_scope: "men", work_scope: "งานสังคม", unavailable_scope: "ไม่รับงานเกินบรีฟ" } });
+  assert.equal(submit.status, 200, await submit.text());
+  const unauthorized = await call(testEnv, `/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/candidates/${created.application_ref}/decision`, { method: "POST", body: { decision: "bind_to_existing_model", model_record_id: "rec12345678901234" } });
+  assert.equal(unauthorized.status, 403);
+  const decision = await call(testEnv, `/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/candidates/${created.application_ref}/decision`, { method: "POST", headers: { "x-internal-token": "owner-test-token" }, body: { decision: "bind_to_existing_model", model_record_id: "rec12345678901234" } });
+  const result = await decision.json();
+  assert.equal(decision.status, 200, JSON.stringify(result));
+  assert.equal(result.application.workflow_status, "bound_after_owner_review");
+  assert.deepEqual(result.side_effects, { model_created: false, booked: false, rated: false, customer_replied: false });
+});
+
+test("draft paused closed and expired jobs never appear on the public board", async () => {
+  for (const status of ["draft", "paused", "closed", "expired"]) {
+    const record = createJobRecord({ id: `JOB-20261001-${status.toUpperCase()}`, status, brief: "งานอีเวนต์\n💰 5,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
+    assert.equal(record.status, status);
+  }
+  const testEnv = env();
+  await ownerCreate(testEnv, { status: "paused" });
+  const html = await (await call(testEnv, "/public/api/jobs")).text();
+  assert.match(html, /ตอนนี้ยังไม่มีงานทั่วไปที่เปิดรับครับ/);
+  assert.match(html, /ตอนนี้ยังไม่มีงานลับที่เปิดรับครับ/);
+  assert.doesNotMatch(html, /JOB-20261001-DEMO01/);
+});
+
+test("owner UI requires a short-lived HttpOnly session and exposes create plus review controls", async () => {
+  const testEnv = env();
+  const blocked = await call(testEnv, "/public/api/jobs/internal");
+  assert.equal(blocked.status, 403);
+  const session = await call(testEnv, "/public/api/jobs/internal/session", { method: "POST", headers: { "x-internal-token": "owner-test-token" }, body: {} });
+  assert.equal(session.status, 200, await session.text());
+  const rawCookie = session.headers.get("set-cookie");
+  assert.match(rawCookie, /mmd_pjb_owner=/);
+  assert.match(rawCookie, /HttpOnly/);
+  assert.match(rawCookie, /SameSite=Strict/);
+  const page = await call(testEnv, "/public/api/jobs/internal", { headers: { cookie: rawCookie.split(";", 1)[0] } });
+  const html = await page.text();
+  assert.equal(page.status, 200, html);
+  assert.match(html, /วางบรีฟตามภาษาที่เปอร์ใช้/);
+  assert.match(html, /บันทึกงาน/);
+  assert.match(html, /ผู้สนใจต่อ Job/);
+  assert.match(html, /รายการงาน/);
+  assert.match(html, /request_more_information/);
+  assert.match(html, /bind_to_existing_model/);
+});
+
+test("owner can list jobs and update status privacy plus budget disclosure server-side", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { confidentiality: false });
+  const headers = { "x-internal-token": "owner-test-token" };
+  let response = await call(testEnv, "/public/api/jobs/internal/jobs", { headers });
+  let body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.jobs.length, 1);
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true } });
+  body = await response.json();
+  assert.equal(body.job.public.world, "private");
+  assert.equal(body.job.public.budget_disclosure_approved, true);
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: false, budget_disclosure_approved: true } });
+  body = await response.json();
+  assert.equal(body.job.public.world, "public");
+  assert.equal(body.job.public.budget_disclosure_approved, false);
+});
+
+test("viewer events honor seven-day retention and WATCH classification", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { confidentiality: true });
+  const cookie = await anonymousCookie(testEnv);
+  const viewerKey = [...testEnv.PUBLIC_ACCESS_EVIDENCE.rows.keys()].find((key) => key.includes("/viewers/"));
+  const record = JSON.parse(new TextDecoder().decode(testEnv.PUBLIC_ACCESS_EVIDENCE.rows.get(viewerKey).bytes));
+  record.events = Array.from({ length: 100 }, (_, i) => ({ type: "brief_open", job_id: "OLD", world: "private", at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000 - i).toISOString() }));
+  await testEnv.PUBLIC_ACCESS_EVIDENCE.put(viewerKey, JSON.stringify(record));
+  for (let i = 0; i < 3; i += 1) assert.equal((await call(testEnv, "/public/api/jobs/JOB-20261001-DEMO01", { headers: { cookie } })).status, 200);
+  const owner = await call(testEnv, "/public/api/jobs/internal/viewers", { headers: { "x-internal-token": "owner-test-token" } });
+  const viewer = (await owner.json()).viewers[0];
+  assert.equal(viewer.alert_level, "WATCH");
+  assert.equal(viewer.events.some((event) => event.job_id === "OLD"), false);
+  assert.ok(viewer.events.length <= 100);
+});
+
+test("responsive board contract is four cards on desktop and two on mobile", async () => {
+  const testEnv = env();
+  await ownerCreate(testEnv, { confidentiality: false });
+  const page = await (await call(testEnv, "/public/api/jobs")).text();
+  assert.match(page, /grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(page, /@media\(max-width:640px\)[\s\S]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+});
+
+test("job-board preflight allows the upload method and credentialed exact origin", async () => {
+  const response = await worker.fetch(new Request("https://sigil.mmdbkk.com/public/api/jobs", { method: "OPTIONS", headers: { origin: "https://sigil.mmdbkk.com" } }), env({ ALLOWED_ORIGINS: "https://sigil.mmdbkk.com" }));
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get("access-control-allow-methods"), /PUT/);
+  assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+});
+
+test("existing public-access health route still delegates to the original worker", async () => {
+  const response = await call(env(), "/health", { headers: { origin: "https://sigil.mmdbkk.com" } });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.worker, "public-access-worker");
+  assert.equal(body.version, "v1");
 });
