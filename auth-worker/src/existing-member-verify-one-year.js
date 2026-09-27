@@ -40,8 +40,31 @@ export async function handleExistingMemberVerifyOneYear(request, env = {}) {
 
     const markedPackages = packages.filter((record) => text(record.fields?.campaign_code) === EXISTING_MEMBER_VERIFY_CAMPAIGN);
     const markedEntitlements = entitlements.filter((record) => text(record.fields?.source_ref) === sourceRef);
+    const protectedEntitlement = entitlements.find((record) => {
+      const fields = record.fields || {};
+      const access = token(fields.access_status || fields.member_lifecycle_status);
+      if (["expired", "revoked", "blocked", "cancelled", "inactive", "denied"].includes(access)) return false;
+      const marker = [
+        fields.capability,
+        fields.entitlement_level,
+        fields.member_status,
+        fields.package_code,
+        fields.membership_label,
+      ].map(token).join("_");
+      return /(?:^|_)(?:vip|svip|black_card|blackcard)(?:_|$)/.test(marker);
+    });
     if (markedPackages.length > 1 || markedEntitlements.length > 1) {
       return response({ ok: false, error: "existing_verify_conflict" }, 409);
+    }
+    if (!markedPackages.length && !markedEntitlements.length && protectedEntitlement) {
+      return response({
+        ok: true,
+        data: {
+          eligible: false,
+          reason: "protected_entitlement_policy",
+          protected_policy_unchanged: true,
+        },
+      });
     }
 
     let packageCode = normalizedPackage(markedPackages[0]?.fields?.package_code);
@@ -52,10 +75,19 @@ export async function handleExistingMemberVerifyOneYear(request, env = {}) {
     }
     activeThrough ||= entitlementThrough;
 
-    const basePackage = packages.find((record) => {
+    const today = bangkokDate(new Date());
+    const basePackages = packages.filter((record) => {
       if (text(record.fields?.campaign_code) === EXISTING_MEMBER_VERIFY_CAMPAIGN) return false;
       return SUPPORTED_PACKAGES.has(normalizedPackage(record.fields?.package_code));
     });
+    const futurePackages = basePackages
+      .filter((record) => {
+        const status = token(record.fields?.status);
+        const expiry = calendarDate(record.fields?.end_date);
+        return ["active", "grace", "grace_period"].includes(status) && expiry && expiry >= today;
+      })
+      .sort((a, b) => calendarDate(b.fields?.end_date).localeCompare(calendarDate(a.fields?.end_date)));
+    const basePackage = futurePackages[0] || basePackages[0];
 
     if (!packageCode) packageCode = normalizedPackage(basePackage?.fields?.package_code);
     if (!SUPPORTED_PACKAGES.has(packageCode)) {
@@ -69,7 +101,6 @@ export async function handleExistingMemberVerifyOneYear(request, env = {}) {
       });
     }
 
-    const today = bangkokDate(new Date());
     const previousExpiry = calendarDate(basePackage?.fields?.end_date);
     const baseStatus = token(basePackage?.fields?.status);
     const baseAnchor = ["active", "grace", "grace_period"].includes(baseStatus) && previousExpiry && previousExpiry >= today
@@ -131,7 +162,7 @@ export async function handleExistingMemberVerifyOneYear(request, env = {}) {
         campaign_source: "my_mmd_verify",
         campaign_claim_id: claimId,
         extension_months: 12,
-        previous_expire_at: previousExpiry || undefined,
+        previous_expire_at: previousExpiry ? `${previousExpiry}T16:59:59.000Z` : undefined,
         benefit_applied_at: appliedAt,
         new_expire_at: `${activeThrough}T16:59:59.000Z`,
         membership_expiry_rule: "one_calendar_year_from_existing_expiry_or_verify",
