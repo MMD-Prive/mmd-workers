@@ -38,4 +38,15 @@ export const MODEL_MEDIA_UPLOAD_JS = `(() => {
   privateConsent.addEventListener('change',()=>{privateButton.disabled=!privateQueue.length||!privateConsent.checked});
   privateButton.addEventListener('click',async()=>{privateButton.disabled=true;for(const item of privateQueue)await uploadPrivate(item);privateButton.disabled=!privateQueue.some(x=>x.status==='error')});
   readBack().then(()=>{const draft=loadDraft();if(draft.length)say('กู้สถานะรายการเดิมแล้ว · ตรวจสอบกับรายการจากเซิร์ฟเวอร์เรียบร้อย')}).catch(error=>say(error.message,true));
+})();
+(() => {
+  'use strict';
+  if (!/\\/(photos|profile)\\/?$/.test(location.pathname) || document.getElementById('mmd-card-status')) return;
+  const status=document.createElement('p');status.id='mmd-card-status';status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.hidden=true;
+  status.style.cssText='margin:16px auto;padding:14px 18px;max-width:736px;border:1px solid #514737;border-radius:14px;color:#eadcc3;background:#181715;font:14px/1.6 system-ui,sans-serif';
+  (document.querySelector('main')||document.body).prepend(status);
+  const labels={queued:'เลือกรูปหลักแล้ว กำลังเตรียมสร้างการ์ด',preparing:'กำลังเตรียมการ์ดของคุณ',generating:'กำลังสร้างภาพการ์ด ออกจากหน้านี้ได้',rendering:'กำลังจัดชื่อและข้อมูลบนการ์ด',awaiting_owner_review:'สร้างการ์ดแล้ว รอ MMD ตรวจภาพและข้อมูล',waiting_profile:'บันทึกรูปหลักแล้ว การ์ดรอข้อมูลโปรไฟล์จาก MMD',waiting_configuration:'บันทึกรูปหลักแล้ว การ์ดรอ MMD ดำเนินการ',source_changed:'รูปหลักหรือข้อมูลเปลี่ยนแล้ว MMD จะตรวจการ์ดอีกครั้ง',needs_review:'บันทึกรูปหลักแล้ว MMD จะตรวจงานสร้างการ์ด',paused:'บันทึกรูปหลักแล้ว งานสร้างการ์ดพักไว้ชั่วคราว'};
+  let count=0,timer;
+  async function refresh(){try{const response=await fetch('/v1/model/media/card-status',{credentials:'include',cache:'no-store'});if(response.status===401||response.status===403)return;const data=await response.json();if(data.ok&&data.enabled){status.hidden=false;status.textContent=data.job?labels[data.job.state]||'MMD กำลังตรวจสถานะการ์ด':'เลือกและบันทึกรูปหลักที่ผ่านการตรวจ แล้วระบบจะสร้างการ์ดให้หนึ่งครั้งอัตโนมัติ'}}catch{}if(++count<30)timer=setTimeout(refresh,20000)}
+  window.addEventListener('pagehide',()=>clearTimeout(timer));refresh();
 })();`;

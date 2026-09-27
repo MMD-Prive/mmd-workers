@@ -52,3 +52,48 @@ GitHub remains source truth; Workers remain runtime authority; Webflow remains p
 - GWs and EMs retain RUN NUMBER, height/weight, and a required 1–2 line Title Bar. All other private cards show model name and metrics without run code.
 - Travel and Extreme render as public `MMD PRIVÉ` collection cards; they suppress individual-model and metric fields.
 - This pack preserves the Upload → Review → Final Preview flow and does not add production publication authority.
+
+## Automatic profile-card inbox — 2026-09-27
+
+The automatic 1322 × 1200 drafts are a separate inbox beside the existing
+manual/My Card intake. They use the owner's current design contract in
+`docs/model/MMD_APP_AUTOMATIC_CARD_DRAFTS.md`; the earlier manual template pack
+is not the automatic renderer.
+
+- HTML: `auto-card-inbox.html`, root `#mmd-auto-card-inbox`.
+- CSS: `auto-card-inbox.css`, fully scoped with final contrast protection.
+- JavaScript: `auto-card-inbox.js`, guarded initialization, same-origin cookie
+  auth, fixed endpoint validation, 20-second timeouts, serialized actions,
+  defensive JSON/PNG parsing and private object-URL cleanup.
+- Tests: `auto-card-inbox.test.mjs`, runs the actual HTML/JS in a DOM harness.
+
+Webflow draft connection was read back and matched on 2026-09-27:
+site `68f879d546d2f4e2ab186e90`, Upload page `6a1be738a8018a51046e5335`.
+New HtmlEmbed `41eef2d7-b8dc-70c2-eb57-632c620d3b4e` sits directly before
+`muUploadForm` within the existing page. CSS is appended to page head as
+`mmd-auto-card-inbox-css-v1`; minified JS is appended last in page footer as
+`mmd-auto-card-inbox-js-v1`. Existing page code was preserved byte for byte.
+The saved footer is 49,881 characters, below Webflow's accepted limit; do not
+append more code without checking the limit or moving to a hosted asset.
+
+The new module does not navigate or rewrite the Studio URL. Login retry retains
+the original path/query, including `t`. Worker cookies and existing server
+authorization remain authoritative. Every API request is authenticated; a
+401/403 clears displayed drafts, a 404 reports an unavailable backend, and
+`enabled: false` reports paused generation while allowing existing previews.
+No browser secrets, photo persistence or public image URLs are introduced.
+
+No production publish, merge, paid generation or feature activation has been
+performed. API key, approved logo objects and Browser Run readiness remain
+activation prerequisites. Read-back and 7 DOM + 83 backend tests passed;
+a live authenticated end-to-end run and visual browser check remain unverified.
+
+Rollback the draft integration by removing this new embed and the two exact
+marked style/script blocks only. Preserve all existing Upload controllers.
+
+UI test command after installing `linkedom@0.18.12` to a temporary directory:
+
+```sh
+MMD_CARD_DOM_MODULE=/tmp/mmd-card-ui/node_modules/linkedom/esm/index.js \
+  node --test webflow/internal/admin/studio/auto-card-inbox.test.mjs
+```
