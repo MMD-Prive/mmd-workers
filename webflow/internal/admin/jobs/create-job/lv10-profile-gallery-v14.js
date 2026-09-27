@@ -1,7 +1,7 @@
 // Create Job LV7 Profile Photo gallery
 // Mobile-first. Desktop dialog intentionally capped at 680px / 78vh.
 // Reads up to 8 canonical Profile Photo attachments.
-// Empty Client galleries can sync the current LINE profile image into the rolling Profile Photo album.
+// Every Client gallery open reconciles the current LINE picture into the rolling Profile Photo album.
 
 <script id="mmd-create-job-lv7-profile-gallery">
 (()=>{'use strict';
@@ -35,20 +35,20 @@ function paint(){const m=modal(),img=m.querySelector('[data-g-image]');if(!activ
 function open(record,focus){const list=photos(record);if(!list.length)return;active=list;idx=0;lastFocus=focus||document.activeElement;const m=modal();m.querySelector('[data-g-name]').textContent=nameOf(record);m.querySelector('[data-g-meta]').textContent='Profile Photo · สูงสุด 8 รูป';m.classList.add('is-open');m.setAttribute('aria-hidden','false');document.documentElement.style.overflow='hidden';paint();m.querySelector('[data-g-close]').focus()}
 function note(msg,tone='ok'){const n=root.querySelector('[data-cj="notice"]');if(!n)return;n.textContent=msg;n.className='mmd-cj__alert is-'+tone}
 async function openClient(record,focus){
-  if(photos(record).length){open(record,focus);return}
-  if(!record?.client_id){note('ยังไม่มีรูปโปรไฟล์ของลูกค้ารายนี้','warn');return}
+  if(!record?.client_id){if(photos(record).length)open(record,focus);else note('ยังไม่มีรูปโปรไฟล์ของลูกค้ารายนี้','warn');return}
   if(focus?.dataset?.busy==='1')return;
-  if(focus){focus.dataset.busy='1';focus.classList.add('is-busy');focus.textContent='…'}
+  if(focus){focus.dataset.busy='1';focus.classList.add('is-busy')}
   try{
     const res=await fetch('/v1/admin/clients/profile-photo/sync',{method:'POST',credentials:'include',cache:'no-store',headers:{'content-type':'application/json'},body:JSON.stringify({client_id:record.client_id})});
     const body=await res.json().catch(()=>({}));
-    if(!res.ok||body.ok===false){note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn');return}
-    record.profile_photos=Array.isArray(body.profile_photos)?body.profile_photos.slice(0,8):[];
-    record.profile_image_url=record.profile_photos[0]||'';
-    if(record.profile_photos.length){schedule();open(record,focus);note(body.added?'บันทึกรูป LINE ล่าสุดเข้า Profile Photo แล้ว':'เปิดอัลบั้ม Profile Photo แล้ว','ok')}
-    else note(body.reason==='client_line_user_id_missing'?'ลูกค้ารายนี้ยังไม่มี LINE User ID สำหรับดึงรูป':'ยังไม่มีรูป Profile Photo ของลูกค้ารายนี้','warn')
-  }catch{note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn')}
+    if(res.ok&&body.ok!==false){
+      const synced=Array.isArray(body.profile_photos)?body.profile_photos.slice(0,8):[];
+      if(synced.length){record.profile_photos=synced;record.profile_image_url=synced[0];schedule()}
+      if(body.added)note('บันทึกรูป LINE ล่าสุดเข้า Profile Photo แล้ว','ok')
+    }else if(!photos(record).length){note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn');return}
+  }catch{if(!photos(record).length){note('โหลดรูปโปรไฟล์ไม่สำเร็จ','warn');return}}
   finally{if(focus){delete focus.dataset.busy;focus.classList.remove('is-busy')}}
+  if(photos(record).length)open(record,focus);else note('ยังไม่มีรูป Profile Photo ของลูกค้ารายนี้','warn')
 }
 function close(){const m=modal();m.classList.remove('is-open');m.setAttribute('aria-hidden','true');document.documentElement.style.overflow='';lastFocus?.focus?.();active=[]}
 function move(d){if(active.length<2)return;idx=(idx+d+active.length)%active.length;paint()}
