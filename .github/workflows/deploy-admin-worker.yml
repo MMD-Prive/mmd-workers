@@ -393,6 +393,7 @@ jobs:
             "/v1/public/kenji/knowledge/published*",
             "/v1/admin/job/create",
             "/v1/admin/job/owner-grant",
+            "/v1/admin/clients/profile-photo/sync",
             "/v1/admin/kenji/control/memory*",
             "/v1/admin/kenji/control/conversations*",
             "/v1/admin/kenji/control/approvals*",
