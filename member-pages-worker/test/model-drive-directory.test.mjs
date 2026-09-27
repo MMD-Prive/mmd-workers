@@ -222,6 +222,39 @@ test("Drive search end-to-end collapses live-shaped EMs16 Gohan root over Review
   assert.equal(items[0].folder_scope_key, `exclusive:drive:${rootId}`);
 });
 
+test("legacy Premium Package ancestry resolves Captain S as private", async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const captainId = "1qCjlnkYE1AwWa7zGpnxgsEcTHxC50dL8";
+  const topId = "1TR75xlefbGXn6smZGSXt8KTRkRbt2W5t";
+  const gayId = "1hcqTu6dxOsDPX0Y8Rr2S3nWFLuTcSak-";
+  const premiumVipId = "120aBvt35VnzgtXdyiAIzplfcTa5HawTf";
+  const legacyPremiumRoot = "1yBlMsAsccJrNhLEwlquupZJzIbHdEVp4";
+  const files = new Map([
+    [captainId, { id: captainId, name: "Captain S", parents: [topId], mimeType: "application/vnd.google-apps.folder", trashed: false }],
+    [topId, { id: topId, name: "Top", parents: [gayId], mimeType: "application/vnd.google-apps.folder", trashed: false }],
+    [gayId, { id: gayId, name: "Gay", parents: [premiumVipId], mimeType: "application/vnd.google-apps.folder", trashed: false }],
+    [premiumVipId, { id: premiumVipId, name: "Premium - VIP Models", parents: [legacyPremiumRoot], mimeType: "application/vnd.google-apps.folder", trashed: false }],
+    [legacyPremiumRoot, { id: legacyPremiumRoot, name: "Premium Package", parents: ["1LZfqh6wCxW7w0n6SFNwaADUaxap1aYdD"], mimeType: "application/vnd.google-apps.folder", trashed: false }],
+  ]);
+
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const id = decodeURIComponent(url.pathname.split("/").pop());
+    const folder = files.get(id);
+    return folder
+      ? Response.json(folder)
+      : Response.json({ error: "not_found" }, { status: 404 });
+  };
+
+  const item = await resolveApprovedModelFolder("test-token", captainId, {});
+  assert.equal(item?.lane, "private");
+  assert.equal(item?.folder_name, "Captain S");
+  assert.equal(item?.approved_root_id, legacyPremiumRoot);
+  assert.equal(item?.folder_path, "Premium Package / Premium - VIP Models / Gay / Top / Captain S");
+});
+
 test("Drive search resolves a bounded, best-name-ranked folder set", async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => { globalThis.fetch = originalFetch; });

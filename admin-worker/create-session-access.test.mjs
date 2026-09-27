@@ -18,6 +18,45 @@ const env = {
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_ACCESS_LOG: "access_log",
   AIRTABLE_FAST_TRUST_LINE_OFC_STAGING_TABLE: "fast_trust_staging",
+  MODEL_DRIVE_DIRECTORY: {
+    async fetch(request) {
+      const url = new URL(request.url);
+      if (url.pathname === "/__internal/model-drive/search") {
+        const q = String(url.searchParams.get("q") || "").toLowerCase();
+        if (q.includes("film j")) {
+          return jsonResponse({
+            ok: true,
+            items: [{
+              drive_folder_id: "1FilmJDriveFolder001",
+              drive_folder_url: "https://drive.google.com/drive/folders/1FilmJDriveFolder001",
+              folder_name: "Film J",
+              folder_path: "MMD Public Models/MMD Travel Models/Straight/Film J",
+              folder_scope_key: "public:travel:straight:film-j",
+              lane: "public",
+            }],
+          });
+        }
+        return jsonResponse({ ok: true, items: [] });
+      }
+      if (url.pathname === "/__internal/model-drive/resolve") {
+        const body = await request.json();
+        if (body.drive_folder_id === "1FilmJDriveFolder001") {
+          return jsonResponse({
+            ok: true,
+            item: {
+              drive_folder_id: "1FilmJDriveFolder001",
+              drive_folder_url: "https://drive.google.com/drive/folders/1FilmJDriveFolder001",
+              folder_name: "Film J",
+              folder_path: "MMD Public Models/MMD Travel Models/Straight/Film J",
+              folder_scope_key: "public:travel:straight:film-j",
+              lane: "public",
+            },
+          });
+        }
+      }
+      return jsonResponse({ ok: false, error: "not_found" }, 404);
+    },
+  },
 };
 
 const future = "2099-01-01";
@@ -194,13 +233,21 @@ function model(id, name, accessFolder, lane) {
 
 function installAirtableMock() {
   const calls = [];
-  globalThis.fetch = async (input) => {
+  let createdModelSeq = 0;
+  globalThis.fetch = async (input, init = {}) => {
     const url = new URL(String(input));
     calls.push(url);
     const parts = url.pathname.split("/").filter(Boolean);
     const table = decodeURIComponent(parts[2] || "");
     const id = parts[3] ? decodeURIComponent(parts[3]) : "";
     const records = tables[table] || [];
+
+    if ((init.method || "GET").toUpperCase() === "POST") {
+      const payload = JSON.parse(String(init.body || "{}"));
+      const record = { id: `recCreatedDrive${String(++createdModelSeq).padStart(6, "0")}`, fields: payload.fields || {} };
+      records.push(record);
+      return jsonResponse(record, 200);
+    }
 
     if (id) {
       const record = records.find((item) => item.id === id);
@@ -422,6 +469,17 @@ assert.equal((await routeRes.json()).ok, true);
 
 const publicSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&selected_access_folder=travel"));
 assert.deepEqual(publicSearch.items.map((item) => item.model_name), ["Public Travel"]);
+
+const publicDriveSearch = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&booking_visibility=public&customer_lane=straight&selected_access_folder=travel&q=Film%20J"));
+assert.equal(publicDriveSearch.layer, "owner_discovery");
+assert.equal(publicDriveSearch.owner_discovery, true);
+assert.deepEqual(publicDriveSearch.items.map((item) => item.model_name), ["Film J"]);
+assert.deepEqual(publicDriveSearch.items[0].folders, ["travel"]);
+assert.equal(publicDriveSearch.items[0].orientation, "straight");
+assert.equal(publicDriveSearch.items[0].drive_materialized, true);
+
+const publicDriveSearchAgain = await searchCreateSessionModels(env, new URL("https://worker/v1/admin/models/search?work_type=public&booking_visibility=public&customer_lane=straight&selected_access_folder=travel&q=film%20j"));
+assert.deepEqual(publicDriveSearchAgain.items.map((item) => item.model_name), ["Film J"]);
 
 {
   const result = await enforcePrivateCreateAccess(

@@ -12,6 +12,16 @@ const DEFAULT_PUBLIC_ROOT = "1pr8X4sk7A_5vPZxG5syp5fmgEs9fZF77";
 const DEFAULT_PRIVATE_ROOT = "1IfEdWQ3hR-k1klfVJEtBgzWYRJCloRyr";
 const DEFAULT_EXCLUSIVE_ROOT = "1j1NRB44PboVQR91M8-17Vb8kcCTCLS97";
 
+// Owner-confirmed legacy/mirrored MMD Catalogue tree. These exact roots are
+// discovery-only compatibility roots; authority still comes from bounded Drive ancestry.
+const LEGACY_CATALOG_ROOT = "1LZfqh6wCxW7w0n6SFNwaADUaxap1aYdD";
+const LEGACY_PUBLIC_ROOT = "1FMIaPITpJ7JGBBb6yiPQnTFOQiPNxLJy";
+const LEGACY_PRIVATE_ROOTS = [
+  "1C7f3rLffbuRgD3VlqKZ_B9MbWratqFKI", // Standard Package
+  "1yBlMsAsccJrNhLEwlquupZJzIbHdEVp4", // Premium Package
+];
+const LEGACY_EXCLUSIVE_ROOT = "1HBz2peUnSwT2ADNVdSebm03iqoDhTzgK";
+
 export const MODEL_DRIVE_DIRECTORY_HOST = INTERNAL_HOST;
 export const MODEL_DRIVE_SEARCH_PATH = SEARCH_PATH;
 export const MODEL_DRIVE_RESOLVE_PATH = RESOLVE_PATH;
@@ -196,28 +206,15 @@ export async function resolveApprovedModelFolder(accessToken, folderId, env = {}
   for (let depth = 0; depth < 14; depth += 1) {
     const parentId = Array.isArray(cursor.parents) ? clean(cursor.parents[0], 160) : "";
     if (!parentId || visited.has(parentId)) break;
-    if (parentId === roots.public) {
-      matchedLane = "public";
+    const approvedLane = approvedLaneForParent(parentId, roots);
+    if (approvedLane) {
+      matchedLane = approvedLane;
       matchedRootId = parentId;
       const root = await driveGetFolder(accessToken, parentId);
       if (root) chain.push(root);
       break;
     }
-    if (parentId === roots.private) {
-      matchedLane = "private";
-      matchedRootId = parentId;
-      const root = await driveGetFolder(accessToken, parentId);
-      if (root) chain.push(root);
-      break;
-    }
-    if (parentId === roots.exclusive) {
-      matchedLane = "exclusive";
-      matchedRootId = parentId;
-      const root = await driveGetFolder(accessToken, parentId);
-      if (root) chain.push(root);
-      break;
-    }
-    if (parentId === roots.catalog) break;
+    if (parentId === roots.catalog || roots.legacyCatalog.includes(parentId)) break;
 
     const parent = await driveGetFolder(accessToken, parentId);
     if (!parent) break;
@@ -248,7 +245,21 @@ function approvedRoots(env) {
     public: clean(env.DRIVE_MODEL_PUBLIC_ROOT_FOLDER_ID || DEFAULT_PUBLIC_ROOT, 160),
     private: clean(env.DRIVE_MODEL_PRIVATE_ROOT_FOLDER_ID || DEFAULT_PRIVATE_ROOT, 160),
     exclusive: clean(env.DRIVE_MODEL_EXCLUSIVE_ROOT_FOLDER_ID || DEFAULT_EXCLUSIVE_ROOT, 160),
+    legacyCatalog: [clean(env.DRIVE_MODEL_LEGACY_CATALOG_ROOT_FOLDER_ID || LEGACY_CATALOG_ROOT, 160)].filter(Boolean),
+    legacyPublic: [clean(env.DRIVE_MODEL_LEGACY_PUBLIC_ROOT_FOLDER_ID || LEGACY_PUBLIC_ROOT, 160)].filter(Boolean),
+    legacyPrivate: String(env.DRIVE_MODEL_LEGACY_PRIVATE_ROOT_FOLDER_IDS || LEGACY_PRIVATE_ROOTS.join(","))
+      .split(",").map((value) => clean(value, 160)).filter(Boolean),
+    legacyExclusive: [clean(env.DRIVE_MODEL_LEGACY_EXCLUSIVE_ROOT_FOLDER_ID || LEGACY_EXCLUSIVE_ROOT, 160)].filter(Boolean),
   };
+}
+
+function approvedLaneForParent(parentId, roots) {
+  const id = clean(parentId, 160);
+  if (!id) return "";
+  if (id === roots.public || roots.legacyPublic.includes(id)) return "public";
+  if (id === roots.private || roots.legacyPrivate.includes(id)) return "private";
+  if (id === roots.exclusive || roots.legacyExclusive.includes(id)) return "exclusive";
+  return "";
 }
 
 async function streamApprovedModelPhoto(accessToken, folderId, exactFileName = "", sourceLabel = "google-drive-approved-root") {

@@ -42,6 +42,10 @@ import {
   isCreateSessionClientLineageRequest,
 } from "./create-session-client-lineage-runtime.js";
 import {
+  listUnifiedModelLineCandidates,
+  materializeApprovedDriveModel,
+} from "./unified-model-drive-link.js";
+import {
   getAllowedModelSessionActions,
   normalizeModelSessionAction,
   normalizeSessionState,
@@ -5389,17 +5393,51 @@ async function resolveCanonicalPrivateMemberAccess(env, member, memberFields, id
   };
 }
 
+function modelPublicDiscoveryContext(fields = {}) {
+  const source = accessToken([
+    fields.service_layer,
+    fields.job_types,
+    fields.public_category,
+    fields["MMD Public Category"],
+    fields.source_folder,
+    fields.folder_path,
+    fields.folder_name,
+    fields.folder_scope_key,
+  ].filter(Boolean).join(" "));
+  const tokens = new Set(source.split("_").filter(Boolean));
+  const folders = [];
+  if (tokens.has("travel")) folders.push("travel");
+  if (tokens.has("extreme")) folders.push("extreme");
+
+  let lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  if (!lane) {
+    if (tokens.has("straight")) lane = "straight";
+    else if (tokens.has("gay")) lane = "gay";
+    else if (tokens.has("both") || tokens.has("bi")) lane = "both";
+  }
+  return { source, folders, lane };
+}
+
 function modelAccessProfile(fields = {}) {
   const rawTags = []
     .concat(Array.isArray(fields.legacy_tags) ? fields.legacy_tags : String(fields.legacy_tags || "").split(/[,\n]/))
     .concat(Array.isArray(fields.tags) ? fields.tags : String(fields.tags || "").split(/[,\n]/));
   const tags = new Set(rawTags.map(accessToken).filter(Boolean));
+  const publicContext = modelPublicDiscoveryContext(fields);
+  const canWorkPublic =
+    fields.can_work_public === true ||
+    ["1", "true", "yes", "public", "allowed", "approved"].includes(accessToken(fields.can_work_public));
 
   const visibilityToken = accessToken(fields.booking_visibility);
   const salesLayer = accessToken(fields.sales_layer);
   let bookingVisibility = "";
   if (visibilityToken === "private" || salesLayer.includes("private")) bookingVisibility = "private";
-  else if (visibilityToken === "public" || salesLayer.includes("public")) bookingVisibility = "public";
+  else if (
+    visibilityToken === "public" ||
+    salesLayer.includes("public") ||
+    canWorkPublic ||
+    publicContext.folders.length
+  ) bookingVisibility = "public";
 
   let accessFolder = accessToken(fields.access_folder || fields.model_access_folder || fields.model_folder);
   if (!CANONICAL_PRIVATE_FOLDERS.has(accessFolder)) {
@@ -5412,11 +5450,11 @@ function modelAccessProfile(fields = {}) {
   }
 
   const serviceSource = accessToken([fields.service_layer, fields.job_types, fields.private_tier].filter(Boolean).join(" "));
-  const publicFolders = [];
-  if (serviceSource.includes("travel") || tags.has("travel")) publicFolders.push("travel");
-  if (serviceSource.includes("extreme") || tags.has("extreme")) publicFolders.push("extreme");
+  const publicFolders = publicContext.folders.slice();
+  if ((serviceSource.includes("travel") || tags.has("travel")) && !publicFolders.includes("travel")) publicFolders.push("travel");
+  if ((serviceSource.includes("extreme") || tags.has("extreme")) && !publicFolders.includes("extreme")) publicFolders.push("extreme");
 
-  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation);
+  const lane = normalizeCustomerLane(fields.customer_lane || fields.orientation_label || fields.orientation) || publicContext.lane;
   const statusActive = !MODEL_BLOCKED_STATUS_TOKENS.has(accessToken(fields.status));
   const availabilityToken = accessToken(fields.availability_status);
   const availableNow =
@@ -5438,7 +5476,6 @@ function modelAccessProfile(fields = {}) {
 
   return { bookingVisibility, accessFolder, publicFolders, lane, statusActive, availableNow, explicitlyUnavailable, ops };
 }
-
 function isDriveLazyPrivateModel(fields = {}) {
   const tag = accessToken(fields.raw_import_tag);
   const scope = accessToken(fields.folder_scope_key);
@@ -5476,6 +5513,68 @@ function sanitizeCreateSessionModel(record, profile) {
     status: !profile.statusActive ? "inactive" : profile.availableNow ? "available" : "active",
     available: profile.availableNow && !profile.explicitlyUnavailable,
     operational: { ...profile.ops },
+  };
+}
+
+async function discoverApprovedDrivePublicModel(env, url, selectedFolder, selectedLane) {
+  const q = str(url.searchParams.get("q") || url.searchParams.get("search") || "");
+  if (q.length < 2) return null;
+
+  const candidateUrl = new URL(url.toString());
+  candidateUrl.searchParams.set("lane", "public");
+  const unified = await listUnifiedModelLineCandidates(env, candidateUrl);
+  if (!unified.ok) return null;
+
+  const driveOnly = (Array.isArray(unified.items) ? unified.items : [])
+    .filter((item) => item?.source === "drive" && item?.materialized === false)
+    .filter((item) => {
+      const context = modelPublicDiscoveryContext({
+        can_work_public: true,
+        source_folder: item?.folder_path,
+        folder_name: item?.folder_name || item?.working_name,
+        folder_scope_key: item?.folder_scope_key,
+      });
+      if (selectedFolder && !context.folders.includes(selectedFolder)) return false;
+      if (selectedLane && context.lane && context.lane !== selectedLane && context.lane !== "both") return false;
+      return true;
+    });
+
+  const normalizeName = (value) => String(value == null ? "" : value)
+    .normalize("NFKC")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9ก-๙]+/g, "");
+  const qNorm = normalizeName(q);
+  const exact = qNorm
+    ? driveOnly.filter((item) => normalizeName(item?.folder_name || item?.working_name) === qNorm)
+    : [];
+  const selectable = exact.length === 1 ? exact : driveOnly;
+  if (selectable.length !== 1) return null;
+
+  const chosen = selectable[0];
+  const materialized = await materializeApprovedDriveModel(
+    env,
+    chosen.drive_folder_id,
+    { id: "public_model_owner_discovery" },
+  );
+  if (!materialized.ok || !materialized.record?.id) return null;
+
+  const fields = materialized.record.fields || {};
+  const profile = modelAccessProfile(fields);
+  if (!profile.statusActive || profile.bookingVisibility === "private") return null;
+  if (selectedFolder && !profile.publicFolders.includes(selectedFolder)) return null;
+  if (selectedLane && profile.lane && profile.lane !== selectedLane && profile.lane !== "both") return null;
+
+  const item = sanitizeCreateSessionModel(materialized.record, profile);
+  if (!item.model_name) return null;
+  return {
+    ...item,
+    source: materialized.materialized
+      ? "owner_approved_drive_lazy_materialized_public_v1"
+      : "owner_canonical_inventory_public_drive_v1",
+    drive_folder_id: str(chosen.drive_folder_id),
+    drive_folder_url: str(chosen.drive_folder_url),
+    drive_materialized: materialized.materialized === true,
   };
 }
 
@@ -5758,8 +5857,25 @@ async function searchCreateSessionModels(env, url) {
     if (items.length >= limit) break;
   }
 
-  const out = { ok: true, layer: "core", booking_visibility: bookingVisibility, folder: selectedFolder, customer_lane: lane, items };
+  let publicRecovery = null;
+  if (bookingVisibility !== "private" && q.length >= 2 && items.length === 0) {
+    publicRecovery = await discoverApprovedDrivePublicModel(env, url, selectedFolder, lane);
+    if (publicRecovery) items.push(publicRecovery);
+  }
+
+  const out = {
+    ok: true,
+    layer: publicRecovery ? "owner_discovery" : "core",
+    booking_visibility: bookingVisibility,
+    folder: selectedFolder,
+    customer_lane: lane,
+    items,
+  };
   if (memberSummary) out.private_access = memberSummary;
+  if (publicRecovery) {
+    out.owner_discovery = true;
+    out.discovery_reason = "approved_drive_public_inventory_recovery";
+  }
   return out;
 }
 
