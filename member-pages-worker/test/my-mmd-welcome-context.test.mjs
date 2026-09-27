@@ -62,8 +62,9 @@ test("welcome context returns only resolver-proven active Private eligibility wi
   const payload = await response.json();
 
   assert.equal(response.status, 200);
-  assert.deepEqual(payload, { ok: true, data: { tier: "VIP", membership_status: "active" } });
+  assert.deepEqual(payload, { ok: true, data: { tier: "VIP", membership_status: "active", audience: "existing" } });
   assert.equal(response.headers.get("x-mmd-member-display-authority"), "my_mmd_entitlement_resolver_v1");
+  assert.equal(response.headers.get("x-mmd-welcome-audience-authority"), "canonical_member_profile");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(fixture.resolverCalls.length, 1);
   assert.equal(fixture.resolverCalls[0].method, "POST");
@@ -75,12 +76,12 @@ test("missing protected entitlement and missing session remain Public", async ()
   const fixture = await makeEnv({ entitlement: false });
   const response = await handleMyMmdWelcomeContext(new Request("https://mmdbkk.com/member/api/liff/welcome-context", { headers: { cookie: fixture.cookie } }), fixture.env);
   const payload = await response.json();
-  assert.deepEqual(payload, { ok: true, data: { tier: "", membership_status: "" } });
+  assert.deepEqual(payload, { ok: true, data: { tier: "", membership_status: "", audience: "existing" } });
   assert.equal(response.headers.get("x-mmd-member-display-authority"), null);
 
   const anonymous = await handleMyMmdWelcomeContext(new Request("https://mmdbkk.com/member/api/liff/welcome-context"), fixture.env);
   assert.equal(anonymous.status, 200);
-  assert.deepEqual(await anonymous.json(), { ok: true, data: { tier: "", membership_status: "" } });
+  assert.deepEqual(await anonymous.json(), { ok: true, data: { tier: "", membership_status: "", audience: "new" } });
 });
 
 test("invalid request shape, cross-origin request and unavailable resolver fail closed", async () => {
