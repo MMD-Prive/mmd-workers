@@ -573,13 +573,17 @@ export async function handleStart(request, env = {}) {
     if (!verifyBenefit.ok) {
       return json({ ok: false, error: { code: "MEMBER_VERIFY_BENEFIT_FAILED", message: "Member Verify could not be completed safely. Please try again." } }, 503);
     }
-    if (verifyBenefit.data?.eligible === true) {
-      const refreshed = await resolveMemberIdentity(env, verified.sub);
-      if (!refreshed.ok || refreshed.exists !== true || !refreshed.profile) {
-        return json({ ok: false, error: { code: "MEMBER_VERIFY_REFRESH_FAILED", message: "Verified membership could not be refreshed safely." } }, 503);
+    if (verifyBenefit.data?.eligible === true && memberState.profile) {
+      const activeThrough = String(verifyBenefit.data.active_through || "").slice(0, 10);
+      memberState.profile.membership_status = "active";
+      if (activeThrough) {
+        memberState.profile.membership_expires_at = activeThrough;
+        memberState.profile.active_through = activeThrough;
       }
-      memberState.member_id = refreshed.member_id;
-      memberState.profile = refreshed.profile;
+      if (memberState.profile.customer_360?.member) {
+        memberState.profile.customer_360.member.membership_status = "active";
+        if (activeThrough) memberState.profile.customer_360.member.membership_expires_at = activeThrough;
+      }
     }
   }
 
