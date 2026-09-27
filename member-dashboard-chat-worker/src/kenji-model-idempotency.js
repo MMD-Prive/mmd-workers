@@ -67,7 +67,7 @@ export class KenjiModelIdempotency {
         ? { ...current, alert_sent: true, alert_status: result.status || 200, alerted_at: now }
         : { ...current, alert_sent: false, alert_reason: result.reason, next_alert_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
-      await txn.setAlarm(result.sent ? current.expires_at : next.next_alert_at);
+      await this.state.storage.setAlarm(result.sent ? current.expires_at : next.next_alert_at);
     });
     return result.sent;
   }
@@ -88,7 +88,7 @@ export class KenjiModelIdempotency {
         ? { ...current, cleanup_pending: false, cleanup_completed_at: now }
         : { ...current, cleanup_pending: true, next_cleanup_at: now + CAMPAIGN_INGRESS_ALERT_RETRY_MS };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
-      await txn.setAlarm(result.ok === true ? current.expires_at : next.next_cleanup_at);
+      await this.state.storage.setAlarm(result.ok === true ? current.expires_at : next.next_cleanup_at);
     });
     return result.ok === true;
   }
@@ -100,7 +100,7 @@ export class KenjiModelIdempotency {
       if (!current || current.status !== "pending" || Number(current.next_attempt_at) > now) return null;
       const next = { ...current, status: "processing", lease_token: crypto.randomUUID(), lease_expires_at: now + 60_000 };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
-      await txn.setAlarm(next.lease_expires_at);
+      await this.state.storage.setAlarm(next.lease_expires_at);
       return next;
     });
     if (!entry) return { ok: true, processed: false };
@@ -120,7 +120,7 @@ export class KenjiModelIdempotency {
       if (current?.status === "cancelled" && current.event_id === entry.event_id) {
         const next = { ...current, cleanup_pending: true, next_cleanup_at: completedAt };
         await txn.put(CAMPAIGN_INGRESS_KEY, next);
-        await txn.setAlarm(completedAt);
+        await this.state.storage.setAlarm(completedAt);
         return "cancelled";
       }
       if (current?.status !== "processing" || current.lease_token !== entry.lease_token) return current?.status || "missing";
@@ -130,7 +130,7 @@ export class KenjiModelIdempotency {
           ? { event_id: entry.event_id, receipt_id: entry.receipt_id, event: entry.event, status: "dead", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), alert_sent: false, next_alert_at: completedAt, expires_at: completedAt + CAMPAIGN_INGRESS_DEAD_TTL_MS }
           : { ...entry, status: "pending", attempts, reason: String(outcome.reason || "processor_failed").slice(0, 80), next_attempt_at: completedAt + delay };
       await txn.put(CAMPAIGN_INGRESS_KEY, next);
-      await txn.setAlarm(next.expires_at || next.next_attempt_at);
+      await this.state.storage.setAlarm(next.expires_at || next.next_attempt_at);
       return next.status;
     });
     if (finalStatus === "cancelled") await this.cleanupCampaignIngressUnsend();
@@ -172,7 +172,7 @@ export class KenjiModelIdempotency {
           const entry = await txn.get(CAMPAIGN_INGRESS_KEY);
           if (entry?.status !== "dead" || !entry.event) return false;
           await txn.put(CAMPAIGN_INGRESS_KEY, { ...entry, status: "pending", attempts: 0, reason: "", next_attempt_at: Date.now() });
-          await txn.setAlarm(Date.now() + 1000);
+          await this.state.storage.setAlarm(Date.now() + 1000);
           return true;
         });
         return json({ ok: true, reprocessed: changed });
@@ -196,7 +196,7 @@ export class KenjiModelIdempotency {
             cleanup_pending: ["processing", "done", "dead"].includes(existing?.status),
             expires_at: now + CAMPAIGN_INGRESS_DONE_TTL_MS,
           });
-          await txn.setAlarm(now + CAMPAIGN_INGRESS_DONE_TTL_MS);
+          await this.state.storage.setAlarm(now + CAMPAIGN_INGRESS_DONE_TTL_MS);
           return { ok: true, cancelled: true, previous_status: existing?.status || "missing" };
         });
         if (!result.ok) return json(result, 409);
@@ -207,7 +207,9 @@ export class KenjiModelIdempotency {
       }
       if (action !== "enqueue") return json({ ok: false, error: "invalid_action" }, 400);
       const event = input?.event;
-      const eventId = String(event?.webhookEventId || event?.message?.id || "");
+      // LINE unsend events reference message.id, so message events must use the
+      // same durable key even when webhookEventId is also present.
+      const eventId = String(event?.message?.id || event?.webhookEventId || "");
       const receiptId = String(input?.receipt_id || "");
       if (!/^[a-f0-9]{64}$/.test(receiptId) || !/^[A-Za-z0-9_-]{1,120}$/.test(eventId) || event?.type !== "message" || event?.message?.type !== "text" || event?.source?.type !== "user" || !/^U[a-f0-9]{32}$/i.test(String(event?.source?.userId || "")) || typeof event?.message?.text !== "string" || event.message.text.length > 5000) {
         return json({ ok: false, error: "invalid_event" }, 400);
@@ -234,7 +236,7 @@ export class KenjiModelIdempotency {
             message: { type: "text", id: event.message.id, text: event.message.text },
           },
         });
-        await txn.setAlarm(receivedAt + 1000);
+        await this.state.storage.setAlarm(receivedAt + 1000);
         return { ok: true, accepted: true, status: "pending", duplicate: false };
       });
       return json(result, result.ok ? 200 : 409);

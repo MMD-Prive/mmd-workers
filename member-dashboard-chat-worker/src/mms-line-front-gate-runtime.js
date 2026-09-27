@@ -484,7 +484,9 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
           if (!response.ok || result?.cancelled !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
         }
         for (const event of campaignEvents) {
-          const eventId = text(event?.webhookEventId || event?.message?.id);
+          // Unsend webhooks identify the original message by messageId. Prefer
+          // message.id here so the cancellation reaches the same durable object.
+          const eventId = text(event?.message?.id || event?.webhookEventId);
           if (!/^[A-Za-z0-9_-]{1,120}$/.test(eventId)) return Response.json({ ok: false, error: "campaign_event_id_missing" }, { status: 503 });
           const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(eventId));
           const key = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");

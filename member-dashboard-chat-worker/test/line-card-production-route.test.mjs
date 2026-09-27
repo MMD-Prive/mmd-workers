@@ -19,6 +19,7 @@ function durableBinding({ contextPutFailures = 0, ingressEnqueueFailures = 0, in
       if (!objects.has(id)) {
         const values = new Map();
         let alarmAt = null;
+        let activeTransaction = null;
         let transactions = Promise.resolve();
         const storage = {
           async get(key) { return values.get(key); },
@@ -26,30 +27,34 @@ function durableBinding({ contextPutFailures = 0, ingressEnqueueFailures = 0, in
           async delete(key) { values.delete(key); },
           async list({ prefix = "" } = {}) { return new Map([...values].filter(([key]) => key.startsWith(prefix))); },
           async getAlarm() { return alarmAt; },
-          async setAlarm(value) { alarmAt = value; },
+          async setAlarm(value) {
+            if (ingressAlarmFailures > 0) {
+              ingressAlarmFailures -= 1;
+              throw new Error("alarm_write_failed");
+            }
+            if (activeTransaction) activeTransaction.alarmAt = value;
+            else alarmAt = value;
+          },
           async transaction(callback) {
             const result = transactions.then(async () => {
               const staged = new Map(values);
-              let stagedAlarm = alarmAt;
+              const stagedTransaction = { alarmAt };
+              activeTransaction = stagedTransaction;
               const txn = {
                 async get(key) { return staged.get(key); },
                 async put(key, value) { staged.set(key, value); },
                 async delete(key) { staged.delete(key); },
                 async list({ prefix = "" } = {}) { return new Map([...staged].filter(([key]) => key.startsWith(prefix))); },
-                async getAlarm() { return stagedAlarm; },
-                async setAlarm(value) {
-                  if (ingressAlarmFailures > 0) {
-                    ingressAlarmFailures -= 1;
-                    throw new Error("alarm_write_failed");
-                  }
-                  stagedAlarm = value;
-                },
               };
-              const value = await callback(txn);
-              values.clear();
-              for (const [key, item] of staged) values.set(key, item);
-              alarmAt = stagedAlarm;
-              return value;
+              try {
+                const value = await callback(txn);
+                values.clear();
+                for (const [key, item] of staged) values.set(key, item);
+                alarmAt = stagedTransaction.alarmAt;
+                return value;
+              } finally {
+                activeTransaction = null;
+              }
             });
             transactions = result.catch(() => {});
             return result;
@@ -81,6 +86,10 @@ function lineEvent(text, id, overrides = {}) {
     message: { id, type: "text", text },
     ...overrides,
   };
+}
+
+function productionLineEvent(text, id, webhookEventId = `webhook-${id}`, overrides = {}) {
+  return lineEvent(text, id, { webhookEventId, ...overrides });
 }
 
 function unsendEvent(messageId, id = `unsend-${messageId}`) {
@@ -315,6 +324,30 @@ test("unsend after processing redacts the Inbox record and preserves a cancellat
   const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
   const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
   assert.equal((await status.json()).cleanup_pending, false);
+});
+
+test("unsend uses LINE message ID when webhookEventId differs from the original message ID", async () => {
+  const f = fixture();
+  const messageId = "msg-unsent-real-shape";
+  const pending = [];
+  const ctx = { waitUntil(promise) { pending.push(Promise.resolve(promise)); } };
+  await withFetch(f.fetch, async () => {
+    await route.fetch(await signedWebhook([productionLineEvent("JASPER", messageId)], f.env), f.env, ctx);
+    for (let round = 0; round < 5; round += 1) {
+      const count = pending.length;
+      await Promise.all(pending);
+      if (pending.length === count) break;
+    }
+    assert.equal((await route.fetch(await signedWebhook([unsendEvent(messageId)], f.env), f.env, ctx)).status, 200);
+  });
+  const record = f.records.get(`line_${messageId}`);
+  assert.equal(record.fields.line_user_id, "");
+  assert.equal(record.fields.admin_note, "[LINE message unsent]");
+  assert.equal(f.calls.filter((call) => call.type === "redact").length, 1);
+  const key = createHash("sha256").update(messageId).digest("hex");
+  const stub = f.env.KENJI_MODEL_DEDUPE.get(f.env.KENJI_MODEL_DEDUPE.idFromName(`line-card-ingress-v1:${key}`));
+  const status = await stub.fetch("https://kenji-model-dedupe.internal/campaign-lead/ingress", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) });
+  assert.equal((await status.json()).status, "cancelled");
 });
 
 test("invalid LINE signature cannot create a durable campaign receipt", async () => {
