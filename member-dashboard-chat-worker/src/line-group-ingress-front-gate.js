@@ -414,9 +414,11 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     `Routing: ${route.reason}`,
     settlement?.status === "materialized"
       ? `Action: membership materialized${settlement.membership_expire_at ? ` through ${settlement.membership_expire_at}` : ""}.`
-      : policyVerified
-        ? "Action: หลักฐานผ่านเกณฑ์เบื้องต้น รอระบบรับเงินยืนยันตัวตนและแพ็กเกจ."
-        : analysis.job_correlation?.status === "exact" || isMembership
+      : settlement?.status === "review_required"
+        ? "Action: เปิดกล่องตรวจรับเงินเพื่อตรวจตัวตน แพ็กเกจ และสลิปด้วยคน ก่อนยืนยันรายการ."
+        : policyVerified
+          ? "Action: หลักฐานผ่านเกณฑ์เบื้องต้น รอระบบรับเงินยืนยันตัวตนและแพ็กเกจ."
+          : analysis.job_correlation?.status === "exact" || isMembership
           ? "Action: Official Verify in Payment Inbox before any money/access change."
           : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
   ].filter(Boolean).join("\n");
