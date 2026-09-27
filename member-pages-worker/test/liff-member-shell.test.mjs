@@ -30,7 +30,7 @@ describe("same-site /member/liff shell", () => {
       assert.equal(response.status, 200);
       assert.match(html, /world-public/);
       assert.match(html, /id="intro-screen" class="intro-screen my-mmd-welcome"/);
-      assert.match(html, /data\.welcomeAudience = audience/);
+      assert.match(html, /dataset\.welcomeAudience = audience/);
       assert.match(html, /canonical_member_profile/);
       assert.match(html, /audience === "existing"/);
       assert.match(html, /MY MMD คือ APP ที่เปอร์สร้างขึ้นจากประสบการณ์การทำงานที่ผ่านมา/);
