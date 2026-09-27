@@ -392,6 +392,16 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
     const cls = modelAccessClass(record);
     return cls.active && cls.visibility === "private";
   });
+  // A denied exact, active private Model may return its broad campaign category.
+  // Do not disclose the Model name, folder, media, profile or a customer reason.
+  const deniedRecord = model.records[0];
+  const deniedClass = modelAccessClass(deniedRecord);
+  const deniedCode = fieldValue(deniedRecord?.fields || {}, MODEL_CODE_FIELDS);
+  const restrictedCategory = /^gws[0-9]+$/i.test(deniedCode) ? "gws"
+    : /^ems[0-9]+$/i.test(deniedCode) ? "ems" : "";
+  if (deniedClass.active && deniedClass.visibility === "private" && restrictedCategory) {
+    return { status: "restricted_category", category: restrictedCategory };
+  }
   if (requestedPrivate && access.renewalDue) return { status: "renewal" };
   return { status: "silent" };
 }
@@ -434,6 +444,9 @@ export async function handleKenjiModelAccessRpc(request, env = {}, options = {})
     if (result.status === "match") return json({ ok: true, status: "match", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION, model: result.model });
     if (result.status === "clarification") return json({ ok: true, status: "clarification", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
     if (result.status === "renewal") return json({ ok: true, status: "renewal", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
+    if (result.status === "restricted_category" && ["gws", "ems"].includes(result.category)) {
+      return json({ ok: true, status: "restricted_category", category: result.category, policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
+    }
     return json({ ok: true, status: "silent", policy_version: KENJI_MODEL_ACCESS_POLICY_VERSION });
   } catch (error) {
     if (error instanceof KenjiModelAccessSourceError) return json({ ok: false, error: "model_access_unavailable" }, 503);
