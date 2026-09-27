@@ -816,6 +816,9 @@ jobs:
           - Private Teaser live route acceptance: \`${PRIVATE_TEASER_ROUTE_SMOKE_OUTCOME}\`
           - Payment Center authenticated acceptance step: \`${PAYMENT_CENTER_ACCEPTANCE_OUTCOME}\`
           - Payment Center authenticated acceptance status: \`${PAYMENT_CENTER_ACCEPTANCE_STATUS:-NOT_RUN}\`
+          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
           - **stopped_at: \`${stopped}\`**
 
           Cloudflare/Wrangler detail:
@@ -840,11 +843,39 @@ jobs:
             echo "MY MMD Private Teaser Viewer live route acceptance did not pass" >&2
             exit 1
           fi
-      - name: Record verified live receipt
-        if: steps.smoke.outcome == 'success'
+      - name: Record verified deployment and route receipt
+        if: >-
+          ${{ !cancelled() &&
+              ((steps.resolve_version.outcome == 'success' && steps.deploy.outcome == 'success') ||
+               steps.migration_deploy.outcome == 'success') &&
+              steps.route_sync.outcome == 'success' &&
+              steps.smoke.outcome == 'success' &&
+              env.MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID != '' }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_contextual_shadow_smoke.outcome }}
+          KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_recommendation_shadow_smoke.outcome }}
+          KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME: ${{ steps.kenji_eligible_recommendation_shadow_smoke.outcome }}
         run: |
+          set -euo pipefail
           deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body "✅ member-dashboard-chat-worker LIVE VERIFIED\n\n- source_sha: \`${GITHUB_SHA}\`\n- deployed_at: \`${deployed_at}\`\n- version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`\n- MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`\n- MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`\n- MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`\n- production smoke: MMD LINE + canonical MMS LINE runtime + MMS service binding verified\n- route mutation: \`6 narrow MMS routes synced\`"
+          body_file="$(mktemp)"
+          trap 'rm -f "$body_file"' EXIT
+          cat > "$body_file" <<EOF
+          ✅ member-dashboard-chat-worker DEPLOY + ROUTE VERIFIED
+
+          - source_sha: \`${GITHUB_SHA}\`
+          - deployed_at: \`${deployed_at}\`
+          - version_id: \`${MEMBER_DASHBOARD_CHAT_WORKER_VERSION_ID}\`
+          - MMD LINE endpoint: \`https://www.mmdbkk.com/webhooks/line\`
+          - MMS LINE endpoint: \`https://www.mmdbkk.com/webhooks/line/mms\`
+          - MMS Therapist auth route: \`https://www.mmdbkk.com/male-massage/therapists/api/auth/*\`
+          - verified scope: version deployment + MMD LINE/MMS route ownership smoke
+          - required routes: verified by route_sync
+          - Kenji contextual shadow smoke: \`${KENJI_CONTEXTUAL_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji canonical recommendation smoke: \`${KENJI_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - Kenji eligible-client recommendation smoke: \`${KENJI_ELIGIBLE_RECOMMENDATION_SHADOW_SMOKE_OUTCOME}\`
+          - acceptance boundary: this receipt does not attest Kenji contextual/recommendation acceptance or Card 21829530 pilot/human E2E; see the deploy diagnosis for those outcomes
+          EOF
+          gh issue comment 325 --repo "$GITHUB_REPOSITORY" --body-file "$body_file"
