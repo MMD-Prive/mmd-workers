@@ -15,6 +15,11 @@ function safeAddress(rename) {
   return /^(?:พี่|คุณ)\s*[\p{L}\p{M} .]{1,38}$/u.test(first) ? first : "";
 }
 
+function perVoiceDraft(address) {
+  const salutation = address ? `${address}ครับ ` : "";
+  return `${salutation}เห็นข้อความแล้วครับ ส่งวัน เวลา พื้นที่ และรูปแบบงานคร่าว ๆ มาได้เลย เดี๋ยวผมดูให้ครับ`;
+}
+
 export async function reviewMonthlyAdLead({ card_id = "", trigger = "", message_text = "", line_user_id = "" } = {}, readers = {}) {
   const log = [];
   const entry = entryOf({ trigger, message_text });
@@ -72,6 +77,7 @@ export async function reviewMonthlyAdLead({ card_id = "", trigger = "", message_
         rate?.model_id === modelId && Number.isFinite(Number(rate.customer_sell_rate_thb)) &&
         Number(rate.customer_sell_rate_thb) > 0
         ? Number(rate.customer_sell_rate_thb) : null,
+      suggested_per_reply_for_review: perVoiceDraft(address),
       // Card 21829530 remains lead-only; a preset is context for Per, never an auto-quote.
       customer_reply: "",
       publish_authorized: false,
