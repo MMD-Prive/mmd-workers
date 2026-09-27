@@ -40,6 +40,7 @@ test("empty Client gallery can sync current LINE photo into Profile Photo histor
   assert.match(js, /\/v1\/admin\/clients\/profile-photo\/sync/);
   assert.match(js, /function openClient\(record,focus\)/);
   assert.match(js, /client_id:record\.client_id/);
-  assert.match(js, /record\.profile_photos=Array\.isArray\(body\.profile_photos\)/);
+  assert.match(js, /const synced=Array\.isArray\(body\.profile_photos\)\?body\.profile_photos\.slice\(0,8\):\[\]/);
+  assert.match(js, /record\.profile_photos=synced/);
   assert.match(js, /บันทึกรูป LINE ล่าสุดเข้า Profile Photo แล้ว/);
 });
