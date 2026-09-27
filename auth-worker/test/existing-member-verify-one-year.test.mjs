@@ -103,7 +103,7 @@ test("active Standard member receives one calendar year from real current expiry
   assert.equal(pkg.fields.ledger_type, "comped");
   assert.ok(entitlement);
   assert.equal(entitlement.fields.extension_months, 12);
-  assert.equal(entitlement.fields.previous_expire_at, "2027-01-31");
+  assert.equal(entitlement.fields.previous_expire_at, "2027-01-31T16:59:59.000Z");
   assert.equal(entitlement.fields.new_expire_at.slice(0, 10), "2028-01-31");
   assert.equal(entitlement.fields.capability, "private_standard");
 });
@@ -182,7 +182,18 @@ test("protected or unresolved package tiers are left to their separate entitleme
       id: "recProtected1234",
       fields: { line_id: LINE, member_id: "MMD-VIP-1", "Contact Email": "vip@example.com" },
     }]});
-    if (table === "member_packages") return Response.json({ records: [] });
+    if (table === "member_packages") return Response.json({ records: [{
+      id: "recOldStandardVip",
+      fields: {
+        member_id: "MMD-VIP-1",
+        member_email: "vip@example.com",
+        package_code: "standard",
+        status: "active",
+        start_date: "2026-01-01",
+        end_date: "2027-01-01",
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    }] });
     if (table === "MMD — Member Entitlements") return Response.json({ records: [{
       id: "recVipEntitlement",
       fields: { member_id: "MMD-VIP-1", line_user_id: LINE, capability: "vip", access_status: "active" },
