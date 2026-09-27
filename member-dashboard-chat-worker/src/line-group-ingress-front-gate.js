@@ -372,6 +372,13 @@ function paymentJobCorrelationLines(analysis = {}) {
   ].filter(Boolean);
 }
 
+function paymentProofCategory(trackingKind, isMembership) {
+  const labels = isMembership
+    ? { membership_signup: "ค่าสมาชิก", membership_renewal: "ค่าต่อสมาชิก" }
+    : { job_deposit: "ค่ามัดจำ", job_final: "ค่าจบงาน", job_full: "ค่าบริการจ่ายเต็ม", job_tip: "ค่าทิป" };
+  return labels[trackingKind] || (isMembership ? "ค่าสมาชิก · รอตรวจประเภท" : "ค่างาน · รอตรวจประเภท");
+}
+
 async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   if (result?.deduped === true) return { skipped: true, reason: "deduped" };
   const chatId = paymentOpsChatId(env);
@@ -388,20 +395,19 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
   const customer = asString(analysis.customer?.display_name || evidence.payerName);
   const trackingKind = asString(analysis.payment_intelligence?.tracking_kind) || "unresolved_payment";
   const settlement = result?.settlement || null;
+  const category = paymentProofCategory(trackingKind, isMembership);
   const statusLine = settlement?.status === "materialized"
-    ? "Status: verified · membership entitlement materialized"
+    ? "สถานะ: ยืนยันแล้วจากระบบรับเงิน"
     : settlement?.status === "review_required"
-      ? "Status: review required"
-      : policyVerified
-        ? "Status: verified · simple membership slip policy"
-        : "Status: pending review";
+      ? "สถานะ: ต้องตรวจสอบ"
+      : "สถานะ: รอตรวจสอบ";
   const text = [
-    isMembership ? "🧾 MMD Membership Payment Proof" : "💳 MMD Payment Proof",
+    `${isMembership ? "🧾" : "💳"} สลิป${category}`,
     statusLine,
     `Source: ${evidence.sourceType === "user" ? "LINE OA direct" : "LINE payment group"}`,
     `Proof: ${evidence.proofId}`,
     `Classified: ${purpose}`,
-    `Tracking: ${trackingKind}`,
+    `ประเภท: ${category}`,
     customer ? `Customer: ${customer}` : "Customer: pending match",
     extraction.amount_thb != null ? `Amount: ${Number(extraction.amount_thb).toLocaleString("en-US")} THB` : "Amount: pending extraction",
     ...(!isMembership ? paymentJobCorrelationLines(analysis) : []),
@@ -409,7 +415,7 @@ async function notifyPaymentProofOps(env = {}, evidence = {}, result = {}) {
     settlement?.status === "materialized"
       ? `Action: membership materialized${settlement.membership_expire_at ? ` through ${settlement.membership_expire_at}` : ""}.`
       : policyVerified
-        ? "Action: payment accepted; membership settlement requires exact canonical identity/package."
+        ? "Action: หลักฐานผ่านเกณฑ์เบื้องต้น รอระบบรับเงินยืนยันตัวตนและแพ็กเกจ."
         : analysis.job_correlation?.status === "exact" || isMembership
           ? "Action: Official Verify in Payment Inbox before any money/access change."
           : "Action: resolve the canonical Job, then Official Verify. No guessing / no money-truth mutation.",
