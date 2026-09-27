@@ -91,8 +91,18 @@ test("free-form Per brief maps to the Public Job Board V2 contract", () => {
   assert.equal(parsed.area, "สุขุมวิท");
   assert.equal(parsed.compensation, "10,000 ถึงตัว");
   assert.equal(parsed.customer_count, 1);
+  assert.equal(parsed.customer_gender, "unspecified");
   assert.equal(parsed.confidentiality, true);
   assert.equal(parsed.media_requirements.count, 8);
+});
+
+test("explicit customer gender is structured without using orientation", () => {
+  const male = parsePublicJobBriefV2("งานอีเวนต์\n👤 ลูกค้า 1 ท่าน ผู้ชาย\n💰 8,000 บาท\n🍌 รูปเดี่ยว 1 รูป");
+  const female = parsePublicJobBriefV2("งานอีเวนต์\n👤 ลูกค้า 1 ท่าน ผู้หญิง\n💰 8,000 บาท\n🍌 รูปเดี่ยว 1 รูป");
+  const couple = parsePublicJobBriefV2("งานอีเวนต์\n👤 ลูกค้า คู่ชายหญิง\n💰 8,000 บาท\n🍌 รูปเดี่ยว 1 รูป");
+  assert.equal(male.customer_gender, "male");
+  assert.equal(female.customer_gender, "female");
+  assert.equal(couple.customer_gender, "couple");
 });
 
 test("runtime fails closed without durable R2 or a strong signing secret", async () => {
@@ -149,7 +159,7 @@ test("job detail and intake expose approved applicant copy without internal stat
 
 test("Public and Private cards are separated and only owner-approved Private budget is exposed", async () => {
   const testEnv = env();
-  await ownerCreate(testEnv, { budget_disclosure_approved: true });
+  await ownerCreate(testEnv, { budget_disclosure_approved: true, customer_gender: "male" });
   await ownerCreate(testEnv, { id: "JOB-20261001-PUBLIC1", confidentiality: false, brief: "งานอีเวนต์ ขอคนมีโปรไฟล์\n⏳ งาน 4 ชม.\n🏡 ศ 2 ต.ค. 18:00 ย่านสาทร\n💰 6,000 บาท\n🍌 รูปเดี่ยว 1 รูป" });
   const response = await call(testEnv, "/public/api/jobs");
   const page = await response.text();
@@ -157,10 +167,15 @@ test("Public and Private cards are separated and only owner-approved Private bud
   assert.match(page, /PRIVATE JOB/);
   assert.match(page, /เลือกงานนี้/);
   assert.match(page, /ดูงานลับ · 10,000/);
+  assert.match(page, /BUDGET · 10,000/);
+  assert.match(page, /ลูกค้า · ชาย/);
   assert.doesNotMatch(page, /ลูกค้าเกย์ผู้ใหญ่/);
 
   const hiddenEnv = env();
   await ownerCreate(hiddenEnv, { budget_disclosure_approved: false });
+  const hiddenPage = await (await call(hiddenEnv, "/public/api/jobs")).text();
+  assert.match(hiddenPage, /BUDGET · PRIVATE/);
+  assert.match(hiddenPage, /ลูกค้า · ไม่ระบุ/);
   const data = await (await call(hiddenEnv, "/public/api/jobs/data")).json();
   assert.equal(data.jobs[0].compensation, "");
   assert.equal(data.jobs[0].title, "งานร่วมรับประทานอาหาร");
@@ -402,6 +417,7 @@ test("owner UI requires a short-lived HttpOnly session and exposes create plus r
   assert.equal(page.status, 200, html);
   assert.match(html, /วางบรีฟตามภาษาที่เปอร์ใช้/);
   assert.match(html, /บันทึกงาน/);
+  assert.match(html, /เพศลูกค้า/);
   assert.match(html, /ผู้สนใจต่อ Job/);
   assert.match(html, /รายการงาน/);
   assert.match(html, /request_more_information/);
@@ -416,10 +432,11 @@ test("owner can list jobs and update status privacy plus budget disclosure serve
   let body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.jobs.length, 1);
-  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true } });
+  response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: true, budget_disclosure_approved: true, customer_gender: "female" } });
   body = await response.json();
   assert.equal(body.job.public.world, "private");
   assert.equal(body.job.public.budget_disclosure_approved, true);
+  assert.equal(body.job.public.customer_gender, "female");
   response = await call(testEnv, "/public/api/jobs/internal/jobs/JOB-20261001-DEMO01/status", { method: "POST", headers, body: { confidentiality: false, budget_disclosure_approved: true } });
   body = await response.json();
   assert.equal(body.job.public.world, "public");
