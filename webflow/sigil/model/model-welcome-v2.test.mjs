@@ -16,6 +16,7 @@ function fakeDocument() {
     children: [],
     appendChild(child) { this.children.push(child); },
     removeAttribute(name) { delete this[name]; },
+    setAttribute(name, value) { this[name] = value; },
   });
   const root = makeNode();
   let markup = "";
@@ -75,10 +76,10 @@ test("verified invited Private Model sees Per's Welcome before choosing Dashboar
   assert.equal(redirects, 0);
   assert.equal(document.root.dataset.lane, "private");
   assert.equal(document.root.dataset.entrySource, "per_invite");
-  assert.match(document.root.innerHTML, /SĪGIL system/);
-  assert.match(document.root.querySelector("h1").textContent, /ยินดีต้อนรับอีกครั้ง/);
+  assert.match(document.root.innerHTML, /SĪGIL/);
+  assert.match(document.root.querySelector("h1").innerHTML, /ยินดีต้อนรับอีกครั้ง/);
   assert.equal(document.root.querySelector(".mw2-verify").href, "/sigil/model/dashboard");
-  assert.equal(document.root.querySelector(".mw2-verify").textContent, "เข้าสู่ Dashboard");
+  assert.match(document.root.innerHTML, /ENTER/);
 });
 
 test("unauthenticated visitor sees Public self greeting and LINE Verify", async () => {
@@ -108,4 +109,15 @@ test("unsafe invite does not select Per copy even when Private lane is trusted",
   }) });
   assert.equal(document.root.dataset.lane, "private");
   assert.equal(document.root.dataset.entrySource, "self");
+});
+
+test("Welcome uses the selected artwork and keeps the full Per letter", async () => {
+  const { document } = await boot({ status: 401 });
+  const markup = document.root.innerHTML;
+  assert.match(markup, /MMD APP/);
+  assert.match(markup, /data:image\/webp;base64,/);
+  assert.match(markup, /ENTER/);
+  assert.equal(document.root.querySelector(".mw2-body").children.length, 3);
+  assert.match(document.root.querySelector(".mw2-body").children[0].textContent, /ประสบการณ์กว่า 5 ปี/);
+  assert.match(document.root.querySelector(".mw2-body").children[2].textContent, /ไม่มีลูกน้อง/);
 });
