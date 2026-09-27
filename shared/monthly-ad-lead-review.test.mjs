@@ -56,6 +56,14 @@ test("typed Model names resolve through a separate lookup without claiming a Car
   assert.equal(result.attribution, "line_text_origin_unverified");
 });
 
+test("a bare written Model name also uses exact typed-name resolution", async () => {
+  const { methods } = readers();
+  const result = await reviewMonthlyAdLead({ line_user_id: event.line_user_id, message_text: "Jasper" }, methods);
+  assert.equal(result.entry_kind, "typed_model_name");
+  assert.equal(result.canonical_model_id, "recTypedModel");
+  assert.equal(result.card_id, null);
+});
+
 test("unresolved identity stops all customer-specific reads", async () => {
   const { calls, methods } = readers({ resolveCustomer: async () => { calls.push("identity"); return { status: "ambiguous" }; } });
   const result = await reviewMonthlyAdLead(event, methods);
