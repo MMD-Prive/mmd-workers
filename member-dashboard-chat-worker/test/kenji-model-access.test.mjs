@@ -425,7 +425,8 @@ test("LINE lookup asks for the work brief and never exposes an unscoped RPC pric
   });
   const approved = await reply({ sellable: true, price_visible: true, requires_per_approval: false, customer_rate_thb: 4500, term_summary: "เรทที่อนุมัติ" });
   assert.doesNotMatch(approved.text, /4,500/);
-  assert.match(approved.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
+  assert.match(approved.text, /ข้อมูลที่เปิดเผยได้/);
+  assert.doesNotMatch(approved.text, /ส่งวัน|เช็กเรท|ราคา|จอง/);
   for (const sales of [
     { sellable: true, price_visible: false, requires_per_approval: false, customer_rate_thb: 4500 },
     { sellable: true, price_visible: true, requires_per_approval: true, customer_rate_thb: 4500 },
@@ -547,9 +548,49 @@ test("JASPER is campaign-scoped Jasper intent and never calls model access RPC",
     ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: { model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "ข้อมูลแนะนำตัวที่อนุมัติแล้ว" } }, 200, calls),
   }, { campaignLeadQueued: true });
   assert.equal(calls.length, 0);
-  assert.match(decision.text, /เห็นว่าคุณสนใจการ์ดนี้/);
+  assert.match(decision.text, /ตรวจข้อมูลที่เปิดเผยได้/);
   assert.doesNotMatch(decision.text, /Jaspal OP|Jasper|เรท\s*\d/);
   assert.equal(decision.reply_source, "line_card_campaign_lead");
+});
+
+test("queued Card text can return only exact approved model information without sales", async () => {
+  const calls = [];
+  const env = {
+    ...BASE_ENV,
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+    LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: {
+      model_code: "EMs01", working_name: "Jay", summary: "โปรไฟล์ที่อนุมัติแล้ว",
+      sales: { customer_rate_thb: 9000 },
+    } }, 200, calls),
+  };
+  const approved = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: true, modelAccessAllowed: true });
+  assert.equal(approved.reply_source, "line_card_model_info");
+  assert.match(approved.text, /Jay.*EMs01.*โปรไฟล์ที่อนุมัติแล้ว/s);
+  assert.doesNotMatch(approved.text, /9000|ส่งวัน|เช็กเรท|จอง/);
+  assert.equal(calls.length, 1);
+
+  const disabled = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: true, modelAccessAllowed: false });
+  assert.equal(disabled.reply_source, "line_card_campaign_lead");
+  assert.equal(calls.length, 1);
+  const unqueued = await resolveKenjiLineReply(lineEvent("EMs01"), {}, env, { campaignLeadQueued: false });
+  assert.equal(unqueued.text, "");
+  assert.equal(calls.length, 1);
+});
+
+test("Card aliases never reveal another Model profile", async () => {
+  const calls = [];
+  const decision = await resolveKenjiLineReply(lineEvent("JASPER"), {}, {
+    ...BASE_ENV,
+    LINE_CARD_21829530_MODEL_INFO_ENABLED: "true",
+    LINE_KENJI_MODEL_ACCESS_ENABLED: "true",
+    ADMIN_WORKER: adminBinding({ ok: true, status: "match", model: {
+      model_code: "EMJASPAL", working_name: "Jaspal OP", summary: "Private info",
+    } }, 200, calls),
+  }, { campaignLeadQueued: true, modelAccessAllowed: true });
+  assert.equal(calls.length, 1);
+  assert.equal(decision.reply_source, "line_card_campaign_lead");
+  assert.doesNotMatch(decision.text, /Jaspal|Private|Jasper/i);
 });
 
 test("all seven active campaign triggers accept a generic brief without model resolution or rates", async () => {
@@ -558,7 +599,7 @@ test("all seven active campaign triggers accept a generic brief without model re
   for (const trigger of ["JASPER", "NANO", "EMs01", "BOOK EI", "EMs11", "GWs19", "EMs19"]) {
     const decision = await resolveKenjiLineReply(lineEvent(trigger), {}, env, { campaignLeadQueued: true });
     assert.equal(decision.reply_source, "line_card_campaign_lead");
-    assert.match(decision.text, /วัน เวลา สถานที่ และรูปแบบงาน/);
+    assert.match(decision.text, /ตรวจข้อมูลที่เปิดเผยได้/);
     assert.doesNotMatch(decision.text, /บาท|โปรไฟล์|รหัส/);
   }
   assert.equal(calls.length, 0);
@@ -987,7 +1028,7 @@ test("next customer message is queued as the attributed campaign brief before ac
     assert.equal(metadata.lead_stage, "brief_received");
     assert.equal(metadata.lead_inbox_id, "line_msg-model-access-1");
     assert.equal(metadata.auto_rate, "disabled");
-    assert.match(replies[1].init.body, /รับรายละเอียดแล้ว/);
+    assert.match(replies[1].init.body, /ได้รับข้อความเพิ่มเติมแล้ว/);
     assert.doesNotMatch(replies[1].init.body, /บาท|โปรไฟล์|รหัส/);
   } finally {
     globalThis.fetch = originalFetch;
