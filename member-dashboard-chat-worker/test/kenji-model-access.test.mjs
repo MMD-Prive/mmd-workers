@@ -1119,7 +1119,7 @@ test("verified EMs denial gives points policy and opens the LIFF points view", a
   assert.equal(decision.reply_source, "line_card_model_access_restricted");
   assert.match(decision.text, /1,200 points.*2,500 points/s);
   assert.match(decision.text, /35,000 บาท.*3 ปี/s);
-  assert.match(decision.text, /member\\/liff\\?view=points/);
+  assert.ok(decision.text.includes("https://mmdbkk.com/member/liff?view=points"));
   assert.doesNotMatch(decision.text, /Sprite|EMs19|รูปภาพของ|25000/);
   assert.equal(calls.length, 1);
 });
