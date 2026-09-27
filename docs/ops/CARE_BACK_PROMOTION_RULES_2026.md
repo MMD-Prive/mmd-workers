@@ -109,8 +109,8 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 
 | Customer status | What MMD verifies | CARE BACK benefit | Points rule | Coupon state |
 | --- | --- | --- | --- | --- |
-| Current member (active/grace) | Passport, existing expiry, LINE Official legacy history, Per Notes | Extend membership **180 days from the actual existing expiry date** | Reconstruct/reconcile historical Points from Per Notes at 100 THB = 1 Point; no automatic CARE BACK point bonus | Opens after Birthday Wish is saved |
-| Former/expired member | Previous member record, LINE Official history, renewal status | No automatic renewal. After official renewal payment and active/grace restoration: extend **90 days** | **+150 Points** after the related renewal is verified and applied; historical Points may be reconstructed separately from Per Notes | Remains unavailable until Wish, renewal, payment, and restored member status are verified |
+| Current member (active/grace) | Passport, existing expiry, LINE Official legacy history, Per Notes | Extend membership **1 year from the actual existing expiry date after Verify** | Reconstruct/reconcile historical Points from Per Notes at 100 THB = 1 Point; no automatic CARE BACK point bonus | Opens after Birthday Wish is saved |
+| Former/expired member | Previous member record, LINE Official history, renewal status | Verify grants **1 year** for the matched former/expired member; later renewal adds its normal package term separately | **+150 Points** after the related renewal is verified and applied; historical Points may be reconstructed separately from Per Notes | Remains unavailable until Wish, renewal, payment, and restored member status are verified |
 | New member — Standard | New membership and payment | No historic membership extension | **+150 Welcome Points** after payment verification | Opens after Birthday Wish and relevant verification |
 | New member — Premium | New membership and payment | No historic membership extension | **+250 Welcome Points** after payment verification | Opens after Birthday Wish and relevant verification |
 | New member — special campaign selection | Eligibility and payment | No historic membership extension | Up to **+350 Points** only where the campaign selection is approved | Opens after Birthday Wish and relevant verification |
@@ -126,7 +126,7 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 
 ### Current member
 
-- The 180-day extension begins from the member’s real recorded expiry date — never from the date they click Verify.
+- The one-year Verify extension for a current member begins from the member’s real recorded expiry date.
 - Historic Points are reconstructed from Per Notes / LINE Official legacy evidence first.
 - The historical-note parser produces staged `proposed_points`, confidence, and warnings; ambiguous history goes to review instead of being guessed.
 - There is no automatic +50 or other automatic CARE BACK point bonus.
@@ -197,8 +197,8 @@ After 30 September 2026, the system must not create a new CARE BACK claim. A ver
 ## 11. Final lock — Coupon Canon V2.2
 
 ```text
-Current member = verified identity + linked legacy history → +180 days from real existing expiry
-Expired member = verified current renewal/payment/active status → +90 days +150 Points
+Current member = verified identity + linked legacy history → +1 year from real existing expiry
+Expired member = verified canonical identity → +1 year from Verify; +150 Points only after a later renewal/payment is verified
 New Standard = verified membership/payment → +150 Welcome Points
 New Premium = verified membership/payment → +250 Welcome Points
 Approved special campaign selection = verified membership/payment → up to +350 Points for Black Card review consideration only
