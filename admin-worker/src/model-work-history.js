@@ -67,12 +67,15 @@ export async function handleModelWorkHistoryRequest(request, env = {}) {
   try {
     const [sessions, payouts, imports] = await Promise.all([
       readAll(env, clean(env.AIRTABLE_TABLE_SESSIONS, 80) || SESSIONS_DEFAULT,
-        `FIND("${formulaEscape(modelId)}",ARRAYJOIN({${MODEL_RELATION}}))`, [...Object.values(SESSION_FIELDS), MODEL_RELATION]),
+        null, [...Object.values(SESSION_FIELDS), MODEL_RELATION]),
       readAll(env, clean(env.AIRTABLE_TABLE_PAYOUT_EVIDENCE, 80) || PAYOUTS_DEFAULT,
         `{${PAYOUT_FIELDS.modelId}}="${formulaEscape(modelId)}"`, Object.values(PAYOUT_FIELDS)),
       readAll(env, clean(env.AIRTABLE_TABLE_MODEL_HISTORY_IMPORTS, 80) || IMPORTS_DEFAULT,
         `{${IMPORT_FIELDS.modelId}}="${formulaEscape(modelId)}"`, Object.values(IMPORT_FIELDS)),
     ]);
+    // Airtable formulas stringify linked records as their display names. Match their
+    // record IDs only after reading the linked field from the API response.
+    if (sessions.truncated || payouts.truncated || imports.truncated) throw new Error("history_incomplete");
 
     const ownedSessions = sessions.records.filter(row => linkedIds(row.fields?.[MODEL_RELATION]).includes(modelId));
     const completedSessions = ownedSessions.filter(row => COMPLETED_STATES.has(token(field(row, SESSION_FIELDS.state))));
@@ -98,7 +101,7 @@ export async function handleModelWorkHistoryRequest(request, env = {}) {
       return clean(f[IMPORT_FIELDS.modelId], 120) === modelId && PENDING_REVIEW_STATES.has(token(f[IMPORT_FIELDS.review]));
     }).length;
     const importCount = reviewedImports.length;
-    const truncated = sessions.truncated || payouts.truncated || imports.truncated;
+    const truncated = false;
 
     return json({
       ok: true,
@@ -238,7 +241,8 @@ async function readAll(env, tableId, formula, fields) {
   let offset = "";
   let pages = 0;
   do {
-    const query = new URLSearchParams({ pageSize: "100", filterByFormula: formula, returnFieldsByFieldId: "true" });
+    const query = new URLSearchParams({ pageSize: "100", returnFieldsByFieldId: "true" });
+    if (formula) query.set("filterByFormula", formula);
     if (offset) query.set("offset", offset);
     const response = await fetch(`https://api.airtable.com/v0/${encodeURIComponent(clean(env.AIRTABLE_BASE_ID) || BASE_DEFAULT)}/${encodeURIComponent(tableId)}?${query}`, {
       headers: { authorization: `Bearer ${clean(env.AIRTABLE_API_KEY, 1200)}`, accept: "application/json" },

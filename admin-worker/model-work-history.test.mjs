@@ -63,6 +63,46 @@ test("historical job and income totals include approved chat history while separ
   } finally { globalThis.fetch = originalFetch; }
 });
 
+test("session lookup matches linked record IDs, not Airtable display names", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = await signedToken();
+  const owned = session("owned", "closed", "2026-01-05", 2500);
+  owned.fields[SF.relation] = [{ id: MODEL_ID, name: "Gaz" }];
+  const foreign = session("foreign", "closed", "2026-01-06", 9999);
+  foreign.fields[SF.relation] = [{ id: "recOtherABC12345678", name: MODEL_ID }];
+  globalThis.fetch = async input => {
+    const url = new URL(input.url || input);
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) {
+      assert.equal(url.searchParams.has("filterByFormula"), false);
+      return Response.json({ records: [owned, foreign] });
+    }
+    return Response.json({ records: [] });
+  };
+  try {
+    const response = await handleModelWorkHistoryRequest(new Request("https://mmdbkk.com/v1/model/history", { headers: { cookie: `mmd_model_session_v1=${token}`, origin: "https://mmdbkk.com" } }), { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "test", MODEL_SESSION_SIGNING_SECRET: SECRET });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.summary.completed_job_count, 1);
+    assert.deepEqual(body.items.map(item => item.id), ["session:owned"]);
+    assert.equal(body.summary.earned_total_thb, 2500);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("a truncated session scan fails closed instead of showing partial earnings", async () => {
+  const originalFetch = globalThis.fetch;
+  const token = await signedToken();
+  globalThis.fetch = async input => {
+    const url = new URL(input.url || input);
+    if (url.pathname.endsWith("/tblC98mKWbzmPuNzX")) return Response.json({ records: [session("partial", "closed", "2026-01-05", 2500)], offset: "another-page" });
+    return Response.json({ records: [] });
+  };
+  try {
+    const response = await handleModelWorkHistoryRequest(new Request("https://mmdbkk.com/v1/model/history", { headers: { cookie: `mmd_model_session_v1=${token}`, origin: "https://mmdbkk.com" } }), { AIRTABLE_BASE_ID: "appsV1ILPRfIjkaYg", AIRTABLE_API_KEY: "test", MODEL_SESSION_SIGNING_SECRET: SECRET });
+    assert.equal(response.status, 503);
+    assert.equal((await response.json()).error, "history_unavailable");
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("work history endpoint requires a verified model session and same-site origin", async () => {
   const noCookie = await handleModelWorkHistoryRequest(new Request("https://mmdbkk.com/v1/model/history"), {});
   assert.equal(noCookie.status, 401);
