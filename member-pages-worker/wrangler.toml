@@ -74,6 +74,13 @@ bucket_name = "mmd-models"
 binding = "PRIVATE_MODEL_MEDIA"
 bucket_name = "mmd-private-model-media"
 
+# Customer-submitted reference images are private intake evidence. They never
+# share the model-media buckets and are read only through the internal request
+# handoff after a verified member submits a request.
+[[r2_buckets]]
+binding = "CUSTOMER_REQUEST_EVIDENCE"
+bucket_name = "mmd-customer-request-evidence"
+
 [[durable_objects.bindings]]
 name = "PRIVATE_PREVIEW_GATE"
 class_name = "PrivatePreviewGate"
