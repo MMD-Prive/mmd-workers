@@ -263,6 +263,8 @@ jobs:
             "www.mmdbkk.com/v1/member/payments*",
             "mmdbkk.com/api/member/medical-request*",
             "www.mmdbkk.com/api/member/medical-request*",
+            "mmdbkk.com/member/api/shop/*",
+            "www.mmdbkk.com/member/api/shop/*",
           ];
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           async function cf(path, options = {}) {

@@ -129,6 +129,31 @@ test("Orders 200 presentation receives the approved board and one logo", async (
   assert.match(html, /<main>Orders<\/main>/);
 });
 
+test("unauthenticated Shop Orders stays fail-closed through the member authority", async () => {
+  const calls = [];
+  const runtime = {
+    MEMBER_PAGES_WORKER: {
+      async fetch(request) {
+        calls.push({ path: new URL(request.url).pathname, method: request.method });
+        return new Response(JSON.stringify({ ok: false, error: "authentication_required" }), {
+          status: 401,
+          headers: { "content-type": "application/json", "cache-control": "no-store" },
+        });
+      },
+    },
+  };
+
+  const response = await worker.fetch(new Request("https://www.mmdbkk.com/member/api/shop/orders"), runtime);
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(calls, [{ path: "/member/api/shop/orders", method: "GET" }]);
+  assert.equal(body.ok, false);
+  assert.equal(response.headers.get("x-mmd-route-owner"), "member-dashboard-chat-worker");
+  assert.equal(response.headers.get("x-mmd-upstream-service"), "member-pages-worker");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+});
+
 test("MY MMD Private Teaser media player stays on MY MMD and accepts read-only access only", async () => {
   const response = await worker.fetch(new Request("https://www.mmdbkk.com/my-mmd/private-preview/view#t=secret"), {});
   const html = await response.text();
