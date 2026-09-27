@@ -8,6 +8,7 @@ const MATRIX_ID = "recMatrix123456";
 const MEMORY_ID = "recMemory123456";
 
 const writes = [];
+let renameClientId = CLIENT_ID;
 const originalFetch = globalThis.fetch;
 
 globalThis.fetch = async (url, init = {}) => {
@@ -27,6 +28,14 @@ globalThis.fetch = async (url, init = {}) => {
         },
       }],
     });
+  }
+
+  if (method === "GET" && href.includes("MMD%20%E2%80%94%20LINE%20OFC%20Client%20Import%20Staging")) {
+    return Response.json({ records: [{ id: "recLineOFC", fields: {
+      "LINE User ID": LINE_USER_ID,
+      "Current LINE Rename": "พี่โจ้ - VIP - เบอร์ส่วนตัวห้ามพูด",
+      "Canonical Client": [renameClientId],
+    } }] });
   }
 
   if (method === "GET" && href.includes("tblNImdF9PKAxhXGi")) {
@@ -99,6 +108,9 @@ try {
   assert.equal(context.resolved, true);
   assert.equal(context.reason, "exact_clients_line_user_id");
   assert.equal(context.client_record_id, CLIENT_ID);
+  assert.equal(context.per_rename_status, "matched");
+  assert.equal(context.safe_context.display_name_for_kenji, "พี่โจ้");
+  assert.doesNotMatch(JSON.stringify(context), /เบอร์ส่วนตัวห้ามพูด/);
   assert.equal(context.relationship_context, "svip_relationship");
   assert.equal(context.voice_context.voice_profile, "per_voice_concierge");
   assert.equal(context.voice_context.familiarity, "established_private");
@@ -136,6 +148,14 @@ try {
   assert.deepEqual(matrixWrite.body.records[0].fields.Client, [CLIENT_ID]);
   assert.deepEqual(matrixWrite.body.records[0].fields["Memory Snapshot"], [MEMORY_ID]);
   assert.equal(JSON.stringify(matrixWrite.body).includes(LINE_USER_ID), false, "raw LINE user ID must not be persisted into Matrix relink");
+
+  renameClientId = "recSomeoneElse";
+  writes.length = 0;
+  const conflict = await resolveCanonicalKenjiLineClient({ env, event });
+  assert.equal(conflict.resolved, false);
+  assert.equal(conflict.reason, "per_rename_client_conflict");
+  assert.equal(conflict.voice_context.familiarity, "new_or_unresolved");
+  assert.equal(writes.length, 0, "conflicting rename must not persist customer memory");
 
   console.log("kenji canonical client + Customer Memory v2 tests passed");
 } finally {
