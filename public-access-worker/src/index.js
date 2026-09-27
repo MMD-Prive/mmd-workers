@@ -2,6 +2,8 @@
 // MMD Privé — Public Access Intake V1
 // Public brief + evidence only. Never grants access, confirms payment, or confirms a booking.
 
+import { handlePublicJobBoard, isPublicJobBoardPath } from "./public-job-board-v2.js";
+
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf"]);
 
@@ -16,6 +18,18 @@ export default {
 
     if (request.method === "GET" && (path === "/health" || path === "/ping")) {
       return withCors(json({ ok: true, worker: "public-access-worker", version: "v1", ts: Date.now() }), cors);
+    }
+
+    if (isPublicJobBoardPath(path)) {
+      try {
+        return withCors(await handlePublicJobBoard(request, env, path), cors);
+      } catch (error) {
+        return withCors(json({
+          ok: false,
+          error: "public_job_board_failed",
+          message: safeError(error)
+        }, statusFor(error)), cors);
+      }
     }
 
     if (request.method === "POST" && path === "/public/api/access/intake") {
