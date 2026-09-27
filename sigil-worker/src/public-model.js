@@ -2,6 +2,7 @@ export const PUBLIC_MODEL_APPLY_PATH = "/v1/public-model/apply";
 export const PUBLIC_MODEL_UPLOAD_URL_PATH = "/v1/public-model/upload-url";
 export const PUBLIC_MODEL_SERVICE = "mmd_public_model_apply";
 export const PUBLIC_MODEL_UPLOAD_SERVICE = "mmd_public_model_upload_url";
+export const PUBLIC_MODEL_FORM_VERSIONS = new Set(["public-model-apply-v8", "public-model-apply-v12"]);
 
 const APPLY_BODY_LIMIT = 64 * 1024;
 const UPLOAD_META_BODY_LIMIT = 16 * 1024;
@@ -584,7 +585,7 @@ function validateApplicationPayload(body) {
     if (body[field] !== undefined && body[field] !== null && body[field] !== "" && !nonEmptyString(body[field], 500)) fields[field] = "must be a nonempty string";
   }
   if (!CONTACT_FIELDS.some((field) => nonEmptyString(body[field], 500))) fields.contact = "one contact channel is required";
-  if (body.form_version !== undefined && body.form_version !== "public-model-apply-v8") fields.form_version = "unsupported form version";
+  if (body.form_version !== undefined && !PUBLIC_MODEL_FORM_VERSIONS.has(body.form_version)) fields.form_version = "unsupported form version";
   if (nonEmptyString(body.company, 200)) fields.company = "must be empty";
   const workTypes = body.work_types ?? body.interested_work_types ?? body.workTypes;
   const workTypeError = validateWorkTypes(workTypes);
