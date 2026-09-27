@@ -1103,6 +1103,16 @@ zone_name = "mmdbkk.com"
 pattern = "www.mmdbkk.com/v1/admin/clients/recent"
 zone_name = "mmdbkk.com"
 
+# Owner/admin profile-photo history sync. Pulls the current LINE profile image
+# into Clients.Profile Photo as a rolling max-8 album.
+[[routes]]
+pattern = "mmdbkk.com/v1/admin/clients/profile-photo/sync"
+zone_name = "mmdbkk.com"
+
+[[routes]]
+pattern = "www.mmdbkk.com/v1/admin/clients/profile-photo/sync"
+zone_name = "mmdbkk.com"
+
 # Exact, credential-bound diagnostic only. Do not capture other payment routes.
 [[routes]]
 pattern = "mmdbkk.com/v1/admin/payment-issuer-diagnostic"
