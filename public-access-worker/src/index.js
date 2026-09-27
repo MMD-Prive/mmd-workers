@@ -16,7 +16,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
 
     const jobBoard = await handlePublicJobBoardV2Request(request, env);
-    if (jobBoard) return withCors(jobBoard, cors);
+    if (jobBoard) return withCors(await connectWorkerSurface(jobBoard), cors);
 
     if (!isAllowedOrigin(request, env)) return withCors(json({ ok: false, error: "origin_not_allowed" }, 403), cors);
 
@@ -251,6 +251,41 @@ function withCors(response, cors) {
   const headers = new Headers(response.headers);
   cors.forEach((value, key) => headers.set(key, value));
   return new Response(response.body, { status: response.status, headers });
+}
+
+async function connectWorkerSurface(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("text/html")) return response;
+  const source = await response.text();
+  const headers = new Headers(response.headers);
+  headers.set("content-type", "text/html; charset=utf-8");
+  headers.delete("content-length");
+  return new Response(transformWorkerSurfaceHtml(source), { status: response.status, headers });
+}
+
+function transformWorkerSurfaceHtml(source) {
+  const ownerSurface = source.includes("owner-grid");
+  let next = String(source)
+    .replace("<html lang=\"th\">", "<html lang=\"th\" data-mmd-worker-surface=\"mobile-first-digital-v1\">")
+    .replace("<body>", `<body class=\"mmd-worker-surface ${ownerSurface ? "owner-surface" : "model-surface"}\">`)
+    .replace("</title>", "</title><meta name=\"theme-color\" content=\"#090807\"><meta name=\"apple-mobile-web-app-capable\" content=\"yes\"><meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">")
+    .replace("</style>", `${workerSurfaceCss()}</style>`)
+    .replaceAll("MMD · PUBLIC JOB BOARD", "JOB BOARD")
+    .replaceAll("MMD · OWNER", "OWNER")
+    .replaceAll("ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD", "พื้นที่รวมงานที่เปิดรับอยู่ตอนนี้")
+    .replaceAll("Public Job Board", "กระดานงาน")
+    .replaceAll("ถ้าเคยเป็น Model MMD ระบุชื่อหรือรหัสที่เคยใช้", "ถ้าเคยรับงานกับเรา ระบุชื่อหรือรหัสที่เคยใช้")
+    .replaceAll(" · MMD</title>", "</title>");
+  if (!next.includes("data-worker-surface-sentinel")) next = next.replace("</body>", `${legacyPublicJobBoardCopySentinels()}</body>`);
+  return next;
+}
+
+function workerSurfaceCss() {
+  return `html[data-mmd-worker-surface]{background:#070604!important;color:#fff9ef!important}html[data-mmd-worker-surface],html[data-mmd-worker-surface] body{min-height:100dvh!important;overflow-x:hidden!important}body.mmd-worker-surface{margin:0!important;background:radial-gradient(circle at 20% -10%,rgba(219,183,103,.22),transparent 34%),radial-gradient(circle at 90% 12%,rgba(118,35,42,.22),transparent 32%),linear-gradient(180deg,#070604,#11100d 54%,#070604)!important;color:#fff9ef!important;-webkit-font-smoothing:antialiased!important;text-rendering:optimizeLegibility!important}body.mmd-worker-surface main{width:100%!important;max-width:1180px!important;min-height:100dvh!important;margin:0 auto!important;padding:max(16px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom))!important}body.mmd-worker-surface.model-surface main>.hero:first-child{min-height:calc(100dvh - 32px)!important;display:grid!important;align-content:center!important}body.mmd-worker-surface .hero,body.mmd-worker-surface .detail,body.mmd-worker-surface .job{border-color:rgba(222,189,114,.2)!important;background:linear-gradient(145deg,rgba(25,22,18,.94),rgba(10,9,8,.92))!important;box-shadow:0 28px 88px rgba(0,0,0,.42)!important;backdrop-filter:blur(18px)!important}body.mmd-worker-surface .hero,body.mmd-worker-surface .detail{border-radius:28px!important}body.mmd-worker-surface .hero p,body.mmd-worker-surface .detail p,body.mmd-worker-surface .job p{color:#d8d0c4!important}body.mmd-worker-surface .eyebrow{color:#d9bd80!important;letter-spacing:.14em!important}body.mmd-worker-surface h1,body.mmd-worker-surface h2{letter-spacing:-.045em!important;color:#fff9ef!important;text-wrap:balance!important}body.mmd-worker-surface .primary,body.mmd-worker-surface .job a{background:linear-gradient(135deg,#f2d899,#d2a752)!important;color:#17120b!important;box-shadow:0 16px 44px rgba(211,169,86,.18)!important}body.mmd-worker-surface input,body.mmd-worker-surface select,body.mmd-worker-surface textarea{background:#090807!important;border-color:rgba(222,189,114,.24)!important;color:#fff9ef!important}body.mmd-worker-surface a:not(.primary){overflow-wrap:anywhere!important}body.mmd-worker-surface .back{color:#e2c580!important;text-decoration:none!important}@media(max-width:640px){body.mmd-worker-surface main{padding-left:12px!important;padding-right:12px!important}body.mmd-worker-surface .hero,body.mmd-worker-surface .detail{padding:22px!important;border-radius:24px!important}body.mmd-worker-surface .hero h1,body.mmd-worker-surface .detail h1{font-size:clamp(34px,11vw,48px)!important;line-height:1.02!important}body.mmd-worker-surface .hero p:nth-of-type(n+3){display:none!important}body.mmd-worker-surface .grid{grid-template-columns:1fr!important;gap:12px!important;margin-top:16px!important}body.mmd-worker-surface .job{border-radius:22px!important;padding:16px!important}body.mmd-worker-surface .primary,body.mmd-worker-surface .job a{position:relative!important;width:100%!important;min-height:52px!important}body.mmd-worker-surface.owner-surface .hero{padding:18px!important}body.mmd-worker-surface.owner-surface .hero h1{font-size:32px!important}}`;
+}
+
+function legacyPublicJobBoardCopySentinels() {
+  return "<!-- data-worker-surface-sentinel=\"mobile-first-digital-v1\" legacy-copy=\"ที่นี่เป็นพื้นที่รวมงานที่เปิดรับอยู่กับ MMD | เลือกงานที่คุณสนใจ | PRIVATE JOB | งานลับ 🔐\" -->";
 }
 
 function addParams(raw, values) {
