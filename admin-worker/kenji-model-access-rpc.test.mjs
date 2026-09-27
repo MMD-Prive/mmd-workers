@@ -21,6 +21,7 @@ const ENV = {
   AIRTABLE_TABLE_MODELS: "models",
   AIRTABLE_TABLE_MODEL_KEYWORD_PROFILES: "profiles",
   AIRTABLE_TABLE_KENJI_MODEL_ACCESS_APPROVALS: "approvals",
+  AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS: "decisions",
   AIRTABLE_TABLE_MODEL_OFFER_RULES: "rules",
 };
 
@@ -72,8 +73,8 @@ function approval(cohort, folders, overrides = {}) {
   });
 }
 
-function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = [], profiles = []) {
-  return { entitlements, models, approvals, rules, profiles };
+function baseData(entitlements = [entitlement("private_standard")], models = [privateModel()], approvals = [], rules = [], profiles = [], decisions = []) {
+  return { entitlements, models, approvals, rules, profiles, decisions };
 }
 
 function keywordProfile(alias, model = privateModel(), overrides = {}) {
@@ -91,6 +92,7 @@ const SCHEMAS = {
   entitlements: new Set(["line_user_id"]),
   models: new Set(["model_code", "model_lookup_key", "unique_key", "working_name", "Working Name", "display_name", "Display Name", "folder_name"]),
   approvals: new Set(["line_user_id"]),
+  decisions: new Set(["line_user_id"]),
   profiles: new Set([]),
 };
 
@@ -412,4 +414,33 @@ test("unknown or inactive GWs and EMs never produce an access promotion", async 
   const unknown = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "GWs20" }, { fetchImpl });
   assert.equal(inactive.status, "silent");
   assert.equal(unknown.status, "silent");
+});
+
+test("GWs and EMs require one current Per approval for this exact client and Model", async () => {
+  const model = privateModel("EMs19", "exclusive", { working_name: "Private Name" });
+  const decision = record("rec-decision", {
+    line_user_id: LINE_USER_ID, Model: [model.id], model_key: "EMs19", category: "EMs",
+    decision_status: "Approved", allow_profile: true, approved_by: "Per",
+    approved_at: "2026-09-27T12:00:00Z", expires_at: "2099-12-31T23:59:59Z",
+    source_ref: "owner-review-1",
+  });
+  const member = entitlement("private_standard");
+  const fetchImpl = airtableFetch(baseData([member], [model], [], [], [], [decision]));
+  const allowed = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, { fetchImpl });
+  assert.equal(allowed.status, "match");
+  assert.equal(allowed.model.model_code, "EMs19");
+  for (const patch of [{ allow_profile: false }, { Model: ["rec-other"] }, { decision_status: "Draft" }, { expires_at: "2020-01-01T00:00:00Z" }]) {
+    const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
+      fetchImpl: airtableFetch(baseData([member], [model], [], [], [], [record("rec-decision", { ...decision.fields, ...patch })])),
+    });
+    assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
+  }
+});
+
+test("legacy unique key never bypasses the EMs per-model approval", async () => {
+  const model = privateModel("mdl_exc_ems_ems19", "exclusive", { working_name: "EMs19" });
+  const denied = await resolveKenjiModelAccess(ENV, { line_user_id: LINE_USER_ID, query: "EMs19" }, {
+    fetchImpl: airtableFetch(baseData([entitlement("private_standard")], [model])),
+  });
+  assert.deepEqual(denied, { status: "restricted_category", category: "ems" });
 });

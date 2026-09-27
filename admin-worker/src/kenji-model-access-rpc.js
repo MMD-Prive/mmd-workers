@@ -17,6 +17,7 @@ const RENEWAL_DUE_LIFECYCLES = new Set(["grace", "expired"]);
 const BLOCKED_MODEL_STATUS = new Set(["inactive", "blocked", "suspended", "archived", "disabled", "banned", "off", "retired"]);
 const MODEL_CODE_FIELDS = ["model_code", "model_lookup_key", "unique_key"];
 const MODEL_WORKING_NAME_FIELDS = ["working_name", "Working Name", "display_name", "Display Name"];
+const PRIVATE_MODEL_DECISIONS_TABLE = "MMD — Private Model Access Decisions";
 const APPROVAL_MEMBER_FIELDS = ["member_record_id", "member_id", "member_email", "line_user_id"];
 
 class KenjiModelAccessSourceError extends Error {
@@ -106,8 +107,10 @@ export function classifyKenjiModelPackage(value) {
 
 export function projectKenjiSafeModel(record = {}) {
   const fields = record.fields || {};
-  const modelCode = fieldValue(fields, MODEL_CODE_FIELDS);
   const workingName = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
+  const canonicalCode = fieldValue(fields, MODEL_CODE_FIELDS);
+  const modelCode = /^(?:gws|ems)[0-9]+$/i.test(workingName) &&
+    !/^(?:gws|ems)[0-9]+$/i.test(canonicalCode) ? workingName : canonicalCode;
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$/.test(modelCode) || !isCustomerSafeText(workingName, 120)) return null;
   const projected = { model_code: modelCode, working_name: workingName };
   const summary = fieldValue(fields, ["customer_safe_summary", "approved_profile_summary", "public_safe_summary"]);
@@ -249,6 +252,40 @@ async function resolveCuratedApproval(env, identity, cohort, fetchImpl) {
   return { status: "allowed", cohort: token(cohort), folders: parseFolderList(valid[0].fields?.allowed_folders) };
 }
 
+function privateCampaignCategory(record = {}) {
+  const fields = record.fields || {};
+  const canonical = fieldValue(fields, MODEL_CODE_FIELDS);
+  const name = fieldValue(fields, MODEL_WORKING_NAME_FIELDS);
+  const code = /^(?:gws|ems)[0-9]+$/i.test(canonical) ? canonical : name;
+  return /^gws[0-9]+$/i.test(code) ? "gws" : /^ems[0-9]+$/i.test(code) ? "ems" : "";
+}
+
+async function hasPerModelApproval(env, lineUserId, model, snapshot, fetchImpl) {
+  const category = privateCampaignCategory(model);
+  if (!category || snapshot?.member_blocked === true || snapshot?.access?.new_model_reveals_allowed !== true) return false;
+  const active = currentlyValidCapabilities(snapshot);
+  if (![...active].some((capability) => capability === "public_member" || PRIVATE_CAPABILITIES.has(capability))) return false;
+  const table = clean(env.AIRTABLE_TABLE_PRIVATE_MODEL_ACCESS_DECISIONS || PRIVATE_MODEL_DECISIONS_TABLE);
+  const decisions = await airtableQueryExact(env, table, "line_user_id", lineUserId, fetchImpl, 100);
+  const fields = model.fields || {};
+  const canonical = fieldValue(fields, MODEL_CODE_FIELDS);
+  const code = (/^(?:gws|ems)[0-9]+$/i.test(canonical)
+    ? canonical : fieldValue(fields, MODEL_WORKING_NAME_FIELDS)).toLowerCase();
+  const matched = decisions.filter((row) => {
+    const fields = row.fields || {};
+    const linked = fieldList(fields, ["Model"], 2);
+    const expiry = Date.parse(fieldValue(fields, ["expires_at"]));
+    return token(fields.decision_status) === "approved" && fields.allow_profile === true &&
+      token(fields.category) === category && clean(fields.model_key).toLowerCase() === code &&
+      linked.length === 1 && linked[0] === clean(model.id) &&
+      clean(fields.approved_by).toLowerCase() === "per" &&
+      Number.isFinite(Date.parse(fieldValue(fields, ["approved_at"]))) &&
+      Number.isFinite(expiry) && expiry > Date.now() &&
+      Boolean(fieldValue(fields, ["source_ref"]));
+  });
+  return matched.length === 1;
+}
+
 async function resolveCanonicalMemberAccess(env, lineUserId, fetchImpl) {
   const records = await airtableQueryExact(env, canonicalEntitlementTable(env), canonicalEntitlementLineField(env), lineUserId, fetchImpl, 100);
   const snapshot = resolveMemberEntitlements(records);
@@ -331,11 +368,17 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   // Otherwise a duplicate name could silently resolve to a different accessible model.
   if (model.records.length !== 1) return { status: "clarification" };
 
+  const privateCampaign = privateCampaignCategory(model.records[0]);
+  const perModelAllowed = privateCampaign
+    ? await hasPerModelApproval(env, lineUserId, model.records[0], access.snapshot, fetchImpl)
+    : false;
   const authorized = model.records.flatMap((record) => {
     const cls = modelAccessClass(record);
     if (!cls.active) return [];
     if (cls.visibility === "public" && !access.allowPublic) return [];
-    if (cls.visibility === "private" && !access.folders.includes(cls.folder)) return [];
+    if (cls.visibility === "private" && (privateCampaign
+      ? !perModelAllowed
+      : !access.folders.includes(cls.folder))) return [];
     const safeModel = projectKenjiSafeModel(record);
     return safeModel ? [{ cls, safeModel, record }] : [];
   });
@@ -396,9 +439,7 @@ export async function resolveKenjiModelAccess(env = {}, input = {}, options = {}
   // Do not disclose the Model name, folder, media, profile or a customer reason.
   const deniedRecord = model.records[0];
   const deniedClass = modelAccessClass(deniedRecord);
-  const deniedCode = fieldValue(deniedRecord?.fields || {}, MODEL_CODE_FIELDS);
-  const restrictedCategory = /^gws[0-9]+$/i.test(deniedCode) ? "gws"
-    : /^ems[0-9]+$/i.test(deniedCode) ? "ems" : "";
+  const restrictedCategory = privateCampaignCategory(deniedRecord);
   if (deniedClass.active && deniedClass.visibility === "private" && restrictedCategory) {
     return { status: "restricted_category", category: restrictedCategory };
   }
