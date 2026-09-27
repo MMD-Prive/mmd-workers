@@ -451,9 +451,10 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
   const events = Array.isArray(body?.events) ? body.events : [];
   const flagsOn = [env.LINE_CARD_21829530_LEAD_ENABLED, env.LINE_CARD_21829530_NATIVE_AUTORESPONSE_CLEAR]
     .every((value) => ["1", "true", "yes", "on"].includes(text(value).toLowerCase()));
-  if (flagsOn && events.length) {
+  if (events.length) {
     const hashes = text(env.LINE_CARD_21829530_PILOT_HASHES).toLowerCase().split(/[\s,]+/).filter(Boolean);
-    if (hashes.length && hashes.every((hash) => /^[a-f0-9]{64}$/.test(hash))) {
+    const pilotConfigValid = flagsOn && hashes.length && hashes.every((hash) => /^[a-f0-9]{64}$/.test(hash));
+    if (pilotConfigValid || events.some((event) => event?.type === "unsend")) {
       const campaignEvents = [];
       const unsendEvents = [];
       const ordinaryEvents = [];
@@ -467,11 +468,31 @@ async function maybeScheduleKenjiLineAfterAck(request, env = {}, ctx = null, han
         if (event?.source?.type === "user" && /^U[a-f0-9]{32}$/i.test(userId)) {
           const hash = await sha256HexText(userId);
           subjectHash = hash;
-          pilot = hashes.includes(hash);
+          pilot = pilotConfigValid && hashes.includes(hash);
         }
-        if (pilot && event?.type === "unsend" && /^[A-Za-z0-9_-]{1,120}$/.test(text(event?.unsend?.messageId))) {
-          unsendEvents.push({ event, subjectHash });
-          continue;
+        const unsendMessageId = text(event?.unsend?.messageId);
+        if (subjectHash && event?.type === "unsend" && /^[A-Za-z0-9_-]{1,120}$/.test(unsendMessageId)) {
+          if (pilot) {
+            unsendEvents.push({ event, subjectHash });
+            continue;
+          }
+          // A prior pilot message still needs redaction after its flags or
+          // allowlist entry are removed. Only known Card aliases are routed.
+          if (!env.KENJI_MODEL_DEDUPE?.idFromName || !env.KENJI_MODEL_DEDUPE?.get) return Response.json({ ok: false, error: "campaign_ingress_binding_missing" }, { status: 503 });
+          const messageKey = await sha256HexText(unsendMessageId);
+          const aliasStub = env.KENJI_MODEL_DEDUPE.get(env.KENJI_MODEL_DEDUPE.idFromName(`line-card-message-v1:${messageKey}`));
+          let aliasResponse;
+          try {
+            aliasResponse = await aliasStub.fetch("https://kenji-model-dedupe.internal/campaign-lead/message-alias", {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "lookup", message_id: unsendMessageId, subject_hash: subjectHash }),
+            });
+          } catch (_) { return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 }); }
+          const alias = await aliasResponse.json().catch(() => ({}));
+          if (!aliasResponse.ok || alias?.ok !== true) return Response.json({ ok: false, error: "campaign_ingress_unavailable" }, { status: 503 });
+          if (alias.found === true) {
+            unsendEvents.push({ event, subjectHash });
+            continue;
+          }
         }
         const campaign = pilot && (triggeredUsers.has(userId) || await hasCardCampaignContext(env, event));
         if (campaign) campaignEvents.push({ event, subjectHash });
