@@ -1,5 +1,6 @@
 const AIRTABLE_API = "https://api.airtable.com/v0";
 const RATE_THB = 100;
+const POINTS_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const ELIGIBLE_STAGES = new Set(["deposit", "full", "membership"]);
 
 export function computePhase1Points(priorRemainderThb, eligibleAmountThb) {
@@ -97,6 +98,7 @@ async function writeSerializedLedgerEvent(env, payload) {
   const priorRemainder = Number(latest?.fields?.remainder_after_thb || 0);
   const computed = computePhase1Points(priorRemainder, payload.amount_thb);
   const postedAt = new Date().toISOString();
+  const expiresAt = new Date(Date.parse(postedAt) + POINTS_TTL_MS).toISOString();
 
   const record = await createRecord(env, ledgerTable, {
     member_id: memberId,
@@ -112,9 +114,10 @@ async function writeSerializedLedgerEvent(env, payload) {
     points_bucket: "base_phase1",
     rate_policy: "phase1_100_thb_1_pt_remainder",
     source: "payments-worker",
-    note: "Base Points Phase 1. Wallet and THB remainder are independent of membership expiry; expires_at intentionally unset.",
+    note: "Base Points. Each awarded lot expires 365 days after posted_at; redemption consumes the nearest expiry first.",
     idempotency_key: `base_phase1:${paymentRef}`,
     posted_at: postedAt,
+    expires_at: expiresAt,
     transaction_status: "posted",
   });
 
@@ -124,7 +127,7 @@ async function writeSerializedLedgerEvent(env, payload) {
     record_id: record?.id || null,
     member_id: memberId,
     ...computed,
-    expires_at: null,
+    expires_at: expiresAt,
   };
 }
 
