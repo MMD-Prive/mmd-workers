@@ -6,7 +6,9 @@ function entryOf(input = {}) {
   const raw = String(input.message_text || input.trigger || "").normalize("NFKC").trim();
   if (TRIGGERS.has(raw)) return { kind: "card_action_text", trigger: raw, query: raw };
   const explicit = /^(?:สนใจ|ขอดู|ถามเรื่อง|ชื่อ(?:\s*model|\s*นายแบบ)?\s*[:：-]?|model\s*[:：-]?)\s*(.{2,48})$/iu.exec(raw);
-  const query = explicit?.[1]?.trim() || "";
+  const bareName = /^[\p{L}\p{M}0-9 _-]{2,48}$/u.test(raw) &&
+    !/^(?:สวัสดี|หวัดดี|ช่วยหน่อย|ราคา|จอง|สมาชิก|hello|help|vip)$/iu.test(raw);
+  const query = explicit?.[1]?.trim() || (bareName ? raw : "");
   return query && query.length <= 48 ? { kind: "typed_model_name", trigger: "", query } : null;
 }
 
