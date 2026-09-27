@@ -83,6 +83,36 @@ test("live broad lane falls back to First Contact and stays silent in groups", a
   }
 });
 
+test("live broad lane honors the First Contact mute", async () => {
+  const originalFetch = globalThis.fetch;
+  let deliveries = 0;
+  globalThis.fetch = async (url) => {
+    if (/api\\.line\\.me\\/v2\\/bot\\/message\\/reply/.test(String(url))) deliveries += 1;
+    return Response.json({});
+  };
+  try {
+    const events = [message("แนะนำหน่อย", {
+      replyToken: "muted-opening",
+      message: { id: "muted-opening-id", type: "text", text: "แนะนำหน่อย" },
+    })];
+    const raw = JSON.stringify({ events });
+    const signature = await createLineSignature(raw, env.LINE_CHANNEL_SECRET);
+    const response = await handleKenjiSeedLineRequest(new Request("https://www.mmdbkk.com/webhooks/line", {
+      method: "POST", headers: { "x-line-signature": signature }, body: raw,
+    }), {
+      ...env,
+      LINE_AUTO_REPLY_ENABLED: "true",
+      LINE_FIRST_CONTACT_ENABLED: "false",
+    }, null, { fetch: async () => Response.json({ ok: true, saved: [{ ok: true }] }) });
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(deliveries, 0);
+    assert.equal(body.saved[0].replied, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("signed LINE opening replies once while follow and protected events stay silent", async () => {
   const originalFetch = globalThis.fetch;
   const sent = [];
