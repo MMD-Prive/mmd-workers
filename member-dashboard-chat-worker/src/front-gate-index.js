@@ -1,6 +1,7 @@
 import worker from "./index.js";
 import { observeKenjiLineWebhook } from "./kenji-ai-worker-line-bridge.mjs";
 import { recordKenjiConversationShadowReceipt } from "./kenji-line-shadow-receipt.mjs";
+import { handleKenjiMemberSurface, isKenjiMemberSurfacePath } from "./kenji-member-app.js";
 export { KenjiModelIdempotency } from "./index.js";
 
 const WORKER_NAME = "member-dashboard-chat-worker";
@@ -434,6 +435,7 @@ function recordBridgeTelemetry(result = {}) {
 export default {
   async fetch(request, env = {}, ctx) {
     const path = new URL(request.url).pathname.toLowerCase().replace(/\/{2,}/g, "/");
+    if (isKenjiMemberSurfacePath(request)) return handleKenjiMemberSurface(request, env);
     if (path.startsWith(THERAPIST_AUTH_PREFIX)) return forwardMmsTherapistAuth(request, env);
     if (isMyMmdAssetPath(path)) return proxyMyMmdPresentation(request, { asset: true });
     if (isMyMmdUiPath(path)) return proxyMyMmdPresentation(request);
