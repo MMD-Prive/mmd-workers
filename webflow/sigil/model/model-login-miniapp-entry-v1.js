@@ -153,6 +153,14 @@
     return url.toString();
   }
 
+  // Job Board links already express the user's intent. Do not show the generic
+  // Model Welcome/Telegram login presentation again; preserve the exact job
+  // context and continue straight into the Published LINE Mini App.
+  if (jobBoardContext()) {
+    location.replace(target());
+    return;
+  }
+
   let telegramBusy = false;
 
   function ensureTelegramStyles() {
