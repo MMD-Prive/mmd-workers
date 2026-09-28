@@ -2,7 +2,8 @@ import { resolveMemberEntitlements } from "../../auth-worker/src/member-entitlem
 import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs";
 import { inferAccessFolder } from "./private-model-work-policy.js";
 
-export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V2";
+export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
+export const PRIVATE_CAMPAIGN_GROUP_POLICY_VERSION = "PRIVATE_CAMPAIGN_GROUPS_V1";
 export const PRIVATE_CAMPAIGN_INTERNAL_GROUPS = Object.freeze({
   gws: "1200",
   ems: "2500",
