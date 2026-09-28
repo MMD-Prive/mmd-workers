@@ -3,6 +3,11 @@ import { resolveModelSalesOffer } from "../../shared/model-sales-control-v1.mjs"
 import { inferAccessFolder } from "./private-model-work-policy.js";
 
 export const KENJI_MODEL_ACCESS_POLICY_VERSION = "KENJI_MODEL_ACCESS_V1";
+export const PRIVATE_CAMPAIGN_GROUP_POLICY_VERSION = "PRIVATE_CAMPAIGN_GROUPS_V1";
+export const PRIVATE_CAMPAIGN_INTERNAL_GROUPS = Object.freeze({
+  gws: "1200",
+  ems: "2500",
+});
 export const KENJI_MODEL_ACCESS_RPC_PATH = "/v1/internal/kenji/model-access";
 
 const AIRTABLE_API = "https://api.airtable.com/v0";
@@ -260,6 +265,22 @@ function privateCampaignCategory(record = {}) {
   return /^gws[0-9]+$/i.test(code) ? "gws" : /^ems[0-9]+$/i.test(code) ? "ems" : "";
 }
 
+export function privateCampaignInternalGroup(value) {
+  const category = typeof value === "string" ? token(value) : privateCampaignCategory(value);
+  return PRIVATE_CAMPAIGN_INTERNAL_GROUPS[category] || "";
+}
+
+function privateCampaignDecisionGroupAllowed(fields = {}, category = "") {
+  const expected = privateCampaignInternalGroup(category);
+  if (!expected) return false;
+  if (fields.owner_override === true || token(fields.eligibility_source) === "per_override") return true;
+  const declared = fieldValue(fields, ["eligibility_group", "internal_access_group"]);
+  // Existing exact Per approvals predate the internal group fields. Preserve
+  // them as manual-owner overrides rather than silently revoking access.
+  if (!declared) return true;
+  return clean(declared) === expected;
+}
+
 async function hasPerModelApproval(env, lineUserId, model, snapshot, fetchImpl) {
   const category = privateCampaignCategory(model);
   if (!category || snapshot?.member_blocked === true || snapshot?.access?.new_model_reveals_allowed !== true) return false;
@@ -279,6 +300,7 @@ async function hasPerModelApproval(env, lineUserId, model, snapshot, fetchImpl) 
       token(fields.category) === category && clean(fields.model_key).toLowerCase() === code &&
       linked.length === 1 && linked[0] === clean(model.id) &&
       clean(fields.approved_by).toLowerCase() === "per" &&
+      privateCampaignDecisionGroupAllowed(fields, category) &&
       Number.isFinite(Date.parse(fieldValue(fields, ["approved_at"]))) &&
       Number.isFinite(expiry) && expiry > Date.now() &&
       Boolean(fieldValue(fields, ["source_ref"]));

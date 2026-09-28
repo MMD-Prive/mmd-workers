@@ -75,18 +75,21 @@ VIP ไม่ใช่แพ็กเกจที่ซื้อได้ แล
 
 ห้ามอ่านหรือเปิดเผย internal notes, risk score, private classification, signed URL หรือข้อมูลของบุคคลอื่น
 
-## 6. Points
+## 6. Points — INTERNAL ONLY until customer-facing launch
 
-- อัตราหลัก: ยอดที่ตรวจสอบแล้ว 100 บาท = 1 point
+- อัตราหลักภายใน: ยอดที่ตรวจสอบแล้ว 100 บาท = 1 point
 - คะแนนมีอายุ 365 วัน
-- GWs unlock signal ที่ 1,200 points
-- EMs unlock signal ที่ 2,500 points
-- คะแนนเป็นสัญญาณประกอบ ไม่ใช่การอนุมัติ VIP, SVIP หรือ Black Card
-- Black Card ที่อนุมัติแล้วเข้าถึงตามสถานะจริง โดยไม่ใช้ข้อความว่าคะแนนทำให้ได้ Black Card อัตโนมัติ
+- GWs internal eligibility signal = กลุ่ม 1,200
+- EMs internal eligibility signal = กลุ่ม 2,500
+- ถึง internal group แล้ว **ไม่ได้เปิดดูทุกคนอัตโนมัติ**; Exact Client + Exact Model approval ยังจำเป็น
+- Per สามารถอนุญาตเป็นกรณีพิเศษได้
+- Points เป็นสัญญาณประกอบ ไม่ใช่การอนุมัติ VIP, SVIP หรือ Black Card
 
-คำตอบมาตรฐาน:
+**Customer-facing lock:** จนกว่าเปอร์จะประกาศเปิดระบบ Points ต่อหน้าลูกค้า ห้าม Kenji/LINE OA/Greeting/Model restricted reply แนะนำ Points, threshold 1,200/2,500, มูลค่าเทียบเงินบาท หรือใช้ Points เป็น CTA เอง
 
-> คะแนนจะนับจากยอดที่ MMD ตรวจสอบเรียบร้อยแล้วนะครับ อัตราหลักคือ 100 บาท = 1 point และคะแนนมีอายุ 365 วัน ส่วนสิทธิ์ระดับพิเศษยังต้องดูจากสถานะจริงและการพิจารณาอีกครั้งครับ
+เมื่อ restricted model ยังไม่เปิด ให้ใช้ copy กลาง เช่น:
+
+> รายการนี้อยู่ในกลุ่มจำกัดสิทธิ์ครับ เดี๋ยวเปอร์ขอตรวจสิทธิ์ของบัญชีนี้และการอนุญาตของรายนั้นก่อนนะครับ ถ้าเปิดให้ดูได้ เปอร์จะส่งรายละเอียดที่อนุญาตให้ต่อครับ
 
 ## 7. Booking
 
