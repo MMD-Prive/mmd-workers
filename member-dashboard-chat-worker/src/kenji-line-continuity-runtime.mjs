@@ -246,9 +246,18 @@ function defaultMatrix({ conversationHash = "", clientRecordId = "", relationshi
 function deriveEffectiveIntent(resolution = {}, matrix = {}, currentIntent = "", message = "") {
   const current = text(currentIntent).toLowerCase();
   const previous = text(matrix.last_customer_intent).toLowerCase();
-  const activeModel = parseObject(matrix?.payload_json)?.active_model_v1;
+  const payload = parseObject(matrix?.payload_json);
+  const browseState = parseObject(payload.model_browse_v1);
+  const activeModel = payload.active_model_v1;
   const hasActiveModel = activeModel && typeof activeModel === "object" &&
     text(activeModel.model_code) && text(activeModel.working_name);
+
+  if (text(browseState.awaiting) === "model_gender" && WEAK_INTENTS.has(current)) {
+    const raw = text(message).normalize("NFC").toLowerCase().replace(/\s+/g, "");
+    if (["ผู้ชาย", "ชาย", "นายแบบ", "man", "male", "ผู้หญิง", "หญิง", "นางแบบ", "woman", "female", "ทั้งคู่", "ชายหญิง", "ชญ", "ทุกเพศ", "both", "any"].includes(raw)) {
+      return "model_browse_gender";
+    }
+  }
 
   if (hasActiveModel && WEAK_INTENTS.has(current)) {
     const raw = text(message).normalize("NFKC").toLowerCase().replace(/\s+/g, "");
@@ -513,6 +522,13 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
         updated_at: matrix.state_updated_at,
       }
     : null;
+  const modelBrowseState = delivered && decision.model_browse_state && typeof decision.model_browse_state === "object"
+    ? {
+        awaiting: text(decision.model_browse_state.awaiting).slice(0, 40),
+        preferred_model_gender: text(decision.model_browse_state.preferred_model_gender).slice(0, 20),
+        updated_at: matrix.state_updated_at,
+      }
+    : null;
   return {
     [F.MATRIX_ID]: matrix.matrix_id,
     ...(clientRecordId ? { [F.MATRIX_CLIENT]: [clientRecordId] } : {}),
@@ -550,6 +566,7 @@ function matrixFields(matrix = {}, continuity = {}, decision = {}, delivered = f
       ...priorPayload,
       ...(openingState ? { first_contact_v2: openingState } : {}),
       ...(activeModelState?.model_code && activeModelState?.working_name ? { active_model_v1: activeModelState } : {}),
+      ...(modelBrowseState?.awaiting ? { model_browse_v1: modelBrowseState } : {}),
       runtime_schema: "mmd.kenji_line_continuity_runtime.v1",
       continuity_schema: text(continuity.schema),
       continuity_decision: text(continuity.decision),
