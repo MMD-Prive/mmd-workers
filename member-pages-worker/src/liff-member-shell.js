@@ -43,6 +43,8 @@ export function handleLiffMemberShell(request, env = {}) {
     careBackStateEndpoint: "/member/api/liff/care-back/state",
     couponWalletEndpoint: "/member/api/liff/care-back/wallet",
     creditWalletEndpoint: "/api/member/app/credits",
+    historyEndpoint: "/api/member/app/history",
+    historyRecoveryEndpoint: "/api/member/app/history/recovery",
     customerRequestsEndpoint: "/member/api/liff/customer-requests",
     customerRequestEvidenceEndpoint: "/member/api/liff/customer-request-evidence",
     careBackWishEndpoint: "/member/api/liff/care-back/wish",
@@ -186,7 +188,7 @@ function renderShell(config, nonce) {
     @media(min-width:700px){.welcome-hero{min-height:188px}.welcome-letter{width:min(100%,760px);margin:0 auto}}
     body.context-resolving .intro-screen{visibility:visible}
 
-    /* Worker-rendered MY MMD LIFF Digital Home v1. Lovable is intentionally not involved. */
+    /* Worker-rendered MY MMD LIFF Digital Home v2. Native LIFF owns the current customer app; Lovable is intentionally not involved. */
     body.app-entered:not(.signup-mode){--digital-bg:#080907;--digital-surface:#151712;--digital-line:#454331;--digital-gold:#e7cc89;--digital-cream:#f6f1e3;--digital-muted:#a7a899;min-height:100svh;padding:0;background:var(--digital-bg);color:var(--digital-cream)}
     body.app-entered:not(.signup-mode) main{width:min(100%,520px);min-height:100svh;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) 18px calc(90px + env(safe-area-inset-bottom));border:0;border-radius:0;background:radial-gradient(ellipse 90% 34% at 50% 11%,rgba(80,64,34,.42),transparent 82%),linear-gradient(155deg,#11120e,#080907 62%);box-shadow:none}
     body.app-entered:not(.signup-mode) .intro-screen,body.app-entered:not(.signup-mode) .member-nav{display:none!important}
@@ -331,7 +333,7 @@ function renderShell(config, nonce) {
     </section>
     </div>
   </section>
-  <nav class="digital-dock" aria-label="เมนู MY MMD LIFF"><button type="button" data-view="home" aria-current="page"><i>⌂</i>หน้าแรก</button><button type="button" data-view="jobs" aria-current="false"><i>▤</i>งาน</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>Wallet</button><a href="/member/kenji-ai-20"><i>✦</i>Kenji</a></nav>
+  <nav class="digital-dock" aria-label="เมนู MY MMD LIFF"><button type="button" data-view="home" aria-current="page"><i>⌂</i>หน้าแรก</button><button type="button" data-view="history" aria-current="false"><i>▤</i>ประวัติ</button><button type="button" data-view="credits" aria-current="false"><i>◈</i>Wallet</button><a href="/member/kenji-ai-20"><i>✦</i>Kenji</a></nav>
   <div id="status" class="status">MMD Privé · LIFF Digital Home</div>
 </main>
 <script src="${LIFF_SDK_URL}"></script>
@@ -339,7 +341,6 @@ function renderShell(config, nonce) {
 (() => {
   "use strict";
   const CONFIG = ${safeConfig};
-  const LOVABLE_POINTS_PATH = "/my-mmd/points";
   const message = document.getElementById("message");
   const appStatus = document.getElementById("app-status");
   const introContinue = document.getElementById("intro-continue");
@@ -455,10 +456,6 @@ function renderShell(config, nonce) {
   wishSubmit.textContent = copy.wishSubmit || wishSubmit.textContent;
   const initialView = CONFIG.view === "care" || CONFIG.intent === "promo" ? "care" : (CONFIG.view || "home");
   function showView(view, smooth = true) {
-    if (view === "points") {
-      window.location.assign(LOVABLE_POINTS_PATH);
-      return;
-    }
     const targetId = view === "history" ? "history-panel" : view;
     const target = document.getElementById(targetId) || document.getElementById("home");
     for (const panel of document.querySelectorAll(".section-rail > .panel")) panel.setAttribute("data-active", String(panel === target));
@@ -597,6 +594,7 @@ function renderShell(config, nonce) {
     if (!response.ok || !payload || payload.ok !== true) return null;
     renderProfile(payload.data || {}, response.headers.get("x-mmd-member-display-authority") || "");
     renderCustomerContact(payload.data || {});
+    await readCanonicalHistory();
     await readCouponWallet();
     await readCreditWallet();
     await readCustomerRequests();
@@ -894,11 +892,11 @@ function renderShell(config, nonce) {
     document.getElementById("payment-card").classList.toggle("hidden", !payment);
     if (expiry) document.getElementById("profile-expiry").textContent = shortDate(expiry);
     if (payment) document.getElementById("profile-payment").textContent = paymentStatus(payment);
-    renderHome(packages, jobs, historyView);
+    renderHome(packages, jobs, { status:"checking", events:[] });
     renderPoints(points);
     renderPackages(packages);
     renderJobs(jobs, view.requests || {}, view.mms || {});
-    renderHistory(historyView, payments);
+    renderCanonicalHistory({ state:"checking", items:[] });
     show(copy.ready || "ผมเตรียมข้อมูลที่ยืนยันได้ของคุณไว้แล้วครับ");
     if (CONFIG.intent === "promo") showView("care", false);
     else showView(CONFIG.view || "home", false);
@@ -937,15 +935,25 @@ function renderShell(config, nonce) {
     const verified = points.status === "verified";
     document.getElementById("points-total").textContent = verified && Number.isInteger(points.active_points) ? signedPoints(points.active_points).replace(/^\\+/, "") : "—";
     document.getElementById("points-rate").textContent = verified ? (copy.pointsRate || "") : (copy.checkingPoints || copy.checking || "");
-    document.getElementById("points-expiry").textContent = verified ? (copy.pointsNoExpiry || "") : "";
+    const expiringPoints = verified && Number.isInteger(points.expiring_points) ? points.expiring_points : null;
+    const nearestExpiry = verified ? safeDate(points.nearest_expiry) : "";
+    const expiryParts = verified ? [copy.pointsNoExpiry || "Points มีอายุ 365 วัน · หมดอายุเป็นราย lot จากวันที่เข้าระบบ"] : [];
+    if (expiringPoints !== null && expiringPoints > 0) {
+      const formatted = new Intl.NumberFormat(locale === "zh" ? "zh-CN" : locale === "en" ? "en-US" : "th-TH").format(expiringPoints);
+      expiryParts.push((copy.expiring || "คะแนนใกล้หมดอายุ") + " " + formatted + " pts" + (nearestExpiry ? " · " + shortDate(nearestExpiry) : ""));
+    }
+    document.getElementById("points-expiry").textContent = expiryParts.join(" · ");
     document.getElementById("points-lifetime-spend").textContent = verified ? formatThb(points.lifetime_service_spend_thb) : "—";
     document.getElementById("points-365-spend").textContent = verified ? formatThb(points.service_spend_365d_thb) : "—";
     const history = document.getElementById("points-history"); history.replaceChildren();
     if (points.status !== "verified") return appendEmpty(history, copy.checkingPoints || copy.checking);
     const items = safeList(points.history); if (!items.length) return appendEmpty(history, copy.empty);
-    for (const item of items) history.append(eventRow(item.date, item.title, item.status, signedPoints(item.points_delta)));
+    for (const item of items) {
+      const expiry = safeDate(item?.expires_at);
+      const detail = signedPoints(item.points_delta) + (expiry ? " · " + (locale === "en" ? "expires " : locale === "zh" ? "到期 " : "หมดอายุ ") + shortDate(expiry) : "");
+      history.append(eventRow(item.date, item.title, item.status, detail));
+    }
   }
-
   function renderPackages(packages) {
     const current = document.getElementById("current-package"); current.replaceChildren();
     if (packages.status !== "verified") appendEmpty(current, copy.checking || "");
@@ -973,12 +981,54 @@ function renderShell(config, nonce) {
     renderBoundedRows("mms", mms.status === "verified" ? mms.prebookings : [], mms.status === "checking" ? copy.checking : copy.empty, (item) => eventRow(item.date, item.service, item.status, [item.prebooking_number ? "#" + item.prebooking_number : "", item.therapist_display_name, item.time].filter(Boolean).join(" · ")));
   }
 
-  function renderHistory(historyView, payments) {
-    document.getElementById("history-window").textContent = safeDate(historyView.from) && safeDate(historyView.to) ? shortDate(historyView.from) + " - " + shortDate(historyView.to) : (historyView.status === "checking" ? (copy.checking || "") : "");
-    renderBoundedRows("v2-history", historyView.status === "verified" ? historyView.events : [], historyView.status === "checking" ? copy.checking : copy.empty, (item) => eventRow(item.date, item.title, item.status, item.type === "points" ? signedPoints(item.points_delta) : item.type));
-    renderBoundedRows("payment-history", payments.historical_verified, copy.empty, (item) => eventRow(item.date, item.title, item.status, Number.isInteger(item.amount) ? item.amount + " THB" : ""));
+  function normalizeCanonicalHistory(payload) {
+    if (Array.isArray(payload)) return { state:"resolved", items:payload };
+    if (!payload || typeof payload !== "object" || !Array.isArray(payload.items)) return null;
+    const state = String(payload.state || "").toLowerCase();
+    if (!["resolved","checking"].includes(state)) return null;
+    return { state, items:payload.items };
   }
 
+  function historyItemRow(item) {
+    const kind = ["booking","payment","care","membership"].includes(String(item?.kind || "")) ? String(item.kind) : "activity";
+    const rawOccurredAt = String(item?.occurredAt || "");
+    const date = safeDate(rawOccurredAt) || safeDate(rawOccurredAt.slice(0,10));
+    const title = String(item?.title || "MMD activity").slice(0,160);
+    const detail = [String(item?.detail || "").slice(0,240), String(item?.statusLabel || "").slice(0,80), kind].filter(Boolean).join(" · ");
+    return eventRow(date, title, item?.statusLabel, detail);
+  }
+
+  function renderCanonicalHistory(history) {
+    const state = history?.state === "resolved" ? "resolved" : "checking";
+    const items = state === "resolved" ? safeList(history?.items) : [];
+    document.getElementById("history-window").textContent = state === "resolved"
+      ? (locale === "en" ? "Verified through your LINE member session" : locale === "zh" ? "通过您的 LINE 会员会话验证" : "ยืนยันผ่านบัญชี LINE ของคุณ")
+      : (copy.checking || "กำลังตรวจสอบข้อมูลของคุณครับ");
+    renderBoundedRows("v2-history", items, state === "checking" ? copy.checking : copy.empty, historyItemRow);
+    renderBoundedRows("payment-history", items.filter((item) => item?.kind === "payment"), state === "checking" ? copy.checking : copy.empty, historyItemRow);
+
+    const home = document.getElementById("history");
+    if (home) {
+      home.replaceChildren();
+      if (state === "checking") appendEmpty(home, copy.checking);
+      else if (!items.length) appendEmpty(home, copy.empty);
+      else for (const item of items.slice(0,3)) home.append(historyItemRow(item));
+    }
+  }
+
+  async function readCanonicalHistory() {
+    try {
+      const response = await fetch(CONFIG.historyEndpoint, { method:"GET", credentials:"same-origin", cache:"no-store", headers:{accept:"application/json"} });
+      const payload = await response.json().catch(() => null);
+      const history = response.ok ? normalizeCanonicalHistory(payload) : null;
+      if (!history) throw new Error("history_unavailable");
+      renderCanonicalHistory(history);
+      return history;
+    } catch {
+      renderCanonicalHistory({ state:"checking", items:[] });
+      return null;
+    }
+  }
   function renderBoundedRows(id, items, emptyCopy, renderItem) { const container = document.getElementById(id); container.replaceChildren(); const safe = safeList(items); if (!safe.length) return appendEmpty(container, emptyCopy); for (const item of safe) container.append(renderItem(item)); }
   function jobDetails(job) { const details = document.createElement("details"); details.className = "details"; const summary = document.createElement("summary"); summary.textContent = [job.job_number ? "#" + job.job_number : "", job.service_title].filter(Boolean).join(" · ") || "MMD"; details.append(summary); const content = document.createElement("div"); content.className = "history"; content.append(eventRow(job.date, job.model_display_name || job.service_title, job.status, [job.start_time, job.end_time, job.duration ? job.duration + " min" : ""].filter(Boolean).join(" · "))); if (job.location_customer_safe) { const place = document.createElement("p"); place.className = "sub"; place.textContent = job.location_customer_safe; content.append(place); } if (job.customer_safe_note) { const note = document.createElement("p"); note.className = "sub"; note.textContent = job.customer_safe_note; content.append(note); } details.append(content); return details; }
   function eventRow(dateValue, titleValue, stateValue, detail) { const row = document.createElement("div"); row.className = "event"; const date = document.createElement("span"); date.className = "event-date"; date.textContent = shortDate(dateValue); const title = document.createElement("strong"); title.textContent = String(titleValue || "MMD"); const state = document.createElement("span"); state.className = "event-status"; state.textContent = detail || safeStatus(stateValue); row.append(date, title, state); return row; }
