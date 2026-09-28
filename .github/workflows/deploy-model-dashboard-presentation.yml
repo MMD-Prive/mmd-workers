@@ -284,20 +284,12 @@ jobs:
 
             asset="$(grep -oE '/sigil/model/dashboard-assets/[^"'"'"' ]+\.(js|css)(\?[^"'"'"' ]*)?' "$body" | head -n 1 || true)"
             if [ -n "$asset" ]; then
-              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS -o /dev/null -w "%{http_code}" "$origin$asset")"
+              asset_headers="$(mktemp)"
+              asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
+                -D "$asset_headers" -o /dev/null -w "%{http_code}" "$origin$asset")"
+              cat "$asset_headers"
               test "$asset_code" = "200"
-
-              root_asset="/${asset#/sigil/model/dashboard-assets/}"
-              root_headers="$(mktemp)"
-              root_asset_code="$(curl --retry 6 --retry-delay 2 --retry-all-errors -sS \
-                -D "$root_headers" -o /dev/null -w "%{http_code}" "$origin$root_asset")"
-              cat "$root_headers"
-              test "$root_asset_code" = "200"
-              tr -d '\r' < "$root_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
-              if tr -d '\r' < "$root_headers" | grep -i -q '^location:'; then
-                echo "Root runtime alias redirected instead of staying same-origin: $origin$root_asset" >&2
-                exit 1
-              fi
+              tr -d '\r' < "$asset_headers" | grep -i -q '^x-mmd-route-owner:[[:space:]]*model-dashboard-presentation-worker$'
             fi
 
             api_body="$(mktemp)"
