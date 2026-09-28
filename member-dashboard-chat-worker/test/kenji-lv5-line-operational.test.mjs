@@ -83,6 +83,33 @@ test("strong booking request is operational even when legacy intent is mmd_compa
   assert.equal(isKenjiLv5LineOperationalCandidate(event("อยากรู้ว่ามีบริการอะไรบ้าง"), "service_guidance"), false);
 });
 
+test("partial deposit draft is captured once per revision before guided intake continues", () => {
+  const base = {
+    active: true,
+    merged_intent: { type: "booking", trigger: "deposit", model_name: "Rossi" },
+    draft: {
+      draft_id: "kbd1_partial_deposit",
+      revision: 2,
+      capture_revision: 1,
+      ready: false,
+      missing_fields: ["date", "time", "location", "amount_thb"],
+    },
+  };
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.shouldCaptureIncompleteDepositDraft(base), true);
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.shouldCaptureIncompleteDepositDraft({
+    ...base,
+    draft: { ...base.draft, capture_revision: 2 },
+  }), false);
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.shouldCaptureIncompleteDepositDraft({
+    ...base,
+    draft: { ...base.draft, ready: true, missing_fields: [] },
+  }), false);
+  assert.equal(KENJI_LV5_LINE_REQUEST_INTERNALS.shouldCaptureIncompleteDepositDraft({
+    ...base,
+    merged_intent: { type: "booking", model_name: "Rossi" },
+  }), false);
+});
+
 test("guided booking asks exactly one missing customer field at a time", () => {
   const base = {
     active: true,
