@@ -807,7 +807,7 @@ function renderShell(config, nonce) {
     if (!feed || !unread) return;
     const safe = Array.isArray(items) ? items.slice(0, 5) : [];
     unread.hidden = !(Number.isInteger(unreadCount) && unreadCount > 0);
-    if (!unread.hidden) unread.textContent = locale === "en" ? `NEW ${unreadCount}` : locale === "zh" ? `新 ${unreadCount}` : `ใหม่ ${unreadCount}`;
+    if (!unread.hidden) unread.textContent = locale === "en" ? "NEW " + unreadCount : locale === "zh" ? "新 " + unreadCount : "ใหม่ " + unreadCount;
     feed.replaceChildren();
     if (!safe.length) {
       const quiet = document.createElement("div"); quiet.className = "digital-quiet"; quiet.textContent = locale === "en" ? "No new updates right now." : locale === "zh" ? "目前没有新的更新。" : "ตอนนี้ยังไม่มีอัปเดตใหม่";
@@ -836,7 +836,7 @@ function renderShell(config, nonce) {
     const needsLabel = document.getElementById("digital-needs-label");
     const needsAction = document.getElementById("digital-needs-action");
     const name = String(profileData?.customer_360?.member?.display_name || profileData?.display_name || "").trim();
-    if (greeting) greeting.textContent = name ? (locale === "en" ? `Hello ${name}` : locale === "zh" ? `你好 ${name}` : `สวัสดี ${name}`) : "MY MMD";
+    if (greeting) greeting.textContent = name ? (locale === "en" ? "Hello " + name : locale === "zh" ? "你好 " + name : "สวัสดี " + name) : "MY MMD";
 
     try {
       const response = await fetch("/api/member/app/dashboard", { credentials:"same-origin", cache:"no-store", headers:{ accept:"application/json" } });
